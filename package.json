@@ -9,9 +9,9 @@
     "typecheck": "turbo run typecheck",
     "dev:web": "turbo run dev --filter=@pmagent/web",
     "dev:desktop": "turbo run dev --filter=@pmagent/desktop",
-    "dev:backend": "uv run uvicorn pmagent_backend.main:app --reload --port 8000",
+    "dev:backend": "uv run uvicorn --factory pmagent_backend.main:create_app --reload --port 8000",
     "test:py": "uv run pytest",
-    "db:up": "docker compose -f infra/docker-compose.yml up -d",
+    "db:up": "docker compose --env-file .env -f infra/docker-compose.yml up -d",
     "db:migrate": "uv run --directory apps/backend alembic upgrade head",
     "db:revision": "uv run --directory apps/backend alembic revision --autogenerate -m"
   },

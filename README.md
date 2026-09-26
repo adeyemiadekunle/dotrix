@@ -33,13 +33,13 @@ Requirements: Python 3.11+, uv, Node 24+, pnpm 11, Docker (for Postgres/Redis).
 ```bash
 uv sync                  # Python: engine, CLI, backend + dev tools
 pnpm install             # TypeScript apps and packages
-cp .env.example .env     # then set a model API key
+cp .env.example .env     # then replace every change-me and set a model API key
 ```
 
 Run things:
 
 ```bash
-docker compose -f infra/docker-compose.yml up -d   # Postgres + Redis
+pnpm db:up && pnpm db:migrate   # Postgres + Redis (localhost only), apply migrations
 pnpm dev:backend         # API on http://localhost:8000 (docs at /docs)
 pnpm dev:web             # web on http://localhost:3000
 pnpm dev:desktop         # Electron window pointed at the web app

@@ -29,7 +29,9 @@ async def validate(payload: Payload) -> Payload:
 
 
 def make_client() -> AsyncClient:
-    app = create_app(Settings(env="test", log_json=False))
+    app = create_app(
+        Settings(env="test", log_json=False, database_url="postgresql+asyncpg://localhost/unused")
+    )
     app.include_router(router)
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
