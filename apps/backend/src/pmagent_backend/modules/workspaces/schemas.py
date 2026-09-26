@@ -49,3 +49,7 @@ class MemberRead(BaseModel):
 
 class MemberRoleUpdate(BaseModel):
     role: Role
+
+
+class OwnershipTransfer(BaseModel):
+    user_id: uuid.UUID

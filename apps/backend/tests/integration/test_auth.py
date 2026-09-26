@@ -1,19 +1,6 @@
-from urllib.parse import parse_qs, urlparse
-
 from httpx import AsyncClient
 
 from pmagent_backend.core.email import OutboxEmailSender
-
-
-def link_token(outbox: OutboxEmailSender, path: str) -> str:
-    """Token from the newest emailed link to `path`."""
-    for message in reversed(outbox.messages):
-        for word in message.body.split():
-            url = urlparse(word)
-            if url.path == path:
-                return parse_qs(url.query)["token"][0]
-    raise AssertionError(f"no email with a {path} link")
-
 
 # -- sign-up ------------------------------------------------------------------------
 
@@ -31,10 +18,12 @@ async def test_signup_logs_in_and_creates_personal_workspace(signup, db_client: 
     assert [(w["kind"], w["role"]) for w in workspaces] == [("personal", "owner")]
 
 
-async def test_signup_sends_verification_email(signup, outbox: OutboxEmailSender) -> None:
+async def test_signup_sends_verification_email(
+    signup, outbox: OutboxEmailSender, email_token
+) -> None:
     await signup()
     assert outbox.messages[-1].to == "ada@example.com"
-    assert link_token(outbox, "/verify-email")
+    assert email_token("/verify-email")
 
 
 async def test_duplicate_email_is_rejected_case_insensitively(signup, db_client: AsyncClient) -> None:
@@ -127,9 +116,9 @@ async def test_logout_revokes_refresh_token(signup, db_client: AsyncClient) -> N
 # -- email verification -------------------------------------------------------------
 
 
-async def test_verify_email(signup, db_client: AsyncClient, outbox: OutboxEmailSender) -> None:
+async def test_verify_email(signup, db_client: AsyncClient, email_token) -> None:
     ada = await signup()
-    token = link_token(outbox, "/verify-email")
+    token = email_token("/verify-email")
 
     assert (await db_client.post("/v1/auth/verify-email", json={"token": token})).status_code == 204
     me = (await db_client.get("/v1/me", headers=ada.headers)).json()
@@ -141,13 +130,13 @@ async def test_verify_email(signup, db_client: AsyncClient, outbox: OutboxEmailS
 
 
 async def test_resend_invalidates_the_previous_link(
-    signup, db_client: AsyncClient, outbox: OutboxEmailSender
+    signup, db_client: AsyncClient, email_token
 ) -> None:
     ada = await signup()
-    first = link_token(outbox, "/verify-email")
+    first = email_token("/verify-email")
     res = await db_client.post("/v1/auth/verify-email/resend", headers=ada.headers)
     assert res.status_code == 202
-    second = link_token(outbox, "/verify-email")
+    second = email_token("/verify-email")
 
     assert (await db_client.post("/v1/auth/verify-email", json={"token": first})).status_code == 400
     assert (await db_client.post("/v1/auth/verify-email", json={"token": second})).status_code == 204
@@ -164,11 +153,11 @@ async def test_password_reset_for_unknown_email_reveals_nothing(
     assert outbox.messages == []
 
 
-async def test_password_reset(signup, db_client: AsyncClient, outbox: OutboxEmailSender) -> None:
+async def test_password_reset(signup, db_client: AsyncClient, email_token) -> None:
     ada = await signup()
     res = await db_client.post("/v1/auth/password-reset/request", json={"email": ada.email})
     assert res.status_code == 202
-    token = link_token(outbox, "/reset-password")
+    token = email_token("/reset-password")
 
     new_password = "a brand new passphrase"
     res = await db_client.post(

@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from alembic import command
@@ -26,6 +28,7 @@ from pmagent_backend.core.email import OutboxEmailSender, get_email_sender
 from pmagent_backend.core.settings import Settings, get_database_settings
 from pmagent_backend.db.session import get_session
 from pmagent_backend.main import create_app
+from pmagent_backend.modules.workspaces.models import Membership, Role
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # For tests that never open a connection; no credentials.
@@ -144,3 +147,41 @@ def signup(db_client: AsyncClient) -> Callable[..., Awaitable[SignedUp]]:
         return SignedUp(res.json(), password)
 
     return _signup
+
+
+@pytest.fixture
+def email_token(outbox: OutboxEmailSender) -> Callable[[str], str]:
+    """Token from the newest emailed link whose path is `path`, e.g. "/verify-email"."""
+
+    def _token(path: str) -> str:
+        for message in reversed(outbox.messages):
+            for word in message.body.split():
+                url = urlparse(word)
+                if url.path == path:
+                    return parse_qs(url.query)["token"][0]
+        raise AssertionError(f"no email with a {path} link")
+
+    return _token
+
+
+@pytest.fixture
+def create_team(db_client: AsyncClient) -> Callable[..., Awaitable[dict[str, Any]]]:
+    async def _create(headers: dict[str, str], name: str = "Kunemi") -> dict[str, Any]:
+        res = await db_client.post("/v1/workspaces", json={"name": name}, headers=headers)
+        assert res.status_code == 201, res.text
+        return res.json()
+
+    return _create
+
+
+@pytest.fixture
+def add_member(db_session: AsyncSession) -> Callable[[str, str, Role], Awaitable[None]]:
+    """Insert a membership directly, for tests that aren't about invites."""
+
+    async def _add(workspace_id: str, user_id: str, role: Role) -> None:
+        db_session.add(
+            Membership(workspace_id=uuid.UUID(workspace_id), user_id=uuid.UUID(user_id), role=role)
+        )
+        await db_session.commit()
+
+    return _add

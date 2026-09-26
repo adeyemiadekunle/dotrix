@@ -10,7 +10,7 @@ from uuid_utils.compat import uuid7
 
 from pmagent_backend.core import security
 from pmagent_backend.core.email import EmailMessage, EmailSender
-from pmagent_backend.core.errors import Conflict, DomainError, Unauthorized
+from pmagent_backend.core.errors import Conflict, InvalidLink, Unauthorized
 from pmagent_backend.core.settings import Settings
 from pmagent_backend.modules.workspaces.service import WorkspaceService
 
@@ -24,13 +24,6 @@ from .schemas import (
     TokenPair,
     UserRead,
 )
-
-
-class InvalidLink(DomainError):
-    code = "invalid_link"
-
-    def __init__(self) -> None:
-        super().__init__("This link is invalid or has expired")
 
 
 def _now() -> datetime:

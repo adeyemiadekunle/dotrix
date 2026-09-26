@@ -114,8 +114,11 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 - [ ] **FR-1** Google and GitHub OAuth login; magic-link login; TOTP 2FA
 - [x] **FR-2** Workspaces (personal / team / business); auto-create a personal workspace on sign-up; one user can belong to many
 - [x] **FR-3** Membership with roles (Owner, Admin, Member, Guest); `require_permission` dependency implementing the PRD matrix
-- [ ] **FR-4** Invites by email and by link; revoke invites; remove members; change roles; Owner transfer
-- [ ] **FR-6** Device-login flow for the CLI and external tools; scoped, revocable personal access tokens
+- [x] **FR-4** Invites by email and by link; revoke invites; remove members; change roles; Owner transfer
+- [x] **FR-6** Device-login flow for the CLI and external tools; scoped, revocable personal access tokens (backend)
+- [ ] **FR-6** `pmagent login` / `logout` in `apps/cli` using the device flow; store the token in the OS keychain (`keyring`), never in a config file
+- [ ] Web pages the backend now links to: `/verify-email`, `/reset-password`, `/invites/accept`, `/device` (apps/web)
+- [ ] Cleanup job: delete expired device authorizations, used/expired action tokens and invites, and old revoked refresh tokens
 - [ ] Cross-workspace isolation test suite (NFR multi-tenancy), required before beta — started in `tests/integration/test_workspaces.py`; extend for every new workspace-scoped resource
 - [ ] Rate-limit sign-up, login, password reset, and verification resend per IP and per email (Redis)
 - [ ] Real email provider (e.g. SES / Postmark / Resend) behind `EmailSender`; send from a background job so response time doesn't reveal whether an email exists
