@@ -2,6 +2,8 @@
 from pmagent_backend.modules.api_tokens import models as _api_tokens  # noqa: F401
 from pmagent_backend.modules.auth import models as _auth  # noqa: F401
 from pmagent_backend.modules.invites import models as _invites  # noqa: F401
+from pmagent_backend.modules.knowledge import models as _knowledge  # noqa: F401
+from pmagent_backend.modules.projects import models as _projects  # noqa: F401
 from pmagent_backend.modules.workspaces import models as _workspaces  # noqa: F401
 
 from .base import Base

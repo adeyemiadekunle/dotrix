@@ -45,6 +45,13 @@ class Conflict(DomainError):
     code = "conflict"
 
 
+class Unprocessable(DomainError):
+    """Well-formed request that breaks a domain rule (bad path, file too large, ...)."""
+
+    status_code = HTTPStatus.UNPROCESSABLE_ENTITY
+    code = "unprocessable"
+
+
 class InvalidLink(DomainError):
     """An emailed or shared token (verification, reset, invite) is unknown, used, or expired."""
 

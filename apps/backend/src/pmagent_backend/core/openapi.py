@@ -59,7 +59,13 @@ TAGS: list[dict[str, str]] = [
     {"name": "api tokens", "description": "Your personal API tokens: create, list, revoke."},
     {"name": "workspaces", "description": "Workspaces, members, roles, and ownership transfer."},
     {"name": "invites", "description": "Invite people by email or shareable link; accept invites."},
-    {"name": "projects", "description": "Projects and their `.pmagent/` source of truth. *Coming soon.*"},
+    {"name": "projects", "description": "Projects: start from a new repo, an existing repo, or docs only."},
+    {
+        "name": "knowledge",
+        "description": "A project's `.pmagent/` source of truth: files with full version history "
+        "(who wrote, instructed, and approved each change), restore, sync for local mirrors, "
+        "and Markdown export. Agents may only write the folders their role owns.",
+    },
     {"name": "issues", "description": "Jira-style issues, board, backlog, sprints. *Coming soon.*"},
     {"name": "approvals", "description": "Action Mode approvals and the audit log. *Coming soon.*"},
     {"name": "health", "description": "Liveness and readiness probes."},

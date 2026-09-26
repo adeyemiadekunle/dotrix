@@ -7,6 +7,7 @@ from pmagent_backend.modules.auth.router import router as auth
 from pmagent_backend.modules.invites.router import router as invites
 from pmagent_backend.modules.invites.router import workspace_router as workspace_invites
 from pmagent_backend.modules.issues.router import router as issues
+from pmagent_backend.modules.knowledge.router import router as knowledge
 from pmagent_backend.modules.projects.router import router as projects
 from pmagent_backend.modules.workspaces.router import router as workspaces
 
@@ -20,6 +21,7 @@ for module_router in (
     workspace_invites,
     invites,
     projects,
+    knowledge,
     issues,
     approvals,
 ):

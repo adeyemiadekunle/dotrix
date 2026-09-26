@@ -170,13 +170,18 @@ External accounts, keys, and config have to exist before these items can be buil
 
 ### P0: Projects and source of truth
 
-- [ ] **FR-9** Projects CRUD with a unique project key per workspace (e.g. `KUN`); start from a new repo, an existing repo, or docs only
-- [ ] **FR-18** `knowledge` module: store `.pmagent/` files per project with per-file version history (content, diff, author, instructed_by, approved_by); restore an earlier version
-- [ ] **FR-15** Scaffold the full `.pmagent/` structure on project creation, reusing `pmagent_engine.config.scaffold`
-- [ ] **FR-16** Seed default `agent-rules/` (base + role files); editable only by Owner or Admin
-- [ ] **FR-41** Enforce per-agent folder permissions (Write / Propose / Tidy / Read) server-side; refuse writes outside an agent's folders
-- [ ] **FR-18** Sync API for the local mirror: pull (manifest + changed files since a version) and push (proposed writes that go through approvals)
-- [ ] **FR-18** Full Markdown export of `.pmagent/` (zip) for Owner or Admin
+- [x] **FR-9** Projects CRUD with a unique project key per workspace (e.g. `KUN`); start from a new repo, an existing repo, or docs only (the source is recorded; creating or reading the repo itself is FR-10)
+- [x] **FR-18** `knowledge` module: store `.pmagent/` files per project with per-file version history (content, diff, author, instructed_by, approved_by); restore an earlier version
+- [x] **FR-15** Scaffold the full `.pmagent/` structure on project creation (`pmagent_engine.layout.skeleton`, the PRD layout)
+- [ ] **FR-15** Make the CLI's local `pmagent init` / `connect` use `pmagent_engine.layout` too (it still writes the older folder list)
+- [x] **FR-16** Seed default `agent-rules/` (base + role files, `pmagent_engine/rules/`); editable only by Owner or Admin
+- [x] **FR-41** Per-agent folder permissions (`pmagent_engine.permissions`) enforced in `KnowledgeService.write`; agent writes also need an instructing and an approving person
+- [ ] **FR-41** Admins can tighten the defaults per project (e.g. `requirements/` approval needs an Admin)
+- [x] **FR-18** Sync pull: manifest with `since_revision` (includes deletions)
+- [ ] **FR-18** Sync push from the local mirror: proposed writes that go through approvals (needs the approvals module)
+- [ ] **FR-18** CLI: `pmagent pull` mirrors `.pmagent/` into the checkout using the manifest (git-excluded, pre-commit hook)
+- [x] **FR-18** Full Markdown export of `.pmagent/` (zip) for Owner or Admin
+- [ ] Project-level access for guests (PRD: guests see only projects they're invited to; today they see none)
 - [ ] **FR-11** Doc upload: store the original, normalise with `pmagent_engine.ingest`, and save to `docs/`
 
 ### P0: Issue tracking
