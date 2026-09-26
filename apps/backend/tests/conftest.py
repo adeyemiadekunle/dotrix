@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from alembic import command
@@ -21,7 +22,8 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import make_url, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
-from pmagent_backend.core.settings import Settings, get_settings
+from pmagent_backend.core.email import OutboxEmailSender, get_email_sender
+from pmagent_backend.core.settings import Settings, get_database_settings
 from pmagent_backend.db.session import get_session
 from pmagent_backend.main import create_app
 
@@ -30,10 +32,10 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 UNUSED_DATABASE_URL = "postgresql+asyncpg://localhost/unused"
 
 
-def test_database_url() -> str:
+def resolve_test_database_url() -> str:
     if url := os.environ.get("PMAGENT_TEST_DATABASE_URL"):
         return url
-    dev_url = make_url(get_settings().database_url)
+    dev_url = make_url(get_database_settings().database_url)
     return dev_url.set(database="pmagent_test").render_as_string(hide_password=False)
 
 
@@ -49,7 +51,7 @@ async def _recreate_database(url: str) -> None:
 @pytest.fixture(scope="session")
 def migrated_database() -> str:
     """Fresh test database at Alembic head. Sync, so Alembic can run its own loop."""
-    url = test_database_url()
+    url = resolve_test_database_url()
     asyncio.run(_recreate_database(url))
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     config.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
@@ -81,20 +83,64 @@ async def db_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
             await outer.rollback()
 
 
+def make_settings(database_url: str = UNUSED_DATABASE_URL) -> Settings:
+    """Explicit test settings, so tests never depend on a developer's .env or CI secrets."""
+    return Settings(
+        env="test",
+        log_json=False,
+        database_url=database_url,
+        jwt_secret="test-only-jwt-secret-not-used-anywhere-else",  # type: ignore[arg-type]
+        app_url="http://app.test",
+        email_backend="console",
+    )
+
+
 @pytest.fixture
 async def client() -> AsyncIterator[AsyncClient]:
     """HTTP client for endpoints that don't touch the database."""
-    app = create_app(Settings(env="test", log_json=False, database_url=UNUSED_DATABASE_URL))
+    app = create_app(make_settings())
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+
+@pytest.fixture
+def outbox() -> OutboxEmailSender:
+    return OutboxEmailSender()
 
 
 @pytest.fixture
 async def db_client(
-    migrated_database: str, db_session: AsyncSession
+    migrated_database: str, db_session: AsyncSession, outbox: OutboxEmailSender
 ) -> AsyncIterator[AsyncClient]:
     """HTTP client whose requests share the test's rolled-back session."""
-    app = create_app(Settings(env="test", log_json=False, database_url=migrated_database))
+    app = create_app(make_settings(migrated_database))
     app.dependency_overrides[get_session] = lambda: db_session
+    app.dependency_overrides[get_email_sender] = lambda: outbox
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+
+class SignedUp:
+    """A user created through the API, with their tokens and auth header."""
+
+    def __init__(self, body: dict[str, Any], password: str) -> None:
+        self.user = body["user"]
+        self.id: str = body["user"]["id"]
+        self.email: str = body["user"]["email"]
+        self.password = password
+        self.tokens = body["tokens"]
+        self.headers = {"Authorization": f"Bearer {self.tokens['access_token']}"}
+
+
+@pytest.fixture
+def signup(db_client: AsyncClient) -> Callable[..., Awaitable[SignedUp]]:
+    async def _signup(
+        email: str = "ada@example.com", password: str = "correct horse battery", name: str = "Ada"
+    ) -> SignedUp:
+        res = await db_client.post(
+            "/v1/auth/signup", json={"email": email, "password": password, "display_name": name}
+        )
+        assert res.status_code == 201, res.text
+        return SignedUp(res.json(), password)
+
+    return _signup
