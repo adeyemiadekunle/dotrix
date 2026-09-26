@@ -11,8 +11,11 @@ from .core.email import build_email_sender
 from .core.errors import register_exception_handlers
 from .core.logging import configure_logging
 from .core.middleware import RequestContextMiddleware
+from .core.openapi import install_openapi, operation_id
 from .core.settings import Settings, get_settings
 from .db.session import create_engine, create_sessionmaker
+
+API_VERSION = "0.1.0"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -27,7 +30,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         await engine.dispose()
 
-    app = FastAPI(title="pmagent API", version="0.1.0", lifespan=lifespan)
+    docs = settings.docs_enabled
+    app = FastAPI(
+        title="pmagent API",
+        version=API_VERSION,
+        lifespan=lifespan,
+        generate_unique_id_function=operation_id,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+        swagger_ui_parameters={"persistAuthorization": True, "displayRequestDuration": True},
+    )
+    install_openapi(app, API_VERSION)
     app.state.settings = settings
     app.state.email_sender = build_email_sender(settings.email_backend)
     app.add_middleware(

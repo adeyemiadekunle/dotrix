@@ -27,6 +27,6 @@ __pycache__/
 docs/files/
 docs/files.zip
 
-# Local Claude Code settings
+# Local Claude Code settings and preview config
 .claude/settings.local.json
-
+.claude/launch.json

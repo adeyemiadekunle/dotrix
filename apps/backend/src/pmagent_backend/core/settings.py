@@ -33,6 +33,8 @@ class Settings(DatabaseSettings):
     log_json: bool = True
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: list[str] = ["http://localhost:3000"]
+    # Swagger UI (/docs), ReDoc (/redoc), and /openapi.json. Turn off to hide the API surface.
+    docs_enabled: bool = True
 
     # Auth. The secret is required and never has a default.
     jwt_secret: SecretStr = Field(min_length=32)

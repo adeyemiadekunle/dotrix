@@ -30,6 +30,10 @@ jobs:
       - run: uv sync
       - run: uv run ruff check apps packages
       - run: uv run pytest
+      - name: OpenAPI schema is up to date (run `pnpm openapi` if this fails)
+        run: |
+          uv run python apps/backend/scripts/export_openapi.py
+          git diff --exit-code packages/api-client/openapi.json
       - name: Migrations apply cleanly and match the models
         working-directory: apps/backend
         run: |
@@ -46,5 +50,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: API client matches the schema (run `pnpm openapi` if this fails)
+        run: |
+          pnpm --filter @pmagent/api-client generate
+          git diff --exit-code packages/api-client/src/schema.ts
       - run: pnpm build
       - run: pnpm typecheck
