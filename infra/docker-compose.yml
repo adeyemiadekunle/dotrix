@@ -1,15 +1,16 @@
-# Local services for the platform backend: `docker compose -f infra/docker-compose.yml up -d`
+# Local services for the platform backend. Start with `pnpm db:up`, which passes the
+# repo-root .env; credentials are never stored in this file.
 services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_USER: pmagent
-      POSTGRES_PASSWORD: pmagent
-      POSTGRES_DB: pmagent
-    ports: ["5432:5432"]
+      POSTGRES_USER: ${POSTGRES_USER:-pmagent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
+      POSTGRES_DB: ${POSTGRES_DB:-pmagent}
+    ports: ["127.0.0.1:5432:5432"]  # localhost only
     volumes: [pgdata:/var/lib/postgresql/data]
   redis:
     image: redis:7
-    ports: ["6379:6379"]
+    ports: ["127.0.0.1:6379:6379"]  # localhost only
 volumes:
   pgdata:
