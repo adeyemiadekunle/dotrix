@@ -72,7 +72,12 @@ TAGS: list[dict[str, str]] = [
         "markdown conversion under `docs/normalized/` in the project's knowledge.",
     },
     {"name": "issues", "description": "Jira-style issues, board, backlog, sprints. *Coming soon.*"},
-    {"name": "approvals", "description": "Action Mode approvals and the audit log. *Coming soon.*"},
+    {
+        "name": "agents",
+        "description": "Talk to the Project Manager agent and its team. Runs happen in the "
+        "background; every write pauses for a person to approve or reject it.",
+    },
+    {"name": "audit", "description": "Append-only log of knowledge changes, approvals, and agent runs."},
     {"name": "health", "description": "Liveness and readiness probes."},
 ]
 

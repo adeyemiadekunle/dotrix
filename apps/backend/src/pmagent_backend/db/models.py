@@ -1,5 +1,7 @@
 """Import every ORM model here so Base.metadata is complete for Alembic."""
+from pmagent_backend.modules.agents import models as _agents  # noqa: F401
 from pmagent_backend.modules.api_tokens import models as _api_tokens  # noqa: F401
+from pmagent_backend.modules.audit import models as _audit  # noqa: F401
 from pmagent_backend.modules.auth import models as _auth  # noqa: F401
 from pmagent_backend.modules.documents import models as _documents  # noqa: F401
 from pmagent_backend.modules.invites import models as _invites  # noqa: F401

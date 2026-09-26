@@ -40,7 +40,7 @@ Run things:
 
 ```bash
 pnpm db:up && pnpm db:migrate   # Postgres, Redis, MinIO (localhost only), apply migrations
-pnpm dev:backend         # API on http://localhost:8000
+pnpm dev:backend         # API on http://localhost:8000 (agents need a model key in .env)
 pnpm dev:web             # web on http://localhost:3000
 pnpm dev:desktop         # Electron window pointed at the web app
 uv run pmagent --help    # CLI

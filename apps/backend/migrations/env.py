@@ -16,6 +16,15 @@ if config.config_file_name and config.attributes.get("configure_logger", True):
 
 target_metadata = Base.metadata
 
+# Tables owned by other tools (LangGraph's checkpointer creates and migrates its own).
+EXTERNAL_TABLE_PREFIXES = ("checkpoint",)
+
+
+def include_name(name: str | None, type_: str, parent_names: object) -> bool:
+    if type_ == "table" and name and name.startswith(EXTERNAL_TABLE_PREFIXES):
+        return False
+    return True
+
 
 def database_url() -> str:
     return config.get_main_option("sqlalchemy.url") or get_database_settings().database_url
@@ -27,13 +36,19 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,
+        include_name=include_name,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        include_name=include_name,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

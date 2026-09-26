@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid_utils.compat import uuid7
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
+from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.workspaces.models import Role
@@ -186,6 +187,7 @@ class KnowledgeService:
             file = self._create(locked, clean, content, actor, message)
         else:
             self._update(locked, file, content, actor, message, deleted=False)
+        self._audit(locked, "knowledge.write", file, actor, message)
         await self.session.commit()
         return FileRead.model_validate(file)
 
@@ -202,6 +204,7 @@ class KnowledgeService:
             raise VersionConflict(f"{clean} is at version {file.version}, not {base_version}")
         locked.knowledge_revision += 1
         self._update(locked, file, "", actor, "Deleted", deleted=True)
+        self._audit(locked, "knowledge.delete", file, actor, None)
         await self.session.commit()
 
     async def restore(
@@ -299,6 +302,22 @@ class KnowledgeService:
                 message=message,
                 created_at=file.updated_at,
             )
+        )
+
+    def _audit(
+        self, project: Project, action: str, file: KnowledgeFile, actor: Actor, message: str | None
+    ) -> None:
+        AuditLog(self.session).record(
+            workspace_id=project.workspace_id,
+            project_id=project.id,
+            action=action,
+            target=file.path,
+            actor_type=actor.kind,
+            actor_user_id=actor.user_id,
+            agent=actor.agent,
+            instructed_by_id=actor.instructed_by_id,
+            approved_by_id=actor.approved_by_id,
+            details={"version": file.version, "revision": file.revision, "message": message},
         )
 
     async def _lock(self, project: Project) -> Project:

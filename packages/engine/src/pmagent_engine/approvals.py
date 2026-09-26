@@ -75,12 +75,15 @@ def _decision(kind: str, message: str | None) -> dict:
     return d
 
 
-def resume_command(result_or_actions: dict | list[dict], decisions: Iterable[str] | str,
+def resume_command(result_or_actions: dict | list[dict],
+                   decisions: Iterable[str | tuple[str, str | None]] | str,
                    message: str | None = None) -> Command:
     """Build the Command that resumes a paused run.
 
     `decisions` is either one decision applied to every pending action, or
-    one per action in the same order as pending_actions().
+    one per action in the same order as pending_actions(). A per-action
+    decision may be a ("reject", reason) pair, so each rejection carries its
+    own reason back to the agent; `message` is the fallback reason.
     """
     actions = (pending_actions(result_or_actions)
                if isinstance(result_or_actions, dict) else result_or_actions)
@@ -92,8 +95,9 @@ def resume_command(result_or_actions: dict | list[dict], decisions: Iterable[str
 
     # Group decisions per interrupt, preserving order.
     grouped: dict[Any, list[dict]] = {}
-    for action, kind in zip(actions, decisions, strict=True):
-        grouped.setdefault(action["interrupt_id"], []).append(_decision(kind, message))
+    for action, decision in zip(actions, decisions, strict=True):
+        kind, reason = decision if isinstance(decision, tuple) else (decision, message)
+        grouped.setdefault(action["interrupt_id"], []).append(_decision(kind, reason or message))
 
     if len(grouped) == 1:
         return Command(resume={"decisions": next(iter(grouped.values()))})

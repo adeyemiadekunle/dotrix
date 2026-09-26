@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Repo-root .env, so settings load the same from any working directory
@@ -57,6 +57,21 @@ class Settings(DatabaseSettings):
     s3_bucket: str = "pmagent-documents"
     s3_region: str = "us-east-1"
     max_upload_mb: int = Field(default=25, ge=1, le=200)
+
+    # Model provider keys. Read under their usual names (no PMAGENT_ prefix), so the
+    # same .env works for the CLI. A project's model ("anthropic:...") needs its key.
+    anthropic_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("ANTHROPIC_API_KEY", "PMAGENT_ANTHROPIC_API_KEY")
+    )
+    openai_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "PMAGENT_OPENAI_API_KEY")
+    )
+    google_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("GOOGLE_API_KEY", "PMAGENT_GOOGLE_API_KEY")
+    )
+    # Agent runs execute in the API process as background tasks; true runs them
+    # inside the request instead (tests, debugging).
+    agent_runs_inline: bool = False
 
     @model_validator(mode="after")
     def _safe_for_production(self) -> Settings:

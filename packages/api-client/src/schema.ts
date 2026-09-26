@@ -864,6 +864,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Runs
+         * @description Recent runs, newest first; filter by `thread_id` to read one conversation.
+         */
+        get: operations["list_runs"];
+        put?: never;
+        /**
+         * Create Run
+         * @description Send a message to the Project Manager. It runs in the background: poll the run until
+         *     `status` is `completed`, `failed`, or `awaiting_approval`. Agents stay in Chat Mode
+         *     unless you instruct a change, and every write pauses for approval. Pass `thread_id` to
+         *     continue a conversation. 503 `model_unavailable` if the project's model has no API key.
+         */
+        post: operations["create_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/briefing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Briefing
+         * @description Ask for the daily briefing. Read-only: any write it attempts is rejected automatically.
+         */
+        post: operations["create_briefing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run
+         * @description A run's status, the PM's reply when done, and its approvals.
+         */
+        get: operations["get_run"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Pending Approvals
+         * @description Every action waiting for a decision in this project: the tool, what it changes, and a
+         *     diff for file writes.
+         */
+        get: operations["list_pending_approvals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Approvals
+         * @description Approve or reject every pending action of a paused run (one decision each), then the
+         *     run resumes. Rejection reasons are sent back to the agent. Needs the approve
+         *     permission; your decision is recorded next to who instructed the run.
+         */
+        post: operations["decide_approvals"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Audit Events
+         * @description Newest first: every knowledge change, approval decision, and agent run, with who
+         *     instructed and who approved it.
+         */
+        get: operations["list_audit_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -872,6 +1003,46 @@ export interface components {
         AcceptInvite: {
             /** Token */
             token: string;
+        };
+        /** AgentRunRead */
+        AgentRunRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Thread Id
+             * Format: uuid
+             */
+            thread_id: string;
+            kind: components["schemas"]["RunKind"];
+            status: components["schemas"]["RunStatus"];
+            /** Message */
+            message: string;
+            /** Reply */
+            reply: string | null;
+            /** Error */
+            error: string | null;
+            /** Requested By Id */
+            requested_by_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Approvals
+             * @default []
+             */
+            approvals: components["schemas"]["ApprovalRead"][];
         };
         /** ApiTokenCreate */
         ApiTokenCreate: {
@@ -948,6 +1119,89 @@ export interface components {
             /** Last Used At */
             last_used_at: string | null;
         };
+        /** ApprovalRead */
+        ApprovalRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Position */
+            position: number;
+            /**
+             * Tool
+             * @description e.g. write_file, edit_file
+             */
+            tool: string;
+            /**
+             * Target
+             * @description What the action changes, e.g. /pmagent/vision.md
+             */
+            target: string | null;
+            /** Args */
+            args: {
+                [key: string]: unknown;
+            };
+            /**
+             * Diff
+             * @description For file writes: unified diff of what would change
+             */
+            diff: string | null;
+            status: components["schemas"]["ApprovalStatus"];
+            /** Reason */
+            reason: string | null;
+            /** Decided By Id */
+            decided_by_id: string | null;
+            /** Decided At */
+            decided_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * ApprovalStatus
+         * @enum {string}
+         */
+        ApprovalStatus: "pending" | "approved" | "rejected";
+        /** AuditEventRead */
+        AuditEventRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Project Id */
+            project_id: string | null;
+            /** Action */
+            action: string;
+            /** Target */
+            target: string | null;
+            actor_type: components["schemas"]["AuthorType"];
+            /** Actor User Id */
+            actor_user_id: string | null;
+            /** Agent */
+            agent: string | null;
+            /** Instructed By Id */
+            instructed_by_id: string | null;
+            /** Approved By Id */
+            approved_by_id: string | null;
+            /** Details */
+            details: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /**
          * AuthorType
          * @enum {string}
@@ -960,6 +1214,32 @@ export interface components {
              * @description PDF, DOCX, PPTX, XLSX, XLS, HTML, CSV, JSON, XML, MD, TXT
              */
             file: string;
+        };
+        /** Decision */
+        Decision: {
+            /**
+             * Approval Id
+             * Format: uuid
+             */
+            approval_id: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approve" | "reject";
+            /**
+             * Reason
+             * @description Sent back to the agent when rejecting
+             */
+            reason?: string | null;
+        };
+        /** DecisionsRequest */
+        DecisionsRequest: {
+            /**
+             * Decisions
+             * @description One decision for every pending approval of the run
+             */
+            decisions: components["schemas"]["Decision"][];
         };
         /** DeviceCodeRequest */
         DeviceCodeRequest: {
@@ -1409,6 +1689,26 @@ export interface components {
          * @enum {string}
          */
         Role: "owner" | "admin" | "member" | "guest";
+        /** RunCreate */
+        RunCreate: {
+            /** Message */
+            message: string;
+            /**
+             * Thread Id
+             * @description Continue a conversation. Omit to start a new thread.
+             */
+            thread_id?: string | null;
+        };
+        /**
+         * RunKind
+         * @enum {string}
+         */
+        RunKind: "chat" | "briefing";
+        /**
+         * RunStatus
+         * @enum {string}
+         */
+        RunStatus: "queued" | "running" | "awaiting_approval" | "completed" | "failed";
         /**
          * Scope
          * @enum {string}
@@ -4145,6 +4445,474 @@ export interface operations {
             };
             /** @description A dependency (such as file storage) is unavailable or not configured */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_runs: {
+        parameters: {
+            query?: {
+                thread_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    create_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    create_briefing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_pending_approvals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    decide_approvals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_audit_events: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+                /** @description e.g. "knowledge.write" */
+                action?: string | null;
+                /** @description Page backwards: pass the last event's `created_at` */
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

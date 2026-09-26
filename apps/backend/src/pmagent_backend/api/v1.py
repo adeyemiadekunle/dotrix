@@ -1,7 +1,8 @@
 from fastapi import APIRouter
 
+from pmagent_backend.modules.agents.router import router as agents
 from pmagent_backend.modules.api_tokens.router import device_router, tokens_router
-from pmagent_backend.modules.approvals.router import router as approvals
+from pmagent_backend.modules.audit.router import router as audit
 from pmagent_backend.modules.auth.router import me_router
 from pmagent_backend.modules.auth.router import router as auth
 from pmagent_backend.modules.documents.router import router as documents
@@ -24,7 +25,8 @@ for module_router in (
     projects,
     knowledge,
     documents,
+    agents,
+    audit,
     issues,
-    approvals,
 ):
     router.include_router(module_router)
