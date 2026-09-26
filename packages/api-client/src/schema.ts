@@ -995,6 +995,226 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Issues
+         * @description Issues, filtered. `order=rank` is the backlog order; `priority` is urgent first, then
+         *     earliest due, then oldest.
+         */
+        get: operations["list_issues"];
+        put?: never;
+        /**
+         * Create Issue
+         * @description Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance
+         *     criteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,
+         *     or bug; other types may sit under an epic. Assigning the built-in coding agent needs the
+         *     instruct-coding-agent permission.
+         */
+        post: operations["create_issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Board
+         * @description Issues in one column per status, each in backlog order.
+         */
+        get: operations["get_board"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/backlog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Backlog
+         * @description Everything not done, in rank order (drag to reorder with `/rank`).
+         */
+        get: operations["get_backlog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/epics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Epics
+         * @description Each epic with how many of its children are done.
+         */
+        get: operations["list_epics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/next": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Next Issue
+         * @description What to work on: your (or the agent's) in-progress issue first, so a crashed session
+         *     resumes; otherwise the best ready issue. 404 `nothing_ready` when there's none.
+         */
+        get: operations["next_issue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Issue
+         * @description Atomically take a ready issue (a given key, or the next one) and start it: it's assigned
+         *     to you or the agent and moves to `in_progress`. Two claimers never get the same issue.
+         */
+        post: operations["claim_issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Issue
+         * @description An issue with its dependencies, children, watchers, and full log.
+         */
+        get: operations["get_issue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Issue
+         * @description Change fields; only what you send changes, and every change is logged (old → new).
+         *     `depends_on` replaces the list and can't create a cycle. Only a person moves an issue to
+         *     `done`; coding tools (`as_agent`) stop at `review`.
+         */
+        patch: operations["update_issue"];
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Comment On Issue
+         * @description Add a comment to the issue's log.
+         */
+        post: operations["comment_on_issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/rank": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rank Issue
+         * @description Move an issue in the backlog: just before or just after another issue.
+         */
+        post: operations["rank_issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/watch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Watch Issue
+         * @description Get notified about changes to this issue.
+         */
+        put: operations["watch_issue"];
+        post?: never;
+        /**
+         * Unwatch Issue
+         * @description Stop watching this issue.
+         */
+        delete: operations["unwatch_issue"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1004,6 +1224,12 @@ export interface components {
             /** Token */
             token: string;
         };
+        /**
+         * AgentAssignee
+         * @description Agents that appear as assignable members.
+         * @enum {string}
+         */
+        AgentAssignee: "coding-agent" | "claude-code" | "codex";
         /** AgentRunRead */
         AgentRunRead: {
             /**
@@ -1207,6 +1433,17 @@ export interface components {
          * @enum {string}
          */
         AuthorType: "user" | "agent" | "system";
+        /** Board */
+        Board: {
+            /** Columns */
+            columns: components["schemas"]["BoardColumn"][];
+        };
+        /** BoardColumn */
+        BoardColumn: {
+            status: components["schemas"]["IssueStatus"];
+            /** Issues */
+            issues: components["schemas"]["IssueSummary"][];
+        };
         /** Body_upload_document */
         Body_upload_document: {
             /**
@@ -1214,6 +1451,23 @@ export interface components {
              * @description PDF, DOCX, PPTX, XLSX, XLS, HTML, CSV, JSON, XML, MD, TXT
              */
             file: string;
+        };
+        /** ClaimRequest */
+        ClaimRequest: {
+            /**
+             * Key
+             * @description Claim this issue; omit to claim the next ready one
+             */
+            key?: string | null;
+            /** @description Claim for this agent (e.g. claude-code) instead of yourself */
+            as_agent?: components["schemas"]["AgentAssignee"] | null;
+        };
+        /** CommentCreate */
+        CommentCreate: {
+            /** Body */
+            body: string;
+            /** @description Set when a coding tool (Claude Code, Codex, the coding agent) is acting. It can only work on issues assigned to it: comment, add sub-tasks, and move its issue up to `review`. */
+            as_agent?: components["schemas"]["AgentAssignee"] | null;
         };
         /** Decision */
         Decision: {
@@ -1336,6 +1590,23 @@ export interface components {
              */
             role: "admin" | "member" | "guest";
         };
+        /** EpicProgress */
+        EpicProgress: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            status: components["schemas"]["IssueStatus"];
+            /** Total */
+            total: number;
+            /** Done */
+            done: number;
+            /**
+             * Percent
+             * @description Children done, 0-100
+             */
+            percent: number;
+        };
         /**
          * FileEntry
          * @description A file in the manifest: metadata, no content.
@@ -1455,6 +1726,239 @@ export interface components {
             /** Use Count */
             use_count: number;
         };
+        /** IssueCreate */
+        IssueCreate: {
+            /** Assignee User Id */
+            assignee_user_id?: string | null;
+            assignee_agent?: components["schemas"]["AgentAssignee"] | null;
+            /** @default task */
+            type: components["schemas"]["IssueType"];
+            /** Title */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** @default todo */
+            status: components["schemas"]["IssueStatus"];
+            /** @default medium */
+            priority: components["schemas"]["Priority"];
+            /**
+             * Parent
+             * @description Parent issue key, e.g. KUN-1
+             */
+            parent?: string | null;
+            /** Estimate */
+            estimate?: number | null;
+            /** Due */
+            due?: string | null;
+            /** Scheduled */
+            scheduled?: string | null;
+            /** Depends On */
+            depends_on?: string[];
+            /** Labels */
+            labels?: string[];
+            /** Components */
+            components?: string[];
+            /** Links */
+            links?: components["schemas"]["Link"][];
+            /** @description Set when a coding tool (Claude Code, Codex, the coding agent) is acting. It can only work on issues assigned to it: comment, add sub-tasks, and move its issue up to `review`. */
+            as_agent?: components["schemas"]["AgentAssignee"] | null;
+        };
+        /**
+         * IssueEventKind
+         * @enum {string}
+         */
+        IssueEventKind: "created" | "updated" | "commented" | "claimed";
+        /** IssueEventRead */
+        IssueEventRead: {
+            kind: components["schemas"]["IssueEventKind"];
+            /** Author User Id */
+            author_user_id: string | null;
+            /** Author Agent */
+            author_agent: string | null;
+            /** Body */
+            body: string | null;
+            /** Changes */
+            changes: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** IssueRead */
+        IssueRead: {
+            /** Key */
+            key: string;
+            type: components["schemas"]["IssueType"];
+            /** Title */
+            title: string;
+            status: components["schemas"]["IssueStatus"];
+            priority: components["schemas"]["Priority"];
+            /** Assignee User Id */
+            assignee_user_id: string | null;
+            assignee_agent: components["schemas"]["AgentAssignee"] | null;
+            /** Parent Key */
+            parent_key?: string | null;
+            /** Labels */
+            labels: string[];
+            /** Estimate */
+            estimate: number | null;
+            /** Due */
+            due: string | null;
+            /** Rank */
+            rank: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Description */
+            description: string;
+            /** Reporter User Id */
+            reporter_user_id: string | null;
+            /** Reporter Agent */
+            reporter_agent: string | null;
+            /** Scheduled */
+            scheduled: string | null;
+            /** Components */
+            components: string[];
+            /** Links */
+            links: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Resolved At */
+            resolved_at: string | null;
+            /**
+             * Depends On
+             * @description Keys this issue is blocked by
+             */
+            depends_on?: string[];
+            /**
+             * Blocks
+             * @description Keys blocked by this issue
+             */
+            blocks?: string[];
+            /** Children */
+            children?: string[];
+            /** Watchers */
+            watchers?: string[];
+            /**
+             * Ready
+             * @description todo, and everything it depends on is done (assignment aside)
+             * @default false
+             */
+            ready: boolean;
+            /** Log */
+            log?: components["schemas"]["IssueEventRead"][];
+        };
+        /**
+         * IssueStatus
+         * @enum {string}
+         */
+        IssueStatus: "todo" | "in_progress" | "blocked" | "review" | "done";
+        /**
+         * IssueSummary
+         * @description Board and list rows: everything except the description and log.
+         */
+        IssueSummary: {
+            /** Key */
+            key: string;
+            type: components["schemas"]["IssueType"];
+            /** Title */
+            title: string;
+            status: components["schemas"]["IssueStatus"];
+            priority: components["schemas"]["Priority"];
+            /** Assignee User Id */
+            assignee_user_id: string | null;
+            assignee_agent: components["schemas"]["AgentAssignee"] | null;
+            /** Parent Key */
+            parent_key?: string | null;
+            /** Labels */
+            labels: string[];
+            /** Estimate */
+            estimate: number | null;
+            /** Due */
+            due: string | null;
+            /** Rank */
+            rank: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * IssueType
+         * @enum {string}
+         */
+        IssueType: "epic" | "story" | "task" | "bug" | "spike" | "sub-task";
+        /**
+         * IssueUpdate
+         * @description Only the fields you send change. Send `null` to clear a field.
+         */
+        IssueUpdate: {
+            /** Assignee User Id */
+            assignee_user_id?: string | null;
+            assignee_agent?: components["schemas"]["AgentAssignee"] | null;
+            type?: components["schemas"]["IssueType"] | null;
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            status?: components["schemas"]["IssueStatus"] | null;
+            priority?: components["schemas"]["Priority"] | null;
+            /** Parent */
+            parent?: string | null;
+            /** Estimate */
+            estimate?: number | null;
+            /** Due */
+            due?: string | null;
+            /** Scheduled */
+            scheduled?: string | null;
+            /** Depends On */
+            depends_on?: string[] | null;
+            /** Labels */
+            labels?: string[] | null;
+            /** Components */
+            components?: string[] | null;
+            /** Links */
+            links?: components["schemas"]["Link"][] | null;
+            /**
+             * Note
+             * @description Added to the issue's log
+             */
+            note?: string | null;
+            /** @description Set when a coding tool (Claude Code, Codex, the coding agent) is acting. It can only work on issues assigned to it: comment, add sub-tasks, and move its issue up to `review`. */
+            as_agent?: components["schemas"]["AgentAssignee"] | null;
+        };
+        /** Link */
+        Link: {
+            /**
+             * Kind
+             * @default other
+             * @enum {string}
+             */
+            kind: "pr" | "commit" | "doc" | "adr" | "other";
+            /** Url */
+            url: string;
+            /** Title */
+            title?: string | null;
+        };
         /** LinkInviteCreate */
         LinkInviteCreate: {
             /**
@@ -1568,6 +2072,11 @@ export interface components {
             email: string;
         };
         /**
+         * Priority
+         * @enum {string}
+         */
+        Priority: "low" | "medium" | "high" | "urgent";
+        /**
          * ProblemDetail
          * @description RFC 9457 problem details. Every error response has this shape.
          */
@@ -1671,6 +2180,19 @@ export interface components {
             name?: string | null;
             /** Description */
             description?: string | null;
+        };
+        /** RankRequest */
+        RankRequest: {
+            /**
+             * Before
+             * @description Put this issue just before that one
+             */
+            before?: string | null;
+            /**
+             * After
+             * @description …or just after that one
+             */
+            after?: string | null;
         };
         /** RefreshRequest */
         RefreshRequest: {
@@ -4912,6 +5434,762 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_issues: {
+        parameters: {
+            query?: {
+                type?: components["schemas"]["IssueType"][];
+                status?: components["schemas"]["IssueStatus"][];
+                /** @description A user ID, an agent (coding-agent, claude-code, codex), or `none` */
+                assignee?: string | null;
+                label?: string | null;
+                /** @description Children of this issue key */
+                parent?: string | null;
+                /** @description Only issues that could start now */
+                ready?: boolean;
+                order?: "rank" | "priority" | "created" | "updated";
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueSummary"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    create_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_board: {
+        parameters: {
+            query?: {
+                type?: components["schemas"]["IssueType"][];
+                /** @description A user ID, an agent (coding-agent, claude-code, codex), or `none` */
+                assignee?: string | null;
+                label?: string | null;
+                /** @description Only this epic's issues */
+                epic?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Board"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_backlog: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueSummary"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_epics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpicProgress"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    next_issue: {
+        parameters: {
+            query?: {
+                /** @description Ask for this agent, e.g. claude-code */
+                as_agent?: components["schemas"]["AgentAssignee"] | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    claim_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    update_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    comment_on_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    rank_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RankRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    watch_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    unwatch_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

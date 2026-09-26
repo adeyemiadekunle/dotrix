@@ -36,6 +36,8 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):
     model: Mapped[str] = mapped_column(String(100), default=DEFAULT_MODEL)
     # Bumped on every .pmagent/ change; lets the CLI mirror pull only what changed.
     knowledge_revision: Mapped[int] = mapped_column(default=0, server_default="0")
+    # Next issue number (KUN-<n>). Incremented under a row lock; numbers are never reused.
+    next_issue_number: Mapped[int] = mapped_column(default=1, server_default="1")
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

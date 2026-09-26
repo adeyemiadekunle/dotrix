@@ -71,7 +71,11 @@ TAGS: list[dict[str, str]] = [
         "description": "Upload PDFs, Office files, and more. Originals are kept; agents read the "
         "markdown conversion under `docs/normalized/` in the project's knowledge.",
     },
-    {"name": "issues", "description": "Jira-style issues, board, backlog, sprints. *Coming soon.*"},
+    {
+        "name": "issues",
+        "description": "Jira-style issues: epics, stories, tasks, bugs, spikes, sub-tasks with keys "
+        "like `KUN-42`; board, backlog, epic progress, dependencies, and atomic `claim` for agents.",
+    },
     {
         "name": "agents",
         "description": "Talk to the Project Manager agent and its team. Runs happen in the "
