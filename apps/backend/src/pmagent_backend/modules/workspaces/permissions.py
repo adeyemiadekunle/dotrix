@@ -15,6 +15,7 @@ class Permission(enum.StrEnum):
     VIEW = "workspace:view"  # projects, board, briefings
     CHAT = "agents:chat"  # Chat Mode
     EDIT_ISSUES = "issues:write"
+    EDIT_KNOWLEDGE = "knowledge:write"  # edit .pmagent/ files directly (agent-rules: MANAGE_WORKSPACE)
     APPROVE_ACTIONS = "agents:approve"  # instruct Action Mode, approve writes
     INSTRUCT_CODING_AGENT = "agents:code"
     MANAGE_PROJECTS = "projects:manage"  # create projects, connect repos and docs
@@ -33,6 +34,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.VIEW,
             Permission.CHAT,
             Permission.EDIT_ISSUES,
+            Permission.EDIT_KNOWLEDGE,
             Permission.APPROVE_ACTIONS,  # PRD: ✓ (configurable)
             Permission.MANAGE_PROJECTS,  # PRD: configurable; allowed by default
             # INSTRUCT_CODING_AGENT: PRD: configurable; off by default
