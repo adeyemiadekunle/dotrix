@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import health, v1
+from .core.email import build_email_sender
 from .core.errors import register_exception_handlers
 from .core.logging import configure_logging
 from .core.middleware import RequestContextMiddleware
@@ -27,6 +28,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await engine.dispose()
 
     app = FastAPI(title="pmagent API", version="0.1.0", lifespan=lifespan)
+    app.state.settings = settings
+    app.state.email_sender = build_email_sender(settings.email_backend)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

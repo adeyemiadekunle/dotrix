@@ -7,7 +7,7 @@ from alembic import context
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pmagent_backend.core.settings import get_settings
+from pmagent_backend.core.settings import get_database_settings
 from pmagent_backend.db.models import Base
 
 config = context.config
@@ -18,7 +18,7 @@ target_metadata = Base.metadata
 
 
 def database_url() -> str:
-    return config.get_main_option("sqlalchemy.url") or get_settings().database_url
+    return config.get_main_option("sqlalchemy.url") or get_database_settings().database_url
 
 
 def run_migrations_offline() -> None:
