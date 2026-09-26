@@ -133,7 +133,12 @@ class KnowledgeService:
         return VersionDiff(path=clean, from_version=version - 1, to_version=version, diff=diff)
 
     async def export_zip(self, project: Project) -> bytes:
-        """Every current file under `.pmagent/`, plus a rendered config.yaml."""
+        """Every current file under `.pmagent/`, plus a rendered config.yaml and one Markdown
+        file per issue (`issues/KUN-1.md`), so leaving the platform loses nothing."""
+        from pmagent_backend.modules.issues.render import (
+            render_project_issues,  # avoid import cycle
+        )
+
         buffer = io.BytesIO()
         config = {
             "key": project.key,
@@ -145,6 +150,8 @@ class KnowledgeService:
             archive.writestr(".pmagent/config.yaml", yaml.safe_dump(config, sort_keys=False))
             for file in await self.files.list_files(project.id):
                 archive.writestr(f".pmagent/{file.path}", file.content)
+            for path, content in (await render_project_issues(self.session, project.id)).items():
+                archive.writestr(f".pmagent/{path}", content)
         return buffer.getvalue()
 
     # -- writes ------------------------------------------------------------------------

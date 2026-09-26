@@ -187,11 +187,17 @@ External accounts, keys, and config have to exist before these items can be buil
 
 ### P0: Issue tracking
 
-- [ ] **FR-29** Issues: types (epic, story, task, bug, spike, sub-task), parent rules, sequential per-project keys (row-locked counter, never reused)
-- [ ] **FR-29** Fields from the PRD (status, priority, assignee incl. agents, reporter, due/scheduled, labels, links, watchers); append-only log
-- [ ] **FR-32** `depends_on` with cycle validation; readiness and `next` ordering (priority → due → created); atomic claim (`SELECT … FOR UPDATE SKIP LOCKED`)
-- [ ] **FR-30** Board and backlog endpoints: filters (assignee, type, label, epic, sprint), rank ordering, epic % complete; under 1 s at 5,000 issues (add indexes)
-- [ ] Only a human, or the PM with approval, moves `review` → `done`
+- [x] **FR-29** Issues (`modules/issues`): types (epic, story, task, bug, spike, sub-task) with the PRD parent rules; sequential per-project keys (row-locked counter, never reused); stories and bugs need a description
+- [x] **FR-29** Fields from the PRD (status, priority, assignee as a person or agent, reporter, due/scheduled, estimate, labels, components, links, watchers); append-only log (changes old -> new, comments, claims)
+- [x] **FR-32** `depends_on` with cycle validation; readiness and `next` ordering (priority -> due -> created, own in-progress first); atomic `claim` (`FOR UPDATE SKIP LOCKED`, verified with 10 concurrent claimers)
+- [x] **FR-30** Board, backlog (rank, reorder), epic % complete, filters (type, status, assignee, label, parent/epic); measured at 5,000 issues: board 689 ms, backlog 279 ms
+- [x] Only a person moves an issue to `done`; coding tools (`as_agent`) work only on their own issue and stop at `review`; assigning `coding-agent` needs the instruct-coding-agent permission
+- [x] Issues included in the `.pmagent/` export as `issues/KEY-N.md` (YAML fields + description + log)
+- [ ] Give the platform PM agent board tools (list/get/create/update/comment issues) through `build_team(task_tools=...)`, gated by approvals like file writes ("PM moves review -> done with approval")
+- [ ] Per-agent issue-type rules from the PRD matrix (Product creates stories, Architecture tasks, Research spikes, Reviewer bugs) once agents have board tools
+- [ ] CLI: `pmagent task` commands and the MCP server talk to the platform issue API instead of local files (Claude Code / Codex hand-off)
+- [ ] **FR-32** Calendar feed (iCalendar) for due and scheduled dates, with a per-user secret URL
+- [ ] **FR-33** @mentions and notifying watchers (with FR-14 notifications)
 
 ### P0: Approvals, audit, and agents
 

@@ -5,6 +5,7 @@ from pmagent_backend.modules.audit import models as _audit  # noqa: F401
 from pmagent_backend.modules.auth import models as _auth  # noqa: F401
 from pmagent_backend.modules.documents import models as _documents  # noqa: F401
 from pmagent_backend.modules.invites import models as _invites  # noqa: F401
+from pmagent_backend.modules.issues import models as _issues  # noqa: F401
 from pmagent_backend.modules.knowledge import models as _knowledge  # noqa: F401
 from pmagent_backend.modules.projects import models as _projects  # noqa: F401
 from pmagent_backend.modules.workspaces import models as _workspaces  # noqa: F401
