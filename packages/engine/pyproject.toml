@@ -9,6 +9,10 @@ dependencies = [
     "markitdown[pdf,docx,pptx,xlsx,xls]>=0.1.8",
     "langgraph-checkpoint-sqlite",
     "filelock",
+    "langchain>=1.4",
+    "langchain-anthropic>=1.7",
+    "langchain-openai>=1.0",
+    "langchain-google-genai>=4.4",
 ]
 
 [build-system]

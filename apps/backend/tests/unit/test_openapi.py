@@ -61,14 +61,17 @@ def test_authenticated_routes_document_401(spec: dict) -> None:
             assert "401" in op["responses"], name
 
 
+# No `with`: the app's startup (database, checkpointer) isn't needed to serve docs.
+
+
 def test_docs_are_served() -> None:
-    with TestClient(make_app()) as client:
-        assert client.get("/docs").status_code == 200
-        assert client.get("/redoc").status_code == 200
-        assert client.get("/openapi.json").json()["info"]["title"] == "pmagent API"
+    client = TestClient(make_app())
+    assert client.get("/docs").status_code == 200
+    assert client.get("/redoc").status_code == 200
+    assert client.get("/openapi.json").json()["info"]["title"] == "pmagent API"
 
 
 def test_docs_can_be_turned_off() -> None:
-    with TestClient(make_app(docs_enabled=False)) as client:
-        for path in ("/docs", "/redoc", "/openapi.json"):
-            assert client.get(path).status_code == 404
+    client = TestClient(make_app(docs_enabled=False))
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404

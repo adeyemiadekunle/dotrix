@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +15,9 @@ from .core.openapi import install_openapi, operation_id
 from .core.settings import Settings, get_settings
 from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
+from .modules.agents.checkpoints import open_checkpointer
+from .modules.agents.llm import settings_model_factory
+from .modules.agents.runner import AgentRunner, mark_interrupted_runs
 
 API_VERSION = "0.1.0"
 
@@ -27,8 +30,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = create_engine(settings.database_url, echo=settings.database_echo)
         app.state.engine = engine
-        app.state.sessionmaker = create_sessionmaker(engine)
-        yield
+        app.state.sessionmaker = sessionmaker = create_sessionmaker(engine)
+        async with AsyncExitStack() as stack:
+            await mark_interrupted_runs(sessionmaker)
+            app.state.runner = runner = AgentRunner(
+                session_factory=sessionmaker,
+                checkpointer=await open_checkpointer(settings.database_url, stack),
+                model_factory=settings_model_factory(settings),
+                inline=settings.agent_runs_inline,
+            )
+            yield
+            await runner.shutdown()
         await engine.dispose()
 
     docs = settings.docs_enabled

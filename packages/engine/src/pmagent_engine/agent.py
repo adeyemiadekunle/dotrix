@@ -18,6 +18,8 @@ Checked against deepagents 0.7.19:
 """
 from __future__ import annotations
 
+from typing import Any
+
 from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend
 
@@ -125,9 +127,15 @@ def _task_tools(config: ProjectConfig) -> tuple[list, list]:
     return [list_tasks, get_task], [create_task, update_task, comment_task]
 
 
-def _subagents(project_name: str, read_task_tools: list, web_search: dict) -> list[dict]:
+def _subagents(
+    project_name: str,
+    read_task_tools: list,
+    web_search: dict | None,
+    rules: dict[str, str] | None = None,
+) -> list[dict]:
     def role(title: str, body: str) -> str:
-        return f"You are the {title} for {project_name}.\n{body}"
+        prompt = f"You are the {title} for {project_name}.\n{body}"
+        return _with_rules(rules, _ROLE_FOR_TITLE[title], prompt)
 
     # Custom tools per subagent are set explicitly so it's obvious who can do
     # what. Filesystem tools are always present (middleware) and gated by
@@ -165,7 +173,7 @@ def _subagents(project_name: str, read_task_tools: list, web_search: dict) -> li
                 "Investigate using web search. Clearly separate verified facts "
                 "(with sources) from assumptions. Write findings under /pmagent/research/."
             )),
-            "tools": [web_search],
+            "tools": [web_search] if web_search else [],
         },
         {
             "name": "reviewer-agent",
@@ -200,29 +208,38 @@ def _subagents(project_name: str, read_task_tools: list, web_search: dict) -> li
     ]
 
 
-def build_agent(config: ProjectConfig, checkpointer: object | None = None):
-    # LockingFilesystemBackend: several processes (chat, background jobs,
-    # coding agents via the CLI) may touch /pmagent/ at once.
-    backend = CompositeBackend(
-        default=StateBackend(),
-        routes={"/pmagent/": LockingFilesystemBackend(root_dir=config.pmagent_dir)},
-    )
-    read_task_tools, write_task_tools = _task_tools(config)
-    web_search = _web_search_tool(config.model)
+def _with_rules(rules: dict[str, str] | None, role: str, prompt: str) -> str:
+    """Prepend the project's agent rules (base.md + the role's file) when given."""
+    if not rules:
+        return prompt
+    parts = [rules.get("base", ""), rules.get(role, ""), prompt]
+    return "\n\n".join(part.strip() for part in parts if part.strip())
 
-    pm_instructions = f"""You are the Project Manager for {config.name}.
 
-{config.description}
+# Subagent name -> role name used by agent-rules/ and the folder permissions.
+SUBAGENT_ROLES = {
+    "product-agent": "product",
+    "architecture-agent": "architecture",
+    "research-agent": "research",
+    "reviewer-agent": "reviewer",
+    "documentation-agent": "documentation",
+}
+PM_ROLE = "project-manager"
+_ROLE_FOR_TITLE = {
+    "Product Agent": "product",
+    "Architecture Agent": "architecture",
+    "Research Agent": "research",
+    "Reviewer Agent": "reviewer",
+    "Documentation Agent": "documentation",
+}
 
-You coordinate five specialist subagents via the `task` tool (product-agent,
-architecture-agent, research-agent, reviewer-agent, documentation-agent) and
-keep /pmagent/ (project.md, requirements/, architecture/, decisions/,
-research/, progress/, tasks/, docs/) as the single source of truth. Ingested
-reference docs live under /pmagent/docs/normalized/ as markdown regardless
-of their original format. Check there before asking the user something that
-may already be documented. You do not write application code, and neither
-do your subagents.
 
+def role_for_agent_name(name: str | None) -> str:
+    """The role behind a LangGraph agent name: a subagent's, else the Project Manager."""
+    return SUBAGENT_ROLES.get(name or "", PM_ROLE)
+
+
+_BOARD_SECTION = """
 ## The task board
 Work is tracked as tasks. Use list_tasks / get_task to read the board, and
 create_task / update_task / comment_task to change it. Never write or edit
@@ -243,46 +260,99 @@ When tasks are in "review", have reviewer-agent check them against their
 acceptance criteria, then summarize its recommendation for the user. Closing
 a task (status done) or sending it back (status todo, with a note) is an
 Action Mode change like any other.
+"""
 
+
+def build_team(
+    project_name: str,
+    description: str,
+    model: Any,
+    backend: Any,
+    *,
+    checkpointer: object | None = None,
+    task_tools: tuple[list, list] | None = None,
+    web_search: dict | None = None,
+    rules: dict[str, str] | None = None,
+):
+    """The Project Manager plus five thinking subagents, over any storage backend.
+
+    `backend` must serve the project's `.pmagent/` under `/pmagent/`. `model` is a
+    "provider:model" string or a chat model instance. `rules` maps role names
+    ("base", "project-manager", "product", ...) to agent-rules/ text. Without
+    `task_tools`, the board section is left out of the PM's instructions.
+    """
+    read_task_tools, write_task_tools = task_tools or ([], [])
+    board = _BOARD_SECTION if task_tools else ""
+    board_source = ", and the task board" if task_tools else ""
+
+    pm_instructions = f"""You are the Project Manager for {project_name}.
+
+{description}
+
+You coordinate five specialist subagents via the `task` tool (product-agent,
+architecture-agent, research-agent, reviewer-agent, documentation-agent) and
+keep /pmagent/ (project.md, requirements/, architecture/, decisions/,
+research/, progress/, docs/) as the single source of truth. Ingested
+reference docs live under /pmagent/docs/normalized/ as markdown regardless
+of their original format. Check there before asking the user something that
+may already be documented. You do not write application code, and neither
+do your subagents.
+{board}
 ## Chat Mode vs Action Mode
 Default to CHAT MODE: read files, read the board, delegate to subagents for
 analysis, research, and review, and discuss/plan freely. Never call
-write_file, edit_file, create_task, update_task, or comment_task in this
-mode. Only enter ACTION MODE when the user explicitly instructs a change
-(e.g. "create those tasks", "update the PRD", "log that decision", "close
-it"). Make the change, report exactly what changed, then return to Chat
-Mode. Every write pauses for the user's approval regardless. That gate
-exists as a backstop, not as a substitute for staying in Chat Mode.
+write_file or edit_file (or any board-changing tool) in this mode. Only enter
+ACTION MODE when the user explicitly instructs a change (e.g. "create those
+tasks", "update the PRD", "log that decision", "close it"). Make the change,
+report exactly what changed, then return to Chat Mode. Every write pauses for
+the user's approval regardless. That gate exists as a backstop, not as a
+substitute for staying in Chat Mode.
 
 ## Concurrency
 Other sessions, background jobs, or coding agents may be working on this
-project right now. Before starting substantial work, check /pmagent/progress/,
-/pmagent/jobs/, and the task board (in_progress / review) so you don't
-duplicate something in flight. When a request splits into independent
-pieces, call the relevant subagents together in the same turn rather than
-one at a time.
+project right now. Before starting substantial work, check /pmagent/progress/
+and what's in progress so you don't duplicate something in flight. When a
+request splits into independent pieces, call the relevant subagents together
+in the same turn rather than one at a time.
 
 ## Briefings
 On "briefing" or "status": read /pmagent/progress/*.md, /pmagent/decisions/*.md,
-and the task board, then report phase, rough % progress (from the board),
-today's priorities (ready tasks by priority, anything due within 7 days,
-anything overdue), what's in progress and with whom, what's waiting in
-review, recent decisions, open questions, and blockers (blocked tasks and
-tasks whose dependencies aren't done).
+/pmagent/current-state.md{board_source}, then report phase, rough % progress,
+today's priorities, what's in progress, recent decisions, open questions,
+blockers, and documentation status. A briefing never writes.
 """
 
     interrupt_on = {
         "write_file": _APPROVAL,
         "edit_file": _APPROVAL,
-        **{name: _APPROVAL for name in TASK_WRITE_TOOLS},
+        **{tool.__name__: _APPROVAL for tool in write_task_tools},
     }
 
     return create_deep_agent(
-        model=config.model,
-        tools=[*read_task_tools, *write_task_tools, web_search],
-        system_prompt=pm_instructions,
-        subagents=_subagents(config.name, read_task_tools, web_search),
+        model=model,
+        tools=[*read_task_tools, *write_task_tools, *([web_search] if web_search else [])],
+        system_prompt=_with_rules(rules, PM_ROLE, pm_instructions),
+        subagents=_subagents(project_name, read_task_tools, web_search, rules),
         backend=backend,
         checkpointer=checkpointer,
         interrupt_on=interrupt_on,
+    )
+
+
+def build_agent(config: ProjectConfig, checkpointer: object | None = None):
+    """The team for a local project: `.pmagent/` on disk, local task board (CLI)."""
+    # LockingFilesystemBackend: several processes (chat, background jobs,
+    # coding agents via the CLI) may touch /pmagent/ at once.
+    backend = CompositeBackend(
+        default=StateBackend(),
+        routes={"/pmagent/": LockingFilesystemBackend(root_dir=config.pmagent_dir)},
+    )
+    return build_team(
+        config.name,
+        config.description,
+        config.model,
+        backend,
+        checkpointer=checkpointer,
+        task_tools=_task_tools(config),
+        web_search=_web_search_tool(config.model),
     )

@@ -13,6 +13,7 @@ import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -21,6 +22,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
+from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import make_url, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
@@ -29,7 +31,10 @@ from pmagent_backend.core.settings import Settings, get_database_settings
 from pmagent_backend.core.storage import MemoryBlobStorage, get_storage
 from pmagent_backend.db.session import get_session
 from pmagent_backend.main import create_app
+from pmagent_backend.modules.agents.llm import ModelChoice, ModelUnavailable
+from pmagent_backend.modules.agents.runner import AgentRunner
 from pmagent_backend.modules.workspaces.models import Membership, Role
+from pmagent_engine.testing import ScriptedChatModel
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # For tests that never open a connection; no credentials.
@@ -117,18 +122,52 @@ def storage() -> MemoryBlobStorage:
     return MemoryBlobStorage()
 
 
+class AgentScript:
+    """What the agents' model will say in this test: `agent_script.say("hi", tool_call(...))`."""
+
+    def __init__(self) -> None:
+        self.model: ScriptedChatModel | None = None
+
+    def say(self, *replies: object) -> ScriptedChatModel:
+        self.model = ScriptedChatModel.of(*replies)  # type: ignore[arg-type]
+        return self.model
+
+    def factory(self, project: object) -> ModelChoice:
+        if self.model is None:
+            raise ModelUnavailable("No API key for the test model")
+        return ModelChoice(model=self.model, web_search=None)
+
+
+@pytest.fixture
+def agent_script() -> AgentScript:
+    return AgentScript()
+
+
 @pytest.fixture
 async def db_client(
     migrated_database: str,
     db_session: AsyncSession,
     outbox: OutboxEmailSender,
     storage: MemoryBlobStorage,
+    agent_script: AgentScript,
 ) -> AsyncIterator[AsyncClient]:
     """HTTP client whose requests share the test's rolled-back session."""
     app = create_app(make_settings(migrated_database))
     app.dependency_overrides[get_session] = lambda: db_session
     app.dependency_overrides[get_email_sender] = lambda: outbox
     app.dependency_overrides[get_storage] = lambda: storage
+
+    @asynccontextmanager
+    async def shared_session() -> AsyncIterator[AsyncSession]:
+        yield db_session  # agent runs join the test's rolled-back transaction
+
+    # Inline: a run finishes (or pauses) before the request that started it returns.
+    app.state.runner = AgentRunner(
+        session_factory=shared_session,
+        checkpointer=InMemorySaver(),
+        model_factory=agent_script.factory,
+        inline=True,
+    )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 

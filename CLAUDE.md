@@ -21,7 +21,7 @@ uv sync                                   # install all Python packages
 uv run pytest                             # Python tests
 uv run ruff check apps packages --fix     # lint (rules pinned in root pyproject.toml)
 pnpm install && pnpm build && pnpm typecheck
-pnpm dev:backend                          # API on :8000, OpenAPI at /docs
+pnpm dev:backend                          # API on :8000, OpenAPI at /docs (python -m pmagent_backend.serve: selector loop on Windows)
 pnpm db:up && pnpm db:migrate             # Postgres, Redis, MinIO (console :9001), then apply migrations
 pnpm db:revision "add issues"             # autogenerate a migration after model changes
 pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
@@ -195,11 +195,17 @@ External accounts, keys, and config have to exist before these items can be buil
 
 ### P0: Approvals, audit, and agents
 
-- [ ] **FR-5** Append-only audit log: who instructed, who approved, what changed (tool, target, diff)
-- [ ] **FR-36** Approvals: pending agent writes (tool, target, content/diff, agent, instructed_by); approve or reject with a reason; permitted roles only
-- [ ] **FR-35** Agent runs: run `pmagent_engine.build_agent` in a worker with a Postgres checkpointer (`langgraph-checkpoint-postgres`); Chat Mode default; a pause sets the run to `awaiting_approval` and resumes on decision
-- [ ] **FR-19** Briefing endpoint (read-only; any write it attempts is auto-rejected)
-- [ ] Streaming of agent output to clients (SSE or WebSocket)
+- [x] **FR-5** Append-only audit log (`modules/audit`): knowledge writes, approval decisions, agent runs, with who instructed and who approved; `GET /v1/workspaces/{id}/audit` for owners and admins
+- [x] **FR-36** Approvals: each paused action (tool, target, args, diff for file writes); approve or reject with a reason; one decision per pending action; approve permission only
+- [x] **FR-35** Agent runs (`modules/agents`): the engine's team (`build_team`) runs in the API process as a background task over the platform knowledge store, with the Postgres checkpointer; `awaiting_approval` resumes on decision (tested across a runner restart)
+- [x] **FR-16** Agent prompts built from the project's `agent-rules/` (base + role)
+- [x] **FR-41** Agent writes attributed to the writing agent (PM or subagent, from `lc_agent_name`) and checked against the folder matrix
+- [x] **FR-19** Briefing endpoint (read-only; any write it attempts is auto-rejected)
+- [ ] **(you)** Put a model key in `.env` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY`) matching each project's `model`; without it runs return 503 `model_unavailable`
+- [ ] Streaming of agent output to clients (SSE or WebSocket); today clients poll the run
+- [ ] Move runs to a separate worker process (e.g. arq on Redis) so API restarts don't stop them; runs cut off by a restart are marked failed today
+- [ ] Tracing of agent runs for admins (LangSmith or OpenTelemetry) and token usage per run (feeds FR-28 spend limits)
+- [ ] **FR-36** Optional second approver (P1), and approving from Slack or email (FR-14)
 
 ### P0: Code hosts and coding agent
 
