@@ -49,6 +49,15 @@ class Settings(DatabaseSettings):
     # "console" logs emails (development only); real providers come later.
     email_backend: str = "console"
 
+    # Object storage for document originals: any S3-compatible store (MinIO locally).
+    # Leave the endpoint and keys unset to run without uploads (they answer 503).
+    s3_endpoint_url: str | None = None
+    s3_access_key: SecretStr | None = None
+    s3_secret_key: SecretStr | None = None
+    s3_bucket: str = "pmagent-documents"
+    s3_region: str = "us-east-1"
+    max_upload_mb: int = Field(default=25, ge=1, le=200)
+
     @model_validator(mode="after")
     def _safe_for_production(self) -> Settings:
         if self.env == "production" and self.email_backend == "console":

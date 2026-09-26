@@ -22,7 +22,7 @@ uv run pytest                             # Python tests
 uv run ruff check apps packages --fix     # lint (rules pinned in root pyproject.toml)
 pnpm install && pnpm build && pnpm typecheck
 pnpm dev:backend                          # API on :8000, OpenAPI at /docs
-pnpm db:up && pnpm db:migrate             # Postgres + Redis, then apply migrations
+pnpm db:up && pnpm db:migrate             # Postgres, Redis, MinIO (console :9001), then apply migrations
 pnpm db:revision "add issues"             # autogenerate a migration after model changes
 pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
 docker compose -f infra/docker-compose.yml up -d   # Postgres + Redis
@@ -182,7 +182,8 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] **FR-18** CLI: `pmagent pull` mirrors `.pmagent/` into the checkout using the manifest (git-excluded, pre-commit hook)
 - [x] **FR-18** Full Markdown export of `.pmagent/` (zip) for Owner or Admin
 - [ ] Project-level access for guests (PRD: guests see only projects they're invited to; today they see none)
-- [ ] **FR-11** Doc upload: store the original, normalise with `pmagent_engine.ingest`, and save to `docs/`
+- [x] **FR-11** Doc upload: original in object storage (MinIO locally, any S3 in production), markdown via `pmagent_engine.ingest.to_markdown` into `docs/normalized/` as a versioned knowledge file
+- [ ] **FR-11** Convert large documents in a background job instead of during the request
 
 ### P0: Issue tracking
 

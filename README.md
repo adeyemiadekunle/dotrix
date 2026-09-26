@@ -39,7 +39,7 @@ cp .env.example .env     # then replace every change-me and set a model API key
 Run things:
 
 ```bash
-pnpm db:up && pnpm db:migrate   # Postgres + Redis (localhost only), apply migrations
+pnpm db:up && pnpm db:migrate   # Postgres, Redis, MinIO (localhost only), apply migrations
 pnpm dev:backend         # API on http://localhost:8000
 pnpm dev:web             # web on http://localhost:3000
 pnpm dev:desktop         # Electron window pointed at the web app

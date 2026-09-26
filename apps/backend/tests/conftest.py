@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 
 from pmagent_backend.core.email import OutboxEmailSender, get_email_sender
 from pmagent_backend.core.settings import Settings, get_database_settings
+from pmagent_backend.core.storage import MemoryBlobStorage, get_storage
 from pmagent_backend.db.session import get_session
 from pmagent_backend.main import create_app
 from pmagent_backend.modules.workspaces.models import Membership, Role
@@ -112,13 +113,22 @@ def outbox() -> OutboxEmailSender:
 
 
 @pytest.fixture
+def storage() -> MemoryBlobStorage:
+    return MemoryBlobStorage()
+
+
+@pytest.fixture
 async def db_client(
-    migrated_database: str, db_session: AsyncSession, outbox: OutboxEmailSender
+    migrated_database: str,
+    db_session: AsyncSession,
+    outbox: OutboxEmailSender,
+    storage: MemoryBlobStorage,
 ) -> AsyncIterator[AsyncClient]:
     """HTTP client whose requests share the test's rolled-back session."""
     app = create_app(make_settings(migrated_database))
     app.dependency_overrides[get_session] = lambda: db_session
     app.dependency_overrides[get_email_sender] = lambda: outbox
+    app.dependency_overrides[get_storage] = lambda: storage
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
