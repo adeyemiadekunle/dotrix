@@ -18,7 +18,12 @@ pmagent = { workspace = true }
 pmagent-backend = { workspace = true }
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff==0.16.9", "httpx>=0.27"]
+dev = [
+    "pytest>=8",
+    "ruff==0.16.9",
+    "httpx>=0.27",
+    "pytest-asyncio>=1.4.0",
+]
 
 [tool.ruff]
 line-length = 100
@@ -34,3 +39,7 @@ known-first-party = ["pmagent_engine", "pmagent_cli", "pmagent_backend"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages/engine/tests", "apps/cli/tests", "apps/backend/tests"]
+addopts = "--import-mode=importlib"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

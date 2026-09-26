@@ -7,12 +7,34 @@ on:
 jobs:
   python:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: pmagent
+          POSTGRES_PASSWORD: pmagent
+          POSTGRES_DB: pmagent
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pmagent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PMAGENT_TEST_DATABASE_URL: postgresql+asyncpg://pmagent:pmagent@localhost:5432/pmagent_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: uv sync
       - run: uv run ruff check apps packages
       - run: uv run pytest
+      - name: Migrations apply cleanly and match the models
+        working-directory: apps/backend
+        env:
+          PMAGENT_DATABASE_URL: postgresql+asyncpg://pmagent:pmagent@localhost:5432/pmagent
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
 
   node:
     runs-on: ubuntu-latest
