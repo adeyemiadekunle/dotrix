@@ -6,10 +6,11 @@ so Alembic sees it.
 """
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, MetaData, Uuid, func
+from sqlalchemy import DateTime, Enum, ForeignKey, MetaData, Uuid, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 from uuid_utils.compat import uuid7
 
@@ -24,6 +25,18 @@ NAMING_CONVENTION = {
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+def str_enum(cls: type[enum.StrEnum], length: int = 32) -> Enum:
+    """Enum column stored as VARCHAR + CHECK, not a native Postgres enum, so
+    adding values later is a plain migration."""
+    return Enum(
+        cls,
+        native_enum=False,
+        create_constraint=True,
+        length=length,
+        values_callable=lambda e: [m.value for m in e],
+    )
 
 
 class UUIDPrimaryKeyMixin:

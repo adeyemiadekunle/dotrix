@@ -4,10 +4,10 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid, true
+from sqlalchemy import DateTime, ForeignKey, String, Uuid, true
 from sqlalchemy.orm import Mapped, mapped_column
 
-from pmagent_backend.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from pmagent_backend.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum
 
 
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -56,15 +56,7 @@ class ActionToken(UUIDPrimaryKeyMixin, Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    purpose: Mapped[ActionTokenPurpose] = mapped_column(
-        Enum(
-            ActionTokenPurpose,
-            native_enum=False,
-            create_constraint=True,
-            length=32,
-            values_callable=lambda e: [m.value for m in e],
-        )
-    )
+    purpose: Mapped[ActionTokenPurpose] = mapped_column(str_enum(ActionTokenPurpose))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

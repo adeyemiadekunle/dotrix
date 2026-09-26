@@ -30,5 +30,3 @@ docs/files.zip
 # Local Claude Code settings
 .claude/settings.local.json
 
-# Local agent instructions (kept out of the repo)
-CLAUDE.md

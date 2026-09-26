@@ -45,6 +45,15 @@ class Conflict(DomainError):
     code = "conflict"
 
 
+class InvalidLink(DomainError):
+    """An emailed or shared token (verification, reset, invite) is unknown, used, or expired."""
+
+    code = "invalid_link"
+
+    def __init__(self) -> None:
+        super().__init__("This link is invalid or has expired")
+
+
 def problem(status: int, code: str, detail: str, **extra: object) -> JSONResponse:
     body = {
         "type": f"https://pmagent.dev/problems/{code}",

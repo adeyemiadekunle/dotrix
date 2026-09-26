@@ -1,4 +1,4 @@
-"""Workspaces, members, and roles (FR-2, FR-3). Invites (FR-4) come next."""
+"""Workspaces, members, roles, ownership transfer (FR-2, FR-3, FR-4). Invites: modules/invites."""
 from __future__ import annotations
 
 import uuid
@@ -13,6 +13,7 @@ from .permissions import Permission
 from .schemas import (
     MemberRead,
     MemberRoleUpdate,
+    OwnershipTransfer,
     WorkspaceCreate,
     WorkspaceUpdate,
     WorkspaceWithRole,
@@ -60,6 +61,14 @@ async def change_member_role(
     user_id: uuid.UUID, data: MemberRoleUpdate, member: MemberAdmin, session: SessionDep
 ) -> MemberRead:
     return await WorkspaceService(session).change_role(member, user_id, data.role)
+
+
+@router.post("/{workspace_id}/transfer-ownership")
+async def transfer_ownership(
+    data: OwnershipTransfer, member: MemberAdmin, session: SessionDep
+) -> MemberRead:
+    """Owner only: the target becomes owner and you become admin."""
+    return await WorkspaceService(session).transfer_ownership(member, data.user_id)
 
 
 @router.delete("/{workspace_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

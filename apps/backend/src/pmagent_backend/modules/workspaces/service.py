@@ -78,12 +78,31 @@ class WorkspaceService:
         self, actor: Membership, target_user_id: uuid.UUID, role: Role
     ) -> MemberRead:
         target = await self._get_member(actor.workspace_id, target_user_id)
+        if actor.workspace.kind is WorkspaceKind.PERSONAL and role not in (Role.OWNER, Role.GUEST):
+            raise Conflict("Personal workspaces have one owner plus read-only guests")
         touches_owner = role == Role.OWNER or target.role == Role.OWNER
         if touches_owner and actor.role != Role.OWNER:
             raise Forbidden("Only an owner can grant or change the owner role")
         if target.role == Role.OWNER and role != Role.OWNER:
             await self._ensure_other_owner(actor.workspace_id, target)
         target.role = role
+        await self.session.commit()
+        members = await self.list_members(actor.workspace_id)
+        return next(m for m in members if m.user_id == target_user_id)
+
+    async def transfer_ownership(self, actor: Membership, target_user_id: uuid.UUID) -> MemberRead:
+        """Atomically make another member the owner and step the current owner down to admin."""
+        if actor.role is not Role.OWNER:
+            raise Forbidden("Only an owner can transfer ownership")
+        if actor.workspace.kind is WorkspaceKind.PERSONAL:
+            raise Conflict("A personal workspace can't be transferred")
+        if target_user_id == actor.user_id:
+            raise Conflict("You already own this workspace")
+        target = await self._get_member(actor.workspace_id, target_user_id)
+        if target.role is Role.GUEST:
+            raise Conflict("Guests can't become owners; make them a member first")
+        target.role = Role.OWNER
+        actor.role = Role.ADMIN
         await self.session.commit()
         members = await self.list_members(actor.workspace_id)
         return next(m for m in members if m.user_id == target_user_id)
