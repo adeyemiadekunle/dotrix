@@ -12,5 +12,16 @@ services:
   redis:
     image: redis:7
     ports: ["127.0.0.1:6379:6379"]  # localhost only
+  # S3-compatible object storage for document originals. Console: http://localhost:9001
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    # Required, from .env (see .env.example); compose refuses to start without them.
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]  # localhost only
+    volumes: [miniodata:/data]
 volumes:
   pgdata:
+  miniodata:

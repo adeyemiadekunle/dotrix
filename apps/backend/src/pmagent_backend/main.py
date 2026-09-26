@@ -13,6 +13,7 @@ from .core.logging import configure_logging
 from .core.middleware import RequestContextMiddleware
 from .core.openapi import install_openapi, operation_id
 from .core.settings import Settings, get_settings
+from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
 
 API_VERSION = "0.1.0"
@@ -44,6 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_openapi(app, API_VERSION)
     app.state.settings = settings
     app.state.email_sender = build_email_sender(settings.email_backend)
+    app.state.storage = build_storage(settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

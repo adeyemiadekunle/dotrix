@@ -66,6 +66,11 @@ TAGS: list[dict[str, str]] = [
         "(who wrote, instructed, and approved each change), restore, sync for local mirrors, "
         "and Markdown export. Agents may only write the folders their role owns.",
     },
+    {
+        "name": "documents",
+        "description": "Upload PDFs, Office files, and more. Originals are kept; agents read the "
+        "markdown conversion under `docs/normalized/` in the project's knowledge.",
+    },
     {"name": "issues", "description": "Jira-style issues, board, backlog, sprints. *Coming soon.*"},
     {"name": "approvals", "description": "Action Mode approvals and the audit log. *Coming soon.*"},
     {"name": "health", "description": "Liveness and readiness probes."},
@@ -92,6 +97,7 @@ _ERROR_DESCRIPTIONS = {
     404: "Not found, or not visible to you",
     409: "Conflicts with the current state",
     422: "Request body or parameters failed validation",
+    503: "A dependency (such as file storage) is unavailable or not configured",
 }
 
 

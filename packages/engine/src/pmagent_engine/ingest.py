@@ -13,15 +13,44 @@ agents read; the source of truth for a human is still the original file.
 """
 from __future__ import annotations
 
+import io
 import shutil
 from pathlib import Path
 
-from markitdown import MarkItDown
+from markitdown import MarkItDown, StreamInfo
 
 from .config import ProjectConfig
 
 _PLAIN_TEXT_EXTS = {".md", ".markdown", ".txt", ".rst"}
+# What to_markdown() accepts: plain text, plus what markitdown's extras convert.
+SUPPORTED_EXTENSIONS = frozenset(
+    {*_PLAIN_TEXT_EXTS, ".pdf", ".docx", ".pptx", ".xlsx", ".xls", ".html", ".htm", ".csv", ".json", ".xml"}
+)
 _converter = MarkItDown()
+
+
+class UnsupportedDocument(ValueError):
+    pass
+
+
+def to_markdown(filename: str, data: bytes) -> str:
+    """Convert a document's bytes to markdown. Pure: no files, no project.
+
+    Blocking and CPU-bound (PDF parsing especially); call it off the event loop.
+    Raises UnsupportedDocument for unknown formats or files that can't be read.
+    """
+    suffix = Path(filename).suffix.lower()
+    if suffix not in SUPPORTED_EXTENSIONS:
+        raise UnsupportedDocument(f"Unsupported format {suffix or '(none)'}")
+    if suffix in _PLAIN_TEXT_EXTS:
+        return data.decode("utf-8", errors="replace")
+    try:
+        result = _converter.convert_stream(
+            io.BytesIO(data), stream_info=StreamInfo(extension=suffix, filename=filename)
+        )
+    except Exception as exc:  # markitdown raises many types for corrupt or encrypted files
+        raise UnsupportedDocument(f"Couldn't read {filename}: {exc.__class__.__name__}") from exc
+    return result.text_content
 
 
 def ingest_doc(config: ProjectConfig, src_path: str) -> str:
