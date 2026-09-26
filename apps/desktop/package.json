@@ -1,0 +1,19 @@
+{
+  "name": "@pmagent/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && electron .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pmagent/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "electron": "^44.4.5",
+    "typescript": "^7.0.2"
+  }
+}
