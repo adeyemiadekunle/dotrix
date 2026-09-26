@@ -24,7 +24,7 @@ import json
 import subprocess
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .config import ProjectConfig
@@ -43,7 +43,7 @@ def _job_path(config: ProjectConfig, job_id: str) -> Path:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def write_job(config: ProjectConfig, job_id: str, **fields) -> dict:

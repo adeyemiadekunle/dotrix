@@ -104,7 +104,7 @@ def _ensure_exclude(root: str) -> bool:
     path = _git_path(root, "info/exclude")
     path.parent.mkdir(parents=True, exist_ok=True)
     text = path.read_text() if path.exists() else ""
-    missing = [l for l in EXCLUDE_LINES if l not in text.splitlines()]
+    missing = [line for line in EXCLUDE_LINES if line not in text.splitlines()]
     if not missing:
         return False
     block = ("\n" if text and not text.endswith("\n") else "") + (
@@ -146,7 +146,7 @@ def tracked_leaks(root: str) -> list[str]:
             content = _git(root, "show", f"HEAD:{f}") or ""
             if MARKER in content:
                 leaks.append(f)
-    return [l for l in leaks if l]
+    return [f for f in leaks if f]
 
 
 def is_tracked(root: str, rel_path: str) -> bool:

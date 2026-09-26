@@ -22,7 +22,8 @@ these helpers, so none of them needs to know about that shape.
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from langgraph.types import Command
 
@@ -91,7 +92,7 @@ def resume_command(result_or_actions: dict | list[dict], decisions: Iterable[str
 
     # Group decisions per interrupt, preserving order.
     grouped: dict[Any, list[dict]] = {}
-    for action, kind in zip(actions, decisions):
+    for action, kind in zip(actions, decisions, strict=True):
         grouped.setdefault(action["interrupt_id"], []).append(_decision(kind, message))
 
     if len(grouped) == 1:

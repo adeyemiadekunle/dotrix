@@ -35,10 +35,10 @@ from __future__ import annotations
 import os
 import tempfile
 import uuid
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Iterable, Optional
 
 import yaml
 from filelock import FileLock
@@ -57,10 +57,10 @@ LOG_HEADER = "## Log"
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _as_str_date(value) -> Optional[str]:
+def _as_str_date(value) -> str | None:
     """Hand-edited frontmatter often has unquoted dates, which YAML parses into
     date objects. Normalize everything to ISO strings (or None)."""
     if value in (None, ""):
@@ -90,9 +90,9 @@ class Task:
     title: str
     status: str = "todo"
     priority: str = "medium"
-    assignee: Optional[str] = None
-    due: Optional[str] = None
-    scheduled: Optional[str] = None
+    assignee: str | None = None
+    due: str | None = None
+    scheduled: str | None = None
     depends_on: list[str] = field(default_factory=list)
     labels: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=_now)
@@ -138,7 +138,7 @@ class Task:
         return f"---\n{front}---\n{self.body.lstrip()}"
 
     @classmethod
-    def from_markdown(cls, text: str) -> "Task":
+    def from_markdown(cls, text: str) -> Task:
         if not text.startswith("---"):
             raise ValueError("Task file is missing YAML frontmatter")
         _, front, body = text.split("---", 2)
@@ -214,9 +214,9 @@ def create_task(
     *,
     description: str = "",
     priority: str = "medium",
-    assignee: Optional[str] = None,
-    due: Optional[str] = None,
-    scheduled: Optional[str] = None,
+    assignee: str | None = None,
+    due: str | None = None,
+    scheduled: str | None = None,
     depends_on: Iterable[str] | str | None = None,
     labels: Iterable[str] | str | None = None,
     author: str = "human",
@@ -240,7 +240,7 @@ def create_task(
 
 def update_task(
     config: ProjectConfig, task_id: str, *, author: str = "human",
-    note: Optional[str] = None, **changes,
+    note: str | None = None, **changes,
 ) -> Task:
     unknown = set(changes) - EDITABLE_FIELDS
     if unknown:
@@ -281,9 +281,9 @@ def comment_task(config: ProjectConfig, task_id: str, text: str, author: str = "
 def list_tasks(
     config: ProjectConfig,
     *,
-    status: Optional[str | Iterable[str]] = None,
-    assignee: Optional[str] = None,
-    label: Optional[str] = None,
+    status: str | Iterable[str] | None = None,
+    assignee: str | None = None,
+    label: str | None = None,
     include_done: bool = True,
 ) -> list[Task]:
     statuses = {status} if isinstance(status, str) else set(status or [])
@@ -319,7 +319,7 @@ def _deps_satisfied(task: Task, by_id: dict[str, Task]) -> bool:
     return all(d in by_id and by_id[d].status == "done" for d in task.depends_on)
 
 
-def ready_tasks(config: ProjectConfig, assignee: Optional[str] = None) -> list[Task]:
+def ready_tasks(config: ProjectConfig, assignee: str | None = None) -> list[Task]:
     """Tasks someone could start right now: status=todo, dependencies done,
     and either unassigned or assigned to `assignee`."""
     all_tasks = list_tasks(config)
@@ -334,7 +334,7 @@ def ready_tasks(config: ProjectConfig, assignee: Optional[str] = None) -> list[T
 
 def next_task(
     config: ProjectConfig, assignee: str, *, claim: bool = False,
-) -> Optional[Task]:
+) -> Task | None:
     """What should `assignee` work on next?
 
     Anything already in_progress for this assignee comes first — a coding
@@ -384,7 +384,7 @@ def claim_task(config: ProjectConfig, task_id: str, assignee: str) -> Task:
 
 def complete_task(
     config: ProjectConfig, task_id: str, *, author: str = "human",
-    note: Optional[str] = None, to_review: bool = False,
+    note: str | None = None, to_review: bool = False,
 ) -> Task:
     status = "review" if to_review else "done"
     return update_task(config, task_id, author=author, status=status, note=note)

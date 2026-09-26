@@ -18,8 +18,6 @@ Checked against deepagents 0.7.19:
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend
 
@@ -52,8 +50,8 @@ def _task_tools(config: ProjectConfig) -> tuple[list, list]:
     """(read_tools, write_tools) bound to this project. Plain functions:
     deepagents turns the signature + docstring into the tool schema."""
 
-    def list_tasks(status: Optional[str] = None, assignee: Optional[str] = None,
-                   label: Optional[str] = None, ready_only: bool = False) -> list[dict]:
+    def list_tasks(status: str | None = None, assignee: str | None = None,
+                   label: str | None = None, ready_only: bool = False) -> list[dict]:
         """List tasks on the project board, sorted by priority then due date.
 
         Args:
@@ -75,9 +73,9 @@ def _task_tools(config: ProjectConfig) -> tuple[list, list]:
         return T.get_task(config, task_id).to_dict()
 
     def create_task(title: str, description: str = "", priority: str = "medium",
-                    assignee: Optional[str] = None, due: Optional[str] = None,
-                    scheduled: Optional[str] = None, depends_on: Optional[list[str]] = None,
-                    labels: Optional[list[str]] = None) -> dict:
+                    assignee: str | None = None, due: str | None = None,
+                    scheduled: str | None = None, depends_on: list[str] | None = None,
+                    labels: list[str] | None = None) -> dict:
         """Create a task on the project board. ACTION MODE ONLY.
 
         Write the description so a coding agent with no other context can do
@@ -98,11 +96,11 @@ def _task_tools(config: ProjectConfig) -> tuple[list, list]:
                              assignee=assignee, due=due, scheduled=scheduled,
                              depends_on=depends_on, labels=labels, author="pm-agent").to_dict()
 
-    def update_task(task_id: str, status: Optional[str] = None, priority: Optional[str] = None,
-                    assignee: Optional[str] = None, due: Optional[str] = None,
-                    scheduled: Optional[str] = None, depends_on: Optional[list[str]] = None,
-                    labels: Optional[list[str]] = None, title: Optional[str] = None,
-                    description: Optional[str] = None, note: Optional[str] = None) -> dict:
+    def update_task(task_id: str, status: str | None = None, priority: str | None = None,
+                    assignee: str | None = None, due: str | None = None,
+                    scheduled: str | None = None, depends_on: list[str] | None = None,
+                    labels: list[str] | None = None, title: str | None = None,
+                    description: str | None = None, note: str | None = None) -> dict:
         """Change fields on an existing task. Only pass what changes. ACTION MODE ONLY.
 
         Args:
@@ -202,7 +200,7 @@ def _subagents(project_name: str, read_task_tools: list, web_search: dict) -> li
     ]
 
 
-def build_agent(config: ProjectConfig, checkpointer: Optional[object] = None):
+def build_agent(config: ProjectConfig, checkpointer: object | None = None):
     # LockingFilesystemBackend: several processes (chat, background jobs,
     # coding agents via the CLI) may touch /pmagent/ at once.
     backend = CompositeBackend(

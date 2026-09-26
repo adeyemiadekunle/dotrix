@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from typing import Optional
 
 import typer
 from langgraph.checkpoint.memory import MemorySaver
@@ -60,7 +59,7 @@ def _echo_protection(report: dict) -> None:
             "  WARNING: git already tracks pmagent files (committed earlier):\n    "
             + "\n    ".join(leaks[:10]) + ("\n    ..." if len(leaks) > 10 else "")
             + "\n  Remove them from the repo (files stay on disk):\n"
-            "    git rm -r --cached " + " ".join(sorted({l.split('/')[0] for l in leaks}))
+            "    git rm -r --cached " + " ".join(sorted({p.split("/")[0] for p in leaks}))
             + " && git commit -m 'Stop tracking pmagent files'\n"
             "  They remain in earlier commits; if the repo is public, treat that content as exposed.",
             fg=typer.colors.YELLOW,
@@ -259,7 +258,7 @@ def jobs_approve(
     job_id: str = typer.Argument(...),
     project: str = ProjectOpt,
     reject: bool = typer.Option(False, "--reject", help="Reject instead of approve."),
-    message: Optional[str] = typer.Option(None, "--message", "-m", help="Reason, sent to the agent on reject."),
+    message: str | None = typer.Option(None, "--message", "-m", help="Reason, sent to the agent on reject."),
     background: bool = typer.Option(True, "--background/--foreground"),
 ):
     """Approve or reject everything a paused job is waiting on, from any terminal."""
@@ -298,11 +297,11 @@ def task_create(
     title: str = typer.Argument(...),
     description: str = typer.Option("", "--description", "-d"),
     priority: str = typer.Option("medium", "--priority", help="low | medium | high | urgent"),
-    assignee: Optional[str] = typer.Option(None, "--assignee"),
-    due: Optional[str] = typer.Option(None, "--due", help="YYYY-MM-DD"),
-    scheduled: Optional[str] = typer.Option(None, "--scheduled", help="YYYY-MM-DD or ISO datetime"),
-    depends_on: Optional[str] = typer.Option(None, "--depends-on", help="Comma-separated task ids"),
-    labels: Optional[str] = typer.Option(None, "--labels", help="Comma-separated"),
+    assignee: str | None = typer.Option(None, "--assignee"),
+    due: str | None = typer.Option(None, "--due", help="YYYY-MM-DD"),
+    scheduled: str | None = typer.Option(None, "--scheduled", help="YYYY-MM-DD or ISO datetime"),
+    depends_on: str | None = typer.Option(None, "--depends-on", help="Comma-separated task ids"),
+    labels: str | None = typer.Option(None, "--labels", help="Comma-separated"),
     author: str = AuthorOpt,
     as_json: bool = typer.Option(False, "--json"),
     project: str = ProjectOpt,
@@ -320,9 +319,9 @@ def task_create(
 
 @task_app.command("list")
 def task_list(
-    status: Optional[str] = typer.Option(None, "--status"),
-    assignee: Optional[str] = typer.Option(None, "--assignee"),
-    label: Optional[str] = typer.Option(None, "--label"),
+    status: str | None = typer.Option(None, "--status"),
+    assignee: str | None = typer.Option(None, "--assignee"),
+    label: str | None = typer.Option(None, "--label"),
     all_: bool = typer.Option(False, "--all", help="Include done tasks."),
     ready: bool = typer.Option(False, "--ready", help="Only tasks that could start right now."),
     as_json: bool = typer.Option(False, "--json"),
@@ -365,16 +364,16 @@ def task_show(
 @task_app.command("update")
 def task_update(
     task_id: str = typer.Argument(...),
-    status: Optional[str] = typer.Option(None, "--status"),
-    priority: Optional[str] = typer.Option(None, "--priority"),
-    assignee: Optional[str] = typer.Option(None, "--assignee"),
-    due: Optional[str] = typer.Option(None, "--due"),
-    scheduled: Optional[str] = typer.Option(None, "--scheduled"),
-    depends_on: Optional[str] = typer.Option(None, "--depends-on"),
-    labels: Optional[str] = typer.Option(None, "--labels"),
-    title: Optional[str] = typer.Option(None, "--title"),
-    description: Optional[str] = typer.Option(None, "--description", "-d"),
-    note: Optional[str] = typer.Option(None, "--note", help="Appended to the task log."),
+    status: str | None = typer.Option(None, "--status"),
+    priority: str | None = typer.Option(None, "--priority"),
+    assignee: str | None = typer.Option(None, "--assignee"),
+    due: str | None = typer.Option(None, "--due"),
+    scheduled: str | None = typer.Option(None, "--scheduled"),
+    depends_on: str | None = typer.Option(None, "--depends-on"),
+    labels: str | None = typer.Option(None, "--labels"),
+    title: str | None = typer.Option(None, "--title"),
+    description: str | None = typer.Option(None, "--description", "-d"),
+    note: str | None = typer.Option(None, "--note", help="Appended to the task log."),
     author: str = AuthorOpt,
     as_json: bool = typer.Option(False, "--json"),
     project: str = ProjectOpt,
@@ -411,7 +410,7 @@ def task_comment(
 def task_done(
     task_id: str = typer.Argument(...),
     review: bool = typer.Option(False, "--review", help="Hand back for review instead of closing."),
-    note: Optional[str] = typer.Option(None, "--note"),
+    note: str | None = typer.Option(None, "--note"),
     author: str = AuthorOpt,
     as_json: bool = typer.Option(False, "--json"),
     project: str = ProjectOpt,
@@ -450,7 +449,7 @@ def next_cmd(
 # ---------------------------------------------------------------------------
 @calendar_app.command("export")
 def calendar_export(
-    out: Optional[str] = typer.Option(None, "--out", "-o", help="Default: .pmagent/calendar.ics"),
+    out: str | None = typer.Option(None, "--out", "-o", help="Default: .pmagent/calendar.ics"),
     open_only: bool = typer.Option(False, "--open-only", help="Leave done tasks off the calendar."),
     project: str = ProjectOpt,
 ):

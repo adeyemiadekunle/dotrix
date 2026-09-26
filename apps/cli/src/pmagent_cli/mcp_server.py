@@ -21,10 +21,8 @@ agents and change only in Action Mode with approval.
 """
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Optional
-
 import functools
+from pathlib import Path
 
 try:  # mcp >= 2
     from mcp.server.mcpserver import MCPServer as _Server
@@ -95,7 +93,7 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
             raise ValueError("That path is internal and not readable")
         return full
 
-    def _doc_files(folder: Optional[str]) -> list[Path]:
+    def _doc_files(folder: str | None) -> list[Path]:
         base = _resolve(folder) if folder else root
         if not base.is_dir():
             raise ValueError(f"No such folder: {folder}")
@@ -129,7 +127,7 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
         }
 
     @server.tool(annotations=READ_ONLY)
-    def list_docs(folder: Optional[str] = None) -> list[dict]:
+    def list_docs(folder: str | None = None) -> list[dict]:
         """List readable knowledge docs, optionally inside one folder such as
         "requirements", "architecture", "decisions", "research", "reviews",
         "progress", or "docs/normalized" (ingested reference docs)."""
@@ -152,7 +150,7 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
                 "truncated": truncated}
 
     @server.tool(annotations=READ_ONLY)
-    def search_docs(query: str, folder: Optional[str] = None, max_results: int = 20) -> list[dict]:
+    def search_docs(query: str, folder: str | None = None, max_results: int = 20) -> list[dict]:
         """Case-insensitive text search across knowledge docs. Returns matching
         lines with their doc path and line number. Use it to find the
         requirement, ADR, or architecture note relevant to your task."""
@@ -170,7 +168,7 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
 
     # -- task board ----------------------------------------------------------
     @server.tool(annotations=READ_ONLY)
-    def list_tasks(status: Optional[str] = None, mine: bool = False,
+    def list_tasks(status: str | None = None, mine: bool = False,
                    ready_only: bool = False) -> list[dict]:
         """List tasks by priority then due date. `mine` = assigned to you;
         `ready_only` = could start now (todo, dependencies done, unassigned or yours)."""
@@ -186,7 +184,7 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
         return T.get_task(config, task_id).to_dict()
 
     @server.tool(annotations=TASK_WRITE)
-    def claim_task(task_id: Optional[str] = None) -> dict:
+    def claim_task(task_id: str | None = None) -> dict:
         """Claim a task ONLY when the user told you to work on it. Pass the
         task_id they named; omit it only if they said "take the next task",
         which picks the highest-priority ready task (or resumes yours)."""

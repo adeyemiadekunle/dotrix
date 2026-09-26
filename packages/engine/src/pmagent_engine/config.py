@@ -54,7 +54,7 @@ class ProjectConfig:
             )
 
     @classmethod
-    def load(cls, root_dir: str) -> "ProjectConfig":
+    def load(cls, root_dir: str) -> ProjectConfig:
         path = os.path.join(root_dir, CONFIG_DIRNAME, CONFIG_FILENAME)
         if not os.path.exists(path):
             raise FileNotFoundError(

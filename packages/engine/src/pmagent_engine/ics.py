@@ -14,9 +14,9 @@ don't edit it.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from collections.abc import Iterable
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Iterable, Optional
 
 from .config import ProjectConfig
 from .tasks import Task, _atomic_write, list_tasks
@@ -47,8 +47,8 @@ def _fold(line: str) -> str:
 
 def _utc_stamp(dt: datetime) -> str:
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _time_props(value: str) -> list[str]:
@@ -89,7 +89,7 @@ def _event(task: Task, kind: str, when: str, project: str, stamp: str) -> list[s
 
 def render_ics(tasks: Iterable[Task], project_name: str) -> str:
     slug = "".join(c if c.isalnum() else "-" for c in project_name.lower()).strip("-") or "project"
-    stamp = _utc_stamp(datetime.now(timezone.utc))
+    stamp = _utc_stamp(datetime.now(UTC))
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
@@ -103,11 +103,11 @@ def render_ics(tasks: Iterable[Task], project_name: str) -> str:
         if t.scheduled:
             lines += _event(t, "scheduled", t.scheduled, slug, stamp)
     lines.append("END:VCALENDAR")
-    return "\r\n".join(_fold(l) for l in lines) + "\r\n"
+    return "\r\n".join(_fold(line) for line in lines) + "\r\n"
 
 
 def export_calendar(
-    config: ProjectConfig, out_path: Optional[str] = None, include_done: bool = True,
+    config: ProjectConfig, out_path: str | None = None, include_done: bool = True,
 ) -> tuple[Path, int]:
     tasks = [t for t in list_tasks(config, include_done=include_done) if t.due or t.scheduled]
     path = Path(out_path) if out_path else Path(config.pmagent_dir) / CALENDAR_FILENAME
