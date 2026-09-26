@@ -12,11 +12,13 @@
     }
   },
   "scripts": {
+    "generate": "pnpm dlx --package=openapi-typescript@7.13.0 --package=typescript@5.9 openapi-typescript openapi.json -o src/schema.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pmagent/shared": "workspace:*"
+    "@pmagent/shared": "workspace:*",
+    "openapi-fetch": "^0.17.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2"

@@ -24,6 +24,7 @@ pnpm install && pnpm build && pnpm typecheck
 pnpm dev:backend                          # API on :8000, OpenAPI at /docs
 pnpm db:up && pnpm db:migrate             # Postgres + Redis, then apply migrations
 pnpm db:revision "add issues"             # autogenerate a migration after model changes
+pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
 docker compose -f infra/docker-compose.yml up -d   # Postgres + Redis
 ```
 
@@ -92,7 +93,8 @@ apps/backend/
 - **Secrets:** tokens (refresh, email links) are stored only as SHA-256 hashes; passwords with Argon2id. Never log tokens outside the dev console email backend.
 - **Errors:** raise domain exceptions (`NotFound`, `Forbidden`, `Conflict`) and map them once in `core/errors.py`.
 - **Tests:** write the test with every endpoint. Include a cross-workspace isolation test for every workspace-scoped resource.
-- **API:** versioned under `/v1`. The OpenAPI schema is the contract for `packages/api-client`.
+- **API:** versioned under `/v1`. Docs at `/docs` (Swagger) and `/redoc`. The OpenAPI schema is the contract for `packages/api-client`: run `pnpm openapi` after any API change and commit `openapi.json` + `src/schema.ts` (CI checks they're current).
+- **Documenting routes:** every route gets a docstring (shown in Swagger) and `responses=errors(...)` listing the error statuses it can return (`core/openapi.py`). Operation IDs are the function names and become the TS client's names, so name route functions carefully and don't rename them casually. Describe new tags in `core/openapi.py` `TAGS`. `tests/unit/test_openapi.py` enforces this.
 
 ## TODO: backend (priority order)
 

@@ -40,11 +40,23 @@ Run things:
 
 ```bash
 pnpm db:up && pnpm db:migrate   # Postgres + Redis (localhost only), apply migrations
-pnpm dev:backend         # API on http://localhost:8000 (docs at /docs)
+pnpm dev:backend         # API on http://localhost:8000
 pnpm dev:web             # web on http://localhost:3000
 pnpm dev:desktop         # Electron window pointed at the web app
 uv run pmagent --help    # CLI
 ```
+
+## API documentation
+
+With the backend running (`pnpm dev:backend`):
+
+- **Swagger UI**: http://localhost:8000/docs (click **Authorize** and paste an `access_token` from `/v1/auth/login` to try authenticated routes)
+- **ReDoc**: http://localhost:8000/redoc
+- **OpenAPI schema**: http://localhost:8000/openapi.json, also committed at [packages/api-client/openapi.json](packages/api-client/openapi.json)
+
+The TypeScript client in `packages/api-client` is generated from that schema. After changing
+any route or schema, run `pnpm openapi` and commit the result; CI fails if they're out of date.
+Set `PMAGENT_DOCS_ENABLED=false` to turn the docs off.
 
 Checks:
 

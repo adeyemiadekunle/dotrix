@@ -1,28 +1,35 @@
-// Typed client for the pmagent API (apps/backend). Web and desktop both use this.
-// Replace with a client generated from the backend's OpenAPI schema once routes exist.
+// Typed client for the pmagent API (apps/backend), used by web and desktop.
+//
+// `schema.ts` is generated from `openapi.json`, which is exported from the backend.
+// Never edit either by hand: run `pnpm openapi` at the repo root after changing the API.
+import createFetchClient, { type Middleware } from "openapi-fetch";
+
+import type { components, paths } from "./schema.js";
+
+export type { components, operations, paths } from "./schema.js";
+export type Schemas = components["schemas"];
+/** RFC 9457 error body. Switch on `type`, not `detail`. */
+export type ProblemDetail = Schemas["ProblemDetail"];
 
 export interface ClientOptions {
   baseUrl: string;
-  token?: string;
+  /** Returns the current access or API token; called on every request. */
+  getToken?: () => string | undefined | Promise<string | undefined>;
 }
 
-export function createClient({ baseUrl, token }: ClientOptions) {
-  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const res = await fetch(`${baseUrl}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...init.headers,
+export function createClient({ baseUrl, getToken }: ClientOptions) {
+  const client = createFetchClient<paths>({ baseUrl });
+  if (getToken) {
+    const auth: Middleware = {
+      async onRequest({ request }) {
+        const token = await getToken();
+        if (token) request.headers.set("Authorization", `Bearer ${token}`);
+        return request;
       },
-    });
-    if (!res.ok) throw new Error(`${init.method ?? "GET"} ${path} failed: ${res.status}`);
-    return (await res.json()) as T;
+    };
+    client.use(auth);
   }
-
-  return {
-    health: () => request<{ status: string }>("/health"),
-  };
+  return client;
 }
 
 export type PmagentClient = ReturnType<typeof createClient>;
