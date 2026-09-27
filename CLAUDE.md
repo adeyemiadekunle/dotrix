@@ -207,7 +207,9 @@ External accounts, keys, and config have to exist before these items can be buil
 - [x] **FR-16** Agent prompts built from the project's `agent-rules/` (base + role)
 - [x] **FR-41** Agent writes attributed to the writing agent (PM or subagent, from `lc_agent_name`) and checked against the folder matrix
 - [x] **FR-19** Briefing endpoint (read-only; any write it attempts is auto-rejected)
-- [ ] **(you)** Put a model key in `.env` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY`) matching each project's `model`; without it runs return 503 `model_unavailable`
+- [x] **(you)** Model key in `.env`: `GOOGLE_API_KEY` set; live-tested with `google_genai:gemini-3.8-flash` (chat that reads project files; approved edit to `roadmap.md`)
+- [x] Model choice per project (`model` on create/update) and `PMAGENT_DEFAULT_MODEL` for new projects
+- [ ] Workspace-level default model and per-workspace provider keys (business plans bring their own keys)
 - [ ] Streaming of agent output to clients (SSE or WebSocket); today clients poll the run
 - [ ] Move runs to a separate worker process (e.g. arq on Redis) so API restarts don't stop them; runs cut off by a restart are marked failed today
 - [ ] Tracing of agent runs for admins (LangSmith or OpenTelemetry) and token usage per run (feeds FR-28 spend limits)

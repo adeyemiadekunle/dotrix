@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from pmagent_backend.api.deps import CurrentUser, SessionDep, require_permission
+from pmagent_backend.api.deps import CurrentUser, SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.workspaces.models import Membership, Role
 from pmagent_backend.modules.workspaces.permissions import Permission
@@ -34,12 +34,18 @@ async def list_projects(member: Viewer, session: SessionDep) -> list[ProjectRead
 
 @router.post("", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422))
 async def create_project(
-    data: ProjectCreate, member: Creator, user: CurrentUser, session: SessionDep
+    data: ProjectCreate,
+    member: Creator,
+    user: CurrentUser,
+    session: SessionDep,
+    settings: SettingsDep,
 ) -> ProjectRead:
     """Create a project from a new repo, an existing repo, or docs only. Its `.pmagent/` is
     created with the full folder structure and the default agent rules. The key (e.g. `KUN`)
     prefixes issue keys and can't be changed; 409 if the workspace already uses it."""
-    return await ProjectService(session).create(member.workspace_id, user, data)
+    return await ProjectService(session).create(
+        member.workspace_id, user, data, default_model=settings.default_model
+    )
 
 
 @router.get("/{project_id}")
@@ -52,5 +58,5 @@ async def get_project(access: ProjectViewer) -> ProjectRead:
 async def update_project(
     data: ProjectUpdate, access: ProjectManager, session: SessionDep
 ) -> ProjectRead:
-    """Rename a project or change its description. The key can't change."""
+    """Rename a project, or change its description or its agents' model. The key can't change."""
     return await ProjectService(session).update(access.project, data)

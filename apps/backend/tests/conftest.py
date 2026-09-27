@@ -101,6 +101,7 @@ def make_settings(database_url: str = UNUSED_DATABASE_URL) -> Settings:
         jwt_secret="test-only-jwt-secret-not-used-anywhere-else",  # type: ignore[arg-type]
         app_url="http://app.test",
         email_backend="console",
+        default_model="anthropic:claude-sonnet-5",
     )
 
 

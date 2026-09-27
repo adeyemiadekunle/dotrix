@@ -1,0 +1,49 @@
+import pytest
+
+from pmagent_backend.core.settings import Settings
+from pmagent_backend.modules.agents.llm import (
+    GeminiWithBuiltinTools,
+    ModelUnavailable,
+    build_chat_model,
+    settings_model_factory,
+)
+from pmagent_backend.modules.projects.models import Project
+
+
+def search_files(query: str) -> str:
+    """Stand-in function tool."""
+    return query
+
+
+def test_gemini_enables_builtin_tools_alongside_function_calling() -> None:
+    model = build_chat_model("google_genai:gemini-3.8-flash", "test-key")
+    assert isinstance(model, GeminiWithBuiltinTools)
+    bound = model.bind_tools([search_files, {"google_search": {}}])
+    config = bound.kwargs["tool_config"]
+    enabled = config["include_server_side_tool_invocations"] if isinstance(config, dict) else (
+        config.include_server_side_tool_invocations
+    )
+    assert enabled is True
+
+
+def settings(**keys: str) -> Settings:
+    return Settings(
+        database_url="postgresql+asyncpg://localhost/unused",
+        jwt_secret="test-only-jwt-secret-not-used-anywhere-else",  # type: ignore[arg-type]
+        anthropic_api_key=keys.get("anthropic"),  # type: ignore[arg-type]
+        google_api_key=keys.get("google"),  # type: ignore[arg-type]
+        openai_api_key=None,
+    )
+
+
+@pytest.mark.parametrize("key", [None, "", "   "])
+def test_missing_or_empty_key_is_model_unavailable(key: str | None) -> None:
+    factory = settings_model_factory(settings(google=key) if key is not None else settings())
+    with pytest.raises(ModelUnavailable):
+        factory(Project(model="google_genai:gemini-3.8-flash"))
+
+
+def test_factory_builds_the_projects_model() -> None:
+    choice = settings_model_factory(settings(google="test-key"))(Project(model="google_genai:gemini-3.8-flash"))
+    assert isinstance(choice.model, GeminiWithBuiltinTools)
+    assert choice.web_search == {"google_search": {}}

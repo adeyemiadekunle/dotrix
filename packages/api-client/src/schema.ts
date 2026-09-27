@@ -641,7 +641,7 @@ export interface paths {
         head?: never;
         /**
          * Update Project
-         * @description Rename a project or change its description. The key can't change.
+         * @description Rename a project, or change its description or its agents' model. The key can't change.
          */
         patch: operations["update_project"];
         trace?: never;
@@ -2130,6 +2130,11 @@ export interface components {
             description: string;
             /** @default docs_only */
             source: components["schemas"]["ProjectSource"];
+            /**
+             * Model
+             * @description Defaults to the server's default model
+             */
+            model?: string | null;
             /** Repo Url */
             repo_url?: string | null;
             /**
@@ -2180,6 +2185,8 @@ export interface components {
             name?: string | null;
             /** Description */
             description?: string | null;
+            /** Model */
+            model?: string | null;
         };
         /** RankRequest */
         RankRequest: {

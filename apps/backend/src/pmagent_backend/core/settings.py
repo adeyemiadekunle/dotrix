@@ -69,6 +69,8 @@ class Settings(DatabaseSettings):
     google_api_key: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("GOOGLE_API_KEY", "PMAGENT_GOOGLE_API_KEY")
     )
+    # Model for new projects ("provider:model"); each project can change its own.
+    default_model: str = "anthropic:claude-sonnet-5"
     # Agent runs execute in the API process as background tasks; true runs them
     # inside the request instead (tests, debugging).
     agent_runs_inline: bool = False
