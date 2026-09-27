@@ -34,7 +34,8 @@ export default defineConfig({
       url: `${WEB}/login`,
       timeout: 300_000,
       reuseExistingServer: !process.env.CI,
-      env: { PMAGENT_API_URL: API },
+      // Its own build folder, so a `next dev` on :3000 keeps working while the tests run.
+      env: { PMAGENT_API_URL: API, PMAGENT_NEXT_DIST_DIR: ".next-e2e" },
     },
   ],
 });

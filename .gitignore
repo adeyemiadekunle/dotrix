@@ -34,3 +34,4 @@ docs/files.zip
 # Playwright (apps/web e2e)
 playwright-report/
 test-results/
+.next-e2e/
