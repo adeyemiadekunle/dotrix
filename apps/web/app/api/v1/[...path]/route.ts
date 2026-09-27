@@ -34,12 +34,21 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
     return fetch(url, { method: request.method, headers, body, cache: "no-store", redirect: "manual" });
   };
 
-  let upstream = await send(jar.get(ACCESS_COOKIE)?.value);
+  let upstream: Response;
   let refreshed: TokenPair | null = null;
   const refreshToken = jar.get(REFRESH_COOKIE)?.value;
-  if (upstream.status === 401 && refreshToken) {
-    refreshed = await refreshTokens(refreshToken);
-    if (refreshed) upstream = await send(refreshed.access_token);
+  try {
+    upstream = await send(jar.get(ACCESS_COOKIE)?.value);
+    if (upstream.status === 401 && refreshToken) {
+      refreshed = await refreshTokens(refreshToken);
+      if (refreshed) upstream = await send(refreshed.access_token);
+    }
+  } catch {
+    // The API is down or restarting: say so, in the same shape as every other error.
+    return NextResponse.json(
+      { type: "about:blank", title: "Bad Gateway", status: 502, detail: "The pmagent API isn't reachable right now." },
+      { status: 502, headers: { "Content-Type": "application/problem+json" } },
+    );
   }
 
   const headers = new Headers();

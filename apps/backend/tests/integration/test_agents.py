@@ -107,6 +107,34 @@ async def test_write_waits_for_approval_then_applies(project, db_client: AsyncCl
     assert (await db_client.get(f"{base}/agent/approvals", headers=ada.headers)).json() == []
 
 
+async def test_workspace_approvals_queue(
+    project, db_client: AsyncClient, agent_script, add_member, signup, create_team
+) -> None:
+    ada, team, base = await project()
+    agent_script.say(
+        tool_call("write_file", file_path="/pmagent/roadmap.md", content="# Roadmap\n\nPhase 1.\n"),
+        "Done.",
+    )
+    paused = await run(db_client, base, ada.headers, "Update the roadmap")
+    queue_url = f"/v1/workspaces/{team['id']}/approvals"
+
+    [item] = (await db_client.get(queue_url, headers=ada.headers)).json()
+    assert item["id"] == paused["approvals"][0]["id"] and item["run_id"] == paused["id"]
+    assert (item["project_key"], item["project_name"]) == ("KUN", "Kunemi")
+    assert item["run_message"] == "Update the roadmap" and item["requested_by_id"] == ada.id
+    assert "+Phase 1." in item["diff"]
+
+    guest = await signup(email="guest@example.com", name="Guest")
+    await add_member(team["id"], guest.id, Role.GUEST)
+    assert (await db_client.get(queue_url, headers=guest.headers)).status_code == 403
+    eve = await signup(email="eve@example.com", name="Eve")
+    await create_team(eve.headers)
+    assert (await db_client.get(queue_url, headers=eve.headers)).status_code == 404  # not her workspace
+
+    assert (await decide(db_client, base, paused, ada.headers, ("approve",))).status_code == 200
+    assert (await db_client.get(queue_url, headers=ada.headers)).json() == []
+
+
 async def test_rejected_write_is_not_applied(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
     model = agent_script.say(

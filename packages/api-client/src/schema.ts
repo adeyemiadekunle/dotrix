@@ -1208,6 +1208,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspace Approvals
+         * @description Every agent action waiting for a decision across the workspace's projects, oldest first,
+         *     with the project and the instruction it came from. Decide them per run with
+         *     `POST .../agent/runs/{run_id}/decisions`.
+         */
+        get: operations["list_workspace_approvals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/audit": {
         parameters: {
             query?: never;
@@ -2748,6 +2770,74 @@ export interface components {
             created_at: string;
             /** Content */
             content: string;
+        };
+        /**
+         * WorkspaceApprovalRead
+         * @description A pending action with where it's from, for the workspace's approvals queue.
+         */
+        WorkspaceApprovalRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Position */
+            position: number;
+            /**
+             * Tool
+             * @description e.g. write_file, edit_file
+             */
+            tool: string;
+            /**
+             * Target
+             * @description What the action changes, e.g. /pmagent/vision.md
+             */
+            target: string | null;
+            /** Args */
+            args: {
+                [key: string]: unknown;
+            };
+            /**
+             * Diff
+             * @description For file writes: unified diff of what would change
+             */
+            diff: string | null;
+            status: components["schemas"]["ApprovalStatus"];
+            /** Reason */
+            reason: string | null;
+            /** Decided By Id */
+            decided_by_id: string | null;
+            /** Decided At */
+            decided_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Key */
+            project_key: string;
+            /** Project Name */
+            project_name: string;
+            /**
+             * Run Message
+             * @description The instruction the run was given
+             */
+            run_message: string;
+            /**
+             * Requested By Id
+             * @description Who instructed the run
+             */
+            requested_by_id: string | null;
         };
         /** WorkspaceCreate */
         WorkspaceCreate: {
@@ -6727,6 +6817,64 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_workspace_approvals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceApprovalRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

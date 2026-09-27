@@ -6,13 +6,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmag
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@pmagent/ui/components/sheet";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
-import { DownloadIcon, EyeIcon, FileTextIcon, FilesIcon } from "lucide-react";
+import { DownloadIcon, EyeIcon, FileTextIcon, FilesIcon, LayersIcon, Loader2Icon } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { useChat } from "@/components/agent/chat-context";
 import { Dropzone, UploadProgress } from "@/components/documents/dropzone";
 import { timeAgo } from "@/components/issues/issue-activity";
 import { Markdown } from "@/components/markdown";
 import { EmptyState } from "@/components/states";
+import { useArchitectureDraft } from "@/lib/agent";
 import { ApiError } from "@/lib/api";
 import { formatBytes, originalUrl, useDocuments, useUploads, type Document } from "@/lib/documents";
 import { useMembers } from "@/lib/issues";
@@ -69,6 +71,8 @@ export default function DocsPage() {
   const [uploading, setUploading] = useState(false);
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
   const canUpload = canManageProjects(workspace?.role);
+  const draft = useArchitectureDraft(scope);
+  const chat = useChat();
 
   async function onFiles(files: File[]) {
     if (!scope) return;
@@ -92,6 +96,32 @@ export default function DocsPage() {
           <CardContent className="grid gap-3">
             <Dropzone onFiles={(f) => void onFiles(f)} disabled={uploading} />
             <UploadProgress uploads={uploads} />
+          </CardContent>
+        </Card>
+      )}
+
+      {canUpload && (documents.data?.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Architecture overview</CardTitle>
+            <CardDescription>
+              Have the Architecture agent draft <code className="font-mono">architecture/overview.md</code> from these
+              documents (and the linked repo&apos;s README). It&apos;s setup work: you review the draft and approve it in
+              the chat before anything is written.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="outline"
+              disabled={draft.isPending}
+              onClick={async () => {
+                const run = await draft.mutateAsync().catch(() => null);
+                if (run) chat.show(run.thread_id);
+              }}
+            >
+              {draft.isPending ? <Loader2Icon className="animate-spin" /> : <LayersIcon />}
+              Draft architecture overview
+            </Button>
           </CardContent>
         </Card>
       )}

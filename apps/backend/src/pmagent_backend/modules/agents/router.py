@@ -6,9 +6,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
-from pmagent_backend.api.deps import SessionDep
+from pmagent_backend.api.deps import SessionDep, require_permission
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.projects.deps import ProjectAccess, require_project_permission
+from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
 from .runner import AgentRunner
@@ -18,6 +19,7 @@ from .schemas import (
     ArchitectureDraftRequest,
     DecisionsRequest,
     RunCreate,
+    WorkspaceApprovalRead,
 )
 from .service import AgentService
 
@@ -102,3 +104,18 @@ async def decide_approvals(
     permission; changes to `architecture/` need an owner or admin (403 otherwise, and the
     run keeps waiting). Your decision is recorded next to who instructed the run."""
     return await agents.decide(access, run_id, data)
+
+
+workspace_router = APIRouter(
+    prefix="/workspaces/{workspace_id}/approvals", tags=["agents"], responses=errors(401, 403, 404)
+)
+
+
+@workspace_router.get("")
+async def list_workspace_approvals(
+    member: Annotated[Membership, Depends(require_permission(Permission.CHAT))], agents: Agents
+) -> list[WorkspaceApprovalRead]:
+    """Every agent action waiting for a decision across the workspace's projects, oldest first,
+    with the project and the instruction it came from. Decide them per run with
+    `POST .../agent/runs/{run_id}/decisions`."""
+    return await agents.workspace_pending(member.workspace_id)
