@@ -15,7 +15,6 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.workspaces.permissions import Permission, has_permission
-from pmagent_engine import approvals as hitl
 
 from .models import ACTIVE_STATUSES, AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .runner import BRIEFING_PROMPT, AgentRunner
@@ -242,11 +241,12 @@ class AgentService:
         run.status, run.updated_at = RunStatus.QUEUED, now
         await self.session.commit()
 
-        command = hitl.resume_command(
-            [{"interrupt_id": a.interrupt_id} for a in pending],
-            [(by_id[a.id].decision, by_id[a.id].reason) for a in pending],
+        await self.runner.resume(
+            run.id,
+            interrupt_ids=[a.interrupt_id for a in pending],
+            decisions=[(by_id[a.id].decision, by_id[a.id].reason) for a in pending],
+            approved_by_id=member.user_id,
         )
-        await self.runner.resume(run.id, command, approved_by_id=member.user_id)
         return await self.get(access, run.id)
 
     async def stop(self, access: ProjectAccess, run_id: uuid.UUID) -> AgentRunRead:
@@ -276,8 +276,10 @@ class AgentService:
             actor_user_id=member.user_id,
         )
         await self.session.commit()
-        if not await self.runner.stop(run.id, reason):
-            # Not running in this process (e.g. cut off by a restart): just record the stop.
+        await self.runner.stop(run.id, reason)
+        # If nothing recorded the stop (it hadn't started, or was cut off by a restart), do it.
+        await self.session.refresh(run)
+        if run.status in (RunStatus.QUEUED, RunStatus.RUNNING):
             run.status, run.error = RunStatus.FAILED, reason
             run.updated_at = run.finished_at = _now()
             await self.session.commit()

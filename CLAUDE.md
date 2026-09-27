@@ -24,6 +24,7 @@ uv run ruff check apps packages --fix     # lint (rules pinned in root pyproject
 pnpm install && pnpm build && pnpm typecheck
 pnpm dev:web                              # web app on :3000 (talks to the API through its own /api/v1 proxy)
 pnpm dev:backend                          # API on :8000, OpenAPI at /docs (python -m pmagent_backend.serve: selector loop on Windows)
+pnpm dev:worker                           # agent-run worker (arq on Redis), needed when PMAGENT_AGENT_RUNS=worker
 pnpm db:up && pnpm db:migrate             # Postgres, Redis, MinIO (console :9001) from infra/docker-compose.yml, then apply migrations
 pnpm db:revision "add issues"             # autogenerate a migration after model changes
 pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
@@ -80,10 +81,10 @@ apps/backend/
 │   │   ├── knowledge/           .pmagent/ files + version history + export
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge
 │   │   ├── issues/              issues, keys, board/backlog/epics, claim, Markdown render for export
-│   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals and decisions, board tools, checkpointer
+│   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals and decisions, board tools, checkpointer, run queue + live streams (in-process or Redis)
 │   │   ├── audit/               append-only audit log
 │   │   └── connectors/          (planned, FR-10/12) GitHub, GitLab, doc sources (OAuth)
-│   └── workers/                 (planned) background jobs; agent runs execute in the API process for now
+│   └── worker.py                arq worker (`pnpm dev:worker`): executes queued agent runs when PMAGENT_AGENT_RUNS=worker
 └── tests/
     ├── conftest.py              app + DB fixtures (transaction rollback per test), signup/create_team/add_member helpers
     ├── unit/                    pure logic: errors, permissions, security, OpenAPI docs rules, repo URLs, model choice
@@ -319,8 +320,8 @@ External accounts, keys, and config have to exist before these items can be buil
 - [x] Model choice per project (`model` on create/update) and `PMAGENT_DEFAULT_MODEL` for new projects
 - [ ] Workspace-level default model and per-workspace provider keys (business plans bring their own keys)
 - [x] Streaming of agent output to clients: the runner reads the graph's stream (collecting results and interrupts as `ainvoke` does) and publishes the PM's text to in-process `RunStreams`; subagents aren't streamed
-- [ ] Streams are per API process: once runs move to a worker (below), publish through Redis
-- [ ] Move runs to a separate worker process (e.g. arq on Redis) so API restarts don't stop them; runs cut off by a restart are marked failed today
+- [x] Streams go through Redis in worker mode (`RedisRunStreams`: snapshot + deltas by position, pub/sub), in-process otherwise
+- [x] Runs in a separate worker process (`PMAGENT_AGENT_RUNS=worker`, arq on Redis): they survive API restarts; a worker cut off mid-run has the job retried from its last checkpoint (never resending the message); Stop aborts the job. `local` (default) keeps runs in the API process
 - [ ] Tracing of agent runs for admins (LangSmith or OpenTelemetry) and token usage per run (feeds FR-28 spend limits)
 - [ ] **FR-36** Optional second approver (P1), and approving from Slack or email (FR-14)
 

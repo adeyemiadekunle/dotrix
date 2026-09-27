@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,7 +19,9 @@ from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
+from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner, mark_interrupted_runs
+from .modules.agents.streams import RedisRunStreams
 from .modules.agents.titles import generate_title
 
 API_VERSION = "0.1.0"
@@ -33,13 +37,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = engine
         app.state.sessionmaker = sessionmaker = create_sessionmaker(engine)
         async with AsyncExitStack() as stack:
-            await mark_interrupted_runs(sessionmaker)
+            queue, streams = None, None
+            if settings.agent_runs == "worker":
+                # Runs execute in the worker; the API enqueues them and serves their streams.
+                redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+                stack.push_async_callback(redis.aclose)
+                queue, streams = RunQueue(redis), RedisRunStreams(redis)
+            else:
+                # Runs execute in this process, so any cut off by the last shutdown are over.
+                await mark_interrupted_runs(sessionmaker)
             app.state.runner = runner = AgentRunner(
                 session_factory=sessionmaker,
                 checkpointer=await open_checkpointer(settings.database_url, stack),
                 model_factory=settings_model_factory(settings),
-                inline=settings.agent_runs_inline,
+                inline=settings.agent_runs == "inline",
                 titler=generate_title,
+                queue=queue,
+                streams=streams,
             )
             yield
             await runner.shutdown()
