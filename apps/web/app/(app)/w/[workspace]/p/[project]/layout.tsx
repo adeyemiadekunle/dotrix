@@ -19,6 +19,7 @@ const TABS = [
   { href: "board", label: "Board" },
   { href: "backlog", label: "Backlog" },
   { href: "chat", label: "Chat" },
+  { href: "knowledge", label: "Knowledge" },
   { href: "docs", label: "Docs" },
   { href: "overview", label: "Overview" },
 ];

@@ -24,7 +24,7 @@ import { useMemo } from "react";
 
 import { useEpics, type BoardFilters, type IssueType, type Scope } from "@/lib/issues";
 import { useMe } from "@/lib/queries";
-import { useSearchParam } from "@/lib/url-state";
+import { useSearchParam, useSetSearchParams } from "@/lib/url-state";
 
 import { AGENTS, AGENT_LABELS, ISSUE_TYPES, TYPE_META, TypeIcon } from "./meta";
 
@@ -38,6 +38,7 @@ export function useFilters() {
   const [assignee, setAssignee] = useSearchParam("assignee");
   const [epic, setEpic] = useSearchParam("epic");
   const [label, setLabel] = useSearchParam("label");
+  const setParams = useSetSearchParams();
 
   const type = useMemo(() => (types ? (types.split(",") as IssueType[]) : []), [types]);
   const server: BoardFilters = useMemo(
@@ -62,13 +63,7 @@ export function useFilters() {
     label,
     setLabel,
     active: Boolean(search || types || assignee || epic || label),
-    clear: () => {
-      // Replace the whole query at once; separate setters would race.
-      const url = new URL(window.location.href);
-      for (const name of ["q", "type", "assignee", "epic", "label"]) url.searchParams.delete(name);
-      window.history.replaceState(null, "", url);
-      setSearch(null);
-    },
+    clear: () => setParams({ q: null, type: null, assignee: null, epic: null, label: null }),
   };
 }
 

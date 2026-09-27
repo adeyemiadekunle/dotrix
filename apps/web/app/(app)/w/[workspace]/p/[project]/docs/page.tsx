@@ -7,6 +7,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { DownloadIcon, EyeIcon, FileTextIcon, FilesIcon, LayersIcon, Loader2Icon } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { useChat } from "@/components/agent/chat-context";
@@ -26,10 +27,12 @@ function ConvertedView({
   scope,
   document,
   onClose,
+  knowledgeHref,
 }: {
   scope: { workspaceId: string; projectId: string };
   document: Document | null;
   onClose: () => void;
+  knowledgeHref?: string;
 }) {
   const file = useQuery({
     queryKey: ["knowledge-file", scope.projectId, document?.knowledge_path],
@@ -50,6 +53,14 @@ function ConvertedView({
           <SheetDescription>
             What the agents read: <code className="font-mono">{document?.knowledge_path}</code>
             {file.data && ` · version ${file.data.version}`}
+            {knowledgeHref && document && (
+              <>
+                {" · "}
+                <Link href={`${knowledgeHref}?file=${document.knowledge_path}`} className="underline underline-offset-4">
+                  Open in Knowledge
+                </Link>
+              </>
+            )}
           </SheetDescription>
         </SheetHeader>
         <div className="px-4 pb-8">
@@ -63,7 +74,7 @@ function ConvertedView({
 }
 
 export default function DocsPage() {
-  const { workspace, scope } = useProjectScope();
+  const { workspace, project, scope } = useProjectScope();
   const documents = useDocuments(scope);
   const members = useMembers(workspace?.id);
   const { uploads, upload, reset } = useUploads();
@@ -172,7 +183,12 @@ export default function DocsPage() {
           </ul>
         )}
       </section>
-      {scope && <ConvertedView scope={scope} document={viewing} onClose={() => setViewing(null)} />}
+      {scope && <ConvertedView
+          scope={scope}
+          document={viewing}
+          onClose={() => setViewing(null)}
+          knowledgeHref={workspace && project ? `/w/${workspace.slug}/p/${project.key}/knowledge` : undefined}
+        />}
     </div>
   );
 }

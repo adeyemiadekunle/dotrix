@@ -10,7 +10,7 @@ export function Markdown({ children, className }: { children: string; className?
   return (
     <div
       className={cn(
-        "text-sm leading-relaxed break-words",
+        "text-sm leading-relaxed break-words [&_code]:[overflow-wrap:anywhere]",
         "[&_a]:underline [&_a]:underline-offset-4 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground",
         "[&_code]:bg-muted [&_code]:rounded [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs",
         "[&_pre]:bg-muted [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0",
