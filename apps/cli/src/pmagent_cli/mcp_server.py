@@ -89,10 +89,12 @@ class _Mirror:
 
     def __init__(self, client: PlatformClient, state: LinkState, pmagent_dir: str) -> None:
         self.client, self.state, self.dir = client, state, pmagent_dir
-        self.last = 0.0
+        # None, not 0.0: the monotonic clock can start near zero (e.g. just after boot, as on a
+        # fresh CI machine), which would make the first pull look recent and skip it.
+        self.last: float | None = None
 
     def refresh(self) -> None:
-        if time.monotonic() - self.last < MIRROR_REFRESH_SECONDS:
+        if self.last is not None and time.monotonic() - self.last < MIRROR_REFRESH_SECONDS:
             return
         self.last = time.monotonic()
         try:

@@ -139,6 +139,22 @@ def test_board_rejects_unknown_agents(platform: FakePlatform, state: LinkState) 
 # -- MCP server in platform mode --------------------------------------------------------
 
 
+def test_mirror_pulls_on_start_even_just_after_boot(
+    platform: FakePlatform, state: LinkState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """time.monotonic() counts from boot on Linux; a freshly booted machine must still pull."""
+    from pmagent_cli import mcp_server
+    from pmagent_engine.config import ProjectConfig
+
+    monkeypatch.setattr(mcp_server.time, "monotonic", lambda: 5.0)
+    platform.put("project.md", "# Kunemi")
+    config = ProjectConfig(name="Kunemi", root_dir=str(tmp_path))
+    Path(config.pmagent_dir).mkdir()
+    state.save(config.pmagent_dir)
+    mcp_server.build_server(config, "codex", client=platform.client())
+    assert (Path(config.pmagent_dir) / "project.md").read_text() == "# Kunemi"
+
+
 async def test_mcp_task_tools_use_the_platform_board(platform: FakePlatform, state: LinkState, tmp_path: Path) -> None:
     from pmagent_cli.mcp_server import build_server
     from pmagent_engine.config import ProjectConfig
