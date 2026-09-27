@@ -40,7 +40,9 @@ export function ChatProvider({ projectId, children }: { projectId: string | unde
   useEffect(() => {
     if (!projectId) return;
     setThreadState(read(`pmagent.thread.${projectId}`));
-    setOpenState(read("pmagent.chatOpen") === "1");
+    // Reopen the panel beside the page on wide screens; on phones it's a sheet over the page,
+    // which should only appear when asked for.
+    setOpenState(read("pmagent.chatOpen") === "1" && window.matchMedia("(min-width: 768px)").matches);
   }, [projectId]);
 
   const setOpen = useCallback((next: boolean) => {

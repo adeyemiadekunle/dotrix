@@ -15,6 +15,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { cn } from "@pmagent/ui/lib/utils";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Board, IssueStatus, IssueSummary, RankTarget } from "@/lib/issues";
@@ -43,32 +44,52 @@ function Column({
   members,
   onOpen,
   canEdit,
+  collapsed,
+  onToggle,
 }: {
   status: IssueStatus;
   issues: IssueSummary[];
   members: MemberMap;
   onOpen: (key: string) => void;
   canEdit: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `${COLUMN_ID}${status}` });
   const meta = STATUS_META[status];
   return (
-    <section className="bg-muted/40 flex w-72 shrink-0 flex-col rounded-xl border md:w-auto md:min-w-0 md:flex-1">
+    // Stacked full width when the board is narrow; side by side (scrolling) when there's room
+    // for a few; sharing the width when there's room for all five. Sized by the board's own
+    // width (container queries), so the chat panel narrowing it works like a smaller screen.
+    <section className="bg-muted/40 flex w-full flex-col rounded-xl border @2xl:w-64 @2xl:shrink-0 @5xl:w-auto @5xl:min-w-0 @5xl:flex-1">
       <header className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium">
-        <span className={cn("size-2 rounded-full", meta.dot)} />
-        {meta.label}
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? "Show" : "Hide"} ${meta.label}`}
+          className="text-muted-foreground hover:text-foreground -ml-1 @2xl:hidden"
+        >
+          {collapsed ? <ChevronRightIcon className="size-4" /> : <ChevronDownIcon className="size-4" />}
+        </button>
+        <span className={cn("size-2 shrink-0 rounded-full", meta.dot)} />
+        <span className="truncate whitespace-nowrap">{meta.label}</span>
         <span className="text-muted-foreground tabular-nums">{issues.length}</span>
       </header>
       <SortableContext items={issues.map((i) => i.key)} strategy={verticalListSortingStrategy}>
         <div
           ref={setNodeRef}
-          className={cn("flex min-h-24 flex-1 flex-col gap-2 p-2 pt-0", isOver && "bg-muted/60 rounded-b-xl")}
+          className={cn(
+            "flex flex-col gap-2 p-2 pt-0 @2xl:min-h-24 @2xl:flex-1",
+            collapsed && "hidden @2xl:flex",
+            isOver && "bg-muted/60 rounded-b-xl",
+          )}
         >
           {issues.map((issue) => (
             <SortableIssueCard key={issue.key} issue={issue} members={members} onOpen={onOpen} disabled={!canEdit} />
           ))}
           {issues.length === 0 && (
-            <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-center text-xs">
+            <p className="text-muted-foreground rounded-lg border border-dashed p-2 text-center text-xs @2xl:p-4">
               {canEdit ? "Drop issues here" : "Nothing here"}
             </p>
           )}
@@ -99,6 +120,8 @@ export function BoardView({
 }) {
   const [columns, setColumns] = useState<Columns>(() => toColumns(board));
   const [active, setActive] = useState<{ issue: IssueSummary; from: IssueStatus } | null>(null);
+  // Stacked (narrow) layout only: finished work starts folded away.
+  const [collapsed, setCollapsed] = useState<Set<IssueStatus>>(() => new Set(["done"]));
 
   // Follow the server whenever it sends a new board, except mid-drag. After a drop the local
   // order stays on screen until the refetch replaces it (or puts it back if the move failed).
@@ -189,17 +212,28 @@ export function BoardView({
         setColumns(toColumns(board));
       }}
     >
-      <div className="flex flex-1 gap-3 overflow-x-auto p-4 md:p-6">
-        {STATUSES.map((status) => (
-          <Column
-            key={status}
-            status={status}
-            issues={visible[status]}
-            members={members}
-            onOpen={onOpen}
-            canEdit={canEdit && !search}
-          />
-        ))}
+      <div className="@container flex min-w-0 flex-1">
+        <div className="flex flex-1 flex-col gap-3 p-4 md:p-6 @2xl:flex-row @2xl:overflow-x-auto">
+          {STATUSES.map((status) => (
+            <Column
+              key={status}
+              status={status}
+              issues={visible[status]}
+              members={members}
+              onOpen={onOpen}
+              canEdit={canEdit && !search}
+              collapsed={collapsed.has(status)}
+              onToggle={() =>
+                setCollapsed((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(status)) next.delete(status);
+                  else next.add(status);
+                  return next;
+                })
+              }
+            />
+          ))}
+        </div>
       </div>
       <DragOverlay>{active && <IssueCard issue={active.issue} members={members} dragging />}</DragOverlay>
     </DndContext>
