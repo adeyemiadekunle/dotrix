@@ -10,13 +10,14 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSkeleton,
   SidebarRail,
   useSidebar,
 } from "@pmagent/ui/components/sidebar";
-import { FolderKanbanIcon, PlusIcon } from "lucide-react";
+import { FolderKanbanIcon, PlusIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
@@ -24,12 +25,15 @@ import { useEffect } from "react";
 import { NavUser } from "@/components/nav-user";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { canManageProjects } from "@/lib/labels";
+import { useWorkspaceApprovals } from "@/lib/agent";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
 
 export function AppSidebar() {
   const pathname = usePathname();
   const { shown: workspace } = useCurrentWorkspace();
   const projects = useProjects(workspace?.id);
+  const approvals = useWorkspaceApprovals(workspace?.id, Boolean(workspace && workspace.role !== "guest"));
+  const waiting = approvals.data?.length ?? 0;
   const { setOpenMobile } = useSidebar();
   // On phones the sidebar is a sheet over the page: close it once you've picked somewhere to go.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
@@ -52,6 +56,19 @@ export function AppSidebar() {
                     <span>Projects</span>
                   </Link>
                 </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === `${base}/approvals`} tooltip="Approvals">
+                  <Link href={`${base}/approvals`}>
+                    <ShieldCheckIcon />
+                    <span>Approvals</span>
+                  </Link>
+                </SidebarMenuButton>
+                {waiting > 0 && (
+                  <SidebarMenuBadge className="bg-warning text-warning-foreground dark:text-background rounded-full px-1.5">
+                    {waiting}
+                  </SidebarMenuBadge>
+                )}
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>

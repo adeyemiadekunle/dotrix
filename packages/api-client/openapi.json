@@ -5744,6 +5744,89 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/approvals": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Workspace Approvals",
+        "description": "Every agent action waiting for a decision across the workspace's projects, oldest first,\nwith the project and the instruction it came from. Decide them per run with\n`POST .../agent/runs/{run_id}/decisions`.",
+        "operationId": "list_workspace_approvals",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceApprovalRead"
+                  },
+                  "title": "Response List Workspace Approvals"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/audit": {
       "get": {
         "tags": [
@@ -10682,6 +10765,154 @@
           "content"
         ],
         "title": "VersionRead"
+      },
+      "WorkspaceApprovalRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Run Id"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "tool": {
+            "type": "string",
+            "title": "Tool",
+            "description": "e.g. write_file, edit_file"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target",
+            "description": "What the action changes, e.g. /pmagent/vision.md"
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args"
+          },
+          "diff": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff",
+            "description": "For file writes: unified diff of what would change"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ApprovalStatus"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "decided_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Id"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_key": {
+            "type": "string",
+            "title": "Project Key"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "run_message": {
+            "type": "string",
+            "title": "Run Message",
+            "description": "The instruction the run was given"
+          },
+          "requested_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By Id",
+            "description": "Who instructed the run"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "run_id",
+          "position",
+          "tool",
+          "target",
+          "args",
+          "diff",
+          "status",
+          "reason",
+          "decided_by_id",
+          "decided_at",
+          "created_at",
+          "project_id",
+          "project_key",
+          "project_name",
+          "run_message",
+          "requested_by_id"
+        ],
+        "title": "WorkspaceApprovalRead",
+        "description": "A pending action with where it's from, for the workspace's approvals queue."
       },
       "WorkspaceCreate": {
         "properties": {

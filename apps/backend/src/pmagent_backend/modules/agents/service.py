@@ -12,6 +12,7 @@ from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocess
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.deps import ProjectAccess
+from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.workspaces.permissions import Permission, has_permission
 from pmagent_engine import approvals as hitl
 
@@ -23,6 +24,7 @@ from .schemas import (
     ArchitectureDraftRequest,
     DecisionsRequest,
     RunCreate,
+    WorkspaceApprovalRead,
 )
 
 # The architecture is set up by owners and admins; only they approve changes to it.
@@ -147,6 +149,27 @@ class AgentService:
             .order_by(AgentApproval.created_at, AgentApproval.position)
         )
         return [ApprovalRead.model_validate(a) for a in result]
+
+    async def workspace_pending(self, workspace_id: uuid.UUID) -> list[WorkspaceApprovalRead]:
+        """Every pending action in the workspace's projects, oldest first."""
+        rows = await self.session.execute(
+            select(AgentApproval, Project.key, Project.name, AgentRun.message, AgentRun.requested_by_id)
+            .join(Project, Project.id == AgentApproval.project_id)
+            .join(AgentRun, AgentRun.id == AgentApproval.run_id)
+            .where(Project.workspace_id == workspace_id, AgentApproval.status == ApprovalStatus.PENDING)
+            .order_by(AgentApproval.created_at, AgentApproval.position)
+        )
+        return [
+            WorkspaceApprovalRead(
+                **ApprovalRead.model_validate(approval).model_dump(),
+                project_id=approval.project_id,
+                project_key=key,
+                project_name=name,
+                run_message=message,
+                requested_by_id=requested_by_id,
+            )
+            for approval, key, name, message, requested_by_id in rows
+        ]
 
     async def decide(
         self, access: ProjectAccess, run_id: uuid.UUID, data: DecisionsRequest

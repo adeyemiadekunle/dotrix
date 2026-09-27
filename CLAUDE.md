@@ -109,11 +109,12 @@ apps/web/
 │   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
 │   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /w/[workspace], /w/[workspace]/projects/new, /w/[workspace]/p/[KEY]/{board,backlog,docs,overview}, /settings
+│   └── (app)/                   signed-in shell (sidebar): /w/[workspace], /w/[workspace]/{approvals,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,docs,overview}, /settings
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
-│   └── documents/               dropzone, queued files, upload progress
-└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, documents.ts, repo.ts, url-state.ts, labels.ts
+│   ├── documents/               dropzone, queued files, upload progress
+│   └── agent/                   chat panel and context, conversation, approvals (diff view, decisions)
+└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, documents.ts, repo.ts, url-state.ts, labels.ts
 packages/ui/src/
 ├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
 └── styles/globals.css           Tailwind entry + theme tokens (light and .dark)
@@ -137,7 +138,9 @@ packages/ui/src/
 - [x] Shell: sign-in via httpOnly-cookie session and API proxy, auth pages, sidebar with workspace switcher (including workspaces seen through an organisation), create workspace/project, settings (profile, appearance, devices and tokens)
 - [x] Board (drag between statuses and within a column to rank; filters in the URL: search, type, assignee including "me", epic, label), issue drawer (`?issue=KEY`: every field, Markdown description, dependencies, activity log, comments, watch), new-issue dialog, backlog (drag to rank, epic progress, filter by epic)
 - [ ] Board keyboard drag only reorders within a column; add a multi-container keyboard coordinate getter so arrow keys can move between columns (the drawer's Status field covers it meanwhile)
-- [ ] Chat with the PM in a side panel plus a full page, with inline approvals (approve / reject with reason / diff); workspace approvals queue
+- [x] Chat with the PM: a panel beside every project page (a sheet on phones) and a full Chat tab with the conversation list; suggestions and the daily briefing to start; runs polled while working (and slower while waiting, so decisions made elsewhere show up); inline approvals with coloured diffs or the fields an issue action sets, approve / reject with a reason, all of a run's decisions sent together
+- [x] Workspace Approvals page and sidebar count (`GET /v1/workspaces/{id}/approvals`); Docs tab "Draft architecture overview" (owners and admins) opens the run in the panel
+- [ ] Stream agent output instead of polling (needs the backend streaming TODO); a stop button for a running run
 - [x] Project setup on the web (`/w/[ws]/projects/new`, owners and admins): start from an existing repo (pasted address; public GitHub repos are looked up to confirm and prefill) or documents only, with documents uploaded as part of creating it; Docs tab (upload, list, view the converted Markdown, download originals); link, change, or unlink the repo later from Overview
 - [ ] "Connect GitHub" (needs FR-10's GitHub App): pick a repo from your account, private repos, "new repository"
 - [ ] Knowledge browser (`.pmagent/` tree, Markdown view, version history, diff, restore)

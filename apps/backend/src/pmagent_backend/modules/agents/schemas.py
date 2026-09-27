@@ -43,6 +43,16 @@ class ApprovalRead(BaseModel):
     created_at: datetime
 
 
+class WorkspaceApprovalRead(ApprovalRead):
+    """A pending action with where it's from, for the workspace's approvals queue."""
+
+    project_id: uuid.UUID
+    project_key: str
+    project_name: str
+    run_message: str = Field(description="The instruction the run was given")
+    requested_by_id: uuid.UUID | None = Field(description="Who instructed the run")
+
+
 class AgentRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
