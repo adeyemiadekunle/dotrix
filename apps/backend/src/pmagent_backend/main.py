@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 
@@ -19,7 +21,7 @@ from .core.ratelimit import build_rate_limiter
 from .core.settings import Settings, get_settings
 from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
-from .jobs import JOBS
+from .jobs import CLEANUP_INTERVAL_SECONDS, JOBS
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
@@ -28,6 +30,16 @@ from .modules.agents.streams import RedisRunStreams
 from .modules.agents.titles import generate_title
 
 API_VERSION = "0.1.0"
+logger = logging.getLogger(__name__)
+
+
+async def _clean_up_hourly(jobs: LocalJobs) -> None:
+    while True:
+        try:
+            await jobs.enqueue("cleanup_expired")
+        except Exception:
+            logger.exception("scheduling cleanup failed")
+        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -68,7 +80,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 queue=queue,
                 streams=streams,
             )
+            cleanup = None
+            if local_jobs is not None:
+                # No worker (and so no cron) in local mode: clean up from here, hourly.
+                cleanup = asyncio.create_task(_clean_up_hourly(local_jobs))
             yield
+            if cleanup is not None:
+                cleanup.cancel()
             await runner.shutdown()
             if local_jobs is not None:
                 await local_jobs.drain()

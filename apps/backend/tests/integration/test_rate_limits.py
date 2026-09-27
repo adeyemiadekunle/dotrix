@@ -30,7 +30,8 @@ async def test_login_is_limited_per_email(db_client: AsyncClient, rate_limited, 
     assert blocked.headers["content-type"] == "application/problem+json"
     assert blocked.json()["type"].endswith("/rate_limited")
     assert blocked.json()["detail"].startswith("Too many attempts. Try again in")
-    assert 1 <= int(blocked.headers["retry-after"]) <= 900
+    # Up to two windows: the rest of this one, then until its weight fades from the next.
+    assert 1 <= int(blocked.headers["retry-after"]) <= 1800
     # Even the right password waits: the limit is on attempts, not failures.
     right = await db_client.post("/v1/auth/login", json={"email": ada.email, "password": ada.password})
     assert right.status_code == 429

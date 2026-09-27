@@ -42,14 +42,17 @@ def _estimate(current: int, previous: int, elapsed: float, window: int) -> float
 
 
 def _retry_after(current: int, previous: int, elapsed: float, limit: Limit) -> float | None:
+    """None if this attempt is allowed; otherwise how long until the next one will be (it
+    counts too, as rejected attempts do)."""
     window, allowed = limit.window_seconds, limit.count
     if _estimate(current, previous, elapsed, window) <= allowed:
         return None
-    if current <= allowed:
-        # Only the previous window's weight is over: wait until enough of it has faded.
-        return max(1.0, window * (1 - (allowed - current) / previous) - elapsed)
-    # This window alone is over: wait for it to end and then for its weight to fade.
-    return max(1.0, (window - elapsed) + window * (1 - allowed / current))
+    room = allowed - (current + 1)
+    if room >= 0 and previous:
+        # Allowed later in this window, once enough of the previous window's weight has faded.
+        return max(1.0, window * (1 - room / previous) - elapsed)
+    # Not in this window: wait for it to end, then for its weight to fade in the next.
+    return max(1.0, (window - elapsed) + window * (1 - (allowed - 1) / current))
 
 
 class MemoryRateLimiter:

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import ApiToken, DeviceAuthorization, DeviceStatus
@@ -56,3 +57,9 @@ class DeviceAuthorizationRepository:
             .where(DeviceAuthorization.device_code_hash == code_hash)
             .with_for_update()
         )
+
+    async def delete_stale(self, before: datetime) -> int:
+        """Cleanup: sign-in attempts that expired before `before`, whatever their outcome
+        (a device that got its token has an API token row of its own)."""
+        result = await self.session.execute(delete(DeviceAuthorization).where(DeviceAuthorization.expires_at < before))
+        return result.rowcount

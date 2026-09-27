@@ -15,7 +15,7 @@ import uuid
 from contextlib import AsyncExitStack
 from typing import Any
 
-from arq import func
+from arq import cron, func
 from arq.connections import RedisSettings
 from arq.worker import Function, Retry, run_worker
 
@@ -24,7 +24,7 @@ from .core.jobs import QUEUE_NAME, JobContext, JobFunction
 from .core.logging import configure_logging
 from .core.settings import get_settings
 from .db.session import create_engine, create_sessionmaker
-from .jobs import JOBS
+from .jobs import JOBS, cleanup_expired
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
@@ -84,11 +84,17 @@ def job_function(name: str, job: JobFunction, backoff_seconds: float = 10) -> Fu
     return func(run, name=name, timeout=JOB_TIMEOUT, max_tries=JOB_MAX_TRIES)
 
 
+async def cleanup(ctx: dict[str, Any]) -> None:
+    await cleanup_expired(ctx["jobs"])
+
+
 class WorkerSettings:
     functions = [
         func(run_agent, timeout=RUN_TIMEOUT_SECONDS, max_tries=RUN_MAX_TRIES),
         *(job_function(name, job) for name, job in JOBS.items()),
     ]
+    # Hourly; arq gives each run a unique job ID, so with several workers only one does it.
+    cron_jobs = [cron(cleanup, minute={17}, run_at_startup=True)]
     queue_name = QUEUE_NAME
     on_startup = startup
     on_shutdown = shutdown

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -63,3 +63,13 @@ class InviteRepository:
             )
             .values(revoked_at=now)
         )
+
+    async def delete_stale(self, before: datetime) -> int:
+        """Cleanup, across workspaces (deleting only): invites that expired, were revoked, or
+        were accepted before `before`. The audit log keeps the history."""
+        result = await self.session.execute(
+            delete(Invite).where(
+                or_(Invite.expires_at < before, Invite.revoked_at < before, Invite.accepted_at < before)
+            )
+        )
+        return result.rowcount
