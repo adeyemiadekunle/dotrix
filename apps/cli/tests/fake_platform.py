@@ -12,6 +12,7 @@ from pmagent_cli.platform import PlatformClient
 WS, PID = "ws-1", "proj-1"
 KB = f"/v1/workspaces/{WS}/projects/{PID}/knowledge"
 ISSUES = f"/v1/workspaces/{WS}/projects/{PID}/issues"
+AGENT = f"/v1/workspaces/{WS}/projects/{PID}/agent"
 
 
 def sha(text: str) -> str:
@@ -25,6 +26,10 @@ class FakePlatform:
         self.requests: list[httpx.Request] = []
         self.issues: dict[str, dict[str, Any]] = {}
         self.device_polls: list[str] = []  # scripted answers for /auth/device/token
+        # Agent runs: each GET of a run, and each decision, returns the next scripted state.
+        self.agent_script: list[dict[str, Any]] = []
+        self.deny_decisions = False  # answer decisions with 403 (role can't approve)
+        self.runs_started: list[dict[str, Any]] = []
 
     # -- state changes, as if someone edited on the platform ----------------------------
     def put(self, path: str, content: str) -> None:
@@ -66,6 +71,17 @@ class FakePlatform:
             if answer == "ok":
                 return httpx.Response(200, json={"id": "tok-1", "token": "pmat_new"})
             return self.problem(400, answer)
+        if path in (AGENT + "/runs", AGENT + "/briefing") and method == "POST":
+            self.runs_started.append(body)
+            run = {"id": "run-1", "thread_id": body.get("thread_id") or "thread-1", "status": "queued",
+                   "approvals": [], "reply": None, "error": None}
+            return httpx.Response(202, json=run)
+        if path.startswith(AGENT + "/runs/") and path.endswith("/decisions"):
+            if self.deny_decisions:
+                return self.problem(403, "forbidden")
+            return httpx.Response(200, json=self._next_run())
+        if path.startswith(AGENT + "/runs/") and method == "GET":
+            return httpx.Response(200, json=self._next_run())
         if path == ISSUES + "/claim":
             if not self.issues:
                 return self.problem(404, "nothing_ready")
@@ -85,6 +101,10 @@ class FakePlatform:
             return httpx.Response(200, json=list(self.issues.values()))
         return self.problem(404, "not_found")
 
+    def _next_run(self) -> dict[str, Any]:
+        state = self.agent_script.pop(0) if len(self.agent_script) > 1 else self.agent_script[0]
+        return {"id": "run-1", "thread_id": "thread-1", "approvals": [], "reply": None, "error": None, **state}
+
     @staticmethod
     def problem(status: int, code: str) -> httpx.Response:
         return httpx.Response(status, json={"type": f"https://pmagent.dev/problems/{code}", "detail": code})
@@ -96,3 +116,7 @@ class FakePlatform:
 def issue(key: str, **fields: Any) -> dict[str, Any]:
     return {"key": key, "type": "task", "title": f"Issue {key}", "status": "todo", "priority": "medium",
             "assignee_user_id": None, "assignee_agent": None, "parent_key": None, **fields}
+
+
+def approval(approval_id: str, tool: str = "write_file", target: str = "/pmagent/roadmap.md", **extra: Any) -> dict:
+    return {"id": approval_id, "tool": tool, "target": target, "args": {}, "diff": None, "status": "pending", **extra}
