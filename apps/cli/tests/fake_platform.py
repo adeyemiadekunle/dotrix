@@ -71,6 +71,8 @@ class FakePlatform:
             if answer == "ok":
                 return httpx.Response(200, json={"id": "tok-1", "token": "pmat_new"})
             return self.problem(400, answer)
+        if path.startswith("/v1/me/tokens/") and method == "DELETE":
+            return httpx.Response(204)
         if path in (AGENT + "/runs", AGENT + "/briefing") and method == "POST":
             self.runs_started.append(body)
             run = {"id": "run-1", "thread_id": body.get("thread_id") or "thread-1", "status": "queued",

@@ -37,9 +37,24 @@ class PlatformError(Exception):
         self.status, self.code, self.detail = status, code, detail
 
 
+NO_KEYCHAIN_HINT = (
+    "This machine has no OS keychain (common on servers, CI, and containers), so pmagent can't "
+    "store a sign-in here. Set PMAGENT_TOKEN to an API token instead (create one in the web app, "
+    "or POST /v1/me/tokens), or install a keyring backend such as keyrings.alt."
+)
+
+
 class NotSignedIn(PlatformError):
-    def __init__(self, url: str) -> None:
-        super().__init__(401, "not_signed_in", f"Not signed in to {url}. Run `pmagent login`.")
+    def __init__(self, url: str, *, no_keychain: bool = False) -> None:
+        detail = f"Not signed in to {url}. Run `pmagent login`."
+        if no_keychain:
+            detail = f"Not signed in to {url}. {NO_KEYCHAIN_HINT}"
+        super().__init__(401, "not_signed_in", detail)
+
+
+class KeychainUnavailable(PlatformError):
+    def __init__(self) -> None:
+        super().__init__(0, "no_keychain", NO_KEYCHAIN_HINT)
 
 
 # -- credentials ---------------------------------------------------------------------
@@ -58,10 +73,21 @@ class CredentialStore(Protocol):
 
 
 class KeyringStore:
+    """The OS keychain. Machines without one (headless Linux, containers, CI) behave as
+    "not signed in" rather than crashing; `unavailable` says why."""
+
+    def __init__(self) -> None:
+        self.unavailable = False
+
     def get(self, url: str) -> Credential | None:
         import keyring
+        from keyring.errors import KeyringError
 
-        raw = keyring.get_password(KEYRING_SERVICE, url)
+        try:
+            raw = keyring.get_password(KEYRING_SERVICE, url)
+        except KeyringError:
+            self.unavailable = True
+            return None
         if not raw:
             return None
         data = json.loads(raw)
@@ -69,18 +95,23 @@ class KeyringStore:
 
     def set(self, url: str, credential: Credential) -> None:
         import keyring
+        from keyring.errors import KeyringError
 
-        keyring.set_password(
-            KEYRING_SERVICE, url, json.dumps({"token": credential.token, "token_id": credential.token_id})
-        )
+        try:
+            keyring.set_password(
+                KEYRING_SERVICE, url, json.dumps({"token": credential.token, "token_id": credential.token_id})
+            )
+        except KeyringError as exc:
+            self.unavailable = True
+            raise KeychainUnavailable() from exc
 
     def delete(self, url: str) -> None:
         import keyring
-        from keyring.errors import PasswordDeleteError
+        from keyring.errors import KeyringError
 
         try:
             keyring.delete_password(KEYRING_SERVICE, url)
-        except PasswordDeleteError:
+        except KeyringError:  # not stored, or no keychain at all: nothing to remove
             pass
 
 
@@ -118,9 +149,10 @@ class PlatformClient:
     @classmethod
     def signed_in(cls, url: str | None = None, store: CredentialStore | None = None) -> PlatformClient:
         resolved = api_url(url)
+        store = store or KeyringStore()
         credential = load_credential(resolved, store)
         if credential is None:
-            raise NotSignedIn(resolved)
+            raise NotSignedIn(resolved, no_keychain=getattr(store, "unavailable", False))
         return cls(resolved, credential.token)
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
@@ -169,7 +201,7 @@ def device_login(
     *,
     show: Callable[[str, str, str], None],
     open_browser: bool = True,
-    sleep: Callable[[float], None] = time.sleep,
+    sleep: Callable[[float], None] | None = None,
     scopes: list[str] | None = None,
 ) -> Credential:
     """Start a device login, let the user approve it in the browser, and return the token.
@@ -183,6 +215,7 @@ def device_login(
             webbrowser.open(start["verification_uri_complete"])
         except Exception:  # noqa: BLE001 - no browser is fine; the URL was printed
             pass
+    sleep = sleep or time.sleep  # looked up at call time, so tests can patch it
     interval = float(start["interval"])
     deadline = time.monotonic() + float(start["expires_in"])
     while time.monotonic() < deadline:

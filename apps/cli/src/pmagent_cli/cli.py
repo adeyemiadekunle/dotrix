@@ -33,6 +33,7 @@ from pmagent_engine.jobs import get_job, list_jobs, resume_job, start_job
 from .agent_client import Outcome, PlatformAgent
 from .board import CODING_AGENTS, PlatformBoard
 from .platform import (
+    KeychainUnavailable,
     KeyringStore,
     PlatformClient,
     PlatformError,
@@ -670,7 +671,16 @@ def login(
         typer.echo(f"(or open {complete})  Waiting for approval…")
 
     credential = _platform_call(lambda: device_login(client, show=show, open_browser=not no_browser))
-    KeyringStore().set(target, credential)
+    try:
+        KeyringStore().set(target, credential)
+    except KeychainUnavailable as exc:
+        # Don't leave a token behind that nothing can use.
+        if credential.token_id:
+            try:
+                PlatformClient(target, credential.token).delete(f"/me/tokens/{credential.token_id}")
+            except PlatformError:
+                pass
+        _fail(str(exc))
     me = _platform_call(lambda: PlatformClient(target, credential.token).get("/me"))
     typer.secho(f"Signed in to {target} as {me['email']}", fg=typer.colors.GREEN)
 
