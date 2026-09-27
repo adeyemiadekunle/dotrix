@@ -21,6 +21,7 @@ uv sync                                   # install all Python packages
 uv run pytest                             # Python tests
 uv run ruff check apps packages --fix     # lint (rules pinned in root pyproject.toml)
 pnpm install && pnpm build && pnpm typecheck
+pnpm dev:web                              # web app on :3000 (talks to the API through its own /api/v1 proxy)
 pnpm dev:backend                          # API on :8000, OpenAPI at /docs (python -m pmagent_backend.serve: selector loop on Windows)
 pnpm db:up && pnpm db:migrate             # Postgres, Redis, MinIO (console :9001), then apply migrations
 pnpm db:revision "add issues"             # autogenerate a migration after model changes
@@ -96,6 +97,47 @@ apps/backend/
 - **API:** versioned under `/v1`. Docs at `/docs` (Swagger) and `/redoc`. The OpenAPI schema is the contract for `packages/api-client`: run `pnpm openapi` after any API change and commit `openapi.json` + `src/schema.ts` (CI checks they're current).
 - **Documenting routes:** every route gets a docstring (shown in Swagger) and `responses=errors(...)` listing the error statuses it can return (`core/openapi.py`). Operation IDs are the function names and become the TS client's names, so name route functions carefully and don't rename them casually. Describe new tags in `core/openapi.py` `TAGS`. `tests/unit/test_openapi.py` enforces this.
 
+## Web app (`apps/web`)
+
+Next.js 16 (App Router, `proxy.ts` not middleware), Tailwind CSS 4, shadcn/ui, TanStack Query, and the typed `@pmagent/api-client`.
+
+```
+apps/web/
+├── proxy.ts                     optimistic sign-in check: redirects to /login?next=… without a session cookie
+├── app/
+│   ├── layout.tsx, providers.tsx  theme (next-themes, default "system"), React Query, tooltips, toasts
+│   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
+│   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
+│   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
+│   └── (app)/                   signed-in shell (sidebar): /w/[workspace], /w/[workspace]/p/[KEY], /settings
+├── components/                  app components (sidebar, switcher, dialogs, form helpers, empty/not-found states)
+└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, labels.ts
+packages/ui/src/
+├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
+└── styles/globals.css           Tailwind entry + theme tokens (light and .dark)
+```
+
+**Conventions**
+
+- **Tokens never reach the browser.** The access and refresh tokens are httpOnly cookies. Pages call the API only through `api` (`lib/api.ts`), which goes to `/api/v1/*`. Refreshes are shared per token (`lib/session.ts`), because the backend treats a reused refresh token as theft.
+- **Data:** TanStack Query with `unwrap(api.GET(...))`. Keys start with the resource (`["projects", workspaceId]`); invalidate those keys after mutations.
+- **URLs use slugs and keys, never UUIDs:** `/w/{workspace slug}/p/{PROJECT KEY}`. Resolve them from the cached lists (`useCurrentWorkspace`, `useCurrentProject`).
+- **UI:**
+  - Use shadcn components from `@pmagent/ui/components/*` and Tailwind tokens (`bg-muted`, `text-muted-foreground`, `bg-brand`, `bg-warning-muted`), never raw colours, so light and dark mode both work.
+  - Write copy in sentence case.
+  - Show controls by role (`lib/labels.ts`), but the API is what enforces access.
+- **Theme:** Settings → Appearance (System / Light / Dark). It defaults to System and is stored in the browser.
+- The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@pmagent/ui/lib/utils` and `@/hooks/…` → `@pmagent/ui/hooks/…`.
+
+## TODO: web (build order)
+
+- [x] Shell: sign-in via httpOnly-cookie session and API proxy, auth pages, sidebar with workspace switcher (including workspaces seen through an organisation), create workspace/project, settings (profile, appearance, devices and tokens)
+- [ ] Board (drag between statuses, filters), issue drawer (fields, description, log, comments), backlog (drag to rank, epics)
+- [ ] Chat with the PM in a side panel plus a full page, with inline approvals (approve / reject with reason / diff); workspace approvals queue
+- [ ] Knowledge browser (`.pmagent/` tree, Markdown view, version history, diff, restore) and doc upload
+- [ ] Briefing; project settings (model, agent rules, export); members, invites, and roles; audit log; organisation pages
+- [ ] Automated UI tests (Playwright) for sign-in and the main flows
+
 ## TODO: backend (priority order)
 
 Work top to bottom; each item depends on the ones above it. FR numbers refer to [docs/prd.md](docs/prd.md).
@@ -119,7 +161,7 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 - [x] **FR-4** Invites by email and by link; revoke invites; remove members; change roles; Owner transfer
 - [x] **FR-6** Device-login flow for the CLI and external tools; scoped, revocable personal access tokens (backend)
 - [x] **FR-6** `pmagent login` / `logout` / `whoami` in `apps/cli` using the device flow; token in the OS keychain (`keyring`), `PMAGENT_TOKEN` for CI
-- [ ] Web pages the backend now links to: `/verify-email`, `/reset-password`, `/invites/accept`, `/device` (apps/web)
+- [x] Web pages the backend now links to: `/verify-email`, `/reset-password`, `/invites/accept`, `/device` (apps/web)
 - [ ] Cleanup job: delete expired device authorizations, used/expired action tokens and invites, and old revoked refresh tokens
 - [ ] Cross-workspace isolation test suite (NFR multi-tenancy), required before beta — started in `tests/integration/test_workspaces.py`; extend for every new workspace-scoped resource
 - [ ] Rate-limit sign-up, login, password reset, and verification resend per IP and per email (Redis)
