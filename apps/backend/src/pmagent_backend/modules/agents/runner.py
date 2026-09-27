@@ -25,6 +25,7 @@ from pmagent_engine import approvals as hitl
 from pmagent_engine.agent import build_team
 from pmagent_engine.layout import AGENTS
 
+from .board_tools import BoardContext, board_instructions, build_board_tools
 from .llm import ModelFactory
 from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
@@ -105,7 +106,7 @@ class AgentRunner:
                 rules = await self._rules(session, project.id)
                 kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
-                name, description = project.name, project.description
+                name, description, project_key = project.name, project.description, project.key
                 choice = self.model_factory(project)
 
             backend = CompositeBackend(
@@ -120,6 +121,15 @@ class AgentRunner:
                     )
                 },
             )
+            read_tools, pm_write_tools, specialist_write_tools = build_board_tools(
+                BoardContext(
+                    session_factory=self.session_factory,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    instructed_by_id=instructed_by,
+                    approved_by_id=approved_by_id,
+                )
+            )
             agent = build_team(
                 name,
                 description,
@@ -128,6 +138,9 @@ class AgentRunner:
                 checkpointer=self.checkpointer,
                 web_search=choice.web_search,
                 rules=rules,
+                task_tools=(read_tools, pm_write_tools),
+                subagent_task_tools=specialist_write_tools,
+                board_instructions=board_instructions(project_key),
             )
             config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": RECURSION_LIMIT}
             result = await agent.ainvoke(graph_input, config)
@@ -231,8 +244,12 @@ async def mark_interrupted_runs(session_factory: SessionFactory) -> None:
 
 
 def _preview(action: dict, files: dict[str, str]) -> tuple[str | None, str | None]:
-    """(target, unified diff) for file writes; (None, None) for other tools."""
+    """(target, unified diff) for file writes; a readable target for board changes."""
     args = action.get("args") or {}
+    if isinstance(args, dict) and action.get("tool") == "create_issue":
+        return f"new {args.get('type', 'issue')}: {args.get('title', '')}".strip(), None
+    if isinstance(args, dict) and action.get("tool") in ("update_issue", "comment_issue"):
+        return str(args.get("key") or "") or None, None
     path = args.get("file_path") if isinstance(args, dict) else None
     if action.get("tool") not in ("write_file", "edit_file") or not isinstance(path, str):
         return None, None

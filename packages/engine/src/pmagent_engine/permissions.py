@@ -8,8 +8,8 @@ Every agent can read everything. Writes are scoped by folder:
 - READ:    no writes
 
 The platform enforces this on every agent write; it is not just a prompt.
-Issues and sprints are also governed by the issue API (which issue types each
-agent may create); this table covers them as files.
+Issues are governed by `can_create_issue` / `can_edit_issues` below (the PRD's
+"issues/, sprints/" row); the folder table covers them as files.
 """
 from __future__ import annotations
 
@@ -64,3 +64,24 @@ def access(agent: str, path: str) -> Access:
 def can_write(agent: str, path: str) -> bool:
     """Whether the agent may write the file itself (WRITE, or TIDY for Documentation)."""
     return access(agent, path) in (Access.WRITE, Access.TIDY)
+
+
+# PRD "issues/, sprints/" row: the PM writes the board; specialists may only open
+# new issues of their own kind (with approval), never edit others' issues.
+ISSUE_TYPES = ("epic", "story", "task", "bug", "spike", "sub-task")
+ISSUE_CREATE_TYPES: dict[str, frozenset[str]] = {
+    PM: frozenset(ISSUE_TYPES),
+    PRODUCT: frozenset({"epic", "story"}),
+    ARCH: frozenset({"task"}),
+    RESEARCH: frozenset({"spike"}),
+    REVIEWER: frozenset({"bug"}),
+}
+
+
+def can_create_issue(agent: str, issue_type: str) -> bool:
+    return issue_type in ISSUE_CREATE_TYPES.get(agent, frozenset())
+
+
+def can_edit_issues(agent: str) -> bool:
+    """Change fields and status of existing issues (including closing them, with approval)."""
+    return agent == PM

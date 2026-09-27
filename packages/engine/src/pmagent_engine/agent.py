@@ -273,16 +273,24 @@ def build_team(
     task_tools: tuple[list, list] | None = None,
     web_search: dict | None = None,
     rules: dict[str, str] | None = None,
+    board_instructions: str | None = None,
+    subagent_task_tools: list | None = None,
 ):
     """The Project Manager plus five thinking subagents, over any storage backend.
 
     `backend` must serve the project's `.pmagent/` under `/pmagent/`. `model` is a
     "provider:model" string or a chat model instance. `rules` maps role names
     ("base", "project-manager", "product", ...) to agent-rules/ text. Without
-    `task_tools`, the board section is left out of the PM's instructions.
+    `task_tools`, the board section is left out of the PM's instructions;
+    `board_instructions` replaces it (the platform's issue board differs from the
+    CLI's task files). `subagent_task_tools` are extra board tools the specialists
+    get (e.g. opening their own issue types); they're gated like every write.
     """
     read_task_tools, write_task_tools = task_tools or ([], [])
-    board = _BOARD_SECTION if task_tools else ""
+    if board_instructions is not None:
+        board = board_instructions
+    else:
+        board = _BOARD_SECTION if task_tools else ""
     board_source = ", and the task board" if task_tools else ""
 
     pm_instructions = f"""You are the Project Manager for {project_name}.
@@ -332,7 +340,9 @@ blockers, and documentation status. A briefing never writes.
         model=model,
         tools=[*read_task_tools, *write_task_tools, *([web_search] if web_search else [])],
         system_prompt=_with_rules(rules, PM_ROLE, pm_instructions),
-        subagents=_subagents(project_name, read_task_tools, web_search, rules),
+        subagents=_subagents(
+            project_name, [*read_task_tools, *(subagent_task_tools or [])], web_search, rules
+        ),
         backend=backend,
         checkpointer=checkpointer,
         interrupt_on=interrupt_on,

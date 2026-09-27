@@ -1,7 +1,7 @@
 import pytest
 
 from pmagent_engine.layout import AGENTS
-from pmagent_engine.permissions import Access, access, can_write
+from pmagent_engine.permissions import Access, access, can_create_issue, can_edit_issues, can_write
 
 R, W, P, T = Access.READ, Access.WRITE, Access.PROPOSE, Access.TIDY
 AGENT_ORDER = ("project-manager", "product", "architecture", "research", "reviewer", "documentation", "coding")
@@ -47,3 +47,25 @@ def test_can_write_allows_write_and_tidy_only() -> None:
 
 def test_unknown_agent_is_read_only() -> None:
     assert access("someone", "requirements/product.md") is Access.READ
+
+
+@pytest.mark.parametrize(
+    ("agent", "allowed"),
+    [
+        ("project-manager", {"epic", "story", "task", "bug", "spike", "sub-task"}),
+        ("product", {"epic", "story"}),
+        ("architecture", {"task"}),
+        ("research", {"spike"}),
+        ("reviewer", {"bug"}),
+        ("documentation", set()),
+        ("coding", set()),
+    ],
+)
+def test_issue_types_each_agent_may_create(agent: str, allowed: set[str]) -> None:
+    for issue_type in ("epic", "story", "task", "bug", "spike", "sub-task"):
+        assert can_create_issue(agent, issue_type) is (issue_type in allowed), (agent, issue_type)
+
+
+def test_only_the_pm_edits_issues() -> None:
+    assert can_edit_issues("project-manager")
+    assert not any(can_edit_issues(a) for a in AGENTS if a != "project-manager")
