@@ -76,7 +76,7 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 ))}
               {projects.data?.map((project) => {
-                const href = `${base}/p/${project.key}`;
+                const href = `${base}/p/${project.key}`; // opens the board
                 return (
                   <SidebarMenuItem key={project.id}>
                     <SidebarMenuButton asChild isActive={pathname.startsWith(href)} tooltip={project.name}>

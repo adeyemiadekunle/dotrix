@@ -25,7 +25,10 @@ export class ApiError extends Error {
     readonly status: number,
     readonly problem?: ProblemDetail,
   ) {
-    super(problemMessage(problem) ?? `Request failed (${status})`);
+    super(
+      problemMessage(problem) ??
+        (status === 404 || status >= 500 ? `the server isn't responding (${status})` : `request failed (${status})`),
+    );
   }
 }
 
