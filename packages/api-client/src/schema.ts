@@ -57,6 +57,7 @@ export interface paths {
          * Signup
          * @description Create an account and sign in. Also creates your personal workspace and emails a
          *     verification link. Email is case-insensitive; passwords are 10–128 characters.
+         *     Rate-limited per IP and per email.
          */
         post: operations["signup"];
         delete?: never;
@@ -77,7 +78,8 @@ export interface paths {
         /**
          * Login
          * @description Exchange email and password for an access token (15 min) and a refresh token.
-         *     A wrong password and an unknown email give the same 401.
+         *     A wrong password and an unknown email give the same 401. Rate-limited per IP and per
+         *     email (10 attempts in 15 minutes).
          */
         post: operations["login"];
         delete?: never;
@@ -158,7 +160,7 @@ export interface paths {
         put?: never;
         /**
          * Resend Verification
-         * @description Email a new verification link. Earlier links stop working.
+         * @description Email a new verification link. Earlier links stop working. Rate-limited.
          */
         post: operations["resend_verification"];
         delete?: never;
@@ -178,7 +180,8 @@ export interface paths {
         put?: never;
         /**
          * Request Password Reset
-         * @description Email a password-reset link. Always 202, whether or not the account exists.
+         * @description Email a password-reset link. Always 202, whether or not the account exists (the
+         *     lookup happens in the background). Rate-limited per IP and per email.
          */
         post: operations["request_password_reset"];
         delete?: never;
@@ -3073,6 +3076,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
+            /** @description Too many attempts; the Retry-After header says how many seconds to wait */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
         };
     };
     login: {
@@ -3108,6 +3120,15 @@ export interface operations {
             };
             /** @description Request body or parameters failed validation */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Too many attempts; the Retry-After header says how many seconds to wait */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3257,6 +3278,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
+            /** @description Too many attempts; the Retry-After header says how many seconds to wait */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
         };
     };
     request_password_reset: {
@@ -3283,6 +3313,15 @@ export interface operations {
             };
             /** @description Request body or parameters failed validation */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Too many attempts; the Retry-After header says how many seconds to wait */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

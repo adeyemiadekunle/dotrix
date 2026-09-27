@@ -9,7 +9,8 @@ from typing import Any
 from arq.jobs import Job
 from uuid_utils.compat import uuid7
 
-QUEUE_NAME = "pmagent:agent-runs"
+from pmagent_backend.core.jobs import QUEUE_NAME
+
 KEY_TTL_SECONDS = 24 * 3600
 
 

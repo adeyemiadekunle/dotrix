@@ -1,9 +1,10 @@
-"""The agent-run worker: `python -m pmagent_backend.worker` (`pnpm dev:worker`).
+"""The background worker: `python -m pmagent_backend.worker` (`pnpm dev:worker`).
 
-Executes the runs the API enqueues when PMAGENT_AGENT_RUNS=worker (arq on Redis). Runs
-survive API restarts; if the worker itself stops mid-run, the job is retried and continues
-from its last checkpoint. Stop (from the API) aborts the job. Run as many workers as you
-like: each run step goes to one of them.
+Executes what the API enqueues when PMAGENT_JOBS=worker (arq on Redis): agent runs, and the
+jobs in `pmagent_backend.jobs` (emails, password-reset requests). Work survives API restarts.
+If the worker stops mid-run, the run is retried and continues from its last checkpoint; a
+job that fails is retried with backoff. Stop (from the API) aborts a run. Run as many
+workers as you like: each job goes to one of them.
 """
 from __future__ import annotations
 
@@ -16,22 +17,27 @@ from typing import Any
 
 from arq import func
 from arq.connections import RedisSettings
-from arq.worker import run_worker
+from arq.worker import Function, Retry, run_worker
 
+from .core.email import build_email_sender
+from .core.jobs import QUEUE_NAME, JobContext, JobFunction
 from .core.logging import configure_logging
 from .core.settings import get_settings
 from .db.session import create_engine, create_sessionmaker
+from .jobs import JOBS
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
-from .modules.agents.queue import QUEUE_NAME, RunQueue
+from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner
 from .modules.agents.streams import RedisRunStreams
 from .modules.agents.titles import generate_title
 
 logger = logging.getLogger(__name__)
 
-JOB_TIMEOUT_SECONDS = 60 * 60  # an agent run can take a while (research, many approvals' worth of work)
-MAX_TRIES = 3  # a run cut off by a worker restart is retried from its last checkpoint
+RUN_TIMEOUT_SECONDS = 60 * 60  # an agent run can take a while (research, many approvals' worth of work)
+RUN_MAX_TRIES = 3  # a run cut off by a worker restart is retried from its last checkpoint
+JOB_TIMEOUT = 60
+JOB_MAX_TRIES = 5  # e.g. the email provider is briefly down: retried after 10s, 20s, 30s, 40s
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -40,8 +46,10 @@ async def startup(ctx: dict[str, Any]) -> None:
     stack = ctx["stack"] = AsyncExitStack()
     engine = ctx["engine"] = create_engine(settings.database_url, echo=settings.database_echo)
     redis = ctx["redis"]
+    sessionmaker = create_sessionmaker(engine)
+    ctx["jobs"] = JobContext(sessionmaker, settings, build_email_sender(settings.email_backend))
     ctx["runner"] = AgentRunner(
-        session_factory=create_sessionmaker(engine),
+        session_factory=sessionmaker,
         checkpointer=await open_checkpointer(settings.database_url, stack),
         model_factory=settings_model_factory(settings),
         inline=True,  # this process executes the runs
@@ -49,7 +57,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         stop_reasons=RunQueue(redis),
         streams=RedisRunStreams(redis),
     )
-    logger.info("agent worker ready (queue %s)", QUEUE_NAME)
+    logger.info("worker ready (queue %s)", QUEUE_NAME)
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
@@ -62,8 +70,25 @@ async def run_agent(ctx: dict[str, Any], run_id: str, payload: dict[str, Any]) -
     await runner.execute(uuid.UUID(run_id), payload)
 
 
+def job_function(name: str, job: JobFunction, backoff_seconds: float = 10) -> Function:
+    async def run(ctx: dict[str, Any], **kwargs: Any) -> None:
+        try:
+            await job(ctx["jobs"], **kwargs)
+        except Exception as exc:
+            tries = ctx.get("job_try", 1)
+            if tries >= JOB_MAX_TRIES:
+                raise
+            logger.warning("job %s failed (try %s), retrying: %s", name, tries, exc)
+            raise Retry(defer=backoff_seconds * tries) from exc
+
+    return func(run, name=name, timeout=JOB_TIMEOUT, max_tries=JOB_MAX_TRIES)
+
+
 class WorkerSettings:
-    functions = [func(run_agent, timeout=JOB_TIMEOUT_SECONDS, max_tries=MAX_TRIES)]
+    functions = [
+        func(run_agent, timeout=RUN_TIMEOUT_SECONDS, max_tries=RUN_MAX_TRIES),
+        *(job_function(name, job) for name, job in JOBS.items()),
+    ]
     queue_name = QUEUE_NAME
     on_startup = startup
     on_shutdown = shutdown

@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pmagent_backend.core import security
 from pmagent_backend.core.email import EmailSender, get_email_sender
 from pmagent_backend.core.errors import Forbidden, NotFound, Unauthorized
+from pmagent_backend.core.jobs import Jobs, get_jobs
 from pmagent_backend.core.settings import Settings
 from pmagent_backend.db.session import get_session
 from pmagent_backend.modules.api_tokens.models import Scope
@@ -40,6 +41,7 @@ def get_app_settings(request: Request) -> Settings:
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
 EmailDep = Annotated[EmailSender, Depends(get_email_sender)]
+JobsDep = Annotated[Jobs, Depends(get_jobs)]
 
 _bearer = HTTPBearer(
     auto_error=False, description="Access token from /v1/auth/login, or an API token (pmat_...)"

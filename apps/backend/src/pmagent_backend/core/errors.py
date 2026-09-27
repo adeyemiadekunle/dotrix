@@ -52,6 +52,17 @@ class Unprocessable(DomainError):
     code = "unprocessable"
 
 
+class TooManyRequests(DomainError):
+    """A rate limit was hit. The response says when to try again (Retry-After, in seconds)."""
+
+    status_code = HTTPStatus.TOO_MANY_REQUESTS
+    code = "rate_limited"
+
+    def __init__(self, detail: str, retry_after: float) -> None:
+        super().__init__(detail)
+        self.retry_after = max(1, int(retry_after + 0.999))
+
+
 class InvalidLink(DomainError):
     """An emailed or shared token (verification, reset, invite) is unknown, used, or expired."""
 
@@ -61,7 +72,9 @@ class InvalidLink(DomainError):
         super().__init__("This link is invalid or has expired")
 
 
-def problem(status: int, code: str, detail: str, **extra: object) -> JSONResponse:
+def problem(
+    status: int, code: str, detail: str, headers: dict[str, str] | None = None, **extra: object
+) -> JSONResponse:
     body = {
         "type": f"https://pmagent.dev/problems/{code}",
         "title": HTTPStatus(status).phrase,
@@ -70,12 +83,14 @@ def problem(status: int, code: str, detail: str, **extra: object) -> JSONRespons
         "request_id": request_id_var.get(),
         **extra,
     }
-    return JSONResponse(body, status_code=status, media_type="application/problem+json")
+    return JSONResponse(body, status_code=status, media_type="application/problem+json", headers=headers)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def _domain(_: Request, exc: DomainError) -> JSONResponse:
+        if isinstance(exc, TooManyRequests):
+            return problem(exc.status_code, exc.code, exc.detail, headers={"Retry-After": str(exc.retry_after)})
         return problem(exc.status_code, exc.code, exc.detail)
 
     @app.exception_handler(StarletteHTTPException)

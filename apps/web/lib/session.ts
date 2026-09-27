@@ -71,8 +71,18 @@ export function refreshTokens(refreshToken: string): Promise<TokenPair | null> {
 
 /** Pass a backend error (problem+json) through unchanged. */
 export function passError(upstream: Response): Response {
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: { "Content-Type": upstream.headers.get("content-type") ?? "application/problem+json" },
-  });
+  const headers = new Headers({ "Content-Type": upstream.headers.get("content-type") ?? "application/problem+json" });
+  const retryAfter = upstream.headers.get("retry-after");
+  if (retryAfter) headers.set("Retry-After", retryAfter);
+  return new Response(upstream.body, { status: upstream.status, headers });
+}
+
+/** Who's calling, for the backend's per-IP rate limits: every request reaches it from this
+ * server, so it believes X-Forwarded-For only from here (its PMAGENT_TRUSTED_PROXIES).
+ * Next fills the header from the socket only when it's missing, so in production put a proxy
+ * in front that appends the real address (nginx, the host's load balancer); per-email limits
+ * don't depend on it. */
+export function clientHeaders(request: Request): Record<string, string> {
+  const forwarded = request.headers.get("x-forwarded-for");
+  return forwarded ? { "X-Forwarded-For": forwarded } : {};
 }

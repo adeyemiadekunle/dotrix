@@ -111,6 +111,7 @@ _ERROR_DESCRIPTIONS = {
     404: "Not found, or not visible to you",
     409: "Conflicts with the current state",
     422: "Request body or parameters failed validation",
+    429: "Too many attempts; the Retry-After header says how many seconds to wait",
     503: "A dependency (such as file storage) is unavailable or not configured",
 }
 

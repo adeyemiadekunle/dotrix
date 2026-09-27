@@ -11,6 +11,7 @@ from uuid_utils.compat import uuid7
 from pmagent_backend.core import security
 from pmagent_backend.core.email import EmailMessage, EmailSender
 from pmagent_backend.core.errors import Conflict, InvalidLink, Unauthorized
+from pmagent_backend.core.jobs import Jobs
 from pmagent_backend.core.settings import Settings
 from pmagent_backend.modules.workspaces.service import WorkspaceService
 
@@ -31,10 +32,13 @@ def _now() -> datetime:
 
 
 class AuthService:
-    def __init__(self, session: AsyncSession, settings: Settings, email: EmailSender) -> None:
+    def __init__(
+        self, session: AsyncSession, settings: Settings, email: EmailSender, jobs: Jobs | None = None
+    ) -> None:
         self.session = session
         self.settings = settings
         self.email = email
+        self.jobs = jobs  # the API's; None inside a job
         self.users = UserRepository(session)
         self.refresh_tokens = RefreshTokenRepository(session)
         self.action_tokens = ActionTokenRepository(session)
@@ -124,7 +128,12 @@ class AuthService:
     # -- password reset ----------------------------------------------------------
 
     async def request_password_reset(self, email: str) -> None:
-        """Always succeeds from the caller's view, so it can't be used to find accounts."""
+        """Always succeeds from the caller's view, so it can't be used to find accounts: the
+        lookup and the email happen in a background job (`send_password_reset`)."""
+        assert self.jobs is not None
+        await self.jobs.enqueue("send_password_reset", email=email)
+
+    async def send_password_reset(self, email: str) -> None:
         user = await self.users.get_by_email(email)
         if user is None or not user.is_active:
             return
