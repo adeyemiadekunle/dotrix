@@ -6,10 +6,8 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/compon
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { FolderPlusIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
-import { CreateProjectDialog } from "@/components/create-project-dialog";
 import { EmptyState, NotFound } from "@/components/states";
 import { PROJECT_SOURCE_LABELS, ROLE_LABELS, canManageProjects, withArticle } from "@/lib/labels";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
@@ -17,7 +15,6 @@ import { useCurrentWorkspace, useProjects } from "@/lib/queries";
 export default function WorkspaceHome() {
   const { workspace, notFound } = useCurrentWorkspace();
   const projects = useProjects(workspace?.id);
-  const [creating, setCreating] = useState(false);
 
   if (notFound) return <NotFound what="workspace" />;
   const canCreate = canManageProjects(workspace?.role);
@@ -29,9 +26,11 @@ export default function WorkspaceHome() {
         parent={workspace?.name}
         actions={
           canCreate && (
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <PlusIcon />
-              New project
+            <Button size="sm" asChild>
+              <Link href={`/w/${workspace!.slug}/projects/new`}>
+                <PlusIcon />
+                New project
+              </Link>
             </Button>
           )
         }
@@ -57,14 +56,16 @@ export default function WorkspaceHome() {
             title="Start your first project"
             description={
               canCreate
-                ? "Create a project from your docs, or run pmagent connect inside a repo to start from its code."
+                ? "Link its repo, add its documents, and the agents take it from there."
                 : "An owner or admin creates projects. Once there is one, it appears here."
             }
             action={
               canCreate && (
-                <Button onClick={() => setCreating(true)}>
-                  <PlusIcon />
-                  New project
+                <Button asChild>
+                  <Link href={`/w/${workspace!.slug}/projects/new`}>
+                    <PlusIcon />
+                    New project
+                  </Link>
                 </Button>
               )
             }
@@ -92,7 +93,6 @@ export default function WorkspaceHome() {
           </div>
         )}
       </div>
-      {workspace && <CreateProjectDialog workspace={workspace} open={creating} onOpenChange={setCreating} />}
     </>
   );
 }

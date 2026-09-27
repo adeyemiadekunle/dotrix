@@ -153,6 +153,38 @@ async def test_repo_urls_are_canonical_and_matchable(signup, create_team, db_cli
     assert bad.status_code == 422
 
 
+async def test_link_and_unlink_a_repo_later(signup, create_team, add_member, db_client: AsyncClient) -> None:
+    ada = await signup()
+    team = await create_team(ada.headers)
+    docs = (await db_client.post(projects_url(team), json={"key": "DOC", "name": "Docs first"}, headers=ada.headers)).json()
+    other = (await db_client.post(
+        projects_url(team), json={"key": "OTH", "name": "O", "repo_url": "https://github.com/acme/other"}, headers=ada.headers,
+    )).json()
+    url = f"{projects_url(team)}/{docs['id']}"
+
+    linked = await db_client.patch(url, json={"repo_url": "git@github.com:acme/kunemi.git"}, headers=ada.headers)
+    assert linked.status_code == 200
+    assert linked.json()["repo_url"] == "https://github.com/acme/kunemi"
+    assert linked.json()["source"] == "docs_only"  # how it started doesn't change
+    renamed = await db_client.patch(url, json={"name": "Renamed"}, headers=ada.headers)
+    assert renamed.json()["repo_url"] == "https://github.com/acme/kunemi"  # left out: kept
+
+    taken = await db_client.patch(url, json={"repo_url": other["repo_url"]}, headers=ada.headers)
+    assert taken.status_code == 409 and taken.json()["type"].endswith("/repo_taken")
+    same = await db_client.patch(
+        f"{projects_url(team)}/{other['id']}", json={"repo_url": "https://github.com/acme/other.git"}, headers=ada.headers,
+    )
+    assert same.status_code == 200  # re-linking its own repo isn't a conflict
+
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    denied = await db_client.patch(url, json={"repo_url": None}, headers=bob.headers)
+    assert denied.status_code == 403  # linking the repo is setup: owners and admins
+
+    unlinked = await db_client.patch(url, json={"repo_url": None}, headers=ada.headers)
+    assert unlinked.status_code == 200 and unlinked.json()["repo_url"] is None
+
+
 async def test_admins_set_up_projects(signup, create_team, add_member, db_client: AsyncClient) -> None:
     ada = await signup()
     cy = await signup(email="cy@example.com", name="Cy")

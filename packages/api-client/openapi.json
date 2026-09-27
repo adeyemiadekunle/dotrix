@@ -3592,7 +3592,7 @@
           "projects"
         ],
         "summary": "Update Project",
-        "description": "Rename a project, or change its description or its agents' model. The key can't change.",
+        "description": "Rename a project, change its description or its agents' model, or link or unlink its repo\n(one project per repo in a workspace: 409 if another has it). The key can't change.",
         "operationId": "update_project",
         "security": [
           {
@@ -3664,6 +3664,16 @@
           },
           "403": {
             "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10146,6 +10156,19 @@
               }
             ],
             "title": "Model"
+          },
+          "repo_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Url",
+            "description": "Link the project to its repo (any remote form; stored canonical). Send null to unlink; leave it out to keep the current link."
           }
         },
         "type": "object",

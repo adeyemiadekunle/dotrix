@@ -19,9 +19,8 @@ import {
 import { FolderKanbanIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
-import { CreateProjectDialog } from "@/components/create-project-dialog";
 import { NavUser } from "@/components/nav-user";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { canManageProjects } from "@/lib/labels";
@@ -31,7 +30,6 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { shown: workspace } = useCurrentWorkspace();
   const projects = useProjects(workspace?.id);
-  const [creating, setCreating] = useState(false);
   const { setOpenMobile } = useSidebar();
   // On phones the sidebar is a sheet over the page: close it once you've picked somewhere to go.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
@@ -62,9 +60,11 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupLabel>Projects</SidebarGroupLabel>
           {canManageProjects(workspace?.role) && (
-            <SidebarGroupAction title="New project" onClick={() => setCreating(true)}>
-              <PlusIcon />
-              <span className="sr-only">New project</span>
+            <SidebarGroupAction title="New project" asChild>
+              <Link href={`${base}/projects/new`}>
+                <PlusIcon />
+                <span className="sr-only">New project</span>
+              </Link>
             </SidebarGroupAction>
           )}
           <SidebarGroupContent>
@@ -103,7 +103,6 @@ export function AppSidebar() {
         <NavUser />
       </SidebarFooter>
       <SidebarRail />
-      {workspace && <CreateProjectDialog workspace={workspace} open={creating} onOpenChange={setCreating} />}
     </Sidebar>
   );
 }

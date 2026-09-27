@@ -32,3 +32,10 @@ export function initials(name: string): string {
 export function withArticle(word: string): string {
   return `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
 }
+
+/** Suggest a key from the name: initials of the words, or the first letters of one word. */
+export function suggestKey(name: string): string {
+  const words = name.toUpperCase().match(/[A-Z0-9]+/g) ?? [];
+  const key = words.length > 1 ? words.map((w) => w[0]).join("") : (words[0] ?? "").slice(0, 4);
+  return key.replace(/^[0-9]+/, "").slice(0, 10);
+}
