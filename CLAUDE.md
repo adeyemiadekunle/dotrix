@@ -168,6 +168,16 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] **(you)** Domain and HTTPS for the API and web app; set `PMAGENT_APP_URL` and the OAuth redirect URIs to it
 - [ ] **(you)** A secrets manager for production env vars (e.g. the host's secret store); `PMAGENT_ENV=production`
 
+### Organisations (beyond the PRD: an organisation owning several workspaces)
+
+- [x] Organisations (`modules/organizations`): owner / admin / member; workspaces may belong to one (personal ones never)
+- [x] Org admins create, attach (their own), and detach workspaces, add people, and place them into any org workspace, but **manage without seeing**: workspace content still requires workspace membership
+- [x] Everyone in an org workspace is an org member (attach, invites, placements); leaving the org leaves its workspaces (owners must hand over first); the org always keeps an owner
+- [ ] Organisation email invites for people without an account; verified email domains (auto-join)
+- [ ] Org-level audit log (org events today are not audited; `audit_events` is per workspace)
+- [ ] SSO/SCIM (FR-7), billing and pooled usage with per-workspace limits (FR-8/FR-28), org-wide base agent rules (FR-17) at the organisation level
+- [ ] Move a project between an organisation's workspaces
+
 ### P0: Projects and source of truth
 
 - [x] Project setup (create project, add external docs, draft architecture) is owners/admins; members only connect working copies: `pmagent connect` finds the project by canonical git remote (credentials stripped on the machine and on the server) and links without changing it; one project per repo per workspace

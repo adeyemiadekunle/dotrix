@@ -18,6 +18,7 @@ from pmagent_backend.core.errors import Conflict, Forbidden, InvalidLink, NotFou
 from pmagent_backend.core.settings import Settings
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.auth.repository import UserRepository
+from pmagent_backend.modules.organizations.service import ensure_org_member
 from pmagent_backend.modules.workspaces.models import Membership, Role, WorkspaceKind
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
 from pmagent_backend.modules.workspaces.schemas import WorkspaceWithRole
@@ -149,6 +150,7 @@ class InviteService:
         if membership is None:
             membership = Membership(workspace_id=invite.workspace_id, user_id=user.id, role=invite.role)
             self.members.add(membership)
+            await ensure_org_member(self.session, invite.workspace, user.id)
             if invite.kind is InviteKind.LINK:
                 invite.use_count += 1
         # Already a member: keep the current role; an invite never changes it.
