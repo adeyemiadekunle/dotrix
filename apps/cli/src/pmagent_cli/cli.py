@@ -30,6 +30,7 @@ from pmagent_engine.ics import export_calendar
 from pmagent_engine.ingest import ingest_doc
 from pmagent_engine.jobs import get_job, list_jobs, resume_job, start_job
 
+from .agent_client import Outcome, PlatformAgent
 from .board import CODING_AGENTS, PlatformBoard
 from .platform import (
     KeyringStore,
@@ -169,10 +170,17 @@ def docs_add(
 # ---------------------------------------------------------------------------
 # Talking to the PM agent
 # ---------------------------------------------------------------------------
+LocalOpt = typer.Option(False, "--local", help="Use the local engine even if this repo is linked.")
+
+
 @app.command()
-def brief(project: str = ProjectOpt):
-    """One-shot: ask the PM agent for a project briefing (Chat Mode, no writes expected)."""
+def brief(project: str = ProjectOpt, local: bool = LocalOpt):
+    """One-shot: ask the PM agent for a project briefing (Chat Mode, no writes expected).
+    On a linked repo this is the platform's briefing, which is read-only."""
     config = _resolve_project(project)
+    if not local and LinkState.load(config.pmagent_dir) is not None:
+        _platform_brief(project)
+        return
     agent = build_agent(config, checkpointer=MemorySaver())
     cfg = {"configurable": {"thread_id": str(uuid.uuid4())}}
     result = agent.invoke({"messages": [{"role": "user", "content": "Give me my project briefing."}]}, cfg)
@@ -184,12 +192,20 @@ def brief(project: str = ProjectOpt):
 
 
 @app.command()
-def chat(project: str = ProjectOpt):
+def chat(
+    project: str = ProjectOpt,
+    local: bool = LocalOpt,
+    thread: str | None = typer.Option(None, "--thread", help="Continue a platform conversation."),
+):
     """Interactive session. Any write pauses for your approval. That pause IS Action Mode.
 
-    Safe to run alongside `pmagent run --background` jobs and coding agents on
-    the same project: each gets its own thread_id, and writes are file-locked."""
+    On a linked repo you talk to the platform's agents: every change they want is shown
+    here (with a diff for files) and you approve or reject it inline. Otherwise it runs
+    the local engine; safe alongside `pmagent run --background` jobs and coding agents."""
     config = _resolve_project(project)
+    if not local and LinkState.load(config.pmagent_dir) is not None:
+        _platform_chat(project, thread)
+        return
     checkpoint_path = os.path.join(config.pmagent_dir, "checkpoints.sqlite")
 
     with SqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
@@ -486,6 +502,124 @@ def handoff_install(
                                        claude_assignee=claude_assignee,
                                        register_mcp=register).items():
         typer.echo(f"{fname}: {what}")
+
+# ---------------------------------------------------------------------------
+# Talking to the platform's agents (linked repos)
+# ---------------------------------------------------------------------------
+_DIFF_LINES = 60
+_PREVIEW_LINES = 14
+
+
+def _echo_diff(diff: str, limit: int | None = _DIFF_LINES) -> None:
+    lines = diff.splitlines()
+    for line in lines[:limit] if limit else lines:
+        color = typer.colors.GREEN if line.startswith("+") and not line.startswith("+++") else (
+            typer.colors.RED if line.startswith("-") and not line.startswith("---") else None
+        )
+        typer.secho(f"    {line}", fg=color)
+    if limit and len(lines) > limit:
+        typer.secho(f"    … {len(lines) - limit} more line(s); press v to see all", dim=True)
+
+
+def _echo_approval(approval: dict, full: bool = False) -> None:
+    args = approval.get("args") or {}
+    if approval.get("diff"):
+        _echo_diff(approval["diff"], None if full else _DIFF_LINES)
+    elif approval["tool"] == "create_issue":
+        facts = ", ".join(f"{k} {args[k]}" for k in ("priority", "parent", "assignee") if args.get(k))
+        if facts:
+            typer.echo(f"    {facts}")
+        description = (args.get("description") or "").splitlines()
+        for line in description if full else description[:_PREVIEW_LINES]:
+            typer.echo(f"    {line}")
+        if not full and len(description) > _PREVIEW_LINES:
+            typer.secho("    … press v to see all", dim=True)
+    else:
+        shown = {k: v for k, v in args.items() if k not in ("key", "file_path")}
+        text = json.dumps(shown, indent=2, ensure_ascii=False)
+        typer.echo("\n".join(f"    {line}" for line in (text if full else text[:1500]).splitlines()))
+
+
+def _ask_decision(approval: dict, index: int, total: int):
+    target = f" -> {approval['target']}" if approval.get("target") else ""
+    typer.secho(f"\n[{index}/{total}] The agents want to: {approval['tool']}{target}", bold=True)
+    _echo_approval(approval)
+    options = "[a]pprove, [r]eject" + (", [A]pprove all" if total > 1 else "") + ", [v]iew in full"
+    while True:
+        choice = typer.prompt(options, default="a", show_default=False).strip()
+        if choice in ("a", "approve"):
+            return ("approve", None)
+        if choice == "A" and total > 1:
+            return "approve-all"
+        if choice in ("r", "reject"):
+            reason = typer.prompt("Why? (sent back to the agent)", default="", show_default=False).strip()
+            return ("reject", reason or None)
+        if choice == "v":
+            _echo_approval(approval, full=True)
+
+
+def _echo_outcome(outcome: Outcome) -> None:
+    run = outcome.run
+    if outcome.left_waiting:
+        typer.secho(
+            "\nYour role can't approve changes. The run is waiting: someone with approve "
+            f"permission can decide it in the web app (run {run['id']}).",
+            fg=typer.colors.YELLOW,
+        )
+    elif run["status"] == "failed":
+        typer.secho(f"\nThe run failed: {run.get('error')}", fg=typer.colors.RED)
+    else:
+        decided = [a for a in run.get("approvals", []) if a["status"] != "pending"]
+        if decided:
+            approved = sum(a["status"] == "approved" for a in decided)
+            typer.secho(f"\n({approved} change(s) approved, {len(decided) - approved} rejected)", dim=True)
+        typer.echo(f"\n{run.get('reply') or ''}\n")
+
+
+def _platform_agent(project: str) -> tuple[LinkState, PlatformAgent]:
+    _, state, client = _linked(project)
+    return state, PlatformAgent(client, state)
+
+
+def _platform_brief(project: str) -> None:
+    _, agent = _platform_agent(project)
+    typer.secho("Preparing your briefing…", dim=True)
+    run = _platform_call(agent.briefing)
+    outcome = Outcome(_platform_call(lambda: agent.wait(run)))
+    _echo_outcome(outcome)
+    if outcome.status == "failed":
+        raise typer.Exit(1)
+
+
+def _platform_chat(project: str, thread: str | None) -> None:
+    state, agent = _platform_agent(project)
+    typer.echo(
+        f"Talking to the {state.project_key} team ({state.project_name}) on the platform. "
+        "Changes wait for your approval. /new starts a new conversation, /quit exits.\n"
+    )
+    while True:
+        try:
+            message = typer.prompt(">").strip()
+        except (KeyboardInterrupt, EOFError, typer.Abort):
+            break
+        if message in ("/quit", "/exit", "/q"):
+            break
+        if message == "/new":
+            thread = None
+            typer.echo("New conversation.")
+            continue
+        if not message:
+            continue
+        try:
+            run = agent.start(message, thread)
+            thread = run["thread_id"]
+            typer.secho("(working…)", dim=True)
+            _echo_outcome(agent.converse(run, _ask_decision))
+        except (PlatformError, TimeoutError) as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+    if thread:
+        typer.secho(f"Continue this conversation with: pmagent chat --thread {thread}", dim=True)
+
 
 # ---------------------------------------------------------------------------
 # Platform: sign in, link a repo, mirror .pmagent/, work the issue board

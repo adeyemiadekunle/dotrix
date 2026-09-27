@@ -52,6 +52,8 @@ uv run pmagent --help    # CLI
 pmagent login                                   # device login; token goes to your OS keychain
 pmagent link . --workspace <slug> --project KUN # link this repo and pull its .pmagent/ (kept out of git)
 pmagent pull                                    # refresh the mirror (only what changed; --force takes platform versions)
+pmagent brief                                   # the platform team's daily briefing (read-only)
+pmagent chat                                    # talk to the team; approve or reject each change inline (diffs shown)
 pmagent issue list --ready                      # the board, by priority
 pmagent issue claim KUN-42 --as claude-code     # coding tools act as themselves and stop at review
 pmagent issue review KUN-42 "What changed" --pr <url> --as claude-code
