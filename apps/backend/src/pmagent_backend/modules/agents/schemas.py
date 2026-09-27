@@ -61,6 +61,9 @@ class AgentRunRead(BaseModel):
     kind: RunKind
     status: RunStatus
     message: str
+    title: str | None = Field(
+        default=None, description="The conversation's title; set on the first run of a thread"
+    )
     reply: str | None
     error: str | None
     requested_by_id: uuid.UUID | None

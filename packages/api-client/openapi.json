@@ -7457,6 +7457,18 @@
             "type": "string",
             "title": "Message"
           },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "The conversation's title; set on the first run of a thread"
+          },
           "reply": {
             "anyOf": [
               {

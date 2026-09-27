@@ -26,6 +26,7 @@ from .schemas import (
     RunCreate,
     WorkspaceApprovalRead,
 )
+from .titles import placeholder_title
 
 # The architecture is set up by owners and admins; only they approve changes to it.
 PROTECTED_PREFIXES = ("/pmagent/architecture/",)
@@ -59,8 +60,15 @@ class AgentService:
         self.runner = runner
 
     async def create_run(
-        self, access: ProjectAccess, data: RunCreate, kind: RunKind = RunKind.CHAT
+        self,
+        access: ProjectAccess,
+        data: RunCreate,
+        kind: RunKind = RunKind.CHAT,
+        *,
+        title: str | None = None,
     ) -> AgentRunRead:
+        """Start a run. A new thread gets a title: `title` if given (built-in requests), else a
+        placeholder from the message that the runner replaces with the model's title."""
         project, member = access.project, access.member
         self.runner.model_factory(project)  # fail fast (503) if the model can't run
         thread_id = data.thread_id or uuid7()
@@ -75,6 +83,7 @@ class AgentService:
             kind=kind,
             status=RunStatus.QUEUED,
             message=data.message,
+            title=(title or placeholder_title(data.message)) if data.thread_id is None else None,
             requested_by_id=member.user_id,
             created_at=now,
             updated_at=now,
@@ -91,7 +100,7 @@ class AgentService:
             details={"kind": kind.value, "thread_id": str(thread_id)},
         )
         await self.session.commit()
-        await self.runner.start(run.id, data.message)
+        await self.runner.start(run.id, data.message, name_thread=data.thread_id is None and title is None)
         return await self.get(access, run.id)
 
     async def architecture_draft(
@@ -110,10 +119,12 @@ class AgentService:
             actor_user_id=access.member.user_id,
             details={"with_repo_summary": bool(data.repo_summary)},
         )
-        return await self.create_run(access, RunCreate(message=message))
+        return await self.create_run(access, RunCreate(message=message), title="Architecture overview draft")
 
     async def briefing(self, access: ProjectAccess) -> AgentRunRead:
-        return await self.create_run(access, RunCreate(message=BRIEFING_PROMPT), RunKind.BRIEFING)
+        return await self.create_run(
+            access, RunCreate(message=BRIEFING_PROMPT), RunKind.BRIEFING, title="Daily briefing"
+        )
 
     async def get(self, access: ProjectAccess, run_id: uuid.UUID) -> AgentRunRead:
         run = await self.session.scalar(

@@ -1502,6 +1502,11 @@ export interface components {
             status: components["schemas"]["RunStatus"];
             /** Message */
             message: string;
+            /**
+             * Title
+             * @description The conversation's title; set on the first run of a thread
+             */
+            title?: string | null;
             /** Reply */
             reply: string | null;
             /** Error */

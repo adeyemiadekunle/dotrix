@@ -58,10 +58,10 @@ function Column({
   const { setNodeRef, isOver } = useDroppable({ id: `${COLUMN_ID}${status}` });
   const meta = STATUS_META[status];
   return (
-    // Stacked full width when the board is narrow; side by side (scrolling) when there's room
-    // for a few; sharing the width when there's room for all five. Sized by the board's own
+    // Stacked full width when the board is narrow; side by side (scrolling, 16rem each) when
+    // there's room for a few; sharing the width only when all five fit at that size (80rem). Sized by the board's own
     // width (container queries), so the chat panel narrowing it works like a smaller screen.
-    <section className="bg-muted/40 flex w-full flex-col rounded-xl border @2xl:w-64 @2xl:shrink-0 @5xl:w-auto @5xl:min-w-0 @5xl:flex-1">
+    <section className="bg-muted/40 flex w-full flex-col rounded-xl border @2xl:w-64 @2xl:shrink-0 @7xl:w-auto @7xl:min-w-0 @7xl:flex-1">
       <header className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium">
         <button
           type="button"

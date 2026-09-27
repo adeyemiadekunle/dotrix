@@ -52,6 +52,8 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     kind: Mapped[RunKind] = mapped_column(str_enum(RunKind, 16))
     status: Mapped[RunStatus] = mapped_column(str_enum(RunStatus, 24))
     message: Mapped[str] = mapped_column(Text)
+    # The conversation's title, on its first run only (a placeholder, then the model's title).
+    title: Mapped[str | None] = mapped_column(String(120))
     reply: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
     # The person who instructed the run; recorded as "instructed by" on every write.

@@ -29,6 +29,7 @@ from .board_tools import BoardContext, board_instructions, build_board_tools
 from .llm import ModelFactory
 from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
+from .titles import Titler
 
 logger = logging.getLogger(__name__)
 
@@ -64,26 +65,33 @@ class AgentRunner:
         checkpointer: Any,
         model_factory: ModelFactory,
         inline: bool = False,
+        titler: Titler | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.checkpointer = checkpointer
         self.model_factory = model_factory
         self.inline = inline
+        # Names new conversations from their first exchange; without one, the placeholder stays.
+        self.titler = titler
         self._tasks: set[asyncio.Task[None]] = set()
 
     # -- scheduling ------------------------------------------------------------------
 
-    async def start(self, run_id: uuid.UUID, message: str) -> None:
-        await self._schedule(run_id, {"messages": [{"role": "user", "content": message}]}, None)
+    async def start(self, run_id: uuid.UUID, message: str, *, name_thread: bool = False) -> None:
+        await self._schedule(
+            run_id, {"messages": [{"role": "user", "content": message}]}, None, name_thread=name_thread
+        )
 
     async def resume(self, run_id: uuid.UUID, command: Any, approved_by_id: uuid.UUID) -> None:
         await self._schedule(run_id, command, approved_by_id)
 
-    async def _schedule(self, run_id: uuid.UUID, graph_input: Any, approved_by_id: uuid.UUID | None) -> None:
+    async def _schedule(
+        self, run_id: uuid.UUID, graph_input: Any, approved_by_id: uuid.UUID | None, *, name_thread: bool = False
+    ) -> None:
         if self.inline:
-            await self._execute(run_id, graph_input, approved_by_id)
+            await self._execute(run_id, graph_input, approved_by_id, name_thread)
             return
-        task = asyncio.create_task(self._execute(run_id, graph_input, approved_by_id))
+        task = asyncio.create_task(self._execute(run_id, graph_input, approved_by_id, name_thread))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
@@ -94,7 +102,9 @@ class AgentRunner:
 
     # -- execution -------------------------------------------------------------------
 
-    async def _execute(self, run_id: uuid.UUID, graph_input: Any, approved_by_id: uuid.UUID | None) -> None:
+    async def _execute(
+        self, run_id: uuid.UUID, graph_input: Any, approved_by_id: uuid.UUID | None, name_thread: bool = False
+    ) -> None:
         try:
             async with self.session_factory() as session:
                 run = await session.get(AgentRun, run_id)
@@ -104,7 +114,7 @@ class AgentRunner:
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
                 await session.commit()
                 rules = await self._rules(session, project.id)
-                kind, thread_id = run.kind, run.thread_id
+                kind, thread_id, first_message = run.kind, run.thread_id, run.message
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
                 name, description, project_key = project.name, project.description, project.key
                 choice = self.model_factory(project)
@@ -151,12 +161,28 @@ class AgentRunner:
                     command = hitl.resume_command(result, "reject", READ_ONLY_REJECTION)
                     result = await agent.ainvoke(command, config)
             await self._finish(run_id, result)
+            if name_thread and self.titler is not None:
+                await self._name_thread(run_id, choice.model, first_message, result)
         except asyncio.CancelledError:
             await self._fail(run_id, "Stopped because the server shut down; send the message again")
             raise
         except Exception as exc:
             logger.exception("agent run %s failed", run_id)
             await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}")
+
+    async def _name_thread(self, run_id: uuid.UUID, model: Any, message: str, result: dict) -> None:
+        """Replace the new thread's placeholder title with one the model writes."""
+        assert self.titler is not None
+        messages = result.get("messages") or []
+        reply = _text(messages[-1].content) if messages else ""
+        title = await self.titler(model, message, reply)
+        if not title:
+            return
+        async with self.session_factory() as session:
+            run = await session.get(AgentRun, run_id)
+            if run is not None:
+                run.title = title
+                await session.commit()
 
     async def _finish(self, run_id: uuid.UUID, result: dict) -> None:
         async with self.session_factory() as session:

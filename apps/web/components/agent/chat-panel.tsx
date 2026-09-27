@@ -17,7 +17,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 
 import { timeAgo } from "@/components/issues/issue-activity";
-import { useRecentThreads } from "@/lib/agent";
+import { runTitle, useRecentThreads, useThread } from "@/lib/agent";
 import { useMembers } from "@/lib/issues";
 import { useProjectScope } from "@/lib/queries";
 
@@ -71,6 +71,9 @@ export function ThreadMenu() {
 function PanelBody({ onClose }: { onClose: () => void }) {
   const { workspace, project, scope } = useProjectScope();
   const { threadId, setThreadId } = useChat();
+  const thread = useThread(scope, threadId);
+  const first = thread.data?.[0];
+  const title = first ? (first.title ?? runTitle(first)) : null;
   const members = useMembers(workspace?.id);
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
   const role = workspace?.role;
@@ -78,7 +81,10 @@ function PanelBody({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
-        <span className="flex-1 text-sm font-medium">Project manager</span>
+        <span className="grid min-w-0 flex-1 leading-tight">
+          <span className="truncate text-sm font-medium">{title ?? "Project manager"}</span>
+          {title && <span className="text-muted-foreground text-xs">Project manager</span>}
+        </span>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button size="icon" variant="ghost" className="size-8" aria-label="New conversation" onClick={() => setThreadId(null)}>
