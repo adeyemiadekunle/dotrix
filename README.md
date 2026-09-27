@@ -46,6 +46,23 @@ pnpm dev:desktop         # Electron window pointed at the web app
 uv run pmagent --help    # CLI
 ```
 
+## The CLI with the platform
+
+```bash
+pmagent login                                   # device login; token goes to your OS keychain
+pmagent link . --workspace <slug> --project KUN # link this repo and pull its .pmagent/ (kept out of git)
+pmagent pull                                    # refresh the mirror (only what changed; --force takes platform versions)
+pmagent issue list --ready                      # the board, by priority
+pmagent issue claim KUN-42 --as claude-code     # coding tools act as themselves and stop at review
+pmagent issue review KUN-42 "What changed" --pr <url> --as claude-code
+pmagent issue done KUN-42                       # only a person closes
+pmagent handoff install --register              # Claude Code / Codex via MCP; linked repos use the platform board
+pmagent logout
+```
+
+`PMAGENT_API_URL` points the CLI at a server (default `http://127.0.0.1:8000`); `PMAGENT_TOKEN`
+overrides the keychain for CI. Unlinked repos keep working with local files (`pmagent task …`).
+
 ## API documentation
 
 With the backend running (`pnpm dev:backend`):

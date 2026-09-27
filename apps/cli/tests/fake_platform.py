@@ -1,0 +1,98 @@
+"""An in-memory stand-in for the platform API, for CLI tests (httpx.MockTransport)."""
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+import httpx
+
+from pmagent_cli.platform import PlatformClient
+
+WS, PID = "ws-1", "proj-1"
+KB = f"/v1/workspaces/{WS}/projects/{PID}/knowledge"
+ISSUES = f"/v1/workspaces/{WS}/projects/{PID}/issues"
+
+
+def sha(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+class FakePlatform:
+    def __init__(self) -> None:
+        self.revision = 1
+        self.files: dict[str, dict[str, Any]] = {}  # path -> {content, revision, deleted}
+        self.requests: list[httpx.Request] = []
+        self.issues: dict[str, dict[str, Any]] = {}
+        self.device_polls: list[str] = []  # scripted answers for /auth/device/token
+
+    # -- state changes, as if someone edited on the platform ----------------------------
+    def put(self, path: str, content: str) -> None:
+        self.revision += 1
+        self.files[path] = {"content": content, "revision": self.revision, "deleted": False}
+
+    def remove(self, path: str) -> None:
+        self.revision += 1
+        self.files[path] = {"content": "", "revision": self.revision, "deleted": True}
+
+    # -- HTTP ---------------------------------------------------------------------
+    def client(self, token: str | None = "pmat_test") -> PlatformClient:
+        http = httpx.Client(base_url="http://fake", transport=httpx.MockTransport(self.handle))
+        return PlatformClient("http://fake", token, http=http)
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        path, method = request.url.path, request.method
+        body = json.loads(request.content) if request.content else {}
+        if path == KB:
+            since = request.url.params.get("since_revision")
+            entries = [
+                {"path": p, "version": 1, "revision": f["revision"], "content_hash": sha(f["content"]),
+                 "size": len(f["content"]), "deleted": f["deleted"], "updated_at": "2026-09-27T00:00:00Z"}
+                for p, f in sorted(self.files.items())
+                if (since is None and not f["deleted"]) or (since is not None and f["revision"] > int(since))
+            ]
+            return httpx.Response(200, json={"revision": self.revision, "files": entries})
+        if path.startswith(KB + "/files/"):
+            f = self.files[path.removeprefix(KB + "/files/")]
+            return httpx.Response(200, json={"content": f["content"]})
+        if path == "/v1/auth/device/code":
+            return httpx.Response(200, json={
+                "device_code": "dev-123", "user_code": "BCDF-GHJK", "verification_uri": "http://fake/device",
+                "verification_uri_complete": "http://fake/device?code=BCDF-GHJK", "expires_in": 600, "interval": 5,
+            })
+        if path == "/v1/auth/device/token":
+            answer = self.device_polls.pop(0)
+            if answer == "ok":
+                return httpx.Response(200, json={"id": "tok-1", "token": "pmat_new"})
+            return self.problem(400, answer)
+        if path == ISSUES + "/claim":
+            if not self.issues:
+                return self.problem(404, "nothing_ready")
+            key = body.get("key") or next(iter(self.issues))
+            issue = self.issues[key] | {"status": "in_progress", "assignee_agent": body.get("as_agent")}
+            self.issues[key] = issue
+            return httpx.Response(200, json=issue)
+        if path.startswith(ISSUES + "/") and method == "PATCH":
+            key = path.rsplit("/", 1)[1]
+            self.issues[key] |= {k: v for k, v in body.items() if k in ("status",)}
+            return httpx.Response(200, json=self.issues[key] | {"log": []})
+        if path.startswith(ISSUES + "/") and path.endswith("/comments"):
+            return httpx.Response(201, json=self.issues[path.split("/")[-2]] | {"log": []})
+        if path.startswith(ISSUES + "/") and method == "GET":
+            return httpx.Response(200, json=self.issues[path.rsplit("/", 1)[1]] | {"log": [], "links": []})
+        if path == ISSUES:
+            return httpx.Response(200, json=list(self.issues.values()))
+        return self.problem(404, "not_found")
+
+    @staticmethod
+    def problem(status: int, code: str) -> httpx.Response:
+        return httpx.Response(status, json={"type": f"https://pmagent.dev/problems/{code}", "detail": code})
+
+    def bodies(self, suffix: str) -> list[dict]:
+        return [json.loads(r.content) for r in self.requests if r.url.path.endswith(suffix) and r.content]
+
+
+def issue(key: str, **fields: Any) -> dict[str, Any]:
+    return {"key": key, "type": "task", "title": f"Issue {key}", "status": "todo", "priority": "medium",
+            "assignee_user_id": None, "assignee_agent": None, "parent_key": None, **fields}
