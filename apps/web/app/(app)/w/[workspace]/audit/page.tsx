@@ -31,7 +31,29 @@ const ACTIONS: Record<string, string> = {
   "issue.create": "created an issue",
   "issue.update": "updated an issue",
   "issue.claim": "claimed an issue",
+  "workspace.renamed": "renamed the workspace",
+  "workspace.ownership_transferred": "made someone the owner:",
+  "member.role_changed": "changed the role of",
+  "member.removed": "removed",
+  "member.left": "left the workspace",
+  "member.joined": "joined the workspace",
+  "member.placed": "added through the organisation:",
+  "invite.sent": "invited",
+  "invite.link_created": "created an invite link",
+  "invite.revoked": "revoked the invite for",
 };
+
+/** Extra words for people changes (the new role, the old and new name). */
+function detailText(e: AuditEvent): string | null {
+  const d = e.details as Record<string, unknown>;
+  if (e.action === "member.role_changed" && d.from && d.to) return `${d.from} → ${d.to}`;
+  if (e.action === "workspace.renamed" && d.from && d.to) return `“${d.from}” → “${d.to}”`;
+  if ((e.action === "invite.sent" || e.action === "member.placed" || e.action === "member.joined") && d.role)
+    return `as ${d.role}${d.via ? ` (${d.via})` : ""}`;
+  if (e.action === "invite.link_created" && d.role) return `for ${d.role}s${d.max_uses ? `, up to ${d.max_uses} uses` : ""}`;
+  if (d.by_organization) return "by the organisation";
+  return null;
+}
 
 const AGENTS: Record<string, string> = {
   "project-manager": "PM agent",
@@ -69,7 +91,8 @@ function Event({
     other(event.instructed_by_id) && `asked by ${other(event.instructed_by_id)}`,
     other(event.approved_by_id) && `approved by ${other(event.approved_by_id)}`,
   ].filter(Boolean);
-  const target = event.target && !/^[0-9a-f-]{36}$/.test(event.target) ? event.target : null;
+  const selfEvent = event.action === "member.left" || event.action === "member.joined";
+  const target = event.target && !selfEvent && !/^[0-9a-f-]{36}$/.test(event.target) ? event.target : null;
   return (
     <li className="flex gap-3 p-3 text-sm">
       <Icon className={actor.kind === "agent" ? "text-brand mt-0.5 size-4 shrink-0" : "text-muted-foreground mt-0.5 size-4 shrink-0"} />
@@ -83,7 +106,9 @@ function Event({
             </>
           )}
         </p>
-        {context.length > 0 && <p className="text-muted-foreground text-xs">{context.join(", ")}</p>}
+        {(context.length > 0 || detailText(event)) && (
+          <p className="text-muted-foreground text-xs">{[detailText(event), ...context].filter(Boolean).join(" · ")}</p>
+        )}
       </div>
       <div className="grid shrink-0 justify-items-end gap-1">
         {event.project_id && projectKeys.get(event.project_id) && (

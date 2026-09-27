@@ -74,11 +74,15 @@ class Settings(DatabaseSettings):
     # Agent runs execute in the API process as background tasks; true runs them
     # inside the request instead (tests, debugging).
     agent_runs_inline: bool = False
+    # End-to-end tests only: allow the deterministic "e2e:rules" model (no API key, no cost).
+    e2e_models: bool = False
 
     @model_validator(mode="after")
     def _safe_for_production(self) -> Settings:
         if self.env == "production" and self.email_backend == "console":
             raise ValueError("email_backend=console logs tokens; not allowed in production")
+        if self.env == "production" and self.e2e_models:
+            raise ValueError("e2e_models is for end-to-end tests; not allowed in production")
         return self
 
 

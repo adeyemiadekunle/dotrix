@@ -27,9 +27,10 @@ pnpm dev:backend                          # API on :8000, OpenAPI at /docs (pyth
 pnpm db:up && pnpm db:migrate             # Postgres, Redis, MinIO (console :9001) from infra/docker-compose.yml, then apply migrations
 pnpm db:revision "add issues"             # autogenerate a migration after model changes
 pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
+pnpm --filter @pmagent/web e2e            # browser tests: fresh pmagent_e2e DB + backend on :8100 + web on :3100, rule-based model
 ```
 
-CI runs both Ruff and pytest, plus the pnpm build and typecheck. Run them before pushing.
+CI runs Ruff and pytest, the pnpm build and typecheck, and the browser tests. Run them before pushing (the browser tests at least when you change web flows).
 
 ## Rules that always apply
 
@@ -182,10 +183,11 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
 - [x] Knowledge tab: `.pmagent/` tree with search (deleted files on request), Markdown or source view, edit with a change note (`base_version` guards against overwriting), delete, history with who wrote / asked / approved each version, diffs, restore (including deleted files), zip export for owners and admins; `agent-rules/` editable by owners and admins only
 - [x] Workspace "Members and settings" (`/w/[ws]/settings`): rename; members with role changes, remove, leave, transfer ownership (personal workspaces: owner and guests only); invites by email or link, pending list, revoke. Audit log (`/w/[ws]/audit`, owners and admins) with project and action filters and paging. Project Settings tab (was Overview): name, description, repo, agent model, agent-rules links into Knowledge, zip export
 - [x] Organisation pages (`/o/[org]`, in the sidebar): create an organisation; Workspaces (new workspace with a chosen owner, add one you own, take one out, people per workspace: place, change role, remove; org admins can't place themselves), Members (add by email with an account, org roles, remove, leave), Settings (rename; what each org role can see)
-- [ ] Backend: audit membership and invite changes (role changes, removals, invites, ownership transfer aren't in `audit_events` yet)
+- [x] Backend: membership and invite changes are audited (rename, role changes, removals and leaving, ownership transfer, invites sent / links created / revoked, joining, org placements in the workspace's own log)
 - [ ] A briefing page (the daily briefing already runs from the chat)
 - [ ] Remove or update the leftovers: `packages/shared` (unused; its `Issue` type predates the API) and `packages/ui/src/index.tsx`'s StatusBadge. The generated API types are the source of truth.
-- [ ] Automated UI tests (Playwright) for sign-in and the main flows
+- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search, chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
+- [ ] More browser tests as pages change: organisations, document upload (needs MinIO in CI), phone layouts
 
 ## TODO: backend (priority order)
 

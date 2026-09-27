@@ -7,7 +7,10 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound
+from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.models import User
+from pmagent_backend.modules.auth.repository import UserRepository
+from pmagent_backend.modules.knowledge.models import AuthorType
 
 from .models import Membership, Role, Workspace, WorkspaceKind
 from .permissions import Permission, has_permission
@@ -25,6 +28,24 @@ class WorkspaceService:
         self.session = session
         self.workspaces = WorkspaceRepository(session)
         self.members = MembershipRepository(session)
+
+    async def _audit(
+        self, actor: Membership, action: str, target_user_id: uuid.UUID | None = None, **details: object
+    ) -> None:
+        """Record a people or settings change in the workspace's audit log (same transaction)."""
+        target = None
+        if target_user_id is not None:
+            user = await UserRepository(self.session).get(target_user_id)
+            target = user.email if user else str(target_user_id)
+            details["user_id"] = str(target_user_id)
+        AuditLog(self.session).record(
+            workspace_id=actor.workspace_id,
+            action=action,
+            target=target,
+            actor_type=AuthorType.USER,
+            actor_user_id=actor.user_id,
+            details=details,
+        )
 
     def _create(self, name: str, kind: WorkspaceKind, owner: User) -> Workspace:
         workspace = Workspace(
@@ -58,6 +79,8 @@ class WorkspaceService:
 
     async def update(self, member: Membership, data: WorkspaceUpdate) -> WorkspaceWithRole:
         workspace = member.workspace
+        if workspace.name != data.name:
+            await self._audit(member, "workspace.renamed", **{"from": workspace.name, "to": data.name})
         workspace.name = data.name
         await self.session.commit()
         return WorkspaceWithRole.of(workspace, member.role)
@@ -85,6 +108,10 @@ class WorkspaceService:
             raise Forbidden("Only an owner can grant or change the owner role")
         if target.role == Role.OWNER and role != Role.OWNER:
             await self._ensure_other_owner(actor.workspace_id, target)
+        if target.role != role:
+            await self._audit(
+                actor, "member.role_changed", target_user_id, **{"from": target.role.value, "to": role.value}
+            )
         target.role = role
         await self.session.commit()
         members = await self.list_members(actor.workspace_id)
@@ -101,6 +128,7 @@ class WorkspaceService:
         target = await self._get_member(actor.workspace_id, target_user_id)
         if target.role is Role.GUEST:
             raise Conflict("Guests can't become owners; make them a member first")
+        await self._audit(actor, "workspace.ownership_transferred", target_user_id)
         target.role = Role.OWNER
         actor.role = Role.ADMIN
         await self.session.commit()
@@ -116,6 +144,9 @@ class WorkspaceService:
             if not leaving and actor.role != Role.OWNER:
                 raise Forbidden("Only an owner can remove an owner")
             await self._ensure_other_owner(actor.workspace_id, target)
+        await self._audit(
+            actor, "member.left" if leaving else "member.removed", target_user_id, role=target.role.value
+        )
         await self.members.delete(target)
         await self.session.commit()
 
