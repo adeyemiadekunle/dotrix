@@ -28,6 +28,7 @@ class WorkspaceRead(BaseModel):
     name: str
     slug: str
     kind: WorkspaceKind
+    organization_id: uuid.UUID | None = None
     created_at: datetime
 
 

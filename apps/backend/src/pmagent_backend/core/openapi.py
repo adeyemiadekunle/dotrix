@@ -57,6 +57,11 @@ TAGS: list[dict[str, str]] = [
         "RFC 8628). The tool calls `/code` and polls `/token`; the user approves in the web app.",
     },
     {"name": "api tokens", "description": "Your personal API tokens: create, list, revoke."},
+    {
+        "name": "organizations",
+        "description": "Organisations own several workspaces (e.g. per division or client) and manage "
+        "people across them. Org admins don't see inside a workspace unless they're in it.",
+    },
     {"name": "workspaces", "description": "Workspaces, members, roles, and ownership transfer."},
     {"name": "invites", "description": "Invite people by email or shareable link; accept invites."},
     {"name": "projects", "description": "Projects: start from a new repo, an existing repo, or docs only."},
