@@ -140,14 +140,15 @@ apps/web/
 │   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
 │   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /w/[workspace], /w/[workspace]/{approvals,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,knowledge,docs,settings} (the project root redirects to board; /overview to settings), /settings
+│   └── (app)/                   signed-in shell (sidebar): /o/[org]{,/members,/settings}, /w/[workspace], /w/[workspace]/{approvals,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,knowledge,docs,settings} (the project root redirects to board; /overview to settings), /settings
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
 │   ├── documents/               dropzone, queued files, upload progress
 │   ├── agent/                   chat panel and context, conversation, approvals (diff view, decisions)
 │   ├── knowledge/               file tree, file history (authorship, diffs, restore)
-│   └── settings/                members, invites (workspace settings)
-└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, knowledge.ts, admin.ts, documents.ts, repo.ts, url-state.ts, labels.ts
+│   ├── settings/                members, invites (workspace settings)
+│   └── orgs/                    create-organisation dialog
+└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, knowledge.ts, admin.ts, orgs.ts, documents.ts, repo.ts, url-state.ts, labels.ts
 packages/ui/src/                 consumed as source (no build step); index.tsx's StatusBadge is a leftover placeholder
 ├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
 └── styles/globals.css           Tailwind entry + theme tokens (light and .dark)
@@ -179,7 +180,7 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
 - [ ] "Connect GitHub" (needs FR-10's GitHub App): pick a repo from your account, private repos, "new repository"
 - [x] Knowledge tab: `.pmagent/` tree with search (deleted files on request), Markdown or source view, edit with a change note (`base_version` guards against overwriting), delete, history with who wrote / asked / approved each version, diffs, restore (including deleted files), zip export for owners and admins; `agent-rules/` editable by owners and admins only
 - [x] Workspace "Members and settings" (`/w/[ws]/settings`): rename; members with role changes, remove, leave, transfer ownership (personal workspaces: owner and guests only); invites by email or link, pending list, revoke. Audit log (`/w/[ws]/audit`, owners and admins) with project and action filters and paging. Project Settings tab (was Overview): name, description, repo, agent model, agent-rules links into Knowledge, zip export
-- [ ] Organisation pages: members, workspaces, placing people into workspaces (next)
+- [x] Organisation pages (`/o/[org]`, in the sidebar): create an organisation; Workspaces (new workspace with a chosen owner, add one you own, take one out, people per workspace: place, change role, remove; org admins can't place themselves), Members (add by email with an account, org roles, remove, leave), Settings (rename; what each org role can see)
 - [ ] Backend: audit membership and invite changes (role changes, removals, invites, ownership transfer aren't in `audit_events` yet)
 - [ ] A briefing page (the daily briefing already runs from the chat)
 - [ ] Remove or update the leftovers: `packages/shared` (unused; its `Issue` type predates the API) and `packages/ui/src/index.tsx`'s StatusBadge. The generated API types are the source of truth.
