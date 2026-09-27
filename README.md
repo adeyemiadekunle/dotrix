@@ -46,6 +46,23 @@ pnpm dev:desktop         # Electron window pointed at the web app
 uv run pmagent --help    # CLI
 ```
 
+## Install the CLI
+
+The `pmagent` command installs on its own (Python 3.11+ and [uv](https://docs.astral.sh/uv/)):
+
+```bash
+uv tool install "git+https://github.com/adeyemiadekunle/multi-agent-pm#subdirectory=apps/cli"
+```
+
+- On Windows, run `uv tool update-shell` once (then open a new terminal) so `pmagent` is on your PATH.
+- Without uv: `pipx install "git+https://github.com/adeyemiadekunle/multi-agent-pm#subdirectory=apps/cli"`.
+- Point it at your server with `PMAGENT_API_URL` (or `--api-url` on `login`); the default is
+  `http://127.0.0.1:8000` until the hosted platform exists.
+- Upgrade with `uv tool upgrade pmagent`; remove with `uv tool uninstall pmagent`.
+
+It includes the local agent engine, so commands also work offline on unlinked repos. Then:
+`pmagent login`, `pmagent link . --workspace <slug> --project <KEY>` (see below).
+
 ## The CLI with the platform
 
 ```bash
