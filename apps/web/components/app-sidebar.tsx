@@ -17,7 +17,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@pmagent/ui/components/sidebar";
-import { FolderKanbanIcon, PlusIcon, ShieldCheckIcon } from "lucide-react";
+import { FolderKanbanIcon, PlusIcon, ScrollTextIcon, SettingsIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
@@ -70,6 +70,24 @@ export function AppSidebar() {
                   </SidebarMenuBadge>
                 )}
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === `${base}/settings`} tooltip="Members and settings">
+                  <Link href={`${base}/settings`}>
+                    <SettingsIcon />
+                    <span>Members and settings</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {canManageProjects(workspace?.role) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname === `${base}/audit`} tooltip="Audit log">
+                    <Link href={`${base}/audit`}>
+                      <ScrollTextIcon />
+                      <span>Audit log</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
