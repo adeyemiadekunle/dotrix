@@ -9808,6 +9808,12 @@
               }
             ],
             "description": "Your role in the workspace, or null if you're not in it"
+          },
+          "via_organization": {
+            "type": "boolean",
+            "title": "Via Organization",
+            "description": "Your role comes from owning the organisation",
+            "default": false
           }
         },
         "type": "object",
@@ -10755,6 +10761,12 @@
           },
           "role": {
             "$ref": "#/components/schemas/Role"
+          },
+          "via_organization": {
+            "type": "boolean",
+            "title": "Via Organization",
+            "description": "You have this role because you own the workspace's organisation",
+            "default": false
           }
         },
         "type": "object",

@@ -34,10 +34,15 @@ class WorkspaceRead(BaseModel):
 
 class WorkspaceWithRole(WorkspaceRead):
     role: Role
+    via_organization: bool = Field(
+        default=False, description="You have this role because you own the workspace's organisation"
+    )
 
     @classmethod
-    def of(cls, workspace: object, role: Role) -> WorkspaceWithRole:
-        return cls(**WorkspaceRead.model_validate(workspace).model_dump(), role=role)
+    def of(cls, workspace: object, role: Role, via_organization: bool = False) -> WorkspaceWithRole:
+        return cls(
+            **WorkspaceRead.model_validate(workspace).model_dump(), role=role, via_organization=via_organization
+        )
 
 
 class MemberRead(BaseModel):

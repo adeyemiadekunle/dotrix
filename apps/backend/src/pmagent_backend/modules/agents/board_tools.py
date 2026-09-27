@@ -91,7 +91,7 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
         async with ctx.session_factory() as session:
             project = await ProjectRepository(session).get(ctx.workspace_id, ctx.project_id)
             member = (
-                await MembershipRepository(session).get(ctx.workspace_id, ctx.instructed_by_id)
+                await MembershipRepository(session).effective(ctx.workspace_id, ctx.instructed_by_id)
                 if ctx.instructed_by_id
                 else None
             )

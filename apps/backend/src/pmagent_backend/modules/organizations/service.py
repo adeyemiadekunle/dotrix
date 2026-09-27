@@ -164,7 +164,10 @@ class OrganizationService:
         return [
             OrgWorkspaceRead(
                 id=ws.id, name=ws.name, slug=ws.slug, kind=ws.kind, created_at=ws.created_at,
-                members=n_members, projects=n_projects, your_role=role,
+                members=n_members, projects=n_projects,
+                # Org owners see every workspace; admins and members only their own.
+                your_role=role or (Role.OWNER if actor.role is OrgRole.OWNER else None),
+                via_organization=role is None and actor.role is OrgRole.OWNER,
             )
             for ws, n_members, n_projects, role in await self.session.execute(stmt)
         ]
@@ -219,7 +222,11 @@ class OrganizationService:
         ]
 
     async def place(self, actor: OrgMembership, workspace_id: uuid.UUID, user_id: uuid.UUID, role: Role) -> list[MemberRead]:
-        """Put an org member into one of the organisation's workspaces, or change their role there."""
+        """Put an org member into one of the organisation's workspaces, or change their role there.
+        Org admins can't place themselves: seeing a workspace's work needs its owner's say (org
+        owners already see every workspace)."""
+        if user_id == actor.user_id and actor.role is not OrgRole.OWNER:
+            raise Forbidden("Org admins can't add themselves to a workspace; ask its owner to add you")
         await self._org_ws(actor, workspace_id)
         await self._require_member(actor.organization_id, user_id)
         existing = await self.session.scalar(

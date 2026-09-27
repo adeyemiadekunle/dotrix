@@ -46,7 +46,7 @@ async def create_workspace(
 @router.get("/{workspace_id}", responses=errors(404))
 async def get_workspace(member: Viewer) -> WorkspaceWithRole:
     """A workspace you belong to."""
-    return WorkspaceWithRole.of(member.workspace, member.role)
+    return WorkspaceWithRole.of(member.workspace, member.role, getattr(member, "via_organization", False))
 
 
 @router.patch("/{workspace_id}", responses=errors(403, 404, 422))

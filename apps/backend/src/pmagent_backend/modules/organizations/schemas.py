@@ -63,6 +63,7 @@ class OrgWorkspaceRead(BaseModel):
     members: int
     projects: int
     your_role: Role | None = Field(description="Your role in the workspace, or null if you're not in it")
+    via_organization: bool = Field(default=False, description="Your role comes from owning the organisation")
 
 
 class OrgWorkspaceCreate(BaseModel):
