@@ -32,13 +32,14 @@ export function IssueCard({
   return (
     <div
       className={cn(
-        "bg-card hover:border-foreground/20 grid cursor-pointer gap-2 rounded-lg border p-3 text-sm shadow-xs transition-colors",
+        // minmax(0,1fr): the card never grows wider than its column, whatever its content.
+        "bg-card hover:border-foreground/20 grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)] gap-2 rounded-lg border p-3 text-sm shadow-xs transition-colors",
         dragging && "ring-primary/30 rotate-1 shadow-lg ring-2",
         className,
       )}
       {...props}
     >
-      <p className="line-clamp-3 leading-snug">{issue.title}</p>
+      <p className="line-clamp-3 leading-snug break-words">{issue.title}</p>
       {(issue.labels.length > 0 || issue.parent_key) && (
         <div className="flex flex-wrap gap-1">
           {issue.parent_key && (
@@ -53,13 +54,13 @@ export function IssueCard({
           ))}
         </div>
       )}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <TypeIcon type={issue.type} />
-        <span className="text-muted-foreground font-mono text-xs">{issue.key}</span>
+        <span className="text-muted-foreground font-mono text-xs whitespace-nowrap">{issue.key}</span>
         {due && (
           <span
             className={cn(
-              "text-muted-foreground flex items-center gap-1 text-xs",
+              "text-muted-foreground flex items-center gap-1 text-xs whitespace-nowrap",
               due.overdue && issue.status !== "done" && "text-red-600 dark:text-red-400",
             )}
           >

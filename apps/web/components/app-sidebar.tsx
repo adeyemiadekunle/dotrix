@@ -17,15 +17,17 @@ import {
   SidebarRail,
   useSidebar,
 } from "@pmagent/ui/components/sidebar";
-import { FolderKanbanIcon, PlusIcon, ScrollTextIcon, SettingsIcon, ShieldCheckIcon } from "lucide-react";
+import { BuildingIcon, FolderKanbanIcon, PlusIcon, ScrollTextIcon, SettingsIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { NavUser } from "@/components/nav-user";
+import { CreateOrgDialog } from "@/components/orgs/create-org-dialog";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { canManageProjects } from "@/lib/labels";
 import { useWorkspaceApprovals } from "@/lib/agent";
+import { useOrgs } from "@/lib/orgs";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
 
 export function AppSidebar() {
@@ -34,6 +36,8 @@ export function AppSidebar() {
   const projects = useProjects(workspace?.id);
   const approvals = useWorkspaceApprovals(workspace?.id, Boolean(workspace && workspace.role !== "guest"));
   const waiting = approvals.data?.length ?? 0;
+  const orgs = useOrgs();
+  const [creatingOrg, setCreatingOrg] = useState(false);
   const { setOpenMobile } = useSidebar();
   // On phones the sidebar is a sheet over the page: close it once you've picked somewhere to go.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
@@ -133,7 +137,34 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Organisations</SidebarGroupLabel>
+          <SidebarGroupAction title="New organisation" onClick={() => setCreatingOrg(true)}>
+            <PlusIcon />
+            <span className="sr-only">New organisation</span>
+          </SidebarGroupAction>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {orgs.data?.map((o) => (
+                <SidebarMenuItem key={o.id}>
+                  <SidebarMenuButton asChild isActive={pathname.startsWith(`/o/${o.slug}`)} tooltip={o.name}>
+                    <Link href={`/o/${o.slug}`}>
+                      <BuildingIcon />
+                      <span className="truncate">{o.name}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+              {orgs.data?.length === 0 && (
+                <p className="text-muted-foreground px-2 py-1 text-xs group-data-[collapsible=icon]:hidden">
+                  For a company with several workspaces.
+                </p>
+              )}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
+      <CreateOrgDialog open={creatingOrg} onOpenChange={setCreatingOrg} />
       <SidebarFooter>
         <NavUser />
       </SidebarFooter>

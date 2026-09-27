@@ -85,7 +85,9 @@ export function useRecentThreads(scope: Scope | undefined) {
         const known = threads.get(run.thread_id);
         threads.set(run.thread_id, {
           threadId: run.thread_id,
-          title: runTitle(run),
+          // Runs come newest first, so the last one seen is the thread's first run, which
+          // carries its title (older threads, from before titles, fall back to the message).
+          title: run.title ?? known?.title ?? runTitle(run),
           kind: run.kind,
           updatedAt: known?.updatedAt ?? run.updated_at,
           waiting: (known?.waiting ?? false) || run.status === "awaiting_approval",

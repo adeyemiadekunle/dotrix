@@ -75,6 +75,41 @@ async def test_conversation_threads(project, db_client: AsyncClient, agent_scrip
     assert [r["message"] for r in thread] == ["two", "one"]
 
 
+async def test_new_threads_get_titles(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    agent_script.say("Here's the board.", "And more.")
+    first = await run(db_client, base, ada.headers, "What's open on the board right now, and what's blocked?")
+    # No titler in tests: the placeholder (first sentence, a few words) stays.
+    assert first["title"] == "What's open on the board right now, and…"
+    follow_up = await run(db_client, base, ada.headers, "Thanks", thread_id=first["thread_id"])
+    assert follow_up["title"] is None  # only a thread's first run carries its title
+
+
+async def test_the_model_names_a_new_thread(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    calls = []
+
+    async def titler(model, message, reply):
+        calls.append((message, reply))
+        return "Board status and blockers"
+
+    db_client._transport.app.state.runner.titler = titler  # type: ignore[attr-defined]
+    agent_script.say("KUN-5 is blocked.", "Sure.")
+    first = await run(db_client, base, ada.headers, "What's blocked?")
+    assert calls == [("What's blocked?", "KUN-5 is blocked.")]
+    fetched = (await db_client.get(f"{base}/agent/runs/{first['id']}", headers=ada.headers)).json()
+    assert fetched["title"] == "Board status and blockers"
+    await run(db_client, base, ada.headers, "Thanks", thread_id=first["thread_id"])
+    assert len(calls) == 1  # follow-ups don't rename the thread
+
+
+async def test_built_in_requests_have_fixed_titles(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    agent_script.say("All quiet.")
+    brief = (await db_client.post(f"{base}/agent/briefing", headers=ada.headers)).json()
+    assert brief["title"] == "Daily briefing"
+
+
 # -- approvals --------------------------------------------------------------------------
 
 
