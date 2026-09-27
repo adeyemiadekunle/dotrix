@@ -171,7 +171,8 @@ External accounts, keys, and config have to exist before these items can be buil
 ### Organisations (beyond the PRD: an organisation owning several workspaces)
 
 - [x] Organisations (`modules/organizations`): owner / admin / member; workspaces may belong to one (personal ones never)
-- [x] Org admins create, attach (their own), and detach workspaces, add people, and place them into any org workspace, but **manage without seeing**: workspace content still requires workspace membership
+- [x] **Org owners see and work in every workspace their organisation owns** (implicit owner access via `MembershipRepository.effective`, not a stored membership; marked `via_organization`; follows org ownership)
+- [x] Org admins create, attach (their own), and detach workspaces, add people, and place others into any org workspace, but **manage without seeing**: they need a real workspace membership, and can't place themselves
 - [x] Everyone in an org workspace is an org member (attach, invites, placements); leaving the org leaves its workspaces (owners must hand over first); the org always keeps an owner
 - [ ] Organisation email invites for people without an account; verified email domains (auto-join)
 - [ ] Org-level audit log (org events today are not audited; `audit_events` is per workspace)

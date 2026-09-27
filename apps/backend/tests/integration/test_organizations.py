@@ -176,3 +176,79 @@ async def test_organisations_are_isolated(org, db_client: AsyncClient, signup) -
     assert (await db_client.get(f"{ORGS}/{acme['id']}/workspaces", headers=zed.headers)).status_code == 404
     res = await db_client.get(f"{ORGS}/{other['id']}/workspaces/{acme_ws['id']}/members", headers=zed.headers)
     assert res.status_code == 404
+
+
+# -- the organisation's owner sees every workspace it owns --------------------------------
+
+
+async def test_org_owner_sees_and_works_in_every_org_workspace(org, db_client: AsyncClient, signup) -> None:
+    ada, acme = await org()
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add(db_client, acme, ada.headers, bob.email, "admin")
+    # Bob creates a workspace he owns; Ada isn't a member of it.
+    ws = (await db_client.post(f"{ORGS}/{acme['id']}/workspaces", json={"name": "Client X"}, headers=bob.headers)).json()
+    await db_client.post(f"/v1/workspaces/{ws['id']}/projects", json={"key": "CLX", "name": "Client X"}, headers=bob.headers)
+
+    # Ada owns the organisation, so she sees and works in it...
+    projects = (await db_client.get(f"/v1/workspaces/{ws['id']}/projects", headers=ada.headers)).json()
+    assert [p["key"] for p in projects] == ["CLX"]
+    got = (await db_client.get(f"/v1/workspaces/{ws['id']}", headers=ada.headers)).json()
+    assert got["role"] == "owner" and got["via_organization"] is True
+    issue = await db_client.post(f"/v1/workspaces/{ws['id']}/projects/{projects[0]['id']}/issues",
+                                 json={"title": "Kickoff", "assignee_user_id": ada.id}, headers=ada.headers)
+    assert issue.status_code == 201  # and can be assigned work there
+    # ...and it's in her workspace list, marked as coming from the organisation.
+    listed = {w["name"]: w for w in (await db_client.get("/v1/workspaces", headers=ada.headers)).json()}
+    assert listed["Client X"]["via_organization"] is True and listed["Personal"]["via_organization"] is False
+    org_view = {w["name"]: w for w in (await db_client.get(f"{ORGS}/{acme['id']}/workspaces", headers=ada.headers)).json()}
+    assert org_view["Client X"]["your_role"] == "owner" and org_view["Client X"]["via_organization"] is True
+    # It isn't a stored membership: the workspace's member list is unchanged.
+    members = (await db_client.get(f"/v1/workspaces/{ws['id']}/members", headers=ada.headers)).json()
+    assert [m["email"] for m in members] == ["bob@example.com"]
+
+
+async def test_org_admins_still_need_to_be_added(org, db_client: AsyncClient, signup) -> None:
+    ada, acme = await org()
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add(db_client, acme, ada.headers, bob.email, "admin")
+    ws = (await db_client.post(f"{ORGS}/{acme['id']}/workspaces", json={"name": "Finance"}, headers=ada.headers)).json()
+    assert (await db_client.get(f"/v1/workspaces/{ws['id']}/projects", headers=bob.headers)).status_code == 404
+    # And an org admin can't let himself in.
+    self_place = await db_client.put(f"{ORGS}/{acme['id']}/workspaces/{ws['id']}/members/{bob.id}",
+                                     json={"role": "member"}, headers=bob.headers)
+    assert self_place.status_code == 403
+    # The owner can add him.
+    placed = await db_client.put(f"{ORGS}/{acme['id']}/workspaces/{ws['id']}/members/{bob.id}",
+                                 json={"role": "member"}, headers=ada.headers)
+    assert placed.status_code == 200
+    assert (await db_client.get(f"/v1/workspaces/{ws['id']}/projects", headers=bob.headers)).status_code == 200
+
+
+async def test_access_follows_org_ownership(org, db_client: AsyncClient, signup) -> None:
+    ada, acme = await org()
+    cy = await signup(email="cy@example.com", name="Cy")
+    await add(db_client, acme, ada.headers, cy.email, "owner")
+    ws = (await db_client.post(f"{ORGS}/{acme['id']}/workspaces", json={"name": "Kunemi", "owner_user_id": ada.id},
+                               headers=ada.headers)).json()
+    assert (await db_client.get(f"/v1/workspaces/{ws['id']}", headers=cy.headers)).status_code == 200
+    # Cy steps down to admin: her implicit access goes with it.
+    await db_client.patch(f"{ORGS}/{acme['id']}/members/{cy.id}", json={"role": "admin"}, headers=ada.headers)
+    assert (await db_client.get(f"/v1/workspaces/{ws['id']}", headers=cy.headers)).status_code == 404
+
+
+async def test_org_owner_can_run_the_agents_there(org, db_client: AsyncClient, signup, agent_script) -> None:
+    from pmagent_engine.testing import tool_call
+
+    ada, acme = await org()
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add(db_client, acme, ada.headers, bob.email, "admin")
+    ws = (await db_client.post(f"{ORGS}/{acme['id']}/workspaces", json={"name": "Client X"}, headers=bob.headers)).json()
+    project = (await db_client.post(f"/v1/workspaces/{ws['id']}/projects", json={"key": "CLX", "name": "Client X"},
+                                    headers=bob.headers)).json()
+    base = f"/v1/workspaces/{ws['id']}/projects/{project['id']}"
+    agent_script.say(tool_call("create_issue", type="task", title="Kickoff meeting"), "Created it.")
+    paused = (await db_client.post(f"{base}/agent/runs", json={"message": "create a kickoff task"}, headers=ada.headers)).json()
+    decisions = {"decisions": [{"approval_id": a["id"], "decision": "approve"} for a in paused["approvals"]]}
+    done = (await db_client.post(f"{base}/agent/runs/{paused['id']}/decisions", json=decisions, headers=ada.headers)).json()
+    assert done["status"] == "completed"
+    assert [i["title"] for i in (await db_client.get(f"{base}/issues", headers=ada.headers)).json()] == ["Kickoff meeting"]

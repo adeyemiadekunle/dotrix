@@ -52,8 +52,8 @@ class WorkspaceService:
 
     async def list_for_user(self, user: User) -> list[WorkspaceWithRole]:
         return [
-            WorkspaceWithRole.of(ws, role)
-            for ws, role in await self.workspaces.list_for_user(user.id)
+            WorkspaceWithRole.of(ws, role, via_org)
+            for ws, role, via_org in await self.workspaces.list_for_user(user.id)
         ]
 
     async def update(self, member: Membership, data: WorkspaceUpdate) -> WorkspaceWithRole:

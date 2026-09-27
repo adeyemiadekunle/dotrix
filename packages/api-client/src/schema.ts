@@ -2404,6 +2404,12 @@ export interface components {
             projects: number;
             /** @description Your role in the workspace, or null if you're not in it */
             your_role: components["schemas"]["Role"] | null;
+            /**
+             * Via Organization
+             * @description Your role comes from owning the organisation
+             * @default false
+             */
+            via_organization: boolean;
         };
         /** OwnershipTransfer */
         OwnershipTransfer: {
@@ -2787,6 +2793,12 @@ export interface components {
              */
             created_at: string;
             role: components["schemas"]["Role"];
+            /**
+             * Via Organization
+             * @description You have this role because you own the workspace's organisation
+             * @default false
+             */
+            via_organization: boolean;
         };
     };
     responses: never;
