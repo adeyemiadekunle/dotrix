@@ -9,6 +9,7 @@ import {
   REFRESH_COOKIE,
   type TokenPair,
   clearSession,
+  clientHeaders,
   refreshTokens,
   setSession,
 } from "@/lib/session";
@@ -16,7 +17,7 @@ import {
 // Request headers passed through to the backend; everything else (cookies included) stays here.
 const FORWARD = ["accept", "content-type", "if-none-match", "x-request-id"];
 // Response headers passed back to the browser.
-const RETURN = ["content-type", "content-disposition", "etag", "location", "x-request-id", "cache-control"];
+const RETURN = ["content-type", "content-disposition", "etag", "location", "x-request-id", "cache-control", "retry-after"];
 
 async function handle(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
@@ -25,7 +26,7 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
   const jar = await cookies();
 
   const send = (token: string | undefined) => {
-    const headers = new Headers();
+    const headers = new Headers(clientHeaders(request));
     for (const name of FORWARD) {
       const value = request.headers.get(name);
       if (value) headers.set(name, value);

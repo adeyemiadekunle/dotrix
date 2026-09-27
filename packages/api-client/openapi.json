@@ -64,7 +64,7 @@
           "auth"
         ],
         "summary": "Signup",
-        "description": "Create an account and sign in. Also creates your personal workspace and emails a\nverification link. Email is case-insensitive; passwords are 10\u2013128 characters.",
+        "description": "Create an account and sign in. Also creates your personal workspace and emails a\nverification link. Email is case-insensitive; passwords are 10\u2013128 characters.\nRate-limited per IP and per email.",
         "operationId": "signup",
         "requestBody": {
           "content": {
@@ -106,6 +106,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
           }
         }
       }
@@ -116,7 +126,7 @@
           "auth"
         ],
         "summary": "Login",
-        "description": "Exchange email and password for an access token (15 min) and a refresh token.\nA wrong password and an unknown email give the same 401.",
+        "description": "Exchange email and password for an access token (15 min) and a refresh token.\nA wrong password and an unknown email give the same 401. Rate-limited per IP and per\nemail (10 attempts in 15 minutes).",
         "operationId": "login",
         "requestBody": {
           "content": {
@@ -151,6 +161,16 @@
           },
           "422": {
             "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -300,7 +320,7 @@
           "auth"
         ],
         "summary": "Resend Verification",
-        "description": "Email a new verification link. Earlier links stop working.",
+        "description": "Email a new verification link. Earlier links stop working. Rate-limited.",
         "operationId": "resend_verification",
         "responses": {
           "202": {
@@ -313,6 +333,16 @@
           },
           "401": {
             "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -335,7 +365,7 @@
           "auth"
         ],
         "summary": "Request Password Reset",
-        "description": "Email a password-reset link. Always 202, whether or not the account exists.",
+        "description": "Email a password-reset link. Always 202, whether or not the account exists (the\nlookup happens in the background). Rate-limited per IP and per email.",
         "operationId": "request_password_reset",
         "requestBody": {
           "content": {
@@ -358,6 +388,16 @@
           },
           "422": {
             "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
             "content": {
               "application/problem+json": {
                 "schema": {

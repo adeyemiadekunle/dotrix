@@ -21,15 +21,19 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from alembic import command
 from alembic.config import Config
+from arq import create_pool
+from arq.connections import RedisSettings
 from httpx import ASGITransport, AsyncClient
 from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import make_url, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from pmagent_backend.core.email import OutboxEmailSender, get_email_sender
+from pmagent_backend.core.jobs import InlineJobs, JobContext
 from pmagent_backend.core.settings import Settings, get_database_settings
 from pmagent_backend.core.storage import MemoryBlobStorage, get_storage
 from pmagent_backend.db.session import get_session
+from pmagent_backend.jobs import JOBS
 from pmagent_backend.main import create_app
 from pmagent_backend.modules.agents.llm import ModelChoice, ModelUnavailable
 from pmagent_backend.modules.agents.runner import AgentRunner
@@ -102,6 +106,8 @@ def make_settings(database_url: str = UNUSED_DATABASE_URL) -> Settings:
         app_url="http://app.test",
         email_backend="console",
         default_model="anthropic:claude-sonnet-5",
+        # Tests that check limits install a limiter themselves (`rate_limited` fixture).
+        rate_limits="off",
     )
 
 
@@ -111,6 +117,22 @@ async def client() -> AsyncIterator[AsyncClient]:
     app = create_app(make_settings())
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+
+REDIS_URL = os.environ.get("PMAGENT_TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
+
+
+@pytest.fixture
+async def redis() -> AsyncIterator[Any]:
+    """An arq Redis pool on $PMAGENT_TEST_REDIS_URL (or local database 15); the test is
+    skipped if Redis isn't reachable. Use unique key prefixes / queue names per test."""
+    try:
+        pool = await create_pool(RedisSettings.from_dsn(REDIS_URL), retry=0)
+        await pool.ping()
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"Redis not reachable at {REDIS_URL}: {exc}")
+    yield pool
+    await pool.aclose()
 
 
 @pytest.fixture
@@ -171,7 +193,8 @@ async def db_client(
         finally:
             await session.close()
 
-    # Inline: a run finishes (or pauses) before the request that started it returns.
+    # Inline: jobs and runs finish (or pause) before the request that started them returns.
+    app.state.jobs = InlineJobs(JobContext(shared_session, app.state.settings, outbox), JOBS)
     app.state.runner = AgentRunner(
         session_factory=shared_session,
         checkpointer=InMemorySaver(),

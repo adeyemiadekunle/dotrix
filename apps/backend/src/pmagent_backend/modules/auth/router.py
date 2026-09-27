@@ -5,9 +5,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from pmagent_backend.api.deps import CurrentUser, EmailDep, SessionDep, SettingsDep
+from pmagent_backend.api.deps import CurrentUser, EmailDep, JobsDep, SessionDep, SettingsDep
 from pmagent_backend.core.openapi import errors
 
+from .limits import LOGIN, PASSWORD_RESET, SIGNUP, VERIFY_RESEND, ThrottleDep
 from .schemas import (
     LoginRequest,
     PasswordResetConfirm,
@@ -21,29 +22,32 @@ from .schemas import (
 )
 from .service import AuthService
 
-# TODO(rate-limit): throttle signup, login, and reset per IP and per email (needs Redis).
 router = APIRouter(prefix="/auth", tags=["auth"])
 me_router = APIRouter(tags=["auth"])
 
 
-def get_auth_service(session: SessionDep, settings: SettingsDep, email: EmailDep) -> AuthService:
-    return AuthService(session, settings, email)
+def get_auth_service(session: SessionDep, settings: SettingsDep, email: EmailDep, jobs: JobsDep) -> AuthService:
+    return AuthService(session, settings, email, jobs)
 
 
 Auth = Annotated[AuthService, Depends(get_auth_service)]
 
 
-@router.post("/signup", status_code=status.HTTP_201_CREATED, responses=errors(409, 422))
-async def signup(data: SignupRequest, auth: Auth) -> SignupResponse:
+@router.post("/signup", status_code=status.HTTP_201_CREATED, responses=errors(409, 422, 429))
+async def signup(data: SignupRequest, auth: Auth, throttle: ThrottleDep) -> SignupResponse:
     """Create an account and sign in. Also creates your personal workspace and emails a
-    verification link. Email is case-insensitive; passwords are 10–128 characters."""
+    verification link. Email is case-insensitive; passwords are 10–128 characters.
+    Rate-limited per IP and per email."""
+    await throttle(SIGNUP, data.email)
     return await auth.signup(data)
 
 
-@router.post("/login", responses=errors(401, 422))
-async def login(data: LoginRequest, auth: Auth) -> TokenPair:
+@router.post("/login", responses=errors(401, 422, 429))
+async def login(data: LoginRequest, auth: Auth, throttle: ThrottleDep) -> TokenPair:
     """Exchange email and password for an access token (15 min) and a refresh token.
-    A wrong password and an unknown email give the same 401."""
+    A wrong password and an unknown email give the same 401. Rate-limited per IP and per
+    email (10 attempts in 15 minutes)."""
+    await throttle(LOGIN, data.email)
     return await auth.login(data)
 
 
@@ -66,15 +70,18 @@ async def verify_email(data: TokenRequest, auth: Auth) -> None:
     await auth.verify_email(data.token)
 
 
-@router.post("/verify-email/resend", status_code=status.HTTP_202_ACCEPTED, responses=errors(401))
-async def resend_verification(user: CurrentUser, auth: Auth) -> None:
-    """Email a new verification link. Earlier links stop working."""
+@router.post("/verify-email/resend", status_code=status.HTTP_202_ACCEPTED, responses=errors(401, 429))
+async def resend_verification(user: CurrentUser, auth: Auth, throttle: ThrottleDep) -> None:
+    """Email a new verification link. Earlier links stop working. Rate-limited."""
+    await throttle(VERIFY_RESEND, user.email)
     await auth.resend_verification(user)
 
 
-@router.post("/password-reset/request", status_code=status.HTTP_202_ACCEPTED, responses=errors(422))
-async def request_password_reset(data: PasswordResetRequest, auth: Auth) -> None:
-    """Email a password-reset link. Always 202, whether or not the account exists."""
+@router.post("/password-reset/request", status_code=status.HTTP_202_ACCEPTED, responses=errors(422, 429))
+async def request_password_reset(data: PasswordResetRequest, auth: Auth, throttle: ThrottleDep) -> None:
+    """Email a password-reset link. Always 202, whether or not the account exists (the
+    lookup happens in the background). Rate-limited per IP and per email."""
+    await throttle(PASSWORD_RESET, data.email)
     await auth.request_password_reset(data.email)
 
 

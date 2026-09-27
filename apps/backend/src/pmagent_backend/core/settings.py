@@ -73,12 +73,19 @@ class Settings(DatabaseSettings):
     )
     # Model for new projects ("provider:model"); each project can change its own.
     default_model: str = "anthropic:claude-sonnet-5"
-    # Where agent runs execute:
-    # - "local": background tasks in the API process (simplest; an API restart cuts runs off)
-    # - "worker": queued in Redis and executed by `python -m pmagent_backend.worker`; runs
-    #   survive API restarts, and a worker that dies has its run retried
+    # Where background work executes (agent runs, emails, password-reset requests):
+    # - "local": tasks in the API process (simplest; an API restart cuts runs off)
+    # - "worker": queued in Redis and executed by `python -m pmagent_backend.worker`; work
+    #   survives API restarts and is retried if the worker dies
     # - "inline": inside the request (tests, debugging)
-    agent_runs: Literal["local", "worker", "inline"] = "local"
+    jobs: Literal["local", "worker", "inline"] = "local"
+    # Rate limits on sign-up, login, password reset, and verification emails:
+    # "redis" (shared by every API process; required in production), "memory" (this process
+    # only), or "off".
+    rate_limits: Literal["redis", "memory", "off"] = "memory"
+    # Peers whose X-Forwarded-For is believed when finding a caller's IP (the web app's
+    # server, a load balancer). Addresses or CIDR ranges.
+    trusted_proxies: list[str] = ["127.0.0.1", "::1"]
     # End-to-end tests only: allow the deterministic "e2e:rules" model (no API key, no cost).
     e2e_models: bool = False
 
@@ -86,6 +93,8 @@ class Settings(DatabaseSettings):
     def _safe_for_production(self) -> Settings:
         if self.env == "production" and self.email_backend == "console":
             raise ValueError("email_backend=console logs tokens; not allowed in production")
+        if self.env == "production" and self.rate_limits != "redis":
+            raise ValueError("rate_limits must be redis in production (limits shared by every process)")
         if self.env == "production" and self.e2e_models:
             raise ValueError("e2e_models is for end-to-end tests; not allowed in production")
         return self

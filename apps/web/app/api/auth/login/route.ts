@@ -1,12 +1,12 @@
 // Sign in: the backend checks the password; the tokens go into httpOnly cookies, never the page.
 import { NextResponse, type NextRequest } from "next/server";
 
-import { API_URL, type TokenPair, passError, setSession } from "@/lib/session";
+import { API_URL, type TokenPair, clientHeaders, passError, setSession } from "@/lib/session";
 
 export async function POST(request: NextRequest) {
   const upstream = await fetch(`${API_URL}/v1/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...clientHeaders(request) },
     body: await request.text(),
     cache: "no-store",
   });

@@ -51,6 +51,8 @@ def main() -> None:
         "PMAGENT_APP_URL": WEB_URL,
         "PMAGENT_CORS_ORIGINS": f'["{WEB_URL}"]',
         "PMAGENT_LOG_JSON": "false",
+        # Every test signs up a fresh account from the same machine (backend tests cover limits).
+        "PMAGENT_RATE_LIMITS": "off",
         # Only used if no secret is configured (e.g. CI); this server holds throwaway data.
         "PMAGENT_JWT_SECRET": os.environ.get("PMAGENT_JWT_SECRET") or "e2e-only-secret-for-throwaway-test-data",
     }

@@ -1,16 +1,14 @@
 """Worker mode: the API enqueues runs in Redis (arq) and a worker executes them; the reply
 streams through Redis; Stop aborts the job; a retried step continues from its checkpoint.
 
-Needs Redis: $PMAGENT_TEST_REDIS_URL, or redis://127.0.0.1:6379/15 (skipped if unreachable).
-Each test gets its own queue and key prefix."""
+Needs Redis (the `redis` fixture; skipped if unreachable). Each test gets its own queue and
+key prefix."""
 import asyncio
-import os
 import uuid
 from typing import Any
 
 import pytest
-from arq import create_pool, func
-from arq.connections import RedisSettings
+from arq import func
 from arq.worker import Worker
 from httpx import AsyncClient
 from pydantic import Field
@@ -21,19 +19,6 @@ from pmagent_backend.modules.agents.runner import AgentRunner
 from pmagent_backend.modules.agents.streams import RedisRunStreams
 from pmagent_backend.worker import run_agent
 from pmagent_engine.testing import ScriptedChatModel, tool_call
-
-REDIS_URL = os.environ.get("PMAGENT_TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
-
-
-@pytest.fixture
-async def redis():
-    try:
-        pool = await create_pool(RedisSettings.from_dsn(REDIS_URL), retry=0)
-        await pool.ping()
-    except Exception as exc:  # noqa: BLE001
-        pytest.skip(f"Redis not reachable at {REDIS_URL}: {exc}")
-    yield pool
-    await pool.aclose()
 
 
 @pytest.fixture

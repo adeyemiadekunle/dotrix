@@ -24,7 +24,7 @@ uv run ruff check apps packages --fix     # lint (rules pinned in root pyproject
 pnpm install && pnpm build && pnpm typecheck
 pnpm dev:web                              # web app on :3000 (talks to the API through its own /api/v1 proxy)
 pnpm dev:backend                          # API on :8000, OpenAPI at /docs (python -m pmagent_backend.serve: selector loop on Windows)
-pnpm dev:worker                           # agent-run worker (arq on Redis), needed when PMAGENT_AGENT_RUNS=worker
+pnpm dev:worker                           # background worker (arq on Redis): agent runs, emails; needed when PMAGENT_JOBS=worker
 pnpm db:up && pnpm db:migrate             # Postgres, Redis, MinIO (console :9001) from infra/docker-compose.yml, then apply migrations
 pnpm db:revision "add issues"             # autogenerate a migration after model changes
 pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
@@ -60,6 +60,8 @@ apps/backend/
 │   │   ├── errors.py            domain exceptions -> RFC 9457 problem responses
 │   │   ├── openapi.py           errors(...) route responses, tag descriptions
 │   │   ├── email.py             EmailSender (dev console backend for now)
+│   │   ├── jobs.py              background jobs: queued (worker), local tasks, or inline; QueuedEmailSender
+│   │   ├── ratelimit.py         sliding-window rate limits (Redis or memory), client IP behind trusted proxies
 │   │   ├── storage.py           BlobStorage: S3-compatible (MinIO locally) for document originals
 │   │   ├── logging.py           structured JSON logs
 │   │   └── middleware.py        request IDs, access log, last-resort 500
@@ -84,7 +86,8 @@ apps/backend/
 │   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals and decisions, board tools, checkpointer, run queue + live streams (in-process or Redis)
 │   │   ├── audit/               append-only audit log
 │   │   └── connectors/          (planned, FR-10/12) GitHub, GitLab, doc sources (OAuth)
-│   └── worker.py                arq worker (`pnpm dev:worker`): executes queued agent runs when PMAGENT_AGENT_RUNS=worker
+│   ├── jobs.py                  background jobs by name (send_email, send_password_reset); where they run: core/jobs.py
+│   └── worker.py                arq worker (`pnpm dev:worker`): agent runs and jobs when PMAGENT_JOBS=worker
 └── tests/
     ├── conftest.py              app + DB fixtures (transaction rollback per test), signup/create_team/add_member helpers
     ├── unit/                    pure logic: errors, permissions, security, OpenAPI docs rules, repo URLs, model choice
@@ -216,8 +219,9 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 - [x] Web pages the backend now links to: `/verify-email`, `/reset-password`, `/invites/accept`, `/device` (apps/web)
 - [ ] Cleanup job: delete expired device authorizations, used/expired action tokens and invites, and old revoked refresh tokens
 - [ ] Cross-workspace isolation test suite (NFR multi-tenancy), required before beta — started in `tests/integration/test_workspaces.py`; extend for every new workspace-scoped resource
-- [ ] Rate-limit sign-up, login, password reset, and verification resend per IP and per email (Redis)
-- [ ] Real email provider (e.g. SES / Postmark / Resend) behind `EmailSender`; send from a background job so response time doesn't reveal whether an email exists
+- [x] Rate limits on sign-up, login, password reset, and verification resend, per IP and per email (`core/ratelimit.py`, sliding window; Redis in production, `PMAGENT_RATE_LIMITS`); client IP from X-Forwarded-For only via `PMAGENT_TRUSTED_PROXIES` (the web app forwards it; in production the web app needs a proxy in front that appends the real address)
+- [x] Emails are sent from background jobs (`QueuedEmailSender`), and a password-reset request does its lookup in a job too, so response time doesn't reveal whether an account exists
+- [ ] Real email provider (e.g. SES / Postmark / Resend) behind `EmailSender`
 - [ ] Per-workspace overrides for the "configurable" Member permissions (approve actions, coding agent, projects)
 
 #### Dependencies needed for the rest of Accounts
@@ -228,7 +232,7 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] **(you)** Pick a provider (Resend, Postmark, or AWS SES) and create an account
 - [ ] **(you)** Own a sending domain and add its DNS records: SPF, DKIM, DMARC (the provider gives the values)
 - [ ] **(you)** Create a sending API key → `PMAGENT_EMAIL_API_KEY`; choose a from-address → `PMAGENT_EMAIL_FROM`
-- [ ] Background job runner so emails send outside the request, e.g. `arq` on the Redis that's already in docker-compose
+- [x] Background job runner so emails send outside the request (`PMAGENT_JOBS=worker`: arq on Redis, retried with backoff)
 - [ ] Provider `EmailSender` implementation, selected by `PMAGENT_EMAIL_BACKEND`
 
 **Google login**
@@ -253,7 +257,7 @@ External accounts, keys, and config have to exist before these items can be buil
 
 **Rate limiting**
 - [ ] Redis is already in docker-compose; needs `PMAGENT_REDIS_URL` in production
-- [ ] Library: `limits` (or a small custom sliding window on Redis)
+- [x] A small sliding window on Redis (`RedisRateLimiter`), no extra library
 
 **CLI device login (FR-6)**
 - [ ] No external dependency; needs a web page in `apps/web` where the user enters the device code
@@ -321,7 +325,7 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] Workspace-level default model and per-workspace provider keys (business plans bring their own keys)
 - [x] Streaming of agent output to clients: the runner reads the graph's stream (collecting results and interrupts as `ainvoke` does) and publishes the PM's text to in-process `RunStreams`; subagents aren't streamed
 - [x] Streams go through Redis in worker mode (`RedisRunStreams`: snapshot + deltas by position, pub/sub), in-process otherwise
-- [x] Runs in a separate worker process (`PMAGENT_AGENT_RUNS=worker`, arq on Redis): they survive API restarts; a worker cut off mid-run has the job retried from its last checkpoint (never resending the message); Stop aborts the job. `local` (default) keeps runs in the API process
+- [x] Runs in a separate worker process (`PMAGENT_JOBS=worker`, arq on Redis): they survive API restarts; a worker cut off mid-run has the job retried from its last checkpoint (never resending the message); Stop aborts the job. `local` (default) keeps runs in the API process
 - [ ] Tracing of agent runs for admins (LangSmith or OpenTelemetry) and token usage per run (feeds FR-28 spend limits)
 - [ ] **FR-36** Optional second approver (P1), and approving from Slack or email (FR-14)
 
