@@ -170,6 +170,7 @@ External accounts, keys, and config have to exist before these items can be buil
 
 ### P0: Projects and source of truth
 
+- [x] Project setup (create project, add external docs, draft architecture) is owners/admins; members only connect working copies: `pmagent connect` finds the project by canonical git remote (credentials stripped on the machine and on the server) and links without changing it; one project per repo per workspace
 - [x] **FR-9** Projects CRUD with a unique project key per workspace (e.g. `KUN`); start from a new repo, an existing repo, or docs only (the source is recorded; creating or reading the repo itself is FR-10)
 - [x] **FR-18** `knowledge` module: store `.pmagent/` files per project with per-file version history (content, diff, author, instructed_by, approved_by); restore an earlier version
 - [x] **FR-15** Scaffold the full `.pmagent/` structure on project creation (`pmagent_engine.layout.skeleton`, the PRD layout)
@@ -230,7 +231,8 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] **FR-7** SAML / OIDC SSO, enforced SSO, SCIM, custom roles, audit export, data retention
 - [ ] **FR-8, FR-28** Plans, seats, per-run spend limits, usage metering, and billing (Stripe)
 - [ ] **FR-12** Google Drive, Notion, and Confluence doc connectors with re-sync
-- [ ] **FR-13** On connect, the Architecture agent drafts `architecture/overview.md` for approval
+- [x] **FR-13** Architecture overview is project **setup** (owners/admins), never triggered by connecting a repo: `POST .../agent/architecture-draft` / `pmagent architecture draft` from the project's docs plus an optional local repo summary (layout, manifests, README; no source); changes to `architecture/` need an owner/admin to approve
+- [ ] **FR-13** With a code host connected (FR-10), draft from the repo on the platform too (the web app's path)
 - [ ] **FR-14** Email and Slack notifications (approvals waiting, PR ready, daily briefing)
 - [ ] **FR-31** Sprints (goal, dates, committed issues)
 - [ ] **FR-33** @mentions and watchers

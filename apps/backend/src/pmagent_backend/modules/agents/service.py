@@ -8,15 +8,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from uuid_utils.compat import uuid7
 
-from pmagent_backend.core.errors import Conflict, NotFound, Unprocessable
+from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.deps import ProjectAccess
+from pmagent_backend.modules.workspaces.permissions import Permission, has_permission
 from pmagent_engine import approvals as hitl
 
 from .models import ACTIVE_STATUSES, AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .runner import BRIEFING_PROMPT, AgentRunner
-from .schemas import AgentRunRead, ApprovalRead, DecisionsRequest, RunCreate
+from .schemas import (
+    AgentRunRead,
+    ApprovalRead,
+    ArchitectureDraftRequest,
+    DecisionsRequest,
+    RunCreate,
+)
+
+# The architecture is set up by owners and admins; only they approve changes to it.
+PROTECTED_PREFIXES = ("/pmagent/architecture/",)
+
+ARCHITECTURE_DRAFT_PROMPT = """Project setup: draft the architecture overview.
+
+Have architecture-agent read what we know: /pmagent/project.md, /pmagent/requirements/,
+the ingested docs under /pmagent/docs/normalized/, and the repository summary below if
+there is one. Then write /pmagent/architecture/overview.md: the stack, the main
+components and how they relate, the core data model, external integrations, and open
+questions. If an overview already exists, update it: keep what is still right and say
+what changed. This is an explicit instruction to make that change (Action Mode); the
+write will wait for approval."""
 
 
 class ThreadBusy(Conflict):
@@ -71,6 +91,24 @@ class AgentService:
         await self.session.commit()
         await self.runner.start(run.id, data.message)
         return await self.get(access, run.id)
+
+    async def architecture_draft(
+        self, access: ProjectAccess, data: ArchitectureDraftRequest
+    ) -> AgentRunRead:
+        """Owner/admin project setup: never triggered by connecting a repo."""
+        message = ARCHITECTURE_DRAFT_PROMPT
+        if data.repo_summary:
+            message += f"\n\nRepository summary (from the owner's machine):\n\n{data.repo_summary}"
+        AuditLog(self.session).record(
+            workspace_id=access.project.workspace_id,
+            project_id=access.project.id,
+            action="project.architecture_draft",
+            target="architecture/overview.md",
+            actor_type=AuthorType.USER,
+            actor_user_id=access.member.user_id,
+            details={"with_repo_summary": bool(data.repo_summary)},
+        )
+        return await self.create_run(access, RunCreate(message=message))
 
     async def briefing(self, access: ProjectAccess) -> AgentRunRead:
         return await self.create_run(access, RunCreate(message=BRIEFING_PROMPT), RunKind.BRIEFING)
@@ -132,6 +170,12 @@ class AgentService:
                 .order_by(AgentApproval.position)
             )
         )
+        protected = [a.target for a in pending if (a.target or "").startswith(PROTECTED_PREFIXES)]
+        if protected and not has_permission(member.role, Permission.MANAGE_PROJECTS):
+            raise Forbidden(
+                f"Changes to the project's architecture ({', '.join(protected)}) need an owner or "
+                "admin to approve; the run is waiting for them"
+            )
         by_id = {d.approval_id: d for d in data.decisions}
         if len(by_id) != len(data.decisions) or set(by_id) != {a.id for a in pending}:
             raise Unprocessable(

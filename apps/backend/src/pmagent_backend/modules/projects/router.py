@@ -3,14 +3,16 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from pmagent_backend.api.deps import CurrentUser, SessionDep, SettingsDep, require_permission
+from pmagent_backend.core.errors import Unprocessable
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.workspaces.models import Membership, Role
 from pmagent_backend.modules.workspaces.permissions import Permission
 
 from .deps import ProjectManager, ProjectViewer
+from .repo_urls import normalize_repo_url
 from .schemas import ProjectCreate, ProjectRead, ProjectUpdate
 from .service import ProjectService
 
@@ -24,12 +26,23 @@ Viewer = Annotated[Membership, Depends(require_permission(Permission.VIEW))]
 Creator = Annotated[Membership, Depends(require_permission(Permission.MANAGE_PROJECTS))]
 
 
-@router.get("")
-async def list_projects(member: Viewer, session: SessionDep) -> list[ProjectRead]:
-    """Projects in the workspace, by key."""
+@router.get("", responses=errors(422))
+async def list_projects(
+    member: Viewer,
+    session: SessionDep,
+    repo_url: str | None = Query(
+        default=None,
+        description="Only the project for this repo remote (any form: https, ssh, with or without .git)",
+    ),
+) -> list[ProjectRead]:
+    """Projects in the workspace, by key. `repo_url` finds the project a local checkout belongs to."""
     if member.role is Role.GUEST:
         return []  # project-level guest access comes later
-    return await ProjectService(session).list(member.workspace_id)
+    try:
+        wanted = normalize_repo_url(repo_url) if repo_url else None
+    except ValueError as exc:
+        raise Unprocessable(str(exc)) from exc
+    return await ProjectService(session).list(member.workspace_id, repo_url=wanted)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422))
@@ -40,9 +53,10 @@ async def create_project(
     session: SessionDep,
     settings: SettingsDep,
 ) -> ProjectRead:
-    """Create a project from a new repo, an existing repo, or docs only. Its `.pmagent/` is
-    created with the full folder structure and the default agent rules. The key (e.g. `KUN`)
-    prefixes issue keys and can't be changed; 409 if the workspace already uses it."""
+    """Set up a project from a new repo, an existing repo, or docs only (owners and admins).
+    Its `.pmagent/` is created with the full folder structure and the default agent rules.
+    The key (e.g. `KUN`) prefixes issue keys and can't be changed; 409 if it's taken, and 409
+    `repo_taken` if a project in this workspace already uses the repo."""
     return await ProjectService(session).create(
         member.workspace_id, user, data, default_model=settings.default_model
     )

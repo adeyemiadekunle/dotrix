@@ -2049,7 +2049,7 @@
           "projects"
         ],
         "summary": "List Projects",
-        "description": "Projects in the workspace, by key.",
+        "description": "Projects in the workspace, by key. `repo_url` finds the project a local checkout belongs to.",
         "operationId": "list_projects",
         "security": [
           {
@@ -2066,6 +2066,24 @@
               "format": "uuid",
               "title": "Workspace Id"
             }
+          },
+          {
+            "name": "repo_url",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only the project for this repo remote (any form: https, ssh, with or without .git)",
+              "title": "Repo Url"
+            },
+            "description": "Only the project for this repo remote (any form: https, ssh, with or without .git)"
           }
         ],
         "responses": {
@@ -2104,7 +2122,7 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Request body or parameters failed validation",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2120,7 +2138,7 @@
           "projects"
         ],
         "summary": "Create Project",
-        "description": "Create a project from a new repo, an existing repo, or docs only. Its `.pmagent/` is\ncreated with the full folder structure and the default agent rules. The key (e.g. `KUN`)\nprefixes issue keys and can't be changed; 409 if the workspace already uses it.",
+        "description": "Set up a project from a new repo, an existing repo, or docs only (owners and admins).\nIts `.pmagent/` is created with the full folder structure and the default agent rules.\nThe key (e.g. `KUN`) prefixes issue keys and can't be changed; 409 if it's taken, and 409\n`repo_taken` if a project in this workspace already uses the repo.",
         "operationId": "create_project",
         "security": [
           {
@@ -3302,7 +3320,7 @@
           "documents"
         ],
         "summary": "Upload Document",
-        "description": "Upload a document. The original is kept in storage, and its content is converted\nto markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents\nread it. Uploading the same filename again adds a new version of that markdown.",
+        "description": "Upload a document. The original is kept in storage, and its content is converted\nto markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents\nread it. Uploading the same filename again adds a new version of that markdown. Adding a\nproject's external docs is setup work: owners and admins.",
         "operationId": "upload_document",
         "security": [
           {
@@ -4018,6 +4036,115 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/architecture-draft": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Create Architecture Draft",
+        "description": "Project setup (owners and admins): have the Architecture agent draft or update\n`architecture/overview.md` from the project's docs and an optional repo summary. It's never\ntriggered by connecting a repo, and the write waits for an owner's or admin's approval.",
+        "operationId": "create_architecture_draft",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchitectureDraftRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}": {
       "get": {
         "tags": [
@@ -4216,7 +4343,7 @@
           "agents"
         ],
         "summary": "Decide Approvals",
-        "description": "Approve or reject every pending action of a paused run (one decision each), then the\nrun resumes. Rejection reasons are sent back to the agent. Needs the approve\npermission; your decision is recorded next to who instructed the run.",
+        "description": "Approve or reject every pending action of a paused run (one decision each), then the\nrun resumes. Rejection reasons are sent back to the agent. Needs the approve\npermission; changes to `architecture/` need an owner or admin (403 otherwise, and the\nrun keeps waiting). Your decision is recorded next to who instructed the run.",
         "operationId": "decide_approvals",
         "security": [
           {
@@ -6341,6 +6468,25 @@
         ],
         "title": "ApprovalStatus"
       },
+      "ArchitectureDraftRequest": {
+        "properties": {
+          "repo_summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Summary",
+            "description": "Optional summary of the repository (file tree, manifests, README) made on the owner's machine. Never the source code itself."
+          }
+        },
+        "type": "object",
+        "title": "ArchitectureDraftRequest"
+      },
       "AuditEventRead": {
         "properties": {
           "id": {
@@ -8326,15 +8472,14 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 2083,
-                "minLength": 1,
-                "format": "uri"
+                "maxLength": 500
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Repo Url"
+            "title": "Repo Url",
+            "description": "The repo's remote, e.g. https://github.com/acme/kunemi or git@github.com:acme/kunemi.git. Stored in canonical form (https, no .git, credentials removed) so the same repo always matches."
           },
           "readme": {
             "anyOf": [

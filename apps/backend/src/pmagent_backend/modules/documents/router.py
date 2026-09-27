@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from pmagent_backend.api.deps import SessionDep, SettingsDep
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.core.storage import BlobStorage, get_storage
-from pmagent_backend.modules.projects.deps import KnowledgeEditor, ProjectViewer
+from pmagent_backend.modules.projects.deps import ProjectManager, ProjectViewer
 
 from .schemas import DocumentRead
 from .service import DocumentService
@@ -33,14 +33,15 @@ Documents = Annotated[DocumentService, Depends(get_document_service)]
 
 @router.post("", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422, 503))
 async def upload_document(
-    access: KnowledgeEditor,
+    access: ProjectManager,
     documents: Documents,
     settings: SettingsDep,
     file: Annotated[UploadFile, File(description="PDF, DOCX, PPTX, XLSX, XLS, HTML, CSV, JSON, XML, MD, TXT")],
 ) -> DocumentRead:
     """Upload a document. The original is kept in storage, and its content is converted
     to markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents
-    read it. Uploading the same filename again adds a new version of that markdown."""
+    read it. Uploading the same filename again adds a new version of that markdown. Adding a
+    project's external docs is setup work: owners and admins."""
     limit = settings.max_upload_mb * 1_000_000
     data = await file.read(limit + 1)  # read one byte past the limit to detect oversize
     return await documents.upload(access, file.filename or "document", data, max_bytes=limit)

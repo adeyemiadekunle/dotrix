@@ -85,10 +85,10 @@ async def test_project_permissions(signup, create_team, add_member, db_client: A
     ).json()
     url = f"{projects_url(team)}/{project['id']}"
 
-    # Members can see and create projects (PRD default for "configurable").
+    # Members see projects but don't set them up (owners and admins do).
     assert (await db_client.get(url, headers=bob.headers)).status_code == 200
     res = await db_client.post(projects_url(team), json={"key": "BOB", "name": "B"}, headers=bob.headers)
-    assert res.status_code == 201
+    assert res.status_code == 403
     # Guests see no projects until project-level invites exist, and can't create any.
     assert (await db_client.get(projects_url(team), headers=guest.headers)).json() == []
     assert (await db_client.get(url, headers=guest.headers)).status_code == 404
@@ -127,3 +127,36 @@ async def test_project_model_choice(signup, create_team, db_client: AsyncClient)
     for bad in ("gpt-5", "mistral:large", "anthropic:"):
         res = await db_client.patch(url, json={"model": bad}, headers=ada.headers)
         assert res.status_code == 422, bad
+
+
+async def test_repo_urls_are_canonical_and_matchable(signup, create_team, db_client: AsyncClient) -> None:
+    ada = await signup()
+    team = await create_team(ada.headers)
+    res = await db_client.post(
+        projects_url(team),
+        json={"key": "KUN", "name": "K", "repo_url": "https://ada:ghp_secret@GitHub.com/acme/kunemi.git"},
+        headers=ada.headers,
+    )
+    assert res.status_code == 201
+    assert res.json()["repo_url"] == "https://github.com/acme/kunemi"  # credentials never stored
+    for form in ("git@github.com:acme/kunemi.git", "ssh://git@github.com/acme/kunemi", "https://github.com/acme/kunemi/"):
+        found = (await db_client.get(projects_url(team), params={"repo_url": form}, headers=ada.headers)).json()
+        assert [p["key"] for p in found] == ["KUN"], form
+    other = (await db_client.get(projects_url(team), params={"repo_url": "git@github.com:acme/other"}, headers=ada.headers)).json()
+    assert other == []
+    dup = await db_client.post(
+        projects_url(team), json={"key": "DUP", "name": "D", "repo_url": "git@github.com:acme/kunemi.git"},
+        headers=ada.headers,
+    )
+    assert dup.status_code == 409 and dup.json()["type"].endswith("/repo_taken")
+    bad = await db_client.get(projects_url(team), params={"repo_url": "not a url"}, headers=ada.headers)
+    assert bad.status_code == 422
+
+
+async def test_admins_set_up_projects(signup, create_team, add_member, db_client: AsyncClient) -> None:
+    ada = await signup()
+    cy = await signup(email="cy@example.com", name="Cy")
+    team = await create_team(ada.headers)
+    await add_member(team["id"], cy.id, Role.ADMIN)
+    res = await db_client.post(projects_url(team), json={"key": "ADM", "name": "A"}, headers=cy.headers)
+    assert res.status_code == 201

@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import uuid
+from pathlib import Path
 
 import typer
 from langgraph.checkpoint.memory import MemorySaver
@@ -30,6 +32,7 @@ from pmagent_engine.ics import export_calendar
 from pmagent_engine.ingest import ingest_doc
 from pmagent_engine.jobs import get_job, list_jobs, resume_job, start_job
 
+from . import repo as repo_facts
 from .agent_client import Outcome, PlatformAgent
 from .board import CODING_AGENTS, PlatformBoard
 from .platform import (
@@ -51,6 +54,8 @@ app.add_typer(calendar_app, name="calendar")
 app.add_typer(handoff_app, name="handoff")
 issue_app = typer.Typer(help="Work the platform issue board (needs `pmagent link`).")
 app.add_typer(issue_app, name="issue")
+architecture_app = typer.Typer(help="Project setup: the architecture overview (owners and admins).")
+app.add_typer(architecture_app, name="architecture")
 
 ProjectOpt = typer.Option(".", "--project", "-p", help="Registered project name or path.")
 AuthorOpt = typer.Option("human", "--author", "-a", help="Who is making this change (shown in the task log).")
@@ -89,8 +94,17 @@ def _fail(msg: str) -> None:
 # Project setup
 # ---------------------------------------------------------------------------
 @app.command()
-def init(path: str = typer.Argument(".", help="Repo root to initialize.")):
-    """Set up a NEW project: create .pmagent/ from scratch."""
+def init(
+    path: str = typer.Argument(".", help="Repo root to initialize."),
+    local: bool = typer.Option(False, "--local", help="Local only: .pmagent/ on this machine, no platform."),
+    workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace slug, name, or ID."),
+    url: str | None = typer.Option(None, "--api-url", help="Platform API URL."),
+):
+    """Set up a NEW project on the platform (owners and admins) and link this folder to it.
+    Runs `git init` if needed. `--local` keeps everything on this machine instead."""
+    if not local:
+        _platform_setup(path, workspace, url, new_repo=True)
+        return
     path = os.path.abspath(path)
     name = typer.prompt("Project name")
     description = typer.prompt("One-line description", default="")
@@ -103,8 +117,22 @@ def init(path: str = typer.Argument(".", help="Repo root to initialize.")):
 
 
 @app.command()
-def connect(path: str = typer.Argument(..., help="Existing repo to connect.")):
-    """Connect an EXISTING repo: scaffold .pmagent/ alongside it, importing README if present."""
+def connect(
+    path: str = typer.Argument(".", help="The git repo to connect (default: this folder)."),
+    local: bool = typer.Option(False, "--local", help="Local only: .pmagent/ on this machine, no platform."),
+    workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace slug, name, or ID."),
+    project_key: str | None = typer.Option(None, "--project", "-p", help="Link to this project key."),
+    url: str | None = typer.Option(None, "--api-url", help="Platform API URL."),
+):
+    """Connect an existing git repo on this machine to its platform project.
+
+    Finds the project by the repo's remote and links this working copy: pull .pmagent/,
+    keep it out of git. Nothing about the project changes, so every engineer can connect
+    their own checkout. If no project uses this repo yet, an owner or admin can set it up
+    here; members are asked to have one do that first. `--local` keeps everything local."""
+    if not local:
+        _platform_connect(path, workspace, project_key, url)
+        return
     path = os.path.abspath(path)
     name = typer.prompt("Project name", default=os.path.basename(path.rstrip("/")))
     description = typer.prompt("One-line description", default="")
@@ -161,8 +189,21 @@ def docs_add(
     files: list[str] = typer.Argument(..., help="Docs to ingest, any extension (docx, pdf, pptx, xlsx, md, txt...)."),
     project: str = ProjectOpt,
 ):
-    """Ingest one or more project docs, normalized to markdown regardless of source format."""
+    """Add project docs, normalized to markdown whatever the format. On a linked repo they're
+    uploaded to the platform (project setup: owners and admins) and pulled back."""
     config = _resolve_project(project)
+    state = LinkState.load(config.pmagent_dir)
+    if state is not None:
+        _, _, client = _linked(project)
+        base = f"/workspaces/{state.workspace_id}/projects/{state.project_id}/documents"
+        for f in files:
+            with open(f, "rb") as fh:
+                doc = _platform_call(
+                    lambda f=f, fh=fh: client.request("POST", base, files={"file": (os.path.basename(f), fh)})
+                )
+            typer.echo(f"  {f} -> .pmagent/{doc['knowledge_path']} (v{doc['knowledge_version']})")
+        _echo_pull(_platform_call(lambda: pull(client, state, config.pmagent_dir)))
+        return
     for f in files:
         normalized = ingest_doc(config, f)
         typer.echo(f"  {f} -> .pmagent/{normalized}")
@@ -725,6 +766,12 @@ def link(
     client = _platform_call(lambda: PlatformClient.signed_in(url))
     ws = _platform_call(lambda: find_workspace(client, workspace))
     project = _platform_call(lambda: find_project(client, ws["id"], project_key))
+    _link_working_copy(client, ws, project, root)
+
+
+def _link_working_copy(client: PlatformClient, ws: dict, project: dict, root: str) -> None:
+    """Link a local folder to a platform project: config, link state, pull, git protection.
+    Changes nothing on the platform."""
     config = ProjectConfig(name=project["name"], description=project["description"], root_dir=root,
                            model=project["model"])
     os.makedirs(config.pmagent_dir, exist_ok=True)
@@ -779,7 +826,7 @@ def _emit_issue(issue: dict, as_json: bool) -> None:
 @issue_app.command("list")
 def issue_list(
     status: str | None = typer.Option(None, "--status"),
-    mine: bool = typer.Option(False, "--mine", help="Assigned to the --as agent."),
+    mine: bool = typer.Option(False, "--mine", help="Assigned to you (or to the --as agent)."),
     ready: bool = typer.Option(False, "--ready", help="Only issues that could start now."),
     agent: str | None = AsAgentOpt,
     as_json: bool = typer.Option(False, "--json"),
@@ -855,6 +902,170 @@ def issue_done(key: str, note: str | None = typer.Option(None, "--note"), projec
 
 
 
+
+
+
+# ---------------------------------------------------------------------------
+# Project setup vs. working copies
+# ---------------------------------------------------------------------------
+SETUP_ROLES = ("owner", "admin")
+
+
+def _signed_in(url: str | None) -> PlatformClient:
+    try:
+        return PlatformClient.signed_in(url)
+    except PlatformError as exc:
+        _fail(f"{exc}\n(Or use --local to keep this project on this machine only.)")
+
+
+def _pick_workspace(workspaces: list[dict], purpose: str) -> dict:
+    if len(workspaces) == 1:
+        return workspaces[0]
+    typer.echo(f"Which workspace {purpose}?")
+    for i, ws in enumerate(workspaces, 1):
+        typer.echo(f"  {i}. {ws['name']} ({ws['slug']}, you're {ws['role']})")
+    choice = typer.prompt("Number", type=int, default=1)
+    if not 1 <= choice <= len(workspaces):
+        _fail("No such workspace.")
+    return workspaces[choice - 1]
+
+
+def _create_project(client: PlatformClient, ws: dict, root: Path, remote: str | None, *, new_repo: bool) -> dict:
+    name = typer.prompt("Project name", default=root.name)
+    key = typer.prompt("Project key (prefixes issues, e.g. KUN-42)", default=repo_facts.suggest_key(name)).upper()
+    description = typer.prompt("One-line description", default="", show_default=False)
+    body = {
+        "key": key, "name": name, "description": description,
+        "source": "new_repo" if new_repo else "existing_repo",
+        "repo_url": remote, "readme": repo_facts.read_readme(root),
+    }
+    project = _platform_call(lambda: client.post(f"/workspaces/{ws['id']}/projects", body))
+    typer.secho(f"Set up {project['key']} ({project['name']}) in {ws['name']}.", fg=typer.colors.GREEN)
+    return project
+
+
+def _next_setup_steps() -> None:
+    typer.echo(
+        "\nNext, as the owner or admin:\n"
+        "  pmagent docs-add <files…>          add the project's external docs (PDF, DOCX, …)\n"
+        "  pmagent architecture draft         have the Architecture agent draft the overview\n"
+        "Teammates then run `pmagent connect` in their own checkout; that never changes the project."
+    )
+
+
+def _platform_connect(path: str, workspace: str | None, project_key: str | None, url: str | None) -> None:
+    root = repo_facts.git_root(path)
+    if root is None:
+        _fail(f"{os.path.abspath(path)} isn't a git repository. For a new project run `pmagent init`.")
+    client = _signed_in(url)
+    workspaces = _platform_call(lambda: client.get("/workspaces"))
+    if workspace:
+        workspaces = [_platform_call(lambda: find_workspace(client, workspace))]
+    if not workspaces:
+        _fail("You aren't in any workspace yet. Create one in the web app, or ask for an invite.")
+
+    if project_key:
+        for ws in workspaces:
+            try:
+                project = find_project(client, ws["id"], project_key)
+            except PlatformError:
+                continue
+            _link_working_copy(client, ws, project, str(root))
+            return
+        _fail(f"No project {project_key.upper()} in your workspaces.")
+
+    remote = repo_facts.remote_url(root)
+    matches = []
+    if remote:
+        for ws in workspaces:
+            found = _platform_call(
+                lambda ws=ws: client.get(f"/workspaces/{ws['id']}/projects", params={"repo_url": remote})
+            )
+            matches += [(ws, project) for project in found]
+    if matches:
+        if len(matches) == 1:
+            ws, project = matches[0]
+        else:
+            typer.echo(f"Several projects use {remote}:")
+            for i, (w, p) in enumerate(matches, 1):
+                typer.echo(f"  {i}. {p['key']} ({p['name']}) in {w['name']}")
+            choice = typer.prompt("Number", type=int, default=1)
+            ws, project = matches[choice - 1]
+        typer.echo(f"This repo belongs to {project['key']} ({project['name']}) in {ws['name']}.")
+        _link_working_copy(client, ws, project, str(root))
+        return
+
+    where = f"uses {remote}" if remote else "is linked to this repo (it has no remote)"
+    setup = [ws for ws in workspaces if ws["role"] in SETUP_ROLES]
+    if not setup:
+        _fail(
+            f"No project in your workspaces {where}. Setting up a project is for owners and admins: "
+            "ask one to connect this repo first, then run `pmagent connect` again "
+            "(or link to an existing project with --project KEY)."
+        )
+    typer.echo(f"No project {where} yet. As an {setup[0]['role']}, you can set it up now.")
+    if not typer.confirm("Set up a new project for this repo?", default=True):
+        raise typer.Exit(0)
+    ws = _pick_workspace(setup, "should own it")
+    project = _create_project(client, ws, root, remote, new_repo=False)
+    _link_working_copy(client, ws, project, str(root))
+    _next_setup_steps()
+
+
+def _platform_setup(path: str, workspace: str | None, url: str | None, *, new_repo: bool) -> None:
+    folder = Path(path).resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    client = _signed_in(url)
+    root = repo_facts.git_root(folder)
+    workspaces = _platform_call(lambda: client.get("/workspaces"))
+    if workspace:
+        workspaces = [_platform_call(lambda: find_workspace(client, workspace))]
+    setup = [ws for ws in workspaces if ws["role"] in SETUP_ROLES]
+    if not setup:
+        _fail("Setting up a project is for workspace owners and admins. Ask one to set it up, "
+              "then run `pmagent connect` in your checkout.")
+    if root is None:
+        subprocess.run(["git", "init", "-q", str(folder)], check=True)
+        typer.echo(f"Initialized a git repository in {folder}")
+        root = folder
+    ws = _pick_workspace(setup, "should own it")
+    project = _create_project(client, ws, root, repo_facts.remote_url(root), new_repo=new_repo)
+    _link_working_copy(client, ws, project, str(root))
+    _next_setup_steps()
+
+
+@architecture_app.command("draft")
+def architecture_draft(
+    with_repo_summary: bool = typer.Option(
+        True, "--repo-summary/--no-repo-summary",
+        help="Include a summary of this repo (file layout, package manifests, README; never source code).",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Send the summary without asking."),
+    project: str = ProjectOpt,
+):
+    """Project setup (owners and admins): have the Architecture agent draft or update
+    architecture/overview.md from the project's docs and, optionally, a summary of this repo.
+    Run it deliberately: it is never triggered by connecting a repo, and its write waits for
+    an owner's or admin's approval here."""
+    config, state, client = _linked(project)
+    summary = None
+    root = repo_facts.git_root(config.root_dir)
+    if with_repo_summary and root is not None:
+        summary = repo_facts.repo_summary(root)
+        preview = summary.splitlines()
+        typer.echo(f"Repo summary ({len(summary):,} characters; file layout, manifests, README; no source code):")
+        typer.secho("\n".join("  " + line for line in preview[:30]) + ("\n  …" if len(preview) > 30 else ""), dim=True)
+        if not yes and not typer.confirm("Send this summary to the platform?", default=True):
+            summary = None
+    body = {"repo_summary": summary} if summary else {}
+    base = f"/workspaces/{state.workspace_id}/projects/{state.project_id}/agent"
+    run = _platform_call(lambda: client.post(f"{base}/architecture-draft", body))
+    typer.secho("(the Architecture agent is working…)", dim=True)
+    agent = PlatformAgent(client, state)
+    outcome = _platform_call(lambda: agent.converse(run, _ask_decision))
+    _echo_outcome(outcome)
+    if outcome.status == "completed":
+        _echo_pull(_platform_call(lambda: pull(client, state, config.pmagent_dir)))
 
 
 if __name__ == "__main__":
