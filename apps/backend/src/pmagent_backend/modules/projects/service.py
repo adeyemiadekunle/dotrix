@@ -24,7 +24,9 @@ class ProjectService:
         self.session = session
         self.projects = ProjectRepository(session)
 
-    async def create(self, workspace_id: uuid.UUID, user: User, data: ProjectCreate) -> ProjectRead:
+    async def create(
+        self, workspace_id: uuid.UUID, user: User, data: ProjectCreate, *, default_model: str
+    ) -> ProjectRead:
         """Create the project and its `.pmagent/` skeleton (agent rules included) in one go."""
         if await self.projects.key_exists(workspace_id, data.key):
             raise KeyTaken(f"This workspace already has a project with key {data.key}")
@@ -35,6 +37,7 @@ class ProjectService:
             description=data.description,
             source=data.source,
             repo_url=data.repo_url,
+            model=data.model or default_model,
             created_by_id=user.id,
         )
         self.projects.add(project)
@@ -57,6 +60,8 @@ class ProjectService:
             project.name = data.name
         if data.description is not None:
             project.description = data.description
+        if data.model is not None:
+            project.model = data.model
         await self.session.commit()
         await self.session.refresh(project)  # updated_at is set by the database
         return ProjectRead.model_validate(project)

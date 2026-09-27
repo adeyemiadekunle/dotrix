@@ -109,3 +109,21 @@ async def test_project_from_another_workspace_is_404(signup, create_team, db_cli
     # Right project ID, wrong workspace in the URL.
     res = await db_client.get(f"{projects_url(other)}/{project['id']}", headers=ada.headers)
     assert res.status_code == 404
+
+
+async def test_project_model_choice(signup, create_team, db_client: AsyncClient) -> None:
+    ada = await signup()
+    team = await create_team(ada.headers)
+    default = (await db_client.post(projects_url(team), json={"key": "DEF", "name": "D"}, headers=ada.headers)).json()
+    assert default["model"] == "anthropic:claude-sonnet-5"  # the server default
+    chosen = await db_client.post(
+        projects_url(team), json={"key": "GEM", "name": "G", "model": "google_genai:gemini-3.8-flash"},
+        headers=ada.headers,
+    )
+    assert chosen.json()["model"] == "google_genai:gemini-3.8-flash"
+    url = f"{projects_url(team)}/{default['id']}"
+    changed = await db_client.patch(url, json={"model": "openai:gpt-5"}, headers=ada.headers)
+    assert changed.json()["model"] == "openai:gpt-5"
+    for bad in ("gpt-5", "mistral:large", "anthropic:"):
+        res = await db_client.patch(url, json={"model": bad}, headers=ada.headers)
+        assert res.status_code == 422, bad

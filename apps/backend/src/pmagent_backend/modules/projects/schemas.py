@@ -26,12 +26,30 @@ ProjectKey = Annotated[
 ProjectName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 Description = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
 
+MODEL_PROVIDERS = ("anthropic", "openai", "google_genai")
+
+
+def _model(value: str) -> str:
+    provider, _, name = value.partition(":")
+    if provider not in MODEL_PROVIDERS or not name.strip():
+        raise ValueError(f"Use provider:model with provider one of {', '.join(MODEL_PROVIDERS)}")
+    return f"{provider}:{name.strip()}"
+
+
+ModelName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=100),
+    AfterValidator(_model),
+    Field(description="Chat model for the project's agents, e.g. google_genai:gemini-3.8-flash"),
+]
+
 
 class ProjectCreate(BaseModel):
     key: ProjectKey
     name: ProjectName
     description: Description = ""
     source: ProjectSource = ProjectSource.DOCS_ONLY
+    model: ModelName | None = Field(default=None, description="Defaults to the server's default model")
     repo_url: Annotated[HttpUrl, AfterValidator(str)] | None = None
     readme: str | None = Field(
         default=None,
@@ -43,6 +61,7 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     name: ProjectName | None = None
     description: Description | None = None
+    model: ModelName | None = None
 
 
 class ProjectRead(BaseModel):
