@@ -22,6 +22,7 @@ dependencies = [
     "langgraph>=1.2",
     "langgraph-checkpoint-postgres>=3.0",
     "psycopg[binary,pool]>=3.2",
+    "arq>=0.28",
 ]
 
 [tool.uv.sources]

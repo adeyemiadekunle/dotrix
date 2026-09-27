@@ -1,7 +1,8 @@
 """Executes agent runs: builds the team for a project, runs or resumes it, and
 records the outcome (reply, pending approvals, or failure).
 
-Runs execute as background tasks in the API process (or inline, for tests).
+Runs execute in the worker process (enqueued by the API), as background tasks in the API
+process ("local" mode), or inline (tests).
 State lives in the LangGraph checkpointer (Postgres), keyed by thread, so a
 paused run resumes from exactly where it stopped.
 """
@@ -28,8 +29,9 @@ from pmagent_engine.layout import AGENTS
 from .board_tools import BoardContext, board_instructions, build_board_tools
 from .llm import ModelFactory
 from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
+from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
-from .streams import RunStream, RunStreams, text_of
+from .streams import RunStreams, Stream, Streams, text_of
 from .titles import Titler
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,17 @@ def _text(content: Any) -> str:
 
 
 class AgentRunner:
+    """Starts, resumes, and stops runs, and executes them.
+
+    Where a run executes depends on how it's constructed:
+    - `queue` set (API in worker mode): runs are enqueued; the worker process executes them.
+    - `inline=True` (tests, the worker itself): executed right away, in the caller.
+    - otherwise: a background task in this process ("local" mode).
+
+    A run step is a JSON payload, so it can sit in a queue: {"kind": "start", "message",
+    "name_thread"} or {"kind": "resume", "interrupt_ids", "decisions", "approved_by_id"}.
+    """
+
     def __init__(
         self,
         *,
@@ -67,6 +80,9 @@ class AgentRunner:
         model_factory: ModelFactory,
         inline: bool = False,
         titler: Titler | None = None,
+        queue: RunQueue | None = None,
+        stop_reasons: RunQueue | None = None,
+        streams: Streams | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.checkpointer = checkpointer
@@ -74,38 +90,57 @@ class AgentRunner:
         self.inline = inline
         # Names new conversations from their first exchange; without one, the placeholder stays.
         self.titler = titler
+        self.queue = queue
+        # The worker: why a job was aborted (Stop). Also means a cut-off run gets retried.
+        self.stop_reasons = stop_reasons
+        # The PM's reply as it's written, for clients that stream it.
+        self.streams: Streams = streams or RunStreams()
         self._tasks: set[asyncio.Task[None]] = set()
-        # Background tasks by run, so a person can stop one; and why it was stopped.
+        # Local mode: background tasks by run, so a person can stop one; and why it was stopped.
         self._running: dict[uuid.UUID, asyncio.Task[None]] = {}
         self._stopped: dict[uuid.UUID, str] = {}
-        # The PM's reply as it's written, for clients that stream it.
-        self.streams = RunStreams()
 
-    # -- scheduling ------------------------------------------------------------------
+    # -- dispatching -----------------------------------------------------------------
 
     async def start(self, run_id: uuid.UUID, message: str, *, name_thread: bool = False) -> None:
-        await self._schedule(
-            run_id, {"messages": [{"role": "user", "content": message}]}, None, name_thread=name_thread
+        await self._dispatch(run_id, {"kind": "start", "message": message, "name_thread": name_thread})
+
+    async def resume(
+        self,
+        run_id: uuid.UUID,
+        *,
+        interrupt_ids: list[str | None],
+        decisions: list[tuple[str, str | None]],
+        approved_by_id: uuid.UUID,
+    ) -> None:
+        await self._dispatch(
+            run_id,
+            {
+                "kind": "resume",
+                "interrupt_ids": interrupt_ids,
+                "decisions": [list(d) for d in decisions],
+                "approved_by_id": str(approved_by_id),
+            },
         )
 
-    async def resume(self, run_id: uuid.UUID, command: Any, approved_by_id: uuid.UUID) -> None:
-        await self._schedule(run_id, command, approved_by_id)
-
-    async def _schedule(
-        self, run_id: uuid.UUID, graph_input: Any, approved_by_id: uuid.UUID | None, *, name_thread: bool = False
-    ) -> None:
-        if self.inline:
-            await self._execute(run_id, graph_input, approved_by_id, name_thread)
+    async def _dispatch(self, run_id: uuid.UUID, payload: dict[str, Any]) -> None:
+        if self.queue is not None:
+            await self.queue.enqueue(run_id, payload)
             return
-        task = asyncio.create_task(self._execute(run_id, graph_input, approved_by_id, name_thread))
+        if self.inline:
+            await self.execute(run_id, payload)
+            return
+        task = asyncio.create_task(self.execute(run_id, payload))
         self._tasks.add(task)
         self._running[run_id] = task
         task.add_done_callback(self._tasks.discard)
         task.add_done_callback(lambda _: self._running.pop(run_id, None))
 
     async def stop(self, run_id: uuid.UUID, reason: str) -> bool:
-        """Cancel a run that's queued or working in this process, and wait (briefly) for it to
-        record the stop. False if it isn't here (finished, or cut off by a restart)."""
+        """Cancel a run that's queued or working, and wait (briefly) for it to record the stop.
+        False if nothing was running it (finished, or cut off by a restart)."""
+        if self.queue is not None:
+            return await self.queue.stop(run_id, reason)
         task = self._running.get(run_id)
         if task is None or task.done():
             return False
@@ -121,13 +156,19 @@ class AgentRunner:
 
     # -- execution -------------------------------------------------------------------
 
-    async def _execute(
-        self, run_id: uuid.UUID, graph_input: Any, approved_by_id: uuid.UUID | None, name_thread: bool = False
-    ) -> None:
+    async def execute(self, run_id: uuid.UUID, payload: dict[str, Any]) -> None:
+        """Run one step of a run to its outcome: a reply, actions waiting for approval, or a
+        failure. Safe to call again for a step that was cut off (a retried queue job): it
+        continues from the last checkpoint instead of starting over."""
+        resuming = payload["kind"] == "resume"
+        approved_by_id = uuid.UUID(payload["approved_by_id"]) if resuming else None
         try:
             async with self.session_factory() as session:
                 run = await session.get(AgentRun, run_id)
-                assert run is not None
+                if run is None or run.status not in (RunStatus.QUEUED, RunStatus.RUNNING):
+                    logger.info("agent run %s: nothing to do (%s)", run_id, run and run.status)
+                    return
+                retry = run.status is RunStatus.RUNNING  # a previous attempt was cut off
                 project = await ProjectRepository(session).get(run.workspace_id, run.project_id)
                 assert project is not None
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
@@ -172,8 +213,20 @@ class AgentRunner:
                 board_instructions=board_instructions(project_key),
             )
             config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": RECURSION_LIMIT}
-            stream = self.streams.open(run_id)
-            result = await _run_graph(agent, graph_input, config, stream)
+            graph_input: Any = (
+                hitl.resume_command(
+                    [{"interrupt_id": i} for i in payload["interrupt_ids"]],
+                    [tuple(d) for d in payload["decisions"]],
+                )
+                if resuming
+                else {"messages": [{"role": "user", "content": payload["message"]}]}
+            )
+            stream = await self.streams.open(run_id)
+            result = None
+            if retry:
+                graph_input, result = await _continue_from_checkpoint(agent, config, payload, graph_input)
+            if result is None:
+                result = await _run_graph(agent, graph_input, config, stream)
             if kind is RunKind.BRIEFING:
                 for _ in range(MAX_AUTO_REJECTIONS):
                     if not hitl.has_pending(result):
@@ -181,18 +234,25 @@ class AgentRunner:
                     command = hitl.resume_command(result, "reject", READ_ONLY_REJECTION)
                     result = await _run_graph(agent, command, config, stream)
             await self._finish(run_id, result)
-            if name_thread and self.titler is not None:
+            if payload.get("name_thread") and self.titler is not None:
                 await self._name_thread(run_id, choice.model, first_message, result)
         except asyncio.CancelledError:
             reason = self._stopped.pop(run_id, None)
-            await self._fail(run_id, reason or "Stopped because the server shut down; send the message again")
-            if reason is None:
-                raise  # server shutdown: let the cancellation through
+            if reason is None and self.stop_reasons is not None:
+                reason = await self.stop_reasons.stop_reason(run_id)
+            if reason is not None:
+                await self._fail(run_id, reason)  # a person stopped it
+                return
+            if self.stop_reasons is None:
+                await self._fail(run_id, "Stopped because the server shut down; send the message again")
+            # In the worker the run stays "running": its job is retried and continues from the
+            # last checkpoint.
+            raise
         except Exception as exc:
             logger.exception("agent run %s failed", run_id)
             await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}")
         finally:
-            self.streams.close(run_id)
+            await self.streams.close(run_id)
 
     async def _name_thread(self, run_id: uuid.UUID, model: Any, message: str, result: dict) -> None:
         """Replace the new thread's placeholder title with one the model writes."""
@@ -326,7 +386,7 @@ def _jsonable(value: Any) -> dict[str, Any]:
     return {"value": str(value)}
 
 
-async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: RunStream) -> dict:
+async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream) -> dict:
     """What `agent.ainvoke` returns (the final state, plus `__interrupt__` when actions wait for
     approval), collected from the graph's stream so the Project Manager's words can be
     published as they're written. Subagents' words aren't streamed: only the PM speaks to you."""
@@ -342,7 +402,33 @@ async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: RunStre
             if getattr(chunk, "type", "") == "AIMessageChunk" and role_for_agent_name(
                 (metadata or {}).get("lc_agent_name")
             ) == PM_ROLE:
-                stream.publish(text_of(chunk.content))
+                await stream.publish(text_of(chunk.content))
     if interrupts:
         return {**latest, "__interrupt__": interrupts} if isinstance(latest, dict) else {"__interrupt__": interrupts}
     return latest if isinstance(latest, dict) else {}
+
+
+def _last_user_message(values: dict) -> str | None:
+    for message in reversed(values.get("messages") or []):
+        if getattr(message, "type", None) == "human":
+            return _text(message.content)
+    return None
+
+
+async def _continue_from_checkpoint(
+    agent: Any, config: dict, payload: dict[str, Any], graph_input: Any
+) -> tuple[Any, dict | None]:
+    """A retried step whose previous attempt was cut off: (input to send, or the result if the
+    step already finished). Never sends the person's message twice."""
+    state = await agent.aget_state(config)
+    if payload["kind"] == "resume" and state.interrupts:
+        return graph_input, None  # the decisions weren't applied yet: apply them
+    if state.next:
+        return None, None  # continue the pending steps from the last checkpoint
+    if payload["kind"] == "start" and _last_user_message(state.values) != payload["message"]:
+        return graph_input, None  # the message never reached the graph: send it now
+    # The step had finished; only recording its outcome was cut off.
+    result = dict(state.values)
+    if state.interrupts:
+        result["__interrupt__"] = list(state.interrupts)
+    return None, result

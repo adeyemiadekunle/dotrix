@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -31,7 +32,8 @@ class Settings(DatabaseSettings):
     env: str = "development"
     log_level: str = "INFO"
     log_json: bool = True
-    redis_url: str = "redis://localhost:6379/0"
+    # 127.0.0.1, not localhost: on Windows "localhost" tries IPv6 first and stalls.
+    redis_url: str = "redis://127.0.0.1:6379/0"
     cors_origins: list[str] = ["http://localhost:3000"]
     # Swagger UI (/docs), ReDoc (/redoc), and /openapi.json. Turn off to hide the API surface.
     docs_enabled: bool = True
@@ -71,9 +73,12 @@ class Settings(DatabaseSettings):
     )
     # Model for new projects ("provider:model"); each project can change its own.
     default_model: str = "anthropic:claude-sonnet-5"
-    # Agent runs execute in the API process as background tasks; true runs them
-    # inside the request instead (tests, debugging).
-    agent_runs_inline: bool = False
+    # Where agent runs execute:
+    # - "local": background tasks in the API process (simplest; an API restart cuts runs off)
+    # - "worker": queued in Redis and executed by `python -m pmagent_backend.worker`; runs
+    #   survive API restarts, and a worker that dies has its run retried
+    # - "inline": inside the request (tests, debugging)
+    agent_runs: Literal["local", "worker", "inline"] = "local"
     # End-to-end tests only: allow the deterministic "e2e:rules" model (no API key, no cost).
     e2e_models: bool = False
 
