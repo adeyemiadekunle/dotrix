@@ -16,8 +16,10 @@ from pmagent_backend.core import security
 from pmagent_backend.core.email import EmailMessage, EmailSender
 from pmagent_backend.core.errors import Conflict, Forbidden, InvalidLink, NotFound
 from pmagent_backend.core.settings import Settings
+from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.auth.repository import UserRepository
+from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.organizations.service import ensure_org_member
 from pmagent_backend.modules.workspaces.models import Membership, Role, WorkspaceKind
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
@@ -71,6 +73,7 @@ class InviteService:
             expires_at=now + EMAIL_INVITE_TTL,
         )
         self.invites.add(invite)
+        self._audit(actor, "invite.sent", data.email, role=data.role.value)
         await self.session.commit()
 
         workspace = actor.workspace.name
@@ -104,6 +107,10 @@ class InviteService:
             max_uses=data.max_uses,
         )
         self.invites.add(invite)
+        self._audit(
+            actor, "invite.link_created", None, role=data.role.value, max_uses=data.max_uses,
+            expires_in_days=data.expires_in_days,
+        )
         await self.session.commit()
         return LinkInviteCreated(
             **InviteRead.model_validate(invite).model_dump(), url=self._accept_url(token)
@@ -114,10 +121,12 @@ class InviteService:
             InviteRead.model_validate(i) for i in await self.invites.list_active(workspace_id, _now())
         ]
 
-    async def revoke(self, workspace_id: uuid.UUID, invite_id: uuid.UUID) -> None:
-        invite = await self.invites.get(workspace_id, invite_id)
+    async def revoke(self, actor: Membership, invite_id: uuid.UUID) -> None:
+        invite = await self.invites.get(actor.workspace_id, invite_id)
         if invite is None:
             raise NotFound("Invite not found")
+        if invite.revoked_at is None:
+            self._audit(actor, "invite.revoked", invite.email or "invite link", kind=invite.kind.value)
         invite.revoked_at = invite.revoked_at or _now()
         await self.session.commit()
 
@@ -153,11 +162,29 @@ class InviteService:
             await ensure_org_member(self.session, invite.workspace, user.id)
             if invite.kind is InviteKind.LINK:
                 invite.use_count += 1
+            AuditLog(self.session).record(
+                workspace_id=invite.workspace_id,
+                action="member.joined",
+                target=user.email,
+                actor_type=AuthorType.USER,
+                actor_user_id=user.id,
+                details={"role": invite.role.value, "via": f"{invite.kind.value} invite"},
+            )
         # Already a member: keep the current role; an invite never changes it.
         await self.session.commit()
         return WorkspaceWithRole.of(invite.workspace, membership.role)
 
     # -- helpers -----------------------------------------------------------------
+
+    def _audit(self, actor: Membership, action: str, target: str | None, **details: object) -> None:
+        AuditLog(self.session).record(
+            workspace_id=actor.workspace_id,
+            action=action,
+            target=target,
+            actor_type=AuthorType.USER,
+            actor_user_id=actor.user_id,
+            details=details,
+        )
 
     def _check_role_allowed(self, actor: Membership, role: Role) -> None:
         if actor.workspace.kind is WorkspaceKind.PERSONAL and role is not Role.GUEST:

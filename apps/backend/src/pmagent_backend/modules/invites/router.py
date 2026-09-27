@@ -75,7 +75,7 @@ async def create_invite_link(
 @workspace_router.delete("/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_invite(invite_id: uuid.UUID, member: MemberAdmin, invites: Invites) -> None:
     """Revoke an email invite or link. Owners and admins."""
-    await invites.revoke(member.workspace_id, invite_id)
+    await invites.revoke(member, invite_id)
 
 
 @router.post("/preview", responses=errors(400, 422))

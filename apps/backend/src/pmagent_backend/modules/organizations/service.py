@@ -8,7 +8,9 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound
+from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.models import User
+from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.workspaces.models import Membership, Role, Workspace, WorkspaceKind
 from pmagent_backend.modules.workspaces.schemas import MemberRead
@@ -234,9 +236,14 @@ class OrganizationService:
         )
         if existing is None:
             self.session.add(Membership(workspace_id=workspace_id, user_id=user_id, role=role))
+            await self._audit_placement(actor, workspace_id, user_id, "member.placed", role=role.value)
         elif existing.role is Role.OWNER:
             raise Conflict("That's the workspace's owner; ownership changes happen in the workspace")
         else:
+            if existing.role is not role:
+                await self._audit_placement(
+                    actor, workspace_id, user_id, "member.role_changed", **{"from": existing.role.value, "to": role.value}
+                )
             existing.role = role
         await self.session.commit()
         return await self.workspace_members(actor, workspace_id)
@@ -250,10 +257,25 @@ class OrganizationService:
             raise NotFound("They aren't in that workspace")
         if existing.role is Role.OWNER:
             raise Conflict("That's the workspace's owner; transfer ownership in the workspace first")
+        await self._audit_placement(actor, workspace_id, user_id, "member.removed", role=existing.role.value)
         await self.session.delete(existing)
         await self.session.commit()
 
     # -- helpers ---------------------------------------------------------------------------
+
+    async def _audit_placement(
+        self, actor: OrgMembership, workspace_id: uuid.UUID, user_id: uuid.UUID, action: str, **details: object
+    ) -> None:
+        """People changes made by the organisation land in the workspace's own audit log."""
+        user = await self.session.get(User, user_id)
+        AuditLog(self.session).record(
+            workspace_id=workspace_id,
+            action=action,
+            target=user.email if user else str(user_id),
+            actor_type=AuthorType.USER,
+            actor_user_id=actor.user_id,
+            details={**details, "user_id": str(user_id), "by_organization": str(actor.organization_id)},
+        )
 
     async def _org(self, org_id: uuid.UUID) -> Organization:
         org = await self.session.get(Organization, org_id)
