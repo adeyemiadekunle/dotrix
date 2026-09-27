@@ -18,11 +18,19 @@ What a coding agent can do through it:
 
 It cannot write or edit knowledge docs. Those are owned by the thinking
 agents and change only in Action Mode with approval.
+
+When the repo is linked to the platform (`pmagent link`), the task tools work the
+platform's issue board as this agent (keys like KUN-42), and the knowledge tools
+read the local mirror, which is pulled at start and refreshed before reads at
+most once a minute.
 """
 from __future__ import annotations
 
 import functools
+import sys
+import time
 from pathlib import Path
+from typing import Any
 
 try:  # mcp >= 2
     from mcp.server.mcpserver import MCPServer as _Server
@@ -35,12 +43,17 @@ from mcp.types import ToolAnnotations
 from pmagent_engine import tasks as T
 from pmagent_engine.config import ProjectConfig
 
+from .board import PlatformBoard
+from .platform import PlatformClient, PlatformError
+from .sync import STATE_FILE, LinkState, pull
+
 READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 TASK_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False,
                              idempotentHint=False, openWorldHint=False)
 
 # Runtime state and internals that are never exposed.
-_HIDDEN_PARTS = {".locks", "jobs", ".gitignore"}
+_HIDDEN_PARTS = {".locks", "jobs", ".gitignore", STATE_FILE}
+MIRROR_REFRESH_SECONDS = 60
 _HIDDEN_PREFIXES = ("checkpoints.sqlite",)
 _TEXT_EXTS = {".md", ".markdown", ".txt", ".yaml", ".yml", ".json", ".csv", ".rst"}
 _MAX_READ_CHARS = 60_000
@@ -66,14 +79,48 @@ def _expected_errors(fn):
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except (ValueError, FileNotFoundError, TimeoutError) as e:
+        except (ValueError, FileNotFoundError, TimeoutError, PlatformError) as e:
             raise ToolError(str(e)) from None
     return wrapper
 
 
-def build_server(config: ProjectConfig, assignee: str) -> _Server:
+class _Mirror:
+    """Keeps a linked repo's .pmagent/ fresh: pulled now, then at most once a minute."""
+
+    def __init__(self, client: PlatformClient, state: LinkState, pmagent_dir: str) -> None:
+        self.client, self.state, self.dir = client, state, pmagent_dir
+        self.last = 0.0
+
+    def refresh(self) -> None:
+        if time.monotonic() - self.last < MIRROR_REFRESH_SECONDS:
+            return
+        self.last = time.monotonic()
+        try:
+            pull(self.client, self.state, self.dir)
+        except PlatformError as exc:  # offline: keep serving the last mirror
+            print(f"pmagent: couldn't refresh .pmagent/ ({exc}); using the local copy", file=sys.stderr)
+
+
+def build_server(config: ProjectConfig, assignee: str, *, client: PlatformClient | None = None) -> _Server:
     root = Path(config.pmagent_dir).resolve()
     _mcp = _Server(name=f"pmagent-{config.name}", instructions=INSTRUCTIONS)
+
+    # Linked to the platform: the board is the platform's; knowledge is the pulled mirror.
+    state = LinkState.load(root)
+    board: PlatformBoard | None = None
+    mirror: _Mirror | None = None
+    if state is not None:
+        client = client or PlatformClient.signed_in(state.api_url)
+        board = PlatformBoard(client, state, assignee)
+        mirror = _Mirror(client, state, str(root))
+        mirror.refresh()
+
+    def _fresh() -> None:
+        if mirror is not None:
+            mirror.refresh()
+
+    def _brief(issue: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in issue.items() if k not in ("log", "description")}
 
     class _Registrar:  # server.tool(...) that also applies _expected_errors
         def tool(self, **kw):
@@ -110,12 +157,15 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
     def project_overview() -> dict:
         """Start here: project name, description, current state, and counts of
         docs and tasks by status. Cheap to call at the start of a session."""
+        _fresh()
+
         def read(name: str) -> str:
             p = root / name
             return p.read_text(errors="ignore")[:8000] if p.exists() else ""
         counts: dict[str, int] = {}
-        for t in T.list_tasks(config):
-            counts[t.status] = counts.get(t.status, 0) + 1
+        statuses = [i["status"] for i in board.list()] if board else [t.status for t in T.list_tasks(config)]
+        for status in statuses:
+            counts[status] = counts.get(status, 0) + 1
         folders = {}
         for d in ("requirements", "architecture", "decisions", "research", "reviews", "progress"):
             p = root / d
@@ -131,6 +181,7 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
         """List readable knowledge docs, optionally inside one folder such as
         "requirements", "architecture", "decisions", "research", "reviews",
         "progress", or "docs/normalized" (ingested reference docs)."""
+        _fresh()
         return [{"path": str(p.relative_to(root)), "bytes": p.stat().st_size}
                 for p in _doc_files(folder)]
 
@@ -138,6 +189,7 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
     def read_doc(path: str) -> dict:
         """Read one knowledge doc by its path relative to .pmagent/, e.g.
         "requirements/checkout.md" or "decisions/ADR-014.md"."""
+        _fresh()
         p = _resolve(path)
         if not p.is_file():
             raise ValueError(f"No such doc: {path}. Use list_docs or search_docs.")
@@ -157,6 +209,7 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
         q = query.strip().lower()
         if not q:
             raise ValueError("query is empty")
+        _fresh()
         hits: list[dict] = []
         for p in _doc_files(folder):
             for n, line in enumerate(p.read_text(errors="ignore").splitlines(), 1):
@@ -172,6 +225,8 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
                    ready_only: bool = False) -> list[dict]:
         """List tasks by priority then due date. `mine` = assigned to you;
         `ready_only` = could start now (todo, dependencies done, unassigned or yours)."""
+        if board:
+            return [_brief(i) for i in board.list(status=status, mine=mine, ready=ready_only)]
         items = (T.ready_tasks(config, assignee) if ready_only
                  else T.list_tasks(config, status=status, assignee=assignee if mine else None,
                                    include_done=status == "done"))
@@ -181,6 +236,8 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
     @server.tool(annotations=READ_ONLY)
     def get_task(task_id: str) -> dict:
         """One task in full: description, acceptance criteria, dependencies, and log."""
+        if board:
+            return board.get(task_id)
         return T.get_task(config, task_id).to_dict()
 
     @server.tool(annotations=TASK_WRITE)
@@ -188,6 +245,13 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
         """Claim a task ONLY when the user told you to work on it. Pass the
         task_id they named; omit it only if they said "take the next task",
         which picks the highest-priority ready task (or resumes yours)."""
+        if board:
+            try:
+                return {"task": board.claim(task_id)}
+            except PlatformError as exc:
+                if exc.code == "nothing_ready":
+                    return {"task": None, "message": "Nothing is ready for you."}
+                raise
         if task_id:
             task = T.claim_task(config, task_id, assignee)
         else:
@@ -199,11 +263,15 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
     @server.tool(annotations=TASK_WRITE)
     def comment_task(task_id: str, text: str) -> dict:
         """Log meaningful progress, a decision you made, or a surprise on a task."""
+        if board:
+            return _brief(board.comment(task_id, text))
         return T.comment_task(config, task_id, text, author=assignee).to_dict()
 
     @server.tool(annotations=TASK_WRITE)
     def set_task_blocked(task_id: str, reason: str) -> dict:
         """Mark a task you're working on as blocked, with why. Then stop and tell the user."""
+        if board:  # the platform refuses issues that aren't assigned to you
+            return _brief(board.block(task_id, reason))
         _require_mine(task_id)
         return T.update_task(config, task_id, author=assignee, status="blocked",
                              note=reason).to_dict()
@@ -212,6 +280,8 @@ def build_server(config: ProjectConfig, assignee: str) -> _Server:
     def submit_for_review(task_id: str, summary: str) -> dict:
         """Hand a finished task back for review. The summary should cover what
         changed, which files, and how to test. Reviewers close it; you can't."""
+        if board:
+            return _brief(board.review(task_id, summary))
         _require_mine(task_id)
         return T.complete_task(config, task_id, author=assignee, note=summary,
                                to_review=True).to_dict()

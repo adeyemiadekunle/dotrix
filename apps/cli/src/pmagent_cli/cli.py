@@ -30,6 +30,16 @@ from pmagent_engine.ics import export_calendar
 from pmagent_engine.ingest import ingest_doc
 from pmagent_engine.jobs import get_job, list_jobs, resume_job, start_job
 
+from .board import CODING_AGENTS, PlatformBoard
+from .platform import (
+    KeyringStore,
+    PlatformClient,
+    PlatformError,
+    api_url,
+    device_login,
+)
+from .sync import LinkState, find_project, find_workspace, pull
+
 app = typer.Typer(help="Multi-agent project management for any repo (init or connect).")
 task_app = typer.Typer(help="Create, list, and update tasks on the project board.")
 calendar_app = typer.Typer(help="Calendar views derived from task due/scheduled dates.")
@@ -37,6 +47,8 @@ handoff_app = typer.Typer(help="Hand-off instructions for coding agents (Claude 
 app.add_typer(task_app, name="task")
 app.add_typer(calendar_app, name="calendar")
 app.add_typer(handoff_app, name="handoff")
+issue_app = typer.Typer(help="Work the platform issue board (needs `pmagent link`).")
+app.add_typer(issue_app, name="issue")
 
 ProjectOpt = typer.Option(".", "--project", "-p", help="Registered project name or path.")
 AuthorOpt = typer.Option("human", "--author", "-a", help="Who is making this change (shown in the task log).")
@@ -474,6 +486,231 @@ def handoff_install(
                                        claude_assignee=claude_assignee,
                                        register_mcp=register).items():
         typer.echo(f"{fname}: {what}")
+
+# ---------------------------------------------------------------------------
+# Platform: sign in, link a repo, mirror .pmagent/, work the issue board
+# ---------------------------------------------------------------------------
+ApiUrlOpt = typer.Option(None, "--api-url", help="Platform API URL (default $PMAGENT_API_URL or http://127.0.0.1:8000).")
+AsAgentOpt = typer.Option(None, "--as", help=f"Act as a coding agent: {', '.join(CODING_AGENTS)}.")
+
+
+def _platform_call(fn):
+    """Run a platform call and turn API errors into a clean message and exit code."""
+    try:
+        return fn()
+    except (PlatformError, ValueError) as exc:
+        _fail(str(exc))
+
+
+def _linked(project: str) -> tuple[ProjectConfig, LinkState, PlatformClient]:
+    config = _resolve_project(project)
+    state = LinkState.load(config.pmagent_dir)
+    if state is None:
+        _fail(f"{config.root_dir} isn't linked to the platform. Run `pmagent link --workspace <slug> --project <KEY>`.")
+    return config, state, _platform_call(lambda: PlatformClient.signed_in(state.api_url))
+
+
+def _echo_pull(result) -> None:
+    typer.echo(f"Pulled revision {result.revision}: {len(result.updated)} updated, {len(result.deleted)} deleted")
+    if result.conflicts:
+        typer.secho(
+            f"  {len(result.conflicts)} file(s) changed locally and on the platform; left as they are:\n    "
+            + "\n    ".join(result.conflicts)
+            + "\n  The platform is the source of truth: `pmagent pull --force` takes its versions.",
+            fg=typer.colors.YELLOW,
+        )
+
+
+@app.command()
+def login(
+    url: str | None = ApiUrlOpt,
+    no_browser: bool = typer.Option(False, "--no-browser", help="Just print the link."),
+):
+    """Sign in to the platform with a one-time code you approve in the browser.
+    The token is stored in your OS keychain, never in a file."""
+    target = api_url(url)
+    client = PlatformClient(target)
+
+    def show(code: str, uri: str, complete: str) -> None:
+        typer.echo(f"To sign in, open {uri} and enter code:  {code}")
+        typer.echo(f"(or open {complete})  Waiting for approval…")
+
+    credential = _platform_call(lambda: device_login(client, show=show, open_browser=not no_browser))
+    KeyringStore().set(target, credential)
+    me = _platform_call(lambda: PlatformClient(target, credential.token).get("/me"))
+    typer.secho(f"Signed in to {target} as {me['email']}", fg=typer.colors.GREEN)
+
+
+@app.command()
+def logout(url: str | None = ApiUrlOpt):
+    """Sign out: revoke this machine's token on the platform and remove it from the keychain."""
+    target = api_url(url)
+    store = KeyringStore()
+    credential = store.get(target)
+    if credential is None:
+        typer.echo(f"Not signed in to {target}.")
+        return
+    if credential.token_id:
+        try:
+            PlatformClient(target, credential.token).delete(f"/me/tokens/{credential.token_id}")
+        except PlatformError as exc:
+            typer.secho(f"Couldn't revoke the token on the server ({exc}); removing it locally.", fg=typer.colors.YELLOW)
+    store.delete(target)
+    typer.echo(f"Signed out of {target}.")
+
+
+@app.command()
+def whoami(url: str | None = ApiUrlOpt):
+    """Who you're signed in as, and your workspaces."""
+    client = _platform_call(lambda: PlatformClient.signed_in(url))
+    me = _platform_call(lambda: client.get("/me"))
+    typer.echo(f"{me['display_name']} <{me['email']}> on {client.url}")
+    for ws in _platform_call(lambda: client.get("/workspaces")):
+        typer.echo(f"  {ws['slug']:30} {ws['role']:7} {ws['name']}")
+
+
+@app.command()
+def link(
+    path: str = typer.Argument(".", help="Repo root to link."),
+    workspace: str = typer.Option(..., "--workspace", "-w", help="Workspace slug, name, or ID."),
+    project_key: str = typer.Option(..., "--project", "-p", help="Project key, e.g. KUN."),
+    url: str | None = ApiUrlOpt,
+):
+    """Link a repo to a platform project and pull its .pmagent/ (kept out of git)."""
+    root = os.path.abspath(path)
+    client = _platform_call(lambda: PlatformClient.signed_in(url))
+    ws = _platform_call(lambda: find_workspace(client, workspace))
+    project = _platform_call(lambda: find_project(client, ws["id"], project_key))
+    config = ProjectConfig(name=project["name"], description=project["description"], root_dir=root,
+                           model=project["model"])
+    os.makedirs(config.pmagent_dir, exist_ok=True)
+    config.save()  # local engine commands (brief, chat) still work on the mirror
+    state = LinkState.load(config.pmagent_dir)
+    if state is None or state.project_id != project["id"]:
+        state = LinkState(api_url=client.url, workspace_id=ws["id"], project_id=project["id"],
+                          project_key=project["key"], project_name=project["name"])
+    registry.register(project["name"], root)
+    typer.echo(f"Linked {root} to {project['key']} ({project['name']}) in {ws['name']}")
+    _echo_pull(_platform_call(lambda: pull(client, state, config.pmagent_dir)))
+    _echo_protection(git_protect(root, config.pmagent_dir))
+
+
+@app.command("pull")
+def pull_cmd(
+    project: str = ProjectOpt,
+    force: bool = typer.Option(False, "--force", help="Overwrite local edits with the platform's versions."),
+):
+    """Update the local .pmagent/ mirror from the platform (only what changed)."""
+    config, state, client = _linked(project)
+    _echo_pull(_platform_call(lambda: pull(client, state, config.pmagent_dir, force=force)))
+    git_protect(config.root_dir, config.pmagent_dir)
+
+
+def _issue_row(i: dict) -> str:
+    who = i.get("assignee_agent") or ("person" if i.get("assignee_user_id") else "-")
+    return f"{i['key']:9} {i['type']:8} {i['status']:11} {i['priority']:7} {who:12} {i['title']}"
+
+
+def _issue_detail(i: dict) -> str:
+    lines = [f"{i['key']}: {i['title']}", f"  {i['type']}, {i['status']}, {i['priority']} priority"
+             + (f", parent {i['parent_key']}" if i.get("parent_key") else "")]
+    if i.get("depends_on"):
+        lines.append(f"  depends on: {', '.join(i['depends_on'])}")
+    lines += ["", i.get("description") or "(no description)", "", "Log:"]
+    for e in i.get("log", []):
+        who = e.get("author_agent") or "person"
+        lines.append(f"  {e['created_at'][:16]} {who} {e['kind']}: {e.get('body') or e.get('changes') or ''}")
+    return "\n".join(lines)
+
+
+def _board(project: str, agent: str | None) -> PlatformBoard:
+    _, state, client = _linked(project)
+    return _platform_call(lambda: PlatformBoard(client, state, agent))
+
+
+def _emit_issue(issue: dict, as_json: bool) -> None:
+    typer.echo(json.dumps(issue, indent=2) if as_json else _issue_detail(issue))
+
+
+@issue_app.command("list")
+def issue_list(
+    status: str | None = typer.Option(None, "--status"),
+    mine: bool = typer.Option(False, "--mine", help="Assigned to the --as agent."),
+    ready: bool = typer.Option(False, "--ready", help="Only issues that could start now."),
+    agent: str | None = AsAgentOpt,
+    as_json: bool = typer.Option(False, "--json"),
+    project: str = ProjectOpt,
+):
+    """Issues by priority (urgent first), then due date."""
+    board = _board(project, agent)
+    issues = _platform_call(lambda: board.list(status=status, mine=mine, ready=ready))
+    if as_json:
+        typer.echo(json.dumps(issues, indent=2))
+    elif not issues:
+        typer.echo("No matching issues.")
+    else:
+        for i in issues:
+            typer.echo(_issue_row(i))
+
+
+@issue_app.command("show")
+def issue_show(key: str, as_json: bool = typer.Option(False, "--json"), project: str = ProjectOpt):
+    """One issue with its description, dependencies, and log."""
+    board = _board(project, None)
+    _emit_issue(_platform_call(lambda: board.get(key)), as_json)
+
+
+@issue_app.command("next")
+def issue_next(agent: str | None = AsAgentOpt, as_json: bool = typer.Option(False, "--json"),
+               project: str = ProjectOpt):
+    """What to work on: your (or the agent's) in-progress issue first, else the best ready one."""
+    board = _board(project, agent)
+    _emit_issue(_platform_call(board.next), as_json)
+
+
+@issue_app.command("claim")
+def issue_claim(key: str | None = typer.Argument(None, help="Omit to claim the next ready issue."),
+                agent: str | None = AsAgentOpt, as_json: bool = typer.Option(False, "--json"),
+                project: str = ProjectOpt):
+    """Take a ready issue and start it (in_progress). Two claimers never get the same issue."""
+    board = _board(project, agent)
+    _emit_issue(_platform_call(lambda: board.claim(key)), as_json)
+
+
+@issue_app.command("comment")
+def issue_comment(key: str, text: str, agent: str | None = AsAgentOpt, project: str = ProjectOpt):
+    """Add a comment to an issue's log."""
+    board = _board(project, agent)
+    _platform_call(lambda: board.comment(key, text))
+    typer.echo(f"Commented on {key.upper()}.")
+
+
+@issue_app.command("block")
+def issue_block(key: str, reason: str, agent: str | None = AsAgentOpt, project: str = ProjectOpt):
+    """Mark an issue blocked, with why."""
+    board = _board(project, agent)
+    _platform_call(lambda: board.block(key, reason))
+    typer.echo(f"{key.upper()} is blocked.")
+
+
+@issue_app.command("review")
+def issue_review(key: str, summary: str, pr: str | None = typer.Option(None, "--pr", help="Pull request URL."),
+                 agent: str | None = AsAgentOpt, project: str = ProjectOpt):
+    """Hand an issue back for review: what changed, and how to test it."""
+    board = _board(project, agent)
+    _platform_call(lambda: board.review(key, summary, pr))
+    typer.echo(f"{key.upper()} is ready for review.")
+
+
+@issue_app.command("done")
+def issue_done(key: str, note: str | None = typer.Option(None, "--note"), project: str = ProjectOpt):
+    """Close an issue. Only a person can; coding agents stop at review."""
+    board = _board(project, None)
+    _platform_call(lambda: board.done(key, note))
+    typer.echo(f"{key.upper()} is done.")
+
+
+
 
 
 if __name__ == "__main__":

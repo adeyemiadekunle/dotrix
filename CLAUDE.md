@@ -118,7 +118,7 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 - [x] **FR-3** Membership with roles (Owner, Admin, Member, Guest); `require_permission` dependency implementing the PRD matrix
 - [x] **FR-4** Invites by email and by link; revoke invites; remove members; change roles; Owner transfer
 - [x] **FR-6** Device-login flow for the CLI and external tools; scoped, revocable personal access tokens (backend)
-- [ ] **FR-6** `pmagent login` / `logout` in `apps/cli` using the device flow; store the token in the OS keychain (`keyring`), never in a config file
+- [x] **FR-6** `pmagent login` / `logout` / `whoami` in `apps/cli` using the device flow; token in the OS keychain (`keyring`), `PMAGENT_TOKEN` for CI
 - [ ] Web pages the backend now links to: `/verify-email`, `/reset-password`, `/invites/accept`, `/device` (apps/web)
 - [ ] Cleanup job: delete expired device authorizations, used/expired action tokens and invites, and old revoked refresh tokens
 - [ ] Cross-workspace isolation test suite (NFR multi-tenancy), required before beta — started in `tests/integration/test_workspaces.py`; extend for every new workspace-scoped resource
@@ -179,7 +179,7 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] **FR-41** Admins can tighten the defaults per project (e.g. `requirements/` approval needs an Admin)
 - [x] **FR-18** Sync pull: manifest with `since_revision` (includes deletions)
 - [ ] **FR-18** Sync push from the local mirror: proposed writes that go through approvals (needs the approvals module)
-- [ ] **FR-18** CLI: `pmagent pull` mirrors `.pmagent/` into the checkout using the manifest (git-excluded, pre-commit hook)
+- [x] **FR-18** CLI: `pmagent link` + `pmagent pull` mirror `.pmagent/` (changes since the last revision, deletions, local edits never silently overwritten; git exclude + pre-commit hook re-applied)
 - [x] **FR-18** Full Markdown export of `.pmagent/` (zip) for Owner or Admin
 - [ ] Project-level access for guests (PRD: guests see only projects they're invited to; today they see none)
 - [x] **FR-11** Doc upload: original in object storage (MinIO locally, any S3 in production), markdown via `pmagent_engine.ingest.to_markdown` into `docs/normalized/` as a versioned knowledge file
@@ -195,7 +195,9 @@ External accounts, keys, and config have to exist before these items can be buil
 - [x] Issues included in the `.pmagent/` export as `issues/KEY-N.md` (YAML fields + description + log)
 - [x] Platform agents have board tools (`modules/agents/board_tools.py`): list/get freely; create/update/comment pause for approval; the PM edits and closes issues with approval. Live-tested on Gemini: "idea to epic" planned in Chat Mode, then an epic + 3 stories created through 4 approvals
 - [x] Per-agent issue rules (`pmagent_engine.permissions.can_create_issue` / `can_edit_issues`): Product epics+stories, Architecture tasks, Research spikes, Reviewer bugs, only the PM edits; specialists aren't given `update_issue`, and the service refuses it anyway
-- [ ] CLI: `pmagent task` commands and the MCP server talk to the platform issue API instead of local files (Claude Code / Codex hand-off)
+- [x] CLI: `pmagent issue …` works the platform board; the MCP server uses it when the repo is linked (Claude Code / Codex act as themselves and stop at review), and refreshes the mirror before reads
+- [ ] CLI: `pmagent chat` / `brief` / `run` call the platform's agent runs (with approvals in the terminal) instead of the local engine when linked
+- [ ] CLI: `pmagent docs-add` uploads to the platform when linked
 - [ ] **FR-32** Calendar feed (iCalendar) for due and scheduled dates, with a per-user secret URL
 - [ ] **FR-33** @mentions and notifying watchers (with FR-14 notifications)
 
