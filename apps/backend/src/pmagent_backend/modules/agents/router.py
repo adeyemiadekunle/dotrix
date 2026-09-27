@@ -1,10 +1,12 @@
 """Talk to the Project Manager agent; approve or reject its writes (FR-19, FR-35, FR-36)."""
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.responses import StreamingResponse
 
 from pmagent_backend.api.deps import SessionDep, require_permission
 from pmagent_backend.core.openapi import errors
@@ -19,6 +21,8 @@ from .schemas import (
     ArchitectureDraftRequest,
     DecisionsRequest,
     RunCreate,
+    ThreadRead,
+    ThreadRename,
     WorkspaceApprovalRead,
 )
 from .service import AgentService
@@ -86,6 +90,45 @@ async def list_runs(
 async def get_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> AgentRunRead:
     """A run's status, the PM's reply when done, and its approvals."""
     return await agents.get(access, run_id)
+
+
+@router.post("/runs/{run_id}/stop", responses=errors(409))
+async def stop_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> AgentRunRead:
+    """Stop a run that's still working (queued or running). Whoever asked can stop it, and so
+    can owners and admins. Changes already approved stay; the conversation can continue. A run
+    waiting for approval isn't stopped: reject its actions instead."""
+    return await agents.stop(access, run_id)
+
+
+@router.get(
+    "/runs/{run_id}/stream",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}, "description": "Server-sent events"}},
+)
+async def stream_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> StreamingResponse:
+    """The Project Manager's reply as it's written, as server-sent events: `text` (everything so
+    far, first), then `delta` (each new piece), then `end`. If the run isn't working right now
+    it's just `end`: read the run for its saved reply. `ping` events keep the connection open."""
+    await agents.check_run(access, run_id)
+
+    async def events():
+        async for event, data in agents.runner.streams.follow(run_id):
+            if event == "ping":
+                yield ": ping\n\n"
+                continue
+            yield f"event: {event}\ndata: {json.dumps({'text': data})}\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.patch("/threads/{thread_id}", responses=errors(422))
+async def rename_thread(thread_id: uuid.UUID, data: ThreadRename, access: Chatter, agents: Agents) -> ThreadRead:
+    """Rename a conversation."""
+    return await agents.rename_thread(access, thread_id, data)
 
 
 @router.get("/approvals")

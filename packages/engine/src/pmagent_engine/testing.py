@@ -9,7 +9,46 @@ from langchain_core.messages import AIMessage, BaseMessage
 from pydantic import Field
 
 
-class ScriptedChatModel(GenericFakeChatModel):
+def _chunks(message: AIMessage) -> list[Any]:
+    """A reply as stream chunks: text word by word (so streaming shows up in tests), or a
+    tool call in one piece."""
+    import json
+
+    from langchain_core.messages import AIMessageChunk
+    from langchain_core.outputs import ChatGenerationChunk
+
+    if message.tool_calls:
+        return [
+            ChatGenerationChunk(
+                message=AIMessageChunk(
+                    content=message.content,
+                    tool_call_chunks=[
+                        {"name": c["name"], "args": json.dumps(c["args"]), "id": c["id"], "index": i}
+                        for i, c in enumerate(message.tool_calls)
+                    ],
+                )
+            )
+        ]
+    words = str(message.content).split(" ")
+    return [
+        ChatGenerationChunk(message=AIMessageChunk(content=w if i == 0 else f" {w}"))
+        for i, w in enumerate(words)
+    ]
+
+
+class _StreamsReplies:
+    """Stream what `_generate` would reply (the fake models' own streaming can't do tool calls)."""
+
+    def _stream(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
+        message = self._generate(messages, *args, **kwargs).generations[0].message  # type: ignore[attr-defined]
+        yield from _chunks(message)
+
+    async def _astream(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
+        for chunk in self._stream(messages, *args, **kwargs):
+            yield chunk
+
+
+class ScriptedChatModel(_StreamsReplies, GenericFakeChatModel):
     """Replies with the given messages in order; tool binding is accepted and ignored.
 
     Script tool use with `tool_call(...)`, e.g. the PM writing a file:
@@ -42,7 +81,7 @@ def tool_call(name: str, call_id: str | None = None, **args: Any) -> AIMessage:
     )
 
 
-class RuleBasedChatModel(GenericFakeChatModel):
+class RuleBasedChatModel(_StreamsReplies, GenericFakeChatModel):
     """A deterministic model for end-to-end (browser) tests, driven by the conversation itself
     rather than a script, so it behaves the same across processes, resumes, and restarts:
 

@@ -22,13 +22,14 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_engine import approvals as hitl
-from pmagent_engine.agent import build_team
+from pmagent_engine.agent import PM_ROLE, build_team, role_for_agent_name
 from pmagent_engine.layout import AGENTS
 
 from .board_tools import BoardContext, board_instructions, build_board_tools
 from .llm import ModelFactory
 from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
+from .streams import RunStream, RunStreams, text_of
 from .titles import Titler
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,11 @@ class AgentRunner:
         # Names new conversations from their first exchange; without one, the placeholder stays.
         self.titler = titler
         self._tasks: set[asyncio.Task[None]] = set()
+        # Background tasks by run, so a person can stop one; and why it was stopped.
+        self._running: dict[uuid.UUID, asyncio.Task[None]] = {}
+        self._stopped: dict[uuid.UUID, str] = {}
+        # The PM's reply as it's written, for clients that stream it.
+        self.streams = RunStreams()
 
     # -- scheduling ------------------------------------------------------------------
 
@@ -93,7 +99,20 @@ class AgentRunner:
             return
         task = asyncio.create_task(self._execute(run_id, graph_input, approved_by_id, name_thread))
         self._tasks.add(task)
+        self._running[run_id] = task
         task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(lambda _: self._running.pop(run_id, None))
+
+    async def stop(self, run_id: uuid.UUID, reason: str) -> bool:
+        """Cancel a run that's queued or working in this process, and wait (briefly) for it to
+        record the stop. False if it isn't here (finished, or cut off by a restart)."""
+        task = self._running.get(run_id)
+        if task is None or task.done():
+            return False
+        self._stopped[run_id] = reason
+        task.cancel()
+        await asyncio.wait({task}, timeout=10)
+        return True
 
     async def shutdown(self) -> None:
         for task in list(self._tasks):
@@ -153,22 +172,27 @@ class AgentRunner:
                 board_instructions=board_instructions(project_key),
             )
             config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": RECURSION_LIMIT}
-            result = await agent.ainvoke(graph_input, config)
+            stream = self.streams.open(run_id)
+            result = await _run_graph(agent, graph_input, config, stream)
             if kind is RunKind.BRIEFING:
                 for _ in range(MAX_AUTO_REJECTIONS):
                     if not hitl.has_pending(result):
                         break
                     command = hitl.resume_command(result, "reject", READ_ONLY_REJECTION)
-                    result = await agent.ainvoke(command, config)
+                    result = await _run_graph(agent, command, config, stream)
             await self._finish(run_id, result)
             if name_thread and self.titler is not None:
                 await self._name_thread(run_id, choice.model, first_message, result)
         except asyncio.CancelledError:
-            await self._fail(run_id, "Stopped because the server shut down; send the message again")
-            raise
+            reason = self._stopped.pop(run_id, None)
+            await self._fail(run_id, reason or "Stopped because the server shut down; send the message again")
+            if reason is None:
+                raise  # server shutdown: let the cancellation through
         except Exception as exc:
             logger.exception("agent run %s failed", run_id)
             await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}")
+        finally:
+            self.streams.close(run_id)
 
     async def _name_thread(self, run_id: uuid.UUID, model: Any, message: str, result: dict) -> None:
         """Replace the new thread's placeholder title with one the model writes."""
@@ -300,3 +324,25 @@ def _jsonable(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return {str(k): v if isinstance(v, (str, int, float, bool, type(None), list, dict)) else str(v) for k, v in value.items()}
     return {"value": str(value)}
+
+
+async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: RunStream) -> dict:
+    """What `agent.ainvoke` returns (the final state, plus `__interrupt__` when actions wait for
+    approval), collected from the graph's stream so the Project Manager's words can be
+    published as they're written. Subagents' words aren't streamed: only the PM speaks to you."""
+    latest: Any = None
+    interrupts: list[Any] = []
+    async for mode, payload in agent.astream(graph_input, config, stream_mode=["updates", "values", "messages"]):
+        if mode == "updates" and isinstance(payload, dict) and (found := payload.get("__interrupt__")) is not None:
+            interrupts.extend(found)
+        elif mode == "values":
+            latest = payload
+        elif mode == "messages":
+            chunk, metadata = payload
+            if getattr(chunk, "type", "") == "AIMessageChunk" and role_for_agent_name(
+                (metadata or {}).get("lc_agent_name")
+            ) == PM_ROLE:
+                stream.publish(text_of(chunk.content))
+    if interrupts:
+        return {**latest, "__interrupt__": interrupts} if isinstance(latest, dict) else {"__interrupt__": interrupts}
+    return latest if isinstance(latest, dict) else {}

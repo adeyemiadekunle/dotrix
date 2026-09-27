@@ -85,3 +85,12 @@ class DecisionsRequest(BaseModel):
     decisions: list[Decision] = Field(
         min_length=1, description="One decision for every pending approval of the run"
     )
+
+
+class ThreadRename(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+
+
+class ThreadRead(BaseModel):
+    thread_id: uuid.UUID
+    title: str
