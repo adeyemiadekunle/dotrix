@@ -605,15 +605,16 @@ export interface paths {
         };
         /**
          * List Projects
-         * @description Projects in the workspace, by key.
+         * @description Projects in the workspace, by key. `repo_url` finds the project a local checkout belongs to.
          */
         get: operations["list_projects"];
         put?: never;
         /**
          * Create Project
-         * @description Create a project from a new repo, an existing repo, or docs only. Its `.pmagent/` is
-         *     created with the full folder structure and the default agent rules. The key (e.g. `KUN`)
-         *     prefixes issue keys and can't be changed; 409 if the workspace already uses it.
+         * @description Set up a project from a new repo, an existing repo, or docs only (owners and admins).
+         *     Its `.pmagent/` is created with the full folder structure and the default agent rules.
+         *     The key (e.g. `KUN`) prefixes issue keys and can't be changed; 409 if it's taken, and 409
+         *     `repo_taken` if a project in this workspace already uses the repo.
          */
         post: operations["create_project"];
         delete?: never;
@@ -815,7 +816,8 @@ export interface paths {
          * Upload Document
          * @description Upload a document. The original is kept in storage, and its content is converted
          *     to markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents
-         *     read it. Uploading the same filename again adds a new version of that markdown.
+         *     read it. Uploading the same filename again adds a new version of that markdown. Adding a
+         *     project's external docs is setup work: owners and admins.
          */
         post: operations["upload_document"];
         delete?: never;
@@ -911,6 +913,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/architecture-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Architecture Draft
+         * @description Project setup (owners and admins): have the Architecture agent draft or update
+         *     `architecture/overview.md` from the project's docs and an optional repo summary. It's never
+         *     triggered by connecting a repo, and the write waits for an owner's or admin's approval.
+         */
+        post: operations["create_architecture_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -965,7 +989,8 @@ export interface paths {
          * Decide Approvals
          * @description Approve or reject every pending action of a paused run (one decision each), then the
          *     run resumes. Rejection reasons are sent back to the agent. Needs the approve
-         *     permission; your decision is recorded next to who instructed the run.
+         *     permission; changes to `architecture/` need an owner or admin (403 otherwise, and the
+         *     run keeps waiting). Your decision is recorded next to who instructed the run.
          */
         post: operations["decide_approvals"];
         delete?: never;
@@ -1396,6 +1421,14 @@ export interface components {
          * @enum {string}
          */
         ApprovalStatus: "pending" | "approved" | "rejected";
+        /** ArchitectureDraftRequest */
+        ArchitectureDraftRequest: {
+            /**
+             * Repo Summary
+             * @description Optional summary of the repository (file tree, manifests, README) made on the owner's machine. Never the source code itself.
+             */
+            repo_summary?: string | null;
+        };
         /** AuditEventRead */
         AuditEventRead: {
             /**
@@ -2135,7 +2168,10 @@ export interface components {
              * @description Defaults to the server's default model
              */
             model?: string | null;
-            /** Repo Url */
+            /**
+             * Repo Url
+             * @description The repo's remote, e.g. https://github.com/acme/kunemi or git@github.com:acme/kunemi.git. Stored in canonical form (https, no .git, credentials removed) so the same repo always matches.
+             */
             repo_url?: string | null;
             /**
              * Readme
@@ -3977,7 +4013,10 @@ export interface operations {
     };
     list_projects: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only the project for this repo remote (any form: https, ssh, with or without .git) */
+                repo_url?: string | null;
+            };
             header?: never;
             path: {
                 workspace_id: string;
@@ -4013,7 +4052,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5175,6 +5214,78 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    create_architecture_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchitectureDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;

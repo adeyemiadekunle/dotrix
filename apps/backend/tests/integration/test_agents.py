@@ -251,3 +251,52 @@ async def test_audit_log(project, db_client: AsyncClient, agent_script, add_memb
     assert write["instructed_by_id"] == ada.id and write["approved_by_id"] == ada.id
     # Only owners and admins read the audit log.
     assert (await db_client.get(audit_url, headers=bob.headers)).status_code == 403
+
+
+
+# -- project setup: the architecture overview ---------------------------------------------
+
+
+async def test_architecture_draft_is_setup_work(
+    project, db_client: AsyncClient, agent_script, add_member, signup
+) -> None:
+    ada, team, base = await project()
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    url = f"{base}/agent/architecture-draft"
+    body = {"repo_summary": "apps/web (Next.js), apps/api (FastAPI), Postgres"}
+
+    assert (await db_client.post(url, json=body, headers=bob.headers)).status_code == 403
+    model = agent_script.say(
+        tool_call("write_file", file_path="/pmagent/architecture/overview.md", content="# Overview\nNext.js + FastAPI"),
+        "Drafted the overview.",
+    )
+    paused = (await db_client.post(url, json=body, headers=ada.headers)).json()
+    assert paused["status"] == "awaiting_approval"
+    assert paused["approvals"][0]["target"] == "/pmagent/architecture/overview.md"
+    first_prompt = str(model.received[0])
+    assert "draft the architecture overview" in first_prompt and "apps/api (FastAPI)" in first_prompt
+    events = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", params={"action": "project.architecture_draft"},
+                                  headers=ada.headers)).json()
+    assert events and events[0]["details"] == {"with_repo_summary": True}
+
+
+async def test_only_owners_and_admins_approve_architecture_changes(
+    project, db_client: AsyncClient, agent_script, add_member, signup
+) -> None:
+    ada, team, base = await project()
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    agent_script.say(
+        tool_call("write_file", file_path="/pmagent/architecture/overview.md", content="# Rewritten by a chat"),
+        "Done.",
+    )
+    # A member chats and the agent proposes an architecture change...
+    paused = await run(db_client, base, bob.headers, "rewrite the architecture overview")
+    # ...which the member can't approve; the run keeps waiting.
+    denied = await decide(db_client, base, paused, bob.headers, ("approve",))
+    assert denied.status_code == 403 and "owner or admin" in denied.json()["detail"]
+    still = (await db_client.get(f"{base}/agent/runs/{paused['id']}", headers=ada.headers)).json()
+    assert still["status"] == "awaiting_approval"
+    # An owner decides it.
+    assert (await decide(db_client, base, paused, ada.headers, ("reject", "Keep ours"))).status_code == 200

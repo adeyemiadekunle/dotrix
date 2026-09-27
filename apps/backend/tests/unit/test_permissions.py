@@ -13,7 +13,7 @@ MATRIX = [
     (P.EDIT_KNOWLEDGE, True, True, True, False),
     (P.APPROVE_ACTIONS, True, True, True, False),
     (P.INSTRUCT_CODING_AGENT, True, True, False, False),
-    (P.MANAGE_PROJECTS, True, True, True, False),
+    (P.MANAGE_PROJECTS, True, True, False, False),  # setup: members only link
     (P.MANAGE_MEMBERS, True, True, False, False),
     (P.MANAGE_BILLING, True, False, False, False),
 ]

@@ -10,11 +10,11 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
-    HttpUrl,
     StringConstraints,
 )
 
 from .models import ProjectSource
+from .repo_urls import normalize_repo_url
 
 ProjectKey = Annotated[
     str,
@@ -50,7 +50,11 @@ class ProjectCreate(BaseModel):
     description: Description = ""
     source: ProjectSource = ProjectSource.DOCS_ONLY
     model: ModelName | None = Field(default=None, description="Defaults to the server's default model")
-    repo_url: Annotated[HttpUrl, AfterValidator(str)] | None = None
+    repo_url: Annotated[str, StringConstraints(max_length=500), AfterValidator(normalize_repo_url)] | None = Field(
+        default=None,
+        description="The repo's remote, e.g. https://github.com/acme/kunemi or git@github.com:acme/kunemi.git. "
+        "Stored in canonical form (https, no .git, credentials removed) so the same repo always matches.",
+    )
     readme: str | None = Field(
         default=None,
         max_length=100_000,

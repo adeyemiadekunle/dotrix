@@ -19,6 +19,10 @@ class KeyTaken(Conflict):
     code = "key_taken"
 
 
+class RepoTaken(Conflict):
+    code = "repo_taken"
+
+
 class ProjectService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -30,6 +34,10 @@ class ProjectService:
         """Create the project and its `.pmagent/` skeleton (agent rules included) in one go."""
         if await self.projects.key_exists(workspace_id, data.key):
             raise KeyTaken(f"This workspace already has a project with key {data.key}")
+        if data.repo_url and (existing := await self.projects.list(workspace_id, repo_url=data.repo_url)):
+            raise RepoTaken(
+                f"{existing[0].key} already uses {data.repo_url}; link to it instead of creating another"
+            )
         project = Project(
             workspace_id=workspace_id,
             key=data.key,
@@ -52,8 +60,9 @@ class ProjectService:
         await self.session.refresh(project)  # scaffolding bumped the revision (and updated_at)
         return ProjectRead.model_validate(project)
 
-    async def list(self, workspace_id: uuid.UUID) -> list[ProjectRead]:
-        return [ProjectRead.model_validate(p) for p in await self.projects.list(workspace_id)]
+    async def list(self, workspace_id: uuid.UUID, *, repo_url: str | None = None) -> list[ProjectRead]:
+        projects = await self.projects.list(workspace_id, repo_url=repo_url)
+        return [ProjectRead.model_validate(p) for p in projects]
 
     async def update(self, project: Project, data: ProjectUpdate) -> ProjectRead:
         if data.name is not None:

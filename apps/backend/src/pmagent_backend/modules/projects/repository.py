@@ -30,8 +30,8 @@ class ProjectRepository:
         )
         return found is not None
 
-    async def list(self, workspace_id: uuid.UUID) -> list[Project]:
-        result = await self.session.scalars(
-            select(Project).where(Project.workspace_id == workspace_id).order_by(Project.key)
-        )
-        return list(result)
+    async def list(self, workspace_id: uuid.UUID, *, repo_url: str | None = None) -> list[Project]:
+        stmt = select(Project).where(Project.workspace_id == workspace_id)
+        if repo_url is not None:
+            stmt = stmt.where(Project.repo_url == repo_url)
+        return list(await self.session.scalars(stmt.order_by(Project.key)))

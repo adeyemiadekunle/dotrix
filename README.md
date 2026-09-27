@@ -67,17 +67,25 @@ It includes the local agent engine, so commands also work offline on unlinked re
 
 ```bash
 pmagent login                                   # device login; token goes to your OS keychain
-pmagent link . --workspace <slug> --project KUN # link this repo and pull its .pmagent/ (kept out of git)
+cd ~/code/kunemi && pmagent connect             # link this checkout to its project (found by the git remote)
 pmagent pull                                    # refresh the mirror (only what changed; --force takes platform versions)
 pmagent brief                                   # the platform team's daily briefing (read-only)
 pmagent chat                                    # talk to the team; approve or reject each change inline (diffs shown)
-pmagent issue list --ready                      # the board, by priority
+pmagent issue list --mine                       # your issues (or --as claude-code for an agent's)
 pmagent issue claim KUN-42 --as claude-code     # coding tools act as themselves and stop at review
 pmagent issue review KUN-42 "What changed" --pr <url> --as claude-code
 pmagent issue done KUN-42                       # only a person closes
 pmagent handoff install --register              # Claude Code / Codex via MCP; linked repos use the platform board
 pmagent logout
 ```
+
+**Project setup vs. working copies.** Setting a project up is for workspace owners and admins,
+once: `pmagent connect` (or `pmagent init` for a new repo) in their checkout creates the project,
+then `pmagent docs-add <files>` adds its external docs and `pmagent architecture draft` has the
+Architecture agent draft `architecture/overview.md` (a repo summary of file layout, manifests, and
+README is shown for approval first; never source code). Everyone else just runs `pmagent connect`
+in their own checkout: it links to that project by the git remote and changes nothing on it.
+Changes to `architecture/` always need an owner or admin to approve.
 
 `PMAGENT_API_URL` points the CLI at a server (default `http://127.0.0.1:8000`); `PMAGENT_TOKEN`
 overrides the keychain for CI. Unlinked repos keep working with local files (`pmagent task …`).

@@ -126,6 +126,10 @@ async def test_upload_permissions(project, db_client: AsyncClient, add_member, s
         await db_client.post("/v1/me/tokens", json={"name": "ro", "scopes": ["read"]}, headers=ada.headers)
     ).json()["token"]
 
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    # Adding a project's external docs is setup work: owners and admins only.
+    assert (await upload(db_client, base, bob.headers, "a.md", b"a")).status_code == 403
     assert (await upload(db_client, base, guest.headers, "a.md", b"a")).status_code == 403
     assert (await upload(db_client, base, eve.headers, "a.md", b"a")).status_code == 404
     read_only = {"Authorization": f"Bearer {token}"}

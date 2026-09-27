@@ -18,7 +18,8 @@ class Permission(enum.StrEnum):
     EDIT_KNOWLEDGE = "knowledge:write"  # edit .pmagent/ files directly (agent-rules: MANAGE_WORKSPACE)
     APPROVE_ACTIONS = "agents:approve"  # instruct Action Mode, approve writes
     INSTRUCT_CODING_AGENT = "agents:code"
-    MANAGE_PROJECTS = "projects:manage"  # create projects, connect repos and docs
+    # Project setup: create projects, add their external docs, draft the architecture.
+    MANAGE_PROJECTS = "projects:manage"
     MANAGE_WORKSPACE = "workspace:manage"  # rename, settings
     MANAGE_MEMBERS = "members:manage"  # invite, remove, change roles
     MANAGE_BILLING = "workspace:billing"  # billing, plan, delete workspace
@@ -36,7 +37,8 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.EDIT_ISSUES,
             Permission.EDIT_KNOWLEDGE,
             Permission.APPROVE_ACTIONS,  # PRD: ✓ (configurable)
-            Permission.MANAGE_PROJECTS,  # PRD: configurable; allowed by default
+            # MANAGE_PROJECTS: PRD "configurable"; off, so connecting a repo on a member's
+            # machine links to the owner's project instead of creating another one.
             # INSTRUCT_CODING_AGENT: PRD: configurable; off by default
         }
     ),

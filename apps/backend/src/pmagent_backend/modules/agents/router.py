@@ -12,7 +12,13 @@ from pmagent_backend.modules.projects.deps import ProjectAccess, require_project
 from pmagent_backend.modules.workspaces.permissions import Permission
 
 from .runner import AgentRunner
-from .schemas import AgentRunRead, ApprovalRead, DecisionsRequest, RunCreate
+from .schemas import (
+    AgentRunRead,
+    ApprovalRead,
+    ArchitectureDraftRequest,
+    DecisionsRequest,
+    RunCreate,
+)
 from .service import AgentService
 
 router = APIRouter(
@@ -35,6 +41,7 @@ def get_agent_service(
 Agents = Annotated[AgentService, Depends(get_agent_service)]
 Chatter = Annotated[ProjectAccess, Depends(require_project_permission(Permission.CHAT))]
 Approver = Annotated[ProjectAccess, Depends(require_project_permission(Permission.APPROVE_ACTIONS))]
+SetupManager = Annotated[ProjectAccess, Depends(require_project_permission(Permission.MANAGE_PROJECTS))]
 
 
 @router.post("/runs", status_code=status.HTTP_202_ACCEPTED, responses=errors(409, 422, 503))
@@ -50,6 +57,16 @@ async def create_run(data: RunCreate, access: Chatter, agents: Agents) -> AgentR
 async def create_briefing(access: Chatter, agents: Agents) -> AgentRunRead:
     """Ask for the daily briefing. Read-only: any write it attempts is rejected automatically."""
     return await agents.briefing(access)
+
+
+@router.post("/architecture-draft", status_code=status.HTTP_202_ACCEPTED, responses=errors(422, 503))
+async def create_architecture_draft(
+    data: ArchitectureDraftRequest, access: SetupManager, agents: Agents
+) -> AgentRunRead:
+    """Project setup (owners and admins): have the Architecture agent draft or update
+    `architecture/overview.md` from the project's docs and an optional repo summary. It's never
+    triggered by connecting a repo, and the write waits for an owner's or admin's approval."""
+    return await agents.architecture_draft(access, data)
 
 
 @router.get("/runs", responses=errors(422))
@@ -82,5 +99,6 @@ async def decide_approvals(
 ) -> AgentRunRead:
     """Approve or reject every pending action of a paused run (one decision each), then the
     run resumes. Rejection reasons are sent back to the agent. Needs the approve
-    permission; your decision is recorded next to who instructed the run."""
+    permission; changes to `architecture/` need an owner or admin (403 otherwise, and the
+    run keeps waiting). Your decision is recorded next to who instructed the run."""
     return await agents.decide(access, run_id, data)

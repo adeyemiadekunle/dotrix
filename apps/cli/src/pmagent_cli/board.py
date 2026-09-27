@@ -30,10 +30,8 @@ class PlatformBoard:
             params["status"] = status
         if ready:
             params["ready"] = True
-        if mine:
-            if self.agent is None:
-                raise ValueError("--mine needs --as <agent>; people can filter with `--assignee <user id>`")
-            params["assignee"] = self.agent
+        if mine:  # the agent's issues, or the signed-in person's
+            params["assignee"] = self.agent or self.client.get("/me")["id"]
         return self.client.get(self.base, params=params)
 
     def get(self, key: str) -> dict:

@@ -15,6 +15,15 @@ ISSUES = f"/v1/workspaces/{WS}/projects/{PID}/issues"
 AGENT = f"/v1/workspaces/{WS}/projects/{PID}/agent"
 
 
+def canonical(url: str) -> str:
+    """The server's repo-URL canonical form, enough for tests."""
+    url = url.strip().removesuffix("/").removesuffix(".git")
+    if url.startswith("git@"):
+        host, path = url[4:].split(":", 1)
+        return f"https://{host}/{path}"
+    return url
+
+
 def sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -30,6 +39,12 @@ class FakePlatform:
         self.agent_script: list[dict[str, Any]] = []
         self.deny_decisions = False  # answer decisions with 403 (role can't approve)
         self.runs_started: list[dict[str, Any]] = []
+        # Workspaces the signed-in person belongs to, and the projects in them.
+        self.workspaces: list[dict[str, Any]] = [
+            {"id": WS, "slug": "kunemi-ab12cd", "name": "Kunemi", "role": "owner", "kind": "team"}
+        ]
+        self.projects: list[dict[str, Any]] = []
+        self.me = {"id": "user-1", "email": "ada@example.com", "display_name": "Ada"}
 
     # -- state changes, as if someone edited on the platform ----------------------------
     def put(self, path: str, content: str) -> None:
@@ -48,7 +63,8 @@ class FakePlatform:
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         path, method = request.url.path, request.method
-        body = json.loads(request.content) if request.content else {}
+        is_json = request.headers.get("content-type", "").startswith("application/json")
+        body = json.loads(request.content) if request.content and is_json else {}
         if path == KB:
             since = request.url.params.get("since_revision")
             entries = [
@@ -71,6 +87,29 @@ class FakePlatform:
             if answer == "ok":
                 return httpx.Response(200, json={"id": "tok-1", "token": "pmat_new"})
             return self.problem(400, answer)
+        if path == "/v1/me":
+            return httpx.Response(200, json=self.me)
+        if path == "/v1/workspaces" and method == "GET":
+            return httpx.Response(200, json=self.workspaces)
+        if path == f"/v1/workspaces/{WS}/projects" and method == "GET":
+            wanted = request.url.params.get("repo_url")
+            found = [p for p in self.projects if wanted is None or p.get("repo_url") == canonical(wanted)]
+            return httpx.Response(200, json=found)
+        if path == f"/v1/workspaces/{WS}/projects" and method == "POST":
+            project = {"id": PID, "key": body["key"], "name": body["name"], "description": body.get("description", ""),
+                       "model": "google_genai:gemini-3.8-flash", "repo_url": canonical(body["repo_url"]) if body.get("repo_url") else None,
+                       "source": body.get("source"), "readme": body.get("readme")}
+            self.projects.append(project)
+            return httpx.Response(201, json=project)
+        if path == f"/v1/workspaces/{WS}/projects/{PID}/documents" and method == "POST":
+            name = request.content.split(b'filename="', 1)[1].split(b'"', 1)[0].decode()
+            self.put(f"docs/normalized/{name.rsplit('.', 1)[0]}.md", f"imported {name}")
+            return httpx.Response(201, json={"knowledge_path": f"docs/normalized/{name.rsplit('.', 1)[0]}.md",
+                                             "knowledge_version": 1})
+        if path == AGENT + "/architecture-draft" and method == "POST":
+            self.runs_started.append(body)
+            return httpx.Response(202, json={"id": "run-1", "thread_id": "thread-1", "status": "queued",
+                                             "approvals": [], "reply": None, "error": None})
         if path.startswith("/v1/me/tokens/") and method == "DELETE":
             return httpx.Response(204)
         if path in (AGENT + "/runs", AGENT + "/briefing") and method == "POST":

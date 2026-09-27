@@ -17,6 +17,15 @@ class RunCreate(BaseModel):
     )
 
 
+class ArchitectureDraftRequest(BaseModel):
+    repo_summary: str | None = Field(
+        default=None,
+        max_length=60_000,
+        description="Optional summary of the repository (file tree, manifests, README) made on the "
+        "owner's machine. Never the source code itself.",
+    )
+
+
 class ApprovalRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
