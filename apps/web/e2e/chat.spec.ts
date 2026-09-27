@@ -38,5 +38,14 @@ test("the PM answers, and a change waits for approval before it happens", async 
 
   // The conversation got a title from the model.
   await page.getByRole("link", { name: "Chat", exact: true }).click();
-  await expect(page.getByRole("navigation", { name: "Conversations" }).getByText("Test conversation").first()).toBeVisible();
+  const conversations = page.getByRole("navigation", { name: "Conversations" });
+  await expect(conversations.getByText("Test conversation").first()).toBeVisible();
+
+  // Rename it from the title above the conversation.
+  await conversations.getByText("Test conversation").first().click();
+  await page.getByRole("button", { name: "Rename conversation" }).click();
+  const title = page.getByLabel("Conversation title");
+  await title.fill("Dark mode request");
+  await title.press("Enter");
+  await expect(conversations.getByText("Dark mode request")).toBeVisible();
 });

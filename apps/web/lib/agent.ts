@@ -5,6 +5,7 @@
 // the background, so active ones are polled until they finish or pause.
 import type { Schemas } from "@pmagent/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { api, errorMessage, unwrap } from "./api";
@@ -163,3 +164,61 @@ export function useWorkspaceApprovals(workspaceId: string | undefined, enabled =
     refetchInterval: 20_000,
   });
 }
+
+/**
+ * The PM's reply as it's being written (server-sent events through the API proxy). Empty until
+ * the first words arrive; the run's saved reply replaces it when the run finishes.
+ */
+export function useRunStream(scope: Scope | undefined, runId: string, active: boolean): string {
+  const queryClient = useQueryClient();
+  const [text, setText] = useState("");
+  useEffect(() => {
+    if (!scope || !active) return;
+    const source = new EventSource(
+      `/api/v1/workspaces/${scope.workspaceId}/projects/${scope.projectId}/agent/runs/${runId}/stream`,
+    );
+    const read = (event: MessageEvent) => (JSON.parse(event.data) as { text: string }).text;
+    source.addEventListener("text", (e) => setText(read(e as MessageEvent)));
+    source.addEventListener("delta", (e) => setText((t) => t + read(e as MessageEvent)));
+    // The stream ends when the run does (or wasn't running): don't let EventSource reconnect,
+    // and fetch the finished run right away rather than at the next poll (which also pauses
+    // while the tab is in the background).
+    source.addEventListener("end", () => {
+      source.close();
+      void queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
+      void queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
+    });
+    source.onerror = () => source.close();
+    return () => source.close();
+  }, [scope, runId, active, queryClient]);
+  return text;
+}
+
+export function useStopRun(scope: Scope | undefined) {
+  return useAgentMutation(scope, (s, runId: string) =>
+    unwrap(
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/stop", {
+        params: { path: { ...path(s), run_id: runId } },
+      }),
+    ),
+  );
+}
+
+export function useRenameThread(scope: Scope | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ threadId, title }: { threadId: string; title: string }) =>
+      unwrap(
+        api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}", {
+          params: { path: { ...path(scope!), thread_id: threadId } },
+          body: { title },
+        }),
+      ),
+    onError: (e) => toast.error(errorMessage(e)),
+    onSettled: () => (scope ? queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) }) : undefined),
+  });
+}
+
+/** A run someone stopped (it's recorded as failed with "Stopped by …"). */
+export const wasStopped = (run: Pick<Run, "status" | "error">) =>
+  run.status === "failed" && (run.error ?? "").startsWith("Stopped");

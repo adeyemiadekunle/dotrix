@@ -8,6 +8,7 @@ import { useMemo } from "react";
 import { useChat } from "@/components/agent/chat-context";
 import { ThreadMenu } from "@/components/agent/chat-panel";
 import { Conversation } from "@/components/agent/conversation";
+import { ThreadTitle } from "@/components/agent/thread-title";
 import { timeAgo } from "@/components/issues/issue-activity";
 import { useRecentThreads } from "@/lib/agent";
 import { useMembers } from "@/lib/issues";
@@ -54,8 +55,11 @@ export default function ChatPage() {
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex justify-end px-3 pt-2 md:hidden">
-          <ThreadMenu />
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
+          {scope && <ThreadTitle scope={scope} threadId={threadId} fallback="New conversation" className="min-w-0 flex-1" />}
+          <div className="md:hidden">
+            <ThreadMenu />
+          </div>
         </div>
         {scope && (
           <Conversation

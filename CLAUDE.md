@@ -177,7 +177,7 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
 - [x] Chat with the PM: a panel beside every project page (a sheet on phones) and a full Chat tab with the conversation list; suggestions and the daily briefing to start; runs polled while working (and slower while waiting, so decisions made elsewhere show up); inline approvals with coloured diffs or the fields an issue action sets, approve / reject with a reason, all of a run's decisions sent together
 - [x] Workspace Approvals page and sidebar count (`GET /v1/workspaces/{id}/approvals`); Docs tab "Draft architecture overview" (owners and admins) opens the run in the panel
 - [x] Conversation titles: a placeholder from the first message right away, then a 3–6 word title the project's model writes after the first reply (`agents/titles.py`; built-in requests have fixed titles)
-- [ ] Rename a conversation; stream agent output instead of polling (needs the backend streaming TODO); a stop button for a running run
+- [x] Chat: the PM's reply streams as it's written (SSE `GET .../agent/runs/{id}/stream` through the proxy; the page refreshes the moment it ends), Stop for a working run (`POST .../stop`: whoever asked, or owners/admins; audited; the conversation continues), rename a conversation (`PATCH .../agent/threads/{id}`)
 - [x] Project setup on the web (`/w/[ws]/projects/new`, owners and admins): start from an existing repo (pasted address; public GitHub repos are looked up to confirm and prefill) or documents only, with documents uploaded as part of creating it; Docs tab (upload, list, view the converted Markdown, download originals); link, change, or unlink the repo later from Overview
 - [ ] "Connect GitHub" (needs FR-10's GitHub App): pick a repo from your account, private repos, "new repository"
 - [x] Knowledge tab: `.pmagent/` tree with search (deleted files on request), Markdown or source view, edit with a change note (`base_version` guards against overwriting), delete, history with who wrote / asked / approved each version, diffs, restore (including deleted files), zip export for owners and admins; `agent-rules/` editable by owners and admins only
@@ -318,7 +318,8 @@ External accounts, keys, and config have to exist before these items can be buil
 - [x] **(you)** Model key in `.env`: `GOOGLE_API_KEY` set; live-tested with `google_genai:gemini-3.8-flash` (chat that reads project files; approved edit to `roadmap.md`)
 - [x] Model choice per project (`model` on create/update) and `PMAGENT_DEFAULT_MODEL` for new projects
 - [ ] Workspace-level default model and per-workspace provider keys (business plans bring their own keys)
-- [ ] Streaming of agent output to clients (SSE or WebSocket); today clients poll the run
+- [x] Streaming of agent output to clients: the runner reads the graph's stream (collecting results and interrupts as `ainvoke` does) and publishes the PM's text to in-process `RunStreams`; subagents aren't streamed
+- [ ] Streams are per API process: once runs move to a worker (below), publish through Redis
 - [ ] Move runs to a separate worker process (e.g. arq on Redis) so API restarts don't stop them; runs cut off by a restart are marked failed today
 - [ ] Tracing of agent runs for admins (LangSmith or OpenTelemetry) and token usage per run (feeds FR-28 spend limits)
 - [ ] **FR-36** Optional second approver (P1), and approving from Slack or email (FR-14)

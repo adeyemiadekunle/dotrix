@@ -23,6 +23,7 @@ import { useProjectScope } from "@/lib/queries";
 
 import { useChat } from "./chat-context";
 import { Conversation } from "./conversation";
+import { ThreadTitle } from "./thread-title";
 
 /** Recent conversations to switch between, and "new conversation". */
 export function ThreadMenu() {
@@ -82,7 +83,11 @@ function PanelBody({ onClose }: { onClose: () => void }) {
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
         <span className="grid min-w-0 flex-1 leading-tight">
-          <span className="truncate text-sm font-medium">{title ?? "Project manager"}</span>
+          {scope ? (
+            <ThreadTitle scope={scope} threadId={threadId} fallback="Project manager" />
+          ) : (
+            <span className="text-sm font-medium">Project manager</span>
+          )}
           {title && <span className="text-muted-foreground text-xs">Project manager</span>}
         </span>
         <Tooltip>

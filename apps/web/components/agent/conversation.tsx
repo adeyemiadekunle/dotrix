@@ -4,12 +4,32 @@ import { Button } from "@pmagent/ui/components/button";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { Textarea } from "@pmagent/ui/components/textarea";
 import { cn } from "@pmagent/ui/lib/utils";
-import { ArrowUpIcon, BotIcon, CircleAlertIcon, LayersIcon, Loader2Icon, NewspaperIcon, SparklesIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  BotIcon,
+  CircleAlertIcon,
+  CircleStopIcon,
+  LayersIcon,
+  Loader2Icon,
+  NewspaperIcon,
+  SparklesIcon,
+  SquareIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { timeAgo } from "@/components/issues/issue-activity";
 import { Markdown } from "@/components/markdown";
-import { isActive, runTitle, useBriefing, useSendMessage, useThread, type Run } from "@/lib/agent";
+import {
+  isActive,
+  runTitle,
+  useBriefing,
+  useRunStream,
+  useSendMessage,
+  useStopRun,
+  useThread,
+  wasStopped,
+  type Run,
+} from "@/lib/agent";
 import type { Scope } from "@/lib/issues";
 
 import { RunApprovals } from "./approvals";
@@ -20,11 +40,11 @@ const SUGGESTIONS = [
   "Turn the latest requirements into an epic with stories",
 ];
 
-function Thinking({ run }: { run: Run }) {
+function Thinking({ run, writing = false }: { run: Run; writing?: boolean }) {
   return (
     <p className="text-muted-foreground flex items-center gap-2 text-sm">
       <Loader2Icon className="size-4 animate-spin" />
-      {run.status === "queued" ? "Waiting to start…" : "The PM is working on it…"}
+      {run.status === "queued" ? "Waiting to start…" : writing ? "Writing…" : "The PM is working on it…"}
     </p>
   );
 }
@@ -41,6 +61,7 @@ function RunView({
   canDecide: boolean;
 }) {
   const who = run.requested_by_id ? (names.get(run.requested_by_id) ?? "Someone") : "Someone";
+  const live = useRunStream(scope, run.id, isActive(run));
   return (
     <div className="grid gap-3">
       {run.kind === "chat" && runTitle(run) !== run.message && (
@@ -69,8 +90,15 @@ function RunView({
           <BotIcon className="size-3.5" />
         </span>
         <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-3">
-          {isActive(run) && <Thinking run={run} />}
-          {run.status === "failed" && (
+          {isActive(run) && live && <Markdown>{live}</Markdown>}
+          {isActive(run) && <Thinking run={run} writing={Boolean(live)} />}
+          {wasStopped(run) && (
+            <p className="text-muted-foreground flex items-center gap-1.5 text-sm">
+              <CircleStopIcon className="size-4 shrink-0" />
+              {run.error}.
+            </p>
+          )}
+          {run.status === "failed" && !wasStopped(run) && (
             <p className="text-destructive flex items-start gap-1.5 text-sm">
               <CircleAlertIcon className="mt-0.5 size-4 shrink-0" />
               {run.error ?? "The run failed."}
@@ -116,12 +144,14 @@ export function Conversation({
 }) {
   const thread = useThread(scope, threadId);
   const send = useSendMessage(scope);
+  const stop = useStopRun(scope);
   const briefing = useBriefing(scope);
   const [draft, setDraft] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
   const runs = thread.data ?? [];
   const busy = runs.some(isActive) || runs.some((r) => r.status === "awaiting_approval") || send.isPending;
   const last = runs.at(-1);
+  const working = runs.find(isActive);
 
   // Keep the newest message in view as the conversation grows.
   useEffect(() => {
@@ -214,9 +244,24 @@ export function Conversation({
               className="max-h-40 min-h-9 flex-1 resize-none border-0 p-1.5 shadow-none focus-visible:ring-0"
               aria-label="Message the project manager"
             />
-            <Button type="submit" size="icon" className="size-8 shrink-0 rounded-lg" disabled={busy || !draft.trim()} aria-label="Send">
-              {send.isPending ? <Loader2Icon className="animate-spin" /> : <ArrowUpIcon />}
-            </Button>
+            {working ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="secondary"
+                className="size-8 shrink-0 rounded-lg"
+                disabled={stop.isPending}
+                onClick={() => stop.mutate(working.id)}
+                aria-label="Stop"
+                title="Stop"
+              >
+                {stop.isPending ? <Loader2Icon className="animate-spin" /> : <SquareIcon className="fill-current" />}
+              </Button>
+            ) : (
+              <Button type="submit" size="icon" className="size-8 shrink-0 rounded-lg" disabled={busy || !draft.trim()} aria-label="Send">
+                {send.isPending ? <Loader2Icon className="animate-spin" /> : <ArrowUpIcon />}
+              </Button>
+            )}
           </div>
           <p className="text-muted-foreground mx-auto mt-1.5 max-w-3xl text-[11px]">
             Enter to send, Shift+Enter for a new line. Nothing changes without your approval.

@@ -10,6 +10,7 @@ from uuid_utils.compat import uuid7
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from pmagent_backend.modules.audit.service import AuditLog
+from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
@@ -24,6 +25,8 @@ from .schemas import (
     ArchitectureDraftRequest,
     DecisionsRequest,
     RunCreate,
+    ThreadRead,
+    ThreadRename,
     WorkspaceApprovalRead,
 )
 from .titles import placeholder_title
@@ -245,6 +248,62 @@ class AgentService:
         )
         await self.runner.resume(run.id, command, approved_by_id=member.user_id)
         return await self.get(access, run.id)
+
+    async def stop(self, access: ProjectAccess, run_id: uuid.UUID) -> AgentRunRead:
+        """Stop a run that's still working. Whoever asked can stop it, and so can owners and
+        admins. What the agents already wrote (after approval) stays; the conversation can
+        continue with a new message."""
+        member = access.member
+        run = await self.session.scalar(
+            select(AgentRun)
+            .where(AgentRun.project_id == access.project.id, AgentRun.id == run_id)
+            .with_for_update()
+        )
+        if run is None:
+            raise NotFound("Run not found")
+        if run.status not in (RunStatus.QUEUED, RunStatus.RUNNING):
+            raise Conflict("Only a run that's still working can be stopped")
+        if run.requested_by_id != member.user_id and not has_permission(member.role, Permission.MANAGE_PROJECTS):
+            raise Forbidden("Only whoever asked, or an owner or admin, can stop this run")
+        user = await self.session.get(User, member.user_id)
+        reason = f"Stopped by {user.display_name if user else 'a member'}"
+        AuditLog(self.session).record(
+            workspace_id=run.workspace_id,
+            project_id=run.project_id,
+            action="agent_run.stopped",
+            target=str(run.id),
+            actor_type=AuthorType.USER,
+            actor_user_id=member.user_id,
+        )
+        await self.session.commit()
+        if not await self.runner.stop(run.id, reason):
+            # Not running in this process (e.g. cut off by a restart): just record the stop.
+            run.status, run.error = RunStatus.FAILED, reason
+            run.updated_at = run.finished_at = _now()
+            await self.session.commit()
+        return await self.get(access, run.id)
+
+    async def rename_thread(self, access: ProjectAccess, thread_id: uuid.UUID, data: ThreadRename) -> ThreadRead:
+        """A conversation's title lives on its first run."""
+        first = await self.session.scalar(
+            select(AgentRun)
+            .where(AgentRun.project_id == access.project.id, AgentRun.thread_id == thread_id)
+            .order_by(AgentRun.created_at)
+            .limit(1)
+            .with_for_update()
+        )
+        if first is None:
+            raise NotFound("Conversation not found")
+        first.title = data.title.strip()
+        await self.session.commit()
+        return ThreadRead(thread_id=thread_id, title=first.title)
+
+    async def check_run(self, access: ProjectAccess, run_id: uuid.UUID) -> None:
+        found = await self.session.scalar(
+            select(AgentRun.id).where(AgentRun.project_id == access.project.id, AgentRun.id == run_id)
+        )
+        if found is None:
+            raise NotFound("Run not found")
 
     async def _check_thread(self, project_id: uuid.UUID, thread_id: uuid.UUID) -> None:
         runs = list(
