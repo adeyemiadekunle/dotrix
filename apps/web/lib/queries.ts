@@ -81,3 +81,10 @@ export function useCurrentProject() {
     notFound: current.notFound || (projects.isSuccess && !project),
   };
 }
+
+/** The project in the URL plus what issue hooks need, and whether you can change things. */
+export function useProjectScope() {
+  const { workspace, project, isLoading, notFound } = useCurrentProject();
+  const scope = workspace && project ? { workspaceId: workspace.id, projectId: project.id } : undefined;
+  return { workspace, project, scope, isLoading, notFound, canEdit: Boolean(workspace && workspace.role !== "guest") };
+}

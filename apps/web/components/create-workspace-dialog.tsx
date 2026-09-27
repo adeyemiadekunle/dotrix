@@ -45,7 +45,7 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; o
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-md">
         <form onSubmit={onSubmit} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>Create a workspace</DialogTitle>

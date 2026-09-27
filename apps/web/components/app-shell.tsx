@@ -4,13 +4,13 @@ import { Button } from "@pmagent/ui/components/button";
 import { Separator } from "@pmagent/ui/components/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@pmagent/ui/components/sidebar";
 import { useMutation } from "@tanstack/react-query";
-import { MailWarningIcon } from "lucide-react";
+import { CloudOffIcon, MailWarningIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { api, errorMessage, unwrap } from "@/lib/api";
-import { useMe } from "@/lib/queries";
+import { useMe, useWorkspaces } from "@/lib/queries";
 
 function VerifyEmailBanner() {
   const me = useMe();
@@ -31,12 +31,37 @@ function VerifyEmailBanner() {
   );
 }
 
+/** Shown when the API can't be reached or fails, instead of placeholders that never fill in. */
+function ConnectionErrorBanner() {
+  const me = useMe();
+  const workspaces = useWorkspaces();
+  const failed = [me, workspaces].find((q) => q.isError && !q.isFetching);
+  if (!failed) return null;
+  return (
+    <div className="bg-destructive/10 text-destructive flex items-center gap-2 border-b px-4 py-2 text-sm">
+      <CloudOffIcon className="size-4 shrink-0" />
+      <span className="flex-1">Couldn&apos;t load your account: {errorMessage(failed.error)}</span>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => {
+          void me.refetch();
+          void workspaces.refetch();
+        }}
+      >
+        Retry
+      </Button>
+    </div>
+  );
+}
+
 /** The signed-in frame: sidebar, a top bar with the page title, and the page. */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
+        <ConnectionErrorBanner />
         <VerifyEmailBanner />
         {children}
       </SidebarInset>
