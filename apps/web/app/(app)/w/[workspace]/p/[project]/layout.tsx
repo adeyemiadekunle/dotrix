@@ -21,7 +21,7 @@ const TABS = [
   { href: "chat", label: "Chat" },
   { href: "knowledge", label: "Knowledge" },
   { href: "docs", label: "Docs" },
-  { href: "overview", label: "Overview" },
+  { href: "settings", label: "Settings" },
 ];
 
 function ProjectFrame({ children }: { children: ReactNode }) {
