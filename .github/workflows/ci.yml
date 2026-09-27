@@ -40,6 +40,31 @@ jobs:
           uv run alembic upgrade head
           uv run alembic check
 
+  cli-install:
+    # The CLI must install and run on its own, outside the workspace, on Linux and Windows.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install the CLI as a standalone tool (from this PR's code)
+        run: uv tool install ./apps/cli
+      - name: It runs
+        shell: bash
+        run: |
+          bin="$(uv tool dir --bin)"
+          # Git Bash on Windows needs a /c/... path: "C:/..." would split PATH at the colon.
+          if command -v cygpath > /dev/null; then bin="$(cygpath -u "$bin")"; fi
+          export PATH="$bin:$PATH"
+          pmagent --help
+          pmagent issue --help > /dev/null
+          out="$(pmagent whoami 2>&1 || true)"
+          echo "$out"
+          echo "$out" | grep -q "Not signed in"
+
   node:
     runs-on: ubuntu-latest
     steps:
