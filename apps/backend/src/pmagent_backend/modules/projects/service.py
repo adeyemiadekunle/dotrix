@@ -71,6 +71,13 @@ class ProjectService:
             project.description = data.description
         if data.model is not None:
             project.model = data.model
+        if "repo_url" in data.model_fields_set and data.repo_url != project.repo_url:
+            if data.repo_url and (
+                taken := [p for p in await self.projects.list(project.workspace_id, repo_url=data.repo_url)
+                          if p.id != project.id]
+            ):
+                raise RepoTaken(f"{taken[0].key} already uses {data.repo_url}")
+            project.repo_url = data.repo_url
         await self.session.commit()
         await self.session.refresh(project)  # updated_at is set by the database
         return ProjectRead.model_validate(project)

@@ -16,6 +16,7 @@ import { useProjectScope } from "@/lib/queries";
 const TABS = [
   { href: "board", label: "Board" },
   { href: "backlog", label: "Backlog" },
+  { href: "docs", label: "Docs" },
   { href: "overview", label: "Overview" },
 ];
 

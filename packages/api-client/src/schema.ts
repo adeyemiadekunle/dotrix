@@ -850,7 +850,8 @@ export interface paths {
         head?: never;
         /**
          * Update Project
-         * @description Rename a project, or change its description or its agents' model. The key can't change.
+         * @description Rename a project, change its description or its agents' model, or link or unlink its repo
+         *     (one project per repo in a workspace: 409 if another has it). The key can't change.
          */
         patch: operations["update_project"];
         trace?: never;
@@ -2553,6 +2554,11 @@ export interface components {
             description?: string | null;
             /** Model */
             model?: string | null;
+            /**
+             * Repo Url
+             * @description Link the project to its repo (any remote form; stored canonical). Send null to unlink; leave it out to keep the current link.
+             */
+            repo_url?: string | null;
         };
         /** RankRequest */
         RankRequest: {
@@ -5454,6 +5460,15 @@ export interface operations {
             };
             /** @description Not found, or not visible to you */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

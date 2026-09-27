@@ -44,13 +44,16 @@ ModelName = Annotated[
 ]
 
 
+# A repo remote in any form, stored canonical (https, no .git, no credentials).
+RepoUrl = Annotated[str, StringConstraints(max_length=500), AfterValidator(normalize_repo_url)]
+
 class ProjectCreate(BaseModel):
     key: ProjectKey
     name: ProjectName
     description: Description = ""
     source: ProjectSource = ProjectSource.DOCS_ONLY
     model: ModelName | None = Field(default=None, description="Defaults to the server's default model")
-    repo_url: Annotated[str, StringConstraints(max_length=500), AfterValidator(normalize_repo_url)] | None = Field(
+    repo_url: RepoUrl | None = Field(
         default=None,
         description="The repo's remote, e.g. https://github.com/acme/kunemi or git@github.com:acme/kunemi.git. "
         "Stored in canonical form (https, no .git, credentials removed) so the same repo always matches.",
@@ -66,6 +69,11 @@ class ProjectUpdate(BaseModel):
     name: ProjectName | None = None
     description: Description | None = None
     model: ModelName | None = None
+    repo_url: RepoUrl | None = Field(
+        default=None,
+        description="Link the project to its repo (any remote form; stored canonical). Send null to unlink; "
+        "leave it out to keep the current link.",
+    )
 
 
 class ProjectRead(BaseModel):

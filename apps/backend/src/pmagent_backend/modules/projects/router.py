@@ -68,9 +68,10 @@ async def get_project(access: ProjectViewer) -> ProjectRead:
     return ProjectRead.model_validate(access.project)
 
 
-@router.patch("/{project_id}", responses=errors(403, 422))
+@router.patch("/{project_id}", responses=errors(403, 409, 422))
 async def update_project(
     data: ProjectUpdate, access: ProjectManager, session: SessionDep
 ) -> ProjectRead:
-    """Rename a project, or change its description or its agents' model. The key can't change."""
+    """Rename a project, change its description or its agents' model, or link or unlink its repo
+    (one project per repo in a workspace: 409 if another has it). The key can't change."""
     return await ProjectService(session).update(access.project, data)
