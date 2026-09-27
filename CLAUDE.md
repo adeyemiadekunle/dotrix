@@ -140,12 +140,13 @@ apps/web/
 │   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
 │   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /w/[workspace], /w/[workspace]/{approvals,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,docs,overview} (the project root redirects to board), /settings
+│   └── (app)/                   signed-in shell (sidebar): /w/[workspace], /w/[workspace]/{approvals,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,knowledge,docs,overview} (the project root redirects to board), /settings
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
 │   ├── documents/               dropzone, queued files, upload progress
-│   └── agent/                   chat panel and context, conversation, approvals (diff view, decisions)
-└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, documents.ts, repo.ts, url-state.ts, labels.ts
+│   ├── agent/                   chat panel and context, conversation, approvals (diff view, decisions)
+│   └── knowledge/               file tree, file history (authorship, diffs, restore)
+└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, knowledge.ts, documents.ts, repo.ts, url-state.ts, labels.ts
 packages/ui/src/                 consumed as source (no build step); index.tsx's StatusBadge is a leftover placeholder
 ├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
 └── styles/globals.css           Tailwind entry + theme tokens (light and .dark)
@@ -155,6 +156,7 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
 
 - **Tokens never reach the browser.** The access and refresh tokens are httpOnly cookies. Pages call the API only through `api` (`lib/api.ts`), which goes to `/api/v1/*`. Refreshes are shared per token (`lib/session.ts`), because the backend treats a reused refresh token as theft.
 - **Data:** TanStack Query with `unwrap(api.GET(...))`. Keys start with the resource (`["projects", workspaceId]`); invalidate those keys after mutations.
+- **URL state:** filters, the open issue, the open file are search params (`useSearchParam`); change several at once with `useSetSearchParams`, since separate updates in a row undo each other.
 - **URLs use slugs and keys, never UUIDs:** `/w/{workspace slug}/p/{PROJECT KEY}`. Resolve them from the cached lists (`useCurrentWorkspace`, `useCurrentProject`).
 - **UI:**
   - Use shadcn components from `@pmagent/ui/components/*` and Tailwind tokens (`bg-muted`, `text-muted-foreground`, `bg-brand`, `bg-warning-muted`), never raw colours, so light and dark mode both work.
@@ -174,7 +176,7 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
 - [ ] Stream agent output instead of polling (needs the backend streaming TODO); a stop button for a running run
 - [x] Project setup on the web (`/w/[ws]/projects/new`, owners and admins): start from an existing repo (pasted address; public GitHub repos are looked up to confirm and prefill) or documents only, with documents uploaded as part of creating it; Docs tab (upload, list, view the converted Markdown, download originals); link, change, or unlink the repo later from Overview
 - [ ] "Connect GitHub" (needs FR-10's GitHub App): pick a repo from your account, private repos, "new repository"
-- [ ] Knowledge browser (`.pmagent/` tree, Markdown view, version history, diff, restore)
+- [x] Knowledge tab: `.pmagent/` tree with search (deleted files on request), Markdown or source view, edit with a change note (`base_version` guards against overwriting), delete, history with who wrote / asked / approved each version, diffs, restore (including deleted files), zip export for owners and admins; `agent-rules/` editable by owners and admins only
 - [ ] A briefing page (the daily briefing already runs from the chat); project settings (model, agent rules, export); members, invites, and roles; audit log; organisation pages
 - [ ] Remove or update the leftovers: `packages/shared` (unused; its `Issue` type predates the API) and `packages/ui/src/index.tsx`'s StatusBadge. The generated API types are the source of truth.
 - [ ] Automated UI tests (Playwright) for sign-in and the main flows
