@@ -68,7 +68,7 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     allow_abort_jobs = True
-    redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
+    # redis_settings is passed in main(): reading settings at import would need a full environment.
 
 
 def main() -> None:
@@ -79,7 +79,7 @@ def main() -> None:
     if sys.platform == "win32":
         # psycopg (the Postgres checkpointer) can't run on Windows' default Proactor loop.
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    run_worker(WorkerSettings)  # type: ignore[arg-type]
+    run_worker(WorkerSettings, redis_settings=RedisSettings.from_dsn(get_settings().redis_url))  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":
