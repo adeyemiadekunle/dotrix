@@ -40,3 +40,39 @@ def tool_call(name: str, call_id: str | None = None, **args: Any) -> AIMessage:
         content="",
         tool_calls=[{"name": name, "args": args, "id": call_id or f"call_{name}", "type": "tool_call"}],
     )
+
+
+class RuleBasedChatModel(GenericFakeChatModel):
+    """A deterministic model for end-to-end (browser) tests, driven by the conversation itself
+    rather than a script, so it behaves the same across processes, resumes, and restarts:
+
+    - "create issue: <title>" asks to create that task (an Action Mode write, so it pauses
+      for approval); after the tool runs, it confirms.
+    - a conversation-title request gets "Test conversation".
+    - anything else is echoed: "Test model reply: <message>".
+
+    Enabled only when the backend runs with PMAGENT_E2E_MODELS=true (never in production).
+    """
+
+    messages: Any = Field(default_factory=lambda: iter(()))
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> RuleBasedChatModel:  # type: ignore[override]
+        return self
+
+    def _reply(self, messages: list[BaseMessage]) -> AIMessage:
+        last = messages[-1] if messages else None
+        if last is not None and last.type == "tool":
+            return AIMessage(content=f"Done. {str(last.content)[:200]}")
+        text = str(last.content if last is not None else "").strip()
+        if "Write a title for this conversation" in text:
+            return AIMessage(content="Test conversation")
+        lowered = text.lower()
+        if lowered.startswith("create issue:"):
+            title = text.split(":", 1)[1].strip() or "Untitled"
+            return tool_call("create_issue", type="task", title=title, priority="medium")
+        return AIMessage(content=f"Test model reply: {text[:500]}")
+
+    def _generate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        return ChatResult(generations=[ChatGeneration(message=self._reply(messages))])

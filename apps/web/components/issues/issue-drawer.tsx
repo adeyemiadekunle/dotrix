@@ -209,7 +209,7 @@ function IssueDetails({
       <div className="grid gap-3">
         <Field label="Status">
           <Select value={issue.status} disabled={!canEdit} onValueChange={(v) => void save({ status: v as Issue["status"] })}>
-            <SelectTrigger size="sm" className="w-44">
+            <SelectTrigger aria-label="Status" size="sm" className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -236,7 +236,7 @@ function IssueDetails({
               )
             }
           >
-            <SelectTrigger size="sm" className="w-44">
+            <SelectTrigger aria-label="Assignee" size="sm" className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -262,7 +262,7 @@ function IssueDetails({
         </Field>
         <Field label="Priority">
           <Select value={issue.priority} disabled={!canEdit} onValueChange={(v) => void save({ priority: v as Issue["priority"] })}>
-            <SelectTrigger size="sm" className="w-44">
+            <SelectTrigger aria-label="Priority" size="sm" className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -280,7 +280,7 @@ function IssueDetails({
         </Field>
         <Field label="Type">
           <Select value={issue.type} disabled={!canEdit} onValueChange={(v) => void save({ type: v as Issue["type"] })}>
-            <SelectTrigger size="sm" className="w-44">
+            <SelectTrigger aria-label="Type" size="sm" className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -309,7 +309,7 @@ function IssueDetails({
                 disabled={!canEdit}
                 onValueChange={(v) => void save({ parent: v === NONE ? null : v })}
               >
-                <SelectTrigger size="sm" className="w-full max-w-72">
+                <SelectTrigger aria-label="Epic" size="sm" className="w-full max-w-72">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

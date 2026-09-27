@@ -27,9 +27,10 @@ pnpm dev:backend                          # API on :8000, OpenAPI at /docs (pyth
 pnpm db:up && pnpm db:migrate             # Postgres, Redis, MinIO (console :9001) from infra/docker-compose.yml, then apply migrations
 pnpm db:revision "add issues"             # autogenerate a migration after model changes
 pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
+pnpm --filter @pmagent/web e2e            # browser tests: fresh pmagent_e2e DB + backend on :8100 + web on :3100, rule-based model
 ```
 
-CI runs both Ruff and pytest, plus the pnpm build and typecheck. Run them before pushing.
+CI runs Ruff and pytest, the pnpm build and typecheck, and the browser tests. Run them before pushing (the browser tests at least when you change web flows).
 
 ## Rules that always apply
 
@@ -185,7 +186,8 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
 - [x] Backend: membership and invite changes are audited (rename, role changes, removals and leaving, ownership transfer, invites sent / links created / revoked, joining, org placements in the workspace's own log)
 - [ ] A briefing page (the daily briefing already runs from the chat)
 - [ ] Remove or update the leftovers: `packages/shared` (unused; its `Issue` type predates the API) and `packages/ui/src/index.tsx`'s StatusBadge. The generated API types are the source of truth.
-- [ ] Automated UI tests (Playwright) for sign-in and the main flows
+- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search, chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
+- [ ] More browser tests as pages change: organisations, document upload (needs MinIO in CI), phone layouts
 
 ## TODO: backend (priority order)
 

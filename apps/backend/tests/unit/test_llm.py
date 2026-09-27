@@ -47,3 +47,19 @@ def test_factory_builds_the_projects_model() -> None:
     choice = settings_model_factory(settings(google="test-key"))(Project(model="google_genai:gemini-3.8-flash"))
     assert isinstance(choice.model, GeminiWithBuiltinTools)
     assert choice.web_search == {"google_search": {}}
+
+
+def test_e2e_models_need_the_flag_and_never_run_in_production() -> None:
+    project = Project(model="e2e:rules")
+    with pytest.raises(ModelUnavailable):
+        settings_model_factory(settings())(project)
+    enabled = settings().model_copy(update={"e2e_models": True})
+    assert settings_model_factory(enabled)(project).web_search is None
+    with pytest.raises(ValueError, match="e2e_models"):
+        Settings(
+            database_url="postgresql+asyncpg://localhost/unused",
+            jwt_secret="test-only-jwt-secret-not-used-anywhere-else",  # type: ignore[arg-type]
+            env="production",
+            email_backend="resend",
+            e2e_models=True,
+        )

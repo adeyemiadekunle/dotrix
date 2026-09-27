@@ -67,11 +67,15 @@ function Editor({
   return (
     <form
       className="grid gap-3"
-      onSubmit={(e: FormEvent) => {
+      onSubmit={async (e: FormEvent) => {
         e.preventDefault();
         // base_version: if someone changed the file meanwhile, the API refuses (409) instead of
-        // overwriting their change.
-        write.mutate({ path, content: draft, baseVersion: version, message }, { onSuccess: onDone });
+        // overwriting their change. Close from the promise, not a mutate callback: the saved
+        // version remounts this editor (its key), which would drop the callback.
+        const saved = await write
+          .mutateAsync({ path, content: draft, baseVersion: version, message })
+          .catch(() => null);
+        if (saved) onDone();
       }}
     >
       <Textarea

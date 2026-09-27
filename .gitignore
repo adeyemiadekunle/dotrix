@@ -30,3 +30,7 @@ docs/files.zip
 # Local Claude Code settings and preview config
 .claude/settings.local.json
 .claude/launch.json
+
+# Playwright (apps/web e2e)
+playwright-report/
+test-results/

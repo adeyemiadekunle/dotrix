@@ -76,6 +76,12 @@ def build_chat_model(model: str, api_key: str) -> Any:
 
 def settings_model_factory(settings: Settings) -> ModelFactory:
     def factory(project: Project) -> ModelChoice:
+        if project.model.startswith("e2e:"):
+            if not settings.e2e_models:
+                raise ModelUnavailable("Test models need PMAGENT_E2E_MODELS=true (end-to-end tests only)")
+            from pmagent_engine.testing import RuleBasedChatModel
+
+            return ModelChoice(model=RuleBasedChatModel(), web_search=None)
         provider = provider_of(project.model)
         key = getattr(settings, provider.setting)
         if key is None or not key.get_secret_value().strip():  # `KEY=` in .env is empty
