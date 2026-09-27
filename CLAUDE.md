@@ -106,7 +106,7 @@ apps/backend/
 - **Permissions:** declared on the route with `require_permission(Permission.X)` (`modules/workspaces/permissions.py` holds the PRD matrix). Never check roles inline. Non-members get 404, not 403, so IDs can't be probed.
 - **Secrets:** tokens (refresh, email links) are stored only as SHA-256 hashes; passwords with Argon2id. Never log tokens outside the dev console email backend.
 - **Errors:** raise domain exceptions (`NotFound`, `Forbidden`, `Conflict`) and map them once in `core/errors.py`.
-- **Tests:** write the test with every endpoint. Include a cross-workspace isolation test for every workspace-scoped resource.
+- **Tests:** write the test with every endpoint. Cross-workspace isolation is checked for every route by `tests/integration/test_isolation.py`; give a new resource a row in its `World` (and a body in `BODIES` if the route looks its resource up after validating the body).
 - **API:** versioned under `/v1`. Docs at `/docs` (Swagger) and `/redoc`. The OpenAPI schema is the contract for `packages/api-client`: run `pnpm openapi` after any API change and commit `openapi.json` + `src/schema.ts` (CI checks they're current).
 - **Documenting routes:** every route gets a docstring (shown in Swagger) and `responses=errors(...)` listing the error statuses it can return (`core/openapi.py`). Operation IDs are the function names and become the TS client's names, so name route functions carefully and don't rename them casually. Describe new tags in `core/openapi.py` `TAGS`. `tests/unit/test_openapi.py` enforces this.
 
@@ -217,8 +217,8 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 - [x] **FR-6** Device-login flow for the CLI and external tools; scoped, revocable personal access tokens (backend)
 - [x] **FR-6** `pmagent login` / `logout` / `whoami` in `apps/cli` using the device flow; token in the OS keychain (`keyring`), `PMAGENT_TOKEN` for CI
 - [x] Web pages the backend now links to: `/verify-email`, `/reset-password`, `/invites/accept`, `/device` (apps/web)
-- [ ] Cleanup job: delete expired device authorizations, used/expired action tokens and invites, and old revoked refresh tokens
-- [ ] Cross-workspace isolation test suite (NFR multi-tenancy), required before beta — started in `tests/integration/test_workspaces.py`; extend for every new workspace-scoped resource
+- [x] Cleanup job (`cleanup_expired`, hourly: the worker's cron, or a loop in the API in local mode): refresh tokens a week after expiry (revoked ones are kept until then, so reuse detection still works), email-link tokens a week after use or expiry, device logins, invites 30 days after expiry/revocation/acceptance
+- [x] Cross-workspace isolation suite (`tests/integration/test_isolation.py`): walks every workspace and organisation route in the OpenAPI schema; an outsider with real IDs gets 404 everywhere, and another workspace's IDs used inside your own workspace get 404; lists show only your own. New routes are covered automatically (a new path parameter fails the suite until it's given a value)
 - [x] Rate limits on sign-up, login, password reset, and verification resend, per IP and per email (`core/ratelimit.py`, sliding window; Redis in production, `PMAGENT_RATE_LIMITS`); client IP from X-Forwarded-For only via `PMAGENT_TRUSTED_PROXIES` (the web app forwards it; in production the web app needs a proxy in front that appends the real address)
 - [x] Emails are sent from background jobs (`QueuedEmailSender`), and a password-reset request does its lookup in a job too, so response time doesn't reveal whether an account exists
 - [ ] Real email provider (e.g. SES / Postmark / Resend) behind `EmailSender`

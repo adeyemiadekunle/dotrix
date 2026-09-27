@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import ActionToken, ActionTokenPurpose, RefreshToken, User
@@ -50,6 +50,12 @@ class RefreshTokenRepository:
             .values(revoked_at=now)
         )
 
+    async def delete_stale(self, before: datetime) -> int:
+        """Cleanup: tokens that expired before `before`. (Revoked tokens are kept until then,
+        so presenting one still revokes its whole family.)"""
+        result = await self.session.execute(delete(RefreshToken).where(RefreshToken.expires_at < before))
+        return result.rowcount
+
 
 class ActionTokenRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -78,3 +84,10 @@ class ActionTokenRepository:
             )
             .values(used_at=now)
         )
+
+    async def delete_stale(self, before: datetime) -> int:
+        """Cleanup: email-link tokens used or expired before `before`."""
+        result = await self.session.execute(
+            delete(ActionToken).where(or_(ActionToken.expires_at < before, ActionToken.used_at < before))
+        )
+        return result.rowcount

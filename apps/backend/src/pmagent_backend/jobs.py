@@ -1,9 +1,22 @@
 """The background jobs, by name (see `core/jobs.py` for where they run)."""
 from __future__ import annotations
 
+import logging
+from datetime import UTC, datetime, timedelta
+
 from .core.email import EmailMessage
 from .core.jobs import JobContext, JobFunction
+from .modules.api_tokens.repository import DeviceAuthorizationRepository
+from .modules.auth.repository import ActionTokenRepository, RefreshTokenRepository
 from .modules.auth.service import AuthService
+from .modules.invites.repository import InviteRepository
+
+logger = logging.getLogger(__name__)
+
+# How long finished rows are kept before cleanup deletes them.
+TOKEN_RETENTION = timedelta(days=7)  # refresh tokens after expiry; email links after use or expiry; device logins
+INVITE_RETENTION = timedelta(days=30)  # after expiry, revocation, or acceptance
+CLEANUP_INTERVAL_SECONDS = 3600
 
 
 async def send_email(ctx: JobContext, *, to: str, subject: str, body: str) -> None:
@@ -17,7 +30,27 @@ async def send_password_reset(ctx: JobContext, *, email: str) -> None:
         await AuthService(session, ctx.settings, ctx.email).send_password_reset(email)
 
 
+async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[str, int]:
+    """Delete rows nothing will use again: expired refresh tokens, used or expired email-link
+    tokens, finished device logins, and old invites. Runs hourly (the worker's cron, or a loop
+    in the API process in local mode); safe to run any time, from any number of processes."""
+    at = datetime.fromisoformat(now) if now else datetime.now(UTC)
+    token_cutoff, invite_cutoff = at - TOKEN_RETENTION, at - INVITE_RETENTION
+    async with ctx.session_factory() as session:
+        deleted = {
+            "refresh_tokens": await RefreshTokenRepository(session).delete_stale(token_cutoff),
+            "action_tokens": await ActionTokenRepository(session).delete_stale(token_cutoff),
+            "device_authorizations": await DeviceAuthorizationRepository(session).delete_stale(token_cutoff),
+            "invites": await InviteRepository(session).delete_stale(invite_cutoff),
+        }
+        await session.commit()
+    if any(deleted.values()):
+        logger.info("cleanup deleted %s", ", ".join(f"{n} {name}" for name, n in deleted.items() if n))
+    return deleted
+
+
 JOBS: dict[str, JobFunction] = {
     "send_email": send_email,
     "send_password_reset": send_password_reset,
+    "cleanup_expired": cleanup_expired,
 }

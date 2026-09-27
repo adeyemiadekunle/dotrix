@@ -39,7 +39,7 @@ class JobContext:
     email: EmailSender  # the real provider (a job must not enqueue its own email again)
 
 
-JobFunction = Callable[..., Awaitable[None]]
+JobFunction = Callable[..., Awaitable[Any]]
 
 
 class Jobs(Protocol):

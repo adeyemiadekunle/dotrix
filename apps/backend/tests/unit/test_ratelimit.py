@@ -25,10 +25,13 @@ async def test_allows_the_limit_then_says_how_long_to_wait() -> None:
     limiter = MemoryRateLimiter(clock)
     assert [await limiter.hit(LIMIT, "a") for _ in range(3)] == [None, None, None]
     wait = await limiter.hit(LIMIT, "a")
-    assert wait is not None and 40 <= wait <= 60
+    assert wait is not None and wait > 40  # at least the rest of this window
     # Other keys and other limits are counted separately.
     assert await limiter.hit(LIMIT, "b") is None
     assert await limiter.hit(Limit("signup:email", 3, 60), "a") is None
+    # Retry-After is a promise: after that long, the next attempt goes through.
+    clock.now += wait
+    assert await limiter.hit(LIMIT, "a") is None
 
 
 async def test_the_previous_window_still_counts_while_it_fades() -> None:
@@ -40,9 +43,25 @@ async def test_the_previous_window_still_counts_while_it_fades() -> None:
     clock.now = 60 * 20_001 + 15
     wait = await limiter.hit(LIMIT, "a")  # 1 + 3 * 0.75 = 3.25 > 3
     assert wait is not None and wait < 45
+    later = MemoryRateLimiter(clock)  # (a copy of the state, to check the promise)
+    later._counts = dict(limiter._counts)
+    clock.now += wait
+    assert await later.hit(LIMIT, "a") is None
+    clock.now -= wait
     # Once enough of it has faded, attempts are allowed again.
     clock.now = 60 * 20_001 + 50
     assert await limiter.hit(LIMIT, "a") is None  # 2 + 3 * (10/60) = 2.5
+
+
+async def test_going_over_early_in_a_window_can_mean_waiting_past_its_end() -> None:
+    clock = Clock(60 * 20_000 + 1)  # 1s into a window
+    limiter = MemoryRateLimiter(clock)
+    for _ in range(3):
+        await limiter.hit(LIMIT, "a")
+    wait = await limiter.hit(LIMIT, "a")  # 4 in this window: over until they fade from the next
+    assert wait is not None and 60 < wait <= 120
+    clock.now += wait
+    assert await limiter.hit(LIMIT, "a") is None
 
 
 async def test_windows_long_past_are_forgotten() -> None:
