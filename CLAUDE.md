@@ -193,8 +193,8 @@ External accounts, keys, and config have to exist before these items can be buil
 - [x] **FR-30** Board, backlog (rank, reorder), epic % complete, filters (type, status, assignee, label, parent/epic); measured at 5,000 issues: board 689 ms, backlog 279 ms
 - [x] Only a person moves an issue to `done`; coding tools (`as_agent`) work only on their own issue and stop at `review`; assigning `coding-agent` needs the instruct-coding-agent permission
 - [x] Issues included in the `.pmagent/` export as `issues/KEY-N.md` (YAML fields + description + log)
-- [ ] Give the platform PM agent board tools (list/get/create/update/comment issues) through `build_team(task_tools=...)`, gated by approvals like file writes ("PM moves review -> done with approval")
-- [ ] Per-agent issue-type rules from the PRD matrix (Product creates stories, Architecture tasks, Research spikes, Reviewer bugs) once agents have board tools
+- [x] Platform agents have board tools (`modules/agents/board_tools.py`): list/get freely; create/update/comment pause for approval; the PM edits and closes issues with approval. Live-tested on Gemini: "idea to epic" planned in Chat Mode, then an epic + 3 stories created through 4 approvals
+- [x] Per-agent issue rules (`pmagent_engine.permissions.can_create_issue` / `can_edit_issues`): Product epics+stories, Architecture tasks, Research spikes, Reviewer bugs, only the PM edits; specialists aren't given `update_issue`, and the service refuses it anyway
 - [ ] CLI: `pmagent task` commands and the MCP server talk to the platform issue API instead of local files (Claude Code / Codex hand-off)
 - [ ] **FR-32** Calendar feed (iCalendar) for due and scheduled dates, with a per-user secret URL
 - [ ] **FR-33** @mentions and notifying watchers (with FR-14 notifications)

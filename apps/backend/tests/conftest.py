@@ -160,7 +160,16 @@ async def db_client(
 
     @asynccontextmanager
     async def shared_session() -> AsyncIterator[AsyncSession]:
-        yield db_session  # agent runs join the test's rolled-back transaction
+        # Like production, each unit of agent work gets its own session (so a failed tool
+        # call rolls back only its own work), but on the test's connection, inside the
+        # test's rolled-back transaction.
+        session = AsyncSession(
+            bind=db_session.bind, join_transaction_mode="create_savepoint", expire_on_commit=False
+        )
+        try:
+            yield session
+        finally:
+            await session.close()
 
     # Inline: a run finishes (or pauses) before the request that started it returns.
     app.state.runner = AgentRunner(

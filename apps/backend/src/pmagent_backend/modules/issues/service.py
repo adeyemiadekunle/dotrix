@@ -26,6 +26,7 @@ from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission, has_permission
+from pmagent_engine.permissions import can_create_issue, can_edit_issues
 
 from .models import (
     DESCRIPTION_REQUIRED,
@@ -79,12 +80,22 @@ class NothingReady(NotFound):
 
 @dataclass(frozen=True)
 class IssueActor:
+    """Who is changing the board. `member` is the person behind it: the caller, or the
+    person who instructed an agent run."""
+
     member: Membership
     agent: AgentAssignee | None = None  # a coding tool acting through this member's credentials
+    # A platform agent ("project-manager", "product", ...) in an approved agent run.
+    thinking_agent: str | None = None
+    approved_by_id: uuid.UUID | None = None
 
     @property
     def user_id(self) -> uuid.UUID:
         return self.member.user_id
+
+    @property
+    def agent_name(self) -> str | None:
+        return self.thinking_agent or (self.agent.value if self.agent else None)
 
 
 def _now() -> datetime:
@@ -131,6 +142,11 @@ class IssueService:
         if actor.agent is not None:
             if data.type is not IssueType.SUB_TASK or parent is None or parent.assignee_agent is not actor.agent:
                 raise Forbidden(f"{actor.agent} can only add sub-tasks to issues assigned to it")
+        if actor.thinking_agent is not None and not can_create_issue(actor.thinking_agent, data.type.value):
+            raise Forbidden(
+                f"The {actor.thinking_agent} agent can't open {data.type} issues; "
+                "ask the Project Manager to create it"
+            )
         self._check_parent(data.type, parent)
         self._check_description(data.type, data.description)
         self._check_assignment(actor, data.assignee_agent)
@@ -154,8 +170,8 @@ class IssueService:
             priority=data.priority,
             assignee_user_id=data.assignee_user_id,
             assignee_agent=data.assignee_agent,
-            reporter_user_id=None if actor.agent else actor.user_id,
-            reporter_agent=actor.agent.value if actor.agent else None,
+            reporter_user_id=None if actor.agent_name else actor.user_id,
+            reporter_agent=actor.agent_name,
             parent_id=parent.id if parent else None,
             estimate=data.estimate,
             due=data.due,
@@ -174,7 +190,7 @@ class IssueService:
         await self.session.flush()
         if data.depends_on:
             await self._set_dependencies(project, issue, data.depends_on)
-        if actor.agent is None:
+        if actor.agent_name is None:
             self.session.add(IssueWatcher(issue_id=issue.id, user_id=actor.user_id))
         self._event(issue, actor, IssueEventKind.CREATED)
         self._audit(project, actor, "issue.create", issue)
@@ -312,6 +328,10 @@ class IssueService:
         sent = data.model_dump(exclude_unset=True)
         note = sent.pop("note", None)
         sent.pop("as_agent", None)
+        if actor.thinking_agent is not None and not can_edit_issues(actor.thinking_agent):
+            raise Forbidden(
+                f"The {actor.thinking_agent} agent can't edit issues; ask the Project Manager"
+            )
         if actor.agent is not None:
             self._check_agent_owns(actor, issue)
             extra = set(sent) - AGENT_FIELDS
@@ -659,8 +679,8 @@ class IssueService:
                 workspace_id=issue.workspace_id,
                 issue_id=issue.id,
                 kind=kind,
-                author_user_id=None if actor.agent else actor.user_id,
-                author_agent=actor.agent.value if actor.agent else None,
+                author_user_id=None if actor.agent_name else actor.user_id,
+                author_agent=actor.agent_name,
                 body=body,
                 changes=changes or {},
                 created_at=_now(),
@@ -680,9 +700,10 @@ class IssueService:
             project_id=project.id,
             action=action,
             target=issue.key,
-            actor_type=AuthorType.AGENT if actor.agent else AuthorType.USER,
-            actor_user_id=None if actor.agent else actor.user_id,
-            agent=actor.agent.value if actor.agent else None,
+            actor_type=AuthorType.AGENT if actor.agent_name else AuthorType.USER,
+            actor_user_id=None if actor.agent_name else actor.user_id,
+            agent=actor.agent_name,
             instructed_by_id=actor.user_id,
+            approved_by_id=actor.approved_by_id,
             details=details or {},
         )
