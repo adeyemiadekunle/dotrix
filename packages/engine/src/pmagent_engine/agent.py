@@ -132,10 +132,11 @@ def _subagents(
     read_task_tools: list,
     web_search: dict | None,
     rules: dict[str, str] | None = None,
+    context: str | None = None,
 ) -> list[dict]:
     def role(title: str, body: str) -> str:
         prompt = f"You are the {title} for {project_name}.\n{body}"
-        return _with_rules(rules, _ROLE_FOR_TITLE[title], prompt)
+        return _with_context(_with_rules(rules, _ROLE_FOR_TITLE[title], prompt), context)
 
     # Custom tools per subagent are set explicitly so it's obvious who can do
     # what. Filesystem tools are always present (middleware) and gated by
@@ -216,6 +217,22 @@ def _with_rules(rules: dict[str, str] | None, role: str, prompt: str) -> str:
     return "\n\n".join(part.strip() for part in parts if part.strip())
 
 
+_CONTEXT_GUIDE = """## Using the project context
+The project context below is built fresh for this run: every document with a one-line
+summary, the board, recent decisions, and what changed since this conversation's last
+message. Start from it. Open only the files (or the sections of them) you need, and don't
+re-read a file you already read in this conversation unless it has changed since. When you
+delegate, give the specialist the paths and excerpts that matter, not just the question."""
+
+
+def _with_context(prompt: str, context: str | None) -> str:
+    """Append the run's project context pack after the fixed instructions (so the unchanging
+    part of the prompt comes first, which is what prompt caching reuses)."""
+    if not context:
+        return prompt
+    return f"{prompt}\n\n{_CONTEXT_GUIDE}\n\n{context.strip()}"
+
+
 # Subagent name -> role name used by agent-rules/ and the folder permissions.
 SUBAGENT_ROLES = {
     "product-agent": "product",
@@ -275,6 +292,7 @@ def build_team(
     rules: dict[str, str] | None = None,
     board_instructions: str | None = None,
     subagent_task_tools: list | None = None,
+    context: str | None = None,
 ):
     """The Project Manager plus five thinking subagents, over any storage backend.
 
@@ -284,7 +302,8 @@ def build_team(
     `task_tools`, the board section is left out of the PM's instructions;
     `board_instructions` replaces it (the platform's issue board differs from the
     CLI's task files). `subagent_task_tools` are extra board tools the specialists
-    get (e.g. opening their own issue types); they're gated like every write.
+    get (e.g. opening their own issue types); they're gated like every write. `context` is the
+    run's project context pack (the platform builds it): the PM and every specialist get it.
     """
     read_task_tools, write_task_tools = task_tools or ([], [])
     if board_instructions is not None:
@@ -292,6 +311,13 @@ def build_team(
     else:
         board = _BOARD_SECTION if task_tools else ""
     board_source = ", and the task board" if task_tools else ""
+    briefing_sources = (
+        "start from the project context below (the board, what changed, recent decisions, the "
+        "documents and what each is about); read /pmagent/current-state.md, /pmagent/progress/, "
+        "or a decision only where you need more detail than the context gives"
+        if context
+        else f"read /pmagent/progress/*.md, /pmagent/decisions/*.md,\n/pmagent/current-state.md{board_source}"
+    )
 
     pm_instructions = f"""You are the Project Manager for {project_name}.
 
@@ -324,8 +350,7 @@ request splits into independent pieces, call the relevant subagents together
 in the same turn rather than one at a time.
 
 ## Briefings
-On "briefing" or "status": read /pmagent/progress/*.md, /pmagent/decisions/*.md,
-/pmagent/current-state.md{board_source}, then report phase, rough % progress,
+On "briefing" or "status": {briefing_sources}, then report phase, rough % progress,
 today's priorities, what's in progress, recent decisions, open questions,
 blockers, and documentation status. A briefing never writes.
 """
@@ -339,9 +364,9 @@ blockers, and documentation status. A briefing never writes.
     return create_deep_agent(
         model=model,
         tools=[*read_task_tools, *write_task_tools, *([web_search] if web_search else [])],
-        system_prompt=_with_rules(rules, PM_ROLE, pm_instructions),
+        system_prompt=_with_context(_with_rules(rules, PM_ROLE, pm_instructions), context),
         subagents=_subagents(
-            project_name, [*read_task_tools, *(subagent_task_tools or [])], web_search, rules
+            project_name, [*read_task_tools, *(subagent_task_tools or [])], web_search, rules, context
         ),
         backend=backend,
         checkpointer=checkpointer,

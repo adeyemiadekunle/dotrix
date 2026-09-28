@@ -29,6 +29,7 @@ from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.workspaces.models import Role
 from pmagent_engine import permissions as agent_permissions
+from pmagent_engine.knowledge_index import describe
 from pmagent_engine.layout import MAX_FILE_BYTES, InvalidPath, normalize_path
 
 from .models import AuthorType, KnowledgeFile, KnowledgeVersion
@@ -265,6 +266,7 @@ class KnowledgeService:
             created_at=now,
             updated_at=now,
         )
+        describe_file(file)
         self.files.add(file)
         self._record(project, file, actor, message)
         return file
@@ -286,6 +288,7 @@ class KnowledgeService:
         file.size = len(content.encode("utf-8"))
         file.deleted = deleted
         file.updated_at = _now()
+        describe_file(file)
         self._record(project, file, actor, message)
 
     def _record(
@@ -352,3 +355,10 @@ class KnowledgeService:
         if found is None:
             raise NotFound(f"{file.path} has no version {version}")
         return found
+
+
+def describe_file(file: KnowledgeFile) -> None:
+    """Keep the file's title, summary, and outline in step with its content."""
+    described = describe(file.path, file.content)
+    file.title, file.summary, file.outline = described.title, described.summary, described.outline
+    file.described_version = file.version

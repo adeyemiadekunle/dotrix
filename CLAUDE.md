@@ -188,8 +188,8 @@ The aim: track a software project's issues and features with agents, brainstorm 
 
 ### Phase 2: agent context (stop re-reading everything)
 Today every run starts cold: the PM gets its instructions and agent rules, then discovers everything with tools (list folders, read files, read the board), and each specialist starts from zero inside `task`. A briefing read ~160,000 input tokens. The fix is to give agents a small, accurate map up front, cache what doesn't change, and let them read only what they need.
-- [ ] **File summaries in the knowledge store:** each version gets a title, a one- or two-line summary, and a heading outline, kept up to date on every write (a background job; headings and the first paragraph without a model, a cheap model for the summary line). A knowledge index lists every file with them.
-- [ ] **A project context pack at the start of every run, built by the platform (no model):**
+- [x] **File summaries in the knowledge store:** every document stores a title, a one-line summary, and its heading outline (`pmagent_engine.knowledge_index.describe`, from the Markdown itself, no model), set on every write and filled in for older rows when the index needs them. Later: a cheap model's summary line for documents whose first paragraph says little
+- [x] **A project context pack at the start of every run, built by the platform (no model):**
   - `project.md` (trimmed)
   - `current-state.md`
   - the knowledge index (path, title, summary, version, last changed)
@@ -198,6 +198,8 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
   - what changed since this thread's last run
   
   Aim for a few thousand tokens. Specialists get the same pack.
+
+  Built in `modules/agents/context.py` and appended after the fixed instructions (`build_team(context=…)`), capped at ~6,000 tokens. Measured on the dev project's briefing: 160,290 → 81,613 input tokens; the rest is the prompt re-sent on every tool step, which the steps below target.
 - [ ] **Prompt caching:** order the system prompt from stable to changing (rules and instructions, then the context pack, then the conversation); mark the cache breakpoint for Anthropic (`cache_control`), rely on implicit caching for Gemini and OpenAI, and record cache hits with token usage
 - [ ] **Reading less:**
   - `read_file` answers "unchanged since you read it (version N)" when the thread already has that version

@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pmagent_backend.db.base import Base, UUIDPrimaryKeyMixin, WorkspaceScopedMixin, str_enum
@@ -41,6 +42,13 @@ class KnowledgeFile(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     deleted: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # What the document is about (pmagent_engine.knowledge_index), for the knowledge index in
+    # every agent run's context pack. `described_version` is the version it describes: older
+    # rows are filled in when the index next needs them.
+    title: Mapped[str | None] = mapped_column(String(200))
+    summary: Mapped[str | None] = mapped_column(String(300))
+    outline: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    described_version: Mapped[int | None]
 
 
 class KnowledgeVersion(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
