@@ -2,9 +2,11 @@
 
 Integration tests run against a real Postgres database: PMAGENT_TEST_DATABASE_URL
 if set, otherwise PMAGENT_DATABASE_URL (from .env) with the database name
-swapped to `pmagent_test`. That database is dropped and recreated each run. The schema is migrated once per session with
-Alembic, and each test runs inside a transaction that is rolled back, so
-tests never see each other's data. Service code may call commit(): the
+swapped to `pmagent_test`. Each run creates its own database named after that one
+(`pmagent_test_<random>`) and drops it at the end, so runs in different checkouts (or
+side by side in one) never drop each other's database mid-test. The schema is migrated
+once per session with Alembic, and each test runs inside a transaction that is rolled
+back, so tests never see each other's data. Service code may call commit(): the
 session joins the outer transaction via savepoints.
 """
 from __future__ import annotations
@@ -12,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -46,33 +48,41 @@ UNUSED_DATABASE_URL = "postgresql+asyncpg://localhost/unused"
 
 
 def resolve_test_database_url() -> str:
+    """This run's own database: the configured test database's name plus a random suffix."""
     if url := os.environ.get("PMAGENT_TEST_DATABASE_URL"):
-        return url
-    dev_url = make_url(get_database_settings().database_url)
-    return dev_url.set(database="pmagent_test").render_as_string(hide_password=False)
+        base = make_url(url)
+    else:
+        base = make_url(get_database_settings().database_url).set(database="pmagent_test")
+    run_database = f"{base.database}_{uuid.uuid4().hex[:8]}"
+    return base.set(database=run_database).render_as_string(hide_password=False)
 
 
-async def _recreate_database(url: str) -> None:
-    target = make_url(url)
-    admin = create_async_engine(target.set(database="postgres"), isolation_level="AUTOCOMMIT")
+async def _admin(url: str, *statements: str) -> None:
+    admin = create_async_engine(make_url(url).set(database="postgres"), isolation_level="AUTOCOMMIT")
     async with admin.connect() as conn:
-        await conn.execute(text(f'DROP DATABASE IF EXISTS "{target.database}" WITH (FORCE)'))
-        await conn.execute(text(f'CREATE DATABASE "{target.database}"'))
+        for statement in statements:
+            await conn.execute(text(statement))
     await admin.dispose()
 
 
 @pytest.fixture(scope="session")
-def migrated_database() -> str:
-    """Fresh test database at Alembic head. Sync, so Alembic can run its own loop."""
+def migrated_database() -> Iterator[str]:
+    """This run's database at Alembic head, dropped afterwards. Sync, so Alembic can run its
+    own loop."""
     url = resolve_test_database_url()
-    asyncio.run(_recreate_database(url))
-    config = Config(str(BACKEND_DIR / "alembic.ini"))
-    config.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
-    # "%" must be escaped for ConfigParser (passwords may contain it).
-    config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
-    config.attributes["configure_logger"] = False
-    command.upgrade(config, "head")
-    return url
+    name = make_url(url).database
+    asyncio.run(_admin(url, f'CREATE DATABASE "{name}"'))
+    try:
+        config = Config(str(BACKEND_DIR / "alembic.ini"))
+        config.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
+        # "%" must be escaped for ConfigParser (passwords may contain it).
+        config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+        config.attributes["configure_logger"] = False
+        command.upgrade(config, "head")
+        yield url
+    finally:
+        # Only this run ever connects to it, so forcing out leftover connections is safe.
+        asyncio.run(_admin(url, f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
 
 
 @pytest.fixture(scope="session")
