@@ -12,7 +12,7 @@ from pydantic import Field
 from pmagent_backend.modules.agents.llm import ModelChoice
 from pmagent_backend.modules.agents.runner import AgentRunner
 from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import ScriptedChatModel
+from pmagent_engine.testing import ScriptedChatModel, tool_call
 
 
 class GatedModel(ScriptedChatModel):
@@ -32,13 +32,13 @@ class GatedModel(ScriptedChatModel):
 def live(db_client: AsyncClient, create_team, signup):
     """(ada, base url, gated model): a project whose runs execute in the background."""
 
-    async def _make(reply: str = "Three issues are open and one is blocked."):
+    async def _make(*replies: Any):
         ada = await signup()
         team = await create_team(ada.headers)
         project = (
             await db_client.post(f"/v1/workspaces/{team['id']}/projects", json={"key": "KUN", "name": "K"}, headers=ada.headers)
         ).json()
-        model = GatedModel.of(reply)
+        model = GatedModel.of(*(replies or ("Three issues are open and one is blocked.",)))
         model.started, model.gate = asyncio.Event(), asyncio.Event()
         app = db_client._transport.app  # type: ignore[attr-defined]
         inline = app.state.runner
@@ -88,6 +88,26 @@ async def test_the_reply_streams_as_it_is_written(live, db_client: AsyncClient) 
     # Once it's finished there's nothing to stream: just the end.
     after = await db_client.get(f"{base}/agent/runs/{run['id']}/stream", headers=ada.headers)
     assert after.text.startswith("event: end")
+
+
+async def test_the_stream_says_what_the_pm_is_doing(live, db_client: AsyncClient) -> None:
+    ada, _, base, model = await live(
+        tool_call("read_file", file_path="/pmagent/roadmap.md"), "The roadmap has three phases."
+    )
+    run = (await db_client.post(f"{base}/agent/runs", json={"message": "Summarise the roadmap"}, headers=ada.headers)).json()
+    await asyncio.wait_for(model.started.wait(), 5)
+
+    async def open_gate_soon():
+        await asyncio.sleep(0.2)
+        model.gate.set()
+
+    response, _ = await asyncio.gather(
+        db_client.get(f"{base}/agent/runs/{run['id']}/stream", headers=ada.headers), open_gate_soon()
+    )
+    body = response.text
+    assert 'event: activity\ndata: {"text": "Reading roadmap.md"}' in body
+    # The activity comes before the reply is written.
+    assert body.index("event: activity") < body.index("phases")  # (the reply streams word by word)
 
 
 async def test_stop_a_working_run(live, db_client: AsyncClient, add_member, signup) -> None:
