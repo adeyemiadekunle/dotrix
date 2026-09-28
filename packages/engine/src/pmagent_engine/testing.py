@@ -11,7 +11,8 @@ from pydantic import Field
 
 def _chunks(message: AIMessage) -> list[Any]:
     """A reply as stream chunks: text word by word (so streaming shows up in tests), or a
-    tool call in one piece."""
+    tool call or a list of content blocks (e.g. `[]`, as Gemini sometimes ends a turn) in one
+    piece."""
     import json
 
     from langchain_core.messages import AIMessageChunk
@@ -29,6 +30,8 @@ def _chunks(message: AIMessage) -> list[Any]:
                 )
             )
         ]
+    if isinstance(message.content, list):
+        return [ChatGenerationChunk(message=AIMessageChunk(content=message.content))]
     words = str(message.content).split(" ")
     return [
         ChatGenerationChunk(message=AIMessageChunk(content=w if i == 0 else f" {w}"))
