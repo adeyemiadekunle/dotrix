@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/app-shell";
 import { api, errorMessage, unwrap } from "@/lib/api";
 import { useMe } from "@/lib/queries";
 
+import { CalendarFeed } from "./calendar";
 import { Devices } from "./devices";
 
 const THEMES: { value: string; label: string; icon: LucideIcon; preview: string }[] = [
@@ -119,6 +120,7 @@ export default function SettingsPage() {
       <div className="flex max-w-3xl flex-col gap-4 p-4 md:p-6">
         <Profile />
         <Appearance />
+        <CalendarFeed />
         <Devices />
       </div>
     </>

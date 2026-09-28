@@ -378,6 +378,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Calendar Feed
+         * @description Your calendar feed's settings; 404 if it's off. The URL itself is shown only when
+         *     the feed is turned on.
+         */
+        get: operations["get_calendar_feed"];
+        put?: never;
+        /**
+         * Create Calendar Feed
+         * @description Turn your calendar feed on and get its secret URL (in this response only). If it was
+         *     already on, the old URL stops working. Needs a login session (403 for API tokens).
+         */
+        post: operations["create_calendar_feed"];
+        /**
+         * Delete Calendar Feed
+         * @description Turn your calendar feed off: its URL stops working.
+         */
+        delete: operations["delete_calendar_feed"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Calendar Feed
+         * @description Change what the feed includes; the URL stays the same.
+         */
+        patch: operations["update_calendar_feed"];
+        trace?: never;
+    };
+    "/v1/calendar/{feed}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Calendar Feed
+         * @description The calendar itself, for calendar apps: `{secret}.ics`, from the URL you got when
+         *     turning the feed on. No sign-in: the secret is the credential. Due dates are all-day
+         *     events, scheduled times one-hour slots; each links to the issue in the web app.
+         */
+        get: operations["calendar_feed"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/organizations": {
         parameters: {
             query?: never;
@@ -1796,6 +1852,50 @@ export interface components {
              */
             file: string;
         };
+        /** CalendarFeedCreate */
+        CalendarFeedCreate: {
+            /** @default mine */
+            scope: components["schemas"]["FeedScope"];
+        };
+        /** CalendarFeedCreated */
+        CalendarFeedCreated: {
+            /** @description `mine`: issues assigned to you or that you watch; `all`: every dated issue in your projects */
+            scope: components["schemas"]["FeedScope"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Last Used At
+             * @description When a calendar app last fetched the feed
+             */
+            last_used_at: string | null;
+            /**
+             * Url
+             * @description The feed's secret address. Shown only now; turn the feed on again for a new one.
+             */
+            url: string;
+        };
+        /** CalendarFeedRead */
+        CalendarFeedRead: {
+            /** @description `mine`: issues assigned to you or that you watch; `all`: every dated issue in your projects */
+            scope: components["schemas"]["FeedScope"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Last Used At
+             * @description When a calendar app last fetched the feed
+             */
+            last_used_at: string | null;
+        };
+        /** CalendarFeedUpdate */
+        CalendarFeedUpdate: {
+            scope: components["schemas"]["FeedScope"];
+        };
         /** ClaimRequest */
         ClaimRequest: {
             /**
@@ -1951,6 +2051,11 @@ export interface components {
              */
             percent: number;
         };
+        /**
+         * FeedScope
+         * @enum {string}
+         */
+        FeedScope: "mine" | "all";
         /**
          * FileEntry
          * @description A file in the manifest: metadata, no content.
@@ -3756,6 +3861,214 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_calendar_feed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarFeedRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    create_calendar_feed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalendarFeedCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarFeedCreated"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    delete_calendar_feed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    update_calendar_feed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalendarFeedUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarFeedRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    calendar_feed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                feed: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An iCalendar (RFC 5545) file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "text/calendar": unknown;
                 };
             };
             /** @description Not found, or not visible to you */

@@ -58,6 +58,11 @@ TAGS: list[dict[str, str]] = [
     },
     {"name": "api tokens", "description": "Your personal API tokens: create, list, revoke."},
     {
+        "name": "calendar",
+        "description": "Your issue due and scheduled dates as an iCalendar feed at a secret URL, for any "
+        "calendar app. Only the workspaces you can see, checked on every fetch.",
+    },
+    {
         "name": "organizations",
         "description": "Organisations own several workspaces (e.g. per division or client) and manage "
         "people across them. Org admins don't see inside a workspace unless they're in it.",
