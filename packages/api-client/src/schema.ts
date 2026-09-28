@@ -1637,6 +1637,23 @@ export interface components {
             /** Requested By Id */
             requested_by_id: string | null;
             /**
+             * Model
+             * @description The project's model when the run last worked, e.g. `google_genai:gemini-3.8-flash`
+             */
+            model?: string | null;
+            /**
+             * Input Tokens
+             * @description Input (prompt) tokens over every model call of the run, subagents and the title included
+             * @default 0
+             */
+            input_tokens: number;
+            /**
+             * Output Tokens
+             * @description Output tokens over every model call of the run, subagents and the title included
+             * @default 0
+             */
+            output_tokens: number;
+            /**
              * Created At
              * Format: date-time
              */

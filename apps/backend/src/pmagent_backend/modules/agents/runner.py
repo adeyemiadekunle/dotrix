@@ -34,6 +34,7 @@ from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
 from .titles import Titler
+from .usage import TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +209,10 @@ class AgentRunner:
         continues from the last checkpoint instead of starting over."""
         resuming = payload["kind"] == "resume"
         approved_by_id = uuid.UUID(payload["approved_by_id"]) if resuming else None
+        # Every model call of this step, subagents' included; recorded on the run when the step
+        # ends (finished, paused, failed, or stopped). Known gap: in worker mode, a cut-off
+        # attempt's tokens are lost when its job is retried.
+        usage = TokenUsage()
         try:
             async with self.session_factory() as session:
                 run = await session.get(AgentRun, run_id)
@@ -218,6 +223,7 @@ class AgentRunner:
                 project = await ProjectRepository(session).get(run.workspace_id, run.project_id)
                 assert project is not None
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
+                run.model = project.model
                 await session.commit()
                 rules = await self._rules(session, project.id)
                 kind, thread_id, first_message = run.kind, run.thread_id, run.message
@@ -258,7 +264,11 @@ class AgentRunner:
                 subagent_task_tools=specialist_write_tools,
                 board_instructions=board_instructions(project_key),
             )
-            config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": RECURSION_LIMIT}
+            config = {
+                "configurable": {"thread_id": str(thread_id)},
+                "recursion_limit": RECURSION_LIMIT,
+                "callbacks": [usage],  # inherited by tools and the subagents they start
+            }
             graph_input: Any = (
                 hitl.resume_command(
                     [{"interrupt_id": i} for i in payload["interrupt_ids"]],
@@ -279,28 +289,30 @@ class AgentRunner:
                 result = await _run_graph(agent, _follow_up(result), config, stream)
                 result = await self._settle(agent, kind, config, stream, result)
                 if not hitl.has_pending(result) and not _reply(result):
-                    await self._fail(run_id, NO_REPLY_AFTER_DECISIONS_ERROR if resuming else NO_REPLY_ERROR)
+                    await self._fail(
+                        run_id, NO_REPLY_AFTER_DECISIONS_ERROR if resuming else NO_REPLY_ERROR, usage
+                    )
                     return
-            await self._finish(run_id, result)
+            await self._finish(run_id, result, usage)
             # The reply is saved: end the stream now, not after the title (a model call).
             await self.streams.close(run_id)
             if payload.get("name_thread") and self.titler is not None:
-                await self._name_thread(run_id, choice.model, first_message, result)
+                await self._name_thread(run_id, choice.model, first_message, result, usage)
         except asyncio.CancelledError:
             reason = self._stopped.pop(run_id, None)
             if reason is None and self.stop_reasons is not None:
                 reason = await self.stop_reasons.stop_reason(run_id)
             if reason is not None:
-                await self._fail(run_id, reason)  # a person stopped it
+                await self._fail(run_id, reason, usage)  # a person stopped it
                 return
             if self.stop_reasons is None:
-                await self._fail(run_id, "Stopped because the server shut down; send the message again")
+                await self._fail(run_id, "Stopped because the server shut down; send the message again", usage)
             # In the worker the run stays "running": its job is retried and continues from the
             # last checkpoint.
             raise
         except Exception as exc:
             logger.exception("agent run %s failed", run_id)
-            await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}")
+            await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}", usage)
         finally:
             await self.streams.close(run_id)
 
@@ -314,23 +326,31 @@ class AgentRunner:
                 result = await _run_graph(agent, command, config, stream)
         return result
 
-    async def _name_thread(self, run_id: uuid.UUID, model: Any, message: str, result: dict) -> None:
-        """Replace the new thread's placeholder title with one the model writes."""
+    async def _name_thread(
+        self, run_id: uuid.UUID, model: Any, message: str, result: dict, usage: TokenUsage
+    ) -> None:
+        """Replace the new thread's placeholder title with one the model writes (its tokens
+        count towards the run)."""
         assert self.titler is not None
-        title = await self.titler(model, message, _reply(result))
-        if not title:
+        title = await self.titler(model.with_config(callbacks=[usage]), message, _reply(result))
+        tokens = usage.take()
+        if not title and not any(tokens.values()):
             return
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id)
             if run is not None:
-                run.title = title
+                if title:
+                    run.title = title
+                _add_tokens(run, tokens)
                 await session.commit()
 
-    async def _finish(self, run_id: uuid.UUID, result: dict) -> None:
+    async def _finish(self, run_id: uuid.UUID, result: dict, usage: TokenUsage) -> None:
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id)
             assert run is not None
             now = _now()
+            tokens = usage.take()
+            _add_tokens(run, tokens)
             pending = hitl.pending_actions(result)
             if pending:
                 files = {
@@ -369,15 +389,18 @@ class AgentRunner:
                 actor_type=AuthorType.AGENT,
                 agent="project-manager",
                 instructed_by_id=run.requested_by_id,
-                details={"pending_actions": len(pending)} if pending else {},
+                details={"pending_actions": len(pending), **tokens} if pending else tokens,
             )
             await session.commit()
 
-    async def _fail(self, run_id: uuid.UUID, error: str) -> None:
+    async def _fail(self, run_id: uuid.UUID, error: str, usage: TokenUsage) -> None:
+        """Stopped and failed runs keep the tokens they used."""
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id)
             if run is None:
                 return
+            tokens = usage.take()
+            _add_tokens(run, tokens)
             run.status, run.error = RunStatus.FAILED, error[:2000]
             run.updated_at = run.finished_at = _now()
             AuditLog(session).record(
@@ -387,7 +410,7 @@ class AgentRunner:
                 target=str(run.id),
                 actor_type=AuthorType.SYSTEM,
                 instructed_by_id=run.requested_by_id,
-                details={"error": run.error},
+                details={"error": run.error, **tokens},
             )
             await session.commit()
 
@@ -408,6 +431,11 @@ async def mark_interrupted_runs(session_factory: SessionFactory) -> None:
             run.status, run.error = RunStatus.FAILED, "Interrupted by a server restart; send it again"
             run.updated_at = run.finished_at = _now()
         await session.commit()
+
+
+def _add_tokens(run: AgentRun, tokens: dict[str, int]) -> None:
+    run.input_tokens = (run.input_tokens or 0) + tokens["input_tokens"]
+    run.output_tokens = (run.output_tokens or 0) + tokens["output_tokens"]
 
 
 def _preview(action: dict, files: dict[str, str]) -> tuple[str | None, str | None]:
