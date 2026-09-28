@@ -9,9 +9,10 @@ import { AuthCard } from "@/components/auth-card";
 import { Field, FormError, SubmitButton } from "@/components/form";
 import { api, authPost, errorMessage, safeNext, unwrap } from "@/lib/api";
 
-/** Sign in with a password, or with a one-time link sent by email. */
-export function LoginForm({ next }: { next?: string }) {
-  const [mode, setMode] = useState<"password" | "link">("password");
+/** Sign in with a password, or with a one-time link sent by email (which also creates an
+ * account for a new address). */
+export function LoginForm({ next, emailLink = false }: { next?: string; emailLink?: boolean }) {
+  const [mode, setMode] = useState<"password" | "link">(emailLink ? "link" : "password");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -52,7 +53,7 @@ export function LoginForm({ next }: { next?: string }) {
     return (
       <AuthCard
         title="Check your email"
-        description={`If ${sentTo} has a pmagent account, a sign-in link is on its way. It works once, for 15 minutes.`}
+        description={`We sent a link to ${sentTo}. It signs you in, or creates your account if you're new. It works once, for 15 minutes.`}
         footer={footer}
       >
         <Button
@@ -70,7 +71,15 @@ export function LoginForm({ next }: { next?: string }) {
   }
 
   return (
-    <AuthCard title="Welcome back" description="Sign in to your pmagent account." footer={footer}>
+    <AuthCard
+      title={mode === "link" ? "Sign in or sign up by email" : "Welcome back"}
+      description={
+        mode === "link"
+          ? "We'll email you a link: it signs you in, or creates your account if you're new."
+          : "Sign in to your pmagent account."
+      }
+      footer={footer}
+    >
       <form onSubmit={onSubmit} className="grid gap-4">
         <FormError message={error} />
         <Field label="Email" name="email" type="email" autoComplete="email" placeholder="you@company.com" required />

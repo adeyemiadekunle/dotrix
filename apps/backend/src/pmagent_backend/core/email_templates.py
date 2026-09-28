@@ -122,6 +122,22 @@ def magic_link(to: str, link: str, ttl_minutes: int) -> EmailMessage:
     ))
 
 
+def finish_signup(to: str, link: str, ttl_minutes: int) -> EmailMessage:
+    """For someone who asked for a sign-in link but has no account yet."""
+    return render(to, EmailContent(
+        subject=f"Finish creating your {PRODUCT} account",
+        heading=f"Welcome to {PRODUCT}",
+        paragraphs=[
+            "There's no account for this address yet. Use the button below to create one: "
+            "you'll just add your name. No password needed."
+        ],
+        action_label="Create my account",
+        action_url=link,
+        note=f"This link expires in {ttl_minutes} minutes and works once. "
+        "If you didn't ask for this, you can ignore this email: no account is created.",
+    ))
+
+
 def invite(to: str, *, inviter: str, workspace: str, role: str, link: str, ttl_days: int) -> EmailMessage:
     return render(to, EmailContent(
         subject=f"{inviter} invited you to {workspace} on {PRODUCT}",

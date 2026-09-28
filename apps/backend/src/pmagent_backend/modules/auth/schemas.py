@@ -40,6 +40,15 @@ class MagicLinkRequest(BaseModel):
     email: Email
 
 
+class EmailSignupFinish(BaseModel):
+    token: str = Field(max_length=256)
+    display_name: DisplayName
+
+
+class EmailSignupAddress(BaseModel):
+    email: str = Field(description="The address the sign-up link is for")
+
+
 class PasswordResetConfirm(BaseModel):
     token: str = Field(max_length=256)
     new_password: Password

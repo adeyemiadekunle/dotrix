@@ -27,9 +27,63 @@ async def test_sign_in_with_an_emailed_link(db_client: AsyncClient, signup, outb
     assert again.status_code == 400 and again.json()["type"].endswith("/invalid_link")
 
 
-async def test_unknown_emails_look_the_same_and_get_nothing(db_client: AsyncClient, outbox: OutboxEmailSender) -> None:
-    res = await db_client.post("/v1/auth/magic-link/request", json={"email": "nobody@example.com"})
-    assert res.status_code == 202 and outbox.messages == []
+async def test_a_new_address_gets_a_link_to_create_its_account(
+    db_client: AsyncClient, outbox: OutboxEmailSender, email_token
+) -> None:
+    res = await db_client.post("/v1/auth/magic-link/request", json={"email": "Grace@Example.com"})
+    assert res.status_code == 202  # the same answer as for an existing account
+    [message] = outbox.messages
+    assert message.to == "grace@example.com" and message.subject == "Finish creating your pmagent account"
+    token = email_token("/signup/finish")
+
+    # The page can show which address it's for, without using the link up.
+    lookup = await db_client.post("/v1/auth/magic-link/signup/lookup", json={"token": token})
+    assert lookup.status_code == 200 and lookup.json() == {"email": "grace@example.com"}
+
+    created = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "Grace"})
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["user"]["email"] == "grace@example.com" and body["user"]["display_name"] == "Grace"
+    assert body["user"]["email_verified"] is True  # the link proved the inbox; no verification email
+    assert len(outbox.messages) == 1
+    session = {"Authorization": f"Bearer {body['tokens']['access_token']}"}
+    workspaces = (await db_client.get("/v1/workspaces", headers=session)).json()
+    assert [w["kind"] for w in workspaces] == ["personal"]
+    # No password: password login fails, but the next link signs in.
+    login = await db_client.post("/v1/auth/login", json={"email": "grace@example.com", "password": "anything at all"})
+    assert login.status_code == 401
+    await db_client.post("/v1/auth/magic-link/request", json={"email": "grace@example.com"})
+    assert outbox.messages[-1].subject == "Your pmagent sign-in link"
+    # The sign-up link works once.
+    again = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "Grace"})
+    assert again.status_code == 400
+    assert (await db_client.post("/v1/auth/magic-link/signup/lookup", json={"token": token})).status_code == 400
+
+
+async def test_only_the_newest_sign_up_link_works(db_client: AsyncClient, email_token) -> None:
+    await db_client.post("/v1/auth/magic-link/request", json={"email": "grace@example.com"})
+    first = email_token("/signup/finish")
+    await db_client.post("/v1/auth/magic-link/request", json={"email": "grace@example.com"})
+    second = email_token("/signup/finish")
+    assert (await db_client.post("/v1/auth/magic-link/signup", json={"token": first, "display_name": "G"})).status_code == 400
+    assert (await db_client.post("/v1/auth/magic-link/signup", json={"token": second, "display_name": "G"})).status_code == 201
+
+
+async def test_a_sign_up_link_for_an_address_that_got_an_account_meanwhile(
+    db_client: AsyncClient, signup, email_token
+) -> None:
+    await db_client.post("/v1/auth/magic-link/request", json={"email": "grace@example.com"})
+    token = email_token("/signup/finish")
+    await signup(email="grace@example.com", name="Grace")  # signed up with a password in the meantime
+    res = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "Grace 2"})
+    assert res.status_code == 409 and "sign in instead" in res.json()["detail"]
+
+
+async def test_sign_up_needs_a_name(db_client: AsyncClient, email_token) -> None:
+    await db_client.post("/v1/auth/magic-link/request", json={"email": "grace@example.com"})
+    token = email_token("/signup/finish")
+    res = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "   "})
+    assert res.status_code == 422
 
 
 async def test_only_the_newest_link_works(db_client: AsyncClient, signup, outbox: OutboxEmailSender, email_token) -> None:

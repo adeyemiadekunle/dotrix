@@ -62,3 +62,16 @@ class ActionToken(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EmailSignup(UUIDPrimaryKeyMixin, Base):
+    """A sign-up by email link, before the account exists: someone asked for a sign-in link
+    for an address with no account. Following the link (and giving a name) creates it."""
+
+    __tablename__ = "email_signups"
+
+    email: Mapped[str] = mapped_column(String(320), index=True)  # lowercased, like users.email
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

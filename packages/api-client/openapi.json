@@ -407,7 +407,7 @@
           "auth"
         ],
         "summary": "Request Magic Link",
-        "description": "Email a sign-in link (valid 15 minutes, once). Always 202, whether or not the account\nexists (the lookup happens in the background). Rate-limited per IP and per email.",
+        "description": "Email a link (valid 15 minutes, once): a sign-in link for an account or, for an\naddress without one, a link to create it (`/v1/auth/magic-link/signup`). Always 202 (the\nlookup happens in the background). Rate-limited per IP and per email.",
         "operationId": "request_magic_link",
         "requestBody": {
           "content": {
@@ -492,6 +492,130 @@
           },
           "422": {
             "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/magic-link/signup/lookup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Email Signup Address",
+        "description": "The address a sign-up link is for, to show while asking for a name. Doesn't use the link up.",
+        "operationId": "email_signup_address",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailSignupAddress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request, for example an invalid or expired link or code",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/magic-link/signup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Finish Email Signup",
+        "description": "Create an account from a sign-up link and sign in. The email is verified (the link\nproved the inbox) and there's no password (sign in by link, or set one with a password\nreset). Also creates the personal workspace. 409 if the address got an account meanwhile.",
+        "operationId": "finish_email_signup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailSignupFinish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request, for example an invalid or expired link or code",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9234,6 +9358,41 @@
           "email"
         ],
         "title": "EmailInviteCreate"
+      },
+      "EmailSignupAddress": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "The address the sign-up link is for"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "EmailSignupAddress"
+      },
+      "EmailSignupFinish": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Token"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "display_name"
+        ],
+        "title": "EmailSignupFinish"
       },
       "EpicProgress": {
         "properties": {

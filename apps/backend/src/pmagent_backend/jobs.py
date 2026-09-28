@@ -8,7 +8,11 @@ from datetime import UTC, datetime, timedelta
 from .core.email import EmailMessage, EmailSendError
 from .core.jobs import JobContext, JobFunction
 from .modules.api_tokens.repository import DeviceAuthorizationRepository
-from .modules.auth.repository import ActionTokenRepository, RefreshTokenRepository
+from .modules.auth.repository import (
+    ActionTokenRepository,
+    EmailSignupRepository,
+    RefreshTokenRepository,
+)
 from .modules.auth.service import AuthService
 from .modules.documents.service import DocumentService
 from .modules.invites.repository import InviteRepository
@@ -48,6 +52,7 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
         deleted = {
             "refresh_tokens": await RefreshTokenRepository(session).delete_stale(token_cutoff),
             "action_tokens": await ActionTokenRepository(session).delete_stale(token_cutoff),
+            "email_signups": await EmailSignupRepository(session).delete_stale(token_cutoff),
             "device_authorizations": await DeviceAuthorizationRepository(session).delete_stale(token_cutoff),
             "invites": await InviteRepository(session).delete_stale(invite_cutoff),
         }

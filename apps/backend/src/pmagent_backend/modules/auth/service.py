@@ -15,8 +15,13 @@ from pmagent_backend.core.jobs import Jobs
 from pmagent_backend.core.settings import Settings
 from pmagent_backend.modules.workspaces.service import WorkspaceService
 
-from .models import ActionToken, ActionTokenPurpose, RefreshToken, User
-from .repository import ActionTokenRepository, RefreshTokenRepository, UserRepository
+from .models import ActionToken, ActionTokenPurpose, EmailSignup, RefreshToken, User
+from .repository import (
+    ActionTokenRepository,
+    EmailSignupRepository,
+    RefreshTokenRepository,
+    UserRepository,
+)
 from .schemas import (
     LoginRequest,
     PasswordResetConfirm,
@@ -42,6 +47,7 @@ class AuthService:
         self.users = UserRepository(session)
         self.refresh_tokens = RefreshTokenRepository(session)
         self.action_tokens = ActionTokenRepository(session)
+        self.signups = EmailSignupRepository(session)
 
     # -- sign-up and login -------------------------------------------------------
 
@@ -151,13 +157,48 @@ class AuthService:
         await self.jobs.enqueue("send_magic_link", email=email)
 
     async def send_magic_link(self, email: str) -> None:
+        """A sign-in link for an account; for an address without one, a link to create it."""
+        ttl = self.settings.magic_link_ttl_minutes
         user = await self.users.get_by_email(email)
-        if user is None or not user.is_active:
+        if user is None:
+            token = await self._new_signup_token(email)
+            await self.session.commit()
+            await self.email.send(email_templates.finish_signup(email, self._link("/signup/finish", token), ttl))
+            return
+        if not user.is_active:
             return
         token = await self._new_action_token(user, ActionTokenPurpose.MAGIC_LINK)
         await self.session.commit()
-        link = self._link("/magic-link", token)
-        await self.email.send(email_templates.magic_link(user.email, link, self.settings.magic_link_ttl_minutes))
+        await self.email.send(email_templates.magic_link(user.email, self._link("/magic-link", token), ttl))
+
+    async def email_signup_address(self, token: str) -> str:
+        """The address a sign-up link is for (without using the link up)."""
+        signup = await self.signups.get_by_hash(security.hash_token(token))
+        if signup is None or signup.used_at is not None or signup.expires_at <= _now():
+            raise InvalidLink()
+        return signup.email
+
+    async def finish_email_signup(self, token: str, display_name: str) -> SignupResponse:
+        """Create the account a sign-up link is for: verified (the link proved the inbox), no
+        password (sign in by link, or set one with "Forgot password?"), a personal workspace."""
+        now = _now()
+        signup = await self.signups.get_by_hash_for_update(security.hash_token(token))
+        if signup is None or signup.used_at is not None or signup.expires_at <= now:
+            raise InvalidLink()
+        signup.used_at = now
+        if await self.users.get_by_email(signup.email):
+            await self.session.commit()  # the link is used up either way
+            raise Conflict("An account with this email already exists; sign in instead")
+        user = User(email=signup.email, display_name=display_name, password_hash=None, email_verified_at=now)
+        self.users.add(user)
+        try:
+            await self.session.flush()
+        except IntegrityError as exc:  # a sign-up with the same email at the same moment
+            raise Conflict("An account with this email already exists; sign in instead") from exc
+        await WorkspaceService(self.session).create_personal(user)
+        tokens = self._issue_tokens(user)
+        await self.session.commit()
+        return SignupResponse(user=UserRead.model_validate(user), tokens=tokens)
 
     async def sign_in_with_magic_link(self, token: str) -> TokenPair:
         """Exchange the emailed token for a session. It works once; following it also
@@ -228,6 +269,21 @@ class AuthService:
                 token_hash=security.hash_token(token),
                 created_at=now,
                 expires_at=now + ttl,
+            )
+        )
+        return token
+
+    async def _new_signup_token(self, email: str) -> str:
+        """A sign-up link for an address with no account; older ones stop working. Caller commits."""
+        now = _now()
+        token = security.generate_token()
+        await self.signups.invalidate(email, now)
+        self.signups.add(
+            EmailSignup(
+                email=email,
+                token_hash=security.hash_token(token),
+                created_at=now,
+                expires_at=now + timedelta(minutes=self.settings.magic_link_ttl_minutes),
             )
         )
         return token

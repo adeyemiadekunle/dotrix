@@ -8,6 +8,7 @@ def test_every_email_has_text_and_html_with_the_link() -> None:
         email_templates.verify_email("ada@example.com", link),
         email_templates.reset_password("ada@example.com", link, 60),
         email_templates.magic_link("ada@example.com", link, 15),
+        email_templates.finish_signup("grace@example.com", link, 15),
         email_templates.invite("bob@example.com", inviter="Ada", workspace="Kunemi", role="member", link=link, ttl_days=7),
     ):
         assert message.subject and message.body and message.html

@@ -213,7 +213,7 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 
 - [x] **FR-1** User model; sign-up and login with email + password (argon2), email verification, password reset
 - [x] **FR-1** JWT access token plus rotating refresh token (hashed in the DB); logout revokes the token
-- [x] **FR-1** Magic-link login: "Email me a sign-in link" on the login page (`POST /v1/auth/magic-link/request`, rate-limited, the lookup in a background job so responses don't reveal accounts); the link (`/magic-link`, 15 minutes, once) takes a click to sign in, because mail scanners open links; following it verifies the email
+- [x] **FR-1** Magic-link login: "Email me a sign-in link" on the login page (`POST /v1/auth/magic-link/request`, rate-limited, the lookup in a background job so responses don't reveal accounts); the link (`/magic-link`, 15 minutes, once) takes a click to sign in, because mail scanners open links; following it verifies the email. For an address with no account the same request sends a "Finish creating your account" link instead (`email_signups`, same limits); `/signup/finish` asks only for a name and creates a verified, password-less account with its personal workspace (a password can be set later with "Forgot password?"); the sign-up page offers it too
 - [ ] **FR-1** Google and GitHub OAuth login; TOTP 2FA
 - [x] **FR-2** Workspaces (personal / team / business); auto-create a personal workspace on sign-up; one user can belong to many
 - [x] **FR-3** Membership with roles (Owner, Admin, Member, Guest); `require_permission` dependency implementing the PRD matrix

@@ -201,8 +201,9 @@ export interface paths {
         put?: never;
         /**
          * Request Magic Link
-         * @description Email a sign-in link (valid 15 minutes, once). Always 202, whether or not the account
-         *     exists (the lookup happens in the background). Rate-limited per IP and per email.
+         * @description Email a link (valid 15 minutes, once): a sign-in link for an account or, for an
+         *     address without one, a link to create it (`/v1/auth/magic-link/signup`). Always 202 (the
+         *     lookup happens in the background). Rate-limited per IP and per email.
          */
         post: operations["request_magic_link"];
         delete?: never;
@@ -226,6 +227,48 @@ export interface paths {
          *     The link works once, and following it also verifies the email address.
          */
         post: operations["sign_in_with_magic_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/magic-link/signup/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Email Signup Address
+         * @description The address a sign-up link is for, to show while asking for a name. Doesn't use the link up.
+         */
+        post: operations["email_signup_address"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/magic-link/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish Email Signup
+         * @description Create an account from a sign-up link and sign in. The email is verified (the link
+         *     proved the inbox) and there's no password (sign in by link, or set one with a password
+         *     reset). Also creates the personal workspace. 409 if the address got an account meanwhile.
+         */
+        post: operations["finish_email_signup"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2109,6 +2152,21 @@ export interface components {
              */
             role: "admin" | "member" | "guest";
         };
+        /** EmailSignupAddress */
+        EmailSignupAddress: {
+            /**
+             * Email
+             * @description The address the sign-up link is for
+             */
+            email: string;
+        };
+        /** EmailSignupFinish */
+        EmailSignupFinish: {
+            /** Token */
+            token: string;
+            /** Display Name */
+            display_name: string;
+        };
         /** EpicProgress */
         EpicProgress: {
             /** Key */
@@ -3638,6 +3696,108 @@ export interface operations {
             };
             /** @description Request body or parameters failed validation */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    email_signup_address: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailSignupAddress"];
+                };
+            };
+            /** @description Bad request, for example an invalid or expired link or code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    finish_email_signup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailSignupFinish"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignupResponse"];
+                };
+            };
+            /** @description Bad request, for example an invalid or expired link or code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Too many attempts; the Retry-After header says how many seconds to wait */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
