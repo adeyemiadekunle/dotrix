@@ -169,9 +169,17 @@ export function useWorkspaceApprovals(workspaceId: string | undefined, enabled =
  * The PM's reply as it's being written (server-sent events through the API proxy). Empty until
  * the first words arrive; the run's saved reply replaces it when the run finishes.
  */
-export function useRunStream(scope: Scope | undefined, runId: string, active: boolean): string {
+export interface RunStreamState {
+  /** The PM's reply so far. */
+  text: string;
+  /** What the PM is doing right now ("Reading roadmap.md"), or null. */
+  activity: string | null;
+}
+
+export function useRunStream(scope: Scope | undefined, runId: string, active: boolean): RunStreamState {
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
+  const [activity, setActivity] = useState<string | null>(null);
   useEffect(() => {
     if (!scope || !active) return;
     const source = new EventSource(
@@ -180,18 +188,20 @@ export function useRunStream(scope: Scope | undefined, runId: string, active: bo
     const read = (event: MessageEvent) => (JSON.parse(event.data) as { text: string }).text;
     source.addEventListener("text", (e) => setText(read(e as MessageEvent)));
     source.addEventListener("delta", (e) => setText((t) => t + read(e as MessageEvent)));
+    source.addEventListener("activity", (e) => setActivity(read(e as MessageEvent)));
     // The stream ends when the run does (or wasn't running): don't let EventSource reconnect,
     // and fetch the finished run right away rather than at the next poll (which also pauses
     // while the tab is in the background).
     source.addEventListener("end", () => {
       source.close();
+      setActivity(null);
       void queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
       void queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
     });
     source.onerror = () => source.close();
     return () => source.close();
   }, [scope, runId, active, queryClient]);
-  return text;
+  return { text, activity };
 }
 
 export function useStopRun(scope: Scope | undefined) {

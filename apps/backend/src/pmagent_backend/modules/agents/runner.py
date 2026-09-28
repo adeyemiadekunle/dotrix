@@ -27,6 +27,7 @@ from pmagent_engine import approvals as hitl
 from pmagent_engine.agent import PM_ROLE, build_team, role_for_agent_name
 from pmagent_engine.layout import AGENTS
 
+from .activity import activity_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
 from .llm import ModelFactory
 from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
@@ -452,8 +453,11 @@ async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream)
     latest: Any = None
     interrupts: list[Any] = []
     async for mode, payload in agent.astream(graph_input, config, stream_mode=["updates", "values", "messages"]):
-        if mode == "updates" and isinstance(payload, dict) and (found := payload.get("__interrupt__")) is not None:
-            interrupts.extend(found)
+        if mode == "updates" and isinstance(payload, dict):
+            if (found := payload.get("__interrupt__")) is not None:
+                interrupts.extend(found)
+            for label in _activities(payload):
+                await stream.activity(label)
         elif mode == "values":
             latest = payload
         elif mode == "messages":
@@ -465,6 +469,22 @@ async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream)
     if interrupts:
         return {**latest, "__interrupt__": interrupts} if isinstance(latest, dict) else {"__interrupt__": interrupts}
     return latest if isinstance(latest, dict) else {}
+
+
+def _activities(update: dict) -> list[str]:
+    """Labels for the tool calls the PM just decided to make (graph updates are the PM's own
+    steps; subagents run inside the `task` tool, which gets one label: "Asking …")."""
+    labels = []
+    for name, output in update.items():
+        if name == "__interrupt__" or not isinstance(output, dict):
+            continue
+        messages = output.get("messages")
+        messages = getattr(messages, "value", messages)  # (an Overwrite wraps the list)
+        for message in messages if isinstance(messages, list) else []:
+            for call in getattr(message, "tool_calls", None) or []:
+                if label := activity_label(call.get("name", ""), call.get("args")):
+                    labels.append(label)
+    return labels
 
 
 def _last_user_message(values: dict) -> str | None:

@@ -127,3 +127,11 @@
     @apply bg-background text-foreground antialiased;
   }
 }
+
+/* CodeBlock: Shiki writes both themes' colours as variables; pick the one for this theme. */
+.code-block-shiki span {
+  color: var(--shiki-light);
+}
+.dark .code-block-shiki span {
+  color: var(--shiki-dark);
+}
