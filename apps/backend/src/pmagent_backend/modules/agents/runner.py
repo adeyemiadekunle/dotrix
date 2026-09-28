@@ -40,8 +40,10 @@ from .usage import TokenUsage
 logger = logging.getLogger(__name__)
 
 BRIEFING_PROMPT = (
-    "Give me my briefing: phase and health, today's priorities, recent decisions, "
-    "open questions, blockers, recent research, and documentation status. Read only."
+    "Give me my briefing: phase and health, what changed, today's priorities, recent decisions, "
+    "open questions, blockers, and documentation status. Write it from the project context: it "
+    "already has the board and what changed since the last briefing. Open a file only if something "
+    "needs explaining that the context doesn't cover, and don't ask the specialists. Read only."
 )
 READ_ONLY_REJECTION = "This is a read-only briefing; no changes were made. Don't retry the write."
 MAX_AUTO_REJECTIONS = 5

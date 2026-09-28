@@ -24,12 +24,13 @@ from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.knowledge.service import describe_file
 from pmagent_backend.modules.projects.models import Project
 
-from .models import AgentRun
+from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 
 MAX_CHARS = 24_000  # ~6,000 tokens
 EXCERPT_CHARS = 1_500
 MAX_LISTED = 10
 DUE_SOON = timedelta(days=7)
+FIRST_BRIEFING_LOOKBACK = timedelta(days=7)  # a first briefing covers the last week
 # Already in every agent's instructions (agent-rules/) or not documents (issues are listed below).
 _NOT_INDEXED = ("agent-rules/",)
 
@@ -65,7 +66,12 @@ async def build_context_pack(session: AsyncSession, project: Project, run: Agent
         parts += ["## Project (project.md)", _excerpt(f.content)]
     if f := by_path.get("current-state.md"):
         parts += ["## Current state (current-state.md)", _excerpt(f.content)]
-    parts += [await _changes(session, project, run), await _board(session, project), _decisions(files), _index(files)]
+    changes = (
+        await _since_last_briefing(session, project, run, by_path)
+        if run is not None and run.kind is RunKind.BRIEFING
+        else await _changes(session, project, run)
+    )
+    parts += [changes, await _board(session, project), _decisions(files), _index(files)]
     pack = "\n\n".join(p for p in parts if p)
     if len(pack) > MAX_CHARS:
         pack = pack[:MAX_CHARS].rsplit("\n", 1)[0] + "\n…(the rest of the index is left out; use ls or glob)"
@@ -180,5 +186,108 @@ async def _changes(session: AsyncSession, project: Project, run: AgentRun | None
     for key, kind, count in events:
         changed[key].append(kind.value if count == 1 else f"{kind.value} ×{count}")
     lines += [f"- {key}: {', '.join(kinds)}" for key, kinds in changed.items()]
+    return "\n".join(lines)
+
+
+async def _since_last_briefing(
+    session: AsyncSession, project: Project, run: AgentRun, by_path: dict[str, KnowledgeFile]
+) -> str:
+    """For a briefing, the platform works out what happened (from the board's log, document
+    versions, and approvals), so the model writes it up instead of reading everything to find out."""
+    last = await session.scalar(
+        select(func.max(AgentRun.created_at)).where(
+            AgentRun.project_id == project.id,
+            AgentRun.kind == RunKind.BRIEFING,
+            AgentRun.status == RunStatus.COMPLETED,
+            AgentRun.created_at < run.created_at,
+        )
+    )
+    since = last or run.created_at - FIRST_BRIEFING_LOOKBACK
+    heading = (
+        f"## Since the last briefing ({_day(last)})"
+        if last
+        else f"## In the last {FIRST_BRIEFING_LOOKBACK.days} days (the first briefing)"
+    )
+    lines = [heading]
+
+    # The board: from each issue's log, where it started and where it is now.
+    events = (await session.execute(
+        select(Issue.key, Issue.title, IssueEvent.kind, IssueEvent.changes)
+        .join(Issue, Issue.id == IssueEvent.issue_id)
+        .where(Issue.project_id == project.id, IssueEvent.created_at > since)
+        .order_by(IssueEvent.created_at)
+    )).all()
+    created: list[str] = []
+    moved: dict[str, list[str]] = {}
+    comments: dict[str, int] = defaultdict(int)
+    titles: dict[str, str] = {}
+    for key, title, kind, change in events:
+        titles[key] = title
+        if kind.value == "created":
+            created.append(key)
+        elif kind.value == "commented":
+            comments[key] += 1
+        elif change and "status" in change:
+            old, new = change["status"]
+            moved.setdefault(key, [old, new])[1] = new
+    if created:
+        lines.append("Created: " + "; ".join(f"{k} {titles[k]}" for k in created[:MAX_LISTED]))
+    finished = [k for k, (old, new) in moved.items() if new == IssueStatus.DONE.value and old != new]
+    if finished:
+        lines.append("Done: " + "; ".join(f"{k} {titles[k]}" for k in finished[:MAX_LISTED]))
+    blocked = [k for k, (old, new) in moved.items() if new == IssueStatus.BLOCKED.value and old != new]
+    if blocked:
+        lines.append("Newly blocked: " + "; ".join(f"{k} {titles[k]}" for k in blocked[:MAX_LISTED]))
+    other = [
+        f"{k} {old.replace('_', ' ')} → {new.replace('_', ' ')}"
+        for k, (old, new) in moved.items()
+        if old != new and k not in finished and k not in blocked
+    ]
+    if other:
+        lines.append("Moved: " + "; ".join(other[:MAX_LISTED]))
+    if comments:
+        lines.append("Discussed: " + ", ".join(f"{k} ({n} comment{'s' if n > 1 else ''})" for k, n in list(comments.items())[:MAX_LISTED]))
+    if len(lines) == 1:
+        lines.append("Board: no changes.")
+
+    # Documents changed, by whom and why.
+    docs = (await session.execute(
+        select(KnowledgeFile.path, KnowledgeVersion.version, KnowledgeVersion.deleted, KnowledgeVersion.agent,
+               KnowledgeVersion.message, User.display_name)
+        .join(KnowledgeFile, KnowledgeFile.id == KnowledgeVersion.file_id)
+        .outerjoin(User, User.id == KnowledgeVersion.author_id)
+        .where(KnowledgeVersion.project_id == project.id, KnowledgeVersion.created_at > since)
+        .order_by(KnowledgeVersion.created_at.desc())
+        .limit(20)
+    )).all()
+    if docs:
+        lines.append("Documents changed:")
+        for path, version, deleted, agent, message, person in docs:
+            who = agent or person or "someone"
+            note = f": {message}" if message else ""
+            lines.append(f"- {path} {'deleted' if deleted else f'v{version}'} by {who}{note}")
+    else:
+        lines.append("Documents: no changes.")
+
+    # Waiting on people.
+    pending = list(await session.scalars(
+        select(AgentApproval)
+        .where(AgentApproval.project_id == project.id, AgentApproval.status == ApprovalStatus.PENDING)
+        .order_by(AgentApproval.created_at)
+        .limit(5)
+    ))
+    if pending:
+        lines.append(
+            f"Waiting for approval ({len(pending)}{'+' if len(pending) == 5 else ''}): "
+            + "; ".join(f"{a.tool} {a.target or ''}".strip() for a in pending)
+        )
+
+    # Is the written state of the project keeping up with the work?
+    state = by_path.get("current-state.md")
+    if state is not None and state.updated_at <= since and (events or docs):
+        lines.append(
+            f"current-state.md was last changed {_day(state.updated_at)}, before these changes: "
+            "say whether it needs updating."
+        )
     return "\n".join(lines)
 
