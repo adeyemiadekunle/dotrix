@@ -202,7 +202,25 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 - [ ] **Reading less:**
   - `read_file` answers "unchanged since you read it (version N)" when the thread already has that version
   - an outline tool and `read_section(path, heading)` for large documents
-  - `search_knowledge(query)` over documents and issues (Postgres full-text search with snippets first; embeddings with pgvector later if needed)
+  - `search_knowledge(query)` over documents and issues, returning the best passages with their paths (see "Search with pgvector" next)
+- [ ] **Search with pgvector (hybrid: meaning + keywords):**
+  - **Setup:**
+    - Postgres image `pgvector/pgvector:pg17` in `infra/docker-compose.yml` and CI (the same Postgres plus the extension; existing data carries over)
+    - a migration with `CREATE EXTENSION vector`
+    - production needs a Postgres host with pgvector (Neon, Supabase, RDS, and Cloud SQL all have it)
+  - **Chunks:** documents split by heading section (issues as title + description + recent comments), each chunk stored with `workspace_id`, `project_id`, path or issue key, and version. Every query filters by workspace and project first; the cross-workspace isolation suite covers the search tool.
+  - **Embeddings:**
+    - made in a background job whenever a document version or issue changes, only for the chunks that changed (content hash)
+    - model set in settings (`PMAGENT_EMBEDDING_MODEL`, e.g. Gemini `text-embedding-004` or OpenAI `text-embedding-3-small`), with the dimension fixed per column
+    - re-embedding everything is a job, for when the model changes
+  - **Search:**
+    - vector similarity (HNSW index) and Postgres full-text search, merged by reciprocal rank fusion, so exact terms (issue keys, names, error text) and paraphrases both match
+    - returns snippets with their paths, so the agent reads only the sections that matter
+  - **Also used for:**
+    - "related issues" and duplicate warnings when an issue is created
+    - finding earlier brainstorms and decisions from chat (Phase 3)
+    - pulling the right excerpts into delegation briefs
+  - **Cost:** embedding a changed section costs a tiny fraction of re-reading files in every run; token usage records embedding calls too
 - [ ] **Delegation that doesn't start from zero:** the PM hands specialists the relevant paths and excerpts with the task, and specialists return findings, not whole files
 - [ ] **Long conversations:** summarise older turns once a thread passes a token threshold (LangChain's summarization middleware), keeping recent turns verbatim
 - [ ] **Briefings from data:**
