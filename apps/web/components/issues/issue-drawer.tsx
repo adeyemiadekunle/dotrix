@@ -25,6 +25,7 @@ import {
   type Issue,
   type Scope,
 } from "@/lib/issues";
+import { can } from "@/lib/labels";
 import { useMe, useProjectScope } from "@/lib/queries";
 import { useSearchParam } from "@/lib/url-state";
 
@@ -173,12 +174,14 @@ function IssueDetails({
   scope,
   members,
   canEdit,
+  canAssignCodingAgent,
   onOpen,
 }: {
   issue: Issue;
   scope: Scope;
   members: MemberMap;
   canEdit: boolean;
+  canAssignCodingAgent: boolean;
   onOpen: (key: string) => void;
 }) {
   const update = useUpdateIssue(scope);
@@ -252,7 +255,7 @@ function IssueDetails({
               <SelectGroup>
                 <SelectLabel>Agents</SelectLabel>
                 {AGENTS.map((a) => (
-                  <SelectItem key={a} value={a}>
+                  <SelectItem key={a} value={a} disabled={a === "coding-agent" && !canAssignCodingAgent}>
                     {AGENT_LABELS[a]}
                   </SelectItem>
                 ))}
@@ -465,7 +468,14 @@ export function IssueDrawer() {
           </p>
         )}
         {issue.data && scope && (
-          <IssueDetails issue={issue.data} scope={scope} members={memberMap} canEdit={canEdit} onOpen={setKey} />
+          <IssueDetails
+            issue={issue.data}
+            scope={scope}
+            members={memberMap}
+            canEdit={canEdit}
+            canAssignCodingAgent={can(workspace, "agents:code")}
+            onOpen={setKey}
+          />
         )}
       </SheetContent>
     </Sheet>

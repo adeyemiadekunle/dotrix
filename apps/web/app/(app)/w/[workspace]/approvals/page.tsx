@@ -14,6 +14,7 @@ import { EmptyState, NotFound } from "@/components/states";
 import { runTitle, useWorkspaceApprovals, type Run, type WorkspaceApproval } from "@/lib/agent";
 import { useMembers } from "@/lib/issues";
 import { useCurrentWorkspace } from "@/lib/queries";
+import { can } from "@/lib/labels";
 
 interface Group {
   runId: string;
@@ -29,8 +30,9 @@ interface Group {
 /** Everything the agents are waiting on in this workspace, one card per instruction. */
 export default function ApprovalsPage() {
   const { workspace, notFound } = useCurrentWorkspace();
-  const canDecide = Boolean(workspace && workspace.role !== "guest");
-  const approvals = useWorkspaceApprovals(workspace?.id, canDecide);
+  const canSee = Boolean(workspace && workspace.role !== "guest");
+  const canDecide = can(workspace, "agents:approve");
+  const approvals = useWorkspaceApprovals(workspace?.id, canSee);
   const members = useMembers(workspace?.id);
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
 
@@ -61,7 +63,10 @@ export default function ApprovalsPage() {
         <p className="text-muted-foreground text-sm">
           Changes the agents want to make, across every project. Nothing is written until someone decides.
         </p>
-        {!canDecide && workspace && <p className="text-sm">Guests don&apos;t approve changes.</p>}
+        {!canSee && workspace && <p className="text-sm">Guests don&apos;t see or approve changes.</p>}
+        {canSee && !canDecide && (
+          <p className="text-sm">Owners and admins review these changes. You can see what&apos;s waiting.</p>
+        )}
         {approvals.isLoading && <Skeleton className="h-40" />}
         {approvals.data?.length === 0 && (
           <EmptyState

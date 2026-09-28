@@ -2892,7 +2892,7 @@
           "workspaces"
         ],
         "summary": "Update Workspace",
-        "description": "Rename a workspace. Owners and admins.",
+        "description": "Rename a workspace, or change what members may do beyond chatting, brainstorming, and\nworking the board (`member_permissions`). Owners and admins.",
         "operationId": "update_workspace",
         "security": [
           {
@@ -11075,6 +11075,23 @@
         ],
         "title": "PasswordResetRequest"
       },
+      "Permission": {
+        "type": "string",
+        "enum": [
+          "workspace:view",
+          "agents:chat",
+          "issues:write",
+          "knowledge:write",
+          "agents:approve",
+          "agents:code",
+          "projects:manage",
+          "workspace:manage",
+          "members:manage",
+          "workspace:billing",
+          "usage:view"
+        ],
+        "title": "Permission"
+      },
       "Priority": {
         "type": "string",
         "enum": [
@@ -12136,17 +12153,37 @@
       "WorkspaceUpdate": {
         "properties": {
           "name": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Name"
+          },
+          "member_permissions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Permission"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Member Permissions",
+            "description": "What members may do beyond chatting, brainstorming, and working the board: any of `knowledge:write` (edit documents), `agents:approve` (approve agent changes), `agents:code` (instruct the coding agent). Empty: owners and admins only."
           }
         },
         "type": "object",
-        "required": [
-          "name"
-        ],
-        "title": "WorkspaceUpdate"
+        "title": "WorkspaceUpdate",
+        "description": "Only the fields you send change."
       },
       "WorkspaceWithRole": {
         "properties": {
@@ -12183,6 +12220,14 @@
             "format": "date-time",
             "title": "Created At"
           },
+          "member_permissions": {
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "type": "array",
+            "title": "Member Permissions",
+            "description": "What this workspace lets members do beyond the defaults"
+          },
           "role": {
             "$ref": "#/components/schemas/Role"
           },
@@ -12191,6 +12236,14 @@
             "title": "Via Organization",
             "description": "You have this role because you own the workspace's organisation",
             "default": false
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "type": "array",
+            "title": "Permissions",
+            "description": "What you can do here: your role's permissions plus what the workspace grants members"
           }
         },
         "type": "object",

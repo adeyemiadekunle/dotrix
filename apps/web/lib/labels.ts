@@ -24,6 +24,33 @@ export function canManageProjects(role: Schemas["Role"] | undefined): boolean {
   return role === "owner" || role === "admin";
 }
 
+export type Permission = Schemas["Permission"];
+
+/** What you can do in a workspace: your role's permissions plus what the workspace grants
+ * members (the API sends them with the workspace). For showing controls; the API still decides. */
+export function can(workspace: { permissions?: Permission[] } | undefined, permission: Permission): boolean {
+  return Boolean(workspace?.permissions?.includes(permission));
+}
+
+/** What a workspace can let members do beyond chatting, brainstorming, and working the board. */
+export const MEMBER_GRANTS: { permission: Permission; label: string; description: string }[] = [
+  {
+    permission: "knowledge:write",
+    label: "Edit documents",
+    description: "Change the project's documents directly in Knowledge (never the agent rules).",
+  },
+  {
+    permission: "agents:approve",
+    label: "Approve agent changes",
+    description: "Approve or reject the changes agents propose, including ones they asked for themselves.",
+  },
+  {
+    permission: "agents:code",
+    label: "Assign the coding agent",
+    description: "Hand issues to the coding agent.",
+  },
+];
+
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? (parts.at(-1)?.[0] ?? "") : "")).toUpperCase() || "?";

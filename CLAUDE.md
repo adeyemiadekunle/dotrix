@@ -182,9 +182,9 @@ The aim: track a software project's issues and features with agents, brainstorm 
 **Stop extending for now:** organisations, the calendar feed, the CLI's local engine (keep it working, no new features), and the desktop app. They're built or planned, but none of them moves the core loop forward.
 
 ### Phase 1: roles match the product (small)
-- [ ] Members lose `EDIT_KNOWLEDGE` and `APPROVE_ACTIONS` by default (today they can edit documents and approve their own agent changes); a per-workspace switch turns them back on for teams that want it (the PRD's "configurable")
-- [ ] A member's request that would change something pauses as usual and waits for an owner or admin; the chat says so ("an owner or admin will review this") instead of offering buttons the member can't use
-- [ ] Web: hide edit controls in Knowledge for members; tests for the matrix, the chat wording, and that a member can't approve
+- [x] Members lose `EDIT_KNOWLEDGE` and `APPROVE_ACTIONS` by default; a workspace grants them back (`Workspace.member_permissions`, from `MEMBER_GRANTABLE`: edit documents, approve agent changes, assign the coding agent), set by owners and admins (`PATCH /v1/workspaces/{id}`, audited) in Settings → What members can do. Check permissions with `can(membership, permission)`, which applies the grants; workspaces report your effective `permissions`
+- [x] A member's request that would change something pauses as usual and waits for an owner or admin; the chat, the Approvals page, and the CLI say so
+- [x] Web: controls follow `can(workspace, …)` (Knowledge editing, approving, assigning the coding agent); tests for the matrix, the defaults, the grants (and never to guests), and that a member can't approve
 
 ### Phase 2: agent context (stop re-reading everything)
 Today every run starts cold: the PM gets its instructions and agent rules, then discovers everything with tools (list folders, read files, read the board), and each specialist starts from zero inside `task`. A briefing read ~160,000 input tokens. The fix is to give agents a small, accurate map up front, cache what doesn't change, and let them read only what they need.
@@ -313,7 +313,7 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 - [x] Real email provider: Sendly (`SendlyEmailSender`, https://developer.sendlyai.com), chosen automatically when its key is set; text and HTML, click tracking off (links carry tokens), an idempotency key per message, retryable vs permanent errors in the `send_email` job
 - [x] Email templates (`core/email_templates.py`): one layout for every email (heading, short text, a button with the link also written out, small print), HTML with inline styles plus plain text, everything escaped; verification, password reset, magic link, invites
 - [ ] Email templates, next: the logo and your brand's colours and footer (company address, support contact), a preview page for owners, and the templates for notifications (approvals waiting, PR ready, daily briefing: FR-14)
-- [ ] Per-workspace overrides for the "configurable" Member permissions (approve actions, coding agent, projects)
+- [x] Per-workspace overrides for the "configurable" Member permissions (edit documents, approve actions, coding agent; projects stay owner/admin): Plan Phase 1
 
 #### Dependencies needed for the rest of Accounts
 

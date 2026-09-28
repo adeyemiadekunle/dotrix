@@ -14,7 +14,7 @@ from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
-from pmagent_backend.modules.workspaces.permissions import Permission, has_permission
+from pmagent_backend.modules.workspaces.permissions import Permission, can
 
 from .models import ACTIVE_STATUSES, AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .runner import BRIEFING_PROMPT, AgentRunner
@@ -209,7 +209,7 @@ class AgentService:
             )
         )
         protected = [a.target for a in pending if (a.target or "").startswith(PROTECTED_PREFIXES)]
-        if protected and not has_permission(member.role, Permission.MANAGE_PROJECTS):
+        if protected and not can(member, Permission.MANAGE_PROJECTS):
             raise Forbidden(
                 f"Changes to the project's architecture ({', '.join(protected)}) need an owner or "
                 "admin to approve; the run is waiting for them"
@@ -265,7 +265,7 @@ class AgentService:
             raise NotFound("Run not found")
         if run.status not in (RunStatus.QUEUED, RunStatus.RUNNING):
             raise Conflict("Only a run that's still working can be stopped")
-        if run.requested_by_id != member.user_id and not has_permission(member.role, Permission.MANAGE_PROJECTS):
+        if run.requested_by_id != member.user_id and not can(member, Permission.MANAGE_PROJECTS):
             raise Forbidden("Only whoever asked, or an owner or admin, can stop this run")
         user = await self.session.get(User, member.user_id)
         reason = f"Stopped by {user.display_name if user else 'a member'}"
@@ -328,6 +328,6 @@ class AgentService:
 def _read(access: ProjectAccess, run: AgentRun) -> AgentRunRead:
     """A run as its viewer may see it: token usage and the model only with usage:view."""
     read = AgentRunRead.model_validate(run)
-    if not has_permission(access.member.role, Permission.VIEW_USAGE):
+    if not can(access.member, Permission.VIEW_USAGE):
         read = read.model_copy(update={"model": None, "input_tokens": None, "output_tokens": None})
     return read

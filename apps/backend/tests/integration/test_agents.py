@@ -395,6 +395,12 @@ async def test_only_owners_and_admins_approve_architecture_changes(
     paused = await run(db_client, base, bob.headers, "rewrite the architecture overview")
     # ...which the member can't approve; the run keeps waiting.
     denied = await decide(db_client, base, paused, bob.headers, ("approve",))
+    assert denied.status_code == 403
+    # Even where the workspace lets members approve agent changes, architecture stays with
+    # owners and admins.
+    grant = await db_client.patch(f"/v1/workspaces/{team['id']}", json={"member_permissions": ["agents:approve"]}, headers=ada.headers)
+    assert grant.status_code == 200
+    denied = await decide(db_client, base, paused, bob.headers, ("approve",))
     assert denied.status_code == 403 and "owner or admin" in denied.json()["detail"]
     still = (await db_client.get(f"{base}/agent/runs/{paused['id']}", headers=ada.headers)).json()
     assert still["status"] == "awaiting_approval"

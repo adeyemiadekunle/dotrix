@@ -13,7 +13,7 @@ from pmagent_backend.modules.auth.repository import UserRepository
 from pmagent_backend.modules.knowledge.models import AuthorType
 
 from .models import Membership, Role, Workspace, WorkspaceKind
-from .permissions import Permission, has_permission
+from .permissions import Permission, can
 from .repository import MembershipRepository, WorkspaceRepository
 from .schemas import MemberRead, WorkspaceCreate, WorkspaceUpdate, WorkspaceWithRole
 
@@ -79,11 +79,17 @@ class WorkspaceService:
 
     async def update(self, member: Membership, data: WorkspaceUpdate) -> WorkspaceWithRole:
         workspace = member.workspace
-        if workspace.name != data.name:
+        if data.name is not None and workspace.name != data.name:
             await self._audit(member, "workspace.renamed", **{"from": workspace.name, "to": data.name})
-        workspace.name = data.name
+            workspace.name = data.name
+        if data.member_permissions is not None:
+            before = sorted(workspace.member_permissions or [])
+            after = sorted(p.value for p in data.member_permissions)
+            if before != after:
+                await self._audit(member, "workspace.member_permissions_changed", **{"from": before, "to": after})
+                workspace.member_permissions = after
         await self.session.commit()
-        return WorkspaceWithRole.of(workspace, member.role)
+        return WorkspaceWithRole.of(workspace, member.role, getattr(member, "via_organization", False))
 
     async def list_members(self, workspace_id: uuid.UUID) -> list[MemberRead]:
         return [
@@ -137,7 +143,7 @@ class WorkspaceService:
 
     async def remove_member(self, actor: Membership, target_user_id: uuid.UUID) -> None:
         leaving = target_user_id == actor.user_id
-        if not leaving and not has_permission(actor.role, Permission.MANAGE_MEMBERS):
+        if not leaving and not can(actor, Permission.MANAGE_MEMBERS):
             raise Forbidden("You don't have permission to remove members")
         target = await self._get_member(actor.workspace_id, target_user_id)
         if target.role == Role.OWNER:

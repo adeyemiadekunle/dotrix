@@ -771,7 +771,8 @@ export interface paths {
         head?: never;
         /**
          * Update Workspace
-         * @description Rename a workspace. Owners and admins.
+         * @description Rename a workspace, or change what members may do beyond chatting, brainstorming, and
+         *     working the board (`member_permissions`). Owners and admins.
          */
         patch: operations["update_workspace"];
         trace?: never;
@@ -2800,6 +2801,11 @@ export interface components {
             email: string;
         };
         /**
+         * Permission
+         * @enum {string}
+         */
+        Permission: "workspace:view" | "agents:chat" | "issues:write" | "knowledge:write" | "agents:approve" | "agents:code" | "projects:manage" | "workspace:manage" | "members:manage" | "workspace:billing" | "usage:view";
+        /**
          * Priority
          * @enum {string}
          */
@@ -3245,10 +3251,18 @@ export interface components {
              */
             role: "admin" | "member" | "guest";
         };
-        /** WorkspaceUpdate */
+        /**
+         * WorkspaceUpdate
+         * @description Only the fields you send change.
+         */
         WorkspaceUpdate: {
             /** Name */
-            name: string;
+            name?: string | null;
+            /**
+             * Member Permissions
+             * @description What members may do beyond chatting, brainstorming, and working the board: any of `knowledge:write` (edit documents), `agents:approve` (approve agent changes), `agents:code` (instruct the coding agent). Empty: owners and admins only.
+             */
+            member_permissions?: components["schemas"]["Permission"][] | null;
         };
         /** WorkspaceWithRole */
         WorkspaceWithRole: {
@@ -3269,6 +3283,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Member Permissions
+             * @description What this workspace lets members do beyond the defaults
+             */
+            member_permissions?: components["schemas"]["Permission"][];
             role: components["schemas"]["Role"];
             /**
              * Via Organization
@@ -3276,6 +3295,11 @@ export interface components {
              * @default false
              */
             via_organization: boolean;
+            /**
+             * Permissions
+             * @description What you can do here: your role's permissions plus what the workspace grants members
+             */
+            permissions?: components["schemas"]["Permission"][];
         };
     };
     responses: never;

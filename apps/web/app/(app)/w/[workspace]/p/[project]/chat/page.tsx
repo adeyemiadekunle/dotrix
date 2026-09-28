@@ -13,6 +13,7 @@ import { timeAgo } from "@/components/issues/issue-activity";
 import { useRecentThreads } from "@/lib/agent";
 import { useMembers } from "@/lib/issues";
 import { useProjectScope } from "@/lib/queries";
+import { can } from "@/lib/labels";
 
 /** The PM on a full page, with the conversation list beside it on wide screens. */
 export default function ChatPage() {
@@ -21,7 +22,6 @@ export default function ChatPage() {
   const threads = useRecentThreads(scope);
   const members = useMembers(workspace?.id);
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
-  const role = workspace?.role;
 
   return (
     // Exactly the screen below the header (3.5rem) and tabs, so only the messages scroll.
@@ -67,8 +67,8 @@ export default function ChatPage() {
             threadId={threadId}
             onThread={setThreadId}
             names={names}
-            canChat={role !== undefined && role !== "guest"}
-            canDecide={role !== undefined && role !== "guest"}
+            canChat={can(workspace, "agents:chat")}
+            canDecide={can(workspace, "agents:approve")}
           />
         )}
       </div>

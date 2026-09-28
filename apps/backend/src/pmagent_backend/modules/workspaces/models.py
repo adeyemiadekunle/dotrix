@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 import uuid
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import ARRAY, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pmagent_backend.db.base import (
@@ -40,6 +40,11 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Set when an organisation owns this workspace; personal workspaces never have one.
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organizations.id", ondelete="SET NULL"), index=True
+    )
+    # Permissions this workspace grants its members beyond the defaults (permissions.py
+    # MEMBER_GRANTABLE: edit documents, approve agent changes, instruct the coding agent).
+    member_permissions: Mapped[list[str]] = mapped_column(
+        ARRAY(String(32)), default=list, server_default="{}"
     )
 
 
