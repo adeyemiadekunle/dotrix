@@ -29,6 +29,7 @@ from pmagent_engine.layout import AGENTS
 
 from .activity import activity_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
+from .context import build_context_pack
 from .llm import ModelFactory
 from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .queue import RunQueue
@@ -223,6 +224,7 @@ class AgentRunner:
                 run.model = project.model
                 await session.commit()
                 rules = await self._rules(session, project.id)
+                context = await build_context_pack(session, project, run)
                 kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
                 name, description, project_key = project.name, project.description, project.key
@@ -260,6 +262,7 @@ class AgentRunner:
                 task_tools=(read_tools, pm_write_tools),
                 subagent_task_tools=specialist_write_tools,
                 board_instructions=board_instructions(project_key),
+                context=context,
             )
             config = {
                 "configurable": {"thread_id": str(thread_id)},
