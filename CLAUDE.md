@@ -240,6 +240,31 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
   - a cheaper model option for specialists and summaries
 
 ### Phase 3: brainstorm → project → documents
+- [ ] **Pick the agent in the chat:**
+  - **Web:** a **+** on the left of the chat input lists the agents with their one-line descriptions: the Project manager (the default, which delegates as today), Product, Architecture, Research, Reviewer, and Documentation
+    - picking one puts a chip in the input ("Research agent ×"); typing `@research` does the same
+    - a conversation keeps the last agent picked until it's changed
+    - each reply shows which agent answered
+    - the + menu later holds "Attach a document" and, in Phase 6, "Link a Figma frame"
+  - **API and CLI:** runs take an optional `agent` (`project-manager`, `product`, `architecture`, `research`, `reviewer`, `documentation`); the CLI gets `pmagent chat --agent research`
+  - **The picked specialist leads the run directly,** not as a subagent of the PM. It gets:
+    - its role prompt
+    - the project's `agent-rules/` for its role
+    - the project context pack
+    
+    This saves the PM's hop (fewer model calls).
+  - **Agents can call each other:** the lead gets a `task` tool listing the other specialists (the PM still delegates to all five)
+    - the called agent gets the context pack plus the caller's brief (paths and excerpts)
+    - each hand-off shows as activity ("Product is asking the architecture agent…") and in the run's details for owners and admins
+  - **Limits:**
+    - **one level deep:** an agent that was called can't call a third (no chains or loops; in deepagents the called agents simply get no `task` tool)
+    - **specialists don't call the PM:** the PM coordinates the whole team; a specialist says when a request needs it
+    - **hand-offs count towards the run's token budget** (Phase 2, Budgets and visibility)
+  - **Safety is unchanged,** because it's keyed by agent:
+    - a change is attributed to the agent that made it, and that agent's folder permissions (FR-41) and issue rules apply
+    - every write waits for approval; Reviewer stays read-only; Research keeps web search
+    - members can pick any agent (chatting and brainstorming are theirs); their requests' changes wait for an owner or admin
+    - runs and hand-offs are audited
 - [ ] **Ideas:** brainstorming conversations in a workspace before any project exists (the PM and specialists, no files to change); members can start and join them
 - [ ] **"Start a project from this idea"** (owners and admins): creates the project and drafts `project.md`, vision, requirements, roadmap, and the first epics and stories from the conversation, as one batch of changes to review and approve
 - [ ] **Promote from chat:** turn an answer or a whole conversation into a document, a decision (ADR), or issues, with the conversation linked as its source
