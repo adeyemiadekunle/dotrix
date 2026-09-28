@@ -5944,7 +5944,7 @@
           "agents"
         ],
         "summary": "Stream Run",
-        "description": "The Project Manager's reply as it's written, as server-sent events: `text` (everything so\nfar, first), then `delta` (each new piece), then `end`. If the run isn't working right now\nit's just `end`: read the run for its saved reply. `ping` events keep the connection open.",
+        "description": "The Project Manager's reply as it's written, as server-sent events: `text` (everything so\nfar, first), then `delta` (each new piece), then `end`. `activity` says what the PM is doing\nmeanwhile (\"Reading roadmap.md\"); each replaces the last. If the run isn't working right\nnow it's just `end`: read the run for its saved reply. `ping` events keep the connection open.",
         "operationId": "stream_run",
         "security": [
           {
