@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from .core.email import EmailMessage
@@ -9,6 +10,7 @@ from .core.jobs import JobContext, JobFunction
 from .modules.api_tokens.repository import DeviceAuthorizationRepository
 from .modules.auth.repository import ActionTokenRepository, RefreshTokenRepository
 from .modules.auth.service import AuthService
+from .modules.documents.service import DocumentService
 from .modules.invites.repository import InviteRepository
 
 logger = logging.getLogger(__name__)
@@ -49,8 +51,17 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
     return deleted
 
 
+async def convert_document(ctx: JobContext, *, document_id: str) -> None:
+    """An uploaded document's markdown, made outside the request (big PDFs take a while)."""
+    if ctx.storage is None:
+        raise RuntimeError("File storage isn't configured")  # retried; the API refuses uploads anyway
+    async with ctx.session_factory() as session:
+        await DocumentService(session, ctx.storage).convert(uuid.UUID(document_id))
+
+
 JOBS: dict[str, JobFunction] = {
     "send_email": send_email,
     "send_password_reset": send_password_reset,
     "cleanup_expired": cleanup_expired,
+    "convert_document": convert_document,
 }

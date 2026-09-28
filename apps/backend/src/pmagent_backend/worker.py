@@ -23,6 +23,7 @@ from .core.email import build_email_sender
 from .core.jobs import QUEUE_NAME, JobContext, JobFunction
 from .core.logging import configure_logging
 from .core.settings import get_settings
+from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
 from .jobs import JOBS, cleanup_expired
 from .modules.agents.checkpoints import open_checkpointer
@@ -46,7 +47,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     engine = ctx["engine"] = create_engine(settings.database_url, echo=settings.database_echo)
     redis = ctx["redis"]
     sessionmaker = create_sessionmaker(engine)
-    ctx["jobs"] = JobContext(sessionmaker, settings, build_email_sender(settings.email_backend))
+    ctx["jobs"] = JobContext(sessionmaker, settings, build_email_sender(settings.email_backend), build_storage(settings))
     ctx["runner"] = AgentRunner(
         session_factory=sessionmaker,
         checkpointer=await open_checkpointer(settings.database_url, stack),

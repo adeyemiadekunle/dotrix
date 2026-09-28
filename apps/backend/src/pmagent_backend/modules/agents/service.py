@@ -140,7 +140,7 @@ class AgentService:
         return _read(access, run)
 
     async def list(
-        self, access: ProjectAccess, *, thread_id: uuid.UUID | None, limit: int
+        self, access: ProjectAccess, *, thread_id: uuid.UUID | None, limit: int, kind: RunKind | None = None
     ) -> list[AgentRunRead]:
         stmt = (
             select(AgentRun)
@@ -149,6 +149,8 @@ class AgentService:
         )
         if thread_id is not None:
             stmt = stmt.where(AgentRun.thread_id == thread_id)
+        if kind is not None:
+            stmt = stmt.where(AgentRun.kind == kind)
         stmt = stmt.order_by(AgentRun.created_at.desc()).limit(limit)
         return [_read(access, r) for r in await self.session.scalars(stmt)]
 

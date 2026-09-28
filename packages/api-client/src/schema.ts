@@ -1082,9 +1082,10 @@ export interface paths {
         put?: never;
         /**
          * Upload Document
-         * @description Upload a document. The original is kept in storage, and its content is converted
-         *     to markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents
-         *     read it. Uploading the same filename again adds a new version of that markdown. Adding a
+         * @description Upload a document. The original is kept in storage, and a background job converts
+         *     it to markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents
+         *     read it: the document is `converting` until then (poll it), then `ready` or `failed`.
+         *     Uploading the same filename again adds a new version of that markdown. Adding a
          *     project's external docs is setup work: owners and admins.
          */
         post: operations["upload_document"];
@@ -1143,7 +1144,8 @@ export interface paths {
         };
         /**
          * List Runs
-         * @description Recent runs, newest first; filter by `thread_id` to read one conversation.
+         * @description Recent runs, newest first; filter by `thread_id` to read one conversation, or by `kind`
+         *     (e.g. `briefing` for past daily briefings).
          */
         get: operations["list_runs"];
         put?: never;
@@ -2026,8 +2028,18 @@ export interface components {
              * @description Where the converted markdown lives in the project's knowledge, e.g. docs/normalized/spec.md
              */
             knowledge_path: string;
-            /** Knowledge Version */
+            /**
+             * Knowledge Version
+             * @description The knowledge file version this upload produced; 0 until ready
+             */
             knowledge_version: number;
+            /** @description `converting` right after upload (a background job makes the markdown), then `ready`, or `failed` with `error` */
+            status: components["schemas"]["DocumentStatus"];
+            /**
+             * Error
+             * @description Why the conversion failed
+             */
+            error?: string | null;
             /** Uploaded By Id */
             uploaded_by_id: string | null;
             /**
@@ -2036,6 +2048,11 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * DocumentStatus
+         * @enum {string}
+         */
+        DocumentStatus: "converting" | "ready" | "failed";
         /** EmailInviteCreate */
         EmailInviteCreate: {
             /**
@@ -6808,6 +6825,7 @@ export interface operations {
         parameters: {
             query?: {
                 thread_id?: string | null;
+                kind?: components["schemas"]["RunKind"] | null;
                 limit?: number;
             };
             header?: never;

@@ -126,6 +126,21 @@ export function useSendMessage(scope: Scope | undefined) {
   );
 }
 
+/** Past daily briefings, newest first (polled while one is being written). */
+export function useBriefings(scope: Scope | undefined) {
+  return useQuery({
+    queryKey: scope ? [...agentKeys.project(scope), "briefings"] : ["agent", "none", "briefings"],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs", {
+          params: { path: path(scope!), query: { kind: "briefing", limit: 30 } },
+        }),
+      ),
+    enabled: Boolean(scope),
+    refetchInterval: (query) => ((query.state.data ?? []).some(isActive) ? POLL_MS : false),
+  });
+}
+
 export function useBriefing(scope: Scope | undefined) {
   return useAgentMutation(scope, (s, _: void) =>
     unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/briefing", { params: { path: path(s) } })),

@@ -146,7 +146,7 @@ apps/web/
 │   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
 │   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /o/[org]{,/members,/settings}, /w/[workspace], /w/[workspace]/{approvals,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,knowledge,docs,settings} (the project root redirects to board; /overview to settings), /settings
+│   └── (app)/                   signed-in shell (sidebar): /o/[org]{,/members,/settings}, /w/[workspace], /w/[workspace]/{approvals,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,briefing,knowledge,docs,settings} (the project root redirects to board; /overview to settings), /settings
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
 │   ├── documents/               dropzone, queued files, upload progress
@@ -191,7 +191,7 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
 - [x] Workspace "Members and settings" (`/w/[ws]/settings`): rename; members with role changes, remove, leave, transfer ownership (personal workspaces: owner and guests only); invites by email or link, pending list, revoke. Audit log (`/w/[ws]/audit`, owners and admins) with project and action filters and paging. Project Settings tab (was Overview): name, description, repo, agent model, agent-rules links into Knowledge, zip export
 - [x] Organisation pages (`/o/[org]`, in the sidebar): create an organisation; Workspaces (new workspace with a chosen owner, add one you own, take one out, people per workspace: place, change role, remove; org admins can't place themselves), Members (add by email with an account, org roles, remove, leave), Settings (rename; what each org role can see)
 - [x] Backend: membership and invite changes are audited (rename, role changes, removals and leaving, ownership transfer, invites sent / links created / revoked, joining, org placements in the workspace's own log)
-- [ ] A briefing page (the daily briefing already runs from the chat)
+- [x] Briefing tab (`/w/[ws]/p/[KEY]/briefing`): the newest daily briefing (streams with live activity while it's written), past briefings (`GET .../agent/runs?kind=briefing`), new briefing; the agent's side of a run is one shared component (`components/agent/agent-reply.tsx`) used by chat and briefing
 - [ ] Remove or update the leftovers: `packages/shared` (unused; its `Issue` type predates the API) and `packages/ui/src/index.tsx`'s StatusBadge. The generated API types are the source of truth.
 - [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search, chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
 - [ ] More browser tests as pages change: organisations, document upload (needs MinIO in CI), phone layouts
@@ -295,7 +295,7 @@ External accounts, keys, and config have to exist before these items can be buil
 - [x] **FR-18** CLI: `pmagent link` + `pmagent pull` mirror `.pmagent/` (changes since the last revision, deletions, local edits never silently overwritten; git exclude + pre-commit hook re-applied)
 - [x] **FR-18** Full Markdown export of `.pmagent/` (zip) for Owner or Admin
 - [x] **FR-11** Doc upload: original in object storage (MinIO locally, any S3 in production), markdown via `pmagent_engine.ingest.to_markdown` into `docs/normalized/` as a versioned knowledge file
-- [ ] **FR-11** Convert large documents in a background job instead of during the request
+- [x] **FR-11** Documents convert in a background job (`convert_document`): an upload stores the original and returns `converting`; the job writes the markdown as the uploader, then `ready` (or `failed` with `error`; the original is kept). Local mode marks conversions cut off by a restart failed; the Docs tab and `pmagent docs-add` wait for it
 
 ### P0: Issue tracking
 

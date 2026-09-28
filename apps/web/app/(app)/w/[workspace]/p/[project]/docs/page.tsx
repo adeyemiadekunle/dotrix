@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmag
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@pmagent/ui/components/sheet";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
-import { DownloadIcon, EyeIcon, FileTextIcon, FilesIcon, LayersIcon, Loader2Icon } from "lucide-react";
+import { CircleAlertIcon, DownloadIcon, EyeIcon, FileTextIcon, FilesIcon, LayersIcon, Loader2Icon } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -83,6 +83,7 @@ export default function DocsPage() {
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
   const canUpload = canManageProjects(workspace?.role);
   const draft = useArchitectureDraft(scope);
+  const converting = (documents.data ?? []).some((d) => d.status === "converting");
   const chat = useChat();
 
   async function onFiles(files: File[]) {
@@ -124,7 +125,7 @@ export default function DocsPage() {
           <CardContent>
             <Button
               variant="outline"
-              disabled={draft.isPending}
+              disabled={draft.isPending || converting}
               onClick={async () => {
                 const run = await draft.mutateAsync().catch(() => null);
                 if (run) chat.show(run.thread_id);
@@ -133,6 +134,9 @@ export default function DocsPage() {
               {draft.isPending ? <Loader2Icon className="animate-spin" /> : <LayersIcon />}
               Draft architecture overview
             </Button>
+            {converting && (
+              <p className="text-muted-foreground mt-2 text-xs">Waiting for the documents to finish converting…</p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -163,12 +167,24 @@ export default function DocsPage() {
                     {doc.uploaded_by_id && ` by ${names.get(doc.uploaded_by_id) ?? "a former member"}`}
                     {doc.knowledge_version > 1 && ` · version ${doc.knowledge_version}`}
                   </span>
+                  {doc.status === "converting" && (
+                    <span className="text-muted-foreground flex items-center gap-1.5 text-xs" role="status">
+                      <Loader2Icon className="size-3.5 animate-spin" /> Converting to text for the agents…
+                    </span>
+                  )}
+                  {doc.status === "failed" && (
+                    <span className="text-destructive flex items-start gap-1.5 text-xs">
+                      <CircleAlertIcon className="mt-px size-3.5 shrink-0" /> Couldn&apos;t convert it: {doc.error}
+                    </span>
+                  )}
                 </div>
                 <div className="flex gap-1">
-                  <Button size="sm" variant="outline" onClick={() => setViewing(doc)}>
-                    <EyeIcon />
-                    View text
-                  </Button>
+                  {doc.status === "ready" && (
+                    <Button size="sm" variant="outline" onClick={() => setViewing(doc)}>
+                      <EyeIcon />
+                      View text
+                    </Button>
+                  )}
                   {scope && (
                     <Button size="sm" variant="ghost" asChild>
                       <a href={originalUrl(scope.workspaceId, scope.projectId, doc.id)} download={doc.filename}>

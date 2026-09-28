@@ -142,6 +142,31 @@ def test_docs_add_uploads_and_pulls(linked: Path, platform: FakePlatform, tmp_pa
     assert (linked / ".pmagent" / "docs" / "normalized" / "spec.md").read_text() == "imported spec.docx"
 
 
+def test_docs_add_waits_for_the_background_conversion(
+    linked: Path, platform: FakePlatform, tmp_path: Path, monkeypatch
+) -> None:
+    naps: list[float] = []
+    monkeypatch.setattr(cli_module, "_sleep", naps.append)
+    platform.document_states = [{"status": "converting"}, {"status": "ready", "knowledge_version": 1}]
+    doc = tmp_path / "spec.pdf"
+    doc.write_bytes(b"%PDF fake")
+    result = run("docs-add", str(doc), "--project", str(linked))
+    assert result.exit_code == 0, result.output
+    assert len(naps) == 2  # it checked back until the platform had converted it
+    assert "-> .pmagent/docs/normalized/spec.md (v1)" in result.output
+    assert (linked / ".pmagent" / "docs" / "normalized" / "spec.md").read_text() == "imported spec.pdf"
+
+
+def test_docs_add_reports_a_failed_conversion(linked: Path, platform: FakePlatform, tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "_sleep", lambda _s: None)
+    platform.document_states = [{"status": "failed", "error": "This PDF is password-protected"}]
+    doc = tmp_path / "locked.pdf"
+    doc.write_bytes(b"%PDF fake")
+    result = run("docs-add", str(doc), "--project", str(linked))
+    assert result.exit_code == 1
+    assert "locked.pdf: couldn't convert it: This PDF is password-protected" in result.output
+
+
 def test_architecture_draft_shows_the_summary_first(linked: Path, platform: FakePlatform) -> None:
     platform.agent_script = [{"status": "completed", "reply": "Drafted architecture/overview.md."}]
     declined = run("architecture", "draft", "--project", str(linked), input="n\n")

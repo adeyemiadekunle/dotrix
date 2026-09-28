@@ -14,6 +14,7 @@ from pmagent_backend.modules.projects.deps import ProjectAccess, require_project
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
+from .models import RunKind
 from .runner import AgentRunner
 from .schemas import (
     AgentRunRead,
@@ -80,10 +81,12 @@ async def list_runs(
     access: Chatter,
     agents: Agents,
     thread_id: uuid.UUID | None = None,
+    kind: RunKind | None = None,
     limit: int = Query(default=20, ge=1, le=100),
 ) -> list[AgentRunRead]:
-    """Recent runs, newest first; filter by `thread_id` to read one conversation."""
-    return await agents.list(access, thread_id=thread_id, limit=limit)
+    """Recent runs, newest first; filter by `thread_id` to read one conversation, or by `kind`
+    (e.g. `briefing` for past daily briefings)."""
+    return await agents.list(access, thread_id=thread_id, kind=kind, limit=limit)
 
 
 @router.get("/runs/{run_id}")

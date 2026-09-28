@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .email import EmailMessage, EmailSender
 from .settings import Settings
+from .storage import BlobStorage
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class JobContext:
     session_factory: Callable[[], AbstractAsyncContextManager[AsyncSession]]
     settings: Settings
     email: EmailSender  # the real provider (a job must not enqueue its own email again)
+    storage: BlobStorage | None = None  # document originals (None when storage isn't configured)
 
 
 JobFunction = Callable[..., Awaitable[Any]]

@@ -108,13 +108,61 @@ async def test_upload_size_limit(project, db_client: AsyncClient, storage) -> No
     assert storage.objects == {}
 
 
-async def test_original_is_removed_if_the_import_fails(project, db_client: AsyncClient, storage) -> None:
+async def test_a_failed_conversion_is_recorded_and_the_original_kept(project, db_client: AsyncClient, storage) -> None:
     ada, _, base = await project()
     # Fits the upload limit, but its markdown exceeds the 1 MB knowledge-file limit.
     res = await upload(db_client, base, ada.headers, "huge.txt", b"x" * 1_500_000)
-    assert res.status_code == 422
-    assert storage.objects == {}  # no orphaned original
-    assert (await db_client.get(f"{base}/documents", headers=ada.headers)).json() == []
+    assert res.status_code == 201
+    doc = res.json()
+    assert doc["status"] == "failed" and doc["error"]  # the knowledge service's reason, e.g. too large
+    assert doc["knowledge_version"] == 0
+    assert len(storage.objects) == 1  # the original stays downloadable
+    missing = await db_client.get(f"{base}/knowledge/files/{doc['knowledge_path']}", headers=ada.headers)
+    assert missing.status_code == 404
+
+
+async def test_conversion_happens_after_the_upload_returns(project, db_client: AsyncClient) -> None:
+    ada, _, base = await project()
+    queued: list[tuple[str, dict]] = []
+
+    class Recorder:
+        async def enqueue(self, name: str, **kwargs) -> None:
+            queued.append((name, kwargs))
+
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    inline, app.state.jobs = app.state.jobs, Recorder()
+    res = await upload(db_client, base, ada.headers, "spec.md", b"# Spec\n\nDrivers.")
+    doc = res.json()
+    assert res.status_code == 201 and doc["status"] == "converting" and doc["knowledge_version"] == 0
+    assert queued == [("convert_document", {"document_id": doc["id"]})]
+
+    # The job, later (here: run it now).
+    await inline.enqueue(*queued[0][:1], **queued[0][1])
+    done = (await db_client.get(f"{base}/documents/{doc['id']}", headers=ada.headers)).json()
+    assert done["status"] == "ready" and done["knowledge_version"] == 1 and done["error"] is None
+    md = (await db_client.get(f"{base}/knowledge/files/docs/normalized/spec.md", headers=ada.headers)).json()
+    assert "Drivers." in md["content"]
+    # A retried job doesn't convert it twice.
+    await inline.enqueue(*queued[0][:1], **queued[0][1])
+    again = (await db_client.get(f"{base}/documents/{doc['id']}", headers=ada.headers)).json()
+    assert again["knowledge_version"] == 1
+
+
+async def test_conversions_cut_off_by_a_restart_are_marked_failed(project, db_client: AsyncClient) -> None:
+    from pmagent_backend.modules.documents.service import mark_interrupted_conversions
+
+    ada, _, base = await project()
+
+    class Nothing:
+        async def enqueue(self, name: str, **kwargs) -> None:
+            pass
+
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    app.state.jobs = Nothing()
+    doc = (await upload(db_client, base, ada.headers, "spec.md", b"# Spec")).json()
+    await mark_interrupted_conversions(app.state.runner.session_factory)
+    after = (await db_client.get(f"{base}/documents/{doc['id']}", headers=ada.headers)).json()
+    assert after["status"] == "failed" and "restarted" in after["error"]
 
 
 async def test_upload_permissions(project, db_client: AsyncClient, add_member, signup) -> None:
