@@ -23,6 +23,7 @@ HOUR, QUARTER_HOUR = 3600, 900
 SIGNUP = (Limit("signup:ip", 10, HOUR), Limit("signup:email", 5, HOUR))
 LOGIN = (Limit("login:ip", 50, QUARTER_HOUR), Limit("login:email", 10, QUARTER_HOUR))
 PASSWORD_RESET = (Limit("reset:ip", 20, HOUR), Limit("reset:email", 5, HOUR))
+MAGIC_LINK = (Limit("magic:ip", 20, HOUR), Limit("magic:email", 5, HOUR))
 VERIFY_RESEND = (Limit("verify:ip", 20, HOUR), Limit("verify:email", 5, HOUR))
 
 

@@ -36,6 +36,10 @@ class PasswordResetRequest(BaseModel):
     email: Email
 
 
+class MagicLinkRequest(BaseModel):
+    email: Email
+
+
 class PasswordResetConfirm(BaseModel):
     token: str = Field(max_length=256)
     new_password: Password

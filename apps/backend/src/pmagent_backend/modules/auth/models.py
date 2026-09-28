@@ -46,10 +46,11 @@ class RefreshToken(UUIDPrimaryKeyMixin, Base):
 class ActionTokenPurpose(enum.StrEnum):
     VERIFY_EMAIL = "verify_email"
     RESET_PASSWORD = "reset_password"
+    MAGIC_LINK = "magic_link"  # sign in without a password
 
 
 class ActionToken(UUIDPrimaryKeyMixin, Base):
-    """Single-use emailed token (email verification, password reset)."""
+    """Single-use emailed token (email verification, password reset, magic-link sign-in)."""
 
     __tablename__ = "action_tokens"
 

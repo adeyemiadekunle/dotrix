@@ -8,9 +8,10 @@ from fastapi import APIRouter, Depends, status
 from pmagent_backend.api.deps import CurrentUser, EmailDep, JobsDep, SessionDep, SettingsDep
 from pmagent_backend.core.openapi import errors
 
-from .limits import LOGIN, PASSWORD_RESET, SIGNUP, VERIFY_RESEND, ThrottleDep
+from .limits import LOGIN, MAGIC_LINK, PASSWORD_RESET, SIGNUP, VERIFY_RESEND, ThrottleDep
 from .schemas import (
     LoginRequest,
+    MagicLinkRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
     RefreshRequest,
@@ -83,6 +84,21 @@ async def request_password_reset(data: PasswordResetRequest, auth: Auth, throttl
     lookup happens in the background). Rate-limited per IP and per email."""
     await throttle(PASSWORD_RESET, data.email)
     await auth.request_password_reset(data.email)
+
+
+@router.post("/magic-link/request", status_code=status.HTTP_202_ACCEPTED, responses=errors(422, 429))
+async def request_magic_link(data: MagicLinkRequest, auth: Auth, throttle: ThrottleDep) -> None:
+    """Email a sign-in link (valid 15 minutes, once). Always 202, whether or not the account
+    exists (the lookup happens in the background). Rate-limited per IP and per email."""
+    await throttle(MAGIC_LINK, data.email)
+    await auth.request_magic_link(data.email)
+
+
+@router.post("/magic-link/verify", responses=errors(400, 422))
+async def sign_in_with_magic_link(data: TokenRequest, auth: Auth) -> TokenPair:
+    """Exchange the token from a sign-in link for an access and refresh token, like login.
+    The link works once, and following it also verifies the email address."""
+    return await auth.sign_in_with_magic_link(data.token)
 
 
 @router.post(

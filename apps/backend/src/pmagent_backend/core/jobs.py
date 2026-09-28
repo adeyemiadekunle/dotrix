@@ -97,7 +97,9 @@ class QueuedEmailSender:
         self.jobs = jobs
 
     async def send(self, message: EmailMessage) -> None:
-        await self.jobs.enqueue("send_email", to=message.to, subject=message.subject, body=message.body)
+        await self.jobs.enqueue(
+            "send_email", to=message.to, subject=message.subject, body=message.body, html=message.html
+        )
 
 
 def get_jobs(request: Request) -> Jobs:

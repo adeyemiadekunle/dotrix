@@ -409,6 +409,108 @@
         }
       }
     },
+    "/v1/auth/magic-link/request": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Request Magic Link",
+        "description": "Email a sign-in link (valid 15 minutes, once). Always 202, whether or not the account\nexists (the lookup happens in the background). Rate-limited per IP and per email.",
+        "operationId": "request_magic_link",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MagicLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/magic-link/verify": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign In With Magic Link",
+        "description": "Exchange the token from a sign-in link for an access and refresh token, like login.\nThe link works once, and following it also verifies the email address.",
+        "operationId": "sign_in_with_magic_link",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request, for example an invalid or expired link or code",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/password-reset/confirm": {
       "post": {
         "tags": [
@@ -10420,6 +10522,20 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "MagicLinkRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "MagicLinkRequest"
       },
       "Manifest": {
         "properties": {

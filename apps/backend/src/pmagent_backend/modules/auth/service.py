@@ -8,8 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid_utils.compat import uuid7
 
-from pmagent_backend.core import security
-from pmagent_backend.core.email import EmailMessage, EmailSender
+from pmagent_backend.core import email_templates, security
+from pmagent_backend.core.email import EmailSender
 from pmagent_backend.core.errors import Conflict, InvalidLink, Unauthorized
 from pmagent_backend.core.jobs import Jobs
 from pmagent_backend.core.settings import Settings
@@ -140,15 +140,36 @@ class AuthService:
         token = await self._new_action_token(user, ActionTokenPurpose.RESET_PASSWORD)
         await self.session.commit()
         link = self._link("/reset-password", token)
-        ttl = self.settings.password_reset_ttl_minutes
-        await self.email.send(
-            EmailMessage(
-                to=user.email,
-                subject="Reset your pmagent password",
-                body=f"Reset your password: {link}\n\nThis link expires in {ttl} minutes. "
-                "If you didn't ask for this, you can ignore this email.",
-            )
-        )
+        await self.email.send(email_templates.reset_password(user.email, link, self.settings.password_reset_ttl_minutes))
+
+    # -- magic-link sign-in ------------------------------------------------------
+
+    async def request_magic_link(self, email: str) -> None:
+        """Always succeeds from the caller's view, so it can't be used to find accounts: the
+        lookup and the email happen in a background job (`send_magic_link`)."""
+        assert self.jobs is not None
+        await self.jobs.enqueue("send_magic_link", email=email)
+
+    async def send_magic_link(self, email: str) -> None:
+        user = await self.users.get_by_email(email)
+        if user is None or not user.is_active:
+            return
+        token = await self._new_action_token(user, ActionTokenPurpose.MAGIC_LINK)
+        await self.session.commit()
+        link = self._link("/magic-link", token)
+        await self.email.send(email_templates.magic_link(user.email, link, self.settings.magic_link_ttl_minutes))
+
+    async def sign_in_with_magic_link(self, token: str) -> TokenPair:
+        """Exchange the emailed token for a session. It works once; following it also
+        verifies the email address (the person proved they read that inbox)."""
+        action = await self._consume(token, ActionTokenPurpose.MAGIC_LINK)
+        user = await self.users.get(action.user_id)
+        if user is None or not user.is_active:
+            raise InvalidLink()
+        user.email_verified_at = user.email_verified_at or _now()
+        tokens = self._issue_tokens(user)
+        await self.session.commit()
+        return tokens
 
     async def reset_password(self, data: PasswordResetConfirm) -> None:
         action = await self._consume(data.token, ActionTokenPurpose.RESET_PASSWORD)
@@ -193,11 +214,11 @@ class AuthService:
     async def _new_action_token(self, user: User, purpose: ActionTokenPurpose) -> str:
         """Creates a token and invalidates older ones for the same purpose; caller commits."""
         now = _now()
-        ttl = (
-            timedelta(hours=self.settings.email_verification_ttl_hours)
-            if purpose is ActionTokenPurpose.VERIFY_EMAIL
-            else timedelta(minutes=self.settings.password_reset_ttl_minutes)
-        )
+        ttl = {
+            ActionTokenPurpose.VERIFY_EMAIL: timedelta(hours=self.settings.email_verification_ttl_hours),
+            ActionTokenPurpose.RESET_PASSWORD: timedelta(minutes=self.settings.password_reset_ttl_minutes),
+            ActionTokenPurpose.MAGIC_LINK: timedelta(minutes=self.settings.magic_link_ttl_minutes),
+        }[purpose]
         token = security.generate_token()
         await self.action_tokens.invalidate(user.id, purpose, now)
         self.action_tokens.add(
@@ -220,14 +241,7 @@ class AuthService:
         return action
 
     async def _send_verification(self, user: User, token: str) -> None:
-        link = self._link("/verify-email", token)
-        await self.email.send(
-            EmailMessage(
-                to=user.email,
-                subject="Verify your pmagent email",
-                body=f"Confirm your email address: {link}",
-            )
-        )
+        await self.email.send(email_templates.verify_email(user.email, self._link("/verify-email", token)))
 
     def _link(self, path: str, token: str) -> str:
         return f"{self.settings.app_url.rstrip('/')}{path}?{urlencode({'token': token})}"

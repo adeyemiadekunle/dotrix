@@ -28,7 +28,8 @@ SEND_TIMEOUT_SECONDS = 15
 class EmailMessage:
     to: str
     subject: str
-    body: str
+    body: str  # plain text
+    html: str | None = None  # the same email as HTML (core/email_templates.py); None: made from body
 
 
 class EmailSender(Protocol):
@@ -90,7 +91,7 @@ class SendlyEmailSender:
             "subject": message.subject,
             "text": message.body,
             # Sendly's API requires html (despite its docs): the same text, escaped, links clickable.
-            "html": text_to_html(message.body),
+            "html": message.html or text_to_html(message.body),
             "tracking": False,
         }
         if self.from_address:

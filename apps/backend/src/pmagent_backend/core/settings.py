@@ -45,6 +45,7 @@ class Settings(DatabaseSettings):
     refresh_token_ttl_days: int = 30
     email_verification_ttl_hours: int = 48
     password_reset_ttl_minutes: int = 60
+    magic_link_ttl_minutes: int = 15
 
     # Base URL of the web app, used to build links in emails.
     app_url: str = "http://localhost:3000"

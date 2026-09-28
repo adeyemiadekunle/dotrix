@@ -21,9 +21,9 @@ INVITE_RETENTION = timedelta(days=30)  # after expiry, revocation, or acceptance
 CLEANUP_INTERVAL_SECONDS = 3600
 
 
-async def send_email(ctx: JobContext, *, to: str, subject: str, body: str) -> None:
+async def send_email(ctx: JobContext, *, to: str, subject: str, body: str, html: str | None = None) -> None:
     try:
-        await ctx.email.send(EmailMessage(to=to, subject=subject, body=body))
+        await ctx.email.send(EmailMessage(to=to, subject=subject, body=body, html=html))
     except EmailSendError as exc:
         if exc.retryable:
             raise  # the worker tries again later
@@ -65,9 +65,16 @@ async def convert_document(ctx: JobContext, *, document_id: str) -> None:
         await DocumentService(session, ctx.storage).convert(uuid.UUID(document_id))
 
 
+async def send_magic_link(ctx: JobContext, *, email: str) -> None:
+    """Like password resets: the lookup happens here, so the response can't reveal accounts."""
+    async with ctx.session_factory() as session:
+        await AuthService(session, ctx.settings, ctx.email).send_magic_link(email)
+
+
 JOBS: dict[str, JobFunction] = {
     "send_email": send_email,
     "send_password_reset": send_password_reset,
+    "send_magic_link": send_magic_link,
     "cleanup_expired": cleanup_expired,
     "convert_document": convert_document,
 }

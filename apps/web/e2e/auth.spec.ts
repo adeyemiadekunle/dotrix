@@ -39,3 +39,18 @@ test("the theme follows the choice in settings and survives a reload", async ({ 
   await page.getByText("Light", { exact: true }).click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 });
+
+test("ask for a sign-in link, and a used or made-up link is refused", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByRole("button", { name: "Email me a sign-in link instead" }).click();
+  await expect(page.getByLabel("Password")).toHaveCount(0);
+  await page.getByLabel("Email").fill("someone@example.com");
+  await page.getByRole("button", { name: "Email me a sign-in link", exact: true }).click();
+  await expect(page.getByText("Check your email")).toBeVisible();
+  await expect(page.getByText("If someone@example.com has a pmagent account")).toBeVisible();
+
+  // The link's page asks for a click (mail scanners open links); a bad token is explained.
+  await page.goto("/magic-link?token=not-a-real-token");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByText("This link is invalid or has expired. Ask for a new link")).toBeVisible();
+});

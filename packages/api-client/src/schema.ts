@@ -190,6 +190,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/magic-link/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Magic Link
+         * @description Email a sign-in link (valid 15 minutes, once). Always 202, whether or not the account
+         *     exists (the lookup happens in the background). Rate-limited per IP and per email.
+         */
+        post: operations["request_magic_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/magic-link/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign In With Magic Link
+         * @description Exchange the token from a sign-in link for an access and refresh token, like login.
+         *     The link works once, and following it also verifies the email address.
+         */
+        post: operations["sign_in_with_magic_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/password-reset/confirm": {
         parameters: {
             query?: never;
@@ -2498,6 +2540,14 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** MagicLinkRequest */
+        MagicLinkRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+        };
         /** Manifest */
         Manifest: {
             /**
@@ -3460,6 +3510,90 @@ export interface operations {
             };
             /** @description Too many attempts; the Retry-After header says how many seconds to wait */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    request_magic_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MagicLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Too many attempts; the Retry-After header says how many seconds to wait */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    sign_in_with_magic_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+            /** @description Bad request, for example an invalid or expired link or code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

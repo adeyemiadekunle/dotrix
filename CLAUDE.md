@@ -213,7 +213,8 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 
 - [x] **FR-1** User model; sign-up and login with email + password (argon2), email verification, password reset
 - [x] **FR-1** JWT access token plus rotating refresh token (hashed in the DB); logout revokes the token
-- [ ] **FR-1** Google and GitHub OAuth login; magic-link login; TOTP 2FA
+- [x] **FR-1** Magic-link login: "Email me a sign-in link" on the login page (`POST /v1/auth/magic-link/request`, rate-limited, the lookup in a background job so responses don't reveal accounts); the link (`/magic-link`, 15 minutes, once) takes a click to sign in, because mail scanners open links; following it verifies the email
+- [ ] **FR-1** Google and GitHub OAuth login; TOTP 2FA
 - [x] **FR-2** Workspaces (personal / team / business); auto-create a personal workspace on sign-up; one user can belong to many
 - [x] **FR-3** Membership with roles (Owner, Admin, Member, Guest); `require_permission` dependency implementing the PRD matrix
 - [x] **FR-4** Invites by email and by link; revoke invites; remove members; change roles; Owner transfer
@@ -224,7 +225,9 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 - [x] Cross-workspace isolation suite (`tests/integration/test_isolation.py`): walks every workspace and organisation route in the OpenAPI schema; an outsider with real IDs gets 404 everywhere, and another workspace's IDs used inside your own workspace get 404; lists show only your own. New routes are covered automatically (a new path parameter fails the suite until it's given a value)
 - [x] Rate limits on sign-up, login, password reset, and verification resend, per IP and per email (`core/ratelimit.py`, sliding window; Redis in production, `PMAGENT_RATE_LIMITS`); client IP from X-Forwarded-For only via `PMAGENT_TRUSTED_PROXIES` (the web app forwards it; in production the web app needs a proxy in front that appends the real address)
 - [x] Emails are sent from background jobs (`QueuedEmailSender`), and a password-reset request does its lookup in a job too, so response time doesn't reveal whether an account exists
-- [x] Real email provider: Sendly (`SendlyEmailSender`, https://developer.sendlyai.com), chosen automatically when its key is set; plain text, click tracking off (links carry tokens), an idempotency key per message, retryable vs permanent errors in the `send_email` job
+- [x] Real email provider: Sendly (`SendlyEmailSender`, https://developer.sendlyai.com), chosen automatically when its key is set; text and HTML, click tracking off (links carry tokens), an idempotency key per message, retryable vs permanent errors in the `send_email` job
+- [x] Email templates (`core/email_templates.py`): one layout for every email (heading, short text, a button with the link also written out, small print), HTML with inline styles plus plain text, everything escaped; verification, password reset, magic link, invites
+- [ ] Email templates, next: the logo and your brand's colours and footer (company address, support contact), a preview page for owners, and the templates for notifications (approvals waiting, PR ready, daily briefing: FR-14)
 - [ ] Per-workspace overrides for the "configurable" Member permissions (approve actions, coding agent, projects)
 
 #### Dependencies needed for the rest of Accounts
@@ -252,8 +255,8 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] Only link accounts by email when the provider reports that email as verified
 
 **Magic-link login**
-- [ ] Depends on **real email sending** above; no other external dependency
-- [ ] New `ActionTokenPurpose.MAGIC_LINK` with a short TTL (about 15 minutes); a web page at `/magic-link` that exchanges the token for a session
+- [x] Depends on **real email sending** above: done (Sendly)
+- [x] `ActionTokenPurpose.MAGIC_LINK` (15 minutes, `PMAGENT_MAGIC_LINK_TTL_MINUTES`); `/magic-link` exchanges the token for a session
 
 **2FA (TOTP) and stored OAuth tokens**
 - [ ] Library: `pyotp`; QR codes rendered in the web app
