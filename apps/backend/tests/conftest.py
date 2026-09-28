@@ -204,7 +204,7 @@ async def db_client(
             await session.close()
 
     # Inline: jobs and runs finish (or pause) before the request that started them returns.
-    app.state.jobs = InlineJobs(JobContext(shared_session, app.state.settings, outbox), JOBS)
+    app.state.jobs = InlineJobs(JobContext(shared_session, app.state.settings, outbox, storage), JOBS)
     app.state.runner = AgentRunner(
         session_factory=shared_session,
         checkpointer=InMemorySaver(),

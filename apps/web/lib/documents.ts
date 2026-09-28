@@ -59,6 +59,8 @@ export function useDocuments(scope: { workspaceId: string; projectId: string } |
         }),
       ),
     enabled: Boolean(scope),
+    // Uploads are converted in the background: check back until they're done.
+    refetchInterval: (query) => ((query.state.data ?? []).some((d) => d.status === "converting") ? 2000 : false),
   });
 }
 

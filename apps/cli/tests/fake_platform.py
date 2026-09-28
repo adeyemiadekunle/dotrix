@@ -43,6 +43,10 @@ class FakePlatform:
         self.streams: list[list[tuple[str, str]]] = []
         self.stream_status = 200  # e.g. 404 for a server without streaming
         self.runs_list: list[dict[str, Any]] = []  # GET .../agent/runs (newest first)
+        # Uploads: without states, converted at once; otherwise each GET of the document applies
+        # the next state (e.g. {"status": "converting"}, then {"status": "ready", ...}).
+        self.documents: list[dict[str, Any]] = []
+        self.document_states: list[dict[str, Any]] = []
         self.stopped: list[str] = []  # runs stopped through .../stop
         self.runs_started: list[dict[str, Any]] = []
         # Workspaces the signed-in person belongs to, and the projects in them.
@@ -109,9 +113,21 @@ class FakePlatform:
             return httpx.Response(201, json=project)
         if path == f"/v1/workspaces/{WS}/projects/{PID}/documents" and method == "POST":
             name = request.content.split(b'filename="', 1)[1].split(b'"', 1)[0].decode()
-            self.put(f"docs/normalized/{name.rsplit('.', 1)[0]}.md", f"imported {name}")
-            return httpx.Response(201, json={"knowledge_path": f"docs/normalized/{name.rsplit('.', 1)[0]}.md",
-                                             "knowledge_version": 1})
+            path = f"docs/normalized/{name.rsplit('.', 1)[0]}.md"
+            doc = {"id": f"doc-{len(self.documents) + 1}", "filename": name, "knowledge_path": path,
+                   "knowledge_version": 0, "status": "converting", "error": None}
+            self.documents.append(doc)
+            if not self.document_states:  # converted straight away
+                self.put(path, f"imported {name}")
+                doc |= {"status": "ready", "knowledge_version": 1}
+            return httpx.Response(201, json=doc)
+        if path.startswith(f"/v1/workspaces/{WS}/projects/{PID}/documents/") and method == "GET":
+            doc = next(d for d in self.documents if d["id"] == path.rsplit("/", 1)[1])
+            if self.document_states:
+                doc |= self.document_states.pop(0)
+                if doc["status"] == "ready":
+                    self.put(doc["knowledge_path"], f"imported {doc['filename']}")
+            return httpx.Response(200, json=doc)
         if path == AGENT + "/architecture-draft" and method == "POST":
             self.runs_started.append(body)
             return httpx.Response(202, json={"id": "run-1", "thread_id": "thread-1", "status": "queued",

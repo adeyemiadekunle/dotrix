@@ -27,6 +27,7 @@ from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner, mark_interrupted_runs
 from .modules.agents.streams import RedisRunStreams
+from .modules.documents.service import mark_interrupted_conversions
 
 API_VERSION = "0.1.0"
 logger = logging.getLogger(__name__)
@@ -56,7 +57,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
                 stack.push_async_callback(redis.aclose)
             app.state.rate_limiter = build_rate_limiter(settings, redis)
-            job_context = JobContext(sessionmaker, settings, build_email_sender(settings.email_backend))
+            job_context = JobContext(
+                sessionmaker, settings, build_email_sender(settings.email_backend), app.state.storage
+            )
             queue, streams, local_jobs = None, None, None
             if settings.jobs == "worker":
                 # Work executes in the worker; the API enqueues it and serves run streams.
@@ -65,6 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             else:
                 # Runs execute in this process, so any cut off by the last shutdown are over.
                 await mark_interrupted_runs(sessionmaker)
+                await mark_interrupted_conversions(sessionmaker)
                 if settings.jobs == "inline":
                     app.state.jobs = InlineJobs(job_context, JOBS)
                 else:

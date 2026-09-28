@@ -4905,7 +4905,7 @@
           "documents"
         ],
         "summary": "Upload Document",
-        "description": "Upload a document. The original is kept in storage, and its content is converted\nto markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents\nread it. Uploading the same filename again adds a new version of that markdown. Adding a\nproject's external docs is setup work: owners and admins.",
+        "description": "Upload a document. The original is kept in storage, and a background job converts\nit to markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents\nread it: the document is `converting` until then (poll it), then `ready` or `failed`.\nUploading the same filename again adds a new version of that markdown. Adding a\nproject's external docs is setup work: owners and admins.",
         "operationId": "upload_document",
         "security": [
           {
@@ -5406,7 +5406,7 @@
           "agents"
         ],
         "summary": "List Runs",
-        "description": "Recent runs, newest first; filter by `thread_id` to read one conversation.",
+        "description": "Recent runs, newest first; filter by `thread_id` to read one conversation, or by `kind`\n(e.g. `briefing` for past daily briefings).",
         "operationId": "list_runs",
         "security": [
           {
@@ -5449,6 +5449,22 @@
                 }
               ],
               "title": "Thread Id"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RunKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
             }
           },
           {
@@ -9040,7 +9056,24 @@
           },
           "knowledge_version": {
             "type": "integer",
-            "title": "Knowledge Version"
+            "title": "Knowledge Version",
+            "description": "The knowledge file version this upload produced; 0 until ready"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DocumentStatus",
+            "description": "`converting` right after upload (a background job makes the markdown), then `ready`, or `failed` with `error`"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Why the conversion failed"
           },
           "uploaded_by_id": {
             "anyOf": [
@@ -9069,10 +9102,20 @@
           "sha256",
           "knowledge_path",
           "knowledge_version",
+          "status",
           "uploaded_by_id",
           "created_at"
         ],
         "title": "DocumentRead"
+      },
+      "DocumentStatus": {
+        "type": "string",
+        "enum": [
+          "converting",
+          "ready",
+          "failed"
+        ],
+        "title": "DocumentStatus"
       },
       "EmailInviteCreate": {
         "properties": {

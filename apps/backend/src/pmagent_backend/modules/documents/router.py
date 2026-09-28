@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 
-from pmagent_backend.api.deps import SessionDep, SettingsDep
+from pmagent_backend.api.deps import JobsDep, SessionDep, SettingsDep
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.core.storage import BlobStorage, get_storage
 from pmagent_backend.modules.projects.deps import ProjectManager, ProjectViewer
@@ -23,9 +23,9 @@ router = APIRouter(
 
 
 def get_document_service(
-    session: SessionDep, storage: Annotated[BlobStorage, Depends(get_storage)]
+    session: SessionDep, storage: Annotated[BlobStorage, Depends(get_storage)], jobs: JobsDep
 ) -> DocumentService:
-    return DocumentService(session, storage)
+    return DocumentService(session, storage, jobs)
 
 
 Documents = Annotated[DocumentService, Depends(get_document_service)]
@@ -38,9 +38,10 @@ async def upload_document(
     settings: SettingsDep,
     file: Annotated[UploadFile, File(description="PDF, DOCX, PPTX, XLSX, XLS, HTML, CSV, JSON, XML, MD, TXT")],
 ) -> DocumentRead:
-    """Upload a document. The original is kept in storage, and its content is converted
-    to markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents
-    read it. Uploading the same filename again adds a new version of that markdown. Adding a
+    """Upload a document. The original is kept in storage, and a background job converts
+    it to markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents
+    read it: the document is `converting` until then (poll it), then `ready` or `failed`.
+    Uploading the same filename again adds a new version of that markdown. Adding a
     project's external docs is setup work: owners and admins."""
     limit = settings.max_upload_mb * 1_000_000
     data = await file.read(limit + 1)  # read one byte past the limit to detect oversize

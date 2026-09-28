@@ -16,6 +16,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -198,17 +199,44 @@ def docs_add(
     if state is not None:
         _, _, client = _linked(project)
         base = f"/workspaces/{state.workspace_id}/projects/{state.project_id}/documents"
+        failed = 0
         for f in files:
             with open(f, "rb") as fh:
                 doc = _platform_call(
                     lambda f=f, fh=fh: client.request("POST", base, files={"file": (os.path.basename(f), fh)})
                 )
-            typer.echo(f"  {f} -> .pmagent/{doc['knowledge_path']} (v{doc['knowledge_version']})")
+            doc = _wait_for_conversion(client, f"{base}/{doc['id']}", doc) if doc.get("id") else doc
+            if doc.get("status", "ready") == "ready":
+                typer.echo(f"  {f} -> .pmagent/{doc['knowledge_path']} (v{doc['knowledge_version']})")
+            elif doc["status"] == "failed":
+                failed += 1
+                typer.secho(f"  {f}: couldn't convert it: {doc.get('error')}", fg=typer.colors.RED)
+            else:
+                typer.secho(f"  {f}: still converting on the platform; `pmagent pull` fetches it later", dim=True)
         _echo_pull(_platform_call(lambda: pull(client, state, config.pmagent_dir)))
+        if failed:
+            raise typer.Exit(1)
         return
     for f in files:
         normalized = ingest_doc(config, f)
         typer.echo(f"  {f} -> .pmagent/{normalized}")
+
+
+CONVERSION_WAIT_SECONDS = 300
+
+
+_sleep = time.sleep  # (tests replace it)
+
+
+def _wait_for_conversion(client: PlatformClient, url: str, doc: dict) -> dict:
+    """The platform converts uploads in the background: wait (a while) until it's done."""
+    delay, waited = 0.5, 0.0
+    while doc.get("status") == "converting" and waited < CONVERSION_WAIT_SECONDS:
+        _sleep(delay)
+        waited += delay
+        delay = min(delay * 1.5, 3.0)
+        doc = _platform_call(lambda: client.get(url))
+    return doc
 
 
 # ---------------------------------------------------------------------------

@@ -1,56 +1,33 @@
 "use client";
 
 import { Button } from "@pmagent/ui/components/button";
-import { ChatBubble, ChatMessage, ChatMessageMeta, ChatNotice } from "@pmagent/ui/components/chat-message";
+import { ChatBubble, ChatMessage, ChatMessageMeta } from "@pmagent/ui/components/chat-message";
 import { ChatScroller } from "@pmagent/ui/components/chat-scroller";
 import { PromptInput, type PromptStatus } from "@pmagent/ui/components/prompt-input";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
-import { BotIcon, CircleAlertIcon, CircleStopIcon, LayersIcon, NewspaperIcon, SparklesIcon } from "lucide-react";
+import { LayersIcon, NewspaperIcon, SparklesIcon } from "lucide-react";
 import { useState } from "react";
 
 import { timeAgo } from "@/components/issues/issue-activity";
-import { Markdown } from "@/components/markdown";
 import {
   isActive,
   runTitle,
   useBriefing,
-  useRunStream,
   useSendMessage,
   useStopRun,
   useThread,
-  wasStopped,
   type Run,
 } from "@/lib/agent";
 import type { Scope } from "@/lib/issues";
 
-import { RunApprovals } from "./approvals";
+import { AgentReply } from "./agent-reply";
 
 const SUGGESTIONS = [
   "What's the state of the project?",
   "What should we build next, and why?",
   "Turn the latest requirements into an epic with stories",
 ];
-
-/** What the PM is doing, while it works: the live activity when there is one. */
-function progressText(run: Run, activity: string | null, writing: boolean): string {
-  if (run.status === "queued") return "Waiting to start…";
-  if (writing) return "Writing…";
-  return activity ? `${activity}…` : "The PM is working on it…";
-}
-
-/** What a run used: "12,340 in / 512 out tokens · model". The API includes it only for
- * owners and admins (null otherwise). */
-function RunUsage({ run }: { run: Run }) {
-  if (isActive(run) || run.input_tokens == null || run.output_tokens == null) return null;
-  if (run.input_tokens === 0 && run.output_tokens === 0) return null;
-  return (
-    <p className="text-muted-foreground text-xs">
-      {run.input_tokens.toLocaleString()} in / {run.output_tokens.toLocaleString()} out tokens
-      {run.model && ` · ${run.model}`}
-    </p>
-  );
-}
 
 /** Who asked, and what: the person's message, or a line for built-in requests. */
 function RunRequest({ run, who }: { run: Run; who: string }) {
@@ -91,32 +68,10 @@ function RunView({
   canDecide: boolean;
 }) {
   const who = run.requested_by_id ? (names.get(run.requested_by_id) ?? "Someone") : "Someone";
-  const active = isActive(run);
-  const live = useRunStream(scope, run.id, active);
-  const decided = run.status === "awaiting_approval" && (run.approvals ?? []).every((a) => a.status !== "pending");
   return (
     <div className="grid gap-3">
       <RunRequest run={run} who={who} />
-      <ChatMessage from="agent" avatar={<BotIcon />}>
-        {active && live.text && <Markdown>{live.text}</Markdown>}
-        {active && <ChatNotice tone="progress">{progressText(run, live.activity, Boolean(live.text))}</ChatNotice>}
-        {wasStopped(run) && <ChatNotice icon={<CircleStopIcon />}>{run.error}.</ChatNotice>}
-        {run.status === "failed" && !wasStopped(run) && (
-          <ChatNotice tone="destructive" icon={<CircleAlertIcon />}>
-            {run.error ?? "The run failed."}
-          </ChatNotice>
-        )}
-        <RunApprovals run={run} scope={scope} canDecide={canDecide} />
-        {decided && <ChatNotice tone="progress">The PM is working on it…</ChatNotice>}
-        {run.reply && <Markdown>{run.reply}</Markdown>}
-        {run.status === "completed" && !run.reply?.trim() && (run.approvals ?? []).length === 0 && (
-          <ChatNotice>
-            The PM finished without a reply. Models occasionally do this; ask again if you expected an answer or a
-            change.
-          </ChatNotice>
-        )}
-        <RunUsage run={run} />
-      </ChatMessage>
+      <AgentReply run={run} scope={scope} canDecide={canDecide} />
     </div>
   );
 }

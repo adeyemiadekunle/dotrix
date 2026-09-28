@@ -495,3 +495,16 @@ async def test_only_owners_and_admins_see_token_usage(
         await db_client.get(f"{base}/agent/runs/{done['id']}", headers={"Authorization": f"Bearer {cy.json()['access_token']}"})
     ).json()
     assert as_admin["input_tokens"] == 150
+
+
+async def test_past_briefings_are_listed_by_kind(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    agent_script.say("Chat answer.", "Briefing one.", "Briefing two.")
+    await run(db_client, base, ada.headers, "What's open?")
+    first = (await db_client.post(f"{base}/agent/briefing", headers=ada.headers)).json()
+    second = (await db_client.post(f"{base}/agent/briefing", headers=ada.headers)).json()
+    briefings = (await db_client.get(f"{base}/agent/runs", params={"kind": "briefing"}, headers=ada.headers)).json()
+    assert [b["id"] for b in briefings] == [second["id"], first["id"]]  # newest first, chats left out
+    assert [b["reply"] for b in briefings] == ["Briefing two.", "Briefing one."]
+    bad = await db_client.get(f"{base}/agent/runs", params={"kind": "nonsense"}, headers=ada.headers)
+    assert bad.status_code == 422
