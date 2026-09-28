@@ -16,14 +16,18 @@ function progressText(run: Run, activity: string | null, writing: boolean): stri
   return activity ? `${activity}…` : "The PM is working on it…";
 }
 
-/** What a run used: "12,340 in / 512 out tokens · model". The API includes it only for
- * owners and admins (null otherwise). */
+/** What a run used: "12,340 in (9,800 cached) / 512 out tokens · 3 model calls · model".
+ * The API includes it only for owners and admins (null otherwise). */
 export function RunUsage({ run }: { run: Run }) {
   if (isActive(run) || run.input_tokens == null || run.output_tokens == null) return null;
   if (run.input_tokens === 0 && run.output_tokens === 0) return null;
+  const cached = run.cached_input_tokens ?? 0;
+  const calls = run.model_calls ?? 0;
   return (
     <p className="text-muted-foreground text-xs">
-      {run.input_tokens.toLocaleString()} in / {run.output_tokens.toLocaleString()} out tokens
+      {run.input_tokens.toLocaleString()} in
+      {cached > 0 && ` (${cached.toLocaleString()} cached)`} / {run.output_tokens.toLocaleString()} out tokens
+      {calls > 0 && ` · ${calls} model call${calls === 1 ? "" : "s"}`}
       {run.model && ` · ${run.model}`}
     </p>
   );

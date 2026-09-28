@@ -329,5 +329,13 @@ def _read(access: ProjectAccess, run: AgentRun) -> AgentRunRead:
     """A run as its viewer may see it: token usage and the model only with usage:view."""
     read = AgentRunRead.model_validate(run)
     if not can(access.member, Permission.VIEW_USAGE):
-        read = read.model_copy(update={"model": None, "input_tokens": None, "output_tokens": None})
+        read = read.model_copy(
+            update={
+                "model": None,
+                "input_tokens": None,
+                "output_tokens": None,
+                "cached_input_tokens": None,
+                "model_calls": None,
+            }
+        )
     return read

@@ -434,7 +434,7 @@ async def test_a_run_records_its_model_and_tokens(project, db_client: AsyncClien
 
     events = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
     completed = next(e for e in events if e["action"] == "agent_run.completed")
-    assert completed["details"] == {"input_tokens": 250, "output_tokens": 30}
+    assert completed["details"] == {"input_tokens": 250, "output_tokens": 30, "cached_input_tokens": 0, "model_calls": 2}
 
 
 async def test_tokens_add_up_across_an_approval(project, db_client: AsyncClient, agent_script) -> None:
@@ -452,9 +452,13 @@ async def test_tokens_add_up_across_an_approval(project, db_client: AsyncClient,
 
     events = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
     waiting = next(e for e in events if e["action"] == "agent_run.awaiting_approval")
-    assert waiting["details"] == {"pending_actions": 1, "input_tokens": 100, "output_tokens": 10}
+    assert waiting["details"] == {
+        "pending_actions": 1, "input_tokens": 100, "output_tokens": 10, "cached_input_tokens": 0, "model_calls": 1,
+    }
     completed = next(e for e in events if e["action"] == "agent_run.completed")
-    assert completed["details"] == {"input_tokens": 120, "output_tokens": 5}  # this step's tokens
+    assert completed["details"] == {  # this step's tokens
+        "input_tokens": 120, "output_tokens": 5, "cached_input_tokens": 0, "model_calls": 1,
+    }
 
 
 async def test_subagent_calls_are_counted(project, db_client: AsyncClient, agent_script) -> None:

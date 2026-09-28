@@ -83,6 +83,15 @@ class AgentRunRead(BaseModel):
         description="Output tokens over every model call of the run, subagents included. "
         "Owners and admins only (null otherwise)",
     )
+    cached_input_tokens: int | None = Field(
+        default=None,
+        description="Of the input tokens, how many the provider served from its prompt cache (cheaper). "
+        "Owners and admins only (null otherwise)",
+    )
+    model_calls: int | None = Field(
+        default=None,
+        description="Model calls the run made (each re-sends the prompt). Owners and admins only (null otherwise)",
+    )
     created_at: datetime
     updated_at: datetime
     finished_at: datetime | None

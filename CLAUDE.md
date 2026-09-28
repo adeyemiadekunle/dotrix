@@ -200,7 +200,13 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
   Aim for a few thousand tokens. Specialists get the same pack.
 
   Built in `modules/agents/context.py` and appended after the fixed instructions (`build_team(context=…)`), capped at ~6,000 tokens. Measured on the dev project's briefing: 160,290 → 81,613 input tokens; the rest is the prompt re-sent on every tool step, which the steps below target.
-- [ ] **Prompt caching:** order the system prompt from stable to changing (rules and instructions, then the context pack, then the conversation); mark the cache breakpoint for Anthropic (`cache_control`), rely on implicit caching for Gemini and OpenAI, and record cache hits with token usage
+- [x] **Prompt caching:**
+  - the system prompt runs from stable to changing: rules and instructions, then the context pack (project, current state, the documents index, decisions, the board, and what changed last), then the conversation
+  - the documents index is capped (`INDEX_CHARS`) so the sections after it always fit
+  - Anthropic: deepagents' `AnthropicPromptCachingMiddleware` marks the breakpoint. Gemini and OpenAI cache implicitly
+  - runs record `cached_input_tokens` and `model_calls` next to the token counts; owners and admins see them under each reply
+  - measured on Gemini 3.8 Flash: implicit caching hits only on long prompts (a 19.5k prompt got 16.4k cached; 6.6k and 13.9k prompts got none). Our runs are now ~7k tokens per call, so they rarely hit. The saving is in fewer, smaller calls; `model_calls` shows where (a first briefing: 6 calls, 47k tokens; the next: 3 calls, 21k)
+  - [ ] explicit Gemini caching (`CachedContent` for the instructions and context pack) if prompts grow again; it charges for storage, so only worth it for long, repeated prefixes
 - [ ] **Reading less:**
   - `read_file` answers "unchanged since you read it (version N)" when the thread already has that version
   - an outline tool and `read_section(path, heading)` for large documents
@@ -227,7 +233,7 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 - [ ] **Long conversations:** summarise older turns once a thread passes a token threshold (LangChain's summarization middleware), keeping recent turns verbatim
 - [x] **Briefings from data:**
   - the platform computes what changed since the last briefing (issues moved, documents changed, decisions, blockers, due dates); the model only narrates it and reads files when something needs explaining
-  - target: under 15,000 tokens. Done in `context.py` `_since_last_briefing` (a briefing's context pack says what was created, done, newly blocked, moved, and discussed on the board; documents changed with who and why; what waits for approval; whether `current-state.md` fell behind), and the briefing prompt writes from it without asking the specialists. Measured on the dev project: 160,290 → 81,613 (context pack) → 24,706 input tokens; prompt caching should close the rest
+  - target: under 15,000 tokens. Done in `context.py` `_since_last_briefing` (a briefing's context pack says what was created, done, newly blocked, moved, and discussed on the board; documents changed with who and why; what waits for approval; whether `current-state.md` fell behind), and the briefing prompt writes from it without asking the specialists. Measured on the dev project: 160,290 → 81,613 (context pack) → 24,706 input tokens; the rest is fewer model calls (Budgets and visibility below)
 - [ ] **Budgets and visibility:**
   - a per-run token budget (stop and say so, rather than overspend)
   - per-tool token counts and the files read, shown to owners and admins under a run

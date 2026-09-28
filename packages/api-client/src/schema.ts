@@ -1741,6 +1741,16 @@ export interface components {
              */
             output_tokens?: number | null;
             /**
+             * Cached Input Tokens
+             * @description Of the input tokens, how many the provider served from its prompt cache (cheaper). Owners and admins only (null otherwise)
+             */
+            cached_input_tokens?: number | null;
+            /**
+             * Model Calls
+             * @description Model calls the run made (each re-sends the prompt). Owners and admins only (null otherwise)
+             */
+            model_calls?: number | null;
+            /**
              * Created At
              * Format: date-time
              */

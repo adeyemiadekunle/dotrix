@@ -8383,6 +8383,30 @@
             "title": "Output Tokens",
             "description": "Output tokens over every model call of the run, subagents included. Owners and admins only (null otherwise)"
           },
+          "cached_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached Input Tokens",
+            "description": "Of the input tokens, how many the provider served from its prompt cache (cheaper). Owners and admins only (null otherwise)"
+          },
+          "model_calls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Calls",
+            "description": "Model calls the run made (each re-sends the prompt). Owners and admins only (null otherwise)"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",

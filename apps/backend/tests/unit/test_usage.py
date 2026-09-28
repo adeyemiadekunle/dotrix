@@ -24,14 +24,14 @@ def test_adds_up_every_generation() -> None:
         )
     )
     counter.on_llm_end(LLMResult(generations=[[ChatGeneration(message=AIMessage(content="c", usage_metadata=usage(1, 2)))]]))
-    assert counter.details() == {"input_tokens": 16, "output_tokens": 5}
+    assert counter.details() == {"input_tokens": 16, "output_tokens": 5, "cached_input_tokens": 0, "model_calls": 2}
 
 
 def test_take_starts_again_from_zero() -> None:
     counter = TokenUsage()
     counter.on_llm_end(LLMResult(generations=[[ChatGeneration(message=AIMessage(content="a", usage_metadata=usage(7, 2)))]]))
-    assert counter.take() == {"input_tokens": 7, "output_tokens": 2}
-    assert counter.details() == {"input_tokens": 0, "output_tokens": 0}
+    assert counter.take() == {"input_tokens": 7, "output_tokens": 2, "cached_input_tokens": 0, "model_calls": 1}
+    assert counter.details() == {"input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0, "model_calls": 0}
 
 
 async def test_streamed_calls_are_counted_once() -> None:
@@ -47,4 +47,12 @@ async def test_streamed_calls_are_counted_once() -> None:
     for _ in range(4):
         async for _chunk in model.astream("hi", config={"callbacks": [counter]}):
             pass
-    assert counter.details() == {"input_tokens": 38, "output_tokens": 7}
+    assert counter.details() == {"input_tokens": 38, "output_tokens": 7, "cached_input_tokens": 0, "model_calls": 4}
+
+
+def test_cached_input_tokens_are_counted() -> None:
+    counter = TokenUsage()
+    cached = usage(1_000, 50) | {"input_token_details": {"cache_read": 800}}
+    counter.on_llm_end(LLMResult(generations=[[ChatGeneration(message=AIMessage(content="a", usage_metadata=cached))]]))
+    counter.on_llm_end(LLMResult(generations=[[ChatGeneration(message=AIMessage(content="b", usage_metadata=usage(200, 5)))]]))
+    assert counter.details() == {"input_tokens": 1_200, "output_tokens": 55, "cached_input_tokens": 800, "model_calls": 2}

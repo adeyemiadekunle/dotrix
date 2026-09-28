@@ -26,7 +26,7 @@ from pmagent_backend.modules.projects.models import Project
 
 from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 
-MAX_CHARS = 24_000  # ~6,000 tokens
+INDEX_CHARS = 14_000  # the documents list's share of the pack (~3,500 tokens)
 EXCERPT_CHARS = 1_500
 MAX_LISTED = 10
 DUE_SOON = timedelta(days=7)
@@ -71,14 +71,17 @@ async def build_context_pack(session: AsyncSession, project: Project, run: Agent
         if run is not None and run.kind is RunKind.BRIEFING
         else await _changes(session, project, run)
     )
-    parts += [changes, await _board(session, project), _decisions(files), _index(files)]
+    # Most stable first, most changeable last: providers cache the longest identical opening
+    # of a prompt, so the documents index (changes only when documents do) comes before the
+    # board, and what changed since last time comes at the very end.
+    parts += [_index(files), _decisions(files), await _board(session, project), changes]
     pack = "\n\n".join(p for p in parts if p)
-    if len(pack) > MAX_CHARS:
-        pack = pack[:MAX_CHARS].rsplit("\n", 1)[0] + "\n…(the rest of the index is left out; use ls or glob)"
     return pack
 
 
 def _index(files: list[KnowledgeFile]) -> str:
+    """Every document with what it's about, grouped by folder. Capped (INDEX_CHARS) so the
+    sections after it always fit; the rest is named by folder for `ls` / `glob`."""
     listed = sorted((f for f in files if not f.path.startswith(_NOT_INDEXED)), key=lambda f: f.path)
     if not listed:
         return ""
@@ -87,8 +90,16 @@ def _index(files: list[KnowledgeFile]) -> str:
         folder = f.path.split("/", 1)[0] + "/" if "/" in f.path else "(top level)"
         groups[folder].append(f"- {f.path}: **{f.title}**: {f.summary} (v{f.version}, {_day(f.updated_at)})")
     lines = [f"## Documents ({len(listed)})"]
+    used, left_out = len(lines[0]), 0
     for folder in sorted(groups, key=lambda g: (g != "(top level)", g)):
-        lines += [f"### {folder}", *groups[folder]]
+        for line in [f"### {folder}", *groups[folder]]:
+            if used + len(line) > INDEX_CHARS:
+                left_out += 0 if line.startswith("### ") else 1
+                continue
+            lines.append(line)
+            used += len(line) + 1
+    if left_out:
+        lines.append(f"…and {left_out} more documents left out of this list; use ls or glob to see them.")
     return "\n".join(lines)
 
 
