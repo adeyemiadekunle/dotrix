@@ -48,8 +48,18 @@ class Settings(DatabaseSettings):
 
     # Base URL of the web app, used to build links in emails.
     app_url: str = "http://localhost:3000"
-    # "console" logs emails (development only); real providers come later.
-    email_backend: str = "console"
+    # Outgoing email: "console" logs it (development only; links carry tokens), "sendly" sends
+    # it through Sendly (https://developer.sendlyai.com). Unset: Sendly when its key is set.
+    email_backend: Literal["console", "sendly"] | None = None
+    # The From address, e.g. "pmagent <no-reply@yourdomain.com>", on a domain verified with the
+    # provider. Unset: the provider account's default (Sendly's shared address with a test key).
+    email_from: str | None = None
+    # Sendly API key: sk_test_… (validates and logs, never delivers) or sk_live_…
+    sendly_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PMAGENT_SENDLY_API_KEY", "SENDLY_API_KEY", "SENDLY_EMAIL"),
+    )
+    sendly_api_url: str = "https://api.sendlyai.com"
 
     # Object storage for document originals: any S3-compatible store (MinIO locally).
     # Leave the endpoint and keys unset to run without uploads (they answer 503).
@@ -91,6 +101,10 @@ class Settings(DatabaseSettings):
 
     @model_validator(mode="after")
     def _safe_for_production(self) -> Settings:
+        if self.email_backend is None:
+            self.email_backend = "sendly" if self.sendly_api_key else "console"
+        if self.email_backend == "sendly" and not self.sendly_api_key:
+            raise ValueError("email_backend=sendly needs PMAGENT_SENDLY_API_KEY")
         if self.env == "production" and self.email_backend == "console":
             raise ValueError("email_backend=console logs tokens; not allowed in production")
         if self.env == "production" and self.rate_limits != "redis":

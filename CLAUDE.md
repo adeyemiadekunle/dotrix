@@ -224,7 +224,7 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 - [x] Cross-workspace isolation suite (`tests/integration/test_isolation.py`): walks every workspace and organisation route in the OpenAPI schema; an outsider with real IDs gets 404 everywhere, and another workspace's IDs used inside your own workspace get 404; lists show only your own. New routes are covered automatically (a new path parameter fails the suite until it's given a value)
 - [x] Rate limits on sign-up, login, password reset, and verification resend, per IP and per email (`core/ratelimit.py`, sliding window; Redis in production, `PMAGENT_RATE_LIMITS`); client IP from X-Forwarded-For only via `PMAGENT_TRUSTED_PROXIES` (the web app forwards it; in production the web app needs a proxy in front that appends the real address)
 - [x] Emails are sent from background jobs (`QueuedEmailSender`), and a password-reset request does its lookup in a job too, so response time doesn't reveal whether an account exists
-- [ ] Real email provider (e.g. SES / Postmark / Resend) behind `EmailSender`
+- [x] Real email provider: Sendly (`SendlyEmailSender`, https://developer.sendlyai.com), chosen automatically when its key is set; plain text, click tracking off (links carry tokens), an idempotency key per message, retryable vs permanent errors in the `send_email` job
 - [ ] Per-workspace overrides for the "configurable" Member permissions (approve actions, coding agent, projects)
 
 #### Dependencies needed for the rest of Accounts
@@ -232,11 +232,12 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 External accounts, keys, and config have to exist before these items can be built and tested for real. Items marked **(you)** need the project owner to create an account or register an app. Put every secret in `.env` only, never in code. Add a `change-me` placeholder to `.env.example`.
 
 **Real email sending**: blocks verification and reset emails reaching inboxes, magic links, invites, and notifications.
-- [ ] **(you)** Pick a provider (Resend, Postmark, or AWS SES) and create an account
-- [ ] **(you)** Own a sending domain and add its DNS records: SPF, DKIM, DMARC (the provider gives the values)
-- [ ] **(you)** Create a sending API key → `PMAGENT_EMAIL_API_KEY`; choose a from-address → `PMAGENT_EMAIL_FROM`
+- [x] **(you)** Pick a provider and create an account: Sendly
+- [ ] **(you)** Own a sending domain, add it in Sendly under Domains, and publish the records it gives (DKIM and SPF required, return path recommended, DMARC optional)
+- [x] **(you)** A test API key (`sk_test_…`: validated and logged, never delivered) in `.env` (`PMAGENT_SENDLY_API_KEY`; `SENDLY_Email` is read too)
+- [ ] **(you)** For real delivery: a live key (`sk_live_…`, scope `messages:send`) and a from-address on the verified domain → `PMAGENT_EMAIL_FROM`
 - [x] Background job runner so emails send outside the request (`PMAGENT_JOBS=worker`: arq on Redis, retried with backoff)
-- [ ] Provider `EmailSender` implementation, selected by `PMAGENT_EMAIL_BACKEND`
+- [x] Provider `EmailSender` implementation, selected by `PMAGENT_EMAIL_BACKEND` (default: Sendly when its key is set, else console)
 
 **Google login**
 - [ ] **(you)** Google Cloud project → OAuth consent screen (scopes: `openid email profile`) → OAuth client ID of type "Web application"

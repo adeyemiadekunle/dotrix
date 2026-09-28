@@ -58,7 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 stack.push_async_callback(redis.aclose)
             app.state.rate_limiter = build_rate_limiter(settings, redis)
             job_context = JobContext(
-                sessionmaker, settings, build_email_sender(settings.email_backend), app.state.storage
+                sessionmaker, settings, build_email_sender(settings), app.state.storage
             )
             queue, streams, local_jobs = None, None, None
             if settings.jobs == "worker":
@@ -109,7 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     # Replaced in lifespan by a sender that queues each email as a job; until then (and in
     # tests that don't run the lifespan) emails go straight to the provider.
-    app.state.email_sender = build_email_sender(settings.email_backend)
+    app.state.email_sender = build_email_sender(settings)
     app.state.rate_limiter = build_rate_limiter(settings, None)
     app.state.storage = build_storage(settings)
     app.add_middleware(
