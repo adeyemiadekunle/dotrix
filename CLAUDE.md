@@ -175,6 +175,73 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
 - If the dev server starts 404ing routes that exist (typically after a `git switch` rewrote files under it), stop it and delete `apps/web/.next`.
 - The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@pmagent/ui/lib/utils` and `@/hooks/…` → `@pmagent/ui/hooks/…`.
 
+## Plan: the core loop (product review, 2026-09-28)
+
+The aim: track a software project's issues and features with agents, brainstorm new ideas, and keep the project's documents written and up to date by agents. Owners and admins create and change documents; members (including designers) chat and brainstorm without changing files; Claude Code or Codex do the coding. This plan comes before the older TODO lists below: work phase by phase. Each phase is usable on its own.
+
+**Stop extending for now:** organisations, the calendar feed, the CLI's local engine (keep it working, no new features), and the desktop app. They're built or planned, but none of them moves the core loop forward.
+
+### Phase 1: roles match the product (small)
+- [ ] Members lose `EDIT_KNOWLEDGE` and `APPROVE_ACTIONS` by default (today they can edit documents and approve their own agent changes); a per-workspace switch turns them back on for teams that want it (the PRD's "configurable")
+- [ ] A member's request that would change something pauses as usual and waits for an owner or admin; the chat says so ("an owner or admin will review this") instead of offering buttons the member can't use
+- [ ] Web: hide edit controls in Knowledge for members; tests for the matrix, the chat wording, and that a member can't approve
+
+### Phase 2: agent context (stop re-reading everything)
+Today every run starts cold: the PM gets its instructions and agent rules, then discovers everything with tools (list folders, read files, read the board), and each specialist starts from zero inside `task`. A briefing read ~160,000 input tokens. The fix is to give agents a small, accurate map up front, cache what doesn't change, and let them read only what they need.
+- [ ] **File summaries in the knowledge store:** each version gets a title, a one- or two-line summary, and a heading outline, kept up to date on every write (a background job; headings and the first paragraph without a model, a cheap model for the summary line). A knowledge index lists every file with them.
+- [ ] **A project context pack at the start of every run, built by the platform (no model):**
+  - `project.md` (trimmed)
+  - `current-state.md`
+  - the knowledge index (path, title, summary, version, last changed)
+  - a board snapshot (counts by status; in-progress, blocked, and due-soon issues with keys and titles)
+  - recent decisions (ADR titles)
+  - what changed since this thread's last run
+  
+  Aim for a few thousand tokens. Specialists get the same pack.
+- [ ] **Prompt caching:** order the system prompt from stable to changing (rules and instructions, then the context pack, then the conversation); mark the cache breakpoint for Anthropic (`cache_control`), rely on implicit caching for Gemini and OpenAI, and record cache hits with token usage
+- [ ] **Reading less:**
+  - `read_file` answers "unchanged since you read it (version N)" when the thread already has that version
+  - an outline tool and `read_section(path, heading)` for large documents
+  - `search_knowledge(query)` over documents and issues (Postgres full-text search with snippets first; embeddings with pgvector later if needed)
+- [ ] **Delegation that doesn't start from zero:** the PM hands specialists the relevant paths and excerpts with the task, and specialists return findings, not whole files
+- [ ] **Long conversations:** summarise older turns once a thread passes a token threshold (LangChain's summarization middleware), keeping recent turns verbatim
+- [ ] **Briefings from data:**
+  - the platform computes what changed since the last briefing (issues moved, documents changed, decisions, blockers, due dates); the model only narrates it and reads files when something needs explaining
+  - target: under 15,000 tokens
+- [ ] **Budgets and visibility:**
+  - a per-run token budget (stop and say so, rather than overspend)
+  - per-tool token counts and the files read, shown to owners and admins under a run
+  - a cheaper model option for specialists and summaries
+
+### Phase 3: brainstorm → project → documents
+- [ ] **Ideas:** brainstorming conversations in a workspace before any project exists (the PM and specialists, no files to change); members can start and join them
+- [ ] **"Start a project from this idea"** (owners and admins): creates the project and drafts `project.md`, vision, requirements, roadmap, and the first epics and stories from the conversation, as one batch of changes to review and approve
+- [ ] **Promote from chat:** turn an answer or a whole conversation into a document, a decision (ADR), or issues, with the conversation linked as its source
+- [ ] **Document templates per folder** (requirements, ADR, research note, design brief) the agents follow, editable in `agent-rules/`
+- [ ] **Keep documents current:** after approved changes, the PM proposes the matching `current-state.md` / roadmap updates (as changes to approve), and briefings flag documents that have gone stale
+
+### Phase 4: notifications (email now works)
+- [ ] Email approvers when changes wait for them, and the requester when their request was decided (with the reason on a rejection); batch per run, not per change
+- [ ] @mentions in comments and chat notify the person; watchers get issue changes (FR-33)
+- [ ] Per-person settings (immediately, daily digest, or off); the daily briefing by email (opt-in)
+- [ ] Slack later (FR-14)
+
+### Phase 5: coding with Claude Code and Codex (don't build our own coding agent)
+- [ ] **(you)** Register the GitHub App (repo contents and pull requests read/write, issues read, webhooks); see "GitHub login" below, one app does both
+- [ ] Connect a project's repository; list and link repos
+- [ ] **"Start coding" on an issue:** a hand-off brief (the issue, acceptance criteria, linked requirements and architecture excerpts) sent to Claude Code (its GitHub integration) or Codex (cloud tasks), plus the existing MCP route for people running them locally
+- [ ] **PRs back on the board:** webhooks link PRs to issues (by key in the branch or title), move issues to `review`, and show checks; only a person moves an issue to `done`
+- [ ] **Guardrails** (FR-26): never push to the default branch, merge, or deploy; reject PRs that contain `.pmagent/`
+- [ ] **Reviewer agent** on every agent PR (FR-22): the report to `reviews/`, a PR comment, and bugs proposed for critical findings
+
+### Phase 6: design (UI/UX designers)
+- [ ] A `design/` folder in the project layout (design briefs, decisions, links to Figma files and frames) with a design brief template; designers stay members (chat, propose; owners and admins approve)
+- [ ] **Figma connector:**
+  - OAuth per person, read-only first: files, pages and frame names, thumbnails, comments
+  - link frames to issues, and show them in the issue drawer
+  - encrypted token storage (see "2FA (TOTP) and stored OAuth tokens")
+- [ ] A design review: the PM or a design specialist compares linked frames and comments with the requirements and lists gaps (read-only; changes proposed as usual)
+
 ## TODO: web (build order)
 
 - [x] Shell: sign-in via httpOnly-cookie session and API proxy, auth pages, sidebar with workspace switcher (including workspaces seen through an organisation), create workspace/project, settings (profile, appearance, devices and tokens)
