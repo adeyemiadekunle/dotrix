@@ -416,6 +416,8 @@ async def mark_interrupted_runs(session_factory: SessionFactory) -> None:
 def _add_tokens(run: AgentRun, tokens: dict[str, int]) -> None:
     run.input_tokens = (run.input_tokens or 0) + tokens["input_tokens"]
     run.output_tokens = (run.output_tokens or 0) + tokens["output_tokens"]
+    run.cached_input_tokens = (run.cached_input_tokens or 0) + tokens["cached_input_tokens"]
+    run.model_calls = (run.model_calls or 0) + tokens["model_calls"]
 
 
 def _preview(action: dict, files: dict[str, str]) -> tuple[str | None, str | None]:

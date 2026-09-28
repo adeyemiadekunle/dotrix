@@ -129,8 +129,10 @@ async def test_the_pack_stays_small(project, db_client: AsyncClient, agent_scrip
     model = agent_script.say("ok")
     await db_client.post(f"{base}/agent/runs", json={"message": "Hi"}, headers=ada.headers)
     pack = system_prompt(model).split("# Project context", 1)[1]
-    assert len(pack) <= 24_100
-    assert pack.rstrip().endswith("use ls or glob)")
+    index = pack.split("## Documents", 1)[1].split("\n## ", 1)[0]
+    assert len(index) <= 14_200  # the documents list is capped...
+    assert "more documents left out of this list; use ls or glob to see them." in index
+    assert "## Board" in pack  # ...so what comes after it always fits
 
 
 async def test_a_briefing_hears_what_happened_since_the_last_one(project, db_client: AsyncClient, agent_script) -> None:
