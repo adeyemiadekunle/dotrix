@@ -101,7 +101,7 @@ apps/backend/
 - **Schemas:** Pydantic v2 schemas are separate from ORM models. Keep `XCreate`, `XUpdate` and `XRead` separate, and never return ORM objects directly.
 - **Database:** SQLAlchemy 2.0 async with asyncpg. Every schema change is an Alembic migration; register new models in `db/models.py` and CI's `alembic check` fails if a migration is missing.
 - **Transactions:** sessions never auto-commit. Services call `await session.commit()` once per unit of work.
-- **Tests:** integration tests need Postgres (`pnpm db:up`). They run in a rolled-back transaction per test, against a `pmagent_test` database that is recreated each run.
+- **Tests:** integration tests need Postgres (`pnpm db:up`). They run in a rolled-back transaction per test, against a database of their own (`pmagent_test_<random>`, dropped at the end), so test runs in different checkouts can run at the same time.
 - **Tenancy:** every workspace-owned table has `workspace_id`, and repositories require it as an argument.
 - **IDs:** UUIDv7 primary keys. Human keys like `KUN-42` are separate columns, unique per project.
 - **Permissions:** declared on the route with `require_permission(Permission.X)` (`modules/workspaces/permissions.py` holds the PRD matrix). Never check roles inline. Non-members get 404, not 403, so IDs can't be probed.
