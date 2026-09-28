@@ -5,7 +5,7 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from .core.email import EmailMessage
+from .core.email import EmailMessage, EmailSendError
 from .core.jobs import JobContext, JobFunction
 from .modules.api_tokens.repository import DeviceAuthorizationRepository
 from .modules.auth.repository import ActionTokenRepository, RefreshTokenRepository
@@ -22,7 +22,13 @@ CLEANUP_INTERVAL_SECONDS = 3600
 
 
 async def send_email(ctx: JobContext, *, to: str, subject: str, body: str) -> None:
-    await ctx.email.send(EmailMessage(to=to, subject=subject, body=body))
+    try:
+        await ctx.email.send(EmailMessage(to=to, subject=subject, body=body))
+    except EmailSendError as exc:
+        if exc.retryable:
+            raise  # the worker tries again later
+        # Retrying won't help (a rejected address, a bad key): record it and move on.
+        logger.error("email not sent (%s): subject=%r: %s", exc.status, subject, exc.detail)
 
 
 async def send_password_reset(ctx: JobContext, *, email: str) -> None:

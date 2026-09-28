@@ -47,7 +47,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     engine = ctx["engine"] = create_engine(settings.database_url, echo=settings.database_echo)
     redis = ctx["redis"]
     sessionmaker = create_sessionmaker(engine)
-    ctx["jobs"] = JobContext(sessionmaker, settings, build_email_sender(settings.email_backend), build_storage(settings))
+    ctx["jobs"] = JobContext(sessionmaker, settings, build_email_sender(settings), build_storage(settings))
     ctx["runner"] = AgentRunner(
         session_factory=sessionmaker,
         checkpointer=await open_checkpointer(settings.database_url, stack),
