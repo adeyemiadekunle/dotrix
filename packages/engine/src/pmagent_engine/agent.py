@@ -26,6 +26,7 @@ from deepagents.backends import CompositeBackend, StateBackend
 from . import tasks as T
 from .backend import LockingFilesystemBackend
 from .config import ProjectConfig
+from .context_middleware import UnchangedReads, summarization
 
 # Tools that change task state, gated exactly like write_file/edit_file.
 TASK_WRITE_TOOLS = ("create_task", "update_task", "comment_task")
@@ -133,6 +134,7 @@ def _subagents(
     web_search: dict | None,
     rules: dict[str, str] | None = None,
     context: str | None = None,
+    knowledge_tools: list | None = None,
 ) -> list[dict]:
     def role(title: str, body: str) -> str:
         prompt = f"You are the {title} for {project_name}.\n{body}"
@@ -155,7 +157,7 @@ def _subagents(
                 "criteria, priority, dependencies) in your reply. The PM creates them. "
                 "Never write application code."
             )),
-            "tools": list(read_task_tools),
+            "tools": [*read_task_tools, *(knowledge_tools or [])],
         },
         {
             "name": "architecture-agent",
@@ -165,7 +167,7 @@ def _subagents(
                 "proposed change, name every existing module/entity it touches. "
                 "Never write application code."
             )),
-            "tools": list(read_task_tools),
+            "tools": [*read_task_tools, *(knowledge_tools or [])],
         },
         {
             "name": "research-agent",
@@ -174,7 +176,7 @@ def _subagents(
                 "Investigate using web search. Clearly separate verified facts "
                 "(with sources) from assumptions. Write findings under /pmagent/research/."
             )),
-            "tools": [web_search] if web_search else [],
+            "tools": [*(knowledge_tools or []), *([web_search] if web_search else [])],
         },
         {
             "name": "reviewer-agent",
@@ -190,7 +192,7 @@ def _subagents(
                 "specific changes. You cannot write anything; report findings "
                 "in your reply."
             )),
-            "tools": list(read_task_tools),
+            "tools": [*read_task_tools, *(knowledge_tools or [])],
             # Structurally read-only: every filesystem write is denied.
             "permissions": [FilesystemPermission(operations=["write"], paths=["/**"], mode="deny")],
         },
@@ -204,7 +206,7 @@ def _subagents(
                 "with: Decision, Reason, Date, Affected modules, Status. Never "
                 "edit /pmagent/tasks/ files directly."
             )),
-            "tools": list(read_task_tools),
+            "tools": [*read_task_tools, *(knowledge_tools or [])],
         },
     ]
 
@@ -293,6 +295,9 @@ def build_team(
     board_instructions: str | None = None,
     subagent_task_tools: list | None = None,
     context: str | None = None,
+    knowledge_tools: list | None = None,
+    specialist_model: Any = None,
+    summarize_after_tokens: int | None = None,
 ):
     """The Project Manager plus five thinking subagents, over any storage backend.
 
@@ -304,6 +309,9 @@ def build_team(
     CLI's task files). `subagent_task_tools` are extra board tools the specialists
     get (e.g. opening their own issue types); they're gated like every write. `context` is the
     run's project context pack (the platform builds it): the PM and every specialist get it.
+    `knowledge_tools` are extra read-only tools for everyone (outline, sections, search).
+    `specialist_model` runs the specialists and conversation summaries (a cheaper model);
+    `summarize_after_tokens` sets when a long conversation's older turns are summarised.
     """
     read_task_tools, write_task_tools = task_tools or ([], [])
     if board_instructions is not None:
@@ -361,13 +369,39 @@ blockers, and documentation status. A briefing never writes.
         **{tool.__name__: _APPROVAL for tool in write_task_tools},
     }
 
+    summary_model = specialist_model or model
+
+    def middleware() -> list[Any]:
+        """Fresh instances for each agent: files already read, and when to summarise."""
+        extra: list[Any] = [UnchangedReads()]
+        if summarize_after_tokens:
+            extra.append(summarization(summary_model, backend, summarize_after_tokens))
+        return extra
+
+    subagents = _subagents(
+        project_name,
+        [*read_task_tools, *(subagent_task_tools or [])],
+        web_search,
+        rules,
+        context,
+        knowledge_tools,
+    )
+    for spec in subagents:
+        spec["middleware"] = middleware()
+        if specialist_model is not None:
+            spec["model"] = specialist_model
+
     return create_deep_agent(
         model=model,
-        tools=[*read_task_tools, *write_task_tools, *([web_search] if web_search else [])],
+        tools=[
+            *read_task_tools,
+            *write_task_tools,
+            *(knowledge_tools or []),
+            *([web_search] if web_search else []),
+        ],
         system_prompt=_with_context(_with_rules(rules, PM_ROLE, pm_instructions), context),
-        subagents=_subagents(
-            project_name, [*read_task_tools, *(subagent_task_tools or [])], web_search, rules, context
-        ),
+        subagents=subagents,
+        middleware=middleware(),
         backend=backend,
         checkpointer=checkpointer,
         interrupt_on=interrupt_on,

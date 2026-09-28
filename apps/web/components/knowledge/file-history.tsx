@@ -10,21 +10,7 @@ import { DiffView } from "@/components/agent/approvals";
 import { timeAgo } from "@/components/issues/issue-activity";
 import type { Scope } from "@/lib/issues";
 import { useRestoreVersion, useVersionDiff, useVersions, type VersionEntry } from "@/lib/knowledge";
-
-const AGENT_NAMES: Record<string, string> = {
-  "project-manager": "PM agent",
-  product: "Product agent",
-  architecture: "Architecture agent",
-  research: "Research agent",
-  reviewer: "Reviewer agent",
-  documentation: "Documentation agent",
-  coding: "Coding agent",
-};
-
-function agentName(agent: string | null): string {
-  const key = agent?.replace(/-agent$/, "") ?? "";
-  return AGENT_NAMES[key] ?? AGENT_NAMES[agent ?? ""] ?? (agent ? `${agent} agent` : "An agent");
-}
+import { agentName } from "@/lib/labels";
 
 /** Who wrote a version, and for agent writes, who asked and who approved. */
 export function authorship(v: VersionEntry, names: Map<string, string>): { who: string; agent: boolean; detail?: string } {

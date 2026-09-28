@@ -160,15 +160,21 @@ class AgentScript:
 
     def __init__(self) -> None:
         self.model: ScriptedChatModel | None = None
+        self.specialist: ScriptedChatModel | None = None
 
     def say(self, *replies: object) -> ScriptedChatModel:
         self.model = ScriptedChatModel.of(*replies)  # type: ignore[arg-type]
         return self.model
 
+    def specialists_say(self, *replies: object) -> ScriptedChatModel:
+        """A separate (cheaper) model for the specialists and summaries."""
+        self.specialist = ScriptedChatModel.of(*replies)  # type: ignore[arg-type]
+        return self.specialist
+
     def factory(self, project: object) -> ModelChoice:
         if self.model is None:
             raise ModelUnavailable("No API key for the test model")
-        return ModelChoice(model=self.model, web_search=None)
+        return ModelChoice(model=self.model, web_search=None, specialist_model=self.specialist)
 
 
 @pytest.fixture

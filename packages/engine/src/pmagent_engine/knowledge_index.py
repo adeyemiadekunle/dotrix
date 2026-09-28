@@ -96,3 +96,60 @@ def describe(path: str, content: str) -> Description:
         summary=_shorten(prose, MAX_SUMMARY) if prose else "(empty)",
         outline=outline,
     )
+
+
+@dataclass(frozen=True)
+class Section:
+    """One heading's part of a document: from the heading to the next heading of the same or a
+    higher level (so an H2 section includes its H3s). The text before the first heading is a
+    section with no heading."""
+
+    heading: str | None  # "## Goals", or None for the text before the first heading
+    level: int  # 1-6; 0 for the text before the first heading
+    trail: str  # the headings above it and its own, e.g. "Product requirements > Goals > Later"
+    start_line: int  # 1-based, the heading's line
+    end_line: int  # inclusive
+    text: str
+
+
+def sections(content: str) -> list[Section]:
+    """Every section of a Markdown document, in order (headings inside code blocks don't count)."""
+    lines = content.replace("\r\n", "\n").split("\n")
+    heads: list[tuple[int, int, str]] = []  # (line index, level, words)
+    in_code = False
+    for index, raw in enumerate(lines):
+        if raw.lstrip().startswith(("```", "~~~")):
+            in_code = not in_code
+            continue
+        if not in_code and (match := _HEADING.match(raw.rstrip())):
+            heads.append((index, len(match.group(1)), _plain(match.group(2))))
+    found: list[Section] = []
+    if not heads or heads[0][0] > 0:
+        end = heads[0][0] if heads else len(lines)
+        text = "\n".join(lines[:end]).strip("\n")
+        if text.strip():
+            found.append(Section(None, 0, "", 1, end, text))
+    stack: list[tuple[int, str]] = []
+    for position, (index, level, words) in enumerate(heads):
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        stack.append((level, words))
+        end = next((i for i, lvl, _ in heads[position + 1:] if lvl <= level), len(lines))
+        text = "\n".join(lines[index:end]).rstrip("\n")
+        found.append(
+            Section(f"{'#' * level} {words}", level, " > ".join(w for _, w in stack), index + 1, end, text)
+        )
+    return found
+
+
+def find_section(content: str, heading: str) -> Section | None:
+    """The section a heading names: "## Goals", "Goals", or a trail like "Requirements > Goals"
+    (case and extra spaces don't matter). The first match wins."""
+    wanted = _plain(heading.lstrip("#")).casefold()
+    for section in sections(content):
+        if section.heading is None:
+            continue
+        own = _plain(section.heading.lstrip("#")).casefold()
+        if wanted in (own, section.trail.casefold()) or section.trail.casefold().endswith(f"> {wanted}"):
+            return section
+    return None

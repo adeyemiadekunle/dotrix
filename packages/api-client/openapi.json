@@ -8407,6 +8407,17 @@
             "title": "Model Calls",
             "description": "Model calls the run made (each re-sends the prompt). Owners and admins only (null otherwise)"
           },
+          "breakdown": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the tokens went: by agent, by tool, and the files read. Owners and admins only (null otherwise)"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -8453,6 +8464,35 @@
           "finished_at"
         ],
         "title": "AgentRunRead"
+      },
+      "AgentUsage": {
+        "properties": {
+          "agent": {
+            "type": "string",
+            "title": "Agent",
+            "description": "project-manager, or the specialist's role (product, research, ...)"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "model_calls": {
+            "type": "integer",
+            "title": "Model Calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent",
+          "input_tokens",
+          "output_tokens",
+          "model_calls"
+        ],
+        "title": "AgentUsage"
       },
       "ApiTokenCreate": {
         "properties": {
@@ -11305,6 +11345,30 @@
             "type": "string",
             "title": "Model"
           },
+          "specialist_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specialist Model",
+            "description": "The specialists' and summaries' model; null means the project's model"
+          },
+          "token_budget": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Budget",
+            "description": "Per-run token budget; null means the server's default"
+          },
           "knowledge_revision": {
             "type": "integer",
             "title": "Knowledge Revision"
@@ -11329,6 +11393,8 @@
           "source",
           "repo_url",
           "model",
+          "specialist_model",
+          "token_budget",
           "knowledge_revision",
           "created_at",
           "updated_at"
@@ -11383,6 +11449,35 @@
               }
             ],
             "title": "Model"
+          },
+          "specialist_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "description": "Chat model for the project's agents, e.g. google_genai:gemini-3.8-flash"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specialist Model",
+            "description": "A cheaper model for the specialists and for summarising long conversations. Send null to use the project's model; leave it out to keep the current one."
+          },
+          "token_budget": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10000000.0,
+                "minimum": 10000.0,
+                "description": "The most tokens (input + output, over all its steps) one agent run may use; a run that reaches it stops and says so"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Budget",
+            "description": "Send null for the server's default; leave it out to keep the current one."
           },
           "repo_url": {
             "anyOf": [
@@ -11515,6 +11610,55 @@
         ],
         "title": "Role"
       },
+      "RunBreakdown": {
+        "properties": {
+          "by_agent": {
+            "items": {
+              "$ref": "#/components/schemas/AgentUsage"
+            },
+            "type": "array",
+            "title": "By Agent",
+            "description": "Largest first"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolUsage"
+            },
+            "type": "array",
+            "title": "Tools",
+            "description": "Largest results first"
+          },
+          "files_read": {
+            "items": {
+              "$ref": "#/components/schemas/RunFileRead"
+            },
+            "type": "array",
+            "title": "Files Read",
+            "description": "Most read first"
+          },
+          "token_budget": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Budget",
+            "description": "The run's token budget (null: no limit)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "by_agent",
+          "tools",
+          "files_read",
+          "token_budget"
+        ],
+        "title": "RunBreakdown",
+        "description": "Where a run's tokens went."
+      },
       "RunCreate": {
         "properties": {
           "message": {
@@ -11542,6 +11686,24 @@
           "message"
         ],
         "title": "RunCreate"
+      },
+      "RunFileRead": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "times": {
+            "type": "integer",
+            "title": "Times"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "times"
+        ],
+        "title": "RunFileRead"
       },
       "RunKind": {
         "type": "string",
@@ -11690,6 +11852,30 @@
           "token"
         ],
         "title": "TokenRequest"
+      },
+      "ToolUsage": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "result_tokens": {
+            "type": "integer",
+            "title": "Result Tokens",
+            "description": "About how many tokens the tool's results added (re-sent with every later model call)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool",
+          "calls",
+          "result_tokens"
+        ],
+        "title": "ToolUsage"
       },
       "UserCodeRequest": {
         "properties": {

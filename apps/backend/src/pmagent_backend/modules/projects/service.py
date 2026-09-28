@@ -71,6 +71,10 @@ class ProjectService:
             project.description = data.description
         if data.model is not None:
             project.model = data.model
+        if "specialist_model" in data.model_fields_set:
+            project.specialist_model = data.specialist_model
+        if "token_budget" in data.model_fields_set:
+            project.token_budget = data.token_budget
         if "repo_url" in data.model_fields_set and data.repo_url != project.repo_url:
             if data.repo_url and (
                 taken := [p for p in await self.projects.list(project.workspace_id, repo_url=data.repo_url)

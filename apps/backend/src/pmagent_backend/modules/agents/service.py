@@ -20,12 +20,16 @@ from .models import ACTIVE_STATUSES, AgentApproval, AgentRun, ApprovalStatus, Ru
 from .runner import BRIEFING_PROMPT, AgentRunner
 from .schemas import (
     AgentRunRead,
+    AgentUsage,
     ApprovalRead,
     ArchitectureDraftRequest,
     DecisionsRequest,
+    RunBreakdown,
     RunCreate,
+    RunFileRead,
     ThreadRead,
     ThreadRename,
+    ToolUsage,
     WorkspaceApprovalRead,
 )
 from .titles import title_from_message
@@ -329,7 +333,7 @@ def _read(access: ProjectAccess, run: AgentRun) -> AgentRunRead:
     """A run as its viewer may see it: token usage and the model only with usage:view."""
     read = AgentRunRead.model_validate(run)
     if not can(access.member, Permission.VIEW_USAGE):
-        read = read.model_copy(
+        return read.model_copy(
             update={
                 "model": None,
                 "input_tokens": None,
@@ -338,4 +342,23 @@ def _read(access: ProjectAccess, run: AgentRun) -> AgentRunRead:
                 "model_calls": None,
             }
         )
-    return read
+    return read.model_copy(update={"breakdown": _breakdown(run)})
+
+
+def _breakdown(run: AgentRun) -> RunBreakdown:
+    usage = run.usage or {}
+    return RunBreakdown(
+        by_agent=sorted(
+            (AgentUsage(agent=name, **counts) for name, counts in (usage.get("by_agent") or {}).items()),
+            key=lambda a: -(a.input_tokens + a.output_tokens),
+        ),
+        tools=sorted(
+            (ToolUsage(tool=name, **counts) for name, counts in (usage.get("tools") or {}).items()),
+            key=lambda t: (-t.result_tokens, -t.calls),
+        ),
+        files_read=sorted(
+            (RunFileRead(path=path, times=times) for path, times in (usage.get("files_read") or {}).items()),
+            key=lambda f: (-f.times, f.path),
+        ),
+        token_budget=run.token_budget,
+    )

@@ -78,6 +78,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 session_factory=sessionmaker,
                 checkpointer=await open_checkpointer(settings.database_url, stack),
                 model_factory=settings_model_factory(settings),
+                token_budget=settings.run_token_budget,
+                summarize_after_tokens=settings.summarize_after_tokens,
                 inline=settings.jobs == "inline",
                 queue=queue,
                 streams=streams,

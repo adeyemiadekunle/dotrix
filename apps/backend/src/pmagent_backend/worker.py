@@ -52,6 +52,8 @@ async def startup(ctx: dict[str, Any]) -> None:
         session_factory=sessionmaker,
         checkpointer=await open_checkpointer(settings.database_url, stack),
         model_factory=settings_model_factory(settings),
+        token_budget=settings.run_token_budget,
+        summarize_after_tokens=settings.summarize_after_tokens,
         inline=True,  # this process executes the runs
         stop_reasons=RunQueue(redis),
         streams=RedisRunStreams(redis),

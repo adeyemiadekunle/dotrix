@@ -35,7 +35,7 @@ from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
-from .usage import TokenUsage
+from .usage import TokenBudgetExceeded, TokenUsage, merge_breakdown
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,11 @@ NO_REPLY_ERROR = "The PM finished without writing a reply, even when asked again
 NO_REPLY_AFTER_DECISIONS_ERROR = (
     "The PM finished without writing a reply, even when asked again. "
     "The approved actions above were applied."
+)
+BUDGET_ERROR = (
+    "Stopped: this run reached its token budget ({used:,} of {budget:,} tokens). Changes already "
+    "approved were kept. Ask a narrower question, or an owner or admin can raise the budget in the "
+    "project's settings."
 )
 
 
@@ -132,8 +137,14 @@ class AgentRunner:
         queue: RunQueue | None = None,
         stop_reasons: RunQueue | None = None,
         streams: Streams | None = None,
+        token_budget: int | None = None,
+        summarize_after_tokens: int | None = None,
     ) -> None:
         self.session_factory = session_factory
+        # Defaults for every project (a project may set its own budget); None: no limit / the
+        # engine's own summarisation.
+        self.token_budget = token_budget or None
+        self.summarize_after_tokens = summarize_after_tokens
         self.checkpointer = checkpointer
         self.model_factory = model_factory
         self.inline = inline
@@ -224,6 +235,11 @@ class AgentRunner:
                 assert project is not None
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
                 run.model = project.model
+                # The budget covers every step of the run: what earlier steps used counts.
+                run.token_budget = project.token_budget or self.token_budget
+                usage = TokenUsage(
+                    budget=run.token_budget, used=(run.input_tokens or 0) + (run.output_tokens or 0)
+                )
                 await session.commit()
                 rules = await self._rules(session, project.id)
                 context = await build_context_pack(session, project, run)
@@ -265,6 +281,8 @@ class AgentRunner:
                 subagent_task_tools=specialist_write_tools,
                 board_instructions=board_instructions(project_key),
                 context=context,
+                specialist_model=choice.specialist_model,
+                summarize_after_tokens=self.summarize_after_tokens,
             )
             config = {
                 "configurable": {"thread_id": str(thread_id)},
@@ -308,7 +326,14 @@ class AgentRunner:
             # In the worker the run stays "running": its job is retried and continues from the
             # last checkpoint.
             raise
+        except TokenBudgetExceeded as exc:
+            logger.info("agent run %s: %s", run_id, exc)
+            await self._fail(run_id, BUDGET_ERROR.format(used=exc.used, budget=exc.budget), usage)
         except Exception as exc:
+            if (budget := _budget_error(exc)) is not None:  # raised inside a tool (a subagent)
+                logger.info("agent run %s: %s", run_id, budget)
+                await self._fail(run_id, BUDGET_ERROR.format(used=budget.used, budget=budget.budget), usage)
+                return
             logger.exception("agent run %s failed", run_id)
             await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}", usage)
         finally:
@@ -329,8 +354,7 @@ class AgentRunner:
             run = await session.get(AgentRun, run_id)
             assert run is not None
             now = _now()
-            tokens = usage.take()
-            _add_tokens(run, tokens)
+            tokens = _add_tokens(run, usage)
             pending = hitl.pending_actions(result)
             if pending:
                 files = {
@@ -379,8 +403,7 @@ class AgentRunner:
             run = await session.get(AgentRun, run_id)
             if run is None:
                 return
-            tokens = usage.take()
-            _add_tokens(run, tokens)
+            tokens = _add_tokens(run, usage)
             run.status, run.error = RunStatus.FAILED, error[:2000]
             run.updated_at = run.finished_at = _now()
             AuditLog(session).record(
@@ -413,11 +436,28 @@ async def mark_interrupted_runs(session_factory: SessionFactory) -> None:
         await session.commit()
 
 
-def _add_tokens(run: AgentRun, tokens: dict[str, int]) -> None:
+def _add_tokens(run: AgentRun, usage: TokenUsage) -> dict[str, int]:
+    """Record the step's usage on the run; returns the step's totals (for the audit log)."""
+    tokens, breakdown = usage.take()
     run.input_tokens = (run.input_tokens or 0) + tokens["input_tokens"]
     run.output_tokens = (run.output_tokens or 0) + tokens["output_tokens"]
     run.cached_input_tokens = (run.cached_input_tokens or 0) + tokens["cached_input_tokens"]
     run.model_calls = (run.model_calls or 0) + tokens["model_calls"]
+    run.usage = merge_breakdown(run.usage, breakdown)
+    return tokens
+
+
+def _budget_error(exc: BaseException) -> TokenBudgetExceeded | None:
+    """The budget error behind an exception (a subagent's model call raises it inside the
+    `task` tool, which may wrap it)."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, TokenBudgetExceeded):
+            return current
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return None
 
 
 def _preview(action: dict, files: dict[str, str]) -> tuple[str | None, str | None]:

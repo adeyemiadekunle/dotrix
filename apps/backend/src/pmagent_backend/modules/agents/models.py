@@ -67,6 +67,10 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     output_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     cached_input_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     model_calls: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Where the tokens went (usage.merge_breakdown): by agent, tool results, files read.
+    usage: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
+    # The run's token budget when it last worked (null: no limit).
+    token_budget: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -1750,6 +1750,8 @@ export interface components {
              * @description Model calls the run made (each re-sends the prompt). Owners and admins only (null otherwise)
              */
             model_calls?: number | null;
+            /** @description Where the tokens went: by agent, by tool, and the files read. Owners and admins only (null otherwise) */
+            breakdown?: components["schemas"]["RunBreakdown"] | null;
             /**
              * Created At
              * Format: date-time
@@ -1767,6 +1769,20 @@ export interface components {
              * @default []
              */
             approvals: components["schemas"]["ApprovalRead"][];
+        };
+        /** AgentUsage */
+        AgentUsage: {
+            /**
+             * Agent
+             * @description project-manager, or the specialist's role (product, research, ...)
+             */
+            agent: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Model Calls */
+            model_calls: number;
         };
         /** ApiTokenCreate */
         ApiTokenCreate: {
@@ -2908,6 +2924,16 @@ export interface components {
             repo_url: string | null;
             /** Model */
             model: string;
+            /**
+             * Specialist Model
+             * @description The specialists' and summaries' model; null means the project's model
+             */
+            specialist_model: string | null;
+            /**
+             * Token Budget
+             * @description Per-run token budget; null means the server's default
+             */
+            token_budget: number | null;
             /** Knowledge Revision */
             knowledge_revision: number;
             /**
@@ -2934,6 +2960,16 @@ export interface components {
             description?: string | null;
             /** Model */
             model?: string | null;
+            /**
+             * Specialist Model
+             * @description A cheaper model for the specialists and for summarising long conversations. Send null to use the project's model; leave it out to keep the current one.
+             */
+            specialist_model?: string | null;
+            /**
+             * Token Budget
+             * @description Send null for the server's default; leave it out to keep the current one.
+             */
+            token_budget?: number | null;
             /**
              * Repo Url
              * @description Link the project to its repo (any remote form; stored canonical). Send null to unlink; leave it out to keep the current link.
@@ -2994,6 +3030,32 @@ export interface components {
          * @enum {string}
          */
         Role: "owner" | "admin" | "member" | "guest";
+        /**
+         * RunBreakdown
+         * @description Where a run's tokens went.
+         */
+        RunBreakdown: {
+            /**
+             * By Agent
+             * @description Largest first
+             */
+            by_agent: components["schemas"]["AgentUsage"][];
+            /**
+             * Tools
+             * @description Largest results first
+             */
+            tools: components["schemas"]["ToolUsage"][];
+            /**
+             * Files Read
+             * @description Most read first
+             */
+            files_read: components["schemas"]["RunFileRead"][];
+            /**
+             * Token Budget
+             * @description The run's token budget (null: no limit)
+             */
+            token_budget: number | null;
+        };
         /** RunCreate */
         RunCreate: {
             /** Message */
@@ -3003,6 +3065,13 @@ export interface components {
              * @description Continue a conversation. Omit to start a new thread.
              */
             thread_id?: string | null;
+        };
+        /** RunFileRead */
+        RunFileRead: {
+            /** Path */
+            path: string;
+            /** Times */
+            times: number;
         };
         /**
          * RunKind
@@ -3070,6 +3139,18 @@ export interface components {
         TokenRequest: {
             /** Token */
             token: string;
+        };
+        /** ToolUsage */
+        ToolUsage: {
+            /** Tool */
+            tool: string;
+            /** Calls */
+            calls: number;
+            /**
+             * Result Tokens
+             * @description About how many tokens the tool's results added (re-sent with every later model call)
+             */
+            result_tokens: number;
         };
         /** UserCodeRequest */
         UserCodeRequest: {

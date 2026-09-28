@@ -34,6 +34,10 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):
     source: Mapped[ProjectSource] = mapped_column(str_enum(ProjectSource, 20))
     repo_url: Mapped[str | None] = mapped_column(String(500))
     model: Mapped[str] = mapped_column(String(100), default=DEFAULT_MODEL)
+    # A cheaper model for the specialists and for summarising long conversations; null: `model`.
+    specialist_model: Mapped[str | None] = mapped_column(String(100))
+    # Tokens one agent run may use (input + output, all its steps); null: the server's default.
+    token_budget: Mapped[int | None]
     # Bumped on every .pmagent/ change; lets the CLI mirror pull only what changed.
     knowledge_revision: Mapped[int] = mapped_column(default=0, server_default="0")
     # Next issue number (KUN-<n>). Incremented under a row lock; numbers are never reused.

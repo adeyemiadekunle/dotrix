@@ -174,12 +174,18 @@ function Agents({
   const update = useUpdateProject(workspace.id, project.id);
   const manifest = useManifest({ workspaceId: workspace.id, projectId: project.id });
   const [model, setModel] = useState(project.model);
+  const [specialistModel, setSpecialistModel] = useState(project.specialist_model ?? "");
+  const [budget, setBudget] = useState(project.token_budget ? String(project.token_budget) : "");
+  const specialistChanged = specialistModel.trim() !== (project.specialist_model ?? "");
+  const budgetChanged = budget.trim() !== (project.token_budget ? String(project.token_budget) : "");
   const rules = (manifest.data?.files ?? []).filter((f) => f.path.startsWith("agent-rules/") && !f.deleted);
   return (
     <Card>
       <CardHeader>
         <CardTitle>Agents</CardTitle>
-        <CardDescription>The model the project&apos;s agents run on, and the rules that shape how they behave.</CardDescription>
+        <CardDescription>
+          The models the project&apos;s agents run on, how much one request may use, and the rules that shape how they behave.
+        </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6">
         <form
@@ -217,6 +223,67 @@ function Agents({
             <code className="font-mono">provider:model</code>, e.g. google_genai, anthropic, or openai. The provider&apos;s API
             key must be configured on the server. New runs use it; running ones finish on the old model.
           </p>
+        </form>
+
+        <form
+          className="grid gap-4"
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            update.mutate({
+              ...(specialistChanged ? { specialist_model: specialistModel.trim() || null } : {}),
+              ...(budgetChanged ? { token_budget: budget.trim() ? Number(budget) : null } : {}),
+            });
+          }}
+        >
+          <div className="grid gap-2">
+            <Label htmlFor="project-specialist-model">Model for specialists and summaries</Label>
+            <Input
+              id="project-specialist-model"
+              value={specialistModel}
+              onChange={(e) => setSpecialistModel(e.target.value)}
+              list="model-suggestions"
+              placeholder={`Same as the project (${project.model})`}
+              className="h-9 min-w-64 font-mono text-sm"
+              maxLength={100}
+              pattern="[a-z_]+:.+"
+              disabled={!canEdit}
+            />
+            <p className="text-muted-foreground text-xs">
+              A cheaper model for the product, architecture, research, reviewer, and documentation agents, and for
+              summarising long conversations. The PM keeps the project&apos;s model. Leave it empty to use the same model.
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="project-token-budget">Token budget per request</Label>
+            <Input
+              id="project-token-budget"
+              type="number"
+              inputMode="numeric"
+              min={10000}
+              max={10000000}
+              step={1000}
+              value={budget}
+              onChange={(e) => setBudget(e.target.value)}
+              placeholder="The server's default"
+              className="h-9 w-48 text-sm"
+              disabled={!canEdit}
+            />
+            <p className="text-muted-foreground text-xs">
+              The most tokens one request to the agents may use, including every specialist it asks and every step after
+              an approval. A request that reaches it stops and says so. Leave it empty for the server&apos;s default.
+            </p>
+          </div>
+          {canEdit && (
+            <div>
+              <SubmitButton
+                pending={update.isPending}
+                disabled={update.isPending || (!specialistChanged && !budgetChanged)}
+                className="h-9"
+              >
+                Save
+              </SubmitButton>
+            </div>
+          )}
         </form>
 
         <div className="grid gap-2">
@@ -265,7 +332,7 @@ export default function ProjectSettings() {
     <div className="grid max-w-3xl content-start gap-4 p-4 md:p-6">
       <General key={`g-${project.updated_at}`} project={project} workspace={workspace} canEdit={canEdit} />
       <Repository project={project} workspace={workspace} canEdit={canEdit} />
-      <Agents key={`a-${project.model}`} project={project} workspace={workspace} canEdit={canEdit} knowledgeHref={`${base}/knowledge`} />
+      <Agents key={`a-${project.model}-${project.specialist_model}-${project.token_budget}`} project={project} workspace={workspace} canEdit={canEdit} knowledgeHref={`${base}/knowledge`} />
       {canEdit && (
         <Card>
           <CardHeader>

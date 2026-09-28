@@ -1,11 +1,13 @@
 "use client";
 
 import { ChatMessage, ChatNotice } from "@pmagent/ui/components/chat-message";
-import { BotIcon, CircleAlertIcon, CircleStopIcon } from "lucide-react";
+import { BotIcon, ChevronDownIcon, CircleAlertIcon, CircleStopIcon } from "lucide-react";
+import { useState } from "react";
 
 import { Markdown } from "@/components/markdown";
 import { isActive, useRunStream, wasStopped, type Run } from "@/lib/agent";
 import type { Scope } from "@/lib/issues";
+import { agentName } from "@/lib/labels";
 
 import { RunApprovals } from "./approvals";
 
@@ -16,20 +18,99 @@ function progressText(run: Run, activity: string | null, writing: boolean): stri
   return activity ? `${activity}…` : "The PM is working on it…";
 }
 
-/** What a run used: "12,340 in (9,800 cached) / 512 out tokens · 3 model calls · model".
- * The API includes it only for owners and admins (null otherwise). */
+const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+
+/** What a run used: "12,340 in (9,800 cached) / 512 out tokens · 3 model calls · model", and
+ * on request where it went: by agent, tool results, files read, and the budget. The API
+ * includes it only for owners and admins (null otherwise). */
 export function RunUsage({ run }: { run: Run }) {
+  const [open, setOpen] = useState(false);
   if (isActive(run) || run.input_tokens == null || run.output_tokens == null) return null;
   if (run.input_tokens === 0 && run.output_tokens === 0) return null;
   const cached = run.cached_input_tokens ?? 0;
   const calls = run.model_calls ?? 0;
+  const breakdown = run.breakdown;
+  const hasDetails = !!breakdown && (breakdown.by_agent.length > 0 || breakdown.tools.length > 0);
   return (
-    <p className="text-muted-foreground text-xs">
-      {run.input_tokens.toLocaleString()} in
-      {cached > 0 && ` (${cached.toLocaleString()} cached)`} / {run.output_tokens.toLocaleString()} out tokens
-      {calls > 0 && ` · ${calls} model call${calls === 1 ? "" : "s"}`}
-      {run.model && ` · ${run.model}`}
-    </p>
+    <div className="text-muted-foreground grid gap-2 text-xs">
+      <p>
+        {run.input_tokens.toLocaleString()} in
+        {cached > 0 && ` (${cached.toLocaleString()} cached)`} / {run.output_tokens.toLocaleString()} out tokens
+        {calls > 0 && ` · ${plural(calls, "model call")}`}
+        {run.model && ` · ${run.model}`}
+        {hasDetails && (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            className="hover:text-foreground ml-2 inline-flex items-center gap-0.5 underline-offset-2 hover:underline"
+          >
+            {open ? "Hide details" : "Details"}
+            <ChevronDownIcon className={`size-3 transition-transform ${open ? "rotate-180" : ""}`} />
+          </button>
+        )}
+      </p>
+      {open && breakdown && <UsageDetails run={run} breakdown={breakdown} />}
+    </div>
+  );
+}
+
+function UsageDetails({ run, breakdown }: { run: Run; breakdown: NonNullable<Run["breakdown"]> }) {
+  const total = (run.input_tokens ?? 0) + (run.output_tokens ?? 0);
+  return (
+    <div className="bg-muted/50 grid gap-3 rounded-md border p-3">
+      {breakdown.token_budget != null && (
+        <p>
+          Budget: {total.toLocaleString()} of {breakdown.token_budget.toLocaleString()} tokens (
+          {Math.min(100, Math.round((total / breakdown.token_budget) * 100))}%)
+        </p>
+      )}
+      {breakdown.by_agent.length > 0 && (
+        <UsageList title="By agent">
+          {breakdown.by_agent.map((a) => (
+            <UsageRow key={a.agent} label={agentName(a.agent)}>
+              {a.input_tokens.toLocaleString()} in / {a.output_tokens.toLocaleString()} out · {plural(a.model_calls, "call")}
+            </UsageRow>
+          ))}
+        </UsageList>
+      )}
+      {breakdown.tools.length > 0 && (
+        <UsageList title="Tool results (re-sent with every later call)">
+          {breakdown.tools.map((t) => (
+            <UsageRow key={t.tool} label={<code className="font-mono">{t.tool}</code>}>
+              {plural(t.calls, "call")} · about {t.result_tokens.toLocaleString()} tokens
+            </UsageRow>
+          ))}
+        </UsageList>
+      )}
+      {breakdown.files_read.length > 0 && (
+        <UsageList title="Files read">
+          {breakdown.files_read.map((f) => (
+            <UsageRow key={f.path} label={<code className="font-mono break-all">{f.path.replace(/^\/pmagent\//, "")}</code>}>
+              {f.times > 1 ? `${f.times} times` : "once"}
+            </UsageRow>
+          ))}
+        </UsageList>
+      )}
+    </div>
+  );
+}
+
+function UsageList({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-1">
+      <p className="text-foreground font-medium">{title}</p>
+      <ul className="grid gap-0.5">{children}</ul>
+    </div>
+  );
+}
+
+function UsageRow({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <li className="flex flex-wrap justify-between gap-x-4">
+      <span className="min-w-0">{label}</span>
+      <span className="tabular-nums">{children}</span>
+    </li>
   );
 }
 

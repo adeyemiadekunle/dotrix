@@ -65,10 +65,29 @@ class ProjectCreate(BaseModel):
     )
 
 
+TokenBudget = Annotated[
+    int,
+    Field(
+        ge=10_000,
+        le=10_000_000,
+        description="The most tokens (input + output, over all its steps) one agent run may use; "
+        "a run that reaches it stops and says so",
+    ),
+]
+
+
 class ProjectUpdate(BaseModel):
     name: ProjectName | None = None
     description: Description | None = None
     model: ModelName | None = None
+    specialist_model: ModelName | None = Field(
+        default=None,
+        description="A cheaper model for the specialists and for summarising long conversations. "
+        "Send null to use the project's model; leave it out to keep the current one.",
+    )
+    token_budget: TokenBudget | None = Field(
+        default=None, description="Send null for the server's default; leave it out to keep the current one."
+    )
     repo_url: RepoUrl | None = Field(
         default=None,
         description="Link the project to its repo (any remote form; stored canonical). Send null to unlink; "
@@ -86,6 +105,10 @@ class ProjectRead(BaseModel):
     source: ProjectSource
     repo_url: str | None
     model: str
+    specialist_model: str | None = Field(
+        description="The specialists' and summaries' model; null means the project's model"
+    )
+    token_budget: int | None = Field(description="Per-run token budget; null means the server's default")
     knowledge_revision: int
     created_at: datetime
     updated_at: datetime

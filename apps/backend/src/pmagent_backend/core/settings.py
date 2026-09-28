@@ -84,6 +84,12 @@ class Settings(DatabaseSettings):
     )
     # Model for new projects ("provider:model"); each project can change its own.
     default_model: str = "anthropic:claude-sonnet-5"
+    # The most tokens (input + output, over all its steps) one agent run may use before it
+    # stops; a project can set its own. 0 turns the limit off.
+    run_token_budget: int = Field(default=500_000, ge=0)
+    # A conversation's older turns are summarised once its prompt passes this many tokens
+    # (the most recent turns are kept word for word).
+    summarize_after_tokens: int = Field(default=40_000, ge=5_000)
     # Where background work executes (agent runs, emails, password-reset requests):
     # - "local": tasks in the API process (simplest; an API restart cuts runs off)
     # - "worker": queued in Redis and executed by `python -m pmagent_backend.worker`; work
