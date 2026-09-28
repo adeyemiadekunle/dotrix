@@ -225,9 +225,9 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
   - **Cost:** embedding a changed section costs a tiny fraction of re-reading files in every run; token usage records embedding calls too
 - [ ] **Delegation that doesn't start from zero:** the PM hands specialists the relevant paths and excerpts with the task, and specialists return findings, not whole files
 - [ ] **Long conversations:** summarise older turns once a thread passes a token threshold (LangChain's summarization middleware), keeping recent turns verbatim
-- [ ] **Briefings from data:**
+- [x] **Briefings from data:**
   - the platform computes what changed since the last briefing (issues moved, documents changed, decisions, blockers, due dates); the model only narrates it and reads files when something needs explaining
-  - target: under 15,000 tokens
+  - target: under 15,000 tokens. Done in `context.py` `_since_last_briefing` (a briefing's context pack says what was created, done, newly blocked, moved, and discussed on the board; documents changed with who and why; what waits for approval; whether `current-state.md` fell behind), and the briefing prompt writes from it without asking the specialists. Measured on the dev project: 160,290 → 81,613 (context pack) → 24,706 input tokens; prompt caching should close the rest
 - [ ] **Budgets and visibility:**
   - a per-run token budget (stop and say so, rather than overspend)
   - per-tool token counts and the files read, shown to owners and admins under a run

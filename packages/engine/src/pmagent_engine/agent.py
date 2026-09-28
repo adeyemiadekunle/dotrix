@@ -312,9 +312,9 @@ def build_team(
         board = _BOARD_SECTION if task_tools else ""
     board_source = ", and the task board" if task_tools else ""
     briefing_sources = (
-        "start from the project context below (the board, what changed, recent decisions, the "
-        "documents and what each is about); read /pmagent/current-state.md, /pmagent/progress/, "
-        "or a decision only where you need more detail than the context gives"
+        "write it from the project context below (the board, what changed since the last "
+        "briefing, recent decisions, the documents and what each is about), without asking the "
+        "specialists; open a file only where something needs more explanation than the context gives"
         if context
         else f"read /pmagent/progress/*.md, /pmagent/decisions/*.md,\n/pmagent/current-state.md{board_source}"
     )

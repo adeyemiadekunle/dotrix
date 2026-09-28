@@ -131,3 +131,38 @@ async def test_the_pack_stays_small(project, db_client: AsyncClient, agent_scrip
     pack = system_prompt(model).split("# Project context", 1)[1]
     assert len(pack) <= 24_100
     assert pack.rstrip().endswith("use ls or glob)")
+
+
+async def test_a_briefing_hears_what_happened_since_the_last_one(project, db_client: AsyncClient, agent_script) -> None:
+    ada, base = await project()
+    model = agent_script.say("First briefing.")
+    await db_client.post(f"{base}/agent/briefing", headers=ada.headers)
+    assert "## In the last 7 days (the first briefing)" in system_prompt(model)
+
+    # Then the work happens.
+    issues = f"{base}/issues"
+    for title in ("Zones UI", "Postcodes", "Driver app"):
+        await db_client.post(issues, json={"type": "task", "title": title}, headers=ada.headers)
+    await db_client.patch(f"{issues}/KUN-1", json={"status": "done"}, headers=ada.headers)
+    await db_client.patch(f"{issues}/KUN-2", json={"status": "blocked"}, headers=ada.headers)
+    await db_client.patch(f"{issues}/KUN-3", json={"status": "in_progress"}, headers=ada.headers)
+    await db_client.post(f"{issues}/KUN-2/comments", json={"body": "Waiting on the postcode list"}, headers=ada.headers)
+    await db_client.put(
+        f"{base}/knowledge/files/roadmap.md", json={"content": "# Roadmap\n\nZones first.", "message": "Zones first"},
+        headers=ada.headers,
+    )
+
+    model = agent_script.say("Second briefing.")
+    await db_client.post(f"{base}/agent/briefing", headers=ada.headers)
+    prompt = system_prompt(model)
+    section = prompt.split("## Since the last briefing", 1)[1].split("\n## ", 1)[0]
+    assert "Created: KUN-1 Zones UI; KUN-2 Postcodes; KUN-3 Driver app" in section
+    assert "Done: KUN-1 Zones UI" in section
+    assert "Newly blocked: KUN-2 Postcodes" in section
+    assert "Moved: KUN-3 todo → in progress" in section
+    assert "Discussed: KUN-2 (1 comment)" in section
+    assert "- roadmap.md v2 by Ada: Zones first" in section
+    assert "current-state.md was last changed" in section  # the written state fell behind
+    # The briefing is told to write from this, not to explore.
+    human = next(str(m.content) for m in model.received[0] if m.type == "human")
+    assert "don't ask the specialists" in human
