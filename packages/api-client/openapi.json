@@ -12,7 +12,7 @@
           "health"
         ],
         "summary": "Health Live",
-        "description": "Liveness: the process is up. Never touches dependencies.",
+        "description": "Liveness: the process is up, with the server's time. Never touches dependencies.",
         "operationId": "health_live",
         "responses": {
           "200": {
@@ -20,11 +20,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Health Live"
+                  "$ref": "#/components/schemas/Health"
                 }
               }
             }
@@ -38,7 +34,7 @@
           "health"
         ],
         "summary": "Health Ready",
-        "description": "Readiness: the database is reachable.",
+        "description": "Readiness: the database is reachable (and how quickly it answered).",
         "operationId": "health_ready",
         "responses": {
           "200": {
@@ -46,11 +42,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Health Ready"
+                  "$ref": "#/components/schemas/Readiness"
                 }
               }
             }
@@ -9424,6 +9416,39 @@
         ],
         "title": "FileWrite"
       },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "\"ok\""
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Time",
+            "description": "The server's clock, in UTC"
+          },
+          "uptime_seconds": {
+            "type": "integer",
+            "title": "Uptime Seconds",
+            "description": "How long this API process has been running"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "The API version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "time",
+          "uptime_seconds",
+          "version"
+        ],
+        "title": "Health"
+      },
       "InviteKind": {
         "type": "string",
         "enum": [
@@ -11207,6 +11232,39 @@
         },
         "type": "object",
         "title": "RankRequest"
+      },
+      "Readiness": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "\"ok\""
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Time",
+            "description": "The server's clock, in UTC"
+          },
+          "database": {
+            "type": "string",
+            "title": "Database",
+            "description": "\"ok\" when the database answered"
+          },
+          "database_ms": {
+            "type": "number",
+            "title": "Database Ms",
+            "description": "How long the database took to answer, in milliseconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "time",
+          "database",
+          "database_ms"
+        ],
+        "title": "Readiness"
       },
       "RefreshRequest": {
         "properties": {

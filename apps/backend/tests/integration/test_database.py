@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 async def test_readiness_checks_database(db_client: AsyncClient) -> None:
     res = await db_client.get("/health/ready")
     assert res.status_code == 200
-    assert res.json() == {"status": "ok", "database": "ok"}
+    body = res.json()
+    assert body["status"] == "ok" and body["database"] == "ok"
+    assert body["database_ms"] >= 0 and body["time"].endswith("Z")
 
 
 async def test_migrations_applied(db_session: AsyncSession) -> None:

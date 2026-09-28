@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Health Live
-         * @description Liveness: the process is up. Never touches dependencies.
+         * @description Liveness: the process is up, with the server's time. Never touches dependencies.
          */
         get: operations["health_live"];
         put?: never;
@@ -33,7 +33,7 @@ export interface paths {
         };
         /**
          * Health Ready
-         * @description Readiness: the database is reachable.
+         * @description Readiness: the database is reachable (and how quickly it answered).
          */
         get: operations["health_ready"];
         put?: never;
@@ -2200,6 +2200,30 @@ export interface components {
             /** Message */
             message?: string | null;
         };
+        /** Health */
+        Health: {
+            /**
+             * Status
+             * @description "ok"
+             */
+            status: string;
+            /**
+             * Time
+             * Format: date-time
+             * @description The server's clock, in UTC
+             */
+            time: string;
+            /**
+             * Uptime Seconds
+             * @description How long this API process has been running
+             */
+            uptime_seconds: number;
+            /**
+             * Version
+             * @description The API version
+             */
+            version: string;
+        };
         /**
          * InviteKind
          * @enum {string}
@@ -2855,6 +2879,30 @@ export interface components {
              */
             after?: string | null;
         };
+        /** Readiness */
+        Readiness: {
+            /**
+             * Status
+             * @description "ok"
+             */
+            status: string;
+            /**
+             * Time
+             * Format: date-time
+             * @description The server's clock, in UTC
+             */
+            time: string;
+            /**
+             * Database
+             * @description "ok" when the database answered
+             */
+            database: string;
+            /**
+             * Database Ms
+             * @description How long the database took to answer, in milliseconds
+             */
+            database_ms: number;
+        };
         /** RefreshRequest */
         RefreshRequest: {
             /** Refresh Token */
@@ -3195,9 +3243,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Health"];
                 };
             };
         };
@@ -3217,9 +3263,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Readiness"];
                 };
             };
         };
