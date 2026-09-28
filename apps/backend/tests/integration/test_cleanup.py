@@ -42,11 +42,11 @@ async def test_cleanup_deletes_only_what_is_finished(
     # In 10 days: the verification link and the device login are over (and a week past it);
     # the refresh token is still valid, and an expired invite is kept 30 days.
     deleted = await cleanup_expired(ctx, now=(now + timedelta(days=10)).isoformat())
-    assert deleted == {"refresh_tokens": 0, "action_tokens": 1, "device_authorizations": 1, "invites": 0}
+    assert deleted == {"refresh_tokens": 0, "action_tokens": 1, "email_signups": 0, "device_authorizations": 1, "invites": 0}
 
     # In 40 days: the refresh token expired over a week ago, the invite over 30 days ago.
     deleted = await cleanup_expired(ctx, now=(now + timedelta(days=40)).isoformat())
-    assert deleted == {"refresh_tokens": 1, "action_tokens": 0, "device_authorizations": 0, "invites": 1}
+    assert deleted == {"refresh_tokens": 1, "action_tokens": 0, "email_signups": 0, "device_authorizations": 0, "invites": 1}
     db_session.expire_all()
     assert set((await _counts(db_session)).values()) == {0}
 

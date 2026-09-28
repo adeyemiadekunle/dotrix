@@ -12,8 +12,8 @@ from urllib.parse import urlencode
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pmagent_backend.core import security
-from pmagent_backend.core.email import EmailMessage, EmailSender
+from pmagent_backend.core import email_templates, security
+from pmagent_backend.core.email import EmailSender
 from pmagent_backend.core.errors import Conflict, Forbidden, InvalidLink, NotFound
 from pmagent_backend.core.settings import Settings
 from pmagent_backend.modules.audit.service import AuditLog
@@ -76,16 +76,14 @@ class InviteService:
         self._audit(actor, "invite.sent", data.email, role=data.role.value)
         await self.session.commit()
 
-        workspace = actor.workspace.name
         await self.email.send(
-            EmailMessage(
-                to=data.email,
-                subject=f"{inviter.display_name} invited you to {workspace} on pmagent",
-                body=(
-                    f"{inviter.display_name} invited you to join {workspace} as {data.role}.\n\n"
-                    f"Accept the invite: {self._accept_url(token)}\n\n"
-                    f"This invite expires in {EMAIL_INVITE_TTL.days} days."
-                ),
+            email_templates.invite(
+                data.email,
+                inviter=inviter.display_name,
+                workspace=actor.workspace.name,
+                role=data.role.value,
+                link=self._accept_url(token),
+                ttl_days=EMAIL_INVITE_TTL.days,
             )
         )
         return InviteRead.model_validate(invite)

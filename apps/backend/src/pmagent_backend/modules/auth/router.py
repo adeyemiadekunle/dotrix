@@ -8,9 +8,12 @@ from fastapi import APIRouter, Depends, status
 from pmagent_backend.api.deps import CurrentUser, EmailDep, JobsDep, SessionDep, SettingsDep
 from pmagent_backend.core.openapi import errors
 
-from .limits import LOGIN, PASSWORD_RESET, SIGNUP, VERIFY_RESEND, ThrottleDep
+from .limits import LOGIN, MAGIC_LINK, PASSWORD_RESET, SIGNUP, VERIFY_RESEND, ThrottleDep
 from .schemas import (
+    EmailSignupAddress,
+    EmailSignupFinish,
     LoginRequest,
+    MagicLinkRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
     RefreshRequest,
@@ -83,6 +86,38 @@ async def request_password_reset(data: PasswordResetRequest, auth: Auth, throttl
     lookup happens in the background). Rate-limited per IP and per email."""
     await throttle(PASSWORD_RESET, data.email)
     await auth.request_password_reset(data.email)
+
+
+@router.post("/magic-link/request", status_code=status.HTTP_202_ACCEPTED, responses=errors(422, 429))
+async def request_magic_link(data: MagicLinkRequest, auth: Auth, throttle: ThrottleDep) -> None:
+    """Email a link (valid 15 minutes, once): a sign-in link for an account or, for an
+    address without one, a link to create it (`/v1/auth/magic-link/signup`). Always 202 (the
+    lookup happens in the background). Rate-limited per IP and per email."""
+    await throttle(MAGIC_LINK, data.email)
+    await auth.request_magic_link(data.email)
+
+
+@router.post("/magic-link/verify", responses=errors(400, 422))
+async def sign_in_with_magic_link(data: TokenRequest, auth: Auth) -> TokenPair:
+    """Exchange the token from a sign-in link for an access and refresh token, like login.
+    The link works once, and following it also verifies the email address."""
+    return await auth.sign_in_with_magic_link(data.token)
+
+
+@router.post("/magic-link/signup/lookup", responses=errors(400, 422))
+async def email_signup_address(data: TokenRequest, auth: Auth) -> EmailSignupAddress:
+    """The address a sign-up link is for, to show while asking for a name. Doesn't use the link up."""
+    return EmailSignupAddress(email=await auth.email_signup_address(data.token))
+
+
+@router.post("/magic-link/signup", status_code=status.HTTP_201_CREATED, responses=errors(400, 409, 422, 429))
+async def finish_email_signup(data: EmailSignupFinish, auth: Auth, throttle: ThrottleDep) -> SignupResponse:
+    """Create an account from a sign-up link and sign in. The email is verified (the link
+    proved the inbox) and there's no password (sign in by link, or set one with a password
+    reset). Also creates the personal workspace. 409 if the address got an account meanwhile."""
+    email = await auth.email_signup_address(data.token)
+    await throttle(SIGNUP, email)
+    return await auth.finish_email_signup(data.token, data.display_name)
 
 
 @router.post(

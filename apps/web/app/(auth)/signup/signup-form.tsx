@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@pmagent/ui/components/button";
+import { MailIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
@@ -60,6 +62,11 @@ export function SignupForm({ next }: { next?: string }) {
         <SubmitButton pending={pending} className="w-full">
           Create account
         </SubmitButton>
+        <Button type="button" variant="ghost" className="w-full" asChild>
+          <Link href="/login?link=1">
+            <MailIcon /> Sign up with an email link instead
+          </Link>
+        </Button>
       </form>
     </AuthCard>
   );

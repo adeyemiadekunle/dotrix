@@ -12,7 +12,7 @@
           "health"
         ],
         "summary": "Health Live",
-        "description": "Liveness: the process is up. Never touches dependencies.",
+        "description": "Liveness: the process is up, with the server's time. Never touches dependencies.",
         "operationId": "health_live",
         "responses": {
           "200": {
@@ -20,11 +20,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Health Live"
+                  "$ref": "#/components/schemas/Health"
                 }
               }
             }
@@ -38,7 +34,7 @@
           "health"
         ],
         "summary": "Health Ready",
-        "description": "Readiness: the database is reachable.",
+        "description": "Readiness: the database is reachable (and how quickly it answered).",
         "operationId": "health_ready",
         "responses": {
           "200": {
@@ -46,11 +42,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Health Ready"
+                  "$ref": "#/components/schemas/Readiness"
                 }
               }
             }
@@ -383,6 +375,232 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/magic-link/request": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Request Magic Link",
+        "description": "Email a link (valid 15 minutes, once): a sign-in link for an account or, for an\naddress without one, a link to create it (`/v1/auth/magic-link/signup`). Always 202 (the\nlookup happens in the background). Rate-limited per IP and per email.",
+        "operationId": "request_magic_link",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MagicLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/magic-link/verify": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign In With Magic Link",
+        "description": "Exchange the token from a sign-in link for an access and refresh token, like login.\nThe link works once, and following it also verifies the email address.",
+        "operationId": "sign_in_with_magic_link",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request, for example an invalid or expired link or code",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/magic-link/signup/lookup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Email Signup Address",
+        "description": "The address a sign-up link is for, to show while asking for a name. Doesn't use the link up.",
+        "operationId": "email_signup_address",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailSignupAddress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request, for example an invalid or expired link or code",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/magic-link/signup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Finish Email Signup",
+        "description": "Create an account from a sign-up link and sign in. The email is verified (the link\nproved the inbox) and there's no password (sign in by link, or set one with a password\nreset). Also creates the personal workspace. 409 if the address got an account meanwhile.",
+        "operationId": "finish_email_signup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailSignupFinish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request, for example an invalid or expired link or code",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
               }
             }
           },
@@ -9141,6 +9359,41 @@
         ],
         "title": "EmailInviteCreate"
       },
+      "EmailSignupAddress": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "The address the sign-up link is for"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "EmailSignupAddress"
+      },
+      "EmailSignupFinish": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Token"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "display_name"
+        ],
+        "title": "EmailSignupFinish"
+      },
       "EpicProgress": {
         "properties": {
           "key": {
@@ -9321,6 +9574,39 @@
           "content"
         ],
         "title": "FileWrite"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "\"ok\""
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Time",
+            "description": "The server's clock, in UTC"
+          },
+          "uptime_seconds": {
+            "type": "integer",
+            "title": "Uptime Seconds",
+            "description": "How long this API process has been running"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "The API version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "time",
+          "uptime_seconds",
+          "version"
+        ],
+        "title": "Health"
       },
       "InviteKind": {
         "type": "string",
@@ -10421,6 +10707,20 @@
         ],
         "title": "LoginRequest"
       },
+      "MagicLinkRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "MagicLinkRequest"
+      },
       "Manifest": {
         "properties": {
           "revision": {
@@ -11091,6 +11391,39 @@
         },
         "type": "object",
         "title": "RankRequest"
+      },
+      "Readiness": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "\"ok\""
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Time",
+            "description": "The server's clock, in UTC"
+          },
+          "database": {
+            "type": "string",
+            "title": "Database",
+            "description": "\"ok\" when the database answered"
+          },
+          "database_ms": {
+            "type": "number",
+            "title": "Database Ms",
+            "description": "How long the database took to answer, in milliseconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "time",
+          "database",
+          "database_ms"
+        ],
+        "title": "Readiness"
       },
       "RefreshRequest": {
         "properties": {

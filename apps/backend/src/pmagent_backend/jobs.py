@@ -8,7 +8,11 @@ from datetime import UTC, datetime, timedelta
 from .core.email import EmailMessage, EmailSendError
 from .core.jobs import JobContext, JobFunction
 from .modules.api_tokens.repository import DeviceAuthorizationRepository
-from .modules.auth.repository import ActionTokenRepository, RefreshTokenRepository
+from .modules.auth.repository import (
+    ActionTokenRepository,
+    EmailSignupRepository,
+    RefreshTokenRepository,
+)
 from .modules.auth.service import AuthService
 from .modules.documents.service import DocumentService
 from .modules.invites.repository import InviteRepository
@@ -21,9 +25,9 @@ INVITE_RETENTION = timedelta(days=30)  # after expiry, revocation, or acceptance
 CLEANUP_INTERVAL_SECONDS = 3600
 
 
-async def send_email(ctx: JobContext, *, to: str, subject: str, body: str) -> None:
+async def send_email(ctx: JobContext, *, to: str, subject: str, body: str, html: str | None = None) -> None:
     try:
-        await ctx.email.send(EmailMessage(to=to, subject=subject, body=body))
+        await ctx.email.send(EmailMessage(to=to, subject=subject, body=body, html=html))
     except EmailSendError as exc:
         if exc.retryable:
             raise  # the worker tries again later
@@ -48,6 +52,7 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
         deleted = {
             "refresh_tokens": await RefreshTokenRepository(session).delete_stale(token_cutoff),
             "action_tokens": await ActionTokenRepository(session).delete_stale(token_cutoff),
+            "email_signups": await EmailSignupRepository(session).delete_stale(token_cutoff),
             "device_authorizations": await DeviceAuthorizationRepository(session).delete_stale(token_cutoff),
             "invites": await InviteRepository(session).delete_stale(invite_cutoff),
         }
@@ -65,9 +70,16 @@ async def convert_document(ctx: JobContext, *, document_id: str) -> None:
         await DocumentService(session, ctx.storage).convert(uuid.UUID(document_id))
 
 
+async def send_magic_link(ctx: JobContext, *, email: str) -> None:
+    """Like password resets: the lookup happens here, so the response can't reveal accounts."""
+    async with ctx.session_factory() as session:
+        await AuthService(session, ctx.settings, ctx.email).send_magic_link(email)
+
+
 JOBS: dict[str, JobFunction] = {
     "send_email": send_email,
     "send_password_reset": send_password_reset,
+    "send_magic_link": send_magic_link,
     "cleanup_expired": cleanup_expired,
     "convert_document": convert_document,
 }

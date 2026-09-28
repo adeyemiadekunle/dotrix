@@ -46,10 +46,11 @@ class RefreshToken(UUIDPrimaryKeyMixin, Base):
 class ActionTokenPurpose(enum.StrEnum):
     VERIFY_EMAIL = "verify_email"
     RESET_PASSWORD = "reset_password"
+    MAGIC_LINK = "magic_link"  # sign in without a password
 
 
 class ActionToken(UUIDPrimaryKeyMixin, Base):
-    """Single-use emailed token (email verification, password reset)."""
+    """Single-use emailed token (email verification, password reset, magic-link sign-in)."""
 
     __tablename__ = "action_tokens"
 
@@ -57,6 +58,19 @@ class ActionToken(UUIDPrimaryKeyMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     purpose: Mapped[ActionTokenPurpose] = mapped_column(str_enum(ActionTokenPurpose))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EmailSignup(UUIDPrimaryKeyMixin, Base):
+    """A sign-up by email link, before the account exists: someone asked for a sign-in link
+    for an address with no account. Following the link (and giving a name) creates it."""
+
+    __tablename__ = "email_signups"
+
+    email: Mapped[str] = mapped_column(String(320), index=True)  # lowercased, like users.email
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

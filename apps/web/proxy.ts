@@ -2,7 +2,7 @@
 // The real check is the backend's; this only saves a round trip to a page that would 401.
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC = ["/login", "/signup", "/forgot-password", "/reset-password", "/verify-email"];
+const PUBLIC = ["/login", "/signup", "/forgot-password", "/reset-password", "/verify-email", "/magic-link"];
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
