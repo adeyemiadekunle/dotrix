@@ -717,8 +717,8 @@ def _echo_outcome(outcome: Outcome, printer: _StreamPrinter | None = None) -> No
     run = outcome.run
     if outcome.left_waiting:
         typer.secho(
-            "\nYour role can't approve changes. The run is waiting: someone with approve "
-            f"permission can decide it in the web app (run {run['id']}).",
+            "\nThis change waits for an owner or admin to review it: they can approve or reject it "
+            f"in the web app, and the run carries on then (run {run['id']}).",
             fg=typer.colors.YELLOW,
         )
     elif run["status"] == "failed":

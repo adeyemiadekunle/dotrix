@@ -44,7 +44,7 @@ import {
   useWriteFile,
   type FileEntry,
 } from "@/lib/knowledge";
-import { canManageProjects } from "@/lib/labels";
+import { can, canManageProjects } from "@/lib/labels";
 import { useProjectScope } from "@/lib/queries";
 import { useSearchParam, useSetSearchParams } from "@/lib/url-state";
 
@@ -343,7 +343,7 @@ function KnowledgePage() {
   const [showDeleted, setShowDeleted] = useState(false);
   const [creating, setCreating] = useState(false);
   const role = workspace?.role;
-  const canEditKnowledge = role !== undefined && role !== "guest";
+  const canEditKnowledge = can(workspace, "knowledge:write");
   const isAdmin = canManageProjects(role);
 
   const files = manifest.data?.files ?? [];

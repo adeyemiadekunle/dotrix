@@ -20,6 +20,7 @@ import { timeAgo } from "@/components/issues/issue-activity";
 import { runTitle, useRecentThreads, useThread } from "@/lib/agent";
 import { useMembers } from "@/lib/issues";
 import { useProjectScope } from "@/lib/queries";
+import { can } from "@/lib/labels";
 
 import { useChat } from "./chat-context";
 import { Conversation } from "./conversation";
@@ -77,7 +78,6 @@ function PanelBody({ onClose }: { onClose: () => void }) {
   const title = first ? (first.title ?? runTitle(first)) : null;
   const members = useMembers(workspace?.id);
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
-  const role = workspace?.role;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -121,8 +121,8 @@ function PanelBody({ onClose }: { onClose: () => void }) {
           threadId={threadId}
           onThread={setThreadId}
           names={names}
-          canChat={role !== undefined && role !== "guest"}
-          canDecide={role !== undefined && role !== "guest"}
+          canChat={can(workspace, "agents:chat")}
+          canDecide={can(workspace, "agents:approve")}
           compact
         />
       )}

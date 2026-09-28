@@ -53,7 +53,8 @@ async def get_workspace(member: Viewer) -> WorkspaceWithRole:
 async def update_workspace(
     data: WorkspaceUpdate, member: WorkspaceAdmin, session: SessionDep
 ) -> WorkspaceWithRole:
-    """Rename a workspace. Owners and admins."""
+    """Rename a workspace, or change what members may do beyond chatting, brainstorming, and
+    working the board (`member_permissions`). Owners and admins."""
     return await WorkspaceService(session).update(member, data)
 
 

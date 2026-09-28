@@ -169,8 +169,13 @@ export function RunApprovals({ run, scope, canDecide }: { run: Run; scope: Scope
       {pending.length > 0 && (
         <p className="text-warning-foreground flex items-center gap-1.5 text-xs font-medium">
           <ShieldCheckIcon className="size-3.5" />
-          {pending.length === 1 ? "1 change waits for your approval" : `${pending.length} changes wait for your approval`}
-          {!canDecide && " (you can't approve in this workspace)"}
+          {canDecide
+            ? pending.length === 1
+              ? "1 change waits for your approval"
+              : `${pending.length} changes wait for your approval`
+            : pending.length === 1
+              ? "1 change waits for an owner or admin to review"
+              : `${pending.length} changes wait for an owner or admin to review`}
         </p>
       )}
       {approvals.map((approval) => (

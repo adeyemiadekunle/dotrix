@@ -2,6 +2,8 @@
 
 import type { Schemas } from "@pmagent/api-client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
+import { Checkbox } from "@pmagent/ui/components/checkbox";
+import { Label } from "@pmagent/ui/components/label";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { useState, type FormEvent } from "react";
 
@@ -10,8 +12,15 @@ import { Field, SubmitButton } from "@/components/form";
 import { InvitesCard } from "@/components/settings/invites";
 import { MembersCard } from "@/components/settings/members";
 import { NotFound } from "@/components/states";
-import { useRenameWorkspace } from "@/lib/admin";
-import { ROLE_LABELS, WORKSPACE_KIND_LABELS, canManageProjects, withArticle } from "@/lib/labels";
+import { useMemberPermissions, useRenameWorkspace } from "@/lib/admin";
+import {
+  MEMBER_GRANTS,
+  ROLE_LABELS,
+  WORKSPACE_KIND_LABELS,
+  canManageProjects,
+  withArticle,
+  type Permission,
+} from "@/lib/labels";
 import { useCurrentWorkspace } from "@/lib/queries";
 
 function GeneralCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
@@ -59,6 +68,49 @@ function GeneralCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"] })
   );
 }
 
+/** What members may do beyond chatting, brainstorming, and working the board. Owners and admins
+ * change it; everyone can see it. */
+function MemberPermissionsCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
+  const save = useMemberPermissions(workspace.id);
+  const canEdit = canManageProjects(workspace.role);
+  const granted = new Set(workspace.member_permissions ?? []);
+
+  function toggle(permission: Permission, on: boolean) {
+    const next = MEMBER_GRANTS.map((g) => g.permission).filter((p) => (p === permission ? on : granted.has(p)));
+    save.mutate(next);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>What members can do</CardTitle>
+        <CardDescription>
+          Members always chat, brainstorm, and work the board. Changes to the project&apos;s documents are for owners and
+          admins: a change a member asks the agents for waits for one of you to review it. You can let members do more.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {MEMBER_GRANTS.map((grant) => (
+          <Label key={grant.permission} className="flex items-start gap-3 font-normal">
+            <Checkbox
+              className="mt-0.5"
+              checked={granted.has(grant.permission)}
+              disabled={!canEdit || save.isPending}
+              onCheckedChange={(checked) => toggle(grant.permission, checked === true)}
+              aria-label={grant.label}
+            />
+            <span className="grid gap-0.5">
+              <span className="font-medium">{grant.label}</span>
+              <span className="text-muted-foreground text-xs">{grant.description}</span>
+            </span>
+          </Label>
+        ))}
+        {!canEdit && <p className="text-muted-foreground text-xs">Only owners and admins change these.</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
 /** The workspace's settings, people, and invites. Everyone sees the people; admins manage them. */
 export default function WorkspaceSettingsPage() {
   const { workspace, notFound } = useCurrentWorkspace();
@@ -72,6 +124,7 @@ export default function WorkspaceSettingsPage() {
         ) : (
           <>
             <GeneralCard key={workspace.id} workspace={workspace} />
+            {workspace.kind !== "personal" && <MemberPermissionsCard workspace={workspace} />}
             <MembersCard workspace={workspace} />
             {canManageProjects(workspace.role) && !workspace.via_organization && <InvitesCard workspace={workspace} />}
           </>

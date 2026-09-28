@@ -25,7 +25,7 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.workspaces.models import Membership
-from pmagent_backend.modules.workspaces.permissions import Permission, has_permission
+from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
 from pmagent_engine.permissions import can_create_issue, can_edit_issues
 
@@ -594,9 +594,7 @@ class IssueService:
 
     @staticmethod
     def _check_assignment(actor: IssueActor, agent: AgentAssignee | None) -> None:
-        if agent is AgentAssignee.CODING_AGENT and not has_permission(
-            actor.member.role, Permission.INSTRUCT_CODING_AGENT
-        ):
+        if agent is AgentAssignee.CODING_AGENT and not can(actor.member, Permission.INSTRUCT_CODING_AGENT):
             raise Forbidden("Your role can't instruct the coding agent")
 
     @staticmethod

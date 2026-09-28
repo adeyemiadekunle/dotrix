@@ -162,7 +162,14 @@ async def test_people_permissions(signup, make_project, add_member, db_client: A
     kb, project = await make_project(ada.headers)
     await add_member(project["workspace_id"], bob.id, Role.MEMBER)
 
-    # Members edit knowledge, but not agent rules, and can't export.
+    # Members read documents but don't change them by default...
+    assert (await db_client.get(f"{kb}/files/vision.md", headers=bob.headers)).status_code == 200
+    denied = await db_client.put(f"{kb}/files/vision.md", json={"content": "b"}, headers=bob.headers)
+    assert denied.status_code == 403
+    # ...unless the workspace lets them; even then not agent rules, and no export.
+    ws = f"/v1/workspaces/{project['workspace_id']}"
+    grant = await db_client.patch(ws, json={"member_permissions": ["knowledge:write"]}, headers=ada.headers)
+    assert grant.status_code == 200
     ok = await db_client.put(f"{kb}/files/vision.md", json={"content": "b"}, headers=bob.headers)
     assert ok.status_code == 200
     rules = await db_client.put(f"{kb}/files/agent-rules/base.md", json={"content": "b"}, headers=bob.headers)

@@ -35,6 +35,18 @@ export function useRenameWorkspace(workspaceId: string) {
   );
 }
 
+/** What members may do beyond chatting, brainstorming, and working the board. */
+export function useMemberPermissions(workspaceId: string) {
+  return useAdminMutation(
+    (permissions: Schemas["Permission"][]) =>
+      unwrap(
+        api.PATCH("/v1/workspaces/{workspace_id}", { ...ws(workspaceId), body: { member_permissions: permissions } }),
+      ),
+    [["workspaces"]],
+    "Member permissions saved",
+  );
+}
+
 export function useChangeRole(workspaceId: string) {
   return useAdminMutation(
     ({ userId, role }: { userId: string; role: Role }) =>

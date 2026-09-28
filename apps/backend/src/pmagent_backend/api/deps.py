@@ -30,7 +30,7 @@ from pmagent_backend.modules.api_tokens.service import ApiTokenService, is_api_t
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.auth.repository import UserRepository
 from pmagent_backend.modules.workspaces.models import Membership
-from pmagent_backend.modules.workspaces.permissions import Permission, has_permission
+from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
 
 
@@ -105,7 +105,7 @@ def require_permission(permission: Permission) -> Callable[..., Awaitable[Member
     async def dependency(
         membership: Annotated[Membership, Depends(get_membership)],
     ) -> Membership:
-        if not has_permission(membership.role, permission):
+        if not can(membership, permission):
             raise Forbidden(f"Your role ({membership.role}) can't do this ({permission})")
         return membership
 
