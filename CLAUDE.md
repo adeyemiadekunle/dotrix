@@ -84,7 +84,7 @@ apps/backend/
 │   │   ├── knowledge/           .pmagent/ files + version history + export
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge
 │   │   ├── issues/              issues, keys, board/backlog/epics, claim, Markdown render for export
-│   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals and decisions, board tools, checkpointer, run queue + live streams (in-process or Redis)
+│   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals and decisions, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis)
 │   │   ├── audit/               append-only audit log
 │   │   └── connectors/          (planned, FR-10/12) GitHub, GitLab, doc sources (OAuth)
 │   ├── jobs.py                  background jobs by name (send_email, send_password_reset); where they run: core/jobs.py
@@ -327,7 +327,8 @@ External accounts, keys, and config have to exist before these items can be buil
 - [x] Streaming of agent output to clients: the runner reads the graph's stream (collecting results and interrupts as `ainvoke` does) and publishes the PM's text to in-process `RunStreams`; subagents aren't streamed
 - [x] Streams go through Redis in worker mode (`RedisRunStreams`: snapshot + deltas by position, pub/sub), in-process otherwise
 - [x] Runs in a separate worker process (`PMAGENT_JOBS=worker`, arq on Redis): they survive API restarts; a worker cut off mid-run has the job retried from its last checkpoint (never resending the message); Stop aborts the job. `local` (default) keeps runs in the API process
-- [ ] Tracing of agent runs for admins (LangSmith or OpenTelemetry) and token usage per run (feeds FR-28 spend limits)
+- [x] Token usage per run (feeds FR-28 spend limits): `agents/usage.py` counts every model call of a step (subagents and the title included) into the run's `input_tokens` / `output_tokens`, with the model used; the run's audit events carry each step's tokens; owners and admins see them under a run in the chat. In worker mode, a cut-off attempt's tokens are lost when its job is retried
+- [ ] Tracing of agent runs for admins (LangSmith or OpenTelemetry)
 - [ ] **FR-36** Optional second approver (P1), and approving from Slack or email (FR-14)
 
 ### P0: Code hosts and coding agent

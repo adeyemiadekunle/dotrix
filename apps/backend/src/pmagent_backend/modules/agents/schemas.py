@@ -67,6 +67,15 @@ class AgentRunRead(BaseModel):
     reply: str | None
     error: str | None
     requested_by_id: uuid.UUID | None
+    model: str | None = Field(
+        default=None, description="The project's model when the run last worked, e.g. `google_genai:gemini-3.8-flash`"
+    )
+    input_tokens: int = Field(
+        default=0, description="Input (prompt) tokens over every model call of the run, subagents and the title included"
+    )
+    output_tokens: int = Field(
+        default=0, description="Output tokens over every model call of the run, subagents and the title included"
+    )
     created_at: datetime
     updated_at: datetime
     finished_at: datetime | None

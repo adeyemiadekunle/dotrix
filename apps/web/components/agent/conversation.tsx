@@ -49,16 +49,29 @@ function Thinking({ run, writing = false }: { run: Run; writing?: boolean }) {
   );
 }
 
+/** What a run used, for owners and admins: "12,340 in / 512 out tokens · model". */
+function RunUsage({ run }: { run: Run }) {
+  if (isActive(run) || (run.input_tokens === 0 && run.output_tokens === 0)) return null;
+  return (
+    <p className="text-muted-foreground text-xs">
+      {run.input_tokens.toLocaleString()} in / {run.output_tokens.toLocaleString()} out tokens
+      {run.model && ` · ${run.model}`}
+    </p>
+  );
+}
+
 function RunView({
   run,
   scope,
   names,
   canDecide,
+  showUsage,
 }: {
   run: Run;
   scope: Scope;
   names: Map<string, string>;
   canDecide: boolean;
+  showUsage: boolean;
 }) {
   const who = run.requested_by_id ? (names.get(run.requested_by_id) ?? "Someone") : "Someone";
   const live = useRunStream(scope, run.id, isActive(run));
@@ -115,6 +128,7 @@ function RunView({
               change.
             </p>
           )}
+          {showUsage && <RunUsage run={run} />}
         </div>
       </div>
     </div>
@@ -132,6 +146,7 @@ export function Conversation({
   names,
   canChat,
   canDecide,
+  showUsage = false,
   compact,
 }: {
   scope: Scope;
@@ -140,6 +155,8 @@ export function Conversation({
   names: Map<string, string>;
   canChat: boolean;
   canDecide: boolean;
+  /** Each run's token usage (owners and admins). */
+  showUsage?: boolean;
   compact?: boolean;
 }) {
   const thread = useThread(scope, threadId);
@@ -212,7 +229,14 @@ export function Conversation({
             </div>
           )}
           {runs.map((run) => (
-            <RunView key={run.id} run={run} scope={scope} names={names} canDecide={canDecide} />
+            <RunView
+              key={run.id}
+              run={run}
+              scope={scope}
+              names={names}
+              canDecide={canDecide}
+              showUsage={showUsage}
+            />
           ))}
           <div ref={bottom} />
         </div>

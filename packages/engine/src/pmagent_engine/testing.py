@@ -12,7 +12,14 @@ from pydantic import Field
 def _chunks(message: AIMessage) -> list[Any]:
     """A reply as stream chunks: text word by word (so streaming shows up in tests), or a
     tool call or a list of content blocks (e.g. `[]`, as Gemini sometimes ends a turn) in one
-    piece."""
+    piece. A scripted `usage_metadata` rides on the last chunk, as providers report it."""
+    chunks = _content_chunks(message)
+    if message.usage_metadata:
+        chunks[-1].message.usage_metadata = message.usage_metadata
+    return chunks
+
+
+def _content_chunks(message: AIMessage) -> list[Any]:
     import json
 
     from langchain_core.messages import AIMessageChunk

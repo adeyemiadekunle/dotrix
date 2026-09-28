@@ -416,3 +416,87 @@ async def test_only_owners_and_admins_approve_architecture_changes(
     assert still["status"] == "awaiting_approval"
     # An owner decides it.
     assert (await decide(db_client, base, paused, ada.headers, ("reject", "Keep ours"))).status_code == 200
+
+
+# -- token usage ------------------------------------------------------------------------------
+
+
+def used(message: AIMessage | str, input_tokens: int, output_tokens: int) -> AIMessage:
+    """A scripted reply that reports its token usage, as providers do."""
+    reply = message if isinstance(message, AIMessage) else AIMessage(content=message)
+    reply.usage_metadata = {
+        "input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": input_tokens + output_tokens,
+    }
+    return reply
+
+
+async def test_a_run_records_its_model_and_tokens(project, db_client: AsyncClient, agent_script) -> None:
+    ada, team, base = await project()
+    agent_script.say(
+        used(tool_call("read_file", file_path="/pmagent/project.md"), 100, 10),
+        used("It's a logistics platform.", 150, 20),
+    )
+    done = await run(db_client, base, ada.headers, "What is this?")
+    assert done["status"] == "completed"
+    assert (done["input_tokens"], done["output_tokens"]) == (250, 30)
+    project_ = (await db_client.get(base, headers=ada.headers)).json()
+    assert done["model"] == project_["model"]
+
+    events = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
+    completed = next(e for e in events if e["action"] == "agent_run.completed")
+    assert completed["details"] == {"input_tokens": 250, "output_tokens": 30}
+
+
+async def test_tokens_add_up_across_an_approval(project, db_client: AsyncClient, agent_script) -> None:
+    ada, team, base = await project()
+    agent_script.say(
+        used(tool_call("write_file", file_path="/pmagent/roadmap.md", content="New"), 100, 10),
+        used("Updated the roadmap.", 120, 5),
+    )
+    paused = await run(db_client, base, ada.headers, "Update the roadmap")
+    assert paused["status"] == "awaiting_approval"
+    assert (paused["input_tokens"], paused["output_tokens"]) == (100, 10)
+    done = (await decide(db_client, base, paused, ada.headers, ("approve",))).json()
+    assert done["status"] == "completed"
+    assert (done["input_tokens"], done["output_tokens"]) == (220, 15)
+
+    events = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
+    waiting = next(e for e in events if e["action"] == "agent_run.awaiting_approval")
+    assert waiting["details"] == {"pending_actions": 1, "input_tokens": 100, "output_tokens": 10}
+    completed = next(e for e in events if e["action"] == "agent_run.completed")
+    assert completed["details"] == {"input_tokens": 120, "output_tokens": 5}  # this step's tokens
+
+
+async def test_subagent_calls_are_counted(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    agent_script.say(
+        used(tool_call("task", description="Summarise the vision", subagent_type="research-agent"), 100, 10),
+        used("The vision is a logistics platform.", 40, 8),  # the subagent
+        used("Research says: logistics.", 130, 6),  # the PM again
+    )
+    done = await run(db_client, base, ada.headers, "Ask research about the vision")
+    assert done["status"] == "completed", done
+    assert (done["input_tokens"], done["output_tokens"]) == (270, 24)
+
+
+async def test_a_failed_run_keeps_its_tokens(project, db_client: AsyncClient, agent_script) -> None:
+    ada, team, base = await project()
+    agent_script.say(used(empty_turn(), 80, 0), used(AIMessage(content=""), 90, 0))
+    done = await run(db_client, base, ada.headers, "Hello?")
+    assert done["status"] == "failed"
+    assert (done["input_tokens"], done["output_tokens"]) == (170, 0)
+    events = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
+    failed = next(e for e in events if e["action"] == "agent_run.failed")
+    assert failed["details"]["input_tokens"] == 170 and failed["details"]["output_tokens"] == 0
+
+
+async def test_the_title_counts_towards_the_run(project, db_client: AsyncClient, agent_script) -> None:
+    from pmagent_backend.modules.agents.titles import generate_title
+
+    ada, _, base = await project()
+    db_client._transport.app.state.runner.titler = generate_title  # type: ignore[attr-defined]
+    agent_script.say(used("KUN-5 is blocked.", 100, 5), used("Blocked issues", 30, 2))
+    first = await run(db_client, base, ada.headers, "What's blocked?")
+    fetched = (await db_client.get(f"{base}/agent/runs/{first['id']}", headers=ada.headers)).json()
+    assert fetched["title"] == "Blocked issues"
+    assert (fetched["input_tokens"], fetched["output_tokens"]) == (130, 7)
