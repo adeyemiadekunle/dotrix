@@ -38,6 +38,10 @@ class FakePlatform:
         # Agent runs: each GET of a run, and each decision, returns the next scripted state.
         self.agent_script: list[dict[str, Any]] = []
         self.deny_decisions = False  # answer decisions with 403 (role can't approve)
+        # Each GET of a run's stream serves the next list of (event, text) as server-sent
+        # events; with none left, the stream just ends (the run isn't working right now).
+        self.streams: list[list[tuple[str, str]]] = []
+        self.stream_status = 200  # e.g. 404 for a server without streaming
         self.runs_started: list[dict[str, Any]] = []
         # Workspaces the signed-in person belongs to, and the projects in them.
         self.workspaces: list[dict[str, Any]] = [
@@ -121,6 +125,14 @@ class FakePlatform:
             if self.deny_decisions:
                 return self.problem(403, "forbidden")
             return httpx.Response(200, json=self._next_run())
+        if path.startswith(AGENT + "/runs/") and path.endswith("/stream"):
+            if self.stream_status != 200:
+                return self.problem(self.stream_status, "not_found")
+            events = self.streams.pop(0) if self.streams else []
+            sse = ": ping\n\n" + "".join(
+                f"event: {event}\ndata: {json.dumps({'text': text})}\n\n" for event, text in [*events, ("end", "")]
+            )
+            return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
         if path.startswith(AGENT + "/runs/") and method == "GET":
             return httpx.Response(200, json=self._next_run())
         if path == ISSUES + "/claim":

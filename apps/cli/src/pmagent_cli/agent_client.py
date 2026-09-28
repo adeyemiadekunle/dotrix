@@ -4,6 +4,10 @@ UI-agnostic: the terminal (or a test) supplies `decide`, which is shown one pend
 change at a time and returns ("approve" | "reject", reason). A run can pause
 several times (each write pauses), so `converse` loops until the run completes,
 fails, or is left waiting for someone else to approve.
+
+With `on_text`, the Project Manager's reply is followed as it's written (the run's
+server-sent event stream) instead of appearing at the end. Streaming is best effort:
+if it's unavailable, waiting falls back to polling and the saved reply is shown.
 """
 from __future__ import annotations
 
@@ -23,10 +27,20 @@ class ApprovalNotAllowed(Exception):
     """The signed-in person can't approve; the run waits for someone who can."""
 
 
+OnText = Callable[[str, bool], None]  # (text, starts a new message)
+
+
 @dataclass
 class Outcome:
     run: dict[str, Any]
     left_waiting: bool = False  # awaiting approval that this person couldn't give
+    streamed: str = ""  # the last message as it was shown while streaming
+
+    @property
+    def reply_shown(self) -> bool:
+        """Whether streaming already showed the whole reply."""
+        reply = (self.run.get("reply") or "").strip()
+        return bool(reply) and self.streamed.strip() == reply
 
     @property
     def status(self) -> str:
@@ -48,19 +62,65 @@ class PlatformAgent:
     def briefing(self) -> dict:
         return self.client.post(f"{self.base}/briefing")
 
-    def wait(self, run: dict, *, timeout: float = 900, on_tick: Callable[[dict], None] | None = None) -> dict:
-        """Poll until the run stops (completed, failed, or waiting for approval)."""
+    def wait(
+        self,
+        run: dict,
+        *,
+        timeout: float = 900,
+        on_tick: Callable[[dict], None] | None = None,
+        on_text: OnText | None = None,
+        shown: list[str] | None = None,
+    ) -> dict:
+        """Wait until the run stops (completed, failed, or waiting for approval): follow its
+        stream with `on_text`, otherwise poll. `shown` holds the current message's text so
+        far, across calls."""
+        shown = shown if shown is not None else [""]
         delay, waited = 0.5, 0.0
+        streaming = on_text is not None
         while run["status"] not in DONE_STATUSES:
             if waited >= timeout:
                 raise TimeoutError(f"Run {run['id']} is still {run['status']} after {int(timeout)}s")
-            self.sleep(delay)
-            waited += delay
-            delay = min(delay * 1.5, 3.0)
+            started = time.monotonic()
+            got_text = False
+            if streaming:
+                try:
+                    got_text = self._follow(run, on_text, shown)  # type: ignore[arg-type]
+                except PlatformError:
+                    streaming = False  # (an older server, or the connection dropped): poll
+            waited += time.monotonic() - started
             run = self.client.get(f"{self.base}/runs/{run['id']}")
             if on_tick:
                 on_tick(run)
+            if run["status"] in DONE_STATUSES:
+                break
+            if not got_text:
+                # Queued, or between steps: no stream yet. Wait a little before looking again.
+                self.sleep(delay)
+                waited += delay
+                delay = min(delay * 1.5, 3.0)
         return run
+
+    def _follow(self, run: dict, on_text: OnText, shown: list[str]) -> bool:
+        """Show the stream until it ends; True if any text came."""
+        got = False
+        for event, data in self.client.events(f"{self.base}/runs/{run['id']}/stream"):
+            text = data.get("text", "") if isinstance(data, dict) else ""
+            if event == "text":
+                # Everything so far. A reconnect repeats what was shown; a new step starts afresh.
+                if text.startswith(shown[0]):
+                    if text[len(shown[0]):]:
+                        on_text(text[len(shown[0]):], not shown[0])
+                else:
+                    on_text(text, True)
+                shown[0] = text
+                got = got or bool(text)
+            elif event == "delta" and text:
+                on_text(text, not shown[0])
+                shown[0] += text
+                got = True
+            elif event == "end":
+                break
+        return got
 
     def decide(self, run: dict, decisions: list[tuple[dict, Decision]]) -> dict:
         body = {
@@ -82,13 +142,15 @@ class PlatformAgent:
         decide: Callable[[dict, int, int], Decision | str],
         *,
         on_tick: Callable[[dict], None] | None = None,
+        on_text: OnText | None = None,
     ) -> Outcome:
         """Wait for the run, settle each pause with `decide`, and repeat until it ends.
 
         `decide(approval, index, total)` returns a Decision, or "approve-all" to approve
         this and every remaining change in the same pause.
         """
-        run = self.wait(run, on_tick=on_tick)
+        shown = [""]
+        run = self.wait(run, on_tick=on_tick, on_text=on_text, shown=shown)
         while run["status"] == "awaiting_approval":
             pending = [a for a in run["approvals"] if a["status"] == "pending"]
             decisions: list[tuple[dict, Decision]] = []
@@ -105,6 +167,7 @@ class PlatformAgent:
             try:
                 run = self.decide(run, decisions)
             except ApprovalNotAllowed:
-                return Outcome(run, left_waiting=True)
-            run = self.wait(run, on_tick=on_tick)
-        return Outcome(run)
+                return Outcome(run, left_waiting=True, streamed=shown[0])
+            shown[0] = ""  # the resumed run writes a new message
+            run = self.wait(run, on_tick=on_tick, on_text=on_text, shown=shown)
+        return Outcome(run, streamed=shown[0])

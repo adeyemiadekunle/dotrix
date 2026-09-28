@@ -11,7 +11,7 @@ import logging
 import os
 import time
 import webbrowser
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -179,6 +179,32 @@ class PlatformClient:
 
     def get(self, path: str, **kw: Any) -> Any:
         return self.request("GET", path, **kw)
+
+    def events(self, path: str) -> Iterator[tuple[str, Any]]:
+        """Server-sent events from `path`, as (event, data) with the JSON data decoded.
+        Comment lines (the server's keep-alive pings) are skipped."""
+        headers = {"Accept": "text/event-stream"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        try:
+            with self.http.stream("GET", f"/v1{path}", headers=headers) as response:
+                if response.status_code >= 400:
+                    response.read()
+                    raise PlatformError(response.status_code, "error", response.text or response.reason_phrase)
+                event, data = "message", []
+                for line in response.iter_lines():
+                    if not line:
+                        if data:
+                            yield event, json.loads("\n".join(data))
+                        event, data = "message", []
+                    elif line.startswith(":"):
+                        continue
+                    elif line.startswith("event:"):
+                        event = line[6:].strip()
+                    elif line.startswith("data:"):
+                        data.append(line[5:].lstrip())
+        except httpx.TransportError as exc:
+            raise PlatformError(0, "unreachable", f"Lost the stream from {self.url}: {exc}") from exc
 
     def post(self, path: str, body: Any = None, **kw: Any) -> Any:
         return self.request("POST", path, json=body, **kw)
