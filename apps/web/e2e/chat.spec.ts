@@ -36,13 +36,14 @@ test("the PM answers, and a change waits for approval before it happens", async 
   await page.goto(page.url().replace("/approvals", `/p/${key}/board`));
   await expect(page.getByText("Add dark mode")).toBeVisible();
 
-  // The conversation got a title from the model.
+  // The conversations are titled from their first message (no model call).
   await page.getByRole("link", { name: "Chat", exact: true }).click();
   const conversations = page.getByRole("navigation", { name: "Conversations" });
-  await expect(conversations.getByText("Test conversation").first()).toBeVisible();
+  await expect(conversations.getByText("What's open", { exact: true })).toBeVisible();
+  await expect(conversations.getByText("Create issue: Add dark mode", { exact: true })).toBeVisible();
 
-  // Rename it from the title above the conversation.
-  await conversations.getByText("Test conversation").first().click();
+  // Rename one from the title above the conversation.
+  await conversations.getByText("Create issue: Add dark mode", { exact: true }).click();
   await page.getByRole("button", { name: "Rename conversation" }).click();
   const title = page.getByLabel("Conversation title");
   await title.fill("Dark mode request");
