@@ -234,6 +234,8 @@ class AgentRunner:
                     command = hitl.resume_command(result, "reject", READ_ONLY_REJECTION)
                     result = await _run_graph(agent, command, config, stream)
             await self._finish(run_id, result)
+            # The reply is saved: end the stream now, not after the title (a model call).
+            await self.streams.close(run_id)
             if payload.get("name_thread") and self.titler is not None:
                 await self._name_thread(run_id, choice.model, first_message, result)
         except asyncio.CancelledError:

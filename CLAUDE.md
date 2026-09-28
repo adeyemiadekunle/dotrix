@@ -307,7 +307,8 @@ External accounts, keys, and config have to exist before these items can be buil
 - [x] Per-agent issue rules (`pmagent_engine.permissions.can_create_issue` / `can_edit_issues`): Product epics+stories, Architecture tasks, Research spikes, Reviewer bugs, only the PM edits; specialists aren't given `update_issue`, and the service refuses it anyway
 - [x] CLI: `pmagent issue …` works the platform board; the MCP server uses it when the repo is linked (Claude Code / Codex act as themselves and stop at review), and refreshes the mirror before reads
 - [x] CLI: `pmagent chat` / `brief` use the platform's agents when linked: inline approve / reject (with reason) / approve all / view, coloured diffs, `--thread` to continue, `--local` for the local engine. Live-tested on Gemini
-- [ ] CLI: `pmagent run` (one-shot, background) on the platform; stream agent output instead of polling once the API streams
+- [x] CLI: `pmagent chat`, `brief`, and `architecture draft` stream the PM's reply as it's written (the run's SSE stream; reconnects between steps, falls back to polling)
+- [ ] CLI: `pmagent run` (one-shot, background) on the platform
 - [x] CLI: `pmagent docs-add` uploads to the platform when linked
 - [ ] **FR-32** Calendar feed (iCalendar) for due and scheduled dates, with a per-user secret URL
 - [ ] **FR-33** @mentions and notifying watchers (with FR-14 notifications)

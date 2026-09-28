@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -600,7 +601,38 @@ def _ask_decision(approval: dict, index: int, total: int):
             _echo_approval(approval, full=True)
 
 
-def _echo_outcome(outcome: Outcome) -> None:
+class _StreamPrinter:
+    """Prints the PM's reply as it's written, and keeps prompts on a line of their own."""
+
+    def __init__(self) -> None:
+        self.open_line = False
+
+    def __call__(self, text: str, new_message: bool) -> None:
+        if new_message:
+            self.finish_line()
+            typer.echo("")
+        typer.echo(text, nl=False)
+        sys.stdout.flush()
+        self.open_line = not text.endswith("\n")
+
+    def finish_line(self) -> None:
+        if self.open_line:
+            typer.echo("")
+            self.open_line = False
+
+    def deciding(self, decide):
+        """`decide`, starting on a fresh line."""
+
+        def wrapped(*args):
+            self.finish_line()
+            return decide(*args)
+
+        return wrapped
+
+
+def _echo_outcome(outcome: Outcome, printer: _StreamPrinter | None = None) -> None:
+    if printer is not None:
+        printer.finish_line()
     run = outcome.run
     if outcome.left_waiting:
         typer.secho(
@@ -612,10 +644,14 @@ def _echo_outcome(outcome: Outcome) -> None:
         typer.secho(f"\nThe run failed: {run.get('error')}", fg=typer.colors.RED)
     else:
         decided = [a for a in run.get("approvals", []) if a["status"] != "pending"]
+        if not (run.get("reply") or "").strip():
+            typer.secho("\n(The PM finished without writing a reply. Try asking again.)", dim=True)
+        elif not outcome.reply_shown:
+            typer.echo(f"\n{run['reply']}")
         if decided:
             approved = sum(a["status"] == "approved" for a in decided)
-            typer.secho(f"\n({approved} change(s) approved, {len(decided) - approved} rejected)", dim=True)
-        typer.echo(f"\n{run.get('reply') or ''}\n")
+            typer.secho(f"({approved} change(s) approved, {len(decided) - approved} rejected)", dim=True)
+        typer.echo("")
 
 
 def _platform_agent(project: str) -> tuple[LinkState, PlatformAgent]:
@@ -627,8 +663,9 @@ def _platform_brief(project: str) -> None:
     _, agent = _platform_agent(project)
     typer.secho("Preparing your briefing…", dim=True)
     run = _platform_call(agent.briefing)
-    outcome = Outcome(_platform_call(lambda: agent.wait(run)))
-    _echo_outcome(outcome)
+    printer, shown = _StreamPrinter(), [""]
+    outcome = Outcome(_platform_call(lambda: agent.wait(run, on_text=printer, shown=shown)), streamed=shown[0])
+    _echo_outcome(outcome, printer)
     if outcome.status == "failed":
         raise typer.Exit(1)
 
@@ -656,7 +693,8 @@ def _platform_chat(project: str, thread: str | None) -> None:
             run = agent.start(message, thread)
             thread = run["thread_id"]
             typer.secho("(working…)", dim=True)
-            _echo_outcome(agent.converse(run, _ask_decision))
+            printer = _StreamPrinter()
+            _echo_outcome(agent.converse(run, printer.deciding(_ask_decision), on_text=printer), printer)
         except (PlatformError, TimeoutError) as exc:
             typer.secho(str(exc), fg=typer.colors.RED)
     if thread:
@@ -1062,8 +1100,9 @@ def architecture_draft(
     run = _platform_call(lambda: client.post(f"{base}/architecture-draft", body))
     typer.secho("(the Architecture agent is working…)", dim=True)
     agent = PlatformAgent(client, state)
-    outcome = _platform_call(lambda: agent.converse(run, _ask_decision))
-    _echo_outcome(outcome)
+    printer = _StreamPrinter()
+    outcome = _platform_call(lambda: agent.converse(run, printer.deciding(_ask_decision), on_text=printer))
+    _echo_outcome(outcome, printer)
     if outcome.status == "completed":
         _echo_pull(_platform_call(lambda: pull(client, state, config.pmagent_dir)))
 

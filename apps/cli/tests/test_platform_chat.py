@@ -148,3 +148,76 @@ def test_brief_reports_a_failed_run(linked_repo: Path, platform: FakePlatform) -
     platform.agent_script = [{"status": "failed", "error": "No API key for anthropic:claude-sonnet-5"}]
     result = CliRunner().invoke(cli_module.app, ["brief", "--project", str(linked_repo)])
     assert result.exit_code == 1 and "No API key" in result.output
+
+
+# -- streaming the reply -------------------------------------------------------------------
+
+
+def _collect() -> tuple[list[tuple[str, bool]], object]:
+    pieces: list[tuple[str, bool]] = []
+    return pieces, lambda text, new: pieces.append((text, new))
+
+
+def test_the_reply_streams_as_it_is_written(platform: FakePlatform, state: LinkState) -> None:
+    platform.agent_script = [{"status": "completed", "reply": "Three issues are open."}]
+    platform.streams = [[("text", ""), ("delta", "Three issues "), ("delta", "are open.")]]
+    pieces, on_text = _collect()
+    outcome = agent(platform, state).converse(agent(platform, state).start("status?"), lambda *a: ("approve", None), on_text=on_text)
+    assert pieces == [("Three issues ", True), ("are open.", False)]
+    assert outcome.streamed == "Three issues are open." and outcome.reply_shown
+
+
+def test_a_reconnect_only_shows_what_is_new(platform: FakePlatform, state: LinkState) -> None:
+    # The first connection drops mid-reply (the run is still running), the second picks up.
+    platform.agent_script = [{"status": "running"}, {"status": "completed", "reply": "Hello there."}]
+    platform.streams = [[("text", "Hel")], [("text", "Hello"), ("delta", " there.")]]
+    pieces, on_text = _collect()
+    outcome = agent(platform, state).converse(agent(platform, state).start("hi"), lambda *a: ("approve", None), on_text=on_text)
+    assert pieces == [("Hel", True), ("lo", False), (" there.", False)]
+    assert outcome.reply_shown
+
+
+def test_each_step_after_an_approval_is_a_new_message(platform: FakePlatform, state: LinkState) -> None:
+    platform.agent_script = [
+        {"status": "awaiting_approval", "approvals": [approval("a1")]},
+        {"status": "queued"},
+        {"status": "completed", "reply": "Roadmap updated."},
+    ]
+    platform.streams = [[("text", "I'll update the roadmap.")], [("text", "Roadmap updated.")]]
+    pieces, on_text = _collect()
+    outcome = agent(platform, state).converse(agent(platform, state).start("go"), lambda *a: ("approve", None), on_text=on_text)
+    assert pieces == [("I'll update the roadmap.", True), ("Roadmap updated.", True)]
+    assert outcome.reply_shown
+
+
+def test_without_streaming_it_falls_back_to_polling(platform: FakePlatform, state: LinkState) -> None:
+    platform.stream_status = 404  # e.g. an older server
+    platform.agent_script = [{"status": "running"}, {"status": "completed", "reply": "Done."}]
+    pieces, on_text = _collect()
+    outcome = agent(platform, state).converse(agent(platform, state).start("go"), lambda *a: ("approve", None), on_text=on_text)
+    assert pieces == [] and outcome.status == "completed" and not outcome.reply_shown
+    streams = [r for r in platform.requests if r.url.path.endswith("/stream")]
+    assert len(streams) == 1  # it stopped trying
+
+
+def test_chat_prints_the_streamed_reply_once(linked_repo: Path, platform: FakePlatform) -> None:
+    platform.agent_script = [{"status": "completed", "reply": "Three issues are open."}]
+    platform.streams = [[("text", "Three issues "), ("delta", "are open.")]]
+    result = CliRunner().invoke(cli_module.app, ["chat", "--project", str(linked_repo)], input="status?\n/quit\n")
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Three issues are open.") == 1
+    assert "Three issues are open.\n" in result.output  # the line is ended before the next prompt
+
+
+def test_chat_shows_the_saved_reply_when_nothing_streamed(linked_repo: Path, platform: FakePlatform) -> None:
+    platform.agent_script = [{"status": "running"}, {"status": "completed", "reply": "Done."}]
+    result = CliRunner().invoke(cli_module.app, ["chat", "--project", str(linked_repo)], input="go\n/quit\n")
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Done.") == 1
+
+
+def test_chat_says_so_when_the_reply_is_empty(linked_repo: Path, platform: FakePlatform) -> None:
+    platform.agent_script = [{"status": "completed", "reply": ""}]
+    result = CliRunner().invoke(cli_module.app, ["chat", "--project", str(linked_repo)], input="go\n/quit\n")
+    assert result.exit_code == 0, result.output
+    assert "finished without writing a reply" in result.output
