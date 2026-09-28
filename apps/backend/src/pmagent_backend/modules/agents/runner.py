@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from deepagents.backends import CompositeBackend, StateBackend
+from langchain_core.messages import HumanMessage, RemoveMessage
 from sqlalchemy import select
 
 from pmagent_backend.modules.audit.service import AuditLog
@@ -43,6 +44,19 @@ BRIEFING_PROMPT = (
 READ_ONLY_REJECTION = "This is a read-only briefing; no changes were made. Don't retry the write."
 MAX_AUTO_REJECTIONS = 5
 RECURSION_LIMIT = 150
+# Models occasionally end their turn with nothing at all (seen with Gemini after several tool
+# calls: no text, no tool calls, zero output tokens). The runner asks once more with this;
+# people never see it, since conversations show runs, not the checkpoint.
+NO_REPLY_FOLLOW_UP = (
+    "Your last turn ended without a reply. Answer my previous message now, in plain text, "
+    "using what you've already found."
+)
+FOLLOW_UP_MARK = "pmagent_follow_up"
+NO_REPLY_ERROR = "The PM finished without writing a reply, even when asked again. Send your message again."
+NO_REPLY_AFTER_DECISIONS_ERROR = (
+    "The PM finished without writing a reply, even when asked again. "
+    "The approved actions above were applied."
+)
 
 
 def _now() -> datetime:
@@ -50,14 +64,46 @@ def _now() -> datetime:
 
 
 def _text(content: Any) -> str:
-    """A message's text, whether a plain string or a list of content blocks."""
+    """A message's text, whether a plain string or a list of content blocks (thinking and
+    other non-text blocks are left out)."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return "".join(
-            block.get("text", "") if isinstance(block, dict) else str(block) for block in content
-        )
+        return "".join(_block_text(block) for block in content)
     return str(content)
+
+
+def _block_text(block: Any) -> str:
+    if not isinstance(block, dict):
+        return str(block)
+    return str(block.get("text", "")) if block.get("type", "text") == "text" else ""
+
+
+def _reply(result: dict) -> str:
+    """The PM's answer in a finished step: its last message's text or, when that is empty,
+    the last text it wrote since the person's message (some models write the answer and then
+    end with an empty turn)."""
+    for message in reversed(result.get("messages") or []):
+        if getattr(message, "type", None) == "human" and not _is_follow_up(message):
+            break
+        if getattr(message, "type", None) == "ai" and (text := _text(message.content).strip()):
+            return text
+    return ""
+
+
+def _is_follow_up(message: Any) -> bool:
+    return bool((getattr(message, "additional_kwargs", None) or {}).get(FOLLOW_UP_MARK))
+
+
+def _follow_up(result: dict) -> dict:
+    """Graph input asking for the missing reply, dropping the empty turn: an empty model turn
+    in the history can itself be refused by the provider."""
+    messages: list[Any] = []
+    last = (result.get("messages") or [None])[-1]
+    if getattr(last, "type", None) == "ai" and getattr(last, "id", None) and not _text(last.content).strip():
+        messages.append(RemoveMessage(id=last.id))
+    messages.append(HumanMessage(NO_REPLY_FOLLOW_UP, additional_kwargs={FOLLOW_UP_MARK: True}))
+    return {"messages": messages}
 
 
 class AgentRunner:
@@ -227,12 +273,14 @@ class AgentRunner:
                 graph_input, result = await _continue_from_checkpoint(agent, config, payload, graph_input)
             if result is None:
                 result = await _run_graph(agent, graph_input, config, stream)
-            if kind is RunKind.BRIEFING:
-                for _ in range(MAX_AUTO_REJECTIONS):
-                    if not hitl.has_pending(result):
-                        break
-                    command = hitl.resume_command(result, "reject", READ_ONLY_REJECTION)
-                    result = await _run_graph(agent, command, config, stream)
+            result = await self._settle(agent, kind, config, stream, result)
+            if not hitl.has_pending(result) and not _reply(result):
+                logger.warning("agent run %s: no reply; asking once more", run_id)
+                result = await _run_graph(agent, _follow_up(result), config, stream)
+                result = await self._settle(agent, kind, config, stream, result)
+                if not hitl.has_pending(result) and not _reply(result):
+                    await self._fail(run_id, NO_REPLY_AFTER_DECISIONS_ERROR if resuming else NO_REPLY_ERROR)
+                    return
             await self._finish(run_id, result)
             if payload.get("name_thread") and self.titler is not None:
                 await self._name_thread(run_id, choice.model, first_message, result)
@@ -254,12 +302,20 @@ class AgentRunner:
         finally:
             await self.streams.close(run_id)
 
+    async def _settle(self, agent: Any, kind: RunKind, config: dict, stream: Stream, result: dict) -> dict:
+        """A briefing is read-only: any write it attempts is rejected so it can carry on."""
+        if kind is RunKind.BRIEFING:
+            for _ in range(MAX_AUTO_REJECTIONS):
+                if not hitl.has_pending(result):
+                    break
+                command = hitl.resume_command(result, "reject", READ_ONLY_REJECTION)
+                result = await _run_graph(agent, command, config, stream)
+        return result
+
     async def _name_thread(self, run_id: uuid.UUID, model: Any, message: str, result: dict) -> None:
         """Replace the new thread's placeholder title with one the model writes."""
         assert self.titler is not None
-        messages = result.get("messages") or []
-        reply = _text(messages[-1].content) if messages else ""
-        title = await self.titler(model, message, reply)
+        title = await self.titler(model, message, _reply(result))
         if not title:
             return
         async with self.session_factory() as session:
@@ -299,8 +355,7 @@ class AgentRunner:
                 run.status = RunStatus.AWAITING_APPROVAL
                 action_name = "agent_run.awaiting_approval"
             else:
-                messages = result.get("messages") or []
-                run.reply = _text(messages[-1].content) if messages else ""
+                run.reply = _reply(result)
                 run.status, run.finished_at = RunStatus.COMPLETED, now
                 action_name = "agent_run.completed"
             run.updated_at = now
@@ -410,7 +465,7 @@ async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream)
 
 def _last_user_message(values: dict) -> str | None:
     for message in reversed(values.get("messages") or []):
-        if getattr(message, "type", None) == "human":
+        if getattr(message, "type", None) == "human" and not _is_follow_up(message):
             return _text(message.content)
     return None
 

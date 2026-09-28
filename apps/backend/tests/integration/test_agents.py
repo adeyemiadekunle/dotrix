@@ -1,6 +1,7 @@
 """Agent runs through the API, with a scripted model (no API key needed)."""
 import pytest
 from httpx import AsyncClient
+from langchain_core.messages import AIMessage
 
 from pmagent_backend.modules.workspaces.models import Role
 from pmagent_engine.testing import tool_call
@@ -108,6 +109,58 @@ async def test_built_in_requests_have_fixed_titles(project, db_client: AsyncClie
     agent_script.say("All quiet.")
     brief = (await db_client.post(f"{base}/agent/briefing", headers=ada.headers)).json()
     assert brief["title"] == "Daily briefing"
+
+
+def empty_turn() -> AIMessage:
+    """How Gemini sometimes ends a turn after tool calls: no text, no tool calls."""
+    return AIMessage(content=[], response_metadata={"finish_reason": "STOP"})
+
+
+async def test_an_empty_final_turn_is_asked_again(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    model = agent_script.say(
+        tool_call("read_file", file_path="/pmagent/project.md"),
+        empty_turn(),
+        "Kunemi is a logistics platform.",
+    )
+    done = await run(db_client, base, ada.headers, "What is this project about?")
+    assert done["status"] == "completed" and done["reply"] == "Kunemi is a logistics platform."
+    # The follow-up replaces the empty turn, which some providers refuse to see in the history.
+    follow_up = model.received[-1]
+    assert follow_up[-1].type == "human" and "ended without a reply" in str(follow_up[-1].content)
+    assert follow_up[-2].type == "tool"
+    # The conversation shows the person's message, not the follow-up.
+    [shown] = (await db_client.get(f"{base}/agent/runs", headers=ada.headers)).json()
+    assert shown["message"] == "What is this project about?"
+
+
+async def test_thinking_alone_is_not_a_reply(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    agent_script.say(
+        AIMessage(content=[{"type": "thinking", "thinking": "Let me summarise."}]), "Here's the summary."
+    )
+    done = await run(db_client, base, ada.headers, "Summarise")
+    assert done["reply"] == "Here's the summary."
+
+
+async def test_text_before_an_empty_final_turn_is_the_reply(
+    project, db_client: AsyncClient, agent_script
+) -> None:
+    ada, _, base = await project()
+    answered = tool_call("read_file", file_path="/pmagent/project.md")
+    answered.content = "It's a logistics platform. Checking the details."
+    model = agent_script.say(answered, empty_turn(), "unused")
+    done = await run(db_client, base, ada.headers, "What is this?")
+    assert done["reply"] == "It's a logistics platform. Checking the details."
+    assert len(model.received) == 2  # not asked again
+
+
+async def test_no_reply_even_when_asked_again_fails(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    agent_script.say(empty_turn(), AIMessage(content=""))
+    done = await run(db_client, base, ada.headers, "Hello?")
+    assert done["status"] == "failed" and not done["reply"]
+    assert "finished without writing a reply" in done["error"]
 
 
 # -- approvals --------------------------------------------------------------------------
