@@ -19,7 +19,6 @@ import { useMemo } from "react";
 import { timeAgo } from "@/components/issues/issue-activity";
 import { runTitle, useRecentThreads, useThread } from "@/lib/agent";
 import { useMembers } from "@/lib/issues";
-import { canManageProjects } from "@/lib/labels";
 import { useProjectScope } from "@/lib/queries";
 
 import { useChat } from "./chat-context";
@@ -124,7 +123,6 @@ function PanelBody({ onClose }: { onClose: () => void }) {
           names={names}
           canChat={role !== undefined && role !== "guest"}
           canDecide={role !== undefined && role !== "guest"}
-          showUsage={canManageProjects(role)}
           compact
         />
       )}

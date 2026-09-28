@@ -30,7 +30,6 @@ from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner
 from .modules.agents.streams import RedisRunStreams
-from .modules.agents.titles import generate_title
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +52,6 @@ async def startup(ctx: dict[str, Any]) -> None:
         checkpointer=await open_checkpointer(settings.database_url, stack),
         model_factory=settings_model_factory(settings),
         inline=True,  # this process executes the runs
-        titler=generate_title,
         stop_reasons=RunQueue(redis),
         streams=RedisRunStreams(redis),
     )

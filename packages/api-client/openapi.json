@@ -8123,19 +8123,31 @@
               }
             ],
             "title": "Model",
-            "description": "The project's model when the run last worked, e.g. `google_genai:gemini-3.8-flash`"
+            "description": "The project's model when the run last worked, e.g. `google_genai:gemini-3.8-flash`. Owners and admins only (null otherwise)"
           },
           "input_tokens": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Input Tokens",
-            "description": "Input (prompt) tokens over every model call of the run, subagents and the title included",
-            "default": 0
+            "description": "Input (prompt) tokens over every model call of the run, subagents included. Owners and admins only (null otherwise)"
           },
           "output_tokens": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Output Tokens",
-            "description": "Output tokens over every model call of the run, subagents and the title included",
-            "default": 0
+            "description": "Output tokens over every model call of the run, subagents included. Owners and admins only (null otherwise)"
           },
           "created_at": {
             "type": "string",
