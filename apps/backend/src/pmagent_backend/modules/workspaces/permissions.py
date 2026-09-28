@@ -23,6 +23,7 @@ class Permission(enum.StrEnum):
     MANAGE_WORKSPACE = "workspace:manage"  # rename, settings
     MANAGE_MEMBERS = "members:manage"  # invite, remove, change roles
     MANAGE_BILLING = "workspace:billing"  # billing, plan, delete workspace
+    VIEW_USAGE = "usage:view"  # agent runs' token counts and model (spend)
 
 
 _ALL = frozenset(Permission)
@@ -42,7 +43,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             # INSTRUCT_CODING_AGENT: PRD: configurable; off by default
         }
     ),
-    # Guests see only projects they're invited to; project scoping lands with projects.
+    # Guests see the workspace, not its projects.
     Role.GUEST: frozenset({Permission.VIEW}),
 }
 

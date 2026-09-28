@@ -33,7 +33,6 @@ from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
-from .titles import Titler
 from .usage import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -115,8 +114,8 @@ class AgentRunner:
     - `inline=True` (tests, the worker itself): executed right away, in the caller.
     - otherwise: a background task in this process ("local" mode).
 
-    A run step is a JSON payload, so it can sit in a queue: {"kind": "start", "message",
-    "name_thread"} or {"kind": "resume", "interrupt_ids", "decisions", "approved_by_id"}.
+    A run step is a JSON payload, so it can sit in a queue: {"kind": "start", "message"} or
+    {"kind": "resume", "interrupt_ids", "decisions", "approved_by_id"}.
     """
 
     def __init__(
@@ -126,7 +125,6 @@ class AgentRunner:
         checkpointer: Any,
         model_factory: ModelFactory,
         inline: bool = False,
-        titler: Titler | None = None,
         queue: RunQueue | None = None,
         stop_reasons: RunQueue | None = None,
         streams: Streams | None = None,
@@ -135,8 +133,6 @@ class AgentRunner:
         self.checkpointer = checkpointer
         self.model_factory = model_factory
         self.inline = inline
-        # Names new conversations from their first exchange; without one, the placeholder stays.
-        self.titler = titler
         self.queue = queue
         # The worker: why a job was aborted (Stop). Also means a cut-off run gets retried.
         self.stop_reasons = stop_reasons
@@ -149,8 +145,8 @@ class AgentRunner:
 
     # -- dispatching -----------------------------------------------------------------
 
-    async def start(self, run_id: uuid.UUID, message: str, *, name_thread: bool = False) -> None:
-        await self._dispatch(run_id, {"kind": "start", "message": message, "name_thread": name_thread})
+    async def start(self, run_id: uuid.UUID, message: str) -> None:
+        await self._dispatch(run_id, {"kind": "start", "message": message})
 
     async def resume(
         self,
@@ -226,7 +222,7 @@ class AgentRunner:
                 run.model = project.model
                 await session.commit()
                 rules = await self._rules(session, project.id)
-                kind, thread_id, first_message = run.kind, run.thread_id, run.message
+                kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
                 name, description, project_key = project.name, project.description, project.key
                 choice = self.model_factory(project)
@@ -294,10 +290,6 @@ class AgentRunner:
                     )
                     return
             await self._finish(run_id, result, usage)
-            # The reply is saved: end the stream now, not after the title (a model call).
-            await self.streams.close(run_id)
-            if payload.get("name_thread") and self.titler is not None:
-                await self._name_thread(run_id, choice.model, first_message, result, usage)
         except asyncio.CancelledError:
             reason = self._stopped.pop(run_id, None)
             if reason is None and self.stop_reasons is not None:
@@ -325,24 +317,6 @@ class AgentRunner:
                 command = hitl.resume_command(result, "reject", READ_ONLY_REJECTION)
                 result = await _run_graph(agent, command, config, stream)
         return result
-
-    async def _name_thread(
-        self, run_id: uuid.UUID, model: Any, message: str, result: dict, usage: TokenUsage
-    ) -> None:
-        """Replace the new thread's placeholder title with one the model writes (its tokens
-        count towards the run)."""
-        assert self.titler is not None
-        title = await self.titler(model.with_config(callbacks=[usage]), message, _reply(result))
-        tokens = usage.take()
-        if not title and not any(tokens.values()):
-            return
-        async with self.session_factory() as session:
-            run = await session.get(AgentRun, run_id)
-            if run is not None:
-                if title:
-                    run.title = title
-                _add_tokens(run, tokens)
-                await session.commit()
 
     async def _finish(self, run_id: uuid.UUID, result: dict, usage: TokenUsage) -> None:
         async with self.session_factory() as session:

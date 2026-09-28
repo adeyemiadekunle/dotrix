@@ -12,7 +12,6 @@ import { ThreadTitle } from "@/components/agent/thread-title";
 import { timeAgo } from "@/components/issues/issue-activity";
 import { useRecentThreads } from "@/lib/agent";
 import { useMembers } from "@/lib/issues";
-import { canManageProjects } from "@/lib/labels";
 import { useProjectScope } from "@/lib/queries";
 
 /** The PM on a full page, with the conversation list beside it on wide screens. */
@@ -70,7 +69,6 @@ export default function ChatPage() {
             names={names}
             canChat={role !== undefined && role !== "guest"}
             canDecide={role !== undefined && role !== "guest"}
-            showUsage={canManageProjects(role)}
           />
         )}
       </div>

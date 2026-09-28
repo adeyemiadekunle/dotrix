@@ -78,30 +78,14 @@ async def test_conversation_threads(project, db_client: AsyncClient, agent_scrip
 
 async def test_new_threads_get_titles(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
-    agent_script.say("Here's the board.", "And more.")
-    first = await run(db_client, base, ada.headers, "What's open on the board right now, and what's blocked?")
-    # No titler in tests: the placeholder (first sentence, a few words) stays.
-    assert first["title"] == "What's open on the board right now, and…"
+    model = agent_script.say("Here's the board.", "And more.")
+    first = await run(db_client, base, ada.headers, "Hi, can you tell me what's open on the board right now, and what's blocked?")
+    # Made from the message by rules (titles.py): no model call for it.
+    assert first["title"] == "What's open on the board right now…"
+    assert len(model.received) == 1
     follow_up = await run(db_client, base, ada.headers, "Thanks", thread_id=first["thread_id"])
     assert follow_up["title"] is None  # only a thread's first run carries its title
-
-
-async def test_the_model_names_a_new_thread(project, db_client: AsyncClient, agent_script) -> None:
-    ada, _, base = await project()
-    calls = []
-
-    async def titler(model, message, reply):
-        calls.append((message, reply))
-        return "Board status and blockers"
-
-    db_client._transport.app.state.runner.titler = titler  # type: ignore[attr-defined]
-    agent_script.say("KUN-5 is blocked.", "Sure.")
-    first = await run(db_client, base, ada.headers, "What's blocked?")
-    assert calls == [("What's blocked?", "KUN-5 is blocked.")]
-    fetched = (await db_client.get(f"{base}/agent/runs/{first['id']}", headers=ada.headers)).json()
-    assert fetched["title"] == "Board status and blockers"
-    await run(db_client, base, ada.headers, "Thanks", thread_id=first["thread_id"])
-    assert len(calls) == 1  # follow-ups don't rename the thread
+    assert len(model.received) == 2
 
 
 async def test_built_in_requests_have_fixed_titles(project, db_client: AsyncClient, agent_script) -> None:
@@ -490,13 +474,24 @@ async def test_a_failed_run_keeps_its_tokens(project, db_client: AsyncClient, ag
     assert failed["details"]["input_tokens"] == 170 and failed["details"]["output_tokens"] == 0
 
 
-async def test_the_title_counts_towards_the_run(project, db_client: AsyncClient, agent_script) -> None:
-    from pmagent_backend.modules.agents.titles import generate_title
+async def test_only_owners_and_admins_see_token_usage(
+    project, db_client: AsyncClient, agent_script, signup, add_member
+) -> None:
+    ada, team, base = await project()
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    agent_script.say(used("It's a logistics platform.", 150, 20), used("Still logistics.", 160, 4))
+    done = await run(db_client, base, bob.headers, "What is this?")  # Bob started it himself
+    assert done["status"] == "completed"
+    assert (done["model"], done["input_tokens"], done["output_tokens"]) == (None, None, None)
+    listed = (await db_client.get(f"{base}/agent/runs", headers=bob.headers)).json()
+    assert all(r["input_tokens"] is None and r["model"] is None for r in listed)
 
-    ada, _, base = await project()
-    db_client._transport.app.state.runner.titler = generate_title  # type: ignore[attr-defined]
-    agent_script.say(used("KUN-5 is blocked.", 100, 5), used("Blocked issues", 30, 2))
-    first = await run(db_client, base, ada.headers, "What's blocked?")
-    fetched = (await db_client.get(f"{base}/agent/runs/{first['id']}", headers=ada.headers)).json()
-    assert fetched["title"] == "Blocked issues"
-    assert (fetched["input_tokens"], fetched["output_tokens"]) == (130, 7)
+    as_owner = (await db_client.get(f"{base}/agent/runs/{done['id']}", headers=ada.headers)).json()
+    assert (as_owner["input_tokens"], as_owner["output_tokens"]) == (150, 20) and as_owner["model"]
+    await add_member(team["id"], (await signup(email="cy@example.com", name="Cy")).id, Role.ADMIN)
+    cy = await db_client.post("/v1/auth/login", json={"email": "cy@example.com", "password": "correct horse battery"})
+    as_admin = (
+        await db_client.get(f"{base}/agent/runs/{done['id']}", headers={"Authorization": f"Bearer {cy.json()['access_token']}"})
+    ).json()
+    assert as_admin["input_tokens"] == 150

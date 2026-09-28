@@ -27,7 +27,6 @@ from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner, mark_interrupted_runs
 from .modules.agents.streams import RedisRunStreams
-from .modules.agents.titles import generate_title
 
 API_VERSION = "0.1.0"
 logger = logging.getLogger(__name__)
@@ -76,7 +75,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 checkpointer=await open_checkpointer(settings.database_url, stack),
                 model_factory=settings_model_factory(settings),
                 inline=settings.jobs == "inline",
-                titler=generate_title,
                 queue=queue,
                 streams=streams,
             )

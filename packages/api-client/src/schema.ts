@@ -1638,21 +1638,19 @@ export interface components {
             requested_by_id: string | null;
             /**
              * Model
-             * @description The project's model when the run last worked, e.g. `google_genai:gemini-3.8-flash`
+             * @description The project's model when the run last worked, e.g. `google_genai:gemini-3.8-flash`. Owners and admins only (null otherwise)
              */
             model?: string | null;
             /**
              * Input Tokens
-             * @description Input (prompt) tokens over every model call of the run, subagents and the title included
-             * @default 0
+             * @description Input (prompt) tokens over every model call of the run, subagents included. Owners and admins only (null otherwise)
              */
-            input_tokens: number;
+            input_tokens?: number | null;
             /**
              * Output Tokens
-             * @description Output tokens over every model call of the run, subagents and the title included
-             * @default 0
+             * @description Output tokens over every model call of the run, subagents included. Owners and admins only (null otherwise)
              */
-            output_tokens: number;
+            output_tokens?: number | null;
             /**
              * Created At
              * Format: date-time

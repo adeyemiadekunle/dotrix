@@ -28,7 +28,7 @@ from .schemas import (
     ThreadRename,
     WorkspaceApprovalRead,
 )
-from .titles import placeholder_title
+from .titles import title_from_message
 
 # The architecture is set up by owners and admins; only they approve changes to it.
 PROTECTED_PREFIXES = ("/pmagent/architecture/",)
@@ -69,8 +69,8 @@ class AgentService:
         *,
         title: str | None = None,
     ) -> AgentRunRead:
-        """Start a run. A new thread gets a title: `title` if given (built-in requests), else a
-        placeholder from the message that the runner replaces with the model's title."""
+        """Start a run. A new thread gets a title: `title` if given (built-in requests), else one
+        made from the message (`titles.py`; no model call)."""
         project, member = access.project, access.member
         self.runner.model_factory(project)  # fail fast (503) if the model can't run
         thread_id = data.thread_id or uuid7()
@@ -85,7 +85,7 @@ class AgentService:
             kind=kind,
             status=RunStatus.QUEUED,
             message=data.message,
-            title=(title or placeholder_title(data.message)) if data.thread_id is None else None,
+            title=(title or title_from_message(data.message)) if data.thread_id is None else None,
             requested_by_id=member.user_id,
             created_at=now,
             updated_at=now,
@@ -102,7 +102,7 @@ class AgentService:
             details={"kind": kind.value, "thread_id": str(thread_id)},
         )
         await self.session.commit()
-        await self.runner.start(run.id, data.message, name_thread=data.thread_id is None and title is None)
+        await self.runner.start(run.id, data.message)
         return await self.get(access, run.id)
 
     async def architecture_draft(
@@ -137,7 +137,7 @@ class AgentService:
         )
         if run is None:
             raise NotFound("Run not found")
-        return AgentRunRead.model_validate(run)
+        return _read(access, run)
 
     async def list(
         self, access: ProjectAccess, *, thread_id: uuid.UUID | None, limit: int
@@ -150,7 +150,7 @@ class AgentService:
         if thread_id is not None:
             stmt = stmt.where(AgentRun.thread_id == thread_id)
         stmt = stmt.order_by(AgentRun.created_at.desc()).limit(limit)
-        return [AgentRunRead.model_validate(r) for r in await self.session.scalars(stmt)]
+        return [_read(access, r) for r in await self.session.scalars(stmt)]
 
     async def pending_approvals(self, access: ProjectAccess) -> list[ApprovalRead]:
         result = await self.session.scalars(
@@ -321,3 +321,11 @@ class AgentService:
             raise ThreadBusy(
                 "This thread has a run in progress or waiting for approval; finish it first"
             )
+
+
+def _read(access: ProjectAccess, run: AgentRun) -> AgentRunRead:
+    """A run as its viewer may see it: token usage and the model only with usage:view."""
+    read = AgentRunRead.model_validate(run)
+    if not has_permission(access.member.role, Permission.VIEW_USAGE):
+        read = read.model_copy(update={"model": None, "input_tokens": None, "output_tokens": None})
+    return read

@@ -16,6 +16,7 @@ MATRIX = [
     (P.MANAGE_PROJECTS, True, True, False, False),  # setup: members only link
     (P.MANAGE_MEMBERS, True, True, False, False),
     (P.MANAGE_BILLING, True, False, False, False),
+    (P.VIEW_USAGE, True, True, False, False),  # agent runs' token counts (spend)
 ]
 
 

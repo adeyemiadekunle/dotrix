@@ -167,7 +167,7 @@ async def test_a_retried_step_does_not_resend_the_message(db_client: AsyncClient
         row = await session.get(AgentRun, uuid.UUID(run["id"]))
         row.status, row.reply = RunStatus.RUNNING, None
         await session.commit()
-    await runner.execute(uuid.UUID(run["id"]), {"kind": "start", "message": "Plan it", "name_thread": False})
+    await runner.execute(uuid.UUID(run["id"]), {"kind": "start", "message": "Plan it"})
 
     again = (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=ada.headers)).json()
     assert again["status"] == "completed" and again["reply"] == "Here's the plan."

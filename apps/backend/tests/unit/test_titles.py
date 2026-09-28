@@ -1,34 +1,32 @@
-"""Conversation titles: the placeholder and cleaning up what the model returns."""
-import asyncio
-from types import SimpleNamespace
+import pytest
 
-from pmagent_backend.modules.agents.titles import generate_title, placeholder_title
+from pmagent_backend.modules.agents.titles import title_from_message
 
 
-def test_placeholder_is_the_first_sentence_trimmed() -> None:
-    assert placeholder_title("what should we build next? Also, the roadmap.") == "What should we build next"
-    long = "Please create a low-priority task under epic KLL-1 titled add a zone analytics dashboard"
-    assert placeholder_title(long) == "Please create a low-priority task under epic KLL-1…"
-    assert placeholder_title("   ") == "New conversation"
+@pytest.mark.parametrize(
+    ("message", "title"),
+    [
+        ("Can you please summarise the board in one short paragraph.", "Summarise the board in one short paragraph"),
+        ("In three short sentences, what is this project about?", "What is this project about"),
+        ("Hi! What's blocked?", "What's blocked"),
+        ("Hey, could you tell me about the roadmap", "The roadmap"),
+        ("what should we build next? Also, the roadmap.", "What should we build next"),
+        ("Add phase 1 to the roadmap", "Add phase 1 to the roadmap"),
+        ("I'd like to plan the multi-zone driver epic", "Plan the multi-zone driver epic"),
+        # Long requests are cut at seven words; issue keys are kept as written.
+        (
+            "please create a low-priority task under epic KLL-1 for the migration docs",
+            "Create a low-priority task under epic KLL-1…",
+        ),
+        ("Update the roadmap\nand also the vision", "Update the roadmap"),
+        ("Thanks!", "Thanks"),  # nothing but pleasantries: keep what was said
+        ("   ", "New conversation"),
+    ],
+)
+def test_titles_come_from_the_first_message(message: str, title: str) -> None:
+    assert title_from_message(message) == title
 
 
-class FakeModel:
-    def __init__(self, content=None, error: Exception | None = None, delay: float = 0) -> None:
-        self.content, self.error, self.delay = content, error, delay
-
-    async def ainvoke(self, prompt: str):
-        await asyncio.sleep(self.delay)
-        if self.error:
-            raise self.error
-        return SimpleNamespace(content=self.content)
-
-
-async def test_generated_titles_are_cleaned() -> None:
-    assert await generate_title(FakeModel('"board status and blockers."'), "m", "r") == "Board status and blockers"
-    blocks = [{"type": "text", "text": "Multi-zone driver epic\nextra line"}]
-    assert await generate_title(FakeModel(blocks), "m", "r") == "Multi-zone driver epic"
-
-
-async def test_failures_keep_the_placeholder() -> None:
-    assert await generate_title(FakeModel(error=RuntimeError("quota")), "m", "r") is None
-    assert await generate_title(FakeModel(""), "m", "r") is None
+def test_titles_stay_short() -> None:
+    title = title_from_message("Supercalifragilisticexpialidocious " * 3 + "architecture overview")
+    assert len(title) <= 61 and title.endswith("…")
