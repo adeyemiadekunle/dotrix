@@ -7,7 +7,9 @@ that won't (a rejected address, a bad key) is not.
 from __future__ import annotations
 
 import hashlib
+import html
 import logging
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
@@ -87,6 +89,8 @@ class SendlyEmailSender:
             "to": [message.to],
             "subject": message.subject,
             "text": message.body,
+            # Sendly's API requires html (despite its docs): the same text, escaped, links clickable.
+            "html": text_to_html(message.body),
             "tracking": False,
         }
         if self.from_address:
@@ -115,6 +119,20 @@ class SendlyEmailSender:
             message.subject,
             result.get("skipped", 0),
         )
+
+
+_URL = re.compile(r"https?://[^\s<>\"']+")
+
+
+def text_to_html(text: str) -> str:
+    """A plain-text email as simple HTML: escaped, paragraphs and line breaks kept, links
+    clickable. Only our own text goes in, but it's escaped all the same."""
+    paragraphs = []
+    for block in re.split(r"\n\s*\n", text.strip()):
+        escaped = html.escape(block)
+        linked = _URL.sub(lambda m: f'<a href="{m.group(0)}">{m.group(0)}</a>', escaped)
+        paragraphs.append(f"<p>{linked.replace(chr(10), '<br>')}</p>")
+    return "\n".join(paragraphs)
 
 
 def _json(response: httpx.Response) -> dict:

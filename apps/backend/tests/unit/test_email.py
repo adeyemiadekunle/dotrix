@@ -10,6 +10,7 @@ from pmagent_backend.core.email import (
     EmailSendError,
     SendlyEmailSender,
     build_email_sender,
+    text_to_html,
 )
 from pmagent_backend.core.jobs import JobContext
 from pmagent_backend.core.settings import Settings
@@ -40,6 +41,7 @@ async def test_sends_plain_text_without_click_tracking() -> None:
         "to": ["ada@example.com"],
         "subject": "Reset your pmagent password",
         "text": "Reset: http://app.test/reset?token=abc",
+        "html": '<p>Reset: <a href="http://app.test/reset?token=abc">http://app.test/reset?token=abc</a></p>',
         "tracking": False,  # the link carries a token: never through a click tracker
         "from": "pmagent <no-reply@pmagent.dev>",
     }
@@ -114,3 +116,12 @@ def test_the_backend_follows_the_key(monkeypatch) -> None:
     monkeypatch.delenv("SENDLY_Email")
     with pytest.raises(ValueError, match="needs PMAGENT_SENDLY_API_KEY"):
         _settings(email_backend="sendly")
+
+
+def test_text_becomes_simple_safe_html() -> None:
+    body = "Hi <Ada> & co,\n\nAccept: http://app.test/invites/accept?token=a&b=1\nThanks"
+    assert text_to_html(body) == (
+        "<p>Hi &lt;Ada&gt; &amp; co,</p>\n"
+        '<p>Accept: <a href="http://app.test/invites/accept?token=a&amp;b=1">'
+        "http://app.test/invites/accept?token=a&amp;b=1</a><br>Thanks</p>"
+    )
