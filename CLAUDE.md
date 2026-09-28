@@ -157,6 +157,7 @@ apps/web/
 └── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, knowledge.ts, admin.ts, orgs.ts, documents.ts, repo.ts, url-state.ts, labels.ts
 packages/ui/src/                 consumed as source (no build step); index.tsx's StatusBadge is a leftover placeholder
 ├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
+│                                plus our own chat kit: chat-scroller (follows new content unless you scroll up), chat-message (message, bubble, meta, notice), prompt-input (send / stop), code-block (copy, lazy Shiki highlighting)
 └── styles/globals.css           Tailwind entry + theme tokens (light and .dark)
 ```
 
@@ -183,6 +184,7 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
 - [x] Workspace Approvals page and sidebar count (`GET /v1/workspaces/{id}/approvals`); Docs tab "Draft architecture overview" (owners and admins) opens the run in the panel
 - [x] Conversation titles made from the first message by rules, with no model call (`agents/titles.py`: drops greetings and "can you / please", a short lead-in clause, keeps the first sentence up to seven words); built-in requests have fixed titles; people rename freely
 - [x] Chat: the PM's reply streams as it's written (SSE `GET .../agent/runs/{id}/stream` through the proxy; the page refreshes the moment it ends), Stop for a working run (`POST .../stop`: whoever asked, or owners/admins; audited; the conversation continues), rename a conversation (`PATCH .../agent/threads/{id}`)
+- [x] Chat UI on our own reusable components (`packages/ui` chat kit); live activity while the PM works ("Reading roadmap.md", "Asking the research agent": the stream's `activity` events from `agents/activity.py`, built from tool names and safe arguments only); fenced code in Markdown gets a CodeBlock
 - [x] Project setup on the web (`/w/[ws]/projects/new`, owners and admins): start from an existing repo (pasted address; public GitHub repos are looked up to confirm and prefill) or documents only, with documents uploaded as part of creating it; Docs tab (upload, list, view the converted Markdown, download originals); link, change, or unlink the repo later from Overview
 - [ ] "Connect GitHub" (needs FR-10's GitHub App): pick a repo from your account, private repos, "new repository"
 - [x] Knowledge tab: `.pmagent/` tree with search (deleted files on request), Markdown or source view, edit with a change note (`base_version` guards against overwriting), delete, history with who wrote / asked / approved each version, diffs, restore (including deleted files), zip export for owners and admins; `agent-rules/` editable by owners and admins only

@@ -1255,8 +1255,9 @@ export interface paths {
         /**
          * Stream Run
          * @description The Project Manager's reply as it's written, as server-sent events: `text` (everything so
-         *     far, first), then `delta` (each new piece), then `end`. If the run isn't working right now
-         *     it's just `end`: read the run for its saved reply. `ping` events keep the connection open.
+         *     far, first), then `delta` (each new piece), then `end`. `activity` says what the PM is doing
+         *     meanwhile ("Reading roadmap.md"); each replaces the last. If the run isn't working right
+         *     now it's just `end`: read the run for its saved reply. `ping` events keep the connection open.
          */
         get: operations["stream_run"];
         put?: never;

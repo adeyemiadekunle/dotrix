@@ -107,8 +107,9 @@ async def stop_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> AgentR
 )
 async def stream_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> StreamingResponse:
     """The Project Manager's reply as it's written, as server-sent events: `text` (everything so
-    far, first), then `delta` (each new piece), then `end`. If the run isn't working right now
-    it's just `end`: read the run for its saved reply. `ping` events keep the connection open."""
+    far, first), then `delta` (each new piece), then `end`. `activity` says what the PM is doing
+    meanwhile ("Reading roadmap.md"); each replaces the last. If the run isn't working right
+    now it's just `end`: read the run for its saved reply. `ping` events keep the connection open."""
     await agents.check_run(access, run_id)
 
     async def events():

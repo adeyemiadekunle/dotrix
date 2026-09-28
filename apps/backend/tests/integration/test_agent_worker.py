@@ -98,6 +98,7 @@ async def test_redis_streams_give_late_followers_the_text_so_far(redis) -> None:
     run_id = uuid.uuid4()
     stream = await streams.open(run_id)
     await stream.publish("Three issues ")
+    await stream.activity("Checking the board")
     events: list[tuple[str, str]] = []
 
     async def follow():
@@ -106,10 +107,17 @@ async def test_redis_streams_give_late_followers_the_text_so_far(redis) -> None:
 
     follower = asyncio.create_task(follow())
     await asyncio.sleep(0.2)
+    await stream.activity("Looking at KUN-5")
     await stream.publish("are open.")
     await streams.close(run_id)
     await asyncio.wait_for(follower, 5)
-    assert events == [("text", "Three issues "), ("delta", "are open."), ("end", "")]
+    assert events == [
+        ("text", "Three issues "),
+        ("activity", "Checking the board"),  # the current activity, for a late follower
+        ("activity", "Looking at KUN-5"),
+        ("delta", "are open."),
+        ("end", ""),
+    ]
     # After the end there's nothing to follow.
     assert [e async for e in streams.follow(run_id)] == [("end", "")]
 
