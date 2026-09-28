@@ -17,6 +17,7 @@ import os
 import subprocess
 import sys
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -34,7 +35,7 @@ from pmagent_engine.ingest import ingest_doc
 from pmagent_engine.jobs import get_job, list_jobs, resume_job, start_job
 
 from . import repo as repo_facts
-from .agent_client import Outcome, PlatformAgent
+from .agent_client import ApprovalNotAllowed, Outcome, PlatformAgent
 from .board import CODING_AGENTS, PlatformBoard
 from .platform import (
     KeychainUnavailable,
@@ -294,10 +295,19 @@ def run(
         False, "--background", "-b",
         help="Return immediately; check progress with `pmagent jobs`. Several can run at once.",
     ),
+    thread: str | None = typer.Option(None, "--thread", help="Continue a platform conversation."),
+    local: bool = LocalOpt,
 ):
     """Kick off a task without an interactive session. Can run concurrently
-    with `pmagent chat` or other `run` jobs on the same project."""
+    with `pmagent chat` or other `run` jobs on the same project.
+
+    On a linked repo it runs on the platform: in the foreground the reply streams here and
+    changes wait for your approval inline; with --background it runs on the server and
+    `pmagent jobs` / `jobs-approve` pick it up later, from any terminal (or the web app)."""
     config = _resolve_project(project)
+    if not local and LinkState.load(config.pmagent_dir) is not None:
+        _platform_run(project, instruction, background, thread)
+        return
     job = start_job(config, instruction, background)
     if background:
         typer.echo(f"Started job {job['id']} ({job['status']}). Log: {job['log_path']}")
@@ -313,9 +323,17 @@ def run(
 
 
 @app.command("jobs")
-def jobs_list(project: str = ProjectOpt):
-    """List every job for a project: running, awaiting approval, failed, or done."""
+def jobs_list(
+    project: str = ProjectOpt,
+    limit: int = typer.Option(20, "--limit", "-n", min=1, max=100, help="How many (platform runs)."),
+    local: bool = LocalOpt,
+):
+    """List every job for a project: running, awaiting approval, failed, or done.
+    On a linked repo: the project's recent agent runs on the platform, anyone's."""
     config = _resolve_project(project)
+    if not local and LinkState.load(config.pmagent_dir) is not None:
+        _platform_jobs(project, limit)
+        return
     jobs = list_jobs(config)
     if not jobs:
         typer.echo('No jobs yet. Start one with `pmagent run "..." --background`.')
@@ -331,9 +349,14 @@ def jobs_approve(
     reject: bool = typer.Option(False, "--reject", help="Reject instead of approve."),
     message: str | None = typer.Option(None, "--message", "-m", help="Reason, sent to the agent on reject."),
     background: bool = typer.Option(True, "--background/--foreground"),
+    local: bool = LocalOpt,
 ):
-    """Approve or reject everything a paused job is waiting on, from any terminal."""
+    """Approve or reject everything a paused job is waiting on, from any terminal.
+    On a linked repo, JOB_ID is a platform run; --foreground follows it afterwards."""
     config = _resolve_project(project)
+    if not local and LinkState.load(config.pmagent_dir) is not None:
+        _platform_jobs_approve(project, job_id, reject, message, background)
+        return
     pending = get_job(config, job_id).get("pending_actions") or []
     for a in pending:
         typer.echo(approvals.format_action(a) + "\n")
@@ -343,6 +366,15 @@ def jobs_approve(
     except ValueError as e:
         _fail(str(e))
     typer.echo(f"Job {job_id} -> {job['status']}")
+
+
+@app.command("jobs-stop")
+def jobs_stop(job_id: str = typer.Argument(...), project: str = ProjectOpt):
+    """Stop a platform run that's queued or working (yours, or any as an owner or admin).
+    The conversation can carry on afterwards."""
+    _, agent = _platform_agent(project)
+    run = _platform_call(lambda: agent.stop(job_id))
+    typer.echo(f"Run {job_id} -> {run['status']}: {run.get('error') or ''}".rstrip(": "))
 
 
 # ---------------------------------------------------------------------------
@@ -602,12 +634,17 @@ def _ask_decision(approval: dict, index: int, total: int):
 
 
 class _StreamPrinter:
-    """Prints the PM's reply as it's written, and keeps prompts on a line of their own."""
+    """Prints the PM's reply as it's written, and what it's doing meanwhile ("Reading
+    roadmap.md…"): in a terminal as one status line that updates in place and clears when
+    text comes; piped, as a dim line each. Keeps prompts on a line of their own."""
 
-    def __init__(self) -> None:
+    def __init__(self, tty: bool | None = None) -> None:
         self.open_line = False
+        self.status_shown = False
+        self.tty = sys.stdout.isatty() if tty is None else tty
 
     def __call__(self, text: str, new_message: bool) -> None:
+        self.clear_status()
         if new_message:
             self.finish_line()
             typer.echo("")
@@ -615,7 +652,23 @@ class _StreamPrinter:
         sys.stdout.flush()
         self.open_line = not text.endswith("\n")
 
+    def activity(self, label: str) -> None:
+        self.finish_line()
+        if self.tty:
+            # (color=True keeps the control codes: this branch only runs on a terminal.)
+            typer.echo("\r\033[2K" + typer.style(f"{label}…", dim=True), nl=False, color=True)
+            sys.stdout.flush()
+            self.status_shown = True
+        else:
+            typer.secho(f"· {label}…", dim=True)
+
+    def clear_status(self) -> None:
+        if self.status_shown:
+            typer.echo("\r\033[2K", nl=False, color=True)
+            self.status_shown = False
+
     def finish_line(self) -> None:
+        self.clear_status()
         if self.open_line:
             typer.echo("")
             self.open_line = False
@@ -664,7 +717,7 @@ def _platform_brief(project: str) -> None:
     typer.secho("Preparing your briefing…", dim=True)
     run = _platform_call(agent.briefing)
     printer, shown = _StreamPrinter(), [""]
-    outcome = Outcome(_platform_call(lambda: agent.wait(run, on_text=printer, shown=shown)), streamed=shown[0])
+    outcome = Outcome(_platform_call(lambda: agent.wait(run, on_text=printer, on_activity=printer.activity, shown=shown)), streamed=shown[0])
     _echo_outcome(outcome, printer)
     if outcome.status == "failed":
         raise typer.Exit(1)
@@ -694,11 +747,90 @@ def _platform_chat(project: str, thread: str | None) -> None:
             thread = run["thread_id"]
             typer.secho("(working…)", dim=True)
             printer = _StreamPrinter()
-            _echo_outcome(agent.converse(run, printer.deciding(_ask_decision), on_text=printer), printer)
+            _echo_outcome(
+                agent.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity),
+                printer,
+            )
         except (PlatformError, TimeoutError) as exc:
             typer.secho(str(exc), fg=typer.colors.RED)
     if thread:
         typer.secho(f"Continue this conversation with: pmagent chat --thread {thread}", dim=True)
+
+
+def _follow_run(agent: PlatformAgent, run: dict) -> Outcome:
+    """Stream a run here, settling its approvals inline, until it ends or waits on someone else."""
+    printer = _StreamPrinter()
+    outcome = _platform_call(
+        lambda: agent.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity)
+    )
+    _echo_outcome(outcome, printer)
+    return outcome
+
+
+def _platform_run(project: str, instruction: str, background: bool, thread: str | None) -> None:
+    _, agent = _platform_agent(project)
+    run = _platform_call(lambda: agent.start(instruction, thread))
+    if background:
+        typer.echo(f"Started run {run['id']} ({run['status']}) on the platform.")
+        typer.secho(
+            "Check on it with `pmagent jobs`; decide its changes with `pmagent jobs-approve <id>` "
+            "or in the web app.",
+            dim=True,
+        )
+        return
+    typer.secho("(working…)", dim=True)
+    outcome = _follow_run(agent, run)
+    typer.secho(f"Continue this conversation with: pmagent chat --thread {run['thread_id']}", dim=True)
+    if outcome.status == "failed":
+        raise typer.Exit(1)
+
+
+def _ago(iso: str | None) -> str:
+    if not iso:
+        return ""
+    seconds = max(0, int((datetime.now(UTC) - datetime.fromisoformat(iso.replace("Z", "+00:00"))).total_seconds()))
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds >= size:
+            return f"{seconds // size}{unit} ago"
+    return "just now"
+
+
+def _platform_jobs(project: str, limit: int) -> None:
+    _, agent = _platform_agent(project)
+    runs = _platform_call(lambda: agent.list_runs(limit))
+    if not runs:
+        typer.echo('No runs yet. Start one with `pmagent run "..."` (add --background to return at once).')
+        return
+    colours = {"failed": typer.colors.RED, "awaiting_approval": typer.colors.YELLOW, "completed": typer.colors.GREEN}
+    for run in runs:
+        pending = sum(a["status"] == "pending" for a in run.get("approvals") or [])
+        waiting = f" ({pending} change(s) to decide)" if pending else ""
+        what = (run.get("title") or run["message"]).splitlines()[0][:70]
+        status = typer.style(f"[{run['status']}{waiting}]", fg=colours.get(run["status"]))
+        typer.echo(f"{run['id']}  {status}  {what}  {typer.style(_ago(run.get('created_at')), dim=True)}")
+
+
+def _platform_jobs_approve(project: str, run_id: str, reject: bool, message: str | None, background: bool) -> None:
+    _, agent = _platform_agent(project)
+    run = _platform_call(lambda: agent.get(run_id))
+    pending = [a for a in run.get("approvals") or [] if a["status"] == "pending"]
+    if run["status"] != "awaiting_approval" or not pending:
+        _fail(f"Run {run_id} isn't waiting for a decision (it's {run['status']}).")
+    for index, approval in enumerate(pending, 1):
+        target = f" -> {approval['target']}" if approval.get("target") else ""
+        typer.secho(f"\n[{index}/{len(pending)}] {approval['tool']}{target}", bold=True)
+        _echo_approval(approval)
+    decision = ("reject", message) if reject else ("approve", None)
+    try:
+        run = agent.decide(run, [(approval, decision) for approval in pending])
+    except ApprovalNotAllowed as exc:
+        _fail(f"Your role can't decide this: {exc}")
+    except PlatformError as exc:
+        _fail(str(exc))
+    verb = "Rejected" if reject else "Approved"
+    typer.echo(f"\n{verb} {len(pending)} change(s). Run {run_id} -> {run['status']}")
+    if not background:
+        _follow_run(agent, run)
 
 
 # ---------------------------------------------------------------------------
@@ -1101,7 +1233,7 @@ def architecture_draft(
     typer.secho("(the Architecture agent is working…)", dim=True)
     agent = PlatformAgent(client, state)
     printer = _StreamPrinter()
-    outcome = _platform_call(lambda: agent.converse(run, printer.deciding(_ask_decision), on_text=printer))
+    outcome = _platform_call(lambda: agent.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity))
     _echo_outcome(outcome, printer)
     if outcome.status == "completed":
         _echo_pull(_platform_call(lambda: pull(client, state, config.pmagent_dir)))

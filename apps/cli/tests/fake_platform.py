@@ -42,6 +42,8 @@ class FakePlatform:
         # events; with none left, the stream just ends (the run isn't working right now).
         self.streams: list[list[tuple[str, str]]] = []
         self.stream_status = 200  # e.g. 404 for a server without streaming
+        self.runs_list: list[dict[str, Any]] = []  # GET .../agent/runs (newest first)
+        self.stopped: list[str] = []  # runs stopped through .../stop
         self.runs_started: list[dict[str, Any]] = []
         # Workspaces the signed-in person belongs to, and the projects in them.
         self.workspaces: list[dict[str, Any]] = [
@@ -125,6 +127,13 @@ class FakePlatform:
             if self.deny_decisions:
                 return self.problem(403, "forbidden")
             return httpx.Response(200, json=self._next_run())
+        if path == AGENT + "/runs" and method == "GET":
+            return httpx.Response(200, json=self.runs_list[: int(request.url.params.get("limit", 20))])
+        if path.startswith(AGENT + "/runs/") and path.endswith("/stop") and method == "POST":
+            run_id = path.split("/")[-2]
+            self.stopped.append(run_id)
+            return httpx.Response(200, json={"id": run_id, "thread_id": "thread-1", "status": "failed",
+                                             "error": "Stopped by Ada", "approvals": [], "reply": None})
         if path.startswith(AGENT + "/runs/") and path.endswith("/stream"):
             if self.stream_status != 200:
                 return self.problem(self.stream_status, "not_found")
