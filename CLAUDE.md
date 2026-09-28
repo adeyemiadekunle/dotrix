@@ -76,6 +76,7 @@ apps/backend/
 │   ├── modules/
 │   │   ├── auth/                users, sign-up/login, refresh tokens, email verification, password reset
 │   │   ├── api_tokens/          personal access tokens (pmat_…) and CLI device login
+│   │   ├── calendar/            per-person iCalendar feed of issue dates at a secret URL (FR-32)
 │   │   ├── workspaces/          workspaces, members, roles, the permission matrix (permissions.py)
 │   │   ├── invites/             email and link invites
 │   │   ├── organizations/       organisations owning workspaces; org roles and permissions
@@ -291,7 +292,6 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] **FR-18** Sync push from the local mirror: proposed writes that go through approvals (the agents module's approval flow)
 - [x] **FR-18** CLI: `pmagent link` + `pmagent pull` mirror `.pmagent/` (changes since the last revision, deletions, local edits never silently overwritten; git exclude + pre-commit hook re-applied)
 - [x] **FR-18** Full Markdown export of `.pmagent/` (zip) for Owner or Admin
-- [ ] Project-level access for guests (PRD: guests see only projects they're invited to; today they see none)
 - [x] **FR-11** Doc upload: original in object storage (MinIO locally, any S3 in production), markdown via `pmagent_engine.ingest.to_markdown` into `docs/normalized/` as a versioned knowledge file
 - [ ] **FR-11** Convert large documents in a background job instead of during the request
 
@@ -310,7 +310,7 @@ External accounts, keys, and config have to exist before these items can be buil
 - [x] CLI: `pmagent chat`, `brief`, and `architecture draft` stream the PM's reply as it's written (the run's SSE stream; reconnects between steps, falls back to polling)
 - [ ] CLI: `pmagent run` (one-shot, background) on the platform
 - [x] CLI: `pmagent docs-add` uploads to the platform when linked
-- [ ] **FR-32** Calendar feed (iCalendar) for due and scheduled dates, with a per-user secret URL
+- [x] **FR-32** Calendar feed (`modules/calendar`): a per-person secret URL (`/v1/calendar/{secret}.ics`, served through the web app's `/api/v1` proxy) with issue due dates (all-day) and scheduled times (one-hour slots); "mine" (assigned or watched) or "all" (every dated issue in visible projects); workspaces re-checked on every fetch, no descriptions in the feed, the secret kept out of the access log; Settings → Calendar in the web app
 - [ ] **FR-33** @mentions and notifying watchers (with FR-14 notifications)
 
 ### P0: Approvals, audit, and agents

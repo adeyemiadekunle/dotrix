@@ -970,6 +970,263 @@
         }
       }
     },
+    "/v1/me/calendar": {
+      "get": {
+        "tags": [
+          "calendar"
+        ],
+        "summary": "Get Calendar Feed",
+        "description": "Your calendar feed's settings; 404 if it's off. The URL itself is shown only when\nthe feed is turned on.",
+        "operationId": "get_calendar_feed",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarFeedRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "calendar"
+        ],
+        "summary": "Create Calendar Feed",
+        "description": "Turn your calendar feed on and get its secret URL (in this response only). If it was\nalready on, the old URL stops working. Needs a login session (403 for API tokens).",
+        "operationId": "create_calendar_feed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarFeedCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarFeedCreated"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "calendar"
+        ],
+        "summary": "Delete Calendar Feed",
+        "description": "Turn your calendar feed off: its URL stops working.",
+        "operationId": "delete_calendar_feed",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "calendar"
+        ],
+        "summary": "Update Calendar Feed",
+        "description": "Change what the feed includes; the URL stays the same.",
+        "operationId": "update_calendar_feed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarFeedUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarFeedRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/calendar/{feed}": {
+      "get": {
+        "tags": [
+          "calendar"
+        ],
+        "summary": "Calendar Feed",
+        "description": "The calendar itself, for calendar apps: `{secret}.ics`, from the URL you got when\nturning the feed on. No sign-in: the secret is the credential. Due dates are all-day\nevents, scheduled times one-hour slots; each links to the issue in the web app.",
+        "operationId": "calendar_feed",
+        "parameters": [
+          {
+            "name": "feed",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Feed"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An iCalendar (RFC 5545) file",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/calendar": {}
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/organizations": {
       "get": {
         "tags": [
@@ -8408,6 +8665,100 @@
         ],
         "title": "Body_upload_document"
       },
+      "CalendarFeedCreate": {
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/FeedScope",
+            "default": "mine"
+          }
+        },
+        "type": "object",
+        "title": "CalendarFeedCreate"
+      },
+      "CalendarFeedCreated": {
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/FeedScope",
+            "description": "`mine`: issues assigned to you or that you watch; `all`: every dated issue in your projects"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At",
+            "description": "When a calendar app last fetched the feed"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "The feed's secret address. Shown only now; turn the feed on again for a new one."
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope",
+          "created_at",
+          "last_used_at",
+          "url"
+        ],
+        "title": "CalendarFeedCreated"
+      },
+      "CalendarFeedRead": {
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/FeedScope",
+            "description": "`mine`: issues assigned to you or that you watch; `all`: every dated issue in your projects"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At",
+            "description": "When a calendar app last fetched the feed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope",
+          "created_at",
+          "last_used_at"
+        ],
+        "title": "CalendarFeedRead"
+      },
+      "CalendarFeedUpdate": {
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/FeedScope"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope"
+        ],
+        "title": "CalendarFeedUpdate"
+      },
       "ClaimRequest": {
         "properties": {
           "key": {
@@ -8748,6 +9099,14 @@
           "percent"
         ],
         "title": "EpicProgress"
+      },
+      "FeedScope": {
+        "type": "string",
+        "enum": [
+          "mine",
+          "all"
+        ],
+        "title": "FeedScope"
       },
       "FileEntry": {
         "properties": {
@@ -11454,6 +11813,10 @@
     {
       "name": "api tokens",
       "description": "Your personal API tokens: create, list, revoke."
+    },
+    {
+      "name": "calendar",
+      "description": "Your issue due and scheduled dates as an iCalendar feed at a secret URL, for any calendar app. Only the workspaces you can see, checked on every fetch."
     },
     {
       "name": "organizations",

@@ -1,20 +1,22 @@
-"""Calendar export: .pmagent/calendar.ics generated from task dates.
+"""Calendars as standard iCalendar (RFC 5545).
 
-There is no separate calendar file to maintain. `due` and `scheduled` live
-on each task; this module renders them as standard iCalendar (RFC 5545) so
-the same tasks show up in any calendar app (subscribe to the file, or import
-it) and in the desktop app's calendar view.
+`render_calendar` turns any list of `CalendarEvent`s into a calendar: the platform's
+per-user feed of issue dates uses it, and so does the local export below.
+
+Local export: .pmagent/calendar.ics generated from task dates. There is no separate
+calendar file to maintain. `due` and `scheduled` live on each task; they render so the
+same tasks show up in any calendar app (subscribe to the file, or import it):
 
   - `due`       -> an all-day event "Due: <title>" on that date
   - `scheduled` -> an event "<title>" (all-day for a date, 1h slot for a datetime)
 
-UIDs are stable per task + kind, so re-exporting updates events in place
-instead of duplicating them. The file is a derived artifact: regenerate it,
-don't edit it.
+UIDs are stable per task (or issue) + kind, so re-exporting updates events in place
+instead of duplicating them. The file is a derived artifact: regenerate it, don't edit it.
 """
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -22,6 +24,16 @@ from .config import ProjectConfig
 from .tasks import Task, _atomic_write, list_tasks
 
 CALENDAR_FILENAME = "calendar.ics"
+
+
+@dataclass(frozen=True)
+class CalendarEvent:
+    uid: str  # stable, so calendar apps update the event instead of duplicating it
+    summary: str
+    start: date | datetime  # a date is an all-day event; a datetime a one-hour slot
+    description: str = ""
+    url: str | None = None
+    categories: list[str] = field(default_factory=list)
 
 
 def _escape(text: str) -> str:
@@ -51,18 +63,55 @@ def _utc_stamp(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
-def _time_props(value: str) -> list[str]:
-    if "T" in value:
-        start = datetime.fromisoformat(value)
+def _time_props(start: date | datetime) -> list[str]:
+    if isinstance(start, datetime):
         return [f"DTSTART:{_utc_stamp(start)}", f"DTEND:{_utc_stamp(start + timedelta(hours=1))}"]
-    d = date.fromisoformat(value)
     return [
-        f"DTSTART;VALUE=DATE:{d.strftime('%Y%m%d')}",
-        f"DTEND;VALUE=DATE:{(d + timedelta(days=1)).strftime('%Y%m%d')}",
+        f"DTSTART;VALUE=DATE:{start.strftime('%Y%m%d')}",
+        f"DTEND;VALUE=DATE:{(start + timedelta(days=1)).strftime('%Y%m%d')}",
     ]
 
 
-def _event(task: Task, kind: str, when: str, project: str, stamp: str) -> list[str]:
+def render_calendar(name: str, events: Iterable[CalendarEvent], *, product: str = "tasks") -> str:
+    stamp = _utc_stamp(datetime.now(UTC))
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        f"PRODID:-//pmagent//{product}//EN",
+        "CALSCALE:GREGORIAN",
+        f"X-WR-CALNAME:{_escape(name)}",
+    ]
+    for event in events:
+        lines += [
+            "BEGIN:VEVENT",
+            f"UID:{event.uid}",
+            f"DTSTAMP:{stamp}",
+            *_time_props(event.start),
+            f"SUMMARY:{_escape(event.summary)}",
+        ]
+        if event.description:
+            lines.append(f"DESCRIPTION:{_escape(event.description)}")
+        if event.url:
+            lines.append(f"URL:{event.url}")
+        if event.categories:
+            lines.append(f"CATEGORIES:{','.join(_escape(c) for c in event.categories)}")
+        lines += [
+            "STATUS:CONFIRMED",
+            "TRANSP:TRANSPARENT",  # don't block time as "busy"
+            "END:VEVENT",
+        ]
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(_fold(line) for line in lines) + "\r\n"
+
+
+# -- local export --------------------------------------------------------------------------
+
+
+def _parse(value: str) -> date | datetime:
+    return datetime.fromisoformat(value) if "T" in value else date.fromisoformat(value)
+
+
+def _task_event(task: Task, kind: str, when: str, project: str) -> CalendarEvent:
     summary = f"Due: {task.title}" if kind == "due" else task.title
     if task.status == "done":
         summary = f"✓ {summary}"  # done tasks stay visible as history
@@ -72,38 +121,24 @@ def _event(task: Task, kind: str, when: str, project: str, stamp: str) -> list[s
     if task.description:
         desc_bits.append("")
         desc_bits.append(task.description)
-    lines = [
-        "BEGIN:VEVENT",
-        f"UID:{task.id}-{kind}@pmagent.{project}",
-        f"DTSTAMP:{stamp}",
-        *_time_props(when),
-        f"SUMMARY:{_escape(summary)}",
-        f"DESCRIPTION:{_escape(chr(10).join(desc_bits))}",
-        f"CATEGORIES:{_escape(','.join([project, *task.labels]))}",
-        "STATUS:CONFIRMED",
-        "TRANSP:TRANSPARENT",  # don't block time as "busy"
-    ]
-    lines.append("END:VEVENT")
-    return lines
+    return CalendarEvent(
+        uid=f"{task.id}-{kind}@pmagent.{project}",
+        summary=summary,
+        start=_parse(when),
+        description="\n".join(desc_bits),
+        categories=[project, *task.labels],
+    )
 
 
 def render_ics(tasks: Iterable[Task], project_name: str) -> str:
     slug = "".join(c if c.isalnum() else "-" for c in project_name.lower()).strip("-") or "project"
-    stamp = _utc_stamp(datetime.now(UTC))
-    lines = [
-        "BEGIN:VCALENDAR",
-        "VERSION:2.0",
-        "PRODID:-//pmagent//tasks//EN",
-        "CALSCALE:GREGORIAN",
-        f"X-WR-CALNAME:{_escape(project_name)} tasks",
-    ]
+    events = []
     for t in tasks:
         if t.due:
-            lines += _event(t, "due", t.due, slug, stamp)
+            events.append(_task_event(t, "due", t.due, slug))
         if t.scheduled:
-            lines += _event(t, "scheduled", t.scheduled, slug, stamp)
-    lines.append("END:VCALENDAR")
-    return "\r\n".join(_fold(line) for line in lines) + "\r\n"
+            events.append(_task_event(t, "scheduled", t.scheduled, slug))
+    return render_calendar(f"{project_name} tasks", events)
 
 
 def export_calendar(

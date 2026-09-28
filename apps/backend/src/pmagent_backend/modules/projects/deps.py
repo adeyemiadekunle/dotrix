@@ -34,8 +34,7 @@ def require_project_permission(
         member: Annotated[Membership, Depends(require_permission(permission))],
         session: SessionDep,
     ) -> ProjectAccess:
-        # Guests will see only projects they're invited to; until project-level access
-        # exists, they see none.
+        # Guests don't see projects: their role is for workspace-level access only.
         project = None
         if member.role is not Role.GUEST:
             project = await ProjectRepository(session).get(member.workspace_id, project_id)

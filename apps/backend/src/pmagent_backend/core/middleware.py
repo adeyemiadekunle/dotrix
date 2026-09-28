@@ -23,6 +23,16 @@ REQUEST_ID_HEADER = "x-request-id"
 access_logger = logging.getLogger("pmagent.access")
 logger = logging.getLogger(__name__)
 
+# Paths whose last segment is a secret (calendar feeds: a calendar app can only send a URL).
+_SECRET_PATHS = ("/v1/calendar/",)
+
+
+def loggable_path(path: str) -> str:
+    for prefix in _SECRET_PATHS:
+        if path.startswith(prefix):
+            return f"{prefix}[secret]"
+    return path
+
 
 class RequestContextMiddleware:
     def __init__(self, app: ASGIApp) -> None:
@@ -60,15 +70,16 @@ class RequestContextMiddleware:
                 scope, receive, send_with_id
             )
         finally:
+            path = loggable_path(scope["path"])
             access_logger.info(
                 "%s %s %s",
                 scope["method"],
-                scope["path"],
+                path,
                 status,
                 extra={
                     "fields": {
                         "method": scope["method"],
-                        "path": scope["path"],
+                        "path": path,
                         "status": status,
                         "duration_ms": round((time.perf_counter() - start) * 1000, 1),
                     }
