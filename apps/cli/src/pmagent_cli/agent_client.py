@@ -28,6 +28,7 @@ class ApprovalNotAllowed(Exception):
 
 
 OnText = Callable[[str, bool], None]  # (text, starts a new message)
+OnActivity = Callable[[str], None]  # what the PM is doing now, e.g. "Reading roadmap.md"
 
 
 @dataclass
@@ -62,6 +63,16 @@ class PlatformAgent:
     def briefing(self) -> dict:
         return self.client.post(f"{self.base}/briefing")
 
+    def get(self, run_id: str) -> dict:
+        return self.client.get(f"{self.base}/runs/{run_id}")
+
+    def list_runs(self, limit: int = 20) -> list[dict]:
+        """The project's most recent runs, newest first."""
+        return self.client.get(f"{self.base}/runs", params={"limit": limit})
+
+    def stop(self, run_id: str) -> dict:
+        return self.client.post(f"{self.base}/runs/{run_id}/stop")
+
     def wait(
         self,
         run: dict,
@@ -69,6 +80,7 @@ class PlatformAgent:
         timeout: float = 900,
         on_tick: Callable[[dict], None] | None = None,
         on_text: OnText | None = None,
+        on_activity: OnActivity | None = None,
         shown: list[str] | None = None,
     ) -> dict:
         """Wait until the run stops (completed, failed, or waiting for approval): follow its
@@ -84,7 +96,7 @@ class PlatformAgent:
             got_text = False
             if streaming:
                 try:
-                    got_text = self._follow(run, on_text, shown)  # type: ignore[arg-type]
+                    got_text = self._follow(run, on_text, shown, on_activity)  # type: ignore[arg-type]
                 except PlatformError:
                     streaming = False  # (an older server, or the connection dropped): poll
             waited += time.monotonic() - started
@@ -100,7 +112,7 @@ class PlatformAgent:
                 delay = min(delay * 1.5, 3.0)
         return run
 
-    def _follow(self, run: dict, on_text: OnText, shown: list[str]) -> bool:
+    def _follow(self, run: dict, on_text: OnText, shown: list[str], on_activity: OnActivity | None = None) -> bool:
         """Show the stream until it ends; True if any text came."""
         got = False
         for event, data in self.client.events(f"{self.base}/runs/{run['id']}/stream"):
@@ -118,6 +130,8 @@ class PlatformAgent:
                 on_text(text, not shown[0])
                 shown[0] += text
                 got = True
+            elif event == "activity" and text and on_activity is not None:
+                on_activity(text)
             elif event == "end":
                 break
         return got
@@ -143,6 +157,7 @@ class PlatformAgent:
         *,
         on_tick: Callable[[dict], None] | None = None,
         on_text: OnText | None = None,
+        on_activity: OnActivity | None = None,
     ) -> Outcome:
         """Wait for the run, settle each pause with `decide`, and repeat until it ends.
 
@@ -150,7 +165,7 @@ class PlatformAgent:
         this and every remaining change in the same pause.
         """
         shown = [""]
-        run = self.wait(run, on_tick=on_tick, on_text=on_text, shown=shown)
+        run = self.wait(run, on_tick=on_tick, on_text=on_text, on_activity=on_activity, shown=shown)
         while run["status"] == "awaiting_approval":
             pending = [a for a in run["approvals"] if a["status"] == "pending"]
             decisions: list[tuple[dict, Decision]] = []
@@ -169,5 +184,5 @@ class PlatformAgent:
             except ApprovalNotAllowed:
                 return Outcome(run, left_waiting=True, streamed=shown[0])
             shown[0] = ""  # the resumed run writes a new message
-            run = self.wait(run, on_tick=on_tick, on_text=on_text, shown=shown)
+            run = self.wait(run, on_tick=on_tick, on_text=on_text, on_activity=on_activity, shown=shown)
         return Outcome(run, streamed=shown[0])

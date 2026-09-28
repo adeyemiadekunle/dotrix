@@ -115,7 +115,7 @@ apps/backend/
 
 ```
 apps/cli/src/pmagent_cli/
-├── cli.py                       Typer commands: login/logout/whoami, init/connect/link/pull, docs-add, chat/brief, issue …, architecture draft, mcp
+├── cli.py                       Typer commands: login/logout/whoami, init/connect/link/pull, docs-add, chat/brief, run/jobs/jobs-approve/jobs-stop, issue …, architecture draft, mcp
 ├── platform.py                  PlatformClient (httpx), KeyringStore (OS keychain; PMAGENT_TOKEN for CI), device login
 ├── sync.py                      LinkState (.pmagent/.platform.json), pulling the mirror, git exclude + pre-commit hook
 ├── board.py                     PlatformBoard: the issue board for the CLI and the MCP server
@@ -309,8 +309,8 @@ External accounts, keys, and config have to exist before these items can be buil
 - [x] Per-agent issue rules (`pmagent_engine.permissions.can_create_issue` / `can_edit_issues`): Product epics+stories, Architecture tasks, Research spikes, Reviewer bugs, only the PM edits; specialists aren't given `update_issue`, and the service refuses it anyway
 - [x] CLI: `pmagent issue …` works the platform board; the MCP server uses it when the repo is linked (Claude Code / Codex act as themselves and stop at review), and refreshes the mirror before reads
 - [x] CLI: `pmagent chat` / `brief` use the platform's agents when linked: inline approve / reject (with reason) / approve all / view, coloured diffs, `--thread` to continue, `--local` for the local engine. Live-tested on Gemini
-- [x] CLI: `pmagent chat`, `brief`, and `architecture draft` stream the PM's reply as it's written (the run's SSE stream; reconnects between steps, falls back to polling)
-- [ ] CLI: `pmagent run` (one-shot, background) on the platform
+- [x] CLI: `pmagent chat`, `brief`, and `architecture draft` stream the PM's reply as it's written (the run's SSE stream; reconnects between steps, falls back to polling), with what it's doing meanwhile (a status line in a terminal, a dim line each when piped)
+- [x] CLI: `pmagent run` on the platform when linked (streams and settles approvals inline; `--background` runs it on the server), `pmagent jobs` (the project's recent runs), `jobs-approve <id>` (approve or `--reject -m`; `--foreground` follows), `jobs-stop <id>`; `--local` keeps the local engine
 - [x] CLI: `pmagent docs-add` uploads to the platform when linked
 - [x] **FR-32** Calendar feed (`modules/calendar`): a per-person secret URL (`/v1/calendar/{secret}.ics`, served through the web app's `/api/v1` proxy) with issue due dates (all-day) and scheduled times (one-hour slots); "mine" (assigned or watched) or "all" (every dated issue in visible projects); workspaces re-checked on every fetch, no descriptions in the feed, the secret kept out of the access log; Settings → Calendar in the web app
 - [ ] **FR-33** @mentions and notifying watchers (with FR-14 notifications)

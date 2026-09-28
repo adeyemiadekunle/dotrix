@@ -1,33 +1,20 @@
 """`pmagent chat` and `brief` against the platform's agents, with inline approvals."""
 from __future__ import annotations
 
-import functools
 import sys
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fake_platform import PID, WS, FakePlatform, approval  # noqa: E402
+from fake_platform import FakePlatform, approval  # noqa: E402
 
 from pmagent_cli import cli as cli_module  # noqa: E402
 from pmagent_cli.agent_client import PlatformAgent  # noqa: E402
 from pmagent_cli.sync import LinkState  # noqa: E402
-from pmagent_engine.config import ProjectConfig  # noqa: E402
 
 DIFF = "--- a/pmagent/roadmap.md\n+++ b/pmagent/roadmap.md\n@@ -1 +1,2 @@\n # Roadmap\n+Phase 1: core\n"
-
-
-@pytest.fixture
-def platform() -> FakePlatform:
-    return FakePlatform()
-
-
-@pytest.fixture
-def state() -> LinkState:
-    return LinkState(api_url="http://fake", workspace_id=WS, project_id=PID, project_key="KUN", project_name="Kunemi")
 
 
 def agent(platform: FakePlatform, state: LinkState) -> PlatformAgent:
@@ -85,18 +72,6 @@ def test_person_without_approve_permission_leaves_it_waiting(platform: FakePlatf
 
 
 # -- the commands ----------------------------------------------------------------------
-
-
-@pytest.fixture
-def linked_repo(tmp_path: Path, state: LinkState, platform: FakePlatform, monkeypatch) -> Path:
-    config = ProjectConfig(name="Kunemi", root_dir=str(tmp_path))
-    Path(config.pmagent_dir).mkdir()
-    config.save()
-    state.save(config.pmagent_dir)
-    monkeypatch.setattr(cli_module.PlatformClient, "signed_in", classmethod(lambda cls, url=None, store=None: platform.client()))
-    # Don't actually wait between polls.
-    monkeypatch.setattr(cli_module, "PlatformAgent", functools.partial(PlatformAgent, sleep=lambda s: None))
-    return tmp_path
 
 
 def test_chat_shows_the_diff_and_approves_inline(linked_repo: Path, platform: FakePlatform) -> None:

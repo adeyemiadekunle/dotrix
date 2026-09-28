@@ -476,7 +476,9 @@ def _activities(update: dict) -> list[str]:
     steps; subagents run inside the `task` tool, which gets one label: "Asking …")."""
     labels = []
     for name, output in update.items():
-        if name == "__interrupt__" or not isinstance(output, dict):
+        # Only the model's own steps. Middleware hooks ("HumanInTheLoopMiddleware.after_model")
+        # re-send tool calls on resume, including ones a person just rejected.
+        if name == "__interrupt__" or "." in name or not isinstance(output, dict):
             continue
         messages = output.get("messages")
         messages = getattr(messages, "value", messages)  # (an Overwrite wraps the list)

@@ -46,3 +46,16 @@ async def test_in_process_streams_carry_activity() -> None:
         ("delta", "Done."),
         ("end", ""),
     ]
+
+
+def test_only_the_models_own_steps_give_activity() -> None:
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    from pmagent_backend.modules.agents.runner import _activities
+
+    call = AIMessage(content="", tool_calls=[{"name": "write_file", "args": {"file_path": "/pmagent/roadmap.md"}, "id": "c1"}])
+    assert _activities({"model": {"messages": [call]}}) == ["Drafting a change to roadmap.md"]
+    # On resume, the approval middleware re-sends the call it decided (maybe rejected): no label.
+    rejected = ToolMessage("rejected", tool_call_id="c1")
+    assert _activities({"HumanInTheLoopMiddleware.after_model": {"messages": [call, rejected]}}) == []
+    assert _activities({"__interrupt__": ()}) == []
