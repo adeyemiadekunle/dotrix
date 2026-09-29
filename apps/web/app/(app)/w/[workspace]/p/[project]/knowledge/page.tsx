@@ -337,7 +337,7 @@ function KnowledgePage() {
   const manifest = useManifest(scope);
   const members = useMembers(workspace?.id);
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
-  const [selected] = useSearchParam("file");
+  const [picked] = useSearchParam("file");
   const setParams = useSetSearchParams();
   const [query, setQuery] = useState("");
   const [showDeleted, setShowDeleted] = useState(false);
@@ -351,6 +351,8 @@ function KnowledgePage() {
     (f) => (showDeleted || !f.deleted) && (!query || f.path.toLowerCase().includes(query.toLowerCase())),
   );
   const tree = useMemo(() => buildTree(visible), [visible]);
+  // With no file in the URL, open the project's overview rather than an empty preview.
+  const selected = picked ?? (files.some((f) => f.path === "project.md" && !f.deleted) ? "project.md" : null);
   const entry = files.find((f) => f.path === selected) ?? null;
   const deletedCount = files.filter((f) => f.deleted).length;
 

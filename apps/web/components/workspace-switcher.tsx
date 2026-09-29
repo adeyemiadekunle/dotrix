@@ -17,7 +17,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
-import { WORKSPACE_KIND_LABELS, initials } from "@/lib/labels";
+import { CreateOrgDialog } from "@/components/orgs/create-org-dialog";
+import { ROLE_LABELS, WORKSPACE_KIND_LABELS, initials } from "@/lib/labels";
 import { useCurrentWorkspace, useWorkspaces } from "@/lib/queries";
 
 export function WorkspaceSwitcher() {
@@ -26,6 +27,7 @@ export function WorkspaceSwitcher() {
   const workspaces = useWorkspaces();
   const { shown: current } = useCurrentWorkspace();
   const [creating, setCreating] = useState(false);
+  const [creatingOrg, setCreatingOrg] = useState(false);
 
   if (!current) return <Skeleton className="h-12 w-full" />;
 
@@ -49,7 +51,9 @@ export function WorkspaceSwitcher() {
               </span>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{current.name}</span>
-                <span className="text-muted-foreground truncate text-xs">{WORKSPACE_KIND_LABELS[current.kind]}</span>
+                <span className="text-muted-foreground truncate text-xs">
+                  {ROLE_LABELS[current.role]} · {WORKSPACE_KIND_LABELS[current.kind]} workspace
+                </span>
               </div>
               <ChevronsUpDownIcon className="ml-auto" />
             </SidebarMenuButton>
@@ -84,9 +88,19 @@ export function WorkspaceSwitcher() {
               </span>
               <span className="text-muted-foreground font-medium">Create workspace</span>
             </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2 p-2" onSelect={() => setCreatingOrg(true)}>
+              <span className="flex size-6 items-center justify-center rounded-md border">
+                <BuildingIcon className="size-4" />
+              </span>
+              <span className="grid">
+                <span className="text-muted-foreground font-medium">Create organisation</span>
+                <span className="text-muted-foreground text-xs">For a company with several workspaces</span>
+              </span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <CreateWorkspaceDialog open={creating} onOpenChange={setCreating} />
+        <CreateOrgDialog open={creatingOrg} onOpenChange={setCreatingOrg} />
       </SidebarMenuItem>
     </SidebarMenu>
   );

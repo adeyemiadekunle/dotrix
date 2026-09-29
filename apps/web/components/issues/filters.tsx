@@ -19,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@pmagent/ui/components/select";
-import { ChevronDownIcon, SearchIcon, XIcon } from "lucide-react";
+import { cn } from "@pmagent/ui/lib/utils";
+import { ChevronDownIcon, SearchIcon, UserIcon, XIcon } from "lucide-react";
 import { useMemo } from "react";
 
 import { useEpics, type BoardFilters, type IssueType, type Scope } from "@/lib/issues";
@@ -29,6 +30,11 @@ import { useSearchParam, useSetSearchParams } from "@/lib/url-state";
 import { AGENTS, AGENT_LABELS, ISSUE_TYPES, TYPE_META, TypeIcon } from "./meta";
 
 const ANY = "__any";
+
+// Filters that aren't set stay quiet (dashed); set ones are tinted so you can see what's narrowing the board.
+const IDLE = "h-8 border-dashed bg-transparent shadow-none text-muted-foreground hover:text-foreground dark:bg-transparent";
+const SET = "h-8 border-brand/30 bg-brand-muted text-brand-muted-foreground hover:bg-brand-muted/80 dark:bg-brand-muted";
+const filterStyle = (on: boolean) => (on ? SET : IDLE);
 
 /** Board filters live in the URL, so a filtered board can be shared and survives a reload. */
 export function useFilters() {
@@ -89,21 +95,32 @@ export function IssueFilters({
         : `${filters.type.length} types`;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-4 pt-4 md:px-6">
+    <div className="flex flex-wrap items-center gap-2 px-4 pt-3 md:px-6">
       <div className="relative w-full sm:w-56">
-        <SearchIcon className="text-muted-foreground absolute top-2.5 left-2.5 size-4" />
+        <SearchIcon className="text-muted-foreground absolute top-2 left-2.5 size-4" />
         <Input
           value={filters.search}
           onChange={(e) => filters.setSearch(e.target.value || null)}
           placeholder="Search issues"
-          className="h-9 pl-8"
+          className="h-8 pl-8 text-sm"
           aria-label="Search issues"
         />
       </div>
 
+      <Button
+        variant="outline"
+        size="sm"
+        className={filterStyle(filters.assignee === "me")}
+        aria-pressed={filters.assignee === "me"}
+        onClick={() => filters.setAssignee(filters.assignee === "me" ? null : "me")}
+      >
+        <UserIcon />
+        Mine
+      </Button>
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-9">
+          <Button variant="outline" size="sm" className={filterStyle(filters.type.length > 0)}>
             {typeLabel}
             <ChevronDownIcon className="opacity-50" />
           </Button>
@@ -126,7 +143,7 @@ export function IssueFilters({
       </DropdownMenu>
 
       <Select value={filters.assignee ?? ANY} onValueChange={(v) => filters.setAssignee(v === ANY ? null : v)}>
-        <SelectTrigger size="sm" className="h-9 w-40" aria-label="Assignee">
+        <SelectTrigger size="sm" className={cn("w-40", filterStyle(Boolean(filters.assignee)))} aria-label="Assignee">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -157,7 +174,7 @@ export function IssueFilters({
 
       {showEpic && (epics.data?.length ?? 0) > 0 && (
         <Select value={filters.epic ?? ANY} onValueChange={(v) => filters.setEpic(v === ANY ? null : v)}>
-          <SelectTrigger size="sm" className="h-9 w-44" aria-label="Epic">
+          <SelectTrigger size="sm" className={cn("w-44", filterStyle(Boolean(filters.epic)))} aria-label="Epic">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -173,7 +190,7 @@ export function IssueFilters({
 
       {(labels.length > 0 || filters.label) && (
         <Select value={filters.label ?? ANY} onValueChange={(v) => filters.setLabel(v === ANY ? null : v)}>
-          <SelectTrigger size="sm" className="h-9 w-36" aria-label="Label">
+          <SelectTrigger size="sm" className={cn("w-36", filterStyle(Boolean(filters.label)))} aria-label="Label">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -188,7 +205,7 @@ export function IssueFilters({
       )}
 
       {filters.active && (
-        <Button variant="ghost" size="sm" className="h-9" onClick={filters.clear}>
+        <Button variant="ghost" size="sm" className="h-8" onClick={filters.clear}>
           <XIcon />
           Clear
         </Button>

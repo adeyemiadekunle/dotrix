@@ -20,8 +20,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Board, IssueStatus, IssueSummary, RankTarget } from "@/lib/issues";
 
-import { IssueCard, SortableIssueCard } from "./issue-card";
-import { STATUSES, STATUS_META, type MemberMap } from "./meta";
+import { IssueCard, SortableIssueCard, type EpicMap } from "./issue-card";
+import { STATUSES, STATUS_META, StatusIcon, type MemberMap } from "./meta";
 
 type Columns = Record<IssueStatus, IssueSummary[]>;
 
@@ -42,6 +42,7 @@ function Column({
   status,
   issues,
   members,
+  epics,
   onOpen,
   canEdit,
   collapsed,
@@ -50,6 +51,7 @@ function Column({
   status: IssueStatus;
   issues: IssueSummary[];
   members: MemberMap;
+  epics: EpicMap;
   onOpen: (key: string) => void;
   canEdit: boolean;
   collapsed: boolean;
@@ -58,38 +60,45 @@ function Column({
   const { setNodeRef, isOver } = useDroppable({ id: `${COLUMN_ID}${status}` });
   const meta = STATUS_META[status];
   return (
-    // Stacked full width when the board is narrow; side by side (scrolling, 16rem each) when
-    // there's room for a few; sharing the width only when all five fit at that size (80rem). Sized by the board's own
-    // width (container queries), so the chat panel narrowing it works like a smaller screen.
-    <section className="bg-muted/40 flex w-full flex-col rounded-xl border @2xl:w-64 @2xl:shrink-0 @7xl:w-auto @7xl:min-w-0 @7xl:flex-1">
-      <header className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium">
+    // Stacked full width when the board is narrow; side by side (scrolling, 15rem each) when
+    // there's room for a few; sharing the width once all five fit at about 13rem (64rem). Sized by
+    // the board's own width (container queries), so the chat panel narrowing it works like a smaller screen.
+    <section className="bg-muted/70 dark:bg-muted/40 flex w-full flex-col rounded-xl @2xl:w-60 @2xl:shrink-0 @5xl:w-auto @5xl:min-w-0 @5xl:flex-1">
+      <header className="flex h-10 items-center gap-2 px-3 text-sm">
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={!collapsed}
           aria-label={`${collapsed ? "Show" : "Hide"} ${meta.label}`}
-          className="text-muted-foreground hover:text-foreground -ml-1 @2xl:hidden"
+          className="text-muted-foreground hover:text-foreground -ml-1 flex size-8 items-center justify-center @2xl:hidden"
         >
           {collapsed ? <ChevronRightIcon className="size-4" /> : <ChevronDownIcon className="size-4" />}
         </button>
-        <span className={cn("size-2 shrink-0 rounded-full", meta.dot)} />
-        <span className="truncate whitespace-nowrap">{meta.label}</span>
-        <span className="text-muted-foreground tabular-nums">{issues.length}</span>
+        <StatusIcon status={status} />
+        <span className="truncate font-semibold whitespace-nowrap">{meta.label}</span>
+        <span className="text-muted-foreground text-xs tabular-nums">{issues.length}</span>
       </header>
       <SortableContext items={issues.map((i) => i.key)} strategy={verticalListSortingStrategy}>
         <div
           ref={setNodeRef}
           className={cn(
-            "flex flex-col gap-2 p-2 pt-0 @2xl:min-h-24 @2xl:flex-1",
+            "flex flex-col gap-2 rounded-b-xl p-2 pt-0 transition-colors @2xl:min-h-24 @2xl:flex-1",
             collapsed && "hidden @2xl:flex",
-            isOver && "bg-muted/60 rounded-b-xl",
+            isOver && "bg-primary/5 ring-primary/30 ring-1 ring-inset",
           )}
         >
           {issues.map((issue) => (
-            <SortableIssueCard key={issue.key} issue={issue} members={members} onOpen={onOpen} disabled={!canEdit} />
+            <SortableIssueCard
+              key={issue.key}
+              issue={issue}
+              members={members}
+              epics={epics}
+              onOpen={onOpen}
+              disabled={!canEdit}
+            />
           ))}
           {issues.length === 0 && (
-            <p className="text-muted-foreground rounded-lg border border-dashed p-2 text-center text-xs @2xl:p-4">
+            <p className="text-muted-foreground border-foreground/15 rounded-lg border border-dashed p-2 text-center text-xs @2xl:p-4">
               {canEdit ? "Drop issues here" : "Nothing here"}
             </p>
           )}
@@ -106,6 +115,7 @@ function Column({
 export function BoardView({
   board,
   members,
+  epics,
   search,
   canEdit,
   onOpen,
@@ -113,6 +123,7 @@ export function BoardView({
 }: {
   board: Board | undefined;
   members: MemberMap;
+  epics: EpicMap;
   search: string;
   canEdit: boolean;
   onOpen: (key: string) => void;
@@ -213,13 +224,14 @@ export function BoardView({
       }}
     >
       <div className="@container flex min-w-0 flex-1">
-        <div className="flex flex-1 flex-col gap-3 p-4 md:p-6 @2xl:flex-row @2xl:overflow-x-auto">
+        <div className="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4 md:px-6 md:pb-6 @2xl:flex-row @2xl:overflow-x-auto">
           {STATUSES.map((status) => (
             <Column
               key={status}
               status={status}
               issues={visible[status]}
               members={members}
+              epics={epics}
               onOpen={onOpen}
               canEdit={canEdit && !search}
               collapsed={collapsed.has(status)}
@@ -235,7 +247,7 @@ export function BoardView({
           ))}
         </div>
       </div>
-      <DragOverlay>{active && <IssueCard issue={active.issue} members={members} dragging />}</DragOverlay>
+      <DragOverlay>{active && <IssueCard issue={active.issue} members={members} epics={epics} dragging />}</DragOverlay>
     </DndContext>
   );
 }

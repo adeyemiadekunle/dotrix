@@ -24,8 +24,8 @@ export default function ChatPage() {
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
 
   return (
-    // Exactly the screen below the header (3.5rem) and tabs, so only the messages scroll.
-    <div className="flex h-[calc(100svh-6.125rem)] min-h-0 shrink-0">
+    // Fills the window below the banners, header, and tabs (see AppShell), so only the messages scroll.
+    <div className="flex min-h-0 flex-1">
       <aside className="hidden w-64 shrink-0 flex-col border-r md:flex">
         <div className="p-3">
           <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setThreadId(null)}>

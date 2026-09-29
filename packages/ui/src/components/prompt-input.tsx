@@ -30,6 +30,7 @@ function PromptInput({
   label = "Message",
   maxLength = 20_000,
   start,
+  footer,
   className,
 }: {
   value: string
@@ -43,6 +44,8 @@ function PromptInput({
   maxLength?: number
   /** Controls before the text, e.g. a + menu and the chips it sets. */
   start?: React.ReactNode
+  /** A row under the box, e.g. the + menu, its chips, and the model. */
+  footer?: React.ReactNode
   className?: string
 }) {
   const ready = status === "ready"
@@ -62,7 +65,7 @@ function PromptInput({
         submit()
       }}
     >
-      <div className="bg-background focus-within:ring-ring/50 flex items-end gap-2 rounded-xl border p-2 focus-within:ring-2">
+      <div className="bg-background focus-within:ring-ring/50 flex items-end gap-2 rounded-xl border p-1.5 pl-2 shadow-xs focus-within:ring-2">
         {start && <div className="flex shrink-0 items-center gap-1 self-end pb-0.5">{start}</div>}
         <Textarea
           value={value}
@@ -79,7 +82,7 @@ function PromptInput({
           rows={1}
           maxLength={maxLength}
           aria-label={label}
-          className="max-h-40 min-h-9 flex-1 resize-none border-0 bg-transparent p-1.5 shadow-none focus-visible:ring-0 dark:bg-transparent"
+          className="max-h-40 min-h-8 flex-1 resize-none border-0 bg-transparent px-1.5 py-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
         />
         {stoppable ? (
           <Button
@@ -107,6 +110,7 @@ function PromptInput({
           </Button>
         )}
       </div>
+      {footer && <div className="mt-1.5 flex min-w-0 items-center gap-1.5">{footer}</div>}
       {hint && <p className="text-muted-foreground mt-1.5 text-[11px]">{hint}</p>}
     </form>
   )

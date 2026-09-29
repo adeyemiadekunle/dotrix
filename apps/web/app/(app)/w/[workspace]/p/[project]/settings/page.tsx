@@ -12,7 +12,7 @@ import { DownloadIcon, FileTextIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
-import { Field, SubmitButton } from "@/components/form";
+import { Field, SaveBar } from "@/components/form";
 import { RepoPreview } from "@/components/repo-preview";
 import { useUpdateProject } from "@/lib/admin";
 import { exportUrl, useManifest } from "@/lib/knowledge";
@@ -71,9 +71,14 @@ function General({ project, workspace, canEdit }: { project: Project; workspace:
             />
           </div>
           {canEdit && (
-            <SubmitButton pending={update.isPending} disabled={update.isPending || !changed} className="justify-self-start">
-              Save
-            </SubmitButton>
+            <SaveBar
+              dirty={changed}
+              pending={update.isPending}
+              onDiscard={() => {
+                setName(project.name);
+                setDescription(project.description);
+              }}
+            />
           )}
         </form>
       </CardContent>
@@ -213,16 +218,14 @@ function Agents({
                 <option key={m} value={m} />
               ))}
             </datalist>
-            {canEdit && (
-              <SubmitButton pending={update.isPending} disabled={update.isPending || model.trim() === project.model} className="h-9">
-                Save
-              </SubmitButton>
-            )}
           </div>
           <p className="text-muted-foreground text-xs">
             <code className="font-mono">provider:model</code>, e.g. google_genai, anthropic, or openai. The provider&apos;s API
             key must be configured on the server. New runs use it; running ones finish on the old model.
           </p>
+          {canEdit && (
+            <SaveBar dirty={model.trim() !== project.model} pending={update.isPending} onDiscard={() => setModel(project.model)} />
+          )}
         </form>
 
         <form
@@ -275,15 +278,14 @@ function Agents({
             </p>
           </div>
           {canEdit && (
-            <div>
-              <SubmitButton
-                pending={update.isPending}
-                disabled={update.isPending || (!specialistChanged && !budgetChanged)}
-                className="h-9"
-              >
-                Save
-              </SubmitButton>
-            </div>
+            <SaveBar
+              dirty={specialistChanged || budgetChanged}
+              pending={update.isPending}
+              onDiscard={() => {
+                setSpecialistModel(project.specialist_model ?? "");
+                setBudget(project.token_budget ? String(project.token_budget) : "");
+              }}
+            />
           )}
         </form>
 

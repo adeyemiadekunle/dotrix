@@ -95,7 +95,7 @@ function EventRow({ event, members }: { event: Event; members: MemberMap }) {
           </p>
         ))}
         {event.body && (
-          <div className={event.kind === "commented" ? "bg-muted/50 rounded-md border p-3" : ""}>
+          <div className={event.kind === "commented" ? "rounded-lg border px-3 py-2" : ""}>
             <Markdown>{event.body}</Markdown>
           </div>
         )}
@@ -135,7 +135,10 @@ export function IssueActivity({
         ))}
       </ol>
       {canComment && (
-        <form onSubmit={submit} className="grid gap-2">
+        <form
+          onSubmit={submit}
+          className="focus-within:ring-ring/50 bg-background grid gap-1 rounded-xl border p-2 shadow-xs focus-within:ring-2"
+        >
           <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -143,10 +146,11 @@ export function IssueActivity({
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit(e);
             }}
             placeholder="Add a comment (Markdown supported)"
-            rows={3}
+            rows={2}
             maxLength={20_000}
+            className="min-h-14 resize-none border-0 bg-transparent px-1.5 py-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pl-1.5">
             <span className="text-muted-foreground text-xs">Ctrl+Enter to send</span>
             <SubmitButton pending={commenting} size="sm" disabled={commenting || !draft.trim()}>
               Comment

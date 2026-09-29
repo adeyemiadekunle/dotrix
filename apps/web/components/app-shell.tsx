@@ -3,29 +3,67 @@
 import { Button } from "@pmagent/ui/components/button";
 import { Separator } from "@pmagent/ui/components/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@pmagent/ui/components/sidebar";
+import { cn } from "@pmagent/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
-import { CloudOffIcon, MailWarningIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { CloudOffIcon, MailWarningIcon, XIcon } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { api, errorMessage, unwrap } from "@/lib/api";
 import { useMe, useWorkspaces } from "@/lib/queries";
 
+const DISMISSED = "pmagent:verify-banner-dismissed";
+
+/** A slim reminder to confirm the email address; it can be put away for the browser session. */
 function VerifyEmailBanner() {
   const me = useMe();
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    try {
+      setDismissed(sessionStorage.getItem(DISMISSED) === "1");
+    } catch {
+      // storage blocked: the banner just stays
+    }
+  }, []);
   const resend = useMutation({
     mutationFn: () => unwrap(api.POST("/v1/auth/verify-email/resend")),
     onSuccess: () => toast.success("Verification email sent"),
     onError: (e) => toast.error(errorMessage(e)),
   });
-  if (!me.data || me.data.email_verified) return null;
+  if (!me.data || me.data.email_verified || dismissed) return null;
   return (
-    <div className="bg-warning-muted text-warning-foreground flex items-center gap-2 border-b px-4 py-2 text-sm">
+    <div className="bg-warning-muted text-warning-foreground flex min-h-9 shrink-0 items-center gap-2 border-b py-1 pr-2 pl-4 text-[13px]">
       <MailWarningIcon className="size-4 shrink-0" />
-      <span className="flex-1">Confirm your email address using the link we sent to {me.data.email}.</span>
-      <Button size="sm" variant="ghost" disabled={resend.isPending} onClick={() => resend.mutate()}>
+      <span className="min-w-0 flex-1 truncate">
+        Confirm your email address using the link we sent to {me.data.email}.
+      </span>
+      <Button
+        size="xs"
+        variant="ghost"
+        className="font-semibold hover:bg-black/5 dark:hover:bg-white/10"
+        disabled={resend.isPending}
+        onClick={() => resend.mutate()}
+      >
         Resend
+      </Button>
+      <Button
+        size="icon-xs"
+        variant="ghost"
+        className="hover:bg-black/5 dark:hover:bg-white/10"
+        aria-label="Dismiss"
+        title="Hide until you next open the app"
+        onClick={() => {
+          setDismissed(true);
+          try {
+            sessionStorage.setItem(DISMISSED, "1");
+          } catch {
+            // nothing to remember it in; hidden until reload
+          }
+        }}
+      >
+        <XIcon />
       </Button>
     </div>
   );
@@ -38,7 +76,7 @@ function ConnectionErrorBanner() {
   const failed = [me, workspaces].find((q) => q.isError && !q.isFetching);
   if (!failed) return null;
   return (
-    <div className="bg-destructive/10 text-destructive flex items-center gap-2 border-b px-4 py-2 text-sm">
+    <div className="bg-destructive/10 text-destructive flex shrink-0 items-center gap-2 border-b px-4 py-2 text-sm">
       <CloudOffIcon className="size-4 shrink-0" />
       <span className="flex-1">Couldn&apos;t load your account: {errorMessage(failed.error)}</span>
       <Button
@@ -55,12 +93,18 @@ function ConnectionErrorBanner() {
   );
 }
 
+/** Pages whose content fills the window and scrolls inside itself (a message list and its input). */
+const FILL_WINDOW = /\/p\/[^/]+\/(chat|briefing)$/;
+
 /** The signed-in frame: sidebar, a top bar with the page title, and the page. */
 export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset>
+      {/* Filling pages get exactly the window's height, so banners, header, and tabs take what
+          they need and the page's own flex-1 area gets the rest (no hard-coded offsets). */}
+      <SidebarInset className={cn(FILL_WINDOW.test(pathname) && "h-svh min-h-0 overflow-hidden")}>
         <ConnectionErrorBanner />
         <VerifyEmailBanner />
         {children}
@@ -70,19 +114,30 @@ export function AppShell({ children }: { children: ReactNode }) {
 }
 
 /** Each page's top bar: sidebar toggle, title (with optional breadcrumb before it), and actions. */
-export function PageHeader({ title, parent, actions }: { title: ReactNode; parent?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({
+  title,
+  parent,
+  actions,
+  icon,
+}: {
+  title: ReactNode;
+  parent?: ReactNode;
+  actions?: ReactNode;
+  icon?: ReactNode;
+}) {
   return (
-    <header className="bg-background sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b px-4">
+    <header className="bg-background sticky top-0 z-10 flex h-13 shrink-0 items-center gap-2 border-b px-4">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
       <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
         {parent && (
           <>
             <span className="text-muted-foreground truncate">{parent}</span>
-            <span className="text-muted-foreground">/</span>
+            <span className="text-muted-foreground/60">/</span>
           </>
         )}
-        <h1 className="truncate font-medium">{title}</h1>
+        {icon}
+        <h1 className="truncate font-semibold">{title}</h1>
       </div>
       {actions}
     </header>

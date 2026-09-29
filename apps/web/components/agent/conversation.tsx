@@ -230,16 +230,24 @@ export function Conversation({
             onStop={working ? () => stop.mutate(working.id) : undefined}
             status={status}
             label={`Message ${agent === "auto" ? "the agents" : agentLabel(agent)}`}
-            start={
-              <AgentPicker
-                agent={agent}
-                onAgent={setAgent}
-                model={picked.model ?? null}
-                onModel={mayChooseModel ? (model) => setPick({ ...picked, model }) : undefined}
-                models={(models.data ?? []).map((m) => m.id)}
-                defaultModel={projectModel}
-                disabled={status !== "ready"}
-              />
+            footer={
+              <>
+                <AgentPicker
+                  agent={agent}
+                  onAgent={setAgent}
+                  model={picked.model ?? null}
+                  onModel={mayChooseModel ? (model) => setPick({ ...picked, model }) : undefined}
+                  models={(models.data ?? []).map((m) => m.id)}
+                  defaultModel={projectModel}
+                  disabled={status !== "ready"}
+                />
+                <span className="flex-1" />
+                {!picked.model && (fixedModel ?? projectModel) && (
+                  <span className="text-muted-foreground truncate font-mono text-[11px]" title="The model this conversation runs on">
+                    {modelName(fixedModel ?? projectModel)}
+                  </span>
+                )}
+              </>
             }
             placeholder={
               status === "waiting" || last?.status === "awaiting_approval"
@@ -250,7 +258,6 @@ export function Conversation({
                     ? "Reply"
                     : "Ask about the project, or ask for a change (@ picks an agent)"
             }
-            hint="Enter to send, Shift+Enter for a new line. Nothing changes without your approval."
           />
         </div>
       ) : (
