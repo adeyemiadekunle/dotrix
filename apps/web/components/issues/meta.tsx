@@ -9,10 +9,6 @@ import {
   BookmarkIcon,
   BotIcon,
   BugIcon,
-  ChevronDownIcon,
-  ChevronsUpIcon,
-  ChevronUpIcon,
-  EqualIcon,
   FlaskConicalIcon,
   ListTreeIcon,
   SquareCheckIcon,
@@ -20,6 +16,7 @@ import {
   ZapIcon,
   type LucideIcon,
 } from "lucide-react";
+import type { ComponentType } from "react";
 
 import type { AgentAssignee, IssueStatus, IssueType, Priority } from "@/lib/issues";
 import { initials } from "@/lib/labels";
@@ -38,31 +35,95 @@ export const TYPE_META: Record<IssueType, { label: string; icon: LucideIcon; cla
   "sub-task": { label: "Sub-task", icon: ListTreeIcon, className: "text-slate-500 dark:text-slate-400" },
 };
 
-export const STATUS_META: Record<IssueStatus, { label: string; dot: string; badge: string }> = {
-  todo: { label: "To do", dot: "bg-slate-400", badge: "bg-muted text-muted-foreground" },
-  in_progress: {
-    label: "In progress",
-    dot: "bg-sky-500",
-    badge: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
-  },
-  blocked: { label: "Blocked", dot: "bg-red-500", badge: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300" },
-  review: {
-    label: "In review",
-    dot: "bg-amber-500",
-    badge: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  },
-  done: {
-    label: "Done",
-    dot: "bg-emerald-500",
-    badge: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  },
+export const STATUS_META: Record<IssueStatus, { label: string; className: string }> = {
+  todo: { label: "To do", className: "text-slate-500 dark:text-slate-400" },
+  in_progress: { label: "In progress", className: "text-blue-600 dark:text-blue-400" },
+  blocked: { label: "Blocked", className: "text-red-600 dark:text-red-400" },
+  review: { label: "In review", className: "text-amber-700 dark:text-amber-400" },
+  done: { label: "Done", className: "text-emerald-700 dark:text-emerald-400" },
 };
 
-export const PRIORITY_META: Record<Priority, { label: string; icon: LucideIcon; className: string }> = {
-  urgent: { label: "Urgent", icon: ChevronsUpIcon, className: "text-red-600 dark:text-red-400" },
-  high: { label: "High", icon: ChevronUpIcon, className: "text-orange-600 dark:text-orange-400" },
-  medium: { label: "Medium", icon: EqualIcon, className: "text-amber-600 dark:text-amber-400" },
-  low: { label: "Low", icon: ChevronDownIcon, className: "text-sky-600 dark:text-sky-400" },
+type IconProps = { className?: string };
+
+// Each status has its own shape as well as its own colour, so it reads without colour vision.
+const STATUS_SHAPES: Record<IssueStatus, ComponentType> = {
+  todo: () => <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeDasharray="2.4 1.6" />,
+  in_progress: () => (
+    <>
+      <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M7 3.2a3.8 3.8 0 0 1 0 7.6z" fill="currentColor" />
+    </>
+  ),
+  blocked: () => (
+    <>
+      <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M3.2 10.8l7.6-7.6" stroke="currentColor" strokeWidth="1.6" />
+    </>
+  ),
+  review: () => (
+    <>
+      <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M7 4v3.2l2 1.4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </>
+  ),
+  done: () => (
+    <>
+      <circle cx="7" cy="7" r="6" fill="currentColor" />
+      <path
+        d="M4.3 7.2l1.9 1.9 3.6-4"
+        fill="none"
+        className="stroke-background"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  ),
+};
+
+export function StatusIcon({ status, className }: { status: IssueStatus } & IconProps) {
+  const Shape = STATUS_SHAPES[status];
+  return (
+    <svg viewBox="0 0 14 14" aria-hidden className={cn("size-3.5 shrink-0", STATUS_META[status].className, className)}>
+      <Shape />
+    </svg>
+  );
+}
+
+/** Signal bars: `level` of three filled; the rest faint. */
+function bars(level: 1 | 2 | 3) {
+  function Bars({ className }: IconProps) {
+    return (
+      <svg viewBox="0 0 14 14" aria-hidden className={cn("size-3.5 shrink-0", className)}>
+        {[
+          [1, 8, 5],
+          [5.5, 5, 8],
+          [10, 2, 11],
+        ].map(([x, y, h], i) => (
+          <rect key={i} x={x} y={y} width="3" height={h} rx="1" fill="currentColor" opacity={i < level ? 1 : 0.25} />
+        ))}
+      </svg>
+    );
+  }
+  return Bars;
+}
+
+function UrgentIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 14 14" aria-hidden className={cn("size-3.5 shrink-0", className)}>
+      <rect x="1" y="1" width="12" height="12" rx="3" fill="currentColor" />
+      <path d="M7 4v3.6" className="stroke-background" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="7" cy="10" r="0.95" className="fill-background" />
+    </svg>
+  );
+}
+
+// Colour only where priority matters (high, urgent), so orange and red keep their meaning.
+export const PRIORITY_META: Record<Priority, { label: string; icon: ComponentType<IconProps>; className: string }> = {
+  urgent: { label: "Urgent", icon: UrgentIcon, className: "text-red-600 dark:text-red-400" },
+  high: { label: "High", icon: bars(3), className: "text-orange-600 dark:text-orange-400" },
+  medium: { label: "Medium", icon: bars(2), className: "text-muted-foreground" },
+  low: { label: "Low", icon: bars(1), className: "text-muted-foreground" },
 };
 
 export const AGENT_LABELS: Record<AgentAssignee, string> = {
@@ -81,18 +142,21 @@ export function PriorityIcon({ priority, className }: { priority: Priority; clas
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <meta.icon aria-label={`${meta.label} priority`} className={cn("size-4 shrink-0", meta.className, className)} />
+        <span role="img" aria-label={`${meta.label} priority`} className="inline-flex">
+          <meta.icon className={cn(meta.className, className)} />
+        </span>
       </TooltipTrigger>
       <TooltipContent>{meta.label} priority</TooltipContent>
     </Tooltip>
   );
 }
 
+/** A status as its shape and name, the same on the board, the backlog, and the drawer. */
 export function StatusBadge({ status, className }: { status: IssueStatus; className?: string }) {
-  const meta = STATUS_META[status];
   return (
-    <span className={cn("inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-medium", meta.badge, className)}>
-      {meta.label}
+    <span className={cn("inline-flex items-center gap-1.5 text-xs whitespace-nowrap", className)}>
+      <StatusIcon status={status} />
+      {STATUS_META[status].label}
     </span>
   );
 }
@@ -112,12 +176,16 @@ export function AssigneeAvatar({
   issue,
   members,
   className,
+  showUnassigned = false,
 }: {
   issue: { assignee_user_id: string | null; assignee_agent: AgentAssignee | null };
   members: MemberMap;
   className?: string;
+  /** Draw an empty placeholder when nobody is assigned (lists that line up in columns); else nothing. */
+  showUnassigned?: boolean;
 }) {
   const name = assigneeName(issue, members);
+  if (!name && !showUnassigned) return null;
   return (
     <Tooltip>
       <TooltipTrigger asChild>

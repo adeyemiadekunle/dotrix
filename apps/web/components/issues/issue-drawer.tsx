@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { Textarea } from "@pmagent/ui/components/textarea";
 import { cn } from "@pmagent/ui/lib/utils";
-import { BellIcon, BellOffIcon, LinkIcon, PencilIcon } from "lucide-react";
+import { BellIcon, LinkIcon, PencilIcon } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -38,6 +38,7 @@ import {
   PRIORITY_META,
   STATUSES,
   STATUS_META,
+  StatusIcon,
   TYPE_META,
   TypeIcon,
   type MemberMap,
@@ -47,12 +48,16 @@ const NONE = "__none";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[7rem_1fr] items-center gap-3 text-sm">
-      <span className="text-muted-foreground">{label}</span>
+    <div className="grid min-h-9 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2 text-sm">
+      <span className="text-muted-foreground pl-1">{label}</span>
       <div className="min-w-0">{children}</div>
     </div>
   );
 }
+
+// Property controls read as plain values until you point at them, all one width.
+const GHOST =
+  "h-8 w-full border-transparent bg-transparent px-2 shadow-none hover:border-input focus-visible:border-ring dark:bg-transparent dark:hover:bg-input/30";
 
 /** An input that saves when you leave it (or press Enter), if the value changed. */
 function SaveOnBlur({
@@ -116,6 +121,7 @@ function Description({
   if (editing) {
     return (
       <div className="grid gap-2">
+        <h3 className="text-sm font-semibold">Description</h3>
         <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={10} autoFocus maxLength={100_000} />
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="outline" onClick={() => setEditing(false)}>
@@ -141,7 +147,24 @@ function Description({
     );
   }
   return (
-    <div className="group relative">
+    <section className="grid gap-2">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Description</h3>
+        {canEdit && (
+          <Button
+            size="xs"
+            variant="ghost"
+            className="text-muted-foreground"
+            onClick={() => {
+              setDraft(issue.description);
+              setEditing(true);
+            }}
+          >
+            <PencilIcon />
+            Edit
+          </Button>
+        )}
+      </div>
       {issue.description ? (
         <Markdown>{issue.description}</Markdown>
       ) : (
@@ -151,21 +174,7 @@ function Description({
             : "No description yet."}
         </p>
       )}
-      {canEdit && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-2"
-          onClick={() => {
-            setDraft(issue.description);
-            setEditing(true);
-          }}
-        >
-          <PencilIcon />
-          Edit description
-        </Button>
-      )}
-    </div>
+    </section>
   );
 }
 
@@ -186,11 +195,8 @@ function IssueDetails({
 }) {
   const update = useUpdateIssue(scope);
   const comment = useComment(scope);
-  const watch = useWatch(scope);
   const epics = useEpics(scope);
-  const me = useMe();
   const save = (changes: Schemas["IssueUpdate"]) => update.mutateAsync({ key: issue.key, changes });
-  const watching = Boolean(me.data && issue.watchers?.includes(me.data.id));
   const assignee = issue.assignee_agent ?? issue.assignee_user_id ?? NONE;
   const reporter = issue.reporter_agent
     ? (AGENT_LABELS[issue.reporter_agent as keyof typeof AGENT_LABELS] ?? issue.reporter_agent)
@@ -199,26 +205,32 @@ function IssueDetails({
       : "Unknown";
 
   return (
-    <div className="grid gap-6 px-4 pb-8 md:px-6">
-      <SaveOnBlur
-        value={issue.title}
-        disabled={!canEdit}
-        onSave={(title) => title && void save({ title })}
-        aria-label="Title"
-        className="h-auto border-transparent px-2 py-1 text-lg font-semibold shadow-none hover:border-input focus-visible:border-input md:text-lg"
-        maxLength={200}
-      />
+    <div className="grid [grid-template-areas:'title'_'props'_'body'] md:min-h-full md:grid-cols-[minmax(0,1fr)_18rem] md:grid-rows-[auto_1fr] md:[grid-template-areas:'title_props'_'body_props']">
+      <div className="px-4 pt-1 pb-4 [grid-area:title] md:px-6">
+        <SaveOnBlur
+          value={issue.title}
+          disabled={!canEdit}
+          onSave={(title) => title && void save({ title })}
+          aria-label="Title"
+          className="-ml-2 h-auto border-transparent px-2 py-1 text-xl font-semibold tracking-tight shadow-none hover:border-input focus-visible:border-input md:text-xl dark:bg-transparent"
+          maxLength={200}
+        />
+      </div>
 
-      <div className="grid gap-3">
+      <aside
+        aria-label="Properties"
+        className="bg-muted/30 grid content-start gap-0.5 border-y px-3 py-3 [grid-area:props] md:border-y-0 md:border-l md:py-4"
+      >
+        <p className="text-muted-foreground px-1 pb-2 text-xs font-medium">Properties</p>
         <Field label="Status">
           <Select value={issue.status} disabled={!canEdit} onValueChange={(v) => void save({ status: v as Issue["status"] })}>
-            <SelectTrigger aria-label="Status" size="sm" className="w-44">
+            <SelectTrigger aria-label="Status" size="sm" className={GHOST}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {STATUSES.map((s) => (
                 <SelectItem key={s} value={s}>
-                  <span className={cn("size-2 rounded-full", STATUS_META[s].dot)} />
+                  <StatusIcon status={s} />
                   {STATUS_META[s].label}
                 </SelectItem>
               ))}
@@ -239,7 +251,7 @@ function IssueDetails({
               )
             }
           >
-            <SelectTrigger aria-label="Assignee" size="sm" className="w-44">
+            <SelectTrigger aria-label="Assignee" size="sm" className={GHOST}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -265,7 +277,7 @@ function IssueDetails({
         </Field>
         <Field label="Priority">
           <Select value={issue.priority} disabled={!canEdit} onValueChange={(v) => void save({ priority: v as Issue["priority"] })}>
-            <SelectTrigger aria-label="Priority" size="sm" className="w-44">
+            <SelectTrigger aria-label="Priority" size="sm" className={GHOST}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -283,7 +295,7 @@ function IssueDetails({
         </Field>
         <Field label="Type">
           <Select value={issue.type} disabled={!canEdit} onValueChange={(v) => void save({ type: v as Issue["type"] })}>
-            <SelectTrigger aria-label="Type" size="sm" className="w-44">
+            <SelectTrigger aria-label="Type" size="sm" className={GHOST}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -304,7 +316,7 @@ function IssueDetails({
                 disabled={!canEdit}
                 onSave={(v) => void save({ parent: v ? v.toUpperCase() : null })}
                 placeholder="KEY-12"
-                className="h-8 w-44 font-mono uppercase"
+                className={cn(GHOST, "font-mono uppercase")}
               />
             ) : (
               <Select
@@ -312,7 +324,7 @@ function IssueDetails({
                 disabled={!canEdit}
                 onValueChange={(v) => void save({ parent: v === NONE ? null : v })}
               >
-                <SelectTrigger aria-label="Epic" size="sm" className="w-full max-w-72">
+                <SelectTrigger aria-label="Epic" size="sm" className={GHOST}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -332,6 +344,7 @@ function IssueDetails({
             value={issue.labels.join(", ")}
             disabled={!canEdit}
             placeholder="frontend, payments"
+            className={GHOST}
             onSave={(v) => void save({ labels: v.split(",").map((l) => l.trim()).filter(Boolean) })}
           />
         </Field>
@@ -343,7 +356,7 @@ function IssueDetails({
             min={0}
             step="0.5"
             placeholder="Points or days"
-            className="h-8 w-44"
+            className={GHOST}
             onSave={(v) => void save({ estimate: v === "" ? null : Number(v) })}
           />
         </Field>
@@ -352,7 +365,7 @@ function IssueDetails({
             value={issue.due ?? ""}
             disabled={!canEdit}
             type="date"
-            className="h-8 w-44"
+            className={GHOST}
             onSave={(v) => void save({ due: v || null })}
           />
         </Field>
@@ -362,7 +375,7 @@ function IssueDetails({
               <SaveOnBlur
                 value={(issue.depends_on ?? []).join(", ")}
                 placeholder="KEY-3, KEY-7"
-                className="h-8 font-mono uppercase"
+                className={cn(GHOST, "font-mono uppercase")}
                 onSave={(v) =>
                   void save({ depends_on: v.split(",").map((k) => k.trim().toUpperCase()).filter(Boolean) })
                 }
@@ -374,61 +387,79 @@ function IssueDetails({
           )}
         </Field>
         <Field label="Blocks">
-          <KeyChips keys={issue.blocks ?? []} onOpen={onOpen} />
+          <div className="px-2">
+            <KeyChips keys={issue.blocks ?? []} onOpen={onOpen} />
+          </div>
         </Field>
         {(issue.children?.length ?? 0) > 0 && (
           <Field label={issue.type === "epic" ? "Issues" : "Sub-tasks"}>
-            <KeyChips keys={issue.children ?? []} onOpen={onOpen} />
+            <div className="px-2">
+              <KeyChips keys={issue.children ?? []} onOpen={onOpen} />
+            </div>
           </Field>
         )}
-        <Field label="Reporter">{reporter}</Field>
+        <Separator className="my-2" />
+        <Field label="Reporter">
+          <span className="px-2">{reporter}</span>
+        </Field>
         <Field label="Created">
-          <span title={new Date(issue.created_at).toLocaleString()}>{timeAgo(issue.created_at)}</span>
+          <span className="px-2" title={new Date(issue.created_at).toLocaleString()}>
+            {timeAgo(issue.created_at)}
+          </span>
           {issue.resolved_at && (
             <span className="text-muted-foreground"> · resolved {timeAgo(issue.resolved_at)}</span>
           )}
         </Field>
-      </div>
+      </aside>
 
-      <div className="flex gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            void navigator.clipboard.writeText(window.location.href);
-            toast.success("Link copied");
-          }}
-        >
-          <LinkIcon />
-          Copy link
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={watch.isPending}
-          onClick={() => watch.mutate({ key: issue.key, watch: !watching })}
-        >
-          {watching ? <BellOffIcon /> : <BellIcon />}
-          {watching ? "Stop watching" : "Watch"}
-        </Button>
-      </div>
+      <div className="grid content-start gap-6 px-4 pt-4 pb-8 [grid-area:body] md:px-6 md:pt-0">
 
-      <Separator />
-
-      <section className="grid gap-2">
-        <h3 className="text-sm font-medium">Description</h3>
         <Description key={issue.updated_at} issue={issue} canEdit={canEdit} onSave={(description) => save({ description })} />
-      </section>
 
-      <Separator />
+        <Separator />
 
-      <IssueActivity
-        log={issue.log ?? []}
-        members={members}
-        canComment={canEdit}
-        commenting={comment.isPending}
-        onComment={(body) => comment.mutateAsync({ key: issue.key, body })}
-      />
+        <IssueActivity
+          log={issue.log ?? []}
+          members={members}
+          canComment={canEdit}
+          commenting={comment.isPending}
+          onComment={(body) => comment.mutateAsync({ key: issue.key, body })}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Copy link and watch, in the drawer's header. */
+function IssueActions({ issue, scope }: { issue: Issue; scope: Scope }) {
+  const watch = useWatch(scope);
+  const me = useMe();
+  const watching = Boolean(me.data && issue.watchers?.includes(me.data.id));
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Copy link"
+        title="Copy link"
+        onClick={() => {
+          void navigator.clipboard.writeText(window.location.href);
+          toast.success("Link copied");
+        }}
+      >
+        <LinkIcon />
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        aria-pressed={watching}
+        disabled={watch.isPending}
+        onClick={() => watch.mutate({ key: issue.key, watch: !watching })}
+        title={watching ? "Stop getting its changes" : "Get its changes"}
+      >
+        <BellIcon />
+        {watching ? "Watching" : "Watch"}
+      </Button>
     </div>
   );
 }
@@ -443,9 +474,9 @@ export function IssueDrawer() {
 
   return (
     <Sheet open={Boolean(key)} onOpenChange={(open) => !open && setKey(null)}>
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-xl">
-        <SheetHeader className="px-4 md:px-6">
-          <SheetTitle className="flex items-center gap-2 text-sm font-normal">
+      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-2xl lg:max-w-4xl">
+        <SheetHeader className="bg-background sticky top-0 z-10 flex-row items-center gap-2 border-b py-3 pr-14 pl-4 md:pl-6">
+          <SheetTitle className="flex flex-1 items-center gap-2 text-sm font-normal">
             {issue.data && <TypeIcon type={issue.data.type} />}
             <span className="text-muted-foreground font-mono">{key}</span>
             {issue.data && !issue.data.ready && issue.data.status === "todo" && (
@@ -454,16 +485,17 @@ export function IssueDrawer() {
               </Badge>
             )}
           </SheetTitle>
+          {issue.data && scope && <IssueActions issue={issue.data} scope={scope} />}
           <SheetDescription className="sr-only">Issue details</SheetDescription>
         </SheetHeader>
         {issue.isLoading && (
-          <div className="grid gap-4 px-4 md:px-6">
+          <div className="grid gap-4 p-4 md:px-6">
             <Skeleton className="h-8" />
             <Skeleton className="h-64" />
           </div>
         )}
         {issue.isError && (
-          <p className="text-muted-foreground px-4 text-sm md:px-6">
+          <p className="text-muted-foreground p-4 text-sm md:px-6">
             This issue doesn&apos;t exist, or it was moved. Check the key.
           </p>
         )}

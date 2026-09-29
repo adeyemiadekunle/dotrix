@@ -2,7 +2,6 @@
 
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
 import {
   Dialog,
   DialogContent,
@@ -31,7 +30,7 @@ import { useState, type FormEvent } from "react";
 import { useConfirm } from "@/components/confirm-dialog";
 import { Field, SubmitButton } from "@/components/form";
 import { EmptyState } from "@/components/states";
-import { ROLE_LABELS, WORKSPACE_KIND_LABELS } from "@/lib/labels";
+import { ROLE_LABELS, WORKSPACE_KIND_LABELS, initials } from "@/lib/labels";
 import {
   canManageOrg,
   useAttachWorkspace,
@@ -291,15 +290,22 @@ function WorkspaceRow({ org, workspace }: { org: Org; workspace: OrgWorkspace })
   const detach = useDetachWorkspace(org.id);
   const [ask, confirmDialog] = useConfirm();
   return (
-    <li className="grid gap-3 p-3">
+    <li className="grid gap-3 px-4 py-3">
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        {manage ? (
-          <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label={`People in ${workspace.name}`}>
+        {manage && (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            aria-label={`People in ${workspace.name}`}
+            className="text-muted-foreground hover:text-foreground -ml-1 flex size-7 items-center justify-center rounded-md"
+          >
             {open ? <ChevronDownIcon className="size-4" /> : <ChevronRightIcon className="size-4" />}
           </button>
-        ) : (
-          <LayoutGridIcon className="text-muted-foreground size-4" />
         )}
+        <span className="bg-brand-muted text-brand-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold">
+          {initials(workspace.name)}
+        </span>
         <div className="grid min-w-0 flex-1 gap-0.5">
           <span className="flex flex-wrap items-center gap-2 font-medium">
             {workspace.name}
@@ -361,52 +367,50 @@ export default function OrgWorkspacesPage() {
   const manage = canManageOrg(org.role);
 
   return (
-    <div className="grid max-w-3xl content-start gap-4 p-4 md:p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Workspaces</CardTitle>
-          <CardDescription>
+    <div className="grid max-w-5xl content-start gap-6 p-4 md:p-8">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="grid gap-1">
+          <h2 className="text-lg font-semibold">Workspaces</h2>
+          <p className="text-muted-foreground text-sm">
             {org.role === "owner"
               ? "As an owner you see inside every workspace the organisation owns."
               : org.role === "admin"
                 ? "You manage every workspace's people, but see inside only the ones you're in."
                 : "The workspaces you're in."}
-          </CardDescription>
-          {manage && (
-            <div className="flex flex-wrap gap-2 pt-2">
-              <Button size="sm" onClick={() => setCreating(true)}>
-                <PlusIcon />
-                New workspace
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setAttaching(true)}>
-                <FolderInputIcon />
-                Add an existing workspace
-              </Button>
-            </div>
-          )}
-        </CardHeader>
-        <CardContent>
-          {workspaces.isLoading && <Skeleton className="h-32" />}
-          {workspaces.data?.length === 0 && (
-            <EmptyState
-              icon={LayoutGridIcon}
-              title="No workspaces yet"
-              description={
-                manage
-                  ? "Create one for each team or product, or add a workspace you already own."
-                  : "When someone places you in one of the organisation's workspaces, it appears here."
-              }
-            />
-          )}
-          {workspaces.data && workspaces.data.length > 0 && (
-            <ul className="divide-y rounded-md border">
-              {workspaces.data.map((w) => (
-                <WorkspaceRow key={w.id} org={org} workspace={w} />
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+          </p>
+        </div>
+        {manage && (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => setAttaching(true)}>
+              <FolderInputIcon />
+              Add an existing workspace
+            </Button>
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <PlusIcon />
+              New workspace
+            </Button>
+          </div>
+        )}
+      </div>
+      {workspaces.isLoading && <Skeleton className="h-32" />}
+      {workspaces.data?.length === 0 && (
+        <EmptyState
+          icon={LayoutGridIcon}
+          title="No workspaces yet"
+          description={
+            manage
+              ? "Create one for each team or product, or add a workspace you already own."
+              : "When someone places you in one of the organisation's workspaces, it appears here."
+          }
+        />
+      )}
+      {workspaces.data && workspaces.data.length > 0 && (
+        <ul className="bg-card divide-y rounded-xl border shadow-xs">
+          {workspaces.data.map((w) => (
+            <WorkspaceRow key={w.id} org={org} workspace={w} />
+          ))}
+        </ul>
+      )}
       {manage && <NewWorkspaceDialog org={org} open={creating} onOpenChange={setCreating} />}
       {manage && <AttachDialog org={org} open={attaching} onOpenChange={setAttaching} />}
     </div>

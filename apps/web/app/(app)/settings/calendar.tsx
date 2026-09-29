@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@pmagent/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
 import { Input } from "@pmagent/ui/components/input";
 import { Label } from "@pmagent/ui/components/label";
 import { RadioGroup, RadioGroupItem } from "@pmagent/ui/components/radio-group";
@@ -11,6 +10,13 @@ import { CalendarPlusIcon, CopyIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import {
+  SettingsContent,
+  SettingsDescription,
+  SettingsHeader,
+  SettingsSection,
+  SettingsTitle,
+} from "@/components/settings-section";
 import { ApiError, api, errorMessage, unwrap } from "@/lib/api";
 
 type Scope = "mine" | "all";
@@ -73,14 +79,14 @@ export function CalendarFeed() {
   const shownScope = current ? (current.scope as Scope) : scope;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Calendar</CardTitle>
-        <CardDescription>
+    <SettingsSection>
+      <SettingsHeader>
+        <SettingsTitle>Calendar</SettingsTitle>
+        <SettingsDescription>
           Subscribe to your issues&apos; due and scheduled dates in Google Calendar, Apple Calendar, or Outlook.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-4">
+        </SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent className="grid gap-4">
         {feed.isLoading ? (
           <Skeleton className="h-24" />
         ) : (
@@ -154,7 +160,7 @@ export function CalendarFeed() {
             )}
           </>
         )}
-      </CardContent>
-    </Card>
+      </SettingsContent>
+    </SettingsSection>
   );
 }

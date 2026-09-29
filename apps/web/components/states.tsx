@@ -17,13 +17,15 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-10 text-center">
-      <div className="bg-muted flex size-10 items-center justify-center rounded-full">
-        <Icon className="text-muted-foreground size-5" />
+    // Sized to its content and placed where the page's content starts, so the action is where
+    // the eye lands (not floating in the middle of a full-height box).
+    <div className="bg-card flex w-full flex-col items-center gap-3 self-start rounded-xl border px-6 py-10 text-center">
+      <div className="bg-brand-muted text-brand-muted-foreground flex size-10 items-center justify-center rounded-lg">
+        <Icon className="size-5" />
       </div>
       <div className="grid gap-1">
-        <h2 className="font-medium">{title}</h2>
-        <p className="text-muted-foreground max-w-sm text-sm">{description}</p>
+        <h2 className="font-semibold">{title}</h2>
+        <p className="text-muted-foreground max-w-md text-sm text-balance">{description}</p>
       </div>
       {action}
     </div>
@@ -35,7 +37,7 @@ export function NotFound({ what }: { what: string }) {
   return (
     <>
       <PageHeader title="Not found" />
-      <div className="flex flex-1 items-center justify-center p-6">
+      <div className="flex flex-1 items-center justify-center p-6 [&>div]:max-w-lg [&>div]:self-center">
         <EmptyState
           icon={SearchXIcon}
           title={`This ${what} doesn't exist`}

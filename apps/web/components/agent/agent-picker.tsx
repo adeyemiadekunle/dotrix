@@ -46,8 +46,8 @@ export function AgentPicker({
           <Button
             type="button"
             size="icon"
-            variant="ghost"
-            className="size-8 rounded-lg"
+            variant="outline"
+            className="size-7 rounded-full"
             disabled={disabled}
             aria-label="Choose the agent and model"
             title="Choose the agent and model"
@@ -88,7 +88,9 @@ export function AgentPicker({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      {agent !== "auto" && (
+      {agent === "auto" ? (
+        <Chip label="Auto" removeLabel="" />
+      ) : (
         <Chip label={agentLabel(agent)} onRemove={disabled ? undefined : () => onAgent("auto")} removeLabel="Back to Auto" />
       )}
       {model && onModel && (
@@ -110,7 +112,7 @@ function Chip({
   removeLabel: string;
 }) {
   return (
-    <span className="bg-muted inline-flex h-7 max-w-40 items-center gap-1 rounded-md pr-1 pl-2 text-xs">
+    <span className="bg-brand-muted text-brand-muted-foreground inline-flex h-6 max-w-40 items-center gap-1 rounded-full px-2 text-xs font-medium has-[button]:pr-1">
       <span className={mono ? "truncate font-mono" : "truncate"}>{label}</span>
       {onRemove && (
         <button
@@ -118,7 +120,7 @@ function Chip({
           onClick={onRemove}
           aria-label={`${label}: ${removeLabel.toLowerCase()}`}
           title={removeLabel}
-          className="hover:bg-background text-muted-foreground hover:text-foreground rounded p-0.5"
+          className="hover:bg-background/60 rounded-full p-0.5"
         >
           <XIcon className="size-3" />
         </button>

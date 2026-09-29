@@ -23,6 +23,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { NavUser } from "@/components/nav-user";
+import { ProjectTile } from "@/components/project-tile";
 import { CreateOrgDialog } from "@/components/orgs/create-org-dialog";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { canManageProjects } from "@/lib/labels";
@@ -69,7 +70,7 @@ export function AppSidebar() {
                   </Link>
                 </SidebarMenuButton>
                 {waiting > 0 && (
-                  <SidebarMenuBadge className="bg-warning text-warning-foreground dark:text-background rounded-full px-1.5">
+                  <SidebarMenuBadge className="bg-primary text-primary-foreground peer-hover/menu-button:text-primary-foreground peer-data-[active=true]/menu-button:text-primary-foreground rounded-full px-1.5">
                     {waiting}
                   </SidebarMenuBadge>
                 )}
@@ -120,10 +121,11 @@ export function AppSidebar() {
                   <SidebarMenuItem key={project.id}>
                     <SidebarMenuButton asChild isActive={pathname.startsWith(href)} tooltip={project.name}>
                       <Link href={href}>
-                        <span className="text-muted-foreground w-4 shrink-0 text-center font-mono text-[10px] group-data-[collapsible=icon]:w-full">
-                          {project.key.slice(0, 3)}
+                        <ProjectTile projectKey={project.key} className="-ml-0.5 group-data-[collapsible=icon]:ml-0 group-data-[collapsible=icon]:size-4 group-data-[collapsible=icon]:text-[9px]" />
+                        <span className="flex-1 truncate">{project.name}</span>
+                        <span className="text-muted-foreground font-mono text-[11px] group-data-[collapsible=icon]:hidden">
+                          {project.key}
                         </span>
-                        <span className="truncate">{project.name}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -137,32 +139,29 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <SidebarGroup>
-          <SidebarGroupLabel>Organisations</SidebarGroupLabel>
-          <SidebarGroupAction title="New organisation" onClick={() => setCreatingOrg(true)}>
-            <PlusIcon />
-            <span className="sr-only">New organisation</span>
-          </SidebarGroupAction>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {orgs.data?.map((o) => (
-                <SidebarMenuItem key={o.id}>
-                  <SidebarMenuButton asChild isActive={pathname.startsWith(`/o/${o.slug}`)} tooltip={o.name}>
-                    <Link href={`/o/${o.slug}`}>
-                      <BuildingIcon />
-                      <span className="truncate">{o.name}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-              {orgs.data?.length === 0 && (
-                <p className="text-muted-foreground px-2 py-1 text-xs group-data-[collapsible=icon]:hidden">
-                  For a company with several workspaces.
-                </p>
-              )}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {(orgs.data?.length ?? 0) > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Organisations</SidebarGroupLabel>
+            <SidebarGroupAction title="New organisation" onClick={() => setCreatingOrg(true)}>
+              <PlusIcon />
+              <span className="sr-only">New organisation</span>
+            </SidebarGroupAction>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {orgs.data?.map((o) => (
+                  <SidebarMenuItem key={o.id}>
+                    <SidebarMenuButton asChild isActive={pathname.startsWith(`/o/${o.slug}`)} tooltip={o.name}>
+                      <Link href={`/o/${o.slug}`}>
+                        <BuildingIcon />
+                        <span className="truncate">{o.name}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <CreateOrgDialog open={creatingOrg} onOpenChange={setCreatingOrg} />
       <SidebarFooter>

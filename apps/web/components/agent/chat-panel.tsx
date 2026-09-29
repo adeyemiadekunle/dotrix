@@ -147,7 +147,7 @@ export function ChatPanel() {
   }
   if (!open) return null;
   return (
-    <aside className="bg-background sticky top-0 h-svh w-[400px] shrink-0 border-l xl:w-[440px]">
+    <aside className="bg-background sticky top-0 h-svh max-h-full w-[400px] shrink-0 border-l xl:w-[440px]">
       <PanelBody onClose={() => setOpen(false)} />
     </aside>
   );

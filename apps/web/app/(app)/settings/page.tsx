@@ -2,7 +2,6 @@
 
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
 import { Label } from "@pmagent/ui/components/label";
 import { RadioGroup, RadioGroupItem } from "@pmagent/ui/components/radio-group";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
@@ -14,6 +13,13 @@ import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/app-shell";
+import {
+  SettingsContent,
+  SettingsDescription,
+  SettingsHeader,
+  SettingsSection,
+  SettingsTitle,
+} from "@/components/settings-section";
 import { api, errorMessage, unwrap } from "@/lib/api";
 import { useMe } from "@/lib/queries";
 
@@ -36,12 +42,12 @@ function Appearance() {
   const { theme, setTheme } = useTheme();
   const mounted = useMounted();
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Appearance</CardTitle>
-        <CardDescription>System follows your device&apos;s light or dark setting. Saved in this browser.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <SettingsSection>
+      <SettingsHeader>
+        <SettingsTitle>Appearance</SettingsTitle>
+        <SettingsDescription>System follows your device&apos;s light or dark setting. Saved in this browser.</SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent>
         {mounted ? (
           <RadioGroup value={theme ?? "system"} onValueChange={setTheme} className="grid grid-cols-3 gap-3 sm:max-w-md">
             {THEMES.map(({ value, label, icon: Icon, preview }) => (
@@ -61,8 +67,8 @@ function Appearance() {
         ) : (
           <Skeleton className="h-24 sm:max-w-md" />
         )}
-      </CardContent>
-    </Card>
+      </SettingsContent>
+    </SettingsSection>
   );
 }
 
@@ -74,12 +80,12 @@ function Profile() {
     onError: (e) => toast.error(errorMessage(e)),
   });
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Profile</CardTitle>
-        <CardDescription>How you appear to your team.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <SettingsSection>
+      <SettingsHeader>
+        <SettingsTitle>Profile</SettingsTitle>
+        <SettingsDescription>How you appear to your team.</SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent>
         {me.data ? (
           <dl className="grid gap-3 text-sm">
             <div className="grid grid-cols-[6rem_1fr] items-center gap-4">
@@ -108,8 +114,8 @@ function Profile() {
         ) : (
           <Skeleton className="h-12" />
         )}
-      </CardContent>
-    </Card>
+      </SettingsContent>
+    </SettingsSection>
   );
 }
 
@@ -117,7 +123,7 @@ export default function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" />
-      <div className="flex max-w-3xl flex-col gap-4 p-4 md:p-6">
+      <div className="flex max-w-5xl flex-col gap-8 p-4 md:p-8">
         <Profile />
         <Appearance />
         <CalendarFeed />

@@ -61,7 +61,7 @@ function ChatBubble({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="chat-bubble"
       className={cn(
-        "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-3 py-2 text-sm break-words whitespace-pre-wrap",
+        "bg-secondary text-secondary-foreground rounded-2xl rounded-tr-sm px-3 py-2 text-sm break-words whitespace-pre-wrap",
         className
       )}
       {...props}

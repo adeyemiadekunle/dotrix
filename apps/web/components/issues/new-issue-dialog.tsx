@@ -17,11 +17,18 @@ import { useState, type FormEvent } from "react";
 
 import { Field, FormError, SubmitButton } from "@/components/form";
 import { errorMessage } from "@/lib/api";
-import { useCreateIssue, useEpics, useSimilarIssues, type IssueType, type Priority } from "@/lib/issues";
+import {
+  useCreateIssue,
+  useEpics,
+  useSimilarIssues,
+  type IssueStatus,
+  type IssueType,
+  type Priority,
+} from "@/lib/issues";
 import { useProjectScope } from "@/lib/queries";
 import { useSearchParam } from "@/lib/url-state";
 
-import { ISSUE_TYPES, PRIORITIES, PRIORITY_META, TYPE_META, TypeIcon } from "./meta";
+import { ISSUE_TYPES, PRIORITIES, PRIORITY_META, STATUS_META, TYPE_META, TypeIcon } from "./meta";
 
 const NONE = "__none";
 
@@ -30,7 +37,16 @@ const DESCRIPTION_HINT: Partial<Record<IssueType, string>> = {
   bug: "Steps to reproduce, expected and actual behaviour (required for bugs)",
 };
 
-export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function NewIssueDialog({
+  open,
+  onOpenChange,
+  status = "todo",
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** The column it starts in (a board column's + button); To do otherwise. */
+  status?: IssueStatus;
+}) {
   const { scope } = useProjectScope();
   const epics = useEpics(scope);
   const create = useCreateIssue(scope);
@@ -47,7 +63,7 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     event.preventDefault();
     const body: Schemas["IssueCreate"] = {
       type,
-      status: "todo",
+      status,
       title,
       priority,
       description,
@@ -67,46 +83,11 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         <form onSubmit={onSubmit} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>New issue</DialogTitle>
-            <DialogDescription>It starts in To do. You can set the rest once it&apos;s created.</DialogDescription>
+            <DialogDescription>
+              It starts in {STATUS_META[status].label}. You can set the rest once it&apos;s created.
+            </DialogDescription>
           </DialogHeader>
           <FormError message={create.isError ? errorMessage(create.error) : null} />
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label>Type</Label>
-              <Select value={type} onValueChange={(v) => setType(v as IssueType)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ISSUE_TYPES.filter((t) => t !== "sub-task").map((t) => (
-                    <SelectItem key={t} value={t}>
-                      <TypeIcon type={t} />
-                      {TYPE_META[t].label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label>Priority</Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRIORITIES.map((p) => {
-                    const meta = PRIORITY_META[p];
-                    return (
-                      <SelectItem key={p} value={p}>
-                        <meta.icon className={meta.className} />
-                        {meta.label}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
           <Field
             label="Title"
             name="title"
@@ -138,6 +119,43 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               ) : undefined
             }
           />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2">
+              <Label>Type</Label>
+              <Select value={type} onValueChange={(v) => setType(v as IssueType)}>
+                <SelectTrigger className="w-full" aria-label="Type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ISSUE_TYPES.filter((t) => t !== "sub-task").map((t) => (
+                    <SelectItem key={t} value={t}>
+                      <TypeIcon type={t} />
+                      {TYPE_META[t].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Priority</Label>
+              <Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
+                <SelectTrigger className="w-full" aria-label="Priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITIES.map((p) => {
+                    const meta = PRIORITY_META[p];
+                    return (
+                      <SelectItem key={p} value={p}>
+                        <meta.icon className={meta.className} />
+                        {meta.label}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div className="grid gap-2">
             <Label htmlFor="new-issue-description">Description{needsDescription ? "" : " (optional)"}</Label>
             <Textarea
@@ -153,7 +171,7 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <div className="grid gap-2">
               <Label>Epic</Label>
               <Select value={parent} onValueChange={setParent}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="Epic">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

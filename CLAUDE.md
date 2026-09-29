@@ -170,7 +170,8 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
 - **URL state:** filters, the open issue, the open file are search params (`useSearchParam`); change several at once with `useSetSearchParams`, since separate updates in a row undo each other.
 - **URLs use slugs and keys, never UUIDs:** `/w/{workspace slug}/p/{PROJECT KEY}`. Resolve them from the cached lists (`useCurrentWorkspace`, `useCurrentProject`).
 - **UI:**
-  - Use shadcn components from `@pmagent/ui/components/*` and Tailwind tokens (`bg-muted`, `text-muted-foreground`, `bg-brand`, `bg-warning-muted`), never raw colours, so light and dark mode both work.
+  - Use shadcn components from `@pmagent/ui/components/*` and Tailwind tokens (`bg-muted`, `text-muted-foreground`, `bg-brand`, `bg-brand-muted`, `bg-warning-muted`), never raw colours, so light and dark mode both work. `primary` is the brand blue (the main action, focus, selection); neutrals carry a faint cool tint.
+  - Shared pieces: issue status and priority look (`StatusIcon`, `StatusBadge`, `PriorityIcon` in `components/issues/meta.tsx`), `ProjectTile`, `EmptyState` (compact, at the top of the content), `SaveBar` (`components/form.tsx`: a form's Discard / Save, only while it has changes), and `SettingsSection` (`components/settings-section.tsx`: settings pages as sections, what it is on the left and its controls on the right; parts named like Card's).
   - Write copy in sentence case.
   - Show controls by role (`lib/labels.ts`), but the API is what enforces access.
 - **Theme:** Settings → Appearance (System / Light / Dark). It defaults to System and is stored in the browser.
@@ -295,7 +296,7 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 - [x] Backend: membership and invite changes are audited (rename, role changes, removals and leaving, ownership transfer, invites sent / links created / revoked, joining, org placements in the workspace's own log)
 - [x] Briefing tab (`/w/[ws]/p/[KEY]/briefing`): the newest daily briefing (streams with live activity while it's written), past briefings (`GET .../agent/runs?kind=briefing`), new briefing; the agent's side of a run is one shared component (`components/agent/agent-reply.tsx`) used by chat and briefing
 - [ ] Remove or update the leftovers: `packages/shared` (unused; its `Issue` type predates the API) and `packages/ui/src/index.tsx`'s StatusBadge. The generated API types are the source of truth.
-- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search and similar issues, chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
+- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search and similar issues, a column's + and the Filter menu with chips, the settings save bar, chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
 - [ ] More browser tests as pages change: organisations, document upload (needs MinIO in CI), phone layouts
 
 ## TODO: backend (priority order)

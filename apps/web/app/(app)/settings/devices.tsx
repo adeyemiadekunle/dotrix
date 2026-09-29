@@ -2,12 +2,18 @@
 
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRoundIcon } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  SettingsContent,
+  SettingsDescription,
+  SettingsHeader,
+  SettingsSection,
+  SettingsTitle,
+} from "@/components/settings-section";
 import { api, errorMessage, unwrap } from "@/lib/api";
 
 function when(iso: string | null | undefined): string {
@@ -28,14 +34,14 @@ export function Devices() {
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Devices and tokens</CardTitle>
-        <CardDescription>
+    <SettingsSection>
+      <SettingsHeader>
+        <SettingsTitle>Devices and tokens</SettingsTitle>
+        <SettingsDescription>
           The CLI, coding tools, and CI you&apos;ve signed in with <code className="font-mono">pmagent login</code>.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent>
         {tokens.isLoading && <Skeleton className="h-16" />}
         {tokens.data?.length === 0 && <p className="text-muted-foreground text-sm">Nothing signed in yet.</p>}
         {tokens.data && tokens.data.length > 0 && (
@@ -70,7 +76,7 @@ export function Devices() {
             ))}
           </ul>
         )}
-      </CardContent>
-    </Card>
+      </SettingsContent>
+    </SettingsSection>
   );
 }

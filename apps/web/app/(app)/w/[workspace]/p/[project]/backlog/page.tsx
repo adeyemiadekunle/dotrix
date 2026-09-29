@@ -18,13 +18,13 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Badge } from "@pmagent/ui/components/badge";
 import { Progress } from "@pmagent/ui/components/progress";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
 import { GripVerticalIcon, ListTodoIcon } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
+import { EpicTag, type EpicMap } from "@/components/issues/issue-card";
 import { AssigneeAvatar, PriorityIcon, StatusBadge, TypeIcon, type MemberMap } from "@/components/issues/meta";
 import { EmptyState } from "@/components/states";
 import { useBacklog, useEpics, useMembers, useMoveIssue, type IssueSummary } from "@/lib/issues";
@@ -34,11 +34,13 @@ import { useSearchParam } from "@/lib/url-state";
 function Row({
   issue,
   members,
+  epics,
   onOpen,
   draggable,
 }: {
   issue: IssueSummary;
   members: MemberMap;
+  epics: EpicMap;
   onOpen: (key: string) => void;
   draggable: boolean;
 }) {
@@ -72,17 +74,19 @@ function Row({
         <span className="text-muted-foreground w-16 shrink-0 font-mono text-xs">{issue.key}</span>
         <span className="min-w-0 flex-1 truncate">{issue.title}</span>
         {issue.parent_key && (
-          <Badge variant="outline" className="hidden font-mono text-[10px] sm:inline-flex">
-            {issue.parent_key}
-          </Badge>
+          <EpicTag
+            epicKey={issue.parent_key}
+            epics={epics}
+            className="text-muted-foreground hidden max-w-40 text-xs md:flex"
+          />
         )}
-        <StatusBadge status={issue.status} className="hidden sm:inline-flex" />
+        <StatusBadge status={issue.status} className="text-muted-foreground hidden w-24 sm:inline-flex" />
         {issue.estimate != null && (
           <span className="bg-muted hidden rounded px-1.5 text-xs tabular-nums sm:inline">{issue.estimate}</span>
         )}
       </button>
       <PriorityIcon priority={issue.priority} />
-      <AssigneeAvatar issue={issue} members={members} />
+      <AssigneeAvatar issue={issue} members={members} showUnassigned />
     </li>
   );
 }
@@ -96,6 +100,7 @@ function BacklogPage() {
   const [, openIssue] = useSearchParam("issue");
   const [epic, setEpic] = useSearchParam("epic");
   const memberMap: MemberMap = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m])), [members.data]);
+  const epicMap: EpicMap = useMemo(() => new Map(epics.data?.map((e) => [e.key, e])), [epics.data]);
 
   // Local order so a drop shows at once; replaced when the refetch arrives.
   const [items, setItems] = useState<IssueSummary[]>([]);
@@ -157,7 +162,14 @@ function BacklogPage() {
             <SortableContext items={visible.map((i) => i.key)} strategy={verticalListSortingStrategy}>
               <ul className="divide-y overflow-hidden rounded-lg border">
                 {visible.map((issue) => (
-                  <Row key={issue.key} issue={issue} members={memberMap} onOpen={openIssue} draggable={canEdit} />
+                  <Row
+                    key={issue.key}
+                    issue={issue}
+                    members={memberMap}
+                    epics={epicMap}
+                    onOpen={openIssue}
+                    draggable={canEdit}
+                  />
                 ))}
               </ul>
             </SortableContext>

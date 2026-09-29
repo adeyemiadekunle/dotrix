@@ -50,3 +50,44 @@ test("a new issue like an existing one points to it", async ({ page }) => {
   await page.getByRole("button", { name: `${key}-1 Add dark mode to the dispatch screen` }).click();
   await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
 });
+
+test("a column's + starts the issue in that column, and the Filter menu narrows the board", async ({ page }) => {
+  const { key } = await signUpWithProject(page);
+
+  await page.getByRole("button", { name: "Add to Blocked" }).click();
+  await expect(page.getByText("It starts in Blocked.")).toBeVisible();
+  await page.getByLabel("Title").fill("Waiting on the pricing rules");
+  await page.getByRole("button", { name: "Create issue" }).click();
+  await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
+  await page.keyboard.press("Escape");
+
+  const blocked = page.locator("section").filter({ has: page.getByText("Blocked", { exact: true }) });
+  await expect(blocked.getByText("Waiting on the pricing rules")).toBeVisible();
+
+  // A filter from the menu shows as a chip; removing the chip brings the issue back.
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Type" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Bug" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/type=bug/);
+  await expect(page.getByText("Waiting on the pricing rules")).toHaveCount(0);
+  await page.getByRole("button", { name: "Remove the type filter" }).click();
+  await expect(page.getByText("Waiting on the pricing rules")).toBeVisible();
+});
+
+test("project settings save through the unsaved-changes bar", async ({ page }) => {
+  await signUpWithProject(page, "Kumove", "KUM");
+  await page.getByRole("link", { name: "Project settings" }).click();
+
+  // The bar only appears once something has changed.
+  await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+  await page.getByLabel("Name").fill("Kumove app");
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await page.getByRole("button", { name: "Discard" }).click();
+  await expect(page.getByLabel("Name")).toHaveValue("Kumove");
+
+  await page.getByLabel("Name").fill("Kumove app");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Kumove app" })).toBeVisible();
+});
