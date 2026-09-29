@@ -150,15 +150,16 @@ apps/web/
 │   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
 │   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /o/[org]{,/members,/settings}, /w/[workspace], /w/[workspace]/{approvals,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,briefing,knowledge,docs,settings} (the project root redirects to board; /overview to settings), /settings
+│   └── (app)/                   signed-in shell (sidebar): /o/[org]{,/members,/settings}, /w/[workspace], /w/[workspace]/{approvals,agents,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,briefing,knowledge,docs,settings} (the project root redirects to board; /overview to settings), /settings
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
 │   ├── documents/               dropzone, queued files, upload progress
 │   ├── agent/                   chat panel and context, conversation, approvals (diff view, decisions)
+│   ├── agents/                  Settings → Agents: the list and the contract editor (workspace and project scope)
 │   ├── knowledge/               file tree, file history (authorship, diffs, restore)
 │   ├── settings/                members, invites (workspace settings)
 │   └── orgs/                    create-organisation dialog
-└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, knowledge.ts, admin.ts, orgs.ts, documents.ts, repo.ts, url-state.ts, labels.ts
+└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, agents.ts (agent contracts, the chat's agent list), knowledge.ts, admin.ts, orgs.ts, documents.ts, repo.ts, url-state.ts, labels.ts
 packages/ui/src/                 consumed as source (no build step), by path: `@pmagent/ui/components/*`, `/lib/*`, `/hooks/*`, `/globals.css`
 ├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
 │                                plus our own chat kit: chat-scroller (follows new content unless you scroll up), chat-message (message, bubble, meta, notice), prompt-input (send / stop), code-block (copy, lazy Shiki highlighting)
@@ -195,10 +196,10 @@ Workspace and organisation overlap: an organisation is a layer of roles above se
 - [ ] Agents v2 scope (D2): agent contracts, the Space, and automations belong to the workspace (Personal or Organisation), with per-project overrides
 
 ### Step 1: agent contracts (agents as versioned data)
-- [ ] An agent is a contract stored per workspace, overridable per project: name, `@handle`, description, instructions, model, token budget, tools (from a catalogue), folder access, issue types it may create, triggers, autonomy rules, and output schema. Versioned and audited like knowledge files
-- [ ] The six built-in agents seeded as contracts owners and admins can edit, with "Reset to default"; custom agents created from a default or from scratch (Settings → Agents)
+- [x] An agent is a contract stored per workspace, overridable per project: name, `@handle`, description, instructions, model, token budget, tools (from a catalogue), folder access, issue types it may create, triggers, autonomy rules, and output schema. Versioned and audited like knowledge files
+- [x] The six built-in agents seeded as contracts owners and admins can edit, with "Reset to default"; custom agents created from a default or from scratch (Settings → Agents, `/w/[ws]/agents`; per project under project settings → Agents; `pmagent agents`, `pmagent chat --agent HANDLE`). Built-ins stay in code until edited (`pmagent_engine.builtins`); a run resolves project override → workspace → built-in (`agent_definitions/repository.py`) and records the agent's version
 - [ ] **Autonomy rules** per agent, like dots' custom rules: `allow` (e.g. comment, label), `ask` (default for every write), `block`. The approval queue offers "Always allow this" for low-risk actions, recorded as a rule change
-- [ ] **Invariants in code, whatever a contract says:** agents never edit `agent-rules/` or contracts; an agent never exceeds the rights of the person it acts for; guests never see content; `.pmagent/` never goes into a code repo; every action is audited
+- [x] **Invariants in code, whatever a contract says:** agents never edit `agent-rules/` or contracts; an agent never exceeds the rights of the person it acts for; guests never see content; `.pmagent/` never goes into a code repo; every action is audited
 - [ ] **Output contracts:** each agent declares its result schema (finding, plan, spec, review, brief, report); the web app renders items with actions ("Create issue", "Propose change", "Fix now", "Dismiss")
 - [ ] **Pipelines as named stages:** every agent's work runs as declared stages (below), shown as activity and in the run's details (tokens per stage), with a checkpoint where the person can steer before the expensive part
 - [ ] **Evals:** saved cases per contract run in CI with the scripted model, so a change to instructions or tools is checked for regressions

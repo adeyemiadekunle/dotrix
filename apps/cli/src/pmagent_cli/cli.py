@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -265,6 +266,8 @@ def brief(project: str = ProjectOpt, local: bool = LocalOpt):
 
 # Who can answer in the platform's chat (`agent` on a run).
 CHAT_AGENTS = ("auto", "product", "architecture", "research", "reviewer", "documentation")
+# `auto`, a built-in, or a custom agent's handle; the platform says whether the project has it.
+AGENT_HANDLE = re.compile(r"^(auto|[a-z][a-z0-9-]{1,30})$")
 
 
 @app.command()
@@ -275,8 +278,9 @@ def chat(
     agent: str = typer.Option(
         "auto",
         "--agent",
-        help="Who answers: auto (the project manager and the specialists it needs), product, "
-        "architecture, research, reviewer, or documentation. Change it in the chat with /agent NAME.",
+        help="Who answers: auto (the project manager and the specialists it needs), or an agent's handle: "
+        "product, architecture, research, reviewer, documentation, or one of the project's own "
+        "(`pmagent agents`). Change it in the chat with /agent NAME.",
     ),
     model: str | None = typer.Option(
         None, "--model", help="The model for a new conversation (provider:model); it stays for the whole conversation."
@@ -287,8 +291,8 @@ def chat(
     On a linked repo you talk to the platform's agents: every change they want is shown
     here (with a diff for files) and you approve or reject it inline. Otherwise it runs
     the local engine; safe alongside `pmagent run --background` jobs and coding agents."""
-    if agent not in CHAT_AGENTS:
-        raise typer.BadParameter(f"use one of: {', '.join(CHAT_AGENTS)}", param_hint="--agent")
+    if not AGENT_HANDLE.match(agent):
+        raise typer.BadParameter(f"use auto or an agent's handle, e.g. {', '.join(CHAT_AGENTS[1:])}", param_hint="--agent")
     if model and thread:
         raise typer.BadParameter(
             "a conversation keeps the model it started with; leave out --thread to start a new one",
@@ -370,6 +374,21 @@ def run(
         _fail(f"[job {job['id']}] failed: {job.get('error')}")
     else:
         typer.echo(job.get("result", ""))
+
+
+@app.command("agents")
+def agents_list(project: str = ProjectOpt):
+    """The agents a linked project has: the built-ins (as its workspace or it has changed them)
+    and its custom agents. Pick one with `pmagent chat --agent HANDLE`."""
+    _, state, client = _linked(project)
+    agents = _platform_call(lambda: client.get(f"/workspaces/{state.workspace_id}/projects/{state.project_id}/agents"))
+    labels = {"built_in": "built-in", "customised": "customised", "custom": "custom"}
+    width = max((len(a["handle"]) for a in agents), default=0) + 1
+    for a in agents:
+        where = " (this project)" if a.get("scope") == "project" else ""
+        typer.echo(f"@{a['handle']:<{width}} {a['name']}  [{labels.get(a['source'], a['source'])}{where}]")
+        if a.get("description"):
+            typer.secho(f"  {' ' * width}{a['description']}", dim=True)
 
 
 @app.command("jobs")
@@ -794,8 +813,8 @@ def _platform_chat(project: str, thread: str | None, *, agent: str = "auto", mod
             continue
         if message.startswith("/agent"):
             name = message.removeprefix("/agent").strip().lower() or "auto"
-            if name not in CHAT_AGENTS:
-                typer.secho(f"Use one of: {', '.join(CHAT_AGENTS)}", fg=typer.colors.RED)
+            if not AGENT_HANDLE.match(name):
+                typer.secho("Use auto or an agent's handle (`pmagent agents` lists them)", fg=typer.colors.RED)
             else:
                 agent = name
                 typer.echo("Talking to the team." if agent == "auto" else f"Talking to the {agent} agent.")

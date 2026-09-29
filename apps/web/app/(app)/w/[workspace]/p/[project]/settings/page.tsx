@@ -8,7 +8,7 @@ import { Label } from "@pmagent/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { Textarea } from "@pmagent/ui/components/textarea";
-import { ArrowRightLeftIcon, DownloadIcon, FileTextIcon } from "lucide-react";
+import { ArrowRightLeftIcon, BotIcon, DownloadIcon, FileTextIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -297,6 +297,22 @@ function Agents({
             />
           )}
         </form>
+
+        <div className="grid gap-2">
+          <h3 className="text-sm font-medium">Who the agents are</h3>
+          <p className="text-muted-foreground text-xs">
+            Their instructions, tools, folder access, and what they may do without asking come from the workspace&apos;s
+            agents; this project can have its own versions and agents of its own.
+          </p>
+          <div>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`${knowledgeHref.replace(/\/knowledge$/, "")}/settings/agents`}>
+                <BotIcon />
+                Agents for this project
+              </Link>
+            </Button>
+          </div>
+        </div>
 
         <div className="grid gap-2">
           <h3 className="text-sm font-medium">Agent rules</h3>

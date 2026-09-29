@@ -5,22 +5,23 @@ import { BotIcon, ChevronDownIcon, CircleAlertIcon, CircleStopIcon } from "lucid
 import { useState } from "react";
 
 import { Markdown } from "@/components/markdown";
-import { agentLabel, isActive, useRunStream, wasStopped, type Run } from "@/lib/agent";
+import { agentLabel, isActive, useRunStream, wasStopped, type AgentOption, type Run } from "@/lib/agent";
+import { useChatAgents } from "@/lib/agents";
 import type { Scope } from "@/lib/issues";
 import { agentName } from "@/lib/labels";
 
 import { RunApprovals } from "./approvals";
 
 /** Who's answering: "Research agent", or "The agents" for Auto. */
-function speaker(run: Run): string {
-  return run.agent && run.agent !== "auto" ? agentLabel(run.agent) : "The agents";
+function speaker(run: Run, options?: AgentOption[]): string {
+  return run.agent && run.agent !== "auto" ? agentLabel(run.agent, options) : "The agents";
 }
 
 /** What the agent is doing, while it works: the live activity when there is one. */
-function progressText(run: Run, activity: string | null, writing: boolean): string {
+function progressText(run: Run, activity: string | null, writing: boolean, options?: AgentOption[]): string {
   if (run.status === "queued") return "Waiting to start…";
   if (writing) return "Writing…";
-  return activity ? `${activity}…` : `${speaker(run)} ${run.agent && run.agent !== "auto" ? "is" : "are"} working on it…`;
+  return activity ? `${activity}…` : `${speaker(run, options)} ${run.agent && run.agent !== "auto" ? "is" : "are"} working on it…`;
 }
 
 const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
@@ -139,12 +140,13 @@ export function AgentReply({
 }) {
   const active = isActive(run);
   const live = useRunStream(scope, run.id, active);
+  const options = useChatAgents(scope);
   const decided = run.status === "awaiting_approval" && (run.approvals ?? []).every((a) => a.status !== "pending");
   return (
     <ChatMessage from="agent" avatar={avatar ? <BotIcon /> : undefined} className={className}>
-      {run.kind === "chat" && <ChatMessageMeta>{agentLabel(run.agent)}</ChatMessageMeta>}
+      {run.kind === "chat" && <ChatMessageMeta>{agentLabel(run.agent, options)}</ChatMessageMeta>}
       {active && live.text && <Markdown>{live.text}</Markdown>}
-      {active && <ChatNotice tone="progress">{progressText(run, live.activity, Boolean(live.text))}</ChatNotice>}
+      {active && <ChatNotice tone="progress">{progressText(run, live.activity, Boolean(live.text), options)}</ChatNotice>}
       {wasStopped(run) && <ChatNotice icon={<CircleStopIcon />}>{run.error}.</ChatNotice>}
       {run.status === "failed" && !wasStopped(run) && (
         <ChatNotice tone="destructive" icon={<CircleAlertIcon />}>

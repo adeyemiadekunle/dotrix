@@ -225,5 +225,19 @@ def test_chat_refuses_a_model_for_an_existing_conversation(linked_repo: Path, pl
         cli_module.app, ["chat", "--project", str(linked_repo), "--thread", "t1", "--model", "openai:x"]
     )
     assert result.exit_code != 0 and "keeps the model it started with" in result.output
-    bad = CliRunner().invoke(cli_module.app, ["chat", "--project", str(linked_repo), "--agent", "marketing"])
-    assert bad.exit_code != 0 and "use one of" in bad.output
+    bad = CliRunner().invoke(cli_module.app, ["chat", "--project", str(linked_repo), "--agent", "Not a handle"])
+    assert bad.exit_code != 0 and "use auto or an agent's handle" in bad.output
+
+
+def test_chat_with_a_custom_agent_and_list_the_agents(linked_repo: Path, platform: FakePlatform) -> None:
+    platform.agent_script = [{"status": "completed", "reply": "No secrets leaked."}]
+    result = CliRunner().invoke(
+        cli_module.app, ["chat", "--project", str(linked_repo), "--agent", "security"], input="Any leaks?\n/quit\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert platform.runs_started[0] == {"message": "Any leaks?", "agent": "security"}
+
+    listed = CliRunner().invoke(cli_module.app, ["agents", "--project", str(linked_repo)])
+    assert listed.exit_code == 0, listed.output
+    assert "@research" in listed.output and "[built-in]" in listed.output
+    assert "@security" in listed.output and "Security reviewer  [custom (this project)]" in listed.output

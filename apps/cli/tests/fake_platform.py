@@ -102,6 +102,15 @@ class FakePlatform:
             return self.problem(400, answer)
         if path == "/v1/me":
             return httpx.Response(200, json=self.me)
+        if path == f"/v1/workspaces/{WS}/projects/{PID}/agents" and method == "GET":
+            return httpx.Response(200, json=[
+                {"handle": "project-manager", "name": "Project Manager", "source": "built_in", "scope": "default",
+                 "description": "Coordinates the specialists."},
+                {"handle": "research", "name": "Research Agent", "source": "built_in", "scope": "default",
+                 "description": "Runs external research."},
+                {"handle": "security", "name": "Security reviewer", "source": "custom", "scope": "project",
+                 "description": "Reviews changes for security risks."},
+            ])
         if path == f"/v1/workspaces/{WS}/projects/{PID}" and method == "GET":
             if self.moved_to is not None:
                 return self.problem(404, "not_found")
