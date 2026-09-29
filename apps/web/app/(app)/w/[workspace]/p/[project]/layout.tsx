@@ -7,6 +7,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState, type ReactNode } from "react";
 
+import { AfterHydration } from "@/components/after-hydration";
 import { ChatProvider, useChat } from "@/components/agent/chat-context";
 import { ChatPanel } from "@/components/agent/chat-panel";
 import { PageHeader } from "@/components/app-shell";
@@ -81,13 +82,18 @@ function ProjectFrame({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
-        {children}
+        {/* The tab's content, the chat panel, and the issue drawer come from browser-side
+            queries: rendered after hydration, so data that arrives first can't make them
+            differ from the server's markup (see AfterHydration). */}
+        <AfterHydration>{children}</AfterHydration>
       </div>
-      {!onChatPage && <ChatPanel />}
-      <Suspense>
-        <IssueDrawer />
-        {creating && <NewIssueDialog open={creating} onOpenChange={setCreating} />}
-      </Suspense>
+      <AfterHydration>
+        {!onChatPage && <ChatPanel />}
+        <Suspense>
+          <IssueDrawer />
+          {creating && <NewIssueDialog open={creating} onOpenChange={setCreating} />}
+        </Suspense>
+      </AfterHydration>
     </div>
   );
 }
