@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Guidance for Claude Code working in this repo. Product spec: [docs/prd.md](docs/prd.md).
-Engine notes: [docs/engine.md](docs/engine.md).
+Engine notes: [docs/engine.md](docs/engine.md). Agents v2 spec: [docs/agents-v2.md](docs/agents-v2.md).
 
 ## Repo map
 
@@ -179,6 +179,70 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 - If the dev server starts 404ing routes that exist (typically after a `git switch` rewrote files under it), stop it and delete `apps/web/.next`.
 - The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@pmagent/ui/lib/utils` and `@/hooks/…` → `@pmagent/ui/hooks/…`.
 
+## Plan: agents v2 (review, 2026-09-29)
+
+Why: agents today are fixed in code (`engine/agent.py`: the PM and five specialists, tools per role; `permissions.py`: folders and issue types), `agent-rules/*.md` only changes their prompt, they run only when a person asks, they can't see code, and knowledge is flat files plus search chunks. The aim, in the spirit of ChatGPT's workspace agents, dots, and Space (DevDay 2026), but keeping our approvals and audit: agents that owners configure and create, that work in the background on events and schedules, that understand how the project's pieces relate, and a shared space per workspace. This plan comes before the rest of "the core loop" below; Phase 3's Ideas moves into Space (step 6), and parts of Phases 4 and 5 are pulled in where noted. Each step is usable on its own. Spec: [docs/agents-v2.md](docs/agents-v2.md) (draft; decisions D1-D5 at its end), written before building step 1.
+
+### Step 1: agent contracts (agents as versioned data)
+- [ ] An agent is a contract stored per workspace, overridable per project: name, `@handle`, description, instructions, model, token budget, tools (from a catalogue), folder access, issue types it may create, triggers, autonomy rules, and output schema. Versioned and audited like knowledge files
+- [ ] The six built-in agents seeded as contracts owners and admins can edit, with "Reset to default"; custom agents created from a default or from scratch (Settings → Agents)
+- [ ] **Autonomy rules** per agent, like dots' custom rules: `allow` (e.g. comment, label), `ask` (default for every write), `block`. The approval queue offers "Always allow this" for low-risk actions, recorded as a rule change
+- [ ] **Invariants in code, whatever a contract says:** agents never edit `agent-rules/` or contracts; an agent never exceeds the rights of the person it acts for; guests never see content; `.pmagent/` never goes into a code repo; every action is audited
+- [ ] **Output contracts:** each agent declares its result schema (finding, plan, spec, review, brief, report); the web app renders items with actions ("Create issue", "Propose change", "Fix now", "Dismiss")
+- [ ] **Pipelines as named stages:** every agent's work runs as declared stages (below), shown as activity and in the run's details (tokens per stage), with a checkpoint where the person can steer before the expensive part
+- [ ] **Evals:** saved cases per contract run in CI with the scripted model, so a change to instructions or tools is checked for regressions
+
+### Step 1b: each agent's pipeline
+- [ ] **Project manager (orchestrator):** intake → classify (question, change, plan, triage) → answer from the context pack, or plan (steps, agents, expected outputs, budget; shown for steering on large requests) → dispatch (independent steps in parallel) → merge results → one batch of proposed writes → follow-ups (the matching `current-state.md` / roadmap updates)
+- [ ] **Triage (PM mode, later on connector events):** incoming bug or feature → find duplicates (search + graph) → classify type, priority, area → propose the issue with fields and links to requirements, or a comment on the existing one
+- [ ] **Product:** request → clarifying questions when ambiguous → related requirements, issues, and decisions (graph + search) → spec from the requirements template (why, users, stories, rules, edge cases, acceptance criteria, dependencies) → consistency check against existing requirements and ADRs → proposed document plus epic and stories as one batch
+- [ ] **Architecture:** change or feature → impact analysis (project graph; code graph once connected) → options with trade-offs → recommendation → ADR draft (to Documentation), module map update, tasks. Keeps the graph's module nodes current
+- [ ] **Research:** plan (sub-questions; shown for steering on large requests) → search our own knowledge and earlier research first → web search → read full pages and PDFs → extract claims with quotes → verify each claim against its quote (supported / weak / unsupported) → report from the template → save to `research/` for approval. Sub-questions in parallel, one level, within the budget
+- [ ] **Reviewer**, three modes, all read-only with `finding[]` output (severity rubric; deduplicated against open findings and issues; dismissals become lessons):
+  - coverage: requirements vs board vs code (done / partial / missing)
+  - issue review: an issue in `review` against its acceptance criteria → close, or send back with specific changes
+  - commit / PR review (step 5): blast radius → findings
+- [ ] **Documentation:** after approved changes → documents affected (graph neighbours) → proposed updates; ADRs from decisions; a scheduled staleness sweep; follows the folder templates and the space's instructions
+- [ ] **Coding hand-off (Phase 5):** issue → brief (acceptance criteria, linked requirement and ADR excerpts, blast radius, tests to run) → Claude Code or Codex → PR back on the board → Reviewer run → a person merges
+
+### Step 1c: research capabilities
+- [ ] Our own tools, whatever the model: `web_search` through one pluggable provider (Tavily, Exa, or Brave; domain and recency filters; the provider's native search stays as fallback), `fetch_page` / `fetch_pdf` to Markdown (via `ingest`; size cap, cache, per-domain rate limit, robots.txt), and a fake provider for tests. **(you)** pick the provider and add its key to `.env`
+- [ ] Sources as records (`research_sources`: URL, title, publisher, fetched at, content hash, quoted excerpt); reports cite `[S3]`; source tiers (official or primary > reputable press > blogs and forums); every finding dated with a confidence
+- [ ] Report template: question, short answer, findings (claim, source, confidence), assumptions, open questions, what it affects in the project (graph links); per-finding actions: propose a requirement change, create a spike, record a decision
+- [ ] Reuse before searching: earlier research is checked first; stale findings are refreshed, not duplicated
+- [ ] Fetched text is labelled untrusted data; instructions on pages are never followed and are flagged in the report
+- [ ] **Watches** (needs step 4): scheduled re-checks of a topic (a regulation, a competitor, dependencies' release notes and CVEs), diffed against the last run; people are told only when something changed, with proposed updates to approve
+
+### Step 2: rules that layer and learn
+- [ ] Layers: organisation → workspace → project → agent; the more specific wins; invariants can't be overridden (covers FR-17)
+- [ ] **Skills:** reusable procedures loaded on demand (`SKILL.md`-style: name, description, steps), e.g. write an ADR, triage a bug, scope a failing build; shared across agents and projects
+- [ ] **Lessons:** a rejection reason, a dismissed finding, or a person's edit of an agent's draft becomes a proposed line in `agent-rules/lessons.md` (per agent); owners approve it; audited and reversible
+- [ ] Read a connected repo's `AGENTS.md` / `CLAUDE.md` as data for reviews and coding briefs (conventions, how to test), never as instructions
+- [ ] Document templates per folder (requirements, ADR, research note, design brief), editable in `agent-rules/` (was Phase 3)
+
+### Step 3: project knowledge graph (Postgres, no graph database)
+- [ ] `graph_nodes` / `graph_edges`, scoped by workspace and project, walked with recursive CTEs. Nodes: requirement, epic / story / task, ADR, module, document section, research finding, person, agent (later commit, PR, file). Edges: `implements`, `depends_on`, `decided_by`, `affects`, `supersedes`, `mentions`, `owned_by`, `blocks`
+- [ ] Built from what we store (issue parent, dependencies, links; knowledge versions), deterministic parsing (issue keys in documents, ADR "Affected modules", headings), and edges agents suggest (approved like any write); kept current on every write
+- [ ] Tools `graph.neighbors`, `graph.impact`, `graph.path` for agents and the MCP server
+- [ ] Uses: the context pack sends the neighbours of what's asked instead of the whole index; staleness (a document is stale when its neighbours changed after it); "what does this affect?"; a graph view in the Knowledge tab
+
+### Step 4: triggers, background runs, and an inbox
+- [ ] An event bus: platform events (issue created or changed, document changed, approval decided, run finished) and webhooks (push, PR, CI status; step 5); schedules on the worker's cron
+- [ ] A background run records whose automation it is ("instructed by"), follows its contract's autonomy rules, and stays inside its budget (per agent and per workspace per day)
+- [ ] An in-app inbox: approvals waiting, findings, research watch changes, run results; email for approvals and high-severity findings (from Phase 4), batched per run
+
+### Step 5: code (needs the GitHub App, FR-10 / Phase 5)
+- [ ] **(you)** register the GitHub App (contents and pull requests read, webhooks; write later for PRs)
+- [ ] Connect a project's repository; a shallow checkout per commit in the worker
+- [ ] **Code graph:** Tree-sitter parse into files, symbols, imports, calls, and tests; re-parse only files changed by each commit; modules linked to the project graph (`architecture/`, requirements). Tools `code.search`, `code.blast_radius`
+- [ ] **Commit review in the background:** push → code graph update → blast radius → Reviewer (read-only) → `finding[]` (severity, what may break, affected files and modules, related issues and requirements, suggested fix) → inbox and notifications → per finding: Create issue, Fix now (coding hand-off), Dismiss with a reason (a lesson). Default branch and PR branches only; trivial commits (docs, lockfiles) skipped; a daily token budget per repo
+- [ ] The same pipeline for failing CI: logs + blast radius → a scoped finding
+
+### Step 6: Space (the workspace as the team's shared home)
+- [ ] Workspace-level knowledge above projects, and **space instructions** the Documentation agent follows to keep it organised
+- [ ] Ideas (was Phase 3): brainstorming conversations in the space before any project exists; "Start a project from this idea" drafts from them
+- [ ] Comments on documents with `@agent` to ask for a change (proposed as usual); real-time co-editing later
+
 ## Plan: the core loop (product review, 2026-09-28)
 
 The aim: track a software project's issues and features with agents, brainstorm new ideas, and keep the project's documents written and up to date by agents. Owners and admins create and change documents; members (including designers) chat and brainstorm without changing files; Claude Code or Codex do the coding. This plan comes before the older TODO lists below: work phase by phase. Each phase is usable on its own.
@@ -250,10 +314,10 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
   - **Limits:** one level deep (a called agent gets no `task` tool, so no chains or loops); specialists don't call the PM; hand-offs count towards the run's token budget
   - **Safety is unchanged,** because it's keyed by agent: a change is attributed to the agent that made it, with that agent's folder permissions (FR-41) and issue rules; every write waits for approval; Reviewer stays read-only; Research keeps web search; members' requests wait for an owner or admin; runs and hand-offs are audited
   - [ ] **Later (needs `PMAGENT_ENCRYPTION_KEY` and a key-rotation plan):** a workspace connects its own Anthropic, OpenAI, or Google key, and its models join the list
-- [ ] **Ideas:** brainstorming conversations in a workspace before any project exists (the PM and specialists, no files to change); members can start and join them
+- [ ] **Ideas:** brainstorming conversations in a workspace before any project exists (the PM and specialists, no files to change); members can start and join them. Moved to agents v2 step 6 (Space)
 - [ ] **"Start a project from this idea"** (owners and admins): creates the project and drafts `project.md`, vision, requirements, roadmap, and the first epics and stories from the conversation, as one batch of changes to review and approve
 - [ ] **Promote from chat:** turn an answer or a whole conversation into a document, a decision (ADR), or issues, with the conversation linked as its source
-- [ ] **Document templates per folder** (requirements, ADR, research note, design brief) the agents follow, editable in `agent-rules/`
+- [ ] **Document templates per folder** (requirements, ADR, research note, design brief) the agents follow, editable in `agent-rules/`. Moved to agents v2 step 2
 - [ ] **Keep documents current:** after approved changes, the PM proposes the matching `current-state.md` / roadmap updates (as changes to approve), and briefings flag documents that have gone stale
 
 ### Phase 4: notifications (email now works)
