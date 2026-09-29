@@ -7,12 +7,13 @@ import { Input } from "@pmagent/ui/components/input";
 import { Label } from "@pmagent/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { CopyIcon, LinkIcon, MailIcon, XIcon } from "lucide-react";
+import { Building2Icon, CopyIcon, LinkIcon, MailIcon, XIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { SubmitButton } from "@/components/form";
 import { timeAgo } from "@/components/issues/issue-activity";
+import { CreateOrgDialog } from "@/components/orgs/create-org-dialog";
 import {
   SettingsContent,
   SettingsDescription,
@@ -151,10 +152,10 @@ function LinkInvite({ workspaceId, roles }: { workspaceId: string; roles: NonNul
 }
 
 /** Invite people (owners and admins), and the invites still waiting to be used. */
-export function InvitesCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
-  const invites = useInvites(workspace.id, true);
-  const revoke = useRevokeInvite(workspace.id);
-  // A personal workspace is yours alone: others can only look (guests).
+/** Only workspaces in an organisation invite people: a personal one is just for you, and a
+ * team workspace outside an organisation stays with the people already in it. */
+function NoInvites({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
+  const [creating, setCreating] = useState(false);
   const personal = workspace.kind === "personal";
   return (
     <SettingsSection>
@@ -162,13 +163,45 @@ export function InvitesCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
         <SettingsTitle>Invite people</SettingsTitle>
         <SettingsDescription>
           {personal
-            ? "A personal workspace is just for you; you can invite guests to look. Create a team workspace to work with others."
-            : `They join ${workspace.name} with the role you choose.`}
+            ? "A personal workspace is just for you: nobody else can join it."
+            : `Only workspaces in an organisation can invite people, and ${workspace.name} isn't in one.`}
         </SettingsDescription>
       </SettingsHeader>
+      <SettingsContent className="grid gap-3">
+        <p className="text-muted-foreground text-sm">
+          {personal
+            ? "To work with others, create a workspace in an organisation and invite them there."
+            : "Create an organisation (or open one you own), then add this workspace to it from the organisation's Workspaces page."}
+        </p>
+        <div>
+          <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
+            <Building2Icon />
+            Create an organisation
+          </Button>
+        </div>
+        <CreateOrgDialog open={creating} onOpenChange={setCreating} />
+      </SettingsContent>
+    </SettingsSection>
+  );
+}
+
+export function InvitesCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
+  if (workspace.kind === "personal" || !workspace.organization_id) return <NoInvites workspace={workspace} />;
+  return <OrgInvitesCard workspace={workspace} />;
+}
+
+function OrgInvitesCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
+  const invites = useInvites(workspace.id, true);
+  const revoke = useRevokeInvite(workspace.id);
+  return (
+    <SettingsSection>
+      <SettingsHeader>
+        <SettingsTitle>Invite people</SettingsTitle>
+        <SettingsDescription>{`They join ${workspace.name} with the role you choose.`}</SettingsDescription>
+      </SettingsHeader>
       <SettingsContent className="grid gap-6">
-        <EmailInvite workspaceId={workspace.id} roles={personal ? ["guest"] : ["admin", "member", "guest"]} />
-        <LinkInvite workspaceId={workspace.id} roles={personal ? ["guest"] : ["member", "guest"]} />
+        <EmailInvite workspaceId={workspace.id} roles={["admin", "member", "guest"]} />
+        <LinkInvite workspaceId={workspace.id} roles={["member", "guest"]} />
         <div className="grid gap-2">
           <h3 className="text-sm font-medium">Pending invites</h3>
           {invites.isLoading && <Skeleton className="h-16" />}

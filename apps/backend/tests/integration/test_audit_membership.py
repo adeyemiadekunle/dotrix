@@ -42,7 +42,7 @@ async def test_removals_and_invites_are_audited(signup, create_team, add_member,
     ada = await signup()
     bob = await signup(email="bob@example.com", name="Bob")
     carol = await signup(email="carol@example.com", name="Carol")
-    team = await create_team(ada.headers)
+    team = await create_team(ada.headers, in_org=True)
     ws = f"/v1/workspaces/{team['id']}"
     await add_member(team["id"], bob.id, Role.MEMBER)
 

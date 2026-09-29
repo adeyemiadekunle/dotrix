@@ -57,7 +57,8 @@ async def invite_by_email(
     data: EmailInviteCreate, member: MemberAdmin, user: CurrentUser, invites: Invites
 ) -> InviteRead:
     """Email an invite (valid 7 days, single use, only for that address). Inviting the same
-    address again replaces the earlier invite. Owners and admins."""
+    address again replaces the earlier invite. Owners and admins, and only in a workspace that
+    belongs to an organisation (409 `invites_need_organization` otherwise)."""
     return await invites.invite_by_email(member, user, data)
 
 
@@ -68,7 +69,8 @@ async def create_invite_link(
     data: LinkInviteCreate, member: MemberAdmin, user: CurrentUser, invites: Invites
 ) -> LinkInviteCreated:
     """Create a shareable invite link (member or guest only). The `url` is returned only
-    here. Owners and admins."""
+    here. Owners and admins, and only in a workspace that belongs to an organisation (409
+    `invites_need_organization` otherwise)."""
     return await invites.create_link(member, user, data)
 
 

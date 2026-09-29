@@ -2894,7 +2894,7 @@
           "workspaces"
         ],
         "summary": "Create Workspace",
-        "description": "Create a team or business workspace; you become its owner. (Your personal workspace\nwas created at sign-up.)",
+        "description": "Create a team or business workspace; you become its owner. (Your personal workspace\nwas created at sign-up.) It can't invite people until it belongs to an organisation: create\nit with `POST /v1/organizations/{id}/workspaces` instead, or attach it later.",
         "operationId": "create_workspace",
         "requestBody": {
           "content": {
@@ -3559,7 +3559,7 @@
           "invites"
         ],
         "summary": "Invite By Email",
-        "description": "Email an invite (valid 7 days, single use, only for that address). Inviting the same\naddress again replaces the earlier invite. Owners and admins.",
+        "description": "Email an invite (valid 7 days, single use, only for that address). Inviting the same\naddress again replaces the earlier invite. Owners and admins, and only in a workspace that\nbelongs to an organisation (409 `invites_need_organization` otherwise).",
         "operationId": "invite_by_email",
         "security": [
           {
@@ -3658,7 +3658,7 @@
           "invites"
         ],
         "summary": "Create Invite Link",
-        "description": "Create a shareable invite link (member or guest only). The `url` is returned only\nhere. Owners and admins.",
+        "description": "Create a shareable invite link (member or guest only). The `url` is returned only\nhere. Owners and admins, and only in a workspace that belongs to an organisation (409\n`invites_need_organization` otherwise).",
         "operationId": "create_invite_link",
         "security": [
           {

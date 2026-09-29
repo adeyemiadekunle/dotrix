@@ -2,12 +2,25 @@ import { expect, test } from "@playwright/test";
 
 import { signUp, signUpWithProject } from "./helpers";
 
-test("a team workspace: invite link, revoke, and the audit log records both", async ({ page }) => {
+test("a workspace in an organisation: invite link, revoke, and the audit log records both", async ({ page }) => {
   await signUp(page);
-  // Create a team workspace from the switcher.
+  // A personal workspace invites nobody.
+  await page.getByRole("link", { name: "Members and settings" }).click();
+  await expect(page.getByText("A personal workspace is just for you: nobody else can join it.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create link" })).toHaveCount(0);
+
+  // A new workspace needs an organisation: with none yet, the dialog offers to create one.
   await page.getByRole("button", { name: /Personal/ }).first().click();
   await page.getByRole("menuitem", { name: "Create workspace" }).click();
-  await page.getByLabel("Name").fill("E2E Team");
+  await page.getByRole("button", { name: "Create an organisation" }).click();
+  await page.getByRole("dialog").getByLabel("Name").fill("E2E Ltd");
+  await page.getByRole("button", { name: "Create organisation" }).click();
+  await expect(page).toHaveURL(/\/o\/e2e-ltd/);
+
+  await page.getByRole("button", { name: /Personal/ }).first().click();
+  await page.getByRole("menuitem", { name: "Create workspace" }).click();
+  await page.getByRole("dialog").getByLabel("Name").fill("E2E Team");
+  await expect(page.getByRole("dialog").getByLabel("Organisation")).toHaveText(/E2E Ltd/);
   await page.getByRole("button", { name: "Create workspace" }).click();
   await expect(page).toHaveURL(/\/w\/e2e-team-/);
 

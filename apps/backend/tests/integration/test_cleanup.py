@@ -22,7 +22,7 @@ async def test_cleanup_deletes_only_what_is_finished(
     db_client: AsyncClient, db_session: AsyncSession, signup, create_team, outbox
 ) -> None:
     ada = await signup()  # a refresh token (30 days) and an email-verification link (48 hours)
-    team = await create_team(ada.headers)
+    team = await create_team(ada.headers, in_org=True)
     invite = await db_client.post(
         f"/v1/workspaces/{team['id']}/invites", json={"email": "bob@example.com", "role": "member"}, headers=ada.headers
     )

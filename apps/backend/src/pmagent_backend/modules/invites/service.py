@@ -38,6 +38,23 @@ from .schemas import (
 EMAIL_INVITE_TTL = timedelta(days=7)
 
 
+class InvitesNeedOrganization(Conflict):
+    code = "invites_need_organization"
+
+
+def _check_can_invite(workspace: object) -> None:
+    """People join workspaces that belong to an organisation. A personal workspace is just for
+    its owner, and a team workspace outside an organisation stays with the people already in it."""
+    if getattr(workspace, "kind", None) is WorkspaceKind.PERSONAL:
+        raise InvitesNeedOrganization(
+            "A personal workspace is just for you. To work with others, use a workspace in an organisation."
+        )
+    if getattr(workspace, "organization_id", None) is None:
+        raise InvitesNeedOrganization(
+            "Only workspaces in an organisation can invite people. Add this workspace to an organisation first."
+        )
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -143,6 +160,8 @@ class InviteService:
     async def accept(self, user: User, token: str) -> WorkspaceWithRole:
         now = _now()
         invite = await self._usable(token, for_update=True)
+        # Also for invites sent before the rule, or before the workspace left its organisation.
+        _check_can_invite(invite.workspace)
         if invite.kind is InviteKind.EMAIL:
             if invite.email != user.email:
                 raise Forbidden(
@@ -185,8 +204,7 @@ class InviteService:
         )
 
     def _check_role_allowed(self, actor: Membership, role: Role) -> None:
-        if actor.workspace.kind is WorkspaceKind.PERSONAL and role is not Role.GUEST:
-            raise Conflict("Personal workspaces can only invite read-only guests")
+        _check_can_invite(actor.workspace)
         if role is Role.ADMIN and actor.role not in (Role.OWNER, Role.ADMIN):
             raise Forbidden("Only owners and admins can invite admins")
 
