@@ -174,6 +174,7 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
   - Write copy in sentence case.
   - Show controls by role (`lib/labels.ts`), but the API is what enforces access.
 - **Theme:** Settings → Appearance (System / Light / Dark). It defaults to System and is stored in the browser.
+- **Hydration:** a project's tab content, chat panel, and issue drawer render only after hydration (`components/after-hydration.tsx`, in the project layout). Their data comes from browser-side queries, and a part that hydrates late (a Suspense boundary, a page the dev server is still compiling) would otherwise get data another component fetched meanwhile and no longer match the server's markup. Wrap new client-data areas that sit under a Suspense boundary the same way.
 - If the dev server starts 404ing routes that exist (typically after a `git switch` rewrote files under it), stop it and delete `apps/web/.next`.
 - The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@pmagent/ui/lib/utils` and `@/hooks/…` → `@pmagent/ui/hooks/…`.
 
