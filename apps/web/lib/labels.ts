@@ -65,6 +65,11 @@ export const MEMBER_GRANTS: { permission: Permission; label: string; description
     label: "Assign the coding agent",
     description: "Hand issues to the coding agent.",
   },
+  {
+    permission: "agents:choose_model",
+    label: "Choose the model",
+    description: "Start conversations on a model other than the project's (a bigger model costs more).",
+  },
 ];
 
 export function initials(name: string): string {

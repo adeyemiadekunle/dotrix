@@ -42,8 +42,9 @@ class ModelChoice:
     specialist_model: Any = None
 
 
-# (project) -> the model to run it with. Tests swap in a scripted model.
-ModelFactory = Callable[[Project], ModelChoice]
+# (project, the conversation's model or None for the project's) -> the model to run it with.
+# Tests swap in a scripted model.
+ModelFactory = Callable[..., ModelChoice]
 
 
 def provider_of(model: str) -> Provider:
@@ -76,9 +77,27 @@ def build_chat_model(model: str, api_key: str) -> Any:
     return init_chat_model(model, **{PROVIDERS[provider].kwarg: api_key})
 
 
+def has_key(settings: Settings, model: str) -> bool:
+    provider = PROVIDERS.get(model.partition(":")[0])
+    key = getattr(settings, provider.setting) if provider else None
+    return key is not None and bool(key.get_secret_value().strip())
+
+
+def available_models(settings: Settings, *also: str) -> list[str]:
+    """The models a conversation can start on: the catalogue (and `also`, e.g. the project's
+    model) whose provider has a key, in order, without repeats."""
+    found: list[str] = []
+    for model in [*also, *settings.models, settings.default_model]:
+        runnable = has_key(settings, model) or (settings.e2e_models and model.startswith("e2e:"))
+        if model and runnable and model not in found:
+            found.append(model)
+    return found
+
+
 def settings_model_factory(settings: Settings) -> ModelFactory:
-    def factory(project: Project) -> ModelChoice:
-        if project.model.startswith("e2e:"):
+    def factory(project: Project, model: str | None = None) -> ModelChoice:
+        chosen = model or project.model
+        if chosen.startswith("e2e:"):
             if not settings.e2e_models:
                 raise ModelUnavailable("Test models need PMAGENT_E2E_MODELS=true (end-to-end tests only)")
             from pmagent_engine.testing import RuleBasedChatModel
@@ -86,9 +105,9 @@ def settings_model_factory(settings: Settings) -> ModelFactory:
             return ModelChoice(model=RuleBasedChatModel(), web_search=None)
         specialist = project.specialist_model
         return ModelChoice(
-            model=_build(project.model),
-            web_search=_web_search_tool(project.model),
-            specialist_model=_build(specialist) if specialist and specialist != project.model else None,
+            model=_build(chosen),
+            web_search=_web_search_tool(chosen),
+            specialist_model=_build(specialist) if specialist and specialist != chosen else None,
         )
 
     def _build(model: str) -> Any:

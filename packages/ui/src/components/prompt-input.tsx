@@ -29,6 +29,7 @@ function PromptInput({
   hint,
   label = "Message",
   maxLength = 20_000,
+  start,
   className,
 }: {
   value: string
@@ -40,6 +41,8 @@ function PromptInput({
   hint?: React.ReactNode
   label?: string
   maxLength?: number
+  /** Controls before the text, e.g. a + menu and the chips it sets. */
+  start?: React.ReactNode
   className?: string
 }) {
   const ready = status === "ready"
@@ -60,6 +63,7 @@ function PromptInput({
       }}
     >
       <div className="bg-background focus-within:ring-ring/50 flex items-end gap-2 rounded-xl border p-2 focus-within:ring-2">
+        {start && <div className="flex shrink-0 items-center gap-1 self-end pb-0.5">{start}</div>}
         <Textarea
           value={value}
           onChange={(event) => onValueChange(event.target.value)}

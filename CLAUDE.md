@@ -235,31 +235,19 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
   - a cheaper model for the specialists and conversation summaries (`Project.specialist_model`, Settings → Agents); the PM keeps the project's model
 
 ### Phase 3: brainstorm → project → documents
-- [ ] **Pick the agent in the chat:**
-  - **Web:** a **+** on the left of the chat input lists the agents with their one-line descriptions: the Project manager (the default, which delegates as today), Product, Architecture, Research, Reviewer, and Documentation
-    - picking one puts a chip in the input ("Research agent ×"); typing `@research` does the same
-    - a conversation keeps the last agent picked until it's changed
-    - each reply shows which agent answered
-    - the + menu later holds "Attach a document" and, in Phase 6, "Link a Figma frame"
-  - **API and CLI:** runs take an optional `agent` (`project-manager`, `product`, `architecture`, `research`, `reviewer`, `documentation`); the CLI gets `pmagent chat --agent research`
-  - **The picked specialist leads the run directly,** not as a subagent of the PM. It gets:
-    - its role prompt
-    - the project's `agent-rules/` for its role
-    - the project context pack
-    
-    This saves the PM's hop (fewer model calls).
-  - **Agents can call each other:** the lead gets a `task` tool listing the other specialists (the PM still delegates to all five)
-    - the called agent gets the context pack plus the caller's brief (paths and excerpts)
-    - each hand-off shows as activity ("Product is asking the architecture agent…") and in the run's details for owners and admins
-  - **Limits:**
-    - **one level deep:** an agent that was called can't call a third (no chains or loops; in deepagents the called agents simply get no `task` tool)
-    - **specialists don't call the PM:** the PM coordinates the whole team; a specialist says when a request needs it
-    - **hand-offs count towards the run's token budget** (Phase 2, Budgets and visibility)
-  - **Safety is unchanged,** because it's keyed by agent:
-    - a change is attributed to the agent that made it, and that agent's folder permissions (FR-41) and issue rules apply
-    - every write waits for approval; Reviewer stays read-only; Research keeps web search
-    - members can pick any agent (chatting and brainstorming are theirs); their requests' changes wait for an owner or admin
-    - runs and hand-offs are audited
+- [x] **Chat with the team: pick the agent, and the model per conversation:**
+  - **It's Chat, not "the PM":** the tab and panel are Chat. The default agent is **Auto**: the project manager decides which specialists to involve, as today, without the interface presenting it as "the PM". Copy says who is working ("Research agent is searching…"), and each reply is labelled with the agent that wrote it
+  - **The + menu** on the left of the chat input:
+    - **Agents:** Auto, Product, Architecture, Research, Reviewer, Documentation, each with its one-line description. Picking one puts a chip in the input ("Research agent ×"); typing `@research` does the same. A conversation keeps the last agent picked until it's changed; agents can change within a conversation
+    - **Model:** only for a new conversation, and only models whose provider is connected. It defaults to the project's model and is **fixed once the first message is sent** (shown in the conversation's header); another model means a new conversation, so a conversation never changes provider partway through
+    - later: "Attach a document", and in Phase 6 "Link a Figma frame"
+  - **Who may pick a model:** owners and admins; a workspace can grant members `agents:choose_model` (Settings → What members can do), since a bigger model costs more. The run's token budget applies whatever the model
+  - **API and CLI:** runs take an optional `agent` (`auto`, `product`, `architecture`, `research`, `reviewer`, `documentation`) and, for a new conversation, an optional `model` (a different model on an existing conversation is refused); `GET /v1/workspaces/{id}/models` lists the models that can run (providers with a key: the server's today, the workspace's own keys later). The CLI: `pmagent chat --agent research --model …` (`--model` only for a new conversation)
+  - **The picked specialist leads the run directly,** not as a subagent of the PM (fewer model calls): its role prompt, the project's `agent-rules/` for its role, and the project context pack
+  - **Agents can call each other:** the lead gets a `task` tool listing the other specialists (Auto's PM still delegates to all five). The called agent gets the context pack plus the caller's brief, and each hand-off shows as activity and in the run's details
+  - **Limits:** one level deep (a called agent gets no `task` tool, so no chains or loops); specialists don't call the PM; hand-offs count towards the run's token budget
+  - **Safety is unchanged,** because it's keyed by agent: a change is attributed to the agent that made it, with that agent's folder permissions (FR-41) and issue rules; every write waits for approval; Reviewer stays read-only; Research keeps web search; members' requests wait for an owner or admin; runs and hand-offs are audited
+  - [ ] **Later (needs `PMAGENT_ENCRYPTION_KEY` and a key-rotation plan):** a workspace connects its own Anthropic, OpenAI, or Google key, and its models join the list
 - [ ] **Ideas:** brainstorming conversations in a workspace before any project exists (the PM and specialists, no files to change); members can start and join them
 - [ ] **"Start a project from this idea"** (owners and admins): creates the project and drafts `project.md`, vision, requirements, roadmap, and the first epics and stories from the conversation, as one batch of changes to review and approve
 - [ ] **Promote from chat:** turn an answer or a whole conversation into a document, a decision (ADR), or issues, with the conversation linked as its source

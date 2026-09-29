@@ -5,11 +5,11 @@ import { signUpWithProject } from "./helpers";
 // The e2e backend runs the agents on a rule-based model: "Create issue: <title>" asks to create
 // that task (which waits for approval); anything else is echoed back.
 
-test("the PM answers, and a change waits for approval before it happens", async ({ page }) => {
+test("the agents answer, and a change waits for approval before it happens", async ({ page }) => {
   const { key } = await signUpWithProject(page);
   await page.getByRole("link", { name: "Chat", exact: true }).click();
 
-  const box = page.getByLabel("Message the project manager");
+  const box = page.getByLabel("Message the agents");
   await box.fill("What's open?");
   await box.press("Enter");
   await expect(page.getByText("Test model reply: What's open?")).toBeVisible();
@@ -49,4 +49,28 @@ test("the PM answers, and a change waits for approval before it happens", async 
   await title.fill("Dark mode request");
   await title.press("Enter");
   await expect(conversations.getByText("Dark mode request")).toBeVisible();
+});
+
+test("pick who answers with the + menu or @", async ({ page }) => {
+  await signUpWithProject(page);
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+
+  await page.getByRole("button", { name: "Choose the agent and model" }).click();
+  await page.getByRole("menuitemradio", { name: /Research agent/ }).click();
+  const box = page.getByLabel("Message Research agent");
+  await box.fill("Who else ships multi-zone?");
+  await box.press("Enter");
+  await expect(page.getByText("Test model reply: Who else ships multi-zone?")).toBeVisible();
+  await expect(page.getByText("Research agent", { exact: true }).last()).toBeVisible(); // the reply's label
+
+  // The conversation keeps the agent; "@product " switches it.
+  await box.fill("@product ");
+  await expect(page.getByLabel("Message Product agent")).toBeVisible();
+  await page.getByLabel("Message Product agent").fill("And the stories?");
+  await page.getByLabel("Message Product agent").press("Enter");
+  await expect(page.getByText("Test model reply: And the stories?")).toBeVisible();
+
+  // Back to Auto by removing the chip.
+  await page.getByRole("button", { name: "Product agent: back to auto" }).click();
+  await expect(page.getByLabel("Message the agents")).toBeVisible();
 });

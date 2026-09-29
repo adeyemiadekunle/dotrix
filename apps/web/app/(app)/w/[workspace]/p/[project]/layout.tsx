@@ -50,7 +50,7 @@ function ProjectFrame({ children }: { children: ReactNode }) {
                     aria-pressed={chat.open}
                   >
                     <MessageSquareIcon />
-                    <span className="hidden sm:inline">Ask PM</span>
+                    <span className="hidden sm:inline">Chat</span>
                   </Button>
                 )}
                 {canEdit && (

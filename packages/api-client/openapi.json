@@ -5507,7 +5507,7 @@
           "agents"
         ],
         "summary": "Create Run",
-        "description": "Send a message to the Project Manager. It runs in the background: poll the run until\n`status` is `completed`, `failed`, or `awaiting_approval`. Agents stay in Chat Mode\nunless you instruct a change, and every write pauses for approval. Pass `thread_id` to\ncontinue a conversation. 503 `model_unavailable` if the project's model has no API key.",
+        "description": "Send a message to the project's agents: `agent` picks who answers (`auto`, the Project\nManager with the specialists it needs, or one specialist, who leads and may ask the others).\nIt runs in the background: poll the run until `status` is `completed`, `failed`, or\n`awaiting_approval`. Agents stay in Chat Mode unless you instruct a change, and every write\npauses for approval. Pass `thread_id` to continue a conversation; a new one may pick its\n`model` (fixed from then on: 409 `model_locked` for another on an existing conversation;\n403 without agents:choose_model; 422 `model_not_available`). 503 `model_unavailable` if the\nmodel has no API key.",
         "operationId": "create_run",
         "security": [
           {
@@ -6577,6 +6577,79 @@
           },
           "422": {
             "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/models": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Models",
+        "description": "The models a conversation can be started on here: those whose provider has an API key.\nA project's own model is always allowed too, even if it isn't listed.",
+        "operationId": "list_models",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelOption"
+                  },
+                  "title": "Response List Models"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8472,6 +8545,24 @@
               }
             ],
             "title": "Requested By Id"
+          },
+          "agent": {
+            "type": "string",
+            "title": "Agent",
+            "description": "Who answered: `auto` (the Project Manager) or a specialist's role",
+            "default": "auto"
+          },
+          "conversation_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Model",
+            "description": "The model the conversation runs on (fixed when it started); null on older conversations, which use the project's model"
           },
           "model": {
             "anyOf": [
@@ -10987,6 +11078,31 @@
         ],
         "title": "MemberRoleUpdate"
       },
+      "ModelOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "provider:model, e.g. google_genai:gemini-3.8-flash"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The model's name without the provider"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "provider",
+          "name"
+        ],
+        "title": "ModelOption"
+      },
       "OrgCreate": {
         "properties": {
           "name": {
@@ -11286,7 +11402,8 @@
           "workspace:manage",
           "members:manage",
           "workspace:billing",
-          "usage:view"
+          "usage:view",
+          "agents:choose_model"
         ],
         "title": "Permission"
       },
@@ -11813,6 +11930,33 @@
             ],
             "title": "Thread Id",
             "description": "Continue a conversation. Omit to start a new thread."
+          },
+          "agent": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "product",
+              "architecture",
+              "research",
+              "reviewer",
+              "documentation"
+            ],
+            "title": "Agent",
+            "description": "Who answers: `auto` (the Project Manager involves the specialists it needs) or one specialist, who leads and may ask the others",
+            "default": "auto"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model."
           }
         },
         "type": "object",

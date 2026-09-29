@@ -130,7 +130,7 @@ function PanelBody({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** The PM beside every project page: a column on wide screens, a sheet on phones. */
+/** Chat beside every project page: a column on wide screens, a sheet on phones. */
 export function ChatPanel() {
   const { open, setOpen } = useChat();
   const mobile = useIsMobile();
@@ -139,7 +139,7 @@ export function ChatPanel() {
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent className="w-full gap-0 p-0 sm:max-w-md [&>button]:hidden">
           <SheetTitle className="sr-only">Project manager</SheetTitle>
-          <SheetDescription className="sr-only">Chat with the project manager agent</SheetDescription>
+          <SheetDescription className="sr-only">Chat with the project's agents</SheetDescription>
           <PanelBody onClose={() => setOpen(false)} />
         </SheetContent>
       </Sheet>

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from .models import ApprovalStatus, RunKind, RunStatus
+
+AgentChoice = Literal["auto", "product", "architecture", "research", "reviewer", "documentation"]
 
 
 class RunCreate(BaseModel):
@@ -15,6 +17,24 @@ class RunCreate(BaseModel):
         default=None,
         description="Continue a conversation. Omit to start a new thread.",
     )
+    agent: AgentChoice = Field(
+        default="auto",
+        description="Who answers: `auto` (the Project Manager involves the specialists it needs) or one "
+        "specialist, who leads and may ask the others",
+    )
+    model: str | None = Field(
+        default=None,
+        max_length=100,
+        description="For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; "
+        "needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use "
+        "the project's model.",
+    )
+
+
+class ModelOption(BaseModel):
+    id: str = Field(description="provider:model, e.g. google_genai:gemini-3.8-flash")
+    provider: str
+    name: str = Field(description="The model's name without the provider")
 
 
 class ArchitectureDraftRequest(BaseModel):
@@ -96,6 +116,14 @@ class AgentRunRead(BaseModel):
     reply: str | None
     error: str | None
     requested_by_id: uuid.UUID | None
+    agent: Annotated[str, BeforeValidator(lambda v: v or "auto")] = Field(
+        default="auto", description="Who answered: `auto` (the Project Manager) or a specialist's role"
+    )
+    conversation_model: str | None = Field(
+        default=None,
+        description="The model the conversation runs on (fixed when it started); null on older conversations, "
+        "which use the project's model",
+    )
     # Usage is for owners and admins (the usage:view permission); null for everyone else.
     model: str | None = Field(
         default=None,

@@ -196,3 +196,32 @@ def test_chat_says_so_when_the_reply_is_empty(linked_repo: Path, platform: FakeP
     result = CliRunner().invoke(cli_module.app, ["chat", "--project", str(linked_repo)], input="go\n/quit\n")
     assert result.exit_code == 0, result.output
     assert "finished without writing a reply" in result.output
+
+
+def test_chat_with_a_specialist_on_a_chosen_model(linked_repo: Path, platform: FakePlatform) -> None:
+    platform.agent_script = [
+        {"status": "completed", "reply": "Three competitors."},
+        {"status": "completed", "reply": "And a fourth."},
+        {"status": "completed", "reply": "The team's view."},
+    ]
+    result = CliRunner().invoke(
+        cli_module.app,
+        ["chat", "--project", str(linked_repo), "--agent", "research", "--model", "google_genai:gemini-3.8-flash"],
+        input="Who else does this?\nAny more?\n/agent auto\nWhat do we do?\n/quit\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "Talking to the research agent on KUN (Kunemi) on the platform, on google_genai:gemini-3.8-flash" in result.output
+    first, second, third = platform.runs_started
+    assert first == {"message": "Who else does this?", "agent": "research", "model": "google_genai:gemini-3.8-flash"}
+    # The conversation keeps its model: later messages don't send one.
+    assert second == {"message": "Any more?", "thread_id": "thread-1", "agent": "research"}
+    assert third == {"message": "What do we do?", "thread_id": "thread-1"}  # /agent auto
+
+
+def test_chat_refuses_a_model_for_an_existing_conversation(linked_repo: Path, platform: FakePlatform) -> None:
+    result = CliRunner().invoke(
+        cli_module.app, ["chat", "--project", str(linked_repo), "--thread", "t1", "--model", "openai:x"]
+    )
+    assert result.exit_code != 0 and "keeps the model it started with" in result.output
+    bad = CliRunner().invoke(cli_module.app, ["chat", "--project", str(linked_repo), "--agent", "marketing"])
+    assert bad.exit_code != 0 and "use one of" in bad.output

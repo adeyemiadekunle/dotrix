@@ -250,7 +250,8 @@ function Agents({
             />
             <p className="text-muted-foreground text-xs">
               A cheaper model for the product, architecture, research, reviewer, and documentation agents, and for
-              summarising long conversations. The PM keeps the project&apos;s model. Leave it empty to use the same model.
+              summarising long conversations. The project manager (Auto) and any agent you pick in Chat use the
+              conversation&apos;s model. Leave it empty to use the same model.
             </p>
           </div>
           <div className="grid gap-2">

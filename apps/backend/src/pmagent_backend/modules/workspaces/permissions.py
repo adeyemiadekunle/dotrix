@@ -27,6 +27,7 @@ class Permission(enum.StrEnum):
     MANAGE_MEMBERS = "members:manage"  # invite, remove, change roles
     MANAGE_BILLING = "workspace:billing"  # billing, plan, delete workspace
     VIEW_USAGE = "usage:view"  # agent runs' token counts and model (spend)
+    CHOOSE_MODEL = "agents:choose_model"  # start a conversation on a model other than the project's
 
 
 _ALL = frozenset(Permission)
@@ -40,7 +41,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.CHAT,  # chat and brainstorm; a change they ask for waits for an owner or admin
             Permission.EDIT_ISSUES,
             # Off by default, grantable per workspace (MEMBER_GRANTABLE): EDIT_KNOWLEDGE,
-            # APPROVE_ACTIONS, INSTRUCT_CODING_AGENT.
+            # APPROVE_ACTIONS, INSTRUCT_CODING_AGENT, CHOOSE_MODEL (a bigger model costs more).
             # MANAGE_PROJECTS: off, so connecting a repo on a member's machine links to the
             # owner's project instead of creating another one.
         }
@@ -51,7 +52,14 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
 
 
 # What a workspace may grant its members on top of the defaults.
-MEMBER_GRANTABLE = frozenset({Permission.EDIT_KNOWLEDGE, Permission.APPROVE_ACTIONS, Permission.INSTRUCT_CODING_AGENT})
+MEMBER_GRANTABLE = frozenset(
+    {
+        Permission.EDIT_KNOWLEDGE,
+        Permission.APPROVE_ACTIONS,
+        Permission.INSTRUCT_CODING_AGENT,
+        Permission.CHOOSE_MODEL,
+    }
+)
 
 
 def has_permission(role: Role, permission: Permission) -> bool:
