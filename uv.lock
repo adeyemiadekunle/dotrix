@@ -3031,6 +3031,7 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langgraph-checkpoint-sqlite" },
     { name = "markitdown", extra = ["docx", "pdf", "pptx", "xls", "xlsx"] },
+    { name = "pydantic" },
     { name = "pyyaml" },
 ]
 
@@ -3044,6 +3045,7 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=1.0" },
     { name = "langgraph-checkpoint-sqlite" },
     { name = "markitdown", extras = ["pdf", "docx", "pptx", "xlsx", "xls"], specifier = ">=0.1.8" },
+    { name = "pydantic", specifier = ">=2" },
     { name = "pyyaml" },
 ]
 
