@@ -381,14 +381,14 @@ External accounts, keys, and config have to exist before these items can be buil
 
 ### Organisations (beyond the PRD: an organisation owning several workspaces)
 
-- [x] Organisations (`modules/organizations`): owner / admin / member; workspaces may belong to one (personal ones never)
+- [x] Organisations (`modules/organizations`): owner / admin / member; workspaces may belong to one. A personal workspace brought into an organisation (attach) becomes a team workspace with its projects, and its owner gets a new, empty personal workspace; attach and detach are audited in the workspace's log
 - [x] **Org owners see and work in every workspace their organisation owns** (implicit owner access via `MembershipRepository.effective`, not a stored membership; marked `via_organization`; follows org ownership)
 - [x] Org admins create, attach (their own), and detach workspaces, add people, and place others into any org workspace, but **manage without seeing**: they need a real workspace membership, and can't place themselves
 - [x] Everyone in an org workspace is an org member (attach, invites, placements); leaving the org leaves its workspaces (owners must hand over first); the org always keeps an owner
 - [ ] Organisation email invites for people without an account; verified email domains (auto-join)
 - [ ] Org-level audit log (org events today are not audited; `audit_events` is per workspace)
 - [ ] SSO/SCIM (FR-7), billing and pooled usage with per-workspace limits (FR-8/FR-28), org-wide base agent rules (FR-17) at the organisation level
-- [ ] Move a project between an organisation's workspaces
+- [x] Move a project between workspaces (`POST .../projects/{id}/move`, project settings → Move project): personal → organisation workspace and back, or between any two where you're owner or admin. Its knowledge, issues and their log, documents, runs and approvals, and search chunks move with it; audit events stay where they happened (`project.moved_out` / `project.moved_in`). 409 if the key or repo is taken there, or while a run is working or awaiting approval. Linked checkouts `pmagent connect` again
 
 ### P0: Projects and source of truth
 

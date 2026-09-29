@@ -6,7 +6,7 @@ test("a workspace in an organisation: invite link, revoke, and the audit log rec
   await signUp(page);
   // A personal workspace invites nobody.
   await page.getByRole("link", { name: "Members and settings" }).click();
-  await expect(page.getByText("A personal workspace is just for you: nobody else can join it.")).toBeVisible();
+  await expect(page.getByText("A personal workspace is just for you: nobody else can join it while it stays personal.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Create link" })).toHaveCount(0);
 
   // A new workspace needs an organisation: with none yet, the dialog offers to create one.
@@ -77,4 +77,26 @@ test("an organisation: create it from the workspace menu, then a workspace in it
   const row = page.getByRole("listitem").filter({ hasText: "Payments team" });
   await expect(row).toBeVisible();
   await expect(row.getByText("you're owner")).toBeVisible();
+});
+
+test("move a project from the personal workspace into an organisation's workspace", async ({ page }) => {
+  const { key } = await signUpWithProject(page, "Kumove", "KUM");
+  const personalUrl = page.url().replace(/\/board.*$/, "/settings");
+  await page.getByRole("button", { name: /Personal/ }).first().click();
+  await page.getByRole("menuitem", { name: /Create organisation/ }).click();
+  await page.getByLabel("Name").fill("Kunemi Ltd");
+  await page.getByRole("button", { name: "Create organisation" }).click();
+  await expect(page).toHaveURL(/\/o\/kunemi-ltd/);
+  await page.getByRole("button", { name: "New workspace" }).click();
+  await page.getByLabel("Name").fill("Payments team");
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: "Payments team" })).toBeVisible();
+
+  await page.goto(personalUrl);
+  await page.getByRole("combobox", { name: "Workspace to move to" }).click();
+  await page.getByRole("option", { name: /Payments team/ }).click();
+  await page.getByRole("button", { name: "Move", exact: true }).click();
+  await page.getByRole("button", { name: "Move project" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/payments-team-[a-z0-9]+/p/${key}/settings`));
+  await expect(page.getByRole("heading", { name: /General/ })).toBeVisible();
 });

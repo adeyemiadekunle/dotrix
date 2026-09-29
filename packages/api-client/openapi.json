@@ -2358,7 +2358,7 @@
           "organizations"
         ],
         "summary": "Attach Workspace",
-        "description": "Bring a team or business workspace you own into the organisation. Its people join the\norganisation as members. Personal workspaces can't be attached.",
+        "description": "Bring a workspace you own into the organisation. Its people join the organisation as\nmembers. A personal workspace becomes a team workspace with its projects, and you get a new,\nempty personal workspace.",
         "operationId": "attach_workspace",
         "security": [
           {
@@ -4268,6 +4268,115 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ProjectUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/move": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Move Project",
+        "description": "Move a project, with its knowledge, issues, documents, and conversations, to another\nworkspace: from your personal workspace into an organisation's, or back. You need to set up\nprojects in both (owners and admins). 409 if the other workspace already has a project with\nits key or repo, or while one of its agent runs is working or waiting for approval. Linked\ncheckouts run `pmagent connect` again afterwards.",
+        "operationId": "move_project",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectMove"
               }
             }
           }
@@ -11734,12 +11843,32 @@
         ],
         "title": "ProjectCreate"
       },
+      "ProjectMove": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id",
+            "description": "The workspace to move the project into"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id"
+        ],
+        "title": "ProjectMove"
+      },
       "ProjectRead": {
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid",
             "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
           },
           "key": {
             "type": "string",
@@ -11813,6 +11942,7 @@
         "type": "object",
         "required": [
           "id",
+          "workspace_id",
           "key",
           "name",
           "description",

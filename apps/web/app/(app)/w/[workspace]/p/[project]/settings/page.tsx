@@ -5,12 +5,15 @@ import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
 import { Input } from "@pmagent/ui/components/input";
 import { Label } from "@pmagent/ui/components/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { Textarea } from "@pmagent/ui/components/textarea";
-import { DownloadIcon, FileTextIcon } from "lucide-react";
+import { ArrowRightLeftIcon, DownloadIcon, FileTextIcon } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { useConfirm } from "@/components/confirm-dialog";
 import { Field, SaveBar } from "@/components/form";
 import { RepoPreview } from "@/components/repo-preview";
 import {
@@ -20,10 +23,10 @@ import {
   SettingsSection,
   SettingsTitle,
 } from "@/components/settings-section";
-import { useUpdateProject } from "@/lib/admin";
+import { useMoveProject, useUpdateProject } from "@/lib/admin";
 import { exportUrl, useManifest } from "@/lib/knowledge";
-import { PROJECT_SOURCE_LABELS, canManageProjects } from "@/lib/labels";
-import { useProjectScope } from "@/lib/queries";
+import { PROJECT_SOURCE_LABELS, WORKSPACE_KIND_LABELS, can, canManageProjects } from "@/lib/labels";
+import { useProjectScope, useWorkspaces } from "@/lib/queries";
 
 type Project = Schemas["ProjectRead"];
 type Workspace = Schemas["WorkspaceWithRole"];
@@ -325,6 +328,77 @@ function Agents({
   );
 }
 
+/** Move the project to another workspace where you can set up projects: from your personal
+ * workspace into an organisation's, or back. */
+function Move({ project, workspace }: { project: Project; workspace: Workspace }) {
+  const workspaces = useWorkspaces();
+  const move = useMoveProject(workspace.id, project.id);
+  const router = useRouter();
+  const [ask, confirmDialog] = useConfirm();
+  const [choice, setChoice] = useState("");
+  const targets = (workspaces.data ?? []).filter((w) => w.id !== workspace.id && can(w, "projects:manage"));
+  const target = targets.find((w) => w.id === choice);
+  return (
+    <SettingsSection id="move">
+      <SettingsHeader>
+        <SettingsTitle>Move project</SettingsTitle>
+        <SettingsDescription>
+          Move {project.name} to another workspace, for example from your personal workspace into an organisation&apos;s
+          so you can work on it with others. Its documents, issues, uploads, and conversations go with it; the people who
+          see it are the other workspace&apos;s.
+        </SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent className="grid gap-3">
+        {targets.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            There&apos;s no other workspace where you can add projects.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Select value={choice} onValueChange={setChoice}>
+              <SelectTrigger className="min-w-64" aria-label="Workspace to move to">
+                <SelectValue placeholder="Choose a workspace" />
+              </SelectTrigger>
+              <SelectContent>
+                {targets.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name} · {WORKSPACE_KIND_LABELS[w.kind]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              disabled={!target || move.isPending}
+              onClick={() =>
+                target &&
+                ask({
+                  title: `Move ${project.key} to ${target.name}?`,
+                  description:
+                    "Everyone in that workspace will see it, and people who are only in this one won't. Linked checkouts run pmagent connect again afterwards.",
+                  confirm: "Move project",
+                  action: async () => {
+                    await move.mutateAsync(target.id);
+                    router.push(`/w/${target.slug}/p/${project.key}/settings`);
+                  },
+                })
+              }
+            >
+              <ArrowRightLeftIcon />
+              Move
+            </Button>
+          </div>
+        )}
+        <p className="text-muted-foreground text-xs">
+          You need to be an owner or admin in both workspaces. It can&apos;t move while an agent is working or waiting for
+          approval, or if the other workspace already has a project with key {project.key} or the same repository.
+        </p>
+        {confirmDialog}
+      </SettingsContent>
+    </SettingsSection>
+  );
+}
+
 /** Project settings: everyone sees them; owners and admins change them. */
 export default function ProjectSettings() {
   const { workspace, project, scope, isLoading } = useProjectScope();
@@ -341,7 +415,7 @@ export default function ProjectSettings() {
     ["general", "General"],
     ["repository", "Repository"],
     ["agents", "Agents"],
-    ...(canEdit ? [["export", "Export"]] : []),
+    ...(canEdit ? [["export", "Export"], ["move", "Move project"]] : []),
   ];
   return (
     <div className="flex items-start gap-10 p-4 md:p-8">
@@ -374,6 +448,7 @@ export default function ProjectSettings() {
             </SettingsContent>
           </SettingsSection>
         )}
+        {canEdit && <Move project={project} workspace={workspace} />}
       </div>
       <nav aria-label="On this page" className="sticky top-20 hidden w-40 shrink-0 text-sm xl:grid">
         <p className="text-muted-foreground pb-2 text-xs font-medium">On this page</p>

@@ -121,7 +121,39 @@ async def test_attach_an_existing_workspace(org, db_client: AsyncClient, signup,
     again = await db_client.post(f"{ORGS}/{acme['id']}/workspaces/attach", json={"workspace_id": team["id"]}, headers=ada.headers)
     assert again.status_code == 409
     mine = await db_client.post(f"{ORGS}/{acme['id']}/workspaces/attach", json={"workspace_id": personal["id"]}, headers=ada.headers)
-    assert mine.status_code == 409  # personal workspaces stay personal
+    assert mine.status_code == 200 and mine.json()["kind"] == "team"
+
+
+async def test_a_personal_workspace_joins_as_a_team_workspace(org, db_client: AsyncClient) -> None:
+    """Bringing your personal workspace into an organisation keeps its projects there, makes it
+    a team workspace that can invite people, and gives you a new, empty personal workspace."""
+    ada, acme = await org()
+    personal = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()[0]
+    assert personal["kind"] == "personal"
+    ws = f"/v1/workspaces/{personal['id']}"
+    project = await db_client.post(f"{ws}/projects", json={"key": "KUN", "name": "Kunemi"}, headers=ada.headers)
+    assert project.status_code == 201
+    assert (await db_client.post(f"{ws}/invites", json={"email": "bob@example.com"}, headers=ada.headers)).status_code == 409
+
+    res = await db_client.post(f"{ORGS}/{acme['id']}/workspaces/attach", json={"workspace_id": personal["id"]},
+                               headers=ada.headers)
+    assert res.status_code == 200, res.text
+    moved = (await db_client.get(ws, headers=ada.headers)).json()
+    assert moved["kind"] == "team" and moved["organization_id"] == acme["id"]
+    assert [p["key"] for p in (await db_client.get(f"{ws}/projects", headers=ada.headers)).json()] == ["KUN"]
+    assert (await db_client.post(f"{ws}/invites", json={"email": "bob@example.com"}, headers=ada.headers)).status_code == 201
+    audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
+    assert "workspace.added_to_organization" in {e["action"] for e in audit}
+
+    workspaces = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()
+    new_personal = [w for w in workspaces if w["kind"] == "personal"]
+    assert len(new_personal) == 1 and new_personal[0]["id"] != personal["id"]
+    assert (await db_client.get(f"/v1/workspaces/{new_personal[0]['id']}/projects", headers=ada.headers)).json() == []
+
+    # Taken out again, it stays a team workspace.
+    detach = await db_client.post(f"{ORGS}/{acme['id']}/workspaces/{personal['id']}/detach", headers=ada.headers)
+    assert detach.status_code == 204
+    assert (await db_client.get(ws, headers=ada.headers)).json()["kind"] == "team"
 
 
 async def test_only_the_workspace_owner_can_attach_it(org, db_client: AsyncClient, signup, create_team) -> None:

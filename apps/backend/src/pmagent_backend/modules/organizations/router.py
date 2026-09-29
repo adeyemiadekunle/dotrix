@@ -117,8 +117,9 @@ async def create_org_workspace(data: OrgWorkspaceCreate, member: WorkspaceAdmin,
 
 @router.post("/{org_id}/workspaces/attach", responses=errors(403, 404, 409, 422))
 async def attach_workspace(data: AttachWorkspace, member: WorkspaceAdmin, session: SessionDep) -> OrgWorkspaceRead:
-    """Bring a team or business workspace you own into the organisation. Its people join the
-    organisation as members. Personal workspaces can't be attached."""
+    """Bring a workspace you own into the organisation. Its people join the organisation as
+    members. A personal workspace becomes a team workspace with its projects, and you get a new,
+    empty personal workspace."""
     return await OrganizationService(session).attach(member, data.workspace_id)
 
 

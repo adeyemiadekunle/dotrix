@@ -125,11 +125,10 @@ function NewWorkspaceDialog({ org, open, onOpenChange }: { org: Org; open: boole
 function AttachDialog({ org, open, onOpenChange }: { org: Org; open: boolean; onOpenChange: (o: boolean) => void }) {
   const attach = useAttachWorkspace(org.id);
   const workspaces = useWorkspaces();
-  // Only team or business workspaces you own that aren't in an organisation yet.
-  const candidates = (workspaces.data ?? []).filter(
-    (w) => w.role === "owner" && !w.via_organization && w.kind !== "personal" && !w.organization_id,
-  );
+  // Workspaces you own that aren't in an organisation yet, your personal one included.
+  const candidates = (workspaces.data ?? []).filter((w) => w.role === "owner" && !w.via_organization && !w.organization_id);
   const [choice, setChoice] = useState<string>("");
+  const personal = candidates.find((w) => w.id === choice)?.kind === "personal";
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-md">
@@ -148,14 +147,12 @@ function AttachDialog({ org, open, onOpenChange }: { org: Org; open: boolean; on
           <DialogHeader>
             <DialogTitle>Add a workspace to {org.name}</DialogTitle>
             <DialogDescription>
-              A team or business workspace you own. Its people join the organisation as members; the workspace keeps its
-              projects and roles.
+              A workspace you own. Its people join the organisation as members; the workspace keeps its projects and roles.
             </DialogDescription>
           </DialogHeader>
           {candidates.length === 0 ? (
             <p className="text-muted-foreground text-sm">
-              You don&apos;t own a team or business workspace outside an organisation. Personal workspaces can&apos;t be
-              added.
+              You don&apos;t own a workspace outside an organisation.
             </p>
           ) : (
             <Select value={choice} onValueChange={setChoice}>
@@ -170,6 +167,12 @@ function AttachDialog({ org, open, onOpenChange }: { org: Org; open: boolean; on
                 ))}
               </SelectContent>
             </Select>
+          )}
+          {personal && (
+            <p className="text-muted-foreground text-sm">
+              Your personal workspace becomes a team workspace in {org.name}, with its projects, and you get a new, empty
+              personal workspace. To bring just one project, move it from the project&apos;s settings instead.
+            </p>
           )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

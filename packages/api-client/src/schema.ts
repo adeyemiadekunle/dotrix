@@ -716,8 +716,9 @@ export interface paths {
         put?: never;
         /**
          * Attach Workspace
-         * @description Bring a team or business workspace you own into the organisation. Its people join the
-         *     organisation as members. Personal workspaces can't be attached.
+         * @description Bring a workspace you own into the organisation. Its people join the organisation as
+         *     members. A personal workspace becomes a team workspace with its projects, and you get a new,
+         *     empty personal workspace.
          */
         post: operations["attach_workspace"];
         delete?: never;
@@ -1066,6 +1067,30 @@ export interface paths {
          *     (one project per repo in a workspace: 409 if another has it). The key can't change.
          */
         patch: operations["update_project"];
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move Project
+         * @description Move a project, with its knowledge, issues, documents, and conversations, to another
+         *     workspace: from your personal workspace into an organisation's, or back. You need to set up
+         *     projects in both (owners and admins). 409 if the other workspace already has a project with
+         *     its key or repo, or while one of its agent runs is working or waiting for approval. Linked
+         *     checkouts run `pmagent connect` again afterwards.
+         */
+        post: operations["move_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/knowledge": {
@@ -3080,6 +3105,15 @@ export interface components {
              */
             readme?: string | null;
         };
+        /** ProjectMove */
+        ProjectMove: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             * @description The workspace to move the project into
+             */
+            workspace_id: string;
+        };
         /** ProjectRead */
         ProjectRead: {
             /**
@@ -3087,6 +3121,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
             /** Key */
             key: string;
             /** Name */
@@ -6764,6 +6803,78 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProjectUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    move_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectMove"];
             };
         };
         responses: {
