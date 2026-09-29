@@ -82,7 +82,7 @@ function NewWorkspaceDialog({ org, open, onOpenChange }: { org: Org; open: boole
             <div className="grid gap-2">
               <Label>Kind</Label>
               <Select value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="Kind">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -94,7 +94,7 @@ function NewWorkspaceDialog({ org, open, onOpenChange }: { org: Org; open: boole
             <div className="grid gap-2">
               <Label>Owner</Label>
               <Select value={owner} onValueChange={setOwner}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="Owner">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

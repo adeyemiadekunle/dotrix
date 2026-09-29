@@ -13,10 +13,6 @@ importers:
         version: 2.11.4
 
   apps/desktop:
-    dependencies:
-      '@pmagent/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
     devDependencies:
       '@types/node':
         specifier: ^26.6.2
@@ -45,9 +41,6 @@ importers:
       '@pmagent/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
-      '@pmagent/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@pmagent/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -118,9 +111,6 @@ importers:
 
   packages/api-client:
     dependencies:
-      '@pmagent/shared':
-        specifier: workspace:*
-        version: link:../shared
       openapi-fetch:
         specifier: ^0.17.0
         version: 0.17.0
@@ -129,17 +119,8 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/shared:
-    devDependencies:
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-
   packages/ui:
     dependencies:
-      '@pmagent/shared':
-        specifier: workspace:*
-        version: link:../shared
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

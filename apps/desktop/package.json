@@ -8,9 +8,6 @@
     "dev": "tsc && electron .",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@pmagent/shared": "workspace:*"
-  },
   "devDependencies": {
     "@types/node": "^26.6.2",
     "electron": "^44.4.5",

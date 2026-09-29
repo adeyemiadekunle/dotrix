@@ -28,7 +28,7 @@ export default function OrgLayout({ children }: { children: ReactNode }) {
         title={org?.name ?? "…"}
         actions={org && <Badge variant="outline">{ORG_ROLE_LABELS[org.role]}</Badge>}
       />
-      <nav className="flex gap-4 overflow-x-auto border-b px-4 text-sm md:px-6" aria-label="Organisation">
+      <nav className="flex gap-1 overflow-x-auto border-b px-2 text-sm md:px-4" aria-label="Organisation">
         {TABS.map((tab) => {
           const href = `${base}${tab.href}`;
           const active = pathname === href;
@@ -38,8 +38,8 @@ export default function OrgLayout({ children }: { children: ReactNode }) {
               href={href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "-mb-px shrink-0 border-b-2 border-transparent py-2.5 transition-colors",
-                active ? "border-foreground font-medium" : "text-muted-foreground hover:text-foreground",
+                "-mb-px shrink-0 border-b-2 border-transparent px-2 py-2.5 transition-colors",
+                active ? "border-primary text-foreground font-medium" : "text-muted-foreground hover:text-foreground",
               )}
             >
               {tab.label}
