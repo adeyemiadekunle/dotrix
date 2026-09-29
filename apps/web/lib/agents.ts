@@ -5,6 +5,7 @@
 // names shown on replies come from here.
 import type { Schemas } from "@pmagent/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { toast } from "sonner";
 
 import { AGENTS, type AgentOption } from "./agent";
@@ -155,11 +156,18 @@ export function useRestoreAgentVersion(scope: AgentScope) {
  * (Auto is the project manager). The built-in list stands in while it loads. */
 export function useChatAgents(scope: Scope | undefined): AgentOption[] {
   const agents = useAgents(scope);
-  if (!agents.data) return AGENTS;
-  return [
-    AGENTS[0],
-    ...agents.data
-      .filter((a) => a.handle !== PM_HANDLE)
-      .map((a) => ({ id: a.handle, name: displayName(a), description: a.description || a.name })),
-  ];
+  const data = agents.data;
+  // Stable between renders, so callers can tell when the list actually changed.
+  return useMemo(
+    () =>
+      data
+        ? [
+            AGENTS[0],
+            ...data
+              .filter((a) => a.handle !== PM_HANDLE)
+              .map((a) => ({ id: a.handle, name: displayName(a), description: a.description || a.name })),
+          ]
+        : AGENTS,
+    [data],
+  );
 }
