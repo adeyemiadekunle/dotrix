@@ -90,6 +90,13 @@ class Settings(DatabaseSettings):
     # A conversation's older turns are summarised once its prompt passes this many tokens
     # (the most recent turns are kept word for word).
     summarize_after_tokens: int = Field(default=40_000, ge=5_000)
+    # The model that turns documents and issues into vectors for search ("provider:model",
+    # google_genai or openai, with that provider's key). Empty: search by keywords only.
+    embedding_model: str = "google_genai:gemini-embedding-001"
+    # Meaning matches below this cosine similarity are left out (the nearest chunks of an
+    # unrelated query are still "nearest"). Depends on the model: measured on
+    # gemini-embedding-001, the right passage scored 0.68-0.72 and unrelated queries at most 0.56.
+    embedding_min_similarity: float = Field(default=0.6, ge=0, le=1)
     # Where background work executes (agent runs, emails, password-reset requests):
     # - "local": tasks in the API process (simplest; an API restart cuts runs off)
     # - "worker": queued in Redis and executed by `python -m pmagent_backend.worker`; work

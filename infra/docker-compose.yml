@@ -2,7 +2,8 @@
 # repo-root .env; credentials are never stored in this file.
 services:
   postgres:
-    image: postgres:17
+    # Postgres 17 plus the pgvector extension (knowledge search); built on the same Debian (trixie) as postgres:17, so collations match existing data.
+    image: pgvector/pgvector:pg17-trixie
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pmagent}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}

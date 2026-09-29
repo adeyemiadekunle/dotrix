@@ -112,8 +112,10 @@ class Section:
     text: str
 
 
-def sections(content: str) -> list[Section]:
-    """Every section of a Markdown document, in order (headings inside code blocks don't count)."""
+def sections(content: str, *, nested: bool = True) -> list[Section]:
+    """Every section of a Markdown document, in order (headings inside code blocks don't count).
+    `nested=False` gives each section's own text only, up to the next heading of any level
+    (for indexing, so no text is in two sections)."""
     lines = content.replace("\r\n", "\n").split("\n")
     heads: list[tuple[int, int, str]] = []  # (line index, level, words)
     in_code = False
@@ -134,7 +136,7 @@ def sections(content: str) -> list[Section]:
         while stack and stack[-1][0] >= level:
             stack.pop()
         stack.append((level, words))
-        end = next((i for i, lvl, _ in heads[position + 1:] if lvl <= level), len(lines))
+        end = next((i for i, lvl, _ in heads[position + 1:] if not nested or lvl <= level), len(lines))
         text = "\n".join(lines[index:end]).rstrip("\n")
         found.append(
             Section(f"{'#' * level} {words}", level, " > ".join(w for _, w in stack), index + 1, end, text)

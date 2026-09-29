@@ -13,7 +13,7 @@ Engine notes: [docs/engine.md](docs/engine.md).
 | `apps/desktop` | Desktop shell around the web app | Electron |
 | `packages/engine` | UI-agnostic agent engine (`pmagent_engine`) | deepagents / LangGraph |
 | `packages/ui`, `api-client`, `shared` | shadcn/ui components and theme; the typed API client (generated from OpenAPI); shared TS constants (currently unused) | TypeScript |
-| `infra` | Local Postgres, Redis, MinIO (`docker-compose.yml`) | Docker |
+| `infra` | Local Postgres (with pgvector), Redis, MinIO (`docker-compose.yml`) | Docker |
 
 ## Commands
 
@@ -86,8 +86,9 @@ apps/backend/
 │   │   ├── issues/              issues, keys, board/backlog/epics, claim, Markdown render for export
 │   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals and decisions, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis)
 │   │   ├── audit/               append-only audit log
+│   │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
 │   │   └── connectors/          (planned, FR-10/12) GitHub, GitLab, doc sources (OAuth)
-│   ├── jobs.py                  background jobs by name (send_email, send_password_reset); where they run: core/jobs.py
+│   ├── jobs.py                  background jobs by name (send_email, send_password_reset, index_knowledge, ...); where they run: core/jobs.py
 │   └── worker.py                arq worker (`pnpm dev:worker`): agent runs and jobs when PMAGENT_JOBS=worker
 └── tests/
     ├── conftest.py              app + DB fixtures (transaction rollback per test), signup/create_team/add_member helpers
@@ -125,6 +126,7 @@ apps/cli/src/pmagent_cli/
 packages/engine/src/pmagent_engine/
 ├── agent.py                     build_team(): the PM + specialist subagents (deepagents), HITL interrupts
 ├── approvals.py                 Action Mode approvals, independent of any UI (pending actions, resume)
+├── context_middleware.py        smaller prompts: unchanged re-reads, compact tool definitions, summarising long conversations
 ├── permissions.py               FR-41 folder matrix and per-agent issue rules
 ├── layout.py, rules/            the .pmagent/ skeleton and default agent rules (base + role files)
 ├── ingest.py                    any document -> Markdown (markitdown)
@@ -207,37 +209,30 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
   - runs record `cached_input_tokens` and `model_calls` next to the token counts; owners and admins see them under each reply
   - measured on Gemini 3.8 Flash: implicit caching hits only on long prompts (a 19.5k prompt got 16.4k cached; 6.6k and 13.9k prompts got none). Our runs are now ~7k tokens per call, so they rarely hit. The saving is in fewer, smaller calls; `model_calls` shows where (a first briefing: 6 calls, 47k tokens; the next: 3 calls, 21k)
   - [ ] explicit Gemini caching (`CachedContent` for the instructions and context pack) if prompts grow again; it charges for storage, so only worth it for long, repeated prefixes
-- [ ] **Reading less:**
-  - `read_file` answers "unchanged since you read it (version N)" when the thread already has that version
-  - an outline tool and `read_section(path, heading)` for large documents
-  - `search_knowledge(query)` over documents and issues, returning the best passages with their paths (see "Search with pgvector" next)
-- [ ] **Search with pgvector (hybrid: meaning + keywords):**
-  - **Setup:**
-    - Postgres image `pgvector/pgvector:pg17` in `infra/docker-compose.yml` and CI (the same Postgres plus the extension; existing data carries over)
-    - a migration with `CREATE EXTENSION vector`
-    - production needs a Postgres host with pgvector (Neon, Supabase, RDS, and Cloud SQL all have it)
-  - **Chunks:** documents split by heading section (issues as title + description + recent comments), each chunk stored with `workspace_id`, `project_id`, path or issue key, and version. Every query filters by workspace and project first; the cross-workspace isolation suite covers the search tool.
-  - **Embeddings:**
-    - made in a background job whenever a document version or issue changes, only for the chunks that changed (content hash)
-    - model set in settings (`PMAGENT_EMBEDDING_MODEL`, e.g. Gemini `text-embedding-004` or OpenAI `text-embedding-3-small`), with the dimension fixed per column
-    - re-embedding everything is a job, for when the model changes
-  - **Search:**
-    - vector similarity (HNSW index) and Postgres full-text search, merged by reciprocal rank fusion, so exact terms (issue keys, names, error text) and paraphrases both match
-    - returns snippets with their paths, so the agent reads only the sections that matter
-  - **Also used for:**
-    - "related issues" and duplicate warnings when an issue is created
-    - finding earlier brainstorms and decisions from chat (Phase 3)
-    - pulling the right excerpts into delegation briefs
-  - **Cost:** embedding a changed section costs a tiny fraction of re-reading files in every run; token usage records embedding calls too
-- [ ] **Delegation that doesn't start from zero:** the PM hands specialists the relevant paths and excerpts with the task, and specialists return findings, not whole files
-- [ ] **Long conversations:** summarise older turns once a thread passes a token threshold (LangChain's summarization middleware), keeping recent turns verbatim
+- [x] **Reading less:**
+  - reading a file the agent already has in its conversation, unchanged, returns a one-line note instead of the file again (`pmagent_engine.context_middleware.UnchangedReads`: compares content, so a changed file always comes back in full; reads that were summarised away don't count)
+  - `document_outline(file_path)` (sections with line ranges and sizes) and `read_section(file_path, heading)` (`modules/agents/knowledge_tools.py`, sections from `knowledge_index.sections`)
+  - `search_knowledge(query)` over documents and issues (below)
+  - the model gets fewer, shorter tool definitions (`CompactTools`: no `delete` or `execute`, short descriptions for `ls`, `read_file`, `glob`, `grep`): about 700 tokens less on every call
+- [x] **Search with pgvector (hybrid: meaning + keywords)** (`modules/search`):
+  - **Setup:** Postgres image `pgvector/pgvector:pg17-trixie` locally and in CI (trixie, like `postgres:17`, so existing data's collations match; the bookworm build warned of a collation mismatch); migration `86579aa1f0e8` runs `CREATE EXTENSION vector`. Production needs a Postgres host with pgvector (Neon, Supabase, RDS, Cloud SQL)
+  - **Chunks** (`knowledge_chunks`): documents by heading section (each section's own text; long ones split between paragraphs), issues as one chunk (type, status, priority, labels, description, three latest comments); `agent-rules/` isn't indexed. A generated `tsvector` column (ref and heading weighted higher) and a `vector(768)` column
+  - **Keeping it current:** `KnowledgeIndex.sync` re-chunks documents whose version changed and issues changed since indexed, and drops deleted ones; a search runs it first (database work only, under a per-project advisory lock), so keyword results are always current. The `index_knowledge` job adds the vectors every minute (the worker's cron, or a loop in the API in local mode), only for chunks whose text changed (content hash); switching `PMAGENT_EMBEDDING_MODEL` re-embeds everything on the next runs
+  - **Embeddings:** `PMAGENT_EMBEDDING_MODEL` (default `google_genai:gemini-embedding-001`, or `openai:…`), asked for 768 dimensions; Gemini gets document and query task types. No model or key: keyword search only (tests and e2e run that way). The indexing job logs its approximate tokens
+  - **Search:** full-text (every word, then at least half the words and two, so near-duplicate titles match without embeddings) and vector (HNSW, cosine) merged by reciprocal rank fusion, one hit per section. Meaning matches need `PMAGENT_EMBEDDING_MIN_SIMILARITY` (0.6): measured on gemini-embedding-001, the right passage scored 0.68-0.72, unrelated queries at most 0.56
+  - **Used by:** agents (`search_knowledge`), `GET .../projects/{id}/search?q=&source=` (anyone who sees the project), and the new-issue dialog's "Similar issues already exist" (debounced, top 3)
+  - [ ] Later: earlier brainstorms and decisions from chat (Phase 3); the query's embedding tokens in the run's usage
+- [x] **Delegation that doesn't start from zero:** the PM delegates straight away with a short brief (the question, what the person asked, what it already read, where to start, what to return) instead of researching first; specialists batch their reads into one turn, answer as soon as they can, and return findings with paths, not whole documents. Live on Gemini 3.8 Flash, "ask the product agent what's missing from KLL-1": 137k tokens before the wording change, then 52k-126k; the model varies a lot run to run, which the budget and breakdown make visible
+- [x] **Long conversations:** deepagents' summarisation, with our threshold (`PMAGENT_SUMMARIZE_AFTER_TOKENS`, 40,000; its default waits for 85% of the context window, ~890k tokens on Gemini): older turns become a summary written by the specialist model, the most recent quarter is kept word for word, and the originals are kept in the run's scratch files
 - [x] **Briefings from data:**
-  - the platform computes what changed since the last briefing (issues moved, documents changed, decisions, blockers, due dates); the model only narrates it and reads files when something needs explaining
-  - target: under 15,000 tokens. Done in `context.py` `_since_last_briefing` (a briefing's context pack says what was created, done, newly blocked, moved, and discussed on the board; documents changed with who and why; what waits for approval; whether `current-state.md` fell behind), and the briefing prompt writes from it without asking the specialists. Measured on the dev project: 160,290 → 81,613 (context pack) → 24,706 input tokens; the rest is fewer model calls (Budgets and visibility below)
-- [ ] **Budgets and visibility:**
-  - a per-run token budget (stop and say so, rather than overspend)
-  - per-tool token counts and the files read, shown to owners and admins under a run
-  - a cheaper model option for specialists and summaries
+  - the platform computes what changed since the last briefing (issues moved, documents changed, decisions, blockers, due dates); the model only narrates it
+  - done in `context.py` `_since_last_briefing` (a briefing's context pack says what was created, done, newly blocked, moved, and discussed on the board; documents changed with who and why; what waits for approval; whether `current-state.md` fell behind). The board lists what's next (to do, most urgent first) and excerpts of blocked and urgent issues
+  - a briefing is **one model call with no tools** (`briefing_system_prompt`), saved into the conversation so a follow-up there goes to the whole team; if it comes back empty, the team writes it (writes auto-rejected)
+  - measured on the dev project: 160,290 → 81,613 (context pack) → 24,706 (briefings from data) → **2,007 input tokens, 1 call**
+- [x] **Budgets and visibility:**
+  - a per-run token budget: the project's (Settings → Agents), else `PMAGENT_RUN_TOKEN_BUDGET` (500,000; 0 = none). Counted over every step and specialist; a run past it stops before its next model call and says so (approved changes stay)
+  - where the tokens went, for owners and admins under each reply ("Details"): tokens by agent, tool results (re-sent with every later call), files read, and the budget (`AgentRun.usage`, `breakdown` in the API)
+  - a cheaper model for the specialists and conversation summaries (`Project.specialist_model`, Settings → Agents); the PM keeps the project's model
 
 ### Phase 3: brainstorm → project → documents
 - [ ] **Pick the agent in the chat:**
@@ -311,7 +306,7 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 - [x] Backend: membership and invite changes are audited (rename, role changes, removals and leaving, ownership transfer, invites sent / links created / revoked, joining, org placements in the workspace's own log)
 - [x] Briefing tab (`/w/[ws]/p/[KEY]/briefing`): the newest daily briefing (streams with live activity while it's written), past briefings (`GET .../agent/runs?kind=briefing`), new briefing; the agent's side of a run is one shared component (`components/agent/agent-reply.tsx`) used by chat and briefing
 - [ ] Remove or update the leftovers: `packages/shared` (unused; its `Issue` type predates the API) and `packages/ui/src/index.tsx`'s StatusBadge. The generated API types are the source of truth.
-- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search, chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
+- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search and similar issues, chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
 - [ ] More browser tests as pages change: organisations, document upload (needs MinIO in CI), phone layouts
 
 ## TODO: backend (priority order)

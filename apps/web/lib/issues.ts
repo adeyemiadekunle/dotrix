@@ -3,7 +3,8 @@
 // Issue queries and mutations. Every key starts with ["issues", projectId] so one invalidation
 // refreshes the board, backlog, epics, and any open issue after a change.
 import type { Schemas } from "@pmagent/api-client";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { api, errorMessage, unwrap } from "./api";
@@ -83,6 +84,34 @@ export function useEpics(scope: Scope | undefined) {
         }),
       ),
     enabled: Boolean(scope),
+  });
+}
+
+/** `value`, once it has stopped changing for `ms`. */
+function useDebounced<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return settled;
+}
+
+/** Existing issues like the one being written (by keywords and, when the server has an
+ * embedding model, by meaning), to catch duplicates before they're created. */
+export function useSimilarIssues(scope: Scope | undefined, text: string) {
+  const query = useDebounced(text.trim(), 400);
+  return useQuery({
+    queryKey: scope ? ["issues", scope.projectId, "similar", query] : ["issues", "none"],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/search", {
+          params: { path: path(scope!), query: { q: query, source: "issue", limit: 3 } },
+        }),
+      ),
+    enabled: Boolean(scope) && query.length >= 4,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
   });
 }
 

@@ -83,6 +83,55 @@ class UnchangedReads(AgentMiddleware):
         )
 
 
+# The model is sent every tool's definition with every call. deepagents' file tools describe
+# features a project's Markdown knowledge doesn't use (regex via `execute`, images and PDFs,
+# offloaded results), so they get shorter descriptions here; how they work doesn't change.
+SHORT_DESCRIPTIONS = {
+    "ls": "List the files and folders in a directory (absolute path, e.g. /pmagent/requirements/).",
+    "read_file": (
+        "Read a file (absolute path), 100 lines at a time by default; page with `offset`/`limit`. "
+        "Read several files in one step when you need them. For a long document, prefer "
+        "`document_outline` and `read_section` when you have them."
+    ),
+    "glob": (
+        "Find files by name pattern, e.g. `*.md`, `/pmagent/requirements/**/*.md`, "
+        "`/pmagent/decisions/*.md`. Returns absolute paths."
+    ),
+    "grep": (
+        "Search files for LITERAL text (not a regex; run one grep per alternative). "
+        "Narrow with `path` and `glob`. To find a topic in other words, use `search_knowledge` "
+        "when you have it."
+    ),
+}
+# Agents never delete project knowledge (a person does); the backend refuses it anyway.
+EXCLUDED_TOOLS = frozenset({"delete", "execute"})
+
+
+def _compact(tool: Any) -> Any:
+    name = getattr(tool, "name", None)
+    if name in SHORT_DESCRIPTIONS and hasattr(tool, "model_copy"):
+        return tool.model_copy(update={"description": SHORT_DESCRIPTIONS[name]})
+    return tool
+
+
+class CompactTools(AgentMiddleware):
+    """Sends the model fewer, shorter tool definitions (see SHORT_DESCRIPTIONS)."""
+
+    def _request(self, request: Any) -> Any:
+        tools = [
+            _compact(tool)
+            for tool in request.tools or []
+            if getattr(tool, "name", None) not in EXCLUDED_TOOLS
+        ]
+        return request.override(tools=tools)
+
+    async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        return await handler(self._request(request))
+
+    def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
+        return handler(self._request(request))
+
+
 def summarization(model: Any, backend: Any, after_tokens: int) -> Any:
     """deepagents' summarisation with our thresholds: summarise once the prompt (instructions,
     context, conversation) passes `after_tokens`, keeping about a quarter of that as recent

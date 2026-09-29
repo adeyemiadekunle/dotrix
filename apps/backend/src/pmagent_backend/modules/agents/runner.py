@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from deepagents.backends import CompositeBackend, StateBackend
-from langchain_core.messages import HumanMessage, RemoveMessage
+from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
 from sqlalchemy import select
 
 from pmagent_backend.modules.audit.service import AuditLog
@@ -24,12 +24,13 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_engine import approvals as hitl
-from pmagent_engine.agent import PM_ROLE, build_team, role_for_agent_name
+from pmagent_engine.agent import PM_ROLE, briefing_system_prompt, build_team, role_for_agent_name
 from pmagent_engine.layout import AGENTS
 
 from .activity import activity_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
 from .context import build_context_pack
+from .knowledge_tools import KNOWLEDGE_TOOLS_GUIDE, build_knowledge_tools
 from .llm import ModelFactory
 from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .queue import RunQueue
@@ -41,9 +42,10 @@ logger = logging.getLogger(__name__)
 
 BRIEFING_PROMPT = (
     "Give me my briefing: phase and health, what changed, today's priorities, recent decisions, "
-    "open questions, blockers, and documentation status. Write it from the project context: it "
-    "already has the board and what changed since the last briefing. Open a file only if something "
-    "needs explaining that the context doesn't cover, and don't ask the specialists. Read only."
+    "open questions, blockers, and documentation status. Write it from the project context, in one "
+    "reply: it already has the board (with what's next) and what changed since the last briefing. "
+    "Use a tool only if something the briefing must explain isn't in the context, and don't ask the "
+    "specialists. Read only."
 )
 READ_ONLY_REJECTION = "This is a read-only briefing; no changes were made. Don't retry the write."
 MAX_AUTO_REJECTIONS = 5
@@ -139,12 +141,15 @@ class AgentRunner:
         streams: Streams | None = None,
         token_budget: int | None = None,
         summarize_after_tokens: int | None = None,
+        embedder: Any = None,
     ) -> None:
         self.session_factory = session_factory
         # Defaults for every project (a project may set its own budget); None: no limit / the
         # engine's own summarisation.
         self.token_budget = token_budget or None
         self.summarize_after_tokens = summarize_after_tokens
+        # The search index's embedding model (None: agents search by keywords only).
+        self.embedder = embedder
         self.checkpointer = checkpointer
         self.model_factory = model_factory
         self.inline = inline
@@ -279,8 +284,14 @@ class AgentRunner:
                 rules=rules,
                 task_tools=(read_tools, pm_write_tools),
                 subagent_task_tools=specialist_write_tools,
-                board_instructions=board_instructions(project_key),
+                board_instructions=board_instructions(project_key) + KNOWLEDGE_TOOLS_GUIDE,
                 context=context,
+                knowledge_tools=build_knowledge_tools(
+                    self.session_factory,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    embedder=self.embedder,
+                ),
                 specialist_model=choice.specialist_model,
                 summarize_after_tokens=self.summarize_after_tokens,
             )
@@ -301,6 +312,10 @@ class AgentRunner:
             result = None
             if retry:
                 graph_input, result = await _continue_from_checkpoint(agent, config, payload, graph_input)
+            if result is None and kind is RunKind.BRIEFING and not resuming:
+                # One model call with no tools: the context pack already says what happened.
+                system = briefing_system_prompt(name, description, rules=rules, context=context)
+                result = await _brief(agent, choice.model, system, payload["message"], config, stream)
             if result is None:
                 result = await _run_graph(agent, graph_input, config, stream)
             result = await self._settle(agent, kind, config, stream, result)
@@ -516,6 +531,22 @@ async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream)
     if interrupts:
         return {**latest, "__interrupt__": interrupts} if isinstance(latest, dict) else {"__interrupt__": interrupts}
     return latest if isinstance(latest, dict) else {}
+
+
+async def _brief(agent: Any, model: Any, system: str, message: str, config: dict, stream: Stream) -> dict:
+    """A briefing: the PM's reply from one streamed model call, then saved into the
+    conversation (as the PM's turn), so a follow-up in the same thread goes to the whole team
+    with the briefing in its history."""
+    reply = ""
+    async for chunk in model.astream(
+        [SystemMessage(system), HumanMessage(message)], config={"callbacks": config["callbacks"]}
+    ):
+        if delta := text_of(chunk.content):
+            reply += delta
+            await stream.publish(delta)
+    messages = [HumanMessage(message), AIMessage(reply)]
+    await agent.aupdate_state(config, {"messages": messages}, as_node="model")
+    return {"messages": messages}
 
 
 def _activities(update: dict) -> list[str]:

@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17
+        image: pgvector/pgvector:pg17-trixie  # Postgres 17 + pgvector, like infra/docker-compose.yml
         # Throwaway container reachable only from this runner: trust auth, no password.
         env:
           POSTGRES_USER: pmagent
@@ -97,7 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17
+        image: pgvector/pgvector:pg17-trixie  # Postgres 17 + pgvector, like infra/docker-compose.yml
         env:
           POSTGRES_USER: pmagent
           POSTGRES_DB: pmagent

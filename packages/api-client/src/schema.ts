@@ -1683,6 +1683,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Project
+         * @description Search the project's documents (by section) and issues. Exact terms (issue keys, names,
+         *     error text) and paraphrases both match: full-text and meaning rankings are merged. Without
+         *     an embedding model configured, keywords only.
+         */
+        get: operations["search_project"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2026,6 +2048,11 @@ export interface components {
         CalendarFeedUpdate: {
             scope: components["schemas"]["FeedScope"];
         };
+        /**
+         * ChunkSource
+         * @enum {string}
+         */
+        ChunkSource: "document" | "issue";
         /** ClaimRequest */
         ClaimRequest: {
             /**
@@ -3088,6 +3115,35 @@ export interface components {
          * @enum {string}
          */
         Scope: "read" | "write";
+        /** SearchHit */
+        SearchHit: {
+            source: components["schemas"]["ChunkSource"];
+            /**
+             * Ref
+             * @description The document's path in `.pmagent/`, or the issue's key
+             */
+            ref: string;
+            /**
+             * Heading
+             * @description The document section (its heading trail), or the issue's title
+             */
+            heading: string | null;
+            /**
+             * Snippet
+             * @description The matching text (up to about 500 characters)
+             */
+            snippet: string;
+            /**
+             * Version
+             * @description The document version the text is from (0 for issues)
+             */
+            version: number;
+            /**
+             * Score
+             * @description Relevance (higher is better; only comparable within one search)
+             */
+            score: number;
+        };
         /** SignupRequest */
         SignupRequest: {
             /**
@@ -8812,6 +8868,62 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    search_project: {
+        parameters: {
+            query: {
+                /** @description What to look for, in any words */
+                q: string;
+                /** @description Only documents, or only issues */
+                source?: components["schemas"]["ChunkSource"] | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchHit"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;

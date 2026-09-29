@@ -55,6 +55,8 @@ def main() -> None:
         "PMAGENT_RATE_LIMITS": "off",
         # Test sign-ups mustn't reach a real email provider, even if .env configures one.
         "PMAGENT_EMAIL_BACKEND": "console",
+        # Search by keywords only: no embedding calls with a developer's key.
+        "PMAGENT_EMBEDDING_MODEL": "",
         # Only used if no secret is configured (e.g. CI); this server holds throwaway data.
         "PMAGENT_JWT_SECRET": os.environ.get("PMAGENT_JWT_SECRET") or "e2e-only-secret-for-throwaway-test-data",
     }

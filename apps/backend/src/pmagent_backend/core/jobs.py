@@ -39,6 +39,7 @@ class JobContext:
     settings: Settings
     email: EmailSender  # the real provider (a job must not enqueue its own email again)
     storage: BlobStorage | None = None  # document originals (None when storage isn't configured)
+    embedder: Any = None  # the search index's embedding model (None: keyword search only)
 
 
 JobFunction = Callable[..., Awaitable[Any]]
@@ -68,6 +69,10 @@ class LocalJobs:
         task = asyncio.create_task(self._run(name, job, kwargs))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+
+    async def run(self, name: str, **kwargs: Any) -> None:
+        """Run a job now and wait for it (a periodic job, so runs never overlap)."""
+        await self._run(name, self.registry[name], kwargs)
 
     async def _run(self, name: str, job: JobFunction, kwargs: dict[str, Any]) -> None:
         try:

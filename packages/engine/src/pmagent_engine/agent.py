@@ -26,7 +26,7 @@ from deepagents.backends import CompositeBackend, StateBackend
 from . import tasks as T
 from .backend import LockingFilesystemBackend
 from .config import ProjectConfig
-from .context_middleware import UnchangedReads, summarization
+from .context_middleware import CompactTools, UnchangedReads, summarization
 
 # Tools that change task state, gated exactly like write_file/edit_file.
 TASK_WRITE_TOOLS = ("create_task", "update_task", "comment_task")
@@ -137,7 +137,7 @@ def _subagents(
     knowledge_tools: list | None = None,
 ) -> list[dict]:
     def role(title: str, body: str) -> str:
-        prompt = f"You are the {title} for {project_name}.\n{body}"
+        prompt = f"You are the {title} for {project_name}.\n{body}\n{_FINDINGS_GUIDE}"
         return _with_context(_with_rules(rules, _ROLE_FOR_TITLE[title], prompt), context)
 
     # Custom tools per subagent are set explicitly so it's obvious who can do
@@ -219,6 +219,27 @@ def _with_rules(rules: dict[str, str] | None, role: str, prompt: str) -> str:
     return "\n\n".join(part.strip() for part in parts if part.strip())
 
 
+# Delegation that doesn't start from zero: a specialist starts with the project context but
+# not this conversation, so the brief carries what it needs, and it answers with findings.
+_DELEGATION_GUIDE = """## Delegating
+A specialist sees the project context, but not this conversation. When the person asks for
+a specialist, or the work needs one, delegate straight away: don't research first, since the
+specialist reads and searches for itself. Write each `task` as a short brief: the question,
+what the person asked for, anything from this conversation it needs (quote what you've
+already read rather than making it read it again), the paths, sections, or issue keys to start
+from, and what to return. Ask several at once when their parts are independent.
+"""
+
+_FINDINGS_GUIDE = """
+Work in few steps: every step re-sends everything so far. Decide what you need from the
+brief and the project context, then ask for all of it in one turn (several read_file,
+read_section, get_issue, or search calls at once), and answer as soon as you can; an empty
+document needs no second look.
+
+Your reply goes back to the Project Manager, not to a person. Answer with findings: a short
+answer first, then the key points, each with the path and section it comes from, and any
+changes you propose. Don't paste whole documents back; quote only the lines that matter."""
+
 _CONTEXT_GUIDE = """## Using the project context
 The project context below is built fresh for this run: every document with a one-line
 summary, the board, recent decisions, and what changed since this conversation's last
@@ -280,6 +301,31 @@ acceptance criteria, then summarize its recommendation for the user. Closing
 a task (status done) or sending it back (status todo, with a note) is an
 Action Mode change like any other.
 """
+
+
+_BRIEFING_INSTRUCTIONS = """You are the Project Manager for {project_name}.
+
+{description}
+
+Write the daily briefing for the person who asked, from the project context below. It was
+built for this briefing from the board, the documents, recent decisions, and what changed
+since the last briefing. You have no tools in this step, and nothing you write changes the
+project. Cover phase and health (with rough % progress), what changed, today's priorities,
+recent decisions, open questions, blockers, and documentation status (flag documents that
+look out of date). Be concise and specific: name issue keys and documents. If something the
+briefing should cover isn't in the context, say what's missing rather than guessing."""
+
+
+def briefing_system_prompt(
+    project_name: str, description: str, *, rules: dict[str, str] | None = None, context: str | None = None
+) -> str:
+    """The Project Manager's prompt for a briefing written in one model call, with no tools:
+    the platform has already worked out what happened (the context pack), so the model only
+    narrates it. Much cheaper than letting the PM explore the project to find out."""
+    prompt = _with_rules(
+        rules, PM_ROLE, _BRIEFING_INSTRUCTIONS.format(project_name=project_name, description=description)
+    )
+    return f"{prompt}\n\n{context.strip()}" if context else prompt
 
 
 def build_team(
@@ -350,6 +396,7 @@ report exactly what changed, then return to Chat Mode. Every write pauses for
 the user's approval regardless. That gate exists as a backstop, not as a
 substitute for staying in Chat Mode.
 
+{_DELEGATION_GUIDE}
 ## Concurrency
 Other sessions, background jobs, or coding agents may be working on this
 project right now. Before starting substantial work, check /pmagent/progress/
@@ -373,7 +420,7 @@ blockers, and documentation status. A briefing never writes.
 
     def middleware() -> list[Any]:
         """Fresh instances for each agent: files already read, and when to summarise."""
-        extra: list[Any] = [UnchangedReads()]
+        extra: list[Any] = [CompactTools(), UnchangedReads()]
         if summarize_after_tokens:
             extra.append(summarization(summary_model, backend, summarize_after_tokens))
         return extra

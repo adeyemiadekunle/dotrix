@@ -262,10 +262,25 @@ async def test_subagent_writes_are_attributed_to_its_role(
     assert latest["agent"] == "product"
 
 
+async def test_a_briefing_is_one_model_call_without_tools(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    model = agent_script.say("Briefing: discovery phase, nothing blocked.", "Nothing is blocked.")
+    brief = (await db_client.post(f"{base}/agent/briefing", headers=ada.headers)).json()
+    assert brief["status"] == "completed" and brief["reply"] == "Briefing: discovery phase, nothing blocked."
+    assert brief["model_calls"] == 1 and brief["breakdown"]["tools"] == []
+    system = str(model.received[0][0].content)
+    assert "You have no tools in this step" in system and "# Project context: Kunemi (KUN)" in system
+    # A follow-up in the same conversation goes to the team, with the briefing in its history.
+    follow = await run(db_client, base, ada.headers, "Any blockers?", thread_id=brief["thread_id"])
+    assert follow["reply"] == "Nothing is blocked."
+    assert any("Briefing: discovery phase" in str(m.content) for m in model.received[1])
+
+
 async def test_briefing_is_read_only(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
     agent_script.say(
-        tool_call("write_file", file_path="/pmagent/progress/blocked.md", content="changed"),
+        AIMessage(content=""),  # the one-call briefing came back empty: the team takes over...
+        tool_call("write_file", file_path="/pmagent/progress/blocked.md", content="changed"),  # ...and tries a write
         "Briefing: discovery phase, nothing blocked.",
     )
     res = await db_client.post(f"{base}/agent/briefing", headers=ada.headers)

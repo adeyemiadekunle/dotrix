@@ -34,3 +34,19 @@ test("create an issue, move it, and comment on it", async ({ page }) => {
   await page.getByRole("button", { name: "Clear" }).click();
   await expect(page.getByText("Write the onboarding docs")).toBeVisible();
 });
+
+test("a new issue like an existing one points to it", async ({ page }) => {
+  const { key } = await signUpWithProject(page);
+  await page.getByRole("button", { name: "New issue" }).click();
+  await page.getByLabel("Title").fill("Add dark mode to the dispatch screen");
+  await page.getByRole("button", { name: "Create issue" }).click();
+  await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: "New issue" }).click();
+  await page.getByLabel("Title").fill("Add a dark mode toggle");
+  await expect(page.getByText("Similar issues already exist. Is it one of these?")).toBeVisible();
+  // Opening the match instead of creating a duplicate.
+  await page.getByRole("button", { name: `${key}-1 Add dark mode to the dispatch screen` }).click();
+  await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
+});

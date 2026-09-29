@@ -17,7 +17,7 @@ import { useState, type FormEvent } from "react";
 
 import { Field, FormError, SubmitButton } from "@/components/form";
 import { errorMessage } from "@/lib/api";
-import { useCreateIssue, useEpics, type IssueType, type Priority } from "@/lib/issues";
+import { useCreateIssue, useEpics, useSimilarIssues, type IssueType, type Priority } from "@/lib/issues";
 import { useProjectScope } from "@/lib/queries";
 import { useSearchParam } from "@/lib/url-state";
 
@@ -39,10 +39,12 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const [priority, setPriority] = useState<Priority>("medium");
   const [parent, setParent] = useState(NONE);
   const [description, setDescription] = useState("");
+  const [title, setTitle] = useState("");
+  const similar = useSimilarIssues(scope, title);
+  const matches = title.trim().length >= 4 ? (similar.data ?? []) : [];
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const title = String(new FormData(event.currentTarget).get("title"));
     const body: Schemas["IssueCreate"] = {
       type,
       status: "todo",
@@ -105,7 +107,37 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               </Select>
             </div>
           </div>
-          <Field label="Title" name="title" placeholder="Add a zone filter to the dispatch screen" required maxLength={200} autoFocus />
+          <Field
+            label="Title"
+            name="title"
+            placeholder="Add a zone filter to the dispatch screen"
+            required
+            maxLength={200}
+            autoFocus
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            hint={
+              matches.length > 0 ? (
+                <span className="grid gap-1" aria-live="polite">
+                  <span>Similar issues already exist. Is it one of these?</span>
+                  {matches.map((m) => (
+                    <button
+                      key={m.ref}
+                      type="button"
+                      className="hover:text-foreground flex min-w-0 items-center gap-2 text-left"
+                      onClick={() => {
+                        onOpenChange(false);
+                        openIssue(m.ref);
+                      }}
+                    >
+                      <span className="font-mono">{m.ref}</span>
+                      <span className="truncate underline-offset-2 hover:underline">{m.heading}</span>
+                    </button>
+                  ))}
+                </span>
+              ) : undefined
+            }
+          />
           <div className="grid gap-2">
             <Label htmlFor="new-issue-description">Description{needsDescription ? "" : " (optional)"}</Label>
             <Textarea

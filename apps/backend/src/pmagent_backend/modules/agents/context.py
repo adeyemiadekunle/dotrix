@@ -14,11 +14,11 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pmagent_backend.modules.auth.models import User
-from pmagent_backend.modules.issues.models import Issue, IssueEvent, IssueStatus
+from pmagent_backend.modules.issues.models import Issue, IssueEvent, IssueStatus, Priority
 from pmagent_backend.modules.knowledge.models import KnowledgeFile, KnowledgeVersion
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.knowledge.service import describe_file
@@ -114,6 +114,16 @@ def _decisions(files: list[KnowledgeFile]) -> str:
     return "\n".join(["## Recent decisions", *(f"- {f.title} ({f.path}, {_day(f.updated_at)})" for f in decisions)])
 
 
+_PRIORITY_ORDER = case(
+    {Priority.URGENT: 0, Priority.HIGH: 1, Priority.MEDIUM: 2, Priority.LOW: 3}, value=Issue.priority, else_=4
+)
+
+
+def _excerpt(text: str, limit: int = 200) -> str:
+    flat = " ".join(text.split())
+    return flat if len(flat) <= limit else flat[:limit].rsplit(" ", 1)[0] + "…"
+
+
 async def _board(session: AsyncSession, project: Project) -> str:
     counts = dict(
         (await session.execute(
@@ -137,9 +147,10 @@ async def _board(session: AsyncSession, project: Project) -> str:
             return f" ({issue.assignee_agent})"
         return f" ({names.get(issue.assignee_user_id, 'unassigned')})" if issue.assignee_user_id else " (unassigned)"
 
-    async def listed(*conditions: object) -> list[Issue]:
+    async def listed(*conditions: object, by_priority: bool = False) -> list[Issue]:
+        order = (_PRIORITY_ORDER, Issue.rank) if by_priority else (Issue.rank,)
         return list(await session.scalars(
-            select(Issue).where(Issue.project_id == project.id, *conditions).order_by(Issue.rank).limit(MAX_LISTED)
+            select(Issue).where(Issue.project_id == project.id, *conditions).order_by(*order).limit(MAX_LISTED)
         ))
 
     summary = ", ".join(f"{counts.get(s, 0)} {s.value.replace('_', ' ')}" for s in IssueStatus)
@@ -151,13 +162,17 @@ async def _board(session: AsyncSession, project: Project) -> str:
         ("Due within a week or overdue", await listed(
             Issue.status != IssueStatus.DONE, Issue.due.is_not(None), Issue.due <= today + DUE_SOON
         )),
+        # What to pick up next: today's priorities come from here.
+        ("Next up (to do, most urgent first)", await listed(Issue.status == IssueStatus.TODO, by_priority=True)),
     ):
         if issues:
             lines.append(f"{label}:")
-            lines += [
-                f"- {i.key} [{i.status.value}, {i.priority.value}{', due ' + _day(i.due) if i.due else ''}] {i.title}{who(i)}"
-                for i in issues
-            ]
+            for i in issues:
+                due = f", due {_day(i.due)}" if i.due else ""
+                lines.append(f"- {i.key} [{i.status.value}, {i.priority.value}{due}] {i.title}{who(i)}")
+                # Why it's stuck, or what the most urgent work is about, without opening it.
+                if (i.status is IssueStatus.BLOCKED or i.priority is Priority.URGENT) and i.description.strip():
+                    lines.append(f"  {_excerpt(i.description)}")
     return "\n".join(lines)
 
 

@@ -8251,6 +8251,132 @@
           }
         }
       }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Project",
+        "description": "Search the project's documents (by section) and issues. Exact terms (issue keys, names,\nerror text) and paraphrases both match: full-text and meaning rankings are merged. Without\nan embedding model configured, keywords only.",
+        "operationId": "search_project",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "What to look for, in any words",
+              "title": "Q"
+            },
+            "description": "What to look for, in any words"
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ChunkSource"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only documents, or only issues",
+              "title": "Source"
+            },
+            "description": "Only documents, or only issues"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 25,
+              "minimum": 1,
+              "default": 8,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SearchHit"
+                  },
+                  "title": "Response Search Project"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -9092,6 +9218,14 @@
           "scope"
         ],
         "title": "CalendarFeedUpdate"
+      },
+      "ChunkSource": {
+        "type": "string",
+        "enum": [
+          "document",
+          "issue"
+        ],
+        "title": "ChunkSource"
       },
       "ClaimRequest": {
         "properties": {
@@ -11732,6 +11866,55 @@
         ],
         "title": "Scope"
       },
+      "SearchHit": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/ChunkSource"
+          },
+          "ref": {
+            "type": "string",
+            "title": "Ref",
+            "description": "The document's path in `.pmagent/`, or the issue's key"
+          },
+          "heading": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading",
+            "description": "The document section (its heading trail), or the issue's title"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet",
+            "description": "The matching text (up to about 500 characters)"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "The document version the text is from (0 for issues)"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "Relevance (higher is better; only comparable within one search)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "ref",
+          "heading",
+          "snippet",
+          "version",
+          "score"
+        ],
+        "title": "SearchHit"
+      },
       "SignupRequest": {
         "properties": {
           "email": {
@@ -12516,6 +12699,10 @@
     {
       "name": "documents",
       "description": "Upload PDFs, Office files, and more. Originals are kept; agents read the markdown conversion under `docs/normalized/` in the project's knowledge."
+    },
+    {
+      "name": "search",
+      "description": "Search a project's documents (by section) and issues by keywords and meaning (Postgres full-text search and pgvector, merged)."
     },
     {
       "name": "issues",
