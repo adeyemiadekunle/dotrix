@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Guidance for Claude Code working in this repo. Product spec: [docs/prd.md](docs/prd.md).
-Engine notes: [docs/engine.md](docs/engine.md).
+Engine notes: [docs/engine.md](docs/engine.md). Agents v2 spec: [docs/agents-v2.md](docs/agents-v2.md).
 
 ## Repo map
 
@@ -181,7 +181,7 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 
 ## Plan: agents v2 (review, 2026-09-29)
 
-Why: agents today are fixed in code (`engine/agent.py`: the PM and five specialists, tools per role; `permissions.py`: folders and issue types), `agent-rules/*.md` only changes their prompt, they run only when a person asks, they can't see code, and knowledge is flat files plus search chunks. The aim, in the spirit of ChatGPT's workspace agents, dots, and Space (DevDay 2026), but keeping our approvals and audit: agents that owners configure and create, that work in the background on events and schedules, that understand how the project's pieces relate, and a shared space per workspace. This plan comes before the rest of "the core loop" below; Phase 3's Ideas moves into Space (step 6), and parts of Phases 4 and 5 are pulled in where noted. Each step is usable on its own. Write the spec (`docs/agents-v2.md`) before building step 1.
+Why: agents today are fixed in code (`engine/agent.py`: the PM and five specialists, tools per role; `permissions.py`: folders and issue types), `agent-rules/*.md` only changes their prompt, they run only when a person asks, they can't see code, and knowledge is flat files plus search chunks. The aim, in the spirit of ChatGPT's workspace agents, dots, and Space (DevDay 2026), but keeping our approvals and audit: agents that owners configure and create, that work in the background on events and schedules, that understand how the project's pieces relate, and a shared space per workspace. This plan comes before the rest of "the core loop" below; Phase 3's Ideas moves into Space (step 6), and parts of Phases 4 and 5 are pulled in where noted. Each step is usable on its own. Spec: [docs/agents-v2.md](docs/agents-v2.md) (draft; decisions D1-D5 at its end), written before building step 1.
 
 ### Step 1: agent contracts (agents as versioned data)
 - [ ] An agent is a contract stored per workspace, overridable per project: name, `@handle`, description, instructions, model, token budget, tools (from a catalogue), folder access, issue types it may create, triggers, autonomy rules, and output schema. Versioned and audited like knowledge files
