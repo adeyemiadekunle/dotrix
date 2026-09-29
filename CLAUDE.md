@@ -74,7 +74,7 @@ apps/backend/
 │   │   ├── health.py            /health (liveness), /health/ready (database)
 │   │   └── v1.py                mounts every module router under /v1
 │   ├── modules/
-│   │   ├── auth/                users, sign-up/login, refresh tokens, email verification, password reset
+│   │   ├── auth/                users, sign-up/login, refresh tokens, email verification, password reset, GitHub sign-in (github.py)
 │   │   ├── api_tokens/          personal access tokens (pmat_…) and CLI device login
 │   │   ├── calendar/            per-person iCalendar feed of issue dates at a secret URL (FR-32)
 │   │   ├── workspaces/          workspaces, members, roles, the permission matrix (permissions.py)
@@ -317,7 +317,8 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 - [x] **FR-1** User model; sign-up and login with email + password (argon2), email verification, password reset
 - [x] **FR-1** JWT access token plus rotating refresh token (hashed in the DB); logout revokes the token
 - [x] **FR-1** Magic-link login: "Email me a sign-in link" on the login page (`POST /v1/auth/magic-link/request`, rate-limited, the lookup in a background job so responses don't reveal accounts); the link (`/magic-link`, 15 minutes, once) takes a click to sign in, because mail scanners open links; following it verifies the email. For an address with no account the same request sends a "Finish creating your account" link instead (`email_signups`, same limits); `/signup/finish` asks only for a name and creates a verified, password-less account with its personal workspace (a password can be set later with "Forgot password?"); the sign-up page offers it too
-- [ ] **FR-1** Google and GitHub OAuth login; TOTP 2FA
+- [x] **FR-1** GitHub login: "Continue with GitHub" on the sign-in and sign-up pages when `PMAGENT_GITHUB_CLIENT_ID` / `_SECRET` are set (`GET /v1/auth/providers`). The web app starts it (`/api/auth/github`: the backend's authorize URL, its `state` in a short httpOnly cookie) and finishes it (`/api/auth/github/callback`: checks the state, `POST /v1/auth/oauth/github/finish` trades the code). Accounts are found by GitHub's account id (`oauth_accounts`); the first time, linked to the account with the same email only if GitHub reports it verified, else a new verified, password-less account with its personal workspace. No GitHub tokens are stored. The API's `/v1/auth/oauth/github/callback` forwards to the web app's, for an app registered with the API as its callback
+- [ ] **FR-1** Google OAuth login; TOTP 2FA
 - [x] **FR-2** Workspaces (personal / team / business); auto-create a personal workspace on sign-up; one user can belong to many
 - [x] **FR-3** Membership with roles (Owner, Admin, Member, Guest); `require_permission` dependency implementing the PRD matrix
 - [x] **FR-4** Invites by email and by link; revoke invites; remove members; change roles; Owner transfer
@@ -352,10 +353,11 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] Library: `authlib` (OIDC, state and PKCE handling)
 
 **GitHub login**
-- [ ] **(you)** Decide between a GitHub OAuth App and a GitHub App. A GitHub App is recommended because FR-10 (repo access, PRs) needs one anyway, and one app can do both.
-- [ ] **(you)** Register it with callback URL `http://localhost:8000/v1/auth/oauth/github/callback`
-- [ ] `PMAGENT_GITHUB_CLIENT_ID`, `PMAGENT_GITHUB_CLIENT_SECRET` (a GitHub App also needs `PMAGENT_GITHUB_APP_ID` and a private key)
-- [ ] Only link accounts by email when the provider reports that email as verified
+- [x] **(you)** Decide between a GitHub OAuth App and a GitHub App. A GitHub App is recommended because FR-10 (repo access, PRs) needs one anyway, and one app can do both.
+- [x] **(you)** Register it with callback URL `http://localhost:3000/api/auth/github/callback` (or `http://localhost:8000/v1/auth/oauth/github/callback`, which forwards there); a GitHub App needs Account permissions → Email addresses: read-only
+- [x] `PMAGENT_GITHUB_CLIENT_ID`, `PMAGENT_GITHUB_CLIENT_SECRET` (`GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` are read too; `PMAGENT_GITHUB_REDIRECT_URI` only if the app has several callback URLs). FR-10 will also need `PMAGENT_GITHUB_APP_ID` and a private key
+- [x] Only link accounts by email when the provider reports that email as verified
+- [ ] Settings: see and unlink a linked GitHub account (keep a way to sign in)
 
 **Magic-link login**
 - [x] Depends on **real email sending** above: done (Sendly)

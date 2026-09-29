@@ -120,6 +120,9 @@ def make_settings(database_url: str = UNUSED_DATABASE_URL) -> Settings:
         rate_limits="off",
         # No real embedding calls; search tests install a fake embedder.
         embedding_model="",
+        # Not offered unless a test sets it up (a developer's .env may have it).
+        github_client_id=None,
+        github_client_secret=None,
     )
 
 

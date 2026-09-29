@@ -74,3 +74,16 @@ class UserRead(BaseModel):
 class SignupResponse(BaseModel):
     user: UserRead
     tokens: TokenPair
+
+
+class AuthProviders(BaseModel):
+    github: bool = Field(description="Sign in with GitHub is set up")
+
+
+class GitHubStart(BaseModel):
+    authorize_url: str = Field(description="Send the person here to approve the sign-in on GitHub")
+    state: str = Field(description="Keep this (e.g. in a cookie) and check GitHub sends it back")
+
+
+class GitHubFinish(BaseModel):
+    code: str = Field(max_length=256, description="The `code` GitHub sent back")

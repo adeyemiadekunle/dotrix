@@ -41,12 +41,25 @@ async def _every(jobs: LocalJobs, name: str, seconds: float) -> None:
         await asyncio.sleep(seconds)
 
 
+def _log_sign_in_options(settings: Settings) -> None:
+    """Say at startup whether "Continue with GitHub" is offered, and why not."""
+    has_id, has_secret = bool(settings.github_client_id), bool(settings.github_client_secret)
+    if has_id and has_secret:
+        logger.info("GitHub sign-in is on (client id %s)", settings.github_client_id)
+    elif has_id or has_secret:
+        missing = "PMAGENT_GITHUB_CLIENT_SECRET" if has_id else "PMAGENT_GITHUB_CLIENT_ID"
+        logger.warning("GitHub sign-in is off: %s is missing from .env", missing)
+    else:
+        logger.info("GitHub sign-in is off: set PMAGENT_GITHUB_CLIENT_ID and PMAGENT_GITHUB_CLIENT_SECRET in .env")
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.log_json)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        _log_sign_in_options(settings)
         engine = create_engine(settings.database_url, echo=settings.database_echo)
         app.state.engine = engine
         app.state.sessionmaker = sessionmaker = create_sessionmaker(engine)

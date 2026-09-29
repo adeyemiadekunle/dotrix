@@ -627,6 +627,132 @@
         }
       }
     },
+    "/v1/auth/providers": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Auth Providers",
+        "description": "Which other ways to sign in are set up, so sign-in pages offer only those.",
+        "operationId": "auth_providers",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthProviders"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/oauth/github/start": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start Github Sign In",
+        "description": "Begin signing in with GitHub: where to send the person, and the `state` to keep and\ncompare with the one GitHub sends back (so nobody can sign you in to their account).\n503 when GitHub sign-in isn't set up.",
+        "operationId": "start_github_sign_in",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubStart"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/oauth/github/finish": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Finish Github Sign In",
+        "description": "Exchange the `code` GitHub sent back for an access and refresh token, like login. The\nfirst time, links the GitHub account to the account with the same email (only one GitHub\nhas verified) or creates one, with a personal workspace. Check `state` before calling.",
+        "operationId": "finish_github_sign_in",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubFinish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/password-reset/confirm": {
       "post": {
         "tags": [
@@ -9156,6 +9282,20 @@
         ],
         "title": "AuditEventRead"
       },
+      "AuthProviders": {
+        "properties": {
+          "github": {
+            "type": "boolean",
+            "title": "Github",
+            "description": "Sign in with GitHub is set up"
+          }
+        },
+        "type": "object",
+        "required": [
+          "github"
+        ],
+        "title": "AuthProviders"
+      },
       "AuthorType": {
         "type": "string",
         "enum": [
@@ -9863,6 +10003,41 @@
           "content"
         ],
         "title": "FileWrite"
+      },
+      "GitHubFinish": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Code",
+            "description": "The `code` GitHub sent back"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "GitHubFinish"
+      },
+      "GitHubStart": {
+        "properties": {
+          "authorize_url": {
+            "type": "string",
+            "title": "Authorize Url",
+            "description": "Send the person here to approve the sign-in on GitHub"
+          },
+          "state": {
+            "type": "string",
+            "title": "State",
+            "description": "Keep this (e.g. in a cookie) and check GitHub sends it back"
+          }
+        },
+        "type": "object",
+        "required": [
+          "authorize_url",
+          "state"
+        ],
+        "title": "GitHubStart"
       },
       "Health": {
         "properties": {

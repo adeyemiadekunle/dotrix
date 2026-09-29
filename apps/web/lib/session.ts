@@ -5,7 +5,7 @@
 // access token when it expires.
 import "server-only";
 
-import type { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 export const API_URL = (process.env.PMAGENT_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 
@@ -85,4 +85,30 @@ export function passError(upstream: Response): Response {
 export function clientHeaders(request: Request): Record<string, string> {
   const forwarded = request.headers.get("x-forwarded-for");
   return forwarded ? { "X-Forwarded-For": forwarded } : {};
+}
+
+/** The state and destination of a GitHub sign-in in progress (see app/api/auth/github). */
+export const GITHUB_STATE_COOKIE = "pm_github_state";
+
+/** A same-site path to go to after signing in, or "/" (never another site). */
+export function safeNextPath(next: string | null | undefined): string {
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/";
+}
+
+/** Back to the sign-in page with a message to show. */
+export function loginWithError(request: Request, message: string, next: string): NextResponse {
+  const login = new URL("/login", request.url);
+  login.searchParams.set("error", message);
+  if (next !== "/") login.searchParams.set("next", next);
+  return NextResponse.redirect(login);
+}
+
+/** Which other ways to sign in the backend has set up (none if it can't be reached). */
+export async function authProviders(): Promise<{ github: boolean }> {
+  try {
+    const res = await fetch(`${API_URL}/v1/auth/providers`, { cache: "no-store" });
+    return res.ok ? ((await res.json()) as { github: boolean }) : { github: false };
+  } catch {
+    return { github: false };
+  }
 }

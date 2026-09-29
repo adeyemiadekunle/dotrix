@@ -2,16 +2,23 @@
 from __future__ import annotations
 
 from typing import Annotated
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import RedirectResponse
 
 from pmagent_backend.api.deps import CurrentUser, EmailDep, JobsDep, SessionDep, SettingsDep
+from pmagent_backend.core import security
 from pmagent_backend.core.openapi import errors
 
+from .github import GitHubDep
 from .limits import LOGIN, MAGIC_LINK, PASSWORD_RESET, SIGNUP, VERIFY_RESEND, ThrottleDep
 from .schemas import (
+    AuthProviders,
     EmailSignupAddress,
     EmailSignupFinish,
+    GitHubFinish,
+    GitHubStart,
     LoginRequest,
     MagicLinkRequest,
     PasswordResetConfirm,
@@ -118,6 +125,38 @@ async def finish_email_signup(data: EmailSignupFinish, auth: Auth, throttle: Thr
     email = await auth.email_signup_address(data.token)
     await throttle(SIGNUP, email)
     return await auth.finish_email_signup(data.token, data.display_name)
+
+
+@router.get("/providers")
+async def auth_providers(github: GitHubDep) -> AuthProviders:
+    """Which other ways to sign in are set up, so sign-in pages offer only those."""
+    return AuthProviders(github=github.configured)
+
+
+@router.post("/oauth/github/start", responses=errors(503))
+async def start_github_sign_in(github: GitHubDep) -> GitHubStart:
+    """Begin signing in with GitHub: where to send the person, and the `state` to keep and
+    compare with the one GitHub sends back (so nobody can sign you in to their account).
+    503 when GitHub sign-in isn't set up."""
+    state = security.generate_token()
+    return GitHubStart(authorize_url=github.authorize_url(state), state=state)
+
+
+@router.post("/oauth/github/finish", responses=errors(401, 409, 422, 503))
+async def finish_github_sign_in(data: GitHubFinish, auth: Auth, github: GitHubDep) -> TokenPair:
+    """Exchange the `code` GitHub sent back for an access and refresh token, like login. The
+    first time, links the GitHub account to the account with the same email (only one GitHub
+    has verified) or creates one, with a personal workspace. Check `state` before calling."""
+    return await auth.sign_in_with_github(await github.profile(data.code))
+
+
+@router.get("/oauth/github/callback", include_in_schema=False)
+async def github_callback(request: Request, settings: SettingsDep) -> RedirectResponse:
+    """For a GitHub app registered with this API as its callback URL: forward to the web
+    app's callback, which checks the state and finishes the sign-in."""
+    params = {k: v for k, v in request.query_params.items() if k in ("code", "state", "error")}
+    target = f"{settings.app_url.rstrip('/')}/api/auth/github/callback"
+    return RedirectResponse(f"{target}?{urlencode(params)}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post(

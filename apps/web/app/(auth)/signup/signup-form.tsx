@@ -7,9 +7,10 @@ import { useState, type FormEvent } from "react";
 
 import { AuthCard } from "@/components/auth-card";
 import { Field, FormError, SubmitButton } from "@/components/form";
+import { GitHubSignIn } from "@/components/github-sign-in";
 import { authPost, errorMessage, safeNext } from "@/lib/api";
 
-export function SignupForm({ next }: { next?: string }) {
+export function SignupForm({ next, github = false }: { next?: string; github?: boolean }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +48,7 @@ export function SignupForm({ next }: { next?: string }) {
     >
       <form onSubmit={onSubmit} className="grid gap-4">
         <FormError message={error} />
+        {github && <GitHubSignIn next={next} />}
         <Field label="Name" name="display_name" autoComplete="name" placeholder="Ada Lovelace" required maxLength={100} />
         <Field label="Email" name="email" type="email" autoComplete="email" placeholder="you@company.com" required />
         <Field
