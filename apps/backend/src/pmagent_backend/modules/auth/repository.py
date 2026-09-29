@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import ActionToken, ActionTokenPurpose, EmailSignup, RefreshToken, User
+from .models import ActionToken, ActionTokenPurpose, EmailSignup, OAuthAccount, RefreshToken, User
 
 
 class UserRepository:
@@ -21,6 +21,21 @@ class UserRepository:
 
     async def get_by_email(self, email: str) -> User | None:
         return await self.session.scalar(select(User).where(User.email == email))
+
+
+class OAuthAccountRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    def add(self, account: OAuthAccount) -> None:
+        self.session.add(account)
+
+    async def get(self, provider: str, provider_user_id: str) -> OAuthAccount | None:
+        return await self.session.scalar(
+            select(OAuthAccount).where(
+                OAuthAccount.provider == provider, OAuthAccount.provider_user_id == provider_user_id
+            )
+        )
 
 
 class RefreshTokenRepository:

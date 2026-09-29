@@ -15,10 +15,12 @@ from pmagent_backend.core.jobs import Jobs
 from pmagent_backend.core.settings import Settings
 from pmagent_backend.modules.workspaces.service import WorkspaceService
 
-from .models import ActionToken, ActionTokenPurpose, EmailSignup, RefreshToken, User
+from .github import GitHubProfile
+from .models import ActionToken, ActionTokenPurpose, EmailSignup, OAuthAccount, RefreshToken, User
 from .repository import (
     ActionTokenRepository,
     EmailSignupRepository,
+    OAuthAccountRepository,
     RefreshTokenRepository,
     UserRepository,
 )
@@ -48,6 +50,7 @@ class AuthService:
         self.refresh_tokens = RefreshTokenRepository(session)
         self.action_tokens = ActionTokenRepository(session)
         self.signups = EmailSignupRepository(session)
+        self.oauth_accounts = OAuthAccountRepository(session)
 
     # -- sign-up and login -------------------------------------------------------
 
@@ -208,6 +211,52 @@ class AuthService:
         if user is None or not user.is_active:
             raise InvalidLink()
         user.email_verified_at = user.email_verified_at or _now()
+        tokens = self._issue_tokens(user)
+        await self.session.commit()
+        return tokens
+
+    # -- sign in with GitHub ------------------------------------------------------
+
+    async def sign_in_with_github(self, profile: GitHubProfile) -> TokenPair:
+        """Sign in the account linked to this GitHub account. The first time, link it to the
+        account with the same email (only an address GitHub has verified), or create one:
+        verified, no password, with a personal workspace."""
+        now = _now()
+        linked = await self.oauth_accounts.get("github", profile.id)
+        if linked is not None:
+            user = await self.users.get(linked.user_id)
+            if user is None or not user.is_active:
+                raise Unauthorized("This account can't sign in")
+            linked.login = profile.login
+        else:
+            if profile.verified_email is None:
+                raise Unauthorized(
+                    "Your GitHub account has no verified email address. Verify one on GitHub, "
+                    "or sign up with your email instead."
+                )
+            user = await self.users.get_by_email(profile.verified_email)
+            if user is None:
+                name = (profile.name or profile.login).strip()[:100] or profile.login
+                user = User(email=profile.verified_email, display_name=name, password_hash=None, email_verified_at=now)
+                self.users.add(user)
+                try:
+                    await self.session.flush()
+                except IntegrityError as exc:  # a sign-up with the same email at the same moment
+                    raise Conflict("An account with this email was just created; try again") from exc
+                await WorkspaceService(self.session).create_personal(user)
+            elif not user.is_active:
+                raise Unauthorized("This account can't sign in")
+            # GitHub verified the address, which proves the inbox as a link would.
+            user.email_verified_at = user.email_verified_at or now
+            self.oauth_accounts.add(
+                OAuthAccount(
+                    user_id=user.id, provider="github", provider_user_id=profile.id, login=profile.login, created_at=now
+                )
+            )
+            try:
+                await self.session.flush()
+            except IntegrityError as exc:  # the same GitHub account signing in twice at once
+                raise Conflict("This GitHub account was just linked; try again") from exc
         tokens = self._issue_tokens(user)
         await self.session.commit()
         return tokens

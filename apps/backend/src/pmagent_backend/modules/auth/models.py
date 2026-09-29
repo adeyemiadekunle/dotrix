@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Uuid, true
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, Uuid, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pmagent_backend.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum
@@ -75,3 +75,20 @@ class EmailSignup(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class OAuthAccount(UUIDPrimaryKeyMixin, Base):
+    """A sign-in identity at another provider (GitHub), linked to one account. Found by the
+    provider's own id, so a changed username or email there still signs in the same person.
+    No provider tokens are stored: signing in needs none."""
+
+    __tablename__ = "oauth_accounts"
+    __table_args__ = (UniqueConstraint("provider", "provider_user_id"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(32))
+    provider_user_id: Mapped[str] = mapped_column(String(64))
+    login: Mapped[str | None] = mapped_column(String(100))  # their username there, for display
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

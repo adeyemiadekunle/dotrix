@@ -62,6 +62,18 @@ class Settings(DatabaseSettings):
     )
     sendly_api_url: str = "https://api.sendlyai.com"
 
+    # Sign in with GitHub (a GitHub App or OAuth App). Both unset: the option isn't offered.
+    github_client_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("PMAGENT_GITHUB_CLIENT_ID", "GITHUB_CLIENT_ID")
+    )
+    github_client_secret: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("PMAGENT_GITHUB_CLIENT_SECRET", "GITHUB_CLIENT_SECRET")
+    )
+    # Where GitHub sends people back. Unset: the callback URL registered on the app, which
+    # should be the web app's {app_url}/api/auth/github/callback or this API's
+    # /v1/auth/oauth/github/callback (which forwards there).
+    github_redirect_uri: str | None = None
+
     # Object storage for document originals: any S3-compatible store (MinIO locally).
     # Leave the endpoint and keys unset to run without uploads (they answer 503).
     s3_endpoint_url: str | None = None

@@ -7,14 +7,25 @@ import { useState, type FormEvent } from "react";
 
 import { AuthCard } from "@/components/auth-card";
 import { Field, FormError, SubmitButton } from "@/components/form";
+import { GitHubSignIn } from "@/components/github-sign-in";
 import { api, authPost, errorMessage, safeNext, unwrap } from "@/lib/api";
 
-/** Sign in with a password, or with a one-time link sent by email (which also creates an
- * account for a new address). */
-export function LoginForm({ next, emailLink = false }: { next?: string; emailLink?: boolean }) {
+/** Sign in with a password, with a one-time link sent by email (which also creates an
+ * account for a new address), or with GitHub when it's set up. */
+export function LoginForm({
+  next,
+  emailLink = false,
+  github = false,
+  initialError,
+}: {
+  next?: string;
+  emailLink?: boolean;
+  github?: boolean;
+  initialError?: string;
+}) {
   const [mode, setMode] = useState<"password" | "link">(emailLink ? "link" : "password");
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
   const [sentTo, setSentTo] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -82,6 +93,7 @@ export function LoginForm({ next, emailLink = false }: { next?: string; emailLin
     >
       <form onSubmit={onSubmit} className="grid gap-4">
         <FormError message={error} />
+        {github && <GitHubSignIn next={next} />}
         <Field label="Email" name="email" type="email" autoComplete="email" placeholder="you@company.com" required />
         {mode === "password" && (
           <Field

@@ -275,6 +275,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Providers
+         * @description Which other ways to sign in are set up, so sign-in pages offer only those.
+         */
+        get: operations["auth_providers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/oauth/github/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Github Sign In
+         * @description Begin signing in with GitHub: where to send the person, and the `state` to keep and
+         *     compare with the one GitHub sends back (so nobody can sign you in to their account).
+         *     503 when GitHub sign-in isn't set up.
+         */
+        post: operations["start_github_sign_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/oauth/github/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish Github Sign In
+         * @description Exchange the `code` GitHub sent back for an access and refresh token, like login. The
+         *     first time, links the GitHub account to the account with the same email (only one GitHub
+         *     has verified) or creates one, with a personal workspace. Check `state` before calling.
+         */
+        post: operations["finish_github_sign_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/password-reset/confirm": {
         parameters: {
             query?: never;
@@ -2016,6 +2080,14 @@ export interface components {
              */
             created_at: string;
         };
+        /** AuthProviders */
+        AuthProviders: {
+            /**
+             * Github
+             * @description Sign in with GitHub is set up
+             */
+            github: boolean;
+        };
         /**
          * AuthorType
          * @enum {string}
@@ -2347,6 +2419,27 @@ export interface components {
             base_version?: number | null;
             /** Message */
             message?: string | null;
+        };
+        /** GitHubFinish */
+        GitHubFinish: {
+            /**
+             * Code
+             * @description The `code` GitHub sent back
+             */
+            code: string;
+        };
+        /** GitHubStart */
+        GitHubStart: {
+            /**
+             * Authorize Url
+             * @description Send the person here to approve the sign-in on GitHub
+             */
+            authorize_url: string;
+            /**
+             * State
+             * @description Keep this (e.g. in a cookie) and check GitHub sends it back
+             */
+            state: string;
         };
         /** Health */
         Health: {
@@ -4032,6 +4125,115 @@ export interface operations {
             };
             /** @description Too many attempts; the Retry-After header says how many seconds to wait */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    auth_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviders"];
+                };
+            };
+        };
+    };
+    start_github_sign_in: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubStart"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    finish_github_sign_in: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitHubFinish"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
