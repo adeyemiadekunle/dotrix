@@ -39,7 +39,8 @@ async def create_workspace(
     data: WorkspaceCreate, user: CurrentUser, session: SessionDep
 ) -> WorkspaceWithRole:
     """Create a team or business workspace; you become its owner. (Your personal workspace
-    was created at sign-up.)"""
+    was created at sign-up.) It can't invite people until it belongs to an organisation: create
+    it with `POST /v1/organizations/{id}/workspaces` instead, or attach it later."""
     return await WorkspaceService(session).create(user, data)
 
 

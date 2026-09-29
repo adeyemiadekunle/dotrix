@@ -29,7 +29,7 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
     async def _build(email: str, name: str) -> World:
         owner = await signup(email=email, name=name)
         h = owner.headers
-        team = await create_team(h, name=f"{name}'s team")
+        team = await create_team(h, name=f"{name}'s team", in_org=True)  # invites need an organisation
         ws = f"/v1/workspaces/{team['id']}"
         # Same project key and issue key in every world, so keys alone never identify one.
         project = (await db_client.post(f"{ws}/projects", json={"key": "KUN", "name": "K"}, headers=h)).json()
@@ -44,7 +44,7 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
         assert invite.status_code == 201, invite.text
         colleague = await signup(email=f"colleague-{email}", name="Colleague")
         await add_member(team["id"], colleague.id, "member")
-        org = (await db_client.post("/v1/organizations", json={"name": f"{name} Ltd"}, headers=h)).json()
+        org = {"id": team["organization_id"]}
         token = (await db_client.post("/v1/me/tokens", json={"name": "script"}, headers=h)).json()
         params = {
             "workspace_id": team["id"],

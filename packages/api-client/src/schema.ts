@@ -807,7 +807,8 @@ export interface paths {
         /**
          * Create Workspace
          * @description Create a team or business workspace; you become its owner. (Your personal workspace
-         *     was created at sign-up.)
+         *     was created at sign-up.) It can't invite people until it belongs to an organisation: create
+         *     it with `POST /v1/organizations/{id}/workspaces` instead, or attach it later.
          */
         post: operations["create_workspace"];
         delete?: never;
@@ -922,7 +923,8 @@ export interface paths {
         /**
          * Invite By Email
          * @description Email an invite (valid 7 days, single use, only for that address). Inviting the same
-         *     address again replaces the earlier invite. Owners and admins.
+         *     address again replaces the earlier invite. Owners and admins, and only in a workspace that
+         *     belongs to an organisation (409 `invites_need_organization` otherwise).
          */
         post: operations["invite_by_email"];
         delete?: never;
@@ -943,7 +945,8 @@ export interface paths {
         /**
          * Create Invite Link
          * @description Create a shareable invite link (member or guest only). The `url` is returned only
-         *     here. Owners and admins.
+         *     here. Owners and admins, and only in a workspace that belongs to an organisation (409
+         *     `invites_need_organization` otherwise).
          */
         post: operations["create_invite_link"];
         delete?: never;

@@ -271,10 +271,23 @@ def email_token(outbox: OutboxEmailSender) -> Callable[[str], str]:
 
 @pytest.fixture
 def create_team(db_client: AsyncClient) -> Callable[..., Awaitable[dict[str, Any]]]:
-    async def _create(headers: dict[str, str], name: str = "Kunemi") -> dict[str, Any]:
+    async def _create(headers: dict[str, str], name: str = "Kunemi", *, in_org: bool = False) -> dict[str, Any]:
+        """A team workspace you own; `in_org` puts it in a new organisation of yours (only
+        workspaces in an organisation can invite people)."""
         res = await db_client.post("/v1/workspaces", json={"name": name}, headers=headers)
         assert res.status_code == 201, res.text
-        return res.json()
+        workspace = res.json()
+        if in_org:
+            org = await db_client.post("/v1/organizations", json={"name": f"{name} Ltd"}, headers=headers)
+            assert org.status_code == 201, org.text
+            attached = await db_client.post(
+                f"/v1/organizations/{org.json()['id']}/workspaces/attach",
+                json={"workspace_id": workspace["id"]},
+                headers=headers,
+            )
+            assert attached.status_code == 200, attached.text
+            workspace = (await db_client.get(f"/v1/workspaces/{workspace['id']}", headers=headers)).json()
+        return workspace
 
     return _create
 
