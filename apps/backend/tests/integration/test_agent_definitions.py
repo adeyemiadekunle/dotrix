@@ -199,3 +199,35 @@ async def test_an_allowed_comment_needs_no_approval_and_a_blocked_action_is_gone
     audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
     allowed = next(e for e in audit if e["action"] == "issues.comment.allowed")
     assert allowed["agent"] == "triage" and allowed["details"]["rule"] == {"agent": "triage", "action": "issues.comment", "version": 1}
+
+
+async def test_a_run_records_its_result_and_people_act_on_each_item(world, db_client: AsyncClient, agent_script) -> None:
+    ada, _, cat, ws, base = await world()
+    reviewer = SECURITY | {"output": "finding", "pipeline": "reviewer.commit"}
+    assert (await save(db_client, f"{ws}/agents/security", ada.headers, reviewer)).status_code == 200
+    agent_script.say(
+        tool_call("stage", current="diff"),
+        tool_call("submit_result", items=[
+            {"severity": "high", "title": "Token in logs", "detail": "auth.py logs the refresh token", "refs": ["auth.py"]},
+            {"severity": "low", "title": "Verbose errors", "detail": "Stack traces reach the client"},
+        ]),
+        "Two findings.",
+    )
+    done = (await db_client.post(f"{base}/agent/runs", json={"message": "review", "agent": "security"},
+                                 headers=ada.headers)).json()
+    assert done["status"] == "completed", done
+    [output] = done["outputs"]
+    assert output["agent"] == "security" and output["kind"] == "finding" and "create_issue" in output["actions"]
+    assert [i["data"]["title"] for i in output["items"]] == ["Token in logs", "Verbose errors"]
+    assert all(i["state"] == "open" for i in output["items"])
+
+    url = f"{base}/agent/runs/{done['id']}/outputs/{output['id']}/items"
+    dismissed = await db_client.patch(f"{url}/1", json={"state": "dismissed", "reason": "Dev only"}, headers=cat.headers)
+    assert dismissed.status_code == 200, dismissed.text
+    item = dismissed.json()["outputs"][0]["items"][1]
+    assert item["state"] == "dismissed" and item["reason"] == "Dev only" and item["acted_by_id"] == cat.id
+    marked = (await db_client.patch(f"{url}/0", json={"state": "done", "link": "KUN-7"}, headers=ada.headers)).json()
+    assert marked["outputs"][0]["items"][0]["link"] == "KUN-7"
+    assert (await db_client.patch(f"{url}/9", json={"state": "done"}, headers=ada.headers)).status_code == 404
+    actions = [e["action"] for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()]
+    assert {"agent_output.dismissed", "agent_output.done"} <= set(actions)

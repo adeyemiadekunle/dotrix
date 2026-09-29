@@ -18,6 +18,8 @@ from pmagent_backend.modules.workspaces.models import Membership, Role
 from pmagent_engine import catalog
 from pmagent_engine.builtins import builtin
 from pmagent_engine.contracts import RESERVED_HANDLES, AgentSpec
+from pmagent_engine.outputs import PIPELINES
+from pmagent_engine.outputs import SCHEMAS as OUTPUT_SCHEMAS
 from pmagent_engine.permissions import ISSUE_TYPES, Access
 
 from .models import AgentDefinition, AgentDefinitionVersion
@@ -70,6 +72,8 @@ def catalog_read() -> AgentCatalog:
         access_levels=list(Access),
         issue_types=list(ISSUE_TYPES),
         reserved_handles=sorted(RESERVED_HANDLES),
+        outputs=list(OUTPUT_SCHEMAS),
+        pipelines={name: list(stages) for name, stages in PIPELINES.items()},
     )
 
 

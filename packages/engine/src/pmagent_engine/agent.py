@@ -31,6 +31,14 @@ from .catalog import tool_id, tool_name
 from .config import ProjectConfig
 from .context_middleware import CompactTools, UnchangedReads, summarization
 from .contracts import PM_HANDLE, AgentSpec
+from .outputs import (
+    ResultSink,
+    StageSink,
+    pipeline_instructions,
+    result_instructions,
+    result_tool,
+    stage_tool,
+)
 
 # Tools that change task state, gated exactly like write_file/edit_file.
 TASK_WRITE_TOOLS = ("create_task", "update_task", "comment_task")
@@ -332,6 +340,8 @@ def build_team(
     lead: str | None = None,
     agents: list[AgentSpec] | None = None,
     models: Any = None,
+    result_sink: ResultSink | None = None,
+    stage_sink: StageSink | None = None,
 ):
     """The Project Manager plus the specialists, over any storage backend.
 
@@ -354,6 +364,10 @@ def build_team(
     summarised. `lead` picks who talks to the person: None or "project-manager" for the PM
     (Auto), or another agent's handle, who then leads with its own prompt, tools, and folder
     permissions and may call the agents its contract lists (one level deep).
+
+    An agent whose contract names a `pipeline` reports its stages to `stage_sink`; the agent
+    talking to the person, when its contract names an `output`, records its result items with
+    `result_sink` (`pmagent_engine.outputs`). Without the sinks, neither tool is given.
     """
     specs = list(agents) if agents else builtin_specs()
     if not any(spec.handle == PM_HANDLE for spec in specs):
@@ -424,11 +438,26 @@ blockers, and documentation status. A briefing never writes.
             extra.append(summarization(summary_model, backend, summarize_after_tokens))
         return extra
 
+    speaker = lead or PM_HANDLE
+
+    def extras(spec: AgentSpec) -> tuple[list[Any], str]:
+        """The result and stage tools its contract asks for, and how to use them."""
+        tools: list[Any] = []
+        text = ""
+        if spec.pipeline and stage_sink is not None:
+            tools.append(stage_tool(spec.pipeline, lambda pipeline, name, h=spec.handle: stage_sink(h, name)))
+            text += pipeline_instructions(spec.pipeline)
+        if spec.output and result_sink is not None and spec.handle == speaker:
+            tools.append(result_tool(spec.output, result_sink))
+            text += result_instructions(spec.output)
+        return tools, text
+
     def prompt(spec: AgentSpec) -> str:
         if spec.handle == lead:
             text = f"You are the {spec.name} for {project_name}.\n{spec.instructions}\n{board}\n{_LEAD_GUIDE}"
         else:
             text = f"You are the {spec.name} for {project_name}.\n{spec.instructions}\n{_FINDINGS_GUIDE}"
+        text += extras(spec)[1]
         return _with_context(_with_rules(rules, spec.handle, text), context)
 
     def subagent(spec: AgentSpec) -> dict:
@@ -436,7 +465,7 @@ blockers, and documentation status. A briefing never writes.
             "name": spec.agent_name,
             "description": spec.description or spec.name,
             "system_prompt": prompt(spec),
-            "tools": _tools_for(spec, specialist_box),
+            "tools": [*_tools_for(spec, specialist_box), *extras(spec)[0]],
             "interrupt_on": _gate(spec, specialist_box),
             "permissions": _permissions(spec),
             "middleware": middleware(),
@@ -452,7 +481,7 @@ blockers, and documentation status. A briefing never writes.
         leader = by_handle[lead]
         return create_deep_agent(
             model=model,
-            tools=_tools_for(leader, specialist_box),
+            tools=[*_tools_for(leader, specialist_box), *extras(leader)[0]],
             system_prompt=prompt(leader),
             subagents=[subagent(spec) for spec in _callable(leader, specs)],
             middleware=middleware(),
@@ -465,8 +494,8 @@ blockers, and documentation status. A briefing never writes.
 
     return create_deep_agent(
         model=model,
-        tools=_tools_for(pm, pm_box),
-        system_prompt=_with_context(_with_rules(rules, PM_HANDLE, pm_instructions), context),
+        tools=[*_tools_for(pm, pm_box), *extras(pm)[0]],
+        system_prompt=_with_context(_with_rules(rules, PM_HANDLE, pm_instructions + extras(pm)[1]), context),
         subagents=[subagent(spec) for spec in team],
         middleware=middleware(),
         permissions=_permissions(pm),

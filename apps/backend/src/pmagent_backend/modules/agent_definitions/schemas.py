@@ -79,3 +79,5 @@ class AgentCatalog(BaseModel):
     access_levels: list[Access]
     issue_types: list[str]
     reserved_handles: list[str] = Field(description="Handles a new agent can't take")
+    outputs: list[str] = Field(description="Result schemas an agent can declare (its `output`)")
+    pipelines: dict[str, list[str]] = Field(description="Pipelines an agent can follow, with their stages")

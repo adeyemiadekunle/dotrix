@@ -8032,6 +8032,134 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}": {
+      "patch": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Update Run Output Item",
+        "description": "Act on one item of a run's result: `done` with what it became (e.g. the issue key you\ncreated from a finding), `dismissed` with why, or `open` again. Anyone who works the board.",
+        "operationId": "update_run_output_item",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "output_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Output Id"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Index"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutputItemUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/models": {
       "get": {
         "tags": [
@@ -9978,6 +10106,25 @@
             "type": "array",
             "title": "Reserved Handles",
             "description": "Handles a new agent can't take"
+          },
+          "outputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Outputs",
+            "description": "Result schemas an agent can declare (its `output`)"
+          },
+          "pipelines": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Pipelines",
+            "description": "Pipelines an agent can follow, with their stages"
           }
         },
         "type": "object",
@@ -9987,7 +10134,9 @@
           "low_risk_actions",
           "access_levels",
           "issue_types",
-          "reserved_handles"
+          "reserved_handles",
+          "outputs",
+          "pipelines"
         ],
         "title": "AgentCatalog"
       },
@@ -10506,6 +10655,14 @@
             "type": "array",
             "title": "Approvals",
             "default": []
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/RunOutputRead"
+            },
+            "type": "array",
+            "title": "Outputs",
+            "description": "The structured results the run recorded"
           }
         },
         "type": "object",
@@ -13302,6 +13459,50 @@
         "title": "OrgWorkspaceRead",
         "description": "What an organisation sees of a workspace: its name and size, never its content."
       },
+      "OutputItemUpdate": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "dismissed",
+              "open"
+            ],
+            "title": "State"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Why it's dismissed (shown to the agent later)"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link",
+            "description": "What it became, e.g. the issue key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "OutputItemUpdate"
+      },
       "OwnershipTransfer": {
         "properties": {
           "user_id": {
@@ -13966,6 +14167,133 @@
           "briefing"
         ],
         "title": "RunKind"
+      },
+      "RunOutputItem": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data",
+            "description": "The item, in its schema (e.g. a finding's severity, title, detail)"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "done",
+              "dismissed"
+            ],
+            "title": "State"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Why it was dismissed"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link",
+            "description": "What it became, e.g. the issue key it was turned into"
+          },
+          "acted_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acted By Id"
+          },
+          "acted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acted At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "data",
+          "state"
+        ],
+        "title": "RunOutputItem"
+      },
+      "RunOutputRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "agent": {
+            "type": "string",
+            "title": "Agent"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "The output schema: finding, plan, spec, impact, report, doc_update, or brief"
+          },
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Actions",
+            "description": "What its items can become in the app, e.g. create_issue, dismiss"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunOutputItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agent",
+          "kind",
+          "actions",
+          "items",
+          "created_at"
+        ],
+        "title": "RunOutputRead",
+        "description": "What the leading agent recorded as its result (its contract's output schema)."
       },
       "RunStatus": {
         "type": "string",

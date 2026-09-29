@@ -1718,6 +1718,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Run Output Item
+         * @description Act on one item of a run's result: `done` with what it became (e.g. the issue key you
+         *     created from a finding), `dismissed` with why, or `open` again. Anyone who works the board.
+         */
+        patch: operations["update_run_output_item"];
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/models": {
         parameters: {
             query?: never;
@@ -2067,6 +2088,18 @@ export interface components {
              * @description Handles a new agent can't take
              */
             reserved_handles: string[];
+            /**
+             * Outputs
+             * @description Result schemas an agent can declare (its `output`)
+             */
+            outputs: string[];
+            /**
+             * Pipelines
+             * @description Pipelines an agent can follow, with their stages
+             */
+            pipelines: {
+                [key: string]: string[];
+            };
         };
         /**
          * AgentFields
@@ -2310,6 +2343,11 @@ export interface components {
              * @default []
              */
             approvals: components["schemas"]["ApprovalRead"][];
+            /**
+             * Outputs
+             * @description The structured results the run recorded
+             */
+            outputs?: components["schemas"]["RunOutputRead"][];
         };
         /** AgentSave */
         AgentSave: {
@@ -3423,6 +3461,24 @@ export interface components {
              */
             via_organization: boolean;
         };
+        /** OutputItemUpdate */
+        OutputItemUpdate: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "done" | "dismissed" | "open";
+            /**
+             * Reason
+             * @description Why it's dismissed (shown to the agent later)
+             */
+            reason?: string | null;
+            /**
+             * Link
+             * @description What it became, e.g. the issue key
+             */
+            link?: string | null;
+        };
         /** OwnershipTransfer */
         OwnershipTransfer: {
             /**
@@ -3723,6 +3779,67 @@ export interface components {
          * @enum {string}
          */
         RunKind: "chat" | "briefing";
+        /** RunOutputItem */
+        RunOutputItem: {
+            /** Index */
+            index: number;
+            /**
+             * Data
+             * @description The item, in its schema (e.g. a finding's severity, title, detail)
+             */
+            data: {
+                [key: string]: unknown;
+            };
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "open" | "done" | "dismissed";
+            /**
+             * Reason
+             * @description Why it was dismissed
+             */
+            reason?: string | null;
+            /**
+             * Link
+             * @description What it became, e.g. the issue key it was turned into
+             */
+            link?: string | null;
+            /** Acted By Id */
+            acted_by_id?: string | null;
+            /** Acted At */
+            acted_at?: string | null;
+        };
+        /**
+         * RunOutputRead
+         * @description What the leading agent recorded as its result (its contract's output schema).
+         */
+        RunOutputRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Agent */
+            agent: string;
+            /**
+             * Kind
+             * @description The output schema: finding, plan, spec, impact, report, doc_update, or brief
+             */
+            kind: string;
+            /**
+             * Actions
+             * @description What its items can become in the app, e.g. create_issue, dismiss
+             */
+            actions: string[];
+            /** Items */
+            items: components["schemas"]["RunOutputItem"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /**
          * RunStatus
          * @enum {string}
@@ -9550,6 +9667,72 @@ export interface operations {
             };
             /** @description Conflicts with the current state */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    update_run_output_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                output_id: string;
+                index: number;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutputItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -100,6 +100,24 @@ class AgentSpec(BaseModel):
             raise ValueError(f"Only low-risk actions can be allowed without asking, not: {', '.join(risky)}")
         return value
 
+    @field_validator("output")
+    @classmethod
+    def _output(cls, value: str | None) -> str | None:
+        from .outputs import SCHEMAS
+
+        if value is not None and value not in SCHEMAS:
+            raise ValueError(f"Unknown output: {value}; use one of {', '.join(SCHEMAS)}")
+        return value
+
+    @field_validator("pipeline")
+    @classmethod
+    def _pipeline(cls, value: str | None) -> str | None:
+        from .outputs import PIPELINES
+
+        if value is not None and value not in PIPELINES:
+            raise ValueError(f"Unknown pipeline: {value}; use one of {', '.join(PIPELINES)}")
+        return value
+
     @model_validator(mode="after")
     def _consistent(self) -> AgentSpec:
         if self.issue_types and "issues.create" not in self.tools:

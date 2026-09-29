@@ -144,7 +144,7 @@ def test_an_unknown_lead_is_refused() -> None:
 
 
 def test_autonomy_shapes_tools_and_gates() -> None:
-    from pmagent_engine.agent import _gate, _tools_for, _toolbox
+    from pmagent_engine.agent import _gate, _toolbox, _tools_for
 
     def create_issue(): ...
     def comment_issue(): ...
@@ -162,3 +162,31 @@ def test_autonomy_shapes_tools_and_gates() -> None:
     assert not policy.allowed("security", "issues.create") and not policy.can_create_issue("security", "bug")
     blocked_writes = spec(tools=["knowledge.write"], access={"reviews/*": "write"}, autonomy={"knowledge.write": "block"})
     assert not AgentPolicy([blocked_writes]).can_write("security", "reviews/r.md")
+
+
+def test_an_agent_reports_stages_and_submits_a_result() -> None:
+    results, stages = [], []
+    model = ScriptedChatModel.of(
+        tool_call("stage", current="diff"),
+        tool_call("submit_result", items=[{"severity": "high", "title": "Token in logs", "detail": "auth.py logs it",
+                                           "refs": ["auth.py"]}]),
+        "One high-severity finding.",
+    )
+    reviewer = spec(output="finding", pipeline="reviewer.commit")
+    agent = build_team("Kunemi", "x", model, _backend(), checkpointer=InMemorySaver(), agents=[*builtin_specs(), reviewer],
+                       lead="security", result_sink=lambda schema, items: results.append((schema, items)),
+                       stage_sink=lambda handle, name: stages.append((handle, name)))
+    result = agent.invoke({"messages": [{"role": "user", "content": "review"}]}, {"configurable": {"thread_id": "o1"}})
+    assert result["messages"][-1].content == "One high-severity finding."
+    assert stages == [("security", "diff")]
+    assert results == [("finding", [{"severity": "high", "title": "Token in logs", "detail": "auth.py logs it",
+                                     "refs": ["auth.py"], "suggested_fix": ""}])]
+    system = str(model.received[0][0].content)
+    assert "diff → blast_radius" in system and "call `submit_result` once" in system
+
+
+def test_output_and_pipeline_names_are_checked() -> None:
+    with pytest.raises(ValidationError, match="Unknown output"):
+        spec(output="essay")
+    with pytest.raises(ValidationError, match="Unknown pipeline"):
+        spec(pipeline="freestyle")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,8 +18,17 @@ from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_engine.agent import PM_ROLE
+from pmagent_engine.outputs import ACTIONS as OUTPUT_ACTIONS
 
-from .models import ACTIVE_STATUSES, AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
+from .models import (
+    ACTIVE_STATUSES,
+    AgentApproval,
+    AgentRun,
+    AgentRunOutput,
+    ApprovalStatus,
+    RunKind,
+    RunStatus,
+)
 from .runner import BRIEFING_PROMPT, AgentRunner
 from .schemas import (
     AgentRunRead,
@@ -26,9 +36,12 @@ from .schemas import (
     ApprovalRead,
     ArchitectureDraftRequest,
     DecisionsRequest,
+    OutputItemUpdate,
     RunBreakdown,
     RunCreate,
     RunFileRead,
+    RunOutputItem,
+    RunOutputRead,
     ThreadRead,
     ThreadRename,
     ToolUsage,
@@ -171,7 +184,7 @@ class AgentService:
     async def get(self, access: ProjectAccess, run_id: uuid.UUID) -> AgentRunRead:
         run = await self.session.scalar(
             select(AgentRun)
-            .options(selectinload(AgentRun.approvals))
+            .options(selectinload(AgentRun.approvals), selectinload(AgentRun.output_rows))
             .where(AgentRun.project_id == access.project.id, AgentRun.id == run_id)
             .execution_options(populate_existing=True)
         )
@@ -184,7 +197,7 @@ class AgentService:
     ) -> list[AgentRunRead]:
         stmt = (
             select(AgentRun)
-            .options(selectinload(AgentRun.approvals))
+            .options(selectinload(AgentRun.approvals), selectinload(AgentRun.output_rows))
             .where(AgentRun.project_id == access.project.id)
         )
         if thread_id is not None:
@@ -327,6 +340,41 @@ class AgentService:
             await self.session.commit()
         return await self.get(access, run.id)
 
+    async def update_output_item(
+        self, access: ProjectAccess, run_id: uuid.UUID, output_id: uuid.UUID, index: int, data: OutputItemUpdate
+    ) -> AgentRunRead:
+        """Mark one result item done (with what it became, e.g. an issue key), dismissed (with why),
+        or open again."""
+        row = await self.session.scalar(
+            select(AgentRunOutput)
+            .where(AgentRunOutput.id == output_id, AgentRunOutput.run_id == run_id,
+                   AgentRunOutput.project_id == access.project.id)
+            .with_for_update()
+        )
+        if row is None or not 0 <= index < len(row.items):
+            raise NotFound("No such result item in this run")
+        items = [dict(item) for item in row.items]
+        items[index] |= {
+            "state": data.state,
+            "reason": data.reason if data.state == "dismissed" else None,
+            "link": data.link if data.state == "done" else None,
+            "acted_by_id": str(access.member.user_id) if data.state != "open" else None,
+            "acted_at": _now().isoformat() if data.state != "open" else None,
+        }
+        row.items = items
+        AuditLog(self.session).record(
+            workspace_id=access.project.workspace_id,
+            project_id=access.project.id,
+            action=f"agent_output.{data.state}",
+            target=str(run_id),
+            actor_type=AuthorType.USER,
+            actor_user_id=access.member.user_id,
+            details={"output_id": str(output_id), "index": index, "kind": row.schema_name, "agent": row.agent,
+                     "reason": data.reason, "link": data.link},
+        )
+        await self.session.commit()
+        return await self.get(access, run_id)
+
     async def rename_thread(self, access: ProjectAccess, thread_id: uuid.UUID, data: ThreadRename) -> ThreadRead:
         """A conversation's title lives on its first run."""
         first = await self.session.scalar(
@@ -374,9 +422,21 @@ class AgentService:
             )
 
 
+def _outputs(run: AgentRun) -> list[RunOutputRead]:
+    if "output_rows" in sa_inspect(run).unloaded:
+        return []
+    return [
+        RunOutputRead(
+            id=row.id, agent=row.agent, kind=row.schema_name, actions=list(OUTPUT_ACTIONS.get(row.schema_name, ())),
+            items=[RunOutputItem(index=i, **item) for i, item in enumerate(row.items)], created_at=row.created_at,
+        )
+        for row in run.output_rows
+    ]
+
+
 def _read(access: ProjectAccess, run: AgentRun) -> AgentRunRead:
     """A run as its viewer may see it: token usage and the model only with usage:view."""
-    read = AgentRunRead.model_validate(run)
+    read = AgentRunRead.model_validate(run).model_copy(update={"outputs": _outputs(run)})
     if not can(access.member, Permission.VIEW_USAGE):
         return read.model_copy(
             update={

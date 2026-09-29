@@ -68,12 +68,19 @@ class ScriptedChatModel(_StreamsReplies, GenericFakeChatModel):
 
     received: list[list[BaseMessage]] = Field(default_factory=list)
     """Every prompt the model was called with, for assertions."""
+    tools_received: list[list[str]] = Field(default_factory=list)
+    """The names of the tools offered with each prompt (same order as `received`)."""
+    bound: list[str] = Field(default_factory=list)
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> ScriptedChatModel:  # type: ignore[override]
-        return self
+        from .catalog import tool_name
+
+        # Each agent binds its tools right before calling the model; remember them for that call.
+        return self.model_copy(update={"bound": [tool_name(t) for t in tools]}) if tools else self
 
     def _generate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
         self.received.append(list(messages))
+        self.tools_received.append(list(self.bound))
         return super()._generate(messages, *args, **kwargs)
 
     @classmethod

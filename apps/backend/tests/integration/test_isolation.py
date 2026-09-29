@@ -59,6 +59,8 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             "org_id": org["id"],
             "token_id": token["id"],
             "handle": "product",
+            "output_id": "01a0e000-0000-7000-8000-000000000000",
+            "index": "0",
         }
         # A run paused on an approval: it has a run, a thread, and a pending action.
         agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
@@ -96,6 +98,9 @@ def _fill(template: str, params: dict[str, str]) -> str:
 BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("PATCH", "/v1/workspaces/{workspace_id}/members/{user_id}"): {"role": "admin"},
     ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}"): {"title": "x"},
+    ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}"): {
+        "state": "dismissed"
+    },
     ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/decisions"): {
         "decisions": [{"approval_id": "01a0e000-0000-7000-8000-000000000000", "decision": "approve"}]
     },
@@ -110,7 +115,7 @@ async def _call(client: AsyncClient, method: str, url: str, body: bool, headers:
 
 async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
     known = {"workspace_id", "project_id", "key", "path", "version", "document_id", "invite_id",
-             "user_id", "org_id", "run_id", "thread_id", "handle"}
+             "user_id", "org_id", "run_id", "thread_id", "handle", "output_id", "index"}
     routes = _scoped_routes(db_client)
     assert len(routes) > 60  # sanity: the whole API is being walked
     for _, template, _ in routes:

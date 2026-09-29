@@ -10,9 +10,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pmagent_engine.outputs import PIPELINES
+
 _KNOWLEDGE_ROOT = "/pmagent/"
 # A custom agent's LangGraph name: its handle (validated: lower-case letters, digits, dashes) + "-agent".
 _AGENT_NAME = re.compile(r"^[a-z][a-z0-9-]{1,30}-agent$")
+_STAGES = {stage for stages in PIPELINES.values() for stage in stages}
 _SUBAGENTS = {
     "product-agent": "the product agent",
     "architecture-agent": "the architecture agent",
@@ -64,6 +67,12 @@ def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
             return f"Drafting changes to {_key(args)}"
         case "comment_issue":
             return f"Drafting a comment on {_key(args)}"
+        case "stage":
+            current = str(args.get("current") or "")
+            # Only the fixed stage names (pmagent_engine.outputs.PIPELINES), never model text.
+            return f"Now: {current.replace('_', ' ')}" if current in _STAGES else None
+        case "submit_result":
+            return "Recording the result"
         case "task":
             name = str(args.get("subagent_type") or "")
             custom = f"@{name.removesuffix('-agent')}" if _AGENT_NAME.match(name) else "a specialist agent"

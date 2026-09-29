@@ -34,7 +34,7 @@ from .board_tools import BoardContext, board_instructions, build_board_tools
 from .context import build_context_pack
 from .knowledge_tools import KNOWLEDGE_TOOLS_GUIDE, build_knowledge_tools
 from .llm import ModelFactory
-from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
+from .models import AgentApproval, AgentRun, AgentRunOutput, ApprovalStatus, RunKind, RunStatus
 from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
@@ -231,6 +231,7 @@ class AgentRunner:
         # ends (finished, paused, failed, or stopped). Known gap: in worker mode, a cut-off
         # attempt's tokens are lost when its job is retried.
         usage = TokenUsage()
+        results: list[tuple[str, list[dict[str, Any]]]] = []  # what the leading agent submitted
         try:
             async with self.session_factory() as session:
                 run = await session.get(AgentRun, run_id)
@@ -320,6 +321,9 @@ class AgentRunner:
                 specialist_model=choice.specialist_model,
                 summarize_after_tokens=self.summarize_after_tokens,
                 lead=lead,
+                result_sink=lambda schema, items: results.append((schema, items)),
+                # Stages show as live activity from the `stage` calls themselves (activity.py).
+                stage_sink=lambda handle, stage: None,
             )
             config = {
                 "configurable": {"thread_id": str(thread_id)},
@@ -355,6 +359,8 @@ class AgentRunner:
                         run_id, NO_REPLY_AFTER_DECISIONS_ERROR if resuming else NO_REPLY_ERROR, usage
                     )
                     return
+            if results:
+                await self._save_outputs(run_id, speaker, results)
             await self._finish(run_id, result, usage, speaker)
         except asyncio.CancelledError:
             reason = self._stopped.pop(run_id, None)
@@ -457,6 +463,21 @@ class AgentRunner:
                 instructed_by_id=run.requested_by_id,
                 details={"error": run.error, **tokens},
             )
+            await session.commit()
+
+    async def _save_outputs(
+        self, run_id: uuid.UUID, agent: str, results: list[tuple[str, list[dict[str, Any]]]]
+    ) -> None:
+        """The structured results the leading agent recorded, one row per submit."""
+        async with self.session_factory() as session:
+            run = await session.get(AgentRun, run_id)
+            if run is None:
+                return
+            for schema, items in results:
+                session.add(AgentRunOutput(
+                    workspace_id=run.workspace_id, run_id=run.id, project_id=run.project_id, agent=agent,
+                    schema_name=schema, items=[{"data": item, "state": "open"} for item in items], created_at=_now(),
+                ))
             await session.commit()
 
     async def _rules(self, session: Any, project_id: uuid.UUID, handles: list[str] | None = None) -> dict[str, str]:

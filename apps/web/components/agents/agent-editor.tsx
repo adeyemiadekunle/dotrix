@@ -429,6 +429,50 @@ function Editor({
 
       <SettingsSection>
         <SettingsHeader>
+          <SettingsTitle>How it works and what it returns</SettingsTitle>
+          <SettingsDescription>
+            A pipeline is the stages it works through, shown while it works. A result is a list it records when it
+            leads a chat (findings, a plan, …), shown with actions such as creating an issue.
+          </SettingsDescription>
+        </SettingsHeader>
+        <SettingsContent className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="agent-pipeline">Pipeline</Label>
+            <Select value={fields.pipeline ?? "__none"} onValueChange={(v) => set("pipeline", v === "__none" ? null : v)} disabled={!canEdit}>
+              <SelectTrigger id="agent-pipeline" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">None: works freely</SelectItem>
+                {Object.entries(cat?.pipelines ?? {}).map(([name, stages]) => (
+                  <SelectItem key={name} value={name}>
+                    {name} <span className="text-muted-foreground text-xs">({stages.join(" → ").replaceAll("_", " ")})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="agent-output">Result</Label>
+            <Select value={fields.output ?? "__none"} onValueChange={(v) => set("output", v === "__none" ? null : v)} disabled={!canEdit}>
+              <SelectTrigger id="agent-output" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">None: a reply only</SelectItem>
+                {(cat?.outputs ?? []).map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name.replace("_", " ")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </SettingsContent>
+      </SettingsSection>
+
+      <SettingsSection>
+        <SettingsHeader>
           <SettingsTitle>What it may do without asking</SettingsTitle>
           <SettingsDescription>
             Every change waits for a person&apos;s approval unless an owner allows it here, and only low-risk actions can be

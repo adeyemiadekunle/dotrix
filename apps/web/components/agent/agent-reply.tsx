@@ -11,6 +11,7 @@ import type { Scope } from "@/lib/issues";
 import { agentName } from "@/lib/labels";
 
 import { RunApprovals } from "./approvals";
+import { RunOutputs } from "./run-outputs";
 
 /** Who's answering: "Research agent", or "The agents" for Auto. */
 function speaker(run: Run, options?: AgentOption[]): string {
@@ -156,6 +157,8 @@ export function AgentReply({
       <RunApprovals run={run} scope={scope} canDecide={canDecide} />
       {decided && <ChatNotice tone="progress">{speaker(run)} {run.agent && run.agent !== "auto" ? "is" : "are"} working on it…</ChatNotice>}
       {run.reply && <Markdown>{run.reply}</Markdown>}
+      {/* Anyone who sees the project works the board; the API checks it again. */}
+      <RunOutputs run={run} scope={scope} canAct />
       {run.status === "completed" && !run.reply?.trim() && (run.approvals ?? []).length === 0 && (
         <ChatNotice>
           {speaker(run)} finished without a reply. Models occasionally do this; ask again if you expected an answer or a
