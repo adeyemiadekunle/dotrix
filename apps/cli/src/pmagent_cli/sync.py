@@ -137,3 +137,24 @@ def find_project(client: PlatformClient, workspace_id: str, key: str) -> dict:
             return project
     keys = ", ".join(p["key"] for p in projects) or "none"
     raise PlatformError(404, "not_found", f"No project {key!r} in that workspace. Projects: {keys}")
+
+
+def follow_move(client: PlatformClient, state: LinkState, pmagent_dir: str | Path) -> str | None:
+    """If the linked project was moved to another workspace, find it there by its id (which
+    never changes) and update the link. Returns the new workspace's name when it moved."""
+    try:
+        client.get(f"/workspaces/{state.workspace_id}/projects/{state.project_id}")
+        return None
+    except PlatformError as exc:
+        if exc.status != 404:
+            raise
+    for ws in client.get("/workspaces"):
+        if ws["id"] == state.workspace_id:
+            continue
+        project = next((p for p in client.get(f"/workspaces/{ws['id']}/projects") if p["id"] == state.project_id), None)
+        if project is not None:
+            state.workspace_id = ws["id"]
+            state.project_key, state.project_name = project["key"], project["name"]
+            state.save(pmagent_dir)
+            return ws["name"]
+    return None  # gone, or moved somewhere you can't see: the command's own call says so

@@ -289,3 +289,40 @@ async def test_moving_refuses_a_taken_key_or_repo_and_active_runs(
     assert run["status"] == "awaiting_approval"
     res = await db_client.post(move, json={"workspace_id": four["id"]}, headers=ada.headers)
     assert res.status_code == 409 and "agent run" in res.json()["detail"]
+
+
+async def test_moving_unassigns_and_unwatches_people_who_cant_see_it(
+    signup, create_team, add_member, db_client: AsyncClient
+) -> None:
+    ada = await signup()
+    bob = await signup(email="bob@example.com", name="Bob")
+    cat = await signup(email="cat@example.com", name="Cat")
+    one = await create_team(ada.headers, "One")
+    two = await create_team(ada.headers, "Two")
+    await add_member(one["id"], bob.id, Role.MEMBER)
+    await add_member(one["id"], cat.id, Role.MEMBER)
+    await add_member(two["id"], cat.id, Role.MEMBER)  # Cat is in both; Bob only in One
+    project = (await db_client.post(projects_url(one), json={"key": "KUN", "name": "K"}, headers=ada.headers)).json()
+    base = f"{projects_url(one)}/{project['id']}/issues"
+    for title, who in (("Bob's", bob.id), ("Cat's", cat.id)):
+        res = await db_client.post(base, json={"type": "task", "title": title, "assignee_user_id": who}, headers=ada.headers)
+        assert res.status_code == 201, res.text
+    for person in (ada, bob, cat):
+        assert (await db_client.put(f"{base}/KUN-1/watch", headers=person.headers)).status_code == 200
+
+    res = await db_client.post(f"{projects_url(one)}/{project['id']}/move", json={"workspace_id": two["id"]},
+                               headers=ada.headers)
+    assert res.status_code == 200, res.text
+
+    moved = f"{projects_url(two)}/{project['id']}/issues"
+    bobs = (await db_client.get(f"{moved}/KUN-1", headers=ada.headers)).json()
+    assert bobs["assignee_user_id"] is None
+    assert set(bobs["watchers"]) == {ada.id, cat.id}
+    assert bobs["log"][-1]["changes"] == {"assignee_user_id": [bob.id, None]}
+    assert bobs["log"][-1]["author_user_id"] == ada.id
+    cats = (await db_client.get(f"{moved}/KUN-2", headers=ada.headers)).json()
+    assert cats["assignee_user_id"] == cat.id  # still in the workspace
+
+    audit = (await db_client.get(f"/v1/workspaces/{two['id']}/audit", headers=ada.headers)).json()
+    moved_in = next(e for e in audit if e["action"] == "project.moved_in")
+    assert moved_in["details"]["unassigned"] == 1 and moved_in["details"]["watchers_removed"] == 1

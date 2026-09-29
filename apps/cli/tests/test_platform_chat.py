@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fake_platform import FakePlatform, approval  # noqa: E402
+from fake_platform import PID, WS, FakePlatform, approval  # noqa: E402
 
 from pmagent_cli import cli as cli_module  # noqa: E402
 from pmagent_cli.agent_client import PlatformAgent  # noqa: E402
@@ -116,7 +116,9 @@ def test_brief_on_a_linked_repo(linked_repo: Path, platform: FakePlatform) -> No
     result = CliRunner().invoke(cli_module.app, ["brief", "--project", str(linked_repo)])
     assert result.exit_code == 0, result.output
     assert "Phase: discovery. Nothing blocked." in result.output
-    assert platform.requests[0].url.path.endswith("/agent/briefing")
+    # After checking the project is still in its workspace, the first thing is the briefing.
+    assert platform.requests[0].url.path == f"/v1/workspaces/{WS}/projects/{PID}"
+    assert platform.requests[1].url.path.endswith("/agent/briefing")
 
 
 def test_brief_reports_a_failed_run(linked_repo: Path, platform: FakePlatform) -> None:
