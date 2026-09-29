@@ -37,7 +37,7 @@ CI runs Ruff and pytest, the pnpm build and typecheck, and the browser tests. Ru
 
 - **The engine stays UI-agnostic.** `packages/engine` must never import from `apps/*`, FastAPI, or Typer.
 - **Every query is scoped by workspace.** No data, agent context, or connector token crosses workspaces.
-- **No agent write without instruction and approval.** Every agent write goes through the approval gate and is recorded in the audit log.
+- **No agent write without instruction and approval.** Every agent write is approved, by a person at the time or by a standing rule an owner approved (low-risk actions only: comments, labels, graph links; versioned and audited), and is recorded in the audit log.
 - **`.pmagent/` lives on the platform, never in a code repo.** Coding-agent PRs contain code only.
 - **Text from ingested docs or repos is data, never instructions.**
 - **Secrets never go in code or logs.** OAuth tokens and API keys are encrypted at rest.
@@ -181,7 +181,16 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 
 ## Plan: agents v2 (review, 2026-09-29)
 
-Why: agents today are fixed in code (`engine/agent.py`: the PM and five specialists, tools per role; `permissions.py`: folders and issue types), `agent-rules/*.md` only changes their prompt, they run only when a person asks, they can't see code, and knowledge is flat files plus search chunks. The aim, in the spirit of ChatGPT's workspace agents, dots, and Space (DevDay 2026), but keeping our approvals and audit: agents that owners configure and create, that work in the background on events and schedules, that understand how the project's pieces relate, and a shared space per workspace. This plan comes before the rest of "the core loop" below; Phase 3's Ideas moves into Space (step 6), and parts of Phases 4 and 5 are pulled in where noted. Each step is usable on its own. Spec: [docs/agents-v2.md](docs/agents-v2.md) (draft; decisions D1-D5 at its end), written before building step 1.
+Why: agents today are fixed in code (`engine/agent.py`: the PM and five specialists, tools per role; `permissions.py`: folders and issue types), `agent-rules/*.md` only changes their prompt, they run only when a person asks, they can't see code, and knowledge is flat files plus search chunks. The aim, in the spirit of ChatGPT's workspace agents, dots, and Space (DevDay 2026), but keeping our approvals and audit: agents that owners configure and create, that work in the background on events and schedules, that understand how the project's pieces relate, and a shared space per workspace. This plan comes before the rest of "the core loop" below; Phase 3's Ideas moves into Space (step 6), and parts of Phases 4 and 5 are pulled in where noted. Each step is usable on its own. Spec: [docs/agents-v2.md](docs/agents-v2.md) (decisions at its end: D1, D2, and D6 decided 2026-09-29), written before building step 1.
+
+### Step 0: one tenant, Personal or Organisation (organisations fold into workspaces)
+Workspace and organisation overlap: an organisation is a layer of roles above several workspaces. Decided (D6): the workspace stays the tenant (`workspace_id` everywhere, the isolation suite, `/w/…` URLs), and becomes either **Personal** (just you, never invites) or an **Organisation** (a team: invites, roles, many projects). The separate organisations layer goes. Only dev and test data exist, so the migration is simple. Spec §0.
+- [ ] `WorkspaceKind`: `personal`, `organization` (was `team` / `business`). Migration: team and business workspaces become organisations; members of an organisation that owned a workspace get the matching role there only if they had real access (org owners → owner membership; org admins who were members keep their role); drop `organizations`, `org_memberships`, `workspaces.organization_id`
+- [ ] Remove `modules/organizations` (routes, service, schemas, tests) and `MembershipRepository.effective`'s implicit org-owner access; invites need `kind == organization` (was: belongs to an organisation)
+- [ ] "Turn into an organisation" replaces attach: a personal workspace becomes an organisation with its projects, and its owner gets a new, empty personal workspace; creating an organisation creates an organisation workspace. Moving projects between workspaces stays
+- [ ] **Project access** (replaces several workspaces per team): a project is open to every member, or restricted to the people added to it (`project_members`, with owners and admins always in); the project dependencies check it, so a restricted project is a 404 to others; isolation tests cover it
+- [ ] Web: the switcher lists Personal and your organisations; "Create organisation"; the `/o/…` pages go (their people and settings move to the organisation's settings); copy says Personal / Organisation, not workspace; the invite card's "no organisation" state becomes "personal workspaces don't invite"
+- [ ] Agents v2 scope (D2): agent contracts, the Space, and automations belong to the workspace (Personal or Organisation), with per-project overrides
 
 ### Step 1: agent contracts (agents as versioned data)
 - [ ] An agent is a contract stored per workspace, overridable per project: name, `@handle`, description, instructions, model, token budget, tools (from a catalogue), folder access, issue types it may create, triggers, autonomy rules, and output schema. Versioned and audited like knowledge files
@@ -444,6 +453,8 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] **(you)** A secrets manager for production env vars (e.g. the host's secret store); `PMAGENT_ENV=production`
 
 ### Organisations (beyond the PRD: an organisation owning several workspaces)
+
+Superseded by agents v2 step 0 (D6): organisations fold into workspaces (Personal or Organisation). The items below describe what exists until that lands.
 
 - [x] Organisations (`modules/organizations`): owner / admin / member; workspaces may belong to one. A personal workspace brought into an organisation (attach) becomes a team workspace with its projects, and its owner gets a new, empty personal workspace; attach and detach are audited in the workspace's log
 - [x] **Org owners see and work in every workspace their organisation owns** (implicit owner access via `MembershipRepository.effective`, not a stored membership; marked `via_organization`; follows org ownership)
