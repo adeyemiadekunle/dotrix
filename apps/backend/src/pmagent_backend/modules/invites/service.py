@@ -20,7 +20,6 @@ from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.auth.repository import UserRepository
 from pmagent_backend.modules.knowledge.models import AuthorType
-from pmagent_backend.modules.organizations.service import ensure_org_member
 from pmagent_backend.modules.workspaces.models import Membership, Role, WorkspaceKind
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
 from pmagent_backend.modules.workspaces.schemas import WorkspaceWithRole
@@ -43,15 +42,10 @@ class InvitesNeedOrganization(Conflict):
 
 
 def _check_can_invite(workspace: object) -> None:
-    """People join workspaces that belong to an organisation. A personal workspace is just for
-    its owner, and a team workspace outside an organisation stays with the people already in it."""
-    if getattr(workspace, "kind", None) is WorkspaceKind.PERSONAL:
+    """People join organisations; a personal workspace is just for its owner."""
+    if getattr(workspace, "kind", None) is not WorkspaceKind.ORGANIZATION:
         raise InvitesNeedOrganization(
-            "A personal workspace is just for you. To work with others, use a workspace in an organisation."
-        )
-    if getattr(workspace, "organization_id", None) is None:
-        raise InvitesNeedOrganization(
-            "Only workspaces in an organisation can invite people. Add this workspace to an organisation first."
+            "A personal workspace is just for you. To work with others, create an organisation or turn this into one."
         )
 
 
@@ -176,7 +170,6 @@ class InviteService:
         if membership is None:
             membership = Membership(workspace_id=invite.workspace_id, user_id=user.id, role=invite.role)
             self.members.add(membership)
-            await ensure_org_member(self.session, invite.workspace, user.id)
             if invite.kind is InviteKind.LINK:
                 invite.use_count += 1
             AuditLog(self.session).record(

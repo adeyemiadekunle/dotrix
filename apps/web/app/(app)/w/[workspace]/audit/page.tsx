@@ -37,7 +37,10 @@ const ACTIONS: Record<string, string> = {
   "member.removed": "removed",
   "member.left": "left the workspace",
   "member.joined": "joined the workspace",
-  "member.placed": "added through the organisation:",
+  "workspace.converted_to_organization": "turned the workspace into an organisation",
+  "project.access_changed": "changed who can see",
+  "project.member_added": "added to a project:",
+  "project.member_removed": "took off a project:",
   "invite.sent": "invited",
   "invite.link_created": "created an invite link",
   "invite.revoked": "revoked the invite for",
@@ -56,10 +59,12 @@ function detailText(e: AuditEvent): string | null {
   const d = e.details as Record<string, unknown>;
   if (e.action === "member.role_changed" && d.from && d.to) return `${d.from} → ${d.to}`;
   if (e.action === "workspace.renamed" && d.from && d.to) return `“${d.from}” → “${d.to}”`;
-  if ((e.action === "invite.sent" || e.action === "member.placed" || e.action === "member.joined") && d.role)
+  if ((e.action === "invite.sent" || e.action === "member.joined") && d.role)
     return `as ${d.role}${d.via ? ` (${d.via})` : ""}`;
   if (e.action === "invite.link_created" && d.role) return `for ${d.role}s${d.max_uses ? `, up to ${d.max_uses} uses` : ""}`;
-  if (d.by_organization) return "by the organisation";
+  if (e.action === "workspace.converted_to_organization" && d.to) return `named “${d.to}”`;
+  if (e.action === "project.access_changed" && d.to) return d.to === "restricted" ? "only people added" : "every member";
+  if ((e.action === "project.member_added" || e.action === "project.member_removed") && d.project) return `${d.project}`;
   return null;
 }
 

@@ -189,7 +189,7 @@ async def list_workspace_approvals(
     """Every agent action waiting for a decision across the workspace's projects, oldest first,
     with the project and the instruction it came from. Decide them per run with
     `POST .../agent/runs/{run_id}/decisions`."""
-    return await agents.workspace_pending(member.workspace_id)
+    return await agents.workspace_pending(member)
 
 
 @router.patch("/runs/{run_id}/outputs/{output_id}/items/{index}", responses=errors(422))

@@ -12,12 +12,11 @@ import {
 } from "@pmagent/ui/components/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@pmagent/ui/components/sidebar";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { BuildingIcon, CheckIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
+import { CheckIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
-import { CreateOrgDialog } from "@/components/orgs/create-org-dialog";
+import { CreateOrganizationDialog } from "@/components/create-organization-dialog";
 import { ROLE_LABELS, WORKSPACE_KIND_LABELS, initials } from "@/lib/labels";
 import { useCurrentWorkspace, useWorkspaces } from "@/lib/queries";
 
@@ -27,14 +26,13 @@ export function WorkspaceSwitcher() {
   const workspaces = useWorkspaces();
   const { shown: current } = useCurrentWorkspace();
   const [creating, setCreating] = useState(false);
-  const [creatingOrg, setCreatingOrg] = useState(false);
 
   if (!current) return <Skeleton className="h-12 w-full" />;
 
   const all = workspaces.data ?? [];
   const groups: [string, Schemas["WorkspaceWithRole"][]][] = [
-    ["Your workspaces", all.filter((w) => !w.via_organization)],
-    ["Through your organisations", all.filter((w) => w.via_organization)],
+    ["Personal", all.filter((w) => w.kind === "personal")],
+    ["Organisations", all.filter((w) => w.kind === "organization")],
   ];
 
   return (
@@ -52,7 +50,7 @@ export function WorkspaceSwitcher() {
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{current.name}</span>
                 <span className="text-muted-foreground truncate text-xs">
-                  {ROLE_LABELS[current.role]} · {WORKSPACE_KIND_LABELS[current.kind]} workspace
+                  {WORKSPACE_KIND_LABELS[current.kind]} · {ROLE_LABELS[current.role]}
                 </span>
               </div>
               <ChevronsUpDownIcon className="ml-auto" />
@@ -75,7 +73,6 @@ export function WorkspaceSwitcher() {
                         {initials(w.name)}
                       </span>
                       <span className="flex-1 truncate">{w.name}</span>
-                      {w.via_organization && <BuildingIcon className="text-muted-foreground size-3.5" />}
                       {w.id === current.id && <CheckIcon className="size-4" />}
                     </DropdownMenuItem>
                   ))}
@@ -86,21 +83,14 @@ export function WorkspaceSwitcher() {
               <span className="flex size-6 items-center justify-center rounded-md border">
                 <PlusIcon className="size-4" />
               </span>
-              <span className="text-muted-foreground font-medium">Create workspace</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="gap-2 p-2" onSelect={() => setCreatingOrg(true)}>
-              <span className="flex size-6 items-center justify-center rounded-md border">
-                <BuildingIcon className="size-4" />
-              </span>
               <span className="grid">
                 <span className="text-muted-foreground font-medium">Create organisation</span>
-                <span className="text-muted-foreground text-xs">For a company with several workspaces</span>
+                <span className="text-muted-foreground text-xs">For a team: invite people, share projects</span>
               </span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <CreateWorkspaceDialog open={creating} onOpenChange={setCreating} />
-        <CreateOrgDialog open={creatingOrg} onOpenChange={setCreatingOrg} />
+        <CreateOrganizationDialog open={creating} onOpenChange={setCreating} />
       </SidebarMenuItem>
     </SidebarMenu>
   );

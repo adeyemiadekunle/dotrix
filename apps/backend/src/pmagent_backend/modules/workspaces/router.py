@@ -14,6 +14,7 @@ from .permissions import Permission
 from .schemas import (
     MemberRead,
     MemberRoleUpdate,
+    OrganizationConversion,
     OwnershipTransfer,
     WorkspaceCreate,
     WorkspaceUpdate,
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"], responses=errors(4
 Viewer = Annotated[Membership, Depends(require_permission(Permission.VIEW))]
 WorkspaceAdmin = Annotated[Membership, Depends(require_permission(Permission.MANAGE_WORKSPACE))]
 MemberAdmin = Annotated[Membership, Depends(require_permission(Permission.MANAGE_MEMBERS))]
+Owner = Annotated[Membership, Depends(require_permission(Permission.MANAGE_BILLING))]
 
 
 @router.get("")
@@ -38,16 +40,25 @@ async def list_workspaces(user: CurrentUser, session: SessionDep) -> list[Worksp
 async def create_workspace(
     data: WorkspaceCreate, user: CurrentUser, session: SessionDep
 ) -> WorkspaceWithRole:
-    """Create a team or business workspace; you become its owner. (Your personal workspace
-    was created at sign-up.) It can't invite people until it belongs to an organisation: create
-    it with `POST /v1/organizations/{id}/workspaces` instead, or attach it later."""
+    """Create an organisation (a workspace for a team: invites, roles, many projects); you
+    become its owner. Your personal workspace was created at sign-up."""
     return await WorkspaceService(session).create(user, data)
 
 
 @router.get("/{workspace_id}", responses=errors(404))
 async def get_workspace(member: Viewer) -> WorkspaceWithRole:
     """A workspace you belong to."""
-    return WorkspaceWithRole.of(member.workspace, member.role, getattr(member, "via_organization", False))
+    return WorkspaceWithRole.of(member.workspace, member.role)
+
+
+@router.post("/{workspace_id}/convert-to-organization", responses=errors(403, 404, 409, 422))
+async def convert_to_organization(
+    data: OrganizationConversion, member: Owner, session: SessionDep
+) -> WorkspaceWithRole:
+    """Turn your personal workspace into an organisation, with its projects, so it can invite
+    people; optionally rename it. You get a new, empty personal workspace. Owners only; 409 if
+    it's already an organisation."""
+    return await WorkspaceService(session).convert_to_organization(member, data)
 
 
 @router.patch("/{workspace_id}", responses=errors(403, 404, 422))

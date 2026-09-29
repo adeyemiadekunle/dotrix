@@ -126,6 +126,7 @@ export default function NewProjectPage() {
               description,
               source,
               repo_url: source === "existing_repo" ? repoUrl.trim() : null,
+              access: "workspace",
             },
           }),
         ));

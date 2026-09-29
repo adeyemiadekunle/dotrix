@@ -42,7 +42,7 @@ async def test_removals_and_invites_are_audited(signup, create_team, add_member,
     ada = await signup()
     bob = await signup(email="bob@example.com", name="Bob")
     carol = await signup(email="carol@example.com", name="Carol")
-    team = await create_team(ada.headers, in_org=True)
+    team = await create_team(ada.headers)
     ws = f"/v1/workspaces/{team['id']}"
     await add_member(team["id"], bob.id, Role.MEMBER)
 
@@ -57,39 +57,26 @@ async def test_removals_and_invites_are_audited(signup, create_team, add_member,
     events = await audit(db_client, team["id"], ada.headers)
     summary = [(e["action"], e["target"], e["actor_user_id"]) for e in events]
     assert summary == [
-        ("workspace.added_to_organization", "Kunemi", ada.id),
         ("member.removed", "bob@example.com", ada.id),
         ("invite.sent", "dan@example.com", ada.id),
         ("invite.revoked", "dan@example.com", ada.id),
         ("invite.link_created", None, ada.id),
         ("member.joined", "carol@example.com", carol.id),
     ]
-    assert events[4]["details"] == {"role": "member", "max_uses": 3, "expires_in_days": 7}
-    assert events[5]["details"] == {"role": "member", "via": "link invite"}
+    assert events[3]["details"] == {"role": "member", "max_uses": 3, "expires_in_days": 7}
+    assert events[4]["details"] == {"role": "member", "via": "link invite"}
     # Tokens never reach the log.
     assert token not in str(events)
 
 
-async def test_organisation_placements_land_in_the_workspace_log(
-    signup, create_team, db_client: AsyncClient
-) -> None:
+async def test_turning_personal_into_an_organisation_is_audited(signup, db_client: AsyncClient) -> None:
     ada = await signup()
-    bob = await signup(email="bob@example.com", name="Bob")
-    team = await create_team(ada.headers)
-    org = (await db_client.post("/v1/organizations", json={"name": "Kunemi Ltd"}, headers=ada.headers)).json()
-    base = f"/v1/organizations/{org['id']}"
-    assert (await db_client.post(f"{base}/workspaces/attach", json={"workspace_id": team["id"]}, headers=ada.headers)).status_code == 200
-    assert (await db_client.post(f"{base}/members", json={"email": "bob@example.com"}, headers=ada.headers)).status_code == 201
-    place = f"{base}/workspaces/{team['id']}/members/{bob.id}"
-    assert (await db_client.put(place, json={"role": "member"}, headers=ada.headers)).status_code == 200
-    assert (await db_client.put(place, json={"role": "guest"}, headers=ada.headers)).status_code == 200
-    assert (await db_client.delete(place, headers=ada.headers)).status_code == 204
-
-    events = await audit(db_client, team["id"], ada.headers)
-    assert [(e["action"], e["target"]) for e in events] == [
-        ("workspace.added_to_organization", "Kunemi"),
-        ("member.placed", "bob@example.com"),
-        ("member.role_changed", "bob@example.com"),
-        ("member.removed", "bob@example.com"),
+    personal = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()[0]
+    res = await db_client.post(
+        f"/v1/workspaces/{personal['id']}/convert-to-organization", json={"name": "Kunemi"}, headers=ada.headers
+    )
+    assert res.status_code == 200
+    events = await audit(db_client, personal["id"], ada.headers)
+    assert [(e["action"], e["details"]) for e in events] == [
+        ("workspace.converted_to_organization", {"from": "Personal", "to": "Kunemi"})
     ]
-    assert all(e["details"]["by_organization"] == org["id"] for e in events[1:])

@@ -73,8 +73,7 @@ def granted_to_members(workspace: Any) -> frozenset[Permission]:
 
 
 def can(membership: Any, permission: Permission) -> bool:
-    """Whether this membership (a real one, or an organisation owner's implicit one) allows
-    `permission`, counting what the workspace grants its members."""
+    """Whether this membership allows `permission`, counting what the workspace grants its members."""
     if has_permission(membership.role, permission):
         return True
     return membership.role is Role.MEMBER and permission in granted_to_members(membership.workspace)

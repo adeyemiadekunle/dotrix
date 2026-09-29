@@ -583,215 +583,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/organizations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Organizations
-         * @description Organisations you belong to, with your role.
-         */
-        get: operations["list_organizations"];
-        put?: never;
-        /**
-         * Create Organization
-         * @description Create an organisation; you become its owner.
-         */
-        post: operations["create_organization"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/organizations/{org_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Organization
-         * @description An organisation you belong to.
-         */
-        get: operations["get_organization"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update Organization
-         * @description Rename the organisation. Owners and admins.
-         */
-        patch: operations["update_organization"];
-        trace?: never;
-    };
-    "/v1/organizations/{org_id}/members": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Org Members
-         * @description Everyone in the organisation.
-         */
-        get: operations["list_org_members"];
-        put?: never;
-        /**
-         * Add Org Member
-         * @description Add someone with an account to the organisation. Owners and admins; only owners add owners.
-         */
-        post: operations["add_org_member"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/organizations/{org_id}/members/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remove Org Member
-         * @description Remove someone (owners and admins), or leave yourself. They're also removed from every
-         *     workspace in the organisation; anyone who owns one must transfer it first (409).
-         */
-        delete: operations["remove_org_member"];
-        options?: never;
-        head?: never;
-        /**
-         * Change Org Member Role
-         * @description Change someone's organisation role. The organisation always keeps an owner.
-         */
-        patch: operations["change_org_member_role"];
-        trace?: never;
-    };
-    "/v1/organizations/{org_id}/workspaces": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Org Workspaces
-         * @description The organisation's workspaces: names and sizes only. Owners and admins see all of them,
-         *     members see their own. Seeing a workspace's projects still requires being in it.
-         */
-        get: operations["list_org_workspaces"];
-        put?: never;
-        /**
-         * Create Org Workspace
-         * @description Create a workspace in the organisation, owned by you or another org member.
-         */
-        post: operations["create_org_workspace"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/organizations/{org_id}/workspaces/attach": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Attach Workspace
-         * @description Bring a workspace you own into the organisation. Its people join the organisation as
-         *     members. A personal workspace becomes a team workspace with its projects, and you get a new,
-         *     empty personal workspace.
-         */
-        post: operations["attach_workspace"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/organizations/{org_id}/workspaces/{workspace_id}/detach": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Detach Workspace
-         * @description Take a workspace out of the organisation. Its people stay organisation members.
-         */
-        post: operations["detach_workspace"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/organizations/{org_id}/workspaces/{workspace_id}/members": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Org Workspace Members
-         * @description Who is in one of the organisation's workspaces.
-         */
-        get: operations["list_org_workspace_members"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/organizations/{org_id}/workspaces/{workspace_id}/members/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Place In Workspace
-         * @description Put an organisation member into one of its workspaces (admin, member, or guest), or change
-         *     their role there. You don't need to be in the workspace yourself.
-         */
-        put: operations["place_in_workspace"];
-        post?: never;
-        /**
-         * Remove From Workspace
-         * @description Take someone out of one of the organisation's workspaces (not its owner).
-         */
-        delete: operations["remove_from_workspace"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/workspaces": {
         parameters: {
             query?: never;
@@ -807,9 +598,8 @@ export interface paths {
         put?: never;
         /**
          * Create Workspace
-         * @description Create a team or business workspace; you become its owner. (Your personal workspace
-         *     was created at sign-up.) It can't invite people until it belongs to an organisation: create
-         *     it with `POST /v1/organizations/{id}/workspaces` instead, or attach it later.
+         * @description Create an organisation (a workspace for a team: invites, roles, many projects); you
+         *     become its owner. Your personal workspace was created at sign-up.
          */
         post: operations["create_workspace"];
         delete?: never;
@@ -841,6 +631,28 @@ export interface paths {
          *     working the board (`member_permissions`). Owners and admins.
          */
         patch: operations["update_workspace"];
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/convert-to-organization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert To Organization
+         * @description Turn your personal workspace into an organisation, with its projects, so it can invite
+         *     people; optionally rename it. You get a new, empty personal workspace. Owners only; 409 if
+         *     it's already an organisation.
+         */
+        post: operations["convert_to_organization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/workspaces/{workspace_id}/members": {
@@ -924,8 +736,8 @@ export interface paths {
         /**
          * Invite By Email
          * @description Email an invite (valid 7 days, single use, only for that address). Inviting the same
-         *     address again replaces the earlier invite. Owners and admins, and only in a workspace that
-         *     belongs to an organisation (409 `invites_need_organization` otherwise).
+         *     address again replaces the earlier invite. Owners and admins, and only in an organisation
+         *     (409 `invites_need_organization` in a personal workspace).
          */
         post: operations["invite_by_email"];
         delete?: never;
@@ -946,8 +758,8 @@ export interface paths {
         /**
          * Create Invite Link
          * @description Create a shareable invite link (member or guest only). The `url` is returned only
-         *     here. Owners and admins, and only in a workspace that belongs to an organisation (409
-         *     `invites_need_organization` otherwise).
+         *     here. Owners and admins, and only in an organisation (409 `invites_need_organization` in
+         *     a personal workspace).
          */
         post: operations["create_invite_link"];
         delete?: never;
@@ -1026,7 +838,9 @@ export interface paths {
         };
         /**
          * List Projects
-         * @description Projects in the workspace, by key. `repo_url` finds the project a local checkout belongs to.
+         * @description Projects in the workspace you can see, by key (guests see none; a restricted project only
+         *     its owners, admins, and the people added to it). `repo_url` finds the project a local
+         *     checkout belongs to.
          */
         get: operations["list_projects"];
         put?: never;
@@ -1063,8 +877,9 @@ export interface paths {
         head?: never;
         /**
          * Update Project
-         * @description Rename a project, change its description or its agents' model, or link or unlink its repo
-         *     (one project per repo in a workspace: 409 if another has it). The key can't change.
+         * @description Rename a project, change its description, its agents' model, or who can see it (`access`),
+         *     or link or unlink its repo (one project per repo in a workspace: 409 if another has it). The
+         *     key can't change. Restricting it unassigns people who can no longer see it from its issues.
          */
         patch: operations["update_project"];
         trace?: never;
@@ -1081,7 +896,7 @@ export interface paths {
         /**
          * Move Project
          * @description Move a project, with its knowledge, issues, documents, and conversations, to another
-         *     workspace: from your personal workspace into an organisation's, or back. You need to set up
+         *     workspace: from your personal workspace into an organisation, or back. You need to set up
          *     projects in both (owners and admins). 409 if the other workspace already has a project with
          *     its key or repo, or while one of its agent runs is working or waiting for approval. People
          *     who can't see it there are unassigned from its issues (logged) and stop watching them; linked
@@ -1089,6 +904,53 @@ export interface paths {
          */
         post: operations["move_project"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Project Members
+         * @description Everyone who can see the project, and why (`via`): their role, the workspace (an open
+         *     project), or being added to it.
+         */
+        get: operations["list_project_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Add Project Member
+         * @description Add someone from the workspace to the project's people (owners and admins); what counts
+         *     once the project is restricted. 409 for a guest. Returns everyone who can see it.
+         */
+        put: operations["add_project_member"];
+        post?: never;
+        /**
+         * Remove Project Member
+         * @description Take someone off the project's people (owners and admins). On a restricted project they
+         *     stop seeing it, are unassigned from its issues, and stop watching them.
+         */
+        delete: operations["remove_project_member"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2527,14 +2389,6 @@ export interface components {
              */
             repo_summary?: string | null;
         };
-        /** AttachWorkspace */
-        AttachWorkspace: {
-            /**
-             * Workspace Id
-             * Format: uuid
-             */
-            workspace_id: string;
-        };
         /** AuditEventRead */
         AuditEventRead: {
             /**
@@ -3347,119 +3201,13 @@ export interface components {
              */
             name: string;
         };
-        /** OrgCreate */
-        OrgCreate: {
-            /** Name */
-            name: string;
-        };
-        /** OrgMemberAdd */
-        OrgMemberAdd: {
+        /** OrganizationConversion */
+        OrganizationConversion: {
             /**
-             * Email
-             * Format: email
+             * Name
+             * @description A new name, e.g. the team's
              */
-            email: string;
-            /** @default member */
-            role: components["schemas"]["OrgRole"];
-        };
-        /** OrgMemberRead */
-        OrgMemberRead: {
-            /**
-             * User Id
-             * Format: uuid
-             */
-            user_id: string;
-            /** Email */
-            email: string;
-            /** Display Name */
-            display_name: string;
-            role: components["schemas"]["OrgRole"];
-            /**
-             * Joined At
-             * Format: date-time
-             */
-            joined_at: string;
-        };
-        /** OrgMemberRoleUpdate */
-        OrgMemberRoleUpdate: {
-            role: components["schemas"]["OrgRole"];
-        };
-        /**
-         * OrgRole
-         * @enum {string}
-         */
-        OrgRole: "owner" | "admin" | "member";
-        /** OrgUpdate */
-        OrgUpdate: {
-            /** Name */
-            name: string;
-        };
-        /** OrgWithRole */
-        OrgWithRole: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Name */
-            name: string;
-            /** Slug */
-            slug: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            role: components["schemas"]["OrgRole"];
-        };
-        /** OrgWorkspaceCreate */
-        OrgWorkspaceCreate: {
-            /** Name */
-            name: string;
-            /**
-             * Kind
-             * @default business
-             * @enum {string}
-             */
-            kind: "team" | "business";
-            /**
-             * Owner User Id
-             * @description Who owns the new workspace (an org member). Defaults to you.
-             */
-            owner_user_id?: string | null;
-        };
-        /**
-         * OrgWorkspaceRead
-         * @description What an organisation sees of a workspace: its name and size, never its content.
-         */
-        OrgWorkspaceRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Name */
-            name: string;
-            /** Slug */
-            slug: string;
-            kind: components["schemas"]["WorkspaceKind"];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Members */
-            members: number;
-            /** Projects */
-            projects: number;
-            /** @description Your role in the workspace, or null if you're not in it */
-            your_role: components["schemas"]["Role"] | null;
-            /**
-             * Via Organization
-             * @description Your role comes from owning the organisation
-             * @default false
-             */
-            via_organization: boolean;
+            name?: string | null;
         };
         /** OutputItemUpdate */
         OutputItemUpdate: {
@@ -3550,6 +3298,11 @@ export interface components {
                 [key: string]: unknown;
             }[] | null;
         };
+        /**
+         * ProjectAccessLevel
+         * @enum {string}
+         */
+        ProjectAccessLevel: "workspace" | "restricted";
         /** ProjectCreate */
         ProjectCreate: {
             /**
@@ -3581,6 +3334,36 @@ export interface components {
              * @description An existing README to import into project.md (connect flow).
              */
             readme?: string | null;
+            /**
+             * @description workspace (every member sees it) or restricted (owners, admins, and the people added to it)
+             * @default workspace
+             */
+            access: components["schemas"]["ProjectAccessLevel"];
+        };
+        /** ProjectMemberRead */
+        ProjectMemberRead: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Email */
+            email: string;
+            /** Display Name */
+            display_name: string;
+            /** @description Their role in the workspace */
+            role: components["schemas"]["Role"];
+            /**
+             * Via
+             * @description Why they see it: their role (owners and admins see every project), the workspace (an open project), or being added to it (a restricted project)
+             * @enum {string}
+             */
+            via: "role" | "workspace" | "added";
+            /**
+             * Added
+             * @description On the project's list (what counts once it's restricted)
+             */
+            added: boolean;
         };
         /** ProjectMove */
         ProjectMove: {
@@ -3612,6 +3395,8 @@ export interface components {
             source: components["schemas"]["ProjectSource"];
             /** Repo Url */
             repo_url: string | null;
+            /** @description workspace (every member sees it) or restricted (owners, admins, and the people added to it) */
+            access: components["schemas"]["ProjectAccessLevel"];
             /** Model */
             model: string;
             /**
@@ -3644,6 +3429,8 @@ export interface components {
         ProjectSource: "new_repo" | "existing_repo" | "docs_only";
         /** ProjectUpdate */
         ProjectUpdate: {
+            /** @description workspace (every member) or restricted (owners, admins, and the people added to it) */
+            access?: components["schemas"]["ProjectAccessLevel"] | null;
             /** Name */
             name?: string | null;
             /** Description */
@@ -4125,25 +3912,16 @@ export interface components {
             name: string;
             /**
              * Kind
-             * @default team
-             * @enum {string}
+             * @default organization
+             * @constant
              */
-            kind: "team" | "business";
+            kind: "organization";
         };
         /**
          * WorkspaceKind
          * @enum {string}
          */
-        WorkspaceKind: "personal" | "team" | "business";
-        /** WorkspacePlacement */
-        WorkspacePlacement: {
-            /**
-             * Role
-             * @default member
-             * @enum {string}
-             */
-            role: "admin" | "member" | "guest";
-        };
+        WorkspaceKind: "personal" | "organization";
         /**
          * WorkspaceUpdate
          * @description Only the fields you send change.
@@ -4168,9 +3946,8 @@ export interface components {
             name: string;
             /** Slug */
             slug: string;
+            /** @description personal (just you) or organization (a team that invites people) */
             kind: components["schemas"]["WorkspaceKind"];
-            /** Organization Id */
-            organization_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -4182,12 +3959,6 @@ export interface components {
              */
             member_permissions?: components["schemas"]["Permission"][];
             role: components["schemas"]["Role"];
-            /**
-             * Via Organization
-             * @description You have this role because you own the workspace's organisation
-             * @default false
-             */
-            via_organization: boolean;
             /**
              * Permissions
              * @description What you can do here: your role's permissions plus what the workspace grants members
@@ -5488,884 +5259,6 @@ export interface operations {
             };
         };
     };
-    list_organizations: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrgWithRole"][];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    create_organization: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OrgCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrgWithRole"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    get_organization: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrgWithRole"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    update_organization: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OrgUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrgWithRole"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    list_org_members: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrgMemberRead"][];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    add_org_member: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OrgMemberAdd"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrgMemberRead"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Conflicts with the current state */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    remove_org_member: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Conflicts with the current state */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    change_org_member_role: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OrgMemberRoleUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrgMemberRead"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Conflicts with the current state */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    list_org_workspaces: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrgWorkspaceRead"][];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    create_org_workspace: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OrgWorkspaceCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrgWorkspaceRead"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    attach_workspace: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AttachWorkspace"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrgWorkspaceRead"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Conflicts with the current state */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    detach_workspace: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    list_org_workspace_members: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberRead"][];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    place_in_workspace: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-                user_id: string;
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkspacePlacement"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberRead"][];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Conflicts with the current state */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    remove_from_workspace: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-                user_id: string;
-                org_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Conflicts with the current state */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
     list_workspaces: {
         parameters: {
             query?: never;
@@ -6530,6 +5423,77 @@ export interface operations {
             };
             /** @description Not found, or not visible to you */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    convert_to_organization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationConversion"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceWithRole"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7472,6 +6436,183 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_project_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectMemberRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    add_project_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectMemberRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    remove_project_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -13,7 +13,7 @@ from fastapi import Depends
 
 from pmagent_backend.api.deps import SessionDep, require_permission
 from pmagent_backend.core.errors import NotFound
-from pmagent_backend.modules.workspaces.models import Membership, Role
+from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
 from .models import Project
@@ -34,10 +34,8 @@ def require_project_permission(
         member: Annotated[Membership, Depends(require_permission(permission))],
         session: SessionDep,
     ) -> ProjectAccess:
-        # Guests don't see projects: their role is for workspace-level access only.
-        project = None
-        if member.role is not Role.GUEST:
-            project = await ProjectRepository(session).get(member.workspace_id, project_id)
+        # Guests see no projects; a restricted project is hidden from members not added to it.
+        project = await ProjectRepository(session).visible(member, project_id)
         if project is None:
             raise NotFound("Project not found")
         return ProjectAccess(project, member)

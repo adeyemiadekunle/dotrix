@@ -9,8 +9,7 @@ export const ROLE_LABELS: Record<Schemas["Role"], string> = {
 
 export const WORKSPACE_KIND_LABELS: Record<Schemas["WorkspaceKind"], string> = {
   personal: "Personal",
-  team: "Team",
-  business: "Business",
+  organization: "Organisation",
 };
 
 export const PROJECT_SOURCE_LABELS: Record<Schemas["ProjectSource"], string> = {

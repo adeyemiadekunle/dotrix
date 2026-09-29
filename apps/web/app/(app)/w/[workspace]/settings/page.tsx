@@ -38,8 +38,7 @@ function GeneralCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"] })
       <SettingsHeader>
         <SettingsTitle>General</SettingsTitle>
         <SettingsDescription>
-          {WORKSPACE_KIND_LABELS[workspace.kind]} workspace · you&apos;re {withArticle(ROLE_LABELS[workspace.role].toLowerCase())}
-          {workspace.via_organization && " through its organisation"}.
+          {WORKSPACE_KIND_LABELS[workspace.kind]} · you&apos;re {withArticle(ROLE_LABELS[workspace.role].toLowerCase())}.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent>
@@ -126,7 +125,7 @@ export default function WorkspaceSettingsPage() {
             <GeneralCard key={workspace.id} workspace={workspace} />
             {workspace.kind !== "personal" && <MemberPermissionsCard workspace={workspace} />}
             <MembersCard workspace={workspace} />
-            {canManageProjects(workspace.role) && !workspace.via_organization && <InvitesCard workspace={workspace} />}
+            {canManageProjects(workspace.role) && <InvitesCard workspace={workspace} />}
           </>
         )}
       </div>

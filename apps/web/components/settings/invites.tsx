@@ -11,9 +11,10 @@ import { Building2Icon, CopyIcon, LinkIcon, MailIcon, XIcon } from "lucide-react
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { useConfirm } from "@/components/confirm-dialog";
 import { SubmitButton } from "@/components/form";
 import { timeAgo } from "@/components/issues/issue-activity";
-import { CreateOrgDialog } from "@/components/orgs/create-org-dialog";
+import { CreateOrganizationDialog } from "@/components/create-organization-dialog";
 import {
   SettingsContent,
   SettingsDescription,
@@ -21,7 +22,13 @@ import {
   SettingsSection,
   SettingsTitle,
 } from "@/components/settings-section";
-import { useCreateInviteLink, useInviteByEmail, useInvites, useRevokeInvite } from "@/lib/admin";
+import {
+  useConvertToOrganization,
+  useCreateInviteLink,
+  useInviteByEmail,
+  useInvites,
+  useRevokeInvite,
+} from "@/lib/admin";
 import { ROLE_LABELS } from "@/lib/labels";
 
 type EmailRole = Schemas["EmailInviteCreate"]["role"];
@@ -152,41 +159,67 @@ function LinkInvite({ workspaceId, roles }: { workspaceId: string; roles: NonNul
 }
 
 /** Invite people (owners and admins), and the invites still waiting to be used. */
-/** Only workspaces in an organisation invite people: a personal one is just for you, and a
- * team workspace outside an organisation stays with the people already in it. */
+/** Personal workspaces don't invite: they're just for you. Their owner can turn one into an
+ * organisation (keeping its projects), or create a new organisation. */
 function NoInvites({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
   const [creating, setCreating] = useState(false);
-  const personal = workspace.kind === "personal";
+  const [name, setName] = useState(workspace.name === "Personal" ? "" : workspace.name);
+  const convert = useConvertToOrganization(workspace.id);
+  const [ask, confirmDialog] = useConfirm();
   return (
     <SettingsSection>
       <SettingsHeader>
         <SettingsTitle>Invite people</SettingsTitle>
-        <SettingsDescription>
-          {personal
-            ? "A personal workspace is just for you: nobody else can join it while it stays personal."
-            : `Only workspaces in an organisation can invite people, and ${workspace.name} isn't in one.`}
-        </SettingsDescription>
+        <SettingsDescription>Personal workspaces don&apos;t invite: this one is just for you.</SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="grid gap-3">
         <p className="text-muted-foreground text-sm">
-          {personal
-            ? "To work with others, add this workspace to an organisation from the organisation's Workspaces page (it becomes a team workspace and you get a new personal one), or move a project into an organisation's workspace from the project's settings."
-            : "Create an organisation (or open one you own), then add this workspace to it from the organisation's Workspaces page."}
+          To work with others, turn it into an organisation: its projects stay, you can invite people, and you get a
+          new, empty personal workspace. Or create a new organisation and move projects into it from their settings.
         </p>
+        {workspace.role === "owner" && (
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              ask({
+                title: "Turn this into an organisation?",
+                description:
+                  "It keeps its projects and can invite people, and you get a new, empty personal workspace. This can't be undone.",
+                confirm: "Turn into an organisation",
+                action: () => convert.mutateAsync(name.trim() || null),
+              });
+            }}
+          >
+            <div className="grid gap-1.5">
+              <Label htmlFor="org-name">Organisation name</Label>
+              <Input
+                id="org-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Kunemi Ltd"
+                maxLength={100}
+                className="w-64"
+              />
+            </div>
+            <SubmitButton pending={convert.isPending}>Turn into an organisation</SubmitButton>
+          </form>
+        )}
         <div>
           <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
             <Building2Icon />
-            Create an organisation
+            Create a new organisation
           </Button>
         </div>
-        <CreateOrgDialog open={creating} onOpenChange={setCreating} />
+        <CreateOrganizationDialog open={creating} onOpenChange={setCreating} />
+        {confirmDialog}
       </SettingsContent>
     </SettingsSection>
   );
 }
 
 export function InvitesCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
-  if (workspace.kind === "personal" || !workspace.organization_id) return <NoInvites workspace={workspace} />;
+  if (workspace.kind === "personal") return <NoInvites workspace={workspace} />;
   return <OrgInvitesCard workspace={workspace} />;
 }
 

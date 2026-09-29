@@ -1571,1284 +1571,6 @@
         }
       }
     },
-    "/v1/organizations": {
-      "get": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "List Organizations",
-        "description": "Organisations you belong to, with your role.",
-        "operationId": "list_organizations",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/OrgWithRole"
-                  },
-                  "type": "array",
-                  "title": "Response List Organizations"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "Create Organization",
-        "description": "Create an organisation; you become its owner.",
-        "operationId": "create_organization",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OrgCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrgWithRole"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Request body or parameters failed validation",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/v1/organizations/{org_id}": {
-      "get": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "Get Organization",
-        "description": "An organisation you belong to.",
-        "operationId": "get_organization",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrgWithRole"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "Update Organization",
-        "description": "Rename the organisation. Owners and admins.",
-        "operationId": "update_organization",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OrgUpdate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrgWithRole"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Request body or parameters failed validation",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/organizations/{org_id}/members": {
-      "get": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "List Org Members",
-        "description": "Everyone in the organisation.",
-        "operationId": "list_org_members",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/OrgMemberRead"
-                  },
-                  "title": "Response List Org Members"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "Add Org Member",
-        "description": "Add someone with an account to the organisation. Owners and admins; only owners add owners.",
-        "operationId": "add_org_member",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OrgMemberAdd"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrgMemberRead"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicts with the current state",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Request body or parameters failed validation",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/organizations/{org_id}/members/{user_id}": {
-      "patch": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "Change Org Member Role",
-        "description": "Change someone's organisation role. The organisation always keeps an owner.",
-        "operationId": "change_org_member_role",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "User Id"
-            }
-          },
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OrgMemberRoleUpdate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrgMemberRead"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicts with the current state",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Request body or parameters failed validation",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "Remove Org Member",
-        "description": "Remove someone (owners and admins), or leave yourself. They're also removed from every\nworkspace in the organisation; anyone who owns one must transfer it first (409).",
-        "operationId": "remove_org_member",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "User Id"
-            }
-          },
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicts with the current state",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/organizations/{org_id}/workspaces": {
-      "get": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "List Org Workspaces",
-        "description": "The organisation's workspaces: names and sizes only. Owners and admins see all of them,\nmembers see their own. Seeing a workspace's projects still requires being in it.",
-        "operationId": "list_org_workspaces",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/OrgWorkspaceRead"
-                  },
-                  "title": "Response List Org Workspaces"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "Create Org Workspace",
-        "description": "Create a workspace in the organisation, owned by you or another org member.",
-        "operationId": "create_org_workspace",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OrgWorkspaceCreate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrgWorkspaceRead"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Request body or parameters failed validation",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/organizations/{org_id}/workspaces/attach": {
-      "post": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "Attach Workspace",
-        "description": "Bring a workspace you own into the organisation. Its people join the organisation as\nmembers. A personal workspace becomes a team workspace with its projects, and you get a new,\nempty personal workspace.",
-        "operationId": "attach_workspace",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AttachWorkspace"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrgWorkspaceRead"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicts with the current state",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Request body or parameters failed validation",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/organizations/{org_id}/workspaces/{workspace_id}/detach": {
-      "post": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "Detach Workspace",
-        "description": "Take a workspace out of the organisation. Its people stay organisation members.",
-        "operationId": "detach_workspace",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "workspace_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Workspace Id"
-            }
-          },
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/organizations/{org_id}/workspaces/{workspace_id}/members": {
-      "get": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "List Org Workspace Members",
-        "description": "Who is in one of the organisation's workspaces.",
-        "operationId": "list_org_workspace_members",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "workspace_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Workspace Id"
-            }
-          },
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/MemberRead"
-                  },
-                  "title": "Response List Org Workspace Members"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/organizations/{org_id}/workspaces/{workspace_id}/members/{user_id}": {
-      "put": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "Place In Workspace",
-        "description": "Put an organisation member into one of its workspaces (admin, member, or guest), or change\ntheir role there. You don't need to be in the workspace yourself.",
-        "operationId": "place_in_workspace",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "workspace_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Workspace Id"
-            }
-          },
-          {
-            "name": "user_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "User Id"
-            }
-          },
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WorkspacePlacement"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/MemberRead"
-                  },
-                  "title": "Response Place In Workspace"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicts with the current state",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Request body or parameters failed validation",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "organizations"
-        ],
-        "summary": "Remove From Workspace",
-        "description": "Take someone out of one of the organisation's workspaces (not its owner).",
-        "operationId": "remove_from_workspace",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "workspace_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Workspace Id"
-            }
-          },
-          {
-            "name": "user_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "User Id"
-            }
-          },
-          {
-            "name": "org_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Org Id"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicts with the current state",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/workspaces": {
       "get": {
         "tags": [
@@ -2894,7 +1616,7 @@
           "workspaces"
         ],
         "summary": "Create Workspace",
-        "description": "Create a team or business workspace; you become its owner. (Your personal workspace\nwas created at sign-up.) It can't invite people until it belongs to an organisation: create\nit with `POST /v1/organizations/{id}/workspaces` instead, or attach it later.",
+        "description": "Create an organisation (a workspace for a team: invites, roles, many projects); you\nbecome its owner. Your personal workspace was created at sign-up.",
         "operationId": "create_workspace",
         "requestBody": {
           "content": {
@@ -3080,6 +1802,105 @@
           },
           "404": {
             "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/convert-to-organization": {
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Convert To Organization",
+        "description": "Turn your personal workspace into an organisation, with its projects, so it can invite\npeople; optionally rename it. You get a new, empty personal workspace. Owners only; 409 if\nit's already an organisation.",
+        "operationId": "convert_to_organization",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationConversion"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceWithRole"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3559,7 +2380,7 @@
           "invites"
         ],
         "summary": "Invite By Email",
-        "description": "Email an invite (valid 7 days, single use, only for that address). Inviting the same\naddress again replaces the earlier invite. Owners and admins, and only in a workspace that\nbelongs to an organisation (409 `invites_need_organization` otherwise).",
+        "description": "Email an invite (valid 7 days, single use, only for that address). Inviting the same\naddress again replaces the earlier invite. Owners and admins, and only in an organisation\n(409 `invites_need_organization` in a personal workspace).",
         "operationId": "invite_by_email",
         "security": [
           {
@@ -3658,7 +2479,7 @@
           "invites"
         ],
         "summary": "Create Invite Link",
-        "description": "Create a shareable invite link (member or guest only). The `url` is returned only\nhere. Owners and admins, and only in a workspace that belongs to an organisation (409\n`invites_need_organization` otherwise).",
+        "description": "Create a shareable invite link (member or guest only). The `url` is returned only\nhere. Owners and admins, and only in an organisation (409 `invites_need_organization` in\na personal workspace).",
         "operationId": "create_invite_link",
         "security": [
           {
@@ -3968,7 +2789,7 @@
           "projects"
         ],
         "summary": "List Projects",
-        "description": "Projects in the workspace, by key. `repo_url` finds the project a local checkout belongs to.",
+        "description": "Projects in the workspace you can see, by key (guests see none; a restricted project only\nits owners, admins, and the people added to it). `repo_url` finds the project a local\ncheckout belongs to.",
         "operationId": "list_projects",
         "security": [
           {
@@ -4233,7 +3054,7 @@
           "projects"
         ],
         "summary": "Update Project",
-        "description": "Rename a project, change its description or its agents' model, or link or unlink its repo\n(one project per repo in a workspace: 409 if another has it). The key can't change.",
+        "description": "Rename a project, change its description, its agents' model, or who can see it (`access`),\nor link or unlink its repo (one project per repo in a workspace: 409 if another has it). The\nkey can't change. Restricting it unassigns people who can no longer see it from its issues.",
         "operationId": "update_project",
         "security": [
           {
@@ -4342,7 +3163,7 @@
           "projects"
         ],
         "summary": "Move Project",
-        "description": "Move a project, with its knowledge, issues, documents, and conversations, to another\nworkspace: from your personal workspace into an organisation's, or back. You need to set up\nprojects in both (owners and admins). 409 if the other workspace already has a project with\nits key or repo, or while one of its agent runs is working or waiting for approval. People\nwho can't see it there are unassigned from its issues (logged) and stop watching them; linked\ncheckouts follow the move on their next command.",
+        "description": "Move a project, with its knowledge, issues, documents, and conversations, to another\nworkspace: from your personal workspace into an organisation, or back. You need to set up\nprojects in both (owners and admins). 409 if the other workspace already has a project with\nits key or repo, or while one of its agent runs is working or waiting for approval. People\nwho can't see it there are unassigned from its issues (logged) and stop watching them; linked\ncheckouts follow the move on their next command.",
         "operationId": "move_project",
         "security": [
           {
@@ -4434,6 +3255,292 @@
           },
           "422": {
             "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/members": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List Project Members",
+        "description": "Everyone who can see the project, and why (`via`): their role, the workspace (an open\nproject), or being added to it.",
+        "operationId": "list_project_members",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectMemberRead"
+                  },
+                  "title": "Response List Project Members"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}": {
+      "put": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Add Project Member",
+        "description": "Add someone from the workspace to the project's people (owners and admins); what counts\nonce the project is restricted. 409 for a guest. Returns everyone who can see it.",
+        "operationId": "add_project_member",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectMemberRead"
+                  },
+                  "title": "Response Add Project Member"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Remove Project Member",
+        "description": "Take someone off the project's people (owners and admins). On a restricted project they\nstop seeing it, are unassigned from its issues, and stop watching them.",
+        "operationId": "remove_project_member",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11101,20 +10208,6 @@
         "type": "object",
         "title": "ArchitectureDraftRequest"
       },
-      "AttachWorkspace": {
-        "properties": {
-          "workspace_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Workspace Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "workspace_id"
-        ],
-        "title": "AttachWorkspace"
-      },
       "AuditEventRead": {
         "properties": {
           "id": {
@@ -13222,242 +12315,25 @@
         ],
         "title": "ModelOption"
       },
-      "OrgCreate": {
+      "OrganizationConversion": {
         "properties": {
           "name": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Name"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "title": "OrgCreate"
-      },
-      "OrgMemberAdd": {
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email",
-            "title": "Email"
-          },
-          "role": {
-            "$ref": "#/components/schemas/OrgRole",
-            "default": "member"
-          }
-        },
-        "type": "object",
-        "required": [
-          "email"
-        ],
-        "title": "OrgMemberAdd"
-      },
-      "OrgMemberRead": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "User Id"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "display_name": {
-            "type": "string",
-            "title": "Display Name"
-          },
-          "role": {
-            "$ref": "#/components/schemas/OrgRole"
-          },
-          "joined_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Joined At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "user_id",
-          "email",
-          "display_name",
-          "role",
-          "joined_at"
-        ],
-        "title": "OrgMemberRead"
-      },
-      "OrgMemberRoleUpdate": {
-        "properties": {
-          "role": {
-            "$ref": "#/components/schemas/OrgRole"
-          }
-        },
-        "type": "object",
-        "required": [
-          "role"
-        ],
-        "title": "OrgMemberRoleUpdate"
-      },
-      "OrgRole": {
-        "type": "string",
-        "enum": [
-          "owner",
-          "admin",
-          "member"
-        ],
-        "title": "OrgRole"
-      },
-      "OrgUpdate": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Name"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "title": "OrgUpdate"
-      },
-      "OrgWithRole": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "slug": {
-            "type": "string",
-            "title": "Slug"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "role": {
-            "$ref": "#/components/schemas/OrgRole"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "slug",
-          "created_at",
-          "role"
-        ],
-        "title": "OrgWithRole"
-      },
-      "OrgWorkspaceCreate": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Name"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "team",
-              "business"
-            ],
-            "title": "Kind",
-            "default": "business"
-          },
-          "owner_user_id": {
             "anyOf": [
               {
                 "type": "string",
-                "format": "uuid"
+                "maxLength": 100,
+                "minLength": 1
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Owner User Id",
-            "description": "Who owns the new workspace (an org member). Defaults to you."
+            "title": "Name",
+            "description": "A new name, e.g. the team's"
           }
         },
         "type": "object",
-        "required": [
-          "name"
-        ],
-        "title": "OrgWorkspaceCreate"
-      },
-      "OrgWorkspaceRead": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "slug": {
-            "type": "string",
-            "title": "Slug"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/WorkspaceKind"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "members": {
-            "type": "integer",
-            "title": "Members"
-          },
-          "projects": {
-            "type": "integer",
-            "title": "Projects"
-          },
-          "your_role": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Role"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Your role in the workspace, or null if you're not in it"
-          },
-          "via_organization": {
-            "type": "boolean",
-            "title": "Via Organization",
-            "description": "Your role comes from owning the organisation",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "slug",
-          "kind",
-          "created_at",
-          "members",
-          "projects",
-          "your_role"
-        ],
-        "title": "OrgWorkspaceRead",
-        "description": "What an organisation sees of a workspace: its name and size, never its content."
+        "title": "OrganizationConversion"
       },
       "OutputItemUpdate": {
         "properties": {
@@ -13651,6 +12527,14 @@
         "title": "ProblemDetail",
         "description": "RFC 9457 problem details. Every error response has this shape."
       },
+      "ProjectAccessLevel": {
+        "type": "string",
+        "enum": [
+          "workspace",
+          "restricted"
+        ],
+        "title": "ProjectAccessLevel"
+      },
       "ProjectCreate": {
         "properties": {
           "key": {
@@ -13713,6 +12597,11 @@
             ],
             "title": "Readme",
             "description": "An existing README to import into project.md (connect flow)."
+          },
+          "access": {
+            "$ref": "#/components/schemas/ProjectAccessLevel",
+            "description": "workspace (every member sees it) or restricted (owners, admins, and the people added to it)",
+            "default": "workspace"
           }
         },
         "type": "object",
@@ -13721,6 +12610,52 @@
           "name"
         ],
         "title": "ProjectCreate"
+      },
+      "ProjectMemberRead": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "Their role in the workspace"
+          },
+          "via": {
+            "type": "string",
+            "enum": [
+              "role",
+              "workspace",
+              "added"
+            ],
+            "title": "Via",
+            "description": "Why they see it: their role (owners and admins see every project), the workspace (an open project), or being added to it (a restricted project)"
+          },
+          "added": {
+            "type": "boolean",
+            "title": "Added",
+            "description": "On the project's list (what counts once it's restricted)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "email",
+          "display_name",
+          "role",
+          "via",
+          "added"
+        ],
+        "title": "ProjectMemberRead"
       },
       "ProjectMove": {
         "properties": {
@@ -13775,6 +12710,10 @@
             ],
             "title": "Repo Url"
           },
+          "access": {
+            "$ref": "#/components/schemas/ProjectAccessLevel",
+            "description": "workspace (every member sees it) or restricted (owners, admins, and the people added to it)"
+          },
           "model": {
             "type": "string",
             "title": "Model"
@@ -13827,6 +12766,7 @@
           "description",
           "source",
           "repo_url",
+          "access",
           "model",
           "specialist_model",
           "token_budget",
@@ -13847,6 +12787,17 @@
       },
       "ProjectUpdate": {
         "properties": {
+          "access": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectAccessLevel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "workspace (every member) or restricted (owners, admins, and the people added to it)"
+          },
           "name": {
             "anyOf": [
               {
@@ -14983,12 +13934,9 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "team",
-              "business"
-            ],
+            "const": "organization",
             "title": "Kind",
-            "default": "team"
+            "default": "organization"
           }
         },
         "type": "object",
@@ -15001,26 +13949,9 @@
         "type": "string",
         "enum": [
           "personal",
-          "team",
-          "business"
+          "organization"
         ],
         "title": "WorkspaceKind"
-      },
-      "WorkspacePlacement": {
-        "properties": {
-          "role": {
-            "type": "string",
-            "enum": [
-              "admin",
-              "member",
-              "guest"
-            ],
-            "title": "Role",
-            "default": "member"
-          }
-        },
-        "type": "object",
-        "title": "WorkspacePlacement"
       },
       "WorkspaceUpdate": {
         "properties": {
@@ -15073,19 +14004,8 @@
             "title": "Slug"
           },
           "kind": {
-            "$ref": "#/components/schemas/WorkspaceKind"
-          },
-          "organization_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Organization Id"
+            "$ref": "#/components/schemas/WorkspaceKind",
+            "description": "personal (just you) or organization (a team that invites people)"
           },
           "created_at": {
             "type": "string",
@@ -15102,12 +14022,6 @@
           },
           "role": {
             "$ref": "#/components/schemas/Role"
-          },
-          "via_organization": {
-            "type": "boolean",
-            "title": "Via Organization",
-            "description": "You have this role because you own the workspace's organisation",
-            "default": false
           },
           "permissions": {
             "items": {
@@ -15156,12 +14070,8 @@
       "description": "Your issue due and scheduled dates as an iCalendar feed at a secret URL, for any calendar app. Only the workspaces you can see, checked on every fetch."
     },
     {
-      "name": "organizations",
-      "description": "Organisations own several workspaces (e.g. per division or client) and manage people across them. Org admins don't see inside a workspace unless they're in it."
-    },
-    {
       "name": "workspaces",
-      "description": "Workspaces, members, roles, and ownership transfer."
+      "description": "Workspaces, the tenant everything belongs to: your personal one (just you) or organisations (a team: invites, roles, many projects). Members, roles, ownership transfer."
     },
     {
       "name": "invites",

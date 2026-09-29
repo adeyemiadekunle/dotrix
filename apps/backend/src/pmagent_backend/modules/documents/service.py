@@ -133,7 +133,7 @@ class DocumentService:
             return  # deleted, or already done (a retried job)
         project = await ProjectRepository(self.session).get(document.workspace_id, document.project_id)
         uploader = (
-            await MembershipRepository(self.session).effective(document.workspace_id, document.uploaded_by_id)
+            await MembershipRepository(self.session).get(document.workspace_id, document.uploaded_by_id)
             if document.uploaded_by_id
             else None
         )

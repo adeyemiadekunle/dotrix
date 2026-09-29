@@ -15,7 +15,13 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from .models import Membership, Role, Workspace, WorkspaceKind
 from .permissions import Permission, can
 from .repository import MembershipRepository, WorkspaceRepository
-from .schemas import MemberRead, WorkspaceCreate, WorkspaceUpdate, WorkspaceWithRole
+from .schemas import (
+    MemberRead,
+    OrganizationConversion,
+    WorkspaceCreate,
+    WorkspaceUpdate,
+    WorkspaceWithRole,
+)
 
 
 def make_slug(name: str) -> str:
@@ -73,9 +79,27 @@ class WorkspaceService:
 
     async def list_for_user(self, user: User) -> list[WorkspaceWithRole]:
         return [
-            WorkspaceWithRole.of(ws, role, via_org)
-            for ws, role, via_org in await self.workspaces.list_for_user(user.id)
+            WorkspaceWithRole.of(ws, role) for ws, role in await self.workspaces.list_for_user(user.id)
         ]
+
+    async def convert_to_organization(self, owner: Membership, data: OrganizationConversion) -> WorkspaceWithRole:
+        """Turn a personal workspace into an organisation, with its projects; its owner gets a
+        new, empty personal workspace. Owners only (the route checks it)."""
+        workspace = await self.session.get(Workspace, owner.workspace_id, with_for_update=True)
+        assert workspace is not None  # the route found it
+        if workspace.kind is not WorkspaceKind.PERSONAL:
+            raise Conflict("This workspace is already an organisation")
+        workspace.kind = WorkspaceKind.ORGANIZATION
+        details: dict[str, object] = {}
+        if data.name and data.name != workspace.name:
+            details = {"from": workspace.name, "to": data.name}
+            workspace.name = data.name
+        await self._audit(owner, "workspace.converted_to_organization", **details)
+        user = await UserRepository(self.session).get(owner.user_id)
+        assert user is not None
+        await self.create_personal(user)
+        await self.session.commit()
+        return WorkspaceWithRole.of(workspace, owner.role)
 
     async def update(self, member: Membership, data: WorkspaceUpdate) -> WorkspaceWithRole:
         workspace = member.workspace
@@ -89,7 +113,7 @@ class WorkspaceService:
                 await self._audit(member, "workspace.member_permissions_changed", **{"from": before, "to": after})
                 workspace.member_permissions = after
         await self.session.commit()
-        return WorkspaceWithRole.of(workspace, member.role, getattr(member, "via_organization", False))
+        return WorkspaceWithRole.of(workspace, member.role)
 
     async def list_members(self, workspace_id: uuid.UUID) -> list[MemberRead]:
         return [
