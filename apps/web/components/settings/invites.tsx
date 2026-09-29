@@ -3,7 +3,6 @@
 import type { Schemas } from "@pmagent/api-client";
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
 import { Input } from "@pmagent/ui/components/input";
 import { Label } from "@pmagent/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
@@ -14,6 +13,13 @@ import { toast } from "sonner";
 
 import { SubmitButton } from "@/components/form";
 import { timeAgo } from "@/components/issues/issue-activity";
+import {
+  SettingsContent,
+  SettingsDescription,
+  SettingsHeader,
+  SettingsSection,
+  SettingsTitle,
+} from "@/components/settings-section";
 import { useCreateInviteLink, useInviteByEmail, useInvites, useRevokeInvite } from "@/lib/admin";
 import { ROLE_LABELS } from "@/lib/labels";
 
@@ -151,16 +157,16 @@ export function InvitesCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
   // A personal workspace is yours alone: others can only look (guests).
   const personal = workspace.kind === "personal";
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Invite people</CardTitle>
-        <CardDescription>
+    <SettingsSection>
+      <SettingsHeader>
+        <SettingsTitle>Invite people</SettingsTitle>
+        <SettingsDescription>
           {personal
             ? "A personal workspace is just for you; you can invite guests to look. Create a team workspace to work with others."
             : `They join ${workspace.name} with the role you choose.`}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-6">
+        </SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent className="grid gap-6">
         <EmailInvite workspaceId={workspace.id} roles={personal ? ["guest"] : ["admin", "member", "guest"]} />
         <LinkInvite workspaceId={workspace.id} roles={personal ? ["guest"] : ["member", "guest"]} />
         <div className="grid gap-2">
@@ -198,7 +204,7 @@ export function InvitesCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
             </ul>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </SettingsContent>
+    </SettingsSection>
   );
 }

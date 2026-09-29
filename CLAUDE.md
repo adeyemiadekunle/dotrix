@@ -171,7 +171,7 @@ packages/ui/src/                 consumed as source (no build step); index.tsx's
 - **URLs use slugs and keys, never UUIDs:** `/w/{workspace slug}/p/{PROJECT KEY}`. Resolve them from the cached lists (`useCurrentWorkspace`, `useCurrentProject`).
 - **UI:**
   - Use shadcn components from `@pmagent/ui/components/*` and Tailwind tokens (`bg-muted`, `text-muted-foreground`, `bg-brand`, `bg-brand-muted`, `bg-warning-muted`), never raw colours, so light and dark mode both work. `primary` is the brand blue (the main action, focus, selection); neutrals carry a faint cool tint.
-  - Shared pieces: issue status and priority look (`StatusIcon`, `StatusBadge`, `PriorityIcon` in `components/issues/meta.tsx`), `ProjectTile`, `EmptyState` (compact, at the top of the content), and `SaveBar` (`components/form.tsx`: a form's Discard / Save, only while it has changes).
+  - Shared pieces: issue status and priority look (`StatusIcon`, `StatusBadge`, `PriorityIcon` in `components/issues/meta.tsx`), `ProjectTile`, `EmptyState` (compact, at the top of the content), `SaveBar` (`components/form.tsx`: a form's Discard / Save, only while it has changes), and `SettingsSection` (`components/settings-section.tsx`: settings pages as sections, what it is on the left and its controls on the right; parts named like Card's).
   - Write copy in sentence case.
   - Show controls by role (`lib/labels.ts`), but the API is what enforces access.
 - **Theme:** Settings → Appearance (System / Light / Dark). It defaults to System and is stored in the browser.

@@ -15,7 +15,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { cn } from "@pmagent/ui/lib/utils";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Board, IssueStatus, IssueSummary, RankTarget } from "@/lib/issues";
@@ -47,6 +47,7 @@ function Column({
   canEdit,
   collapsed,
   onToggle,
+  onAdd,
 }: {
   status: IssueStatus;
   issues: IssueSummary[];
@@ -56,6 +57,7 @@ function Column({
   canEdit: boolean;
   collapsed: boolean;
   onToggle: () => void;
+  onAdd?: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `${COLUMN_ID}${status}` });
   const meta = STATUS_META[status];
@@ -77,6 +79,17 @@ function Column({
         <StatusIcon status={status} />
         <span className="truncate font-semibold whitespace-nowrap">{meta.label}</span>
         <span className="text-muted-foreground text-xs tabular-nums">{issues.length}</span>
+        {onAdd && (
+          <button
+            type="button"
+            onClick={onAdd}
+            aria-label={`Add to ${meta.label}`}
+            title={`Add an issue to ${meta.label}`}
+            className="text-muted-foreground hover:bg-background hover:text-foreground -mr-1.5 ml-auto flex size-7 items-center justify-center rounded-md transition-colors"
+          >
+            <PlusIcon className="size-4" />
+          </button>
+        )}
       </header>
       <SortableContext items={issues.map((i) => i.key)} strategy={verticalListSortingStrategy}>
         <div
@@ -120,6 +133,7 @@ export function BoardView({
   canEdit,
   onOpen,
   onMove,
+  onAdd,
 }: {
   board: Board | undefined;
   members: MemberMap;
@@ -128,6 +142,8 @@ export function BoardView({
   canEdit: boolean;
   onOpen: (key: string) => void;
   onMove: (move: { key: string; status?: IssueStatus; rank?: RankTarget }) => void;
+  /** Start a new issue in a column; only people move work to Done, so that column has none. */
+  onAdd?: (status: IssueStatus) => void;
 }) {
   const [columns, setColumns] = useState<Columns>(() => toColumns(board));
   const [active, setActive] = useState<{ issue: IssueSummary; from: IssueStatus } | null>(null);
@@ -235,6 +251,7 @@ export function BoardView({
               onOpen={onOpen}
               canEdit={canEdit && !search}
               collapsed={collapsed.has(status)}
+              onAdd={onAdd && status !== "done" ? () => onAdd(status) : undefined}
               onToggle={() =>
                 setCollapsed((prev) => {
                   const next = new Set(prev);

@@ -1,13 +1,14 @@
 "use client";
 
 import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { Suspense, useMemo } from "react";
+import { Suspense, useMemo, useState } from "react";
 
 import { BoardView } from "@/components/issues/board-view";
 import { IssueFilters, useFilters } from "@/components/issues/filters";
 import type { EpicMap } from "@/components/issues/issue-card";
 import type { MemberMap } from "@/components/issues/meta";
-import { useBoard, useEpics, useMembers, useMoveIssue } from "@/lib/issues";
+import { NewIssueDialog } from "@/components/issues/new-issue-dialog";
+import { useBoard, useEpics, useMembers, useMoveIssue, type IssueStatus } from "@/lib/issues";
 import { useProjectScope } from "@/lib/queries";
 import { useSearchParam } from "@/lib/url-state";
 
@@ -18,6 +19,7 @@ function BoardPage() {
   const members = useMembers(workspace?.id);
   const move = useMoveIssue(scope);
   const epics = useEpics(scope);
+  const [adding, setAdding] = useState<IssueStatus | null>(null);
   const epicMap: EpicMap = useMemo(() => new Map(epics.data?.map((e) => [e.key, e])), [epics.data]);
   const [, openIssue] = useSearchParam("issue");
   const memberMap: MemberMap = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m])), [members.data]);
@@ -44,8 +46,10 @@ function BoardPage() {
           canEdit={canEdit}
           onOpen={openIssue}
           onMove={(m) => move.mutate(m)}
+          onAdd={canEdit ? setAdding : undefined}
         />
       )}
+      {adding && <NewIssueDialog open status={adding} onOpenChange={(open) => !open && setAdding(null)} />}
     </div>
   );
 }

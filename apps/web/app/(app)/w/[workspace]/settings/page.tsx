@@ -1,14 +1,20 @@
 "use client";
 
 import type { Schemas } from "@pmagent/api-client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
 import { Checkbox } from "@pmagent/ui/components/checkbox";
 import { Label } from "@pmagent/ui/components/label";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { useState, type FormEvent } from "react";
 
 import { PageHeader } from "@/components/app-shell";
-import { Field, SubmitButton } from "@/components/form";
+import { Field, SaveBar } from "@/components/form";
+import {
+  SettingsContent,
+  SettingsDescription,
+  SettingsHeader,
+  SettingsSection,
+  SettingsTitle,
+} from "@/components/settings-section";
 import { InvitesCard } from "@/components/settings/invites";
 import { MembersCard } from "@/components/settings/members";
 import { NotFound } from "@/components/states";
@@ -28,15 +34,15 @@ function GeneralCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"] })
   const [name, setName] = useState(workspace.name);
   const canEdit = canManageProjects(workspace.role);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>General</CardTitle>
-        <CardDescription>
+    <SettingsSection>
+      <SettingsHeader>
+        <SettingsTitle>General</SettingsTitle>
+        <SettingsDescription>
           {WORKSPACE_KIND_LABELS[workspace.kind]} workspace · you&apos;re {withArticle(ROLE_LABELS[workspace.role].toLowerCase())}
           {workspace.via_organization && " through its organisation"}.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent>
         <form
           className="grid gap-2"
           onSubmit={(e: FormEvent) => {
@@ -44,27 +50,21 @@ function GeneralCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"] })
             rename.mutate(name.trim());
           }}
         >
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="min-w-56 flex-1">
-              <Field
-                label="Name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                maxLength={100}
-                disabled={!canEdit}
-              />
-            </div>
-            {canEdit && (
-              <SubmitButton pending={rename.isPending} disabled={rename.isPending || name.trim() === workspace.name}>
-                Save
-              </SubmitButton>
-            )}
-          </div>
+          <Field
+            label="Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            maxLength={100}
+            disabled={!canEdit}
+          />
           <p className="text-muted-foreground text-xs">Its address stays /w/{workspace.slug}.</p>
+          {canEdit && (
+            <SaveBar dirty={name.trim() !== workspace.name} pending={rename.isPending} onDiscard={() => setName(workspace.name)} />
+          )}
         </form>
-      </CardContent>
-    </Card>
+      </SettingsContent>
+    </SettingsSection>
   );
 }
 
@@ -81,15 +81,15 @@ function MemberPermissionsCard({ workspace }: { workspace: Schemas["WorkspaceWit
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>What members can do</CardTitle>
-        <CardDescription>
+    <SettingsSection>
+      <SettingsHeader>
+        <SettingsTitle>What members can do</SettingsTitle>
+        <SettingsDescription>
           Members always chat, brainstorm, and work the board. Changes to the project&apos;s documents are for owners and
           admins: a change a member asks the agents for waits for one of you to review it. You can let members do more.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3">
+        </SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent className="grid gap-3">
         {MEMBER_GRANTS.map((grant) => (
           <Label key={grant.permission} className="flex items-start gap-3 font-normal">
             <Checkbox
@@ -106,8 +106,8 @@ function MemberPermissionsCard({ workspace }: { workspace: Schemas["WorkspaceWit
           </Label>
         ))}
         {!canEdit && <p className="text-muted-foreground text-xs">Only owners and admins change these.</p>}
-      </CardContent>
-    </Card>
+      </SettingsContent>
+    </SettingsSection>
   );
 }
 
@@ -118,7 +118,7 @@ export default function WorkspaceSettingsPage() {
   return (
     <>
       <PageHeader title="Settings" parent={workspace?.name} />
-      <div className="grid max-w-3xl content-start gap-4 p-4 md:p-6">
+      <div className="grid max-w-5xl content-start gap-8 p-4 md:p-8">
         {!workspace ? (
           <Skeleton className="h-64" />
         ) : (

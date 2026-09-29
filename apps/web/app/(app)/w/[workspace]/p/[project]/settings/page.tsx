@@ -3,7 +3,6 @@
 import type { Schemas } from "@pmagent/api-client";
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
 import { Input } from "@pmagent/ui/components/input";
 import { Label } from "@pmagent/ui/components/label";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
@@ -14,6 +13,13 @@ import { useState, type FormEvent } from "react";
 
 import { Field, SaveBar } from "@/components/form";
 import { RepoPreview } from "@/components/repo-preview";
+import {
+  SettingsContent,
+  SettingsDescription,
+  SettingsHeader,
+  SettingsSection,
+  SettingsTitle,
+} from "@/components/settings-section";
 import { useUpdateProject } from "@/lib/admin";
 import { exportUrl, useManifest } from "@/lib/knowledge";
 import { PROJECT_SOURCE_LABELS, canManageProjects } from "@/lib/labels";
@@ -36,20 +42,20 @@ function General({ project, workspace, canEdit }: { project: Project; workspace:
   const [description, setDescription] = useState(project.description);
   const changed = name.trim() !== project.name || description.trim() !== project.description;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+    <SettingsSection id="general">
+      <SettingsHeader>
+        <SettingsTitle className="flex items-center gap-2">
           General
           <Badge variant="outline" className="font-mono">
             {project.key}
           </Badge>
-        </CardTitle>
-        <CardDescription>
+        </SettingsTitle>
+        <SettingsDescription>
           Started from {PROJECT_SOURCE_LABELS[project.source].toLowerCase()} on{" "}
           {new Date(project.created_at).toLocaleDateString()}. The key prefixes issue keys and can&apos;t change.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent>
         <form
           className="grid gap-4"
           onSubmit={(e: FormEvent) => {
@@ -81,8 +87,8 @@ function General({ project, workspace, canEdit }: { project: Project; workspace:
             />
           )}
         </form>
-      </CardContent>
-    </Card>
+      </SettingsContent>
+    </SettingsSection>
   );
 }
 
@@ -94,15 +100,15 @@ function Repository({ project, workspace, canEdit }: { project: Project; workspa
   const save = (repo_url: string | null) => update.mutate({ repo_url }, { onSuccess: () => setEditing(false) });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Repository</CardTitle>
-        <CardDescription>
+    <SettingsSection id="repository">
+      <SettingsHeader>
+        <SettingsTitle>Repository</SettingsTitle>
+        <SettingsDescription>
           The code repo this project plans for. Teammates link their own checkouts with{" "}
           <code className="font-mono">pmagent connect</code>.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent>
         {editing ? (
           <form
             className="grid gap-2"
@@ -160,8 +166,8 @@ function Repository({ project, workspace, canEdit }: { project: Project; workspa
             )}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </SettingsContent>
+    </SettingsSection>
   );
 }
 
@@ -185,14 +191,14 @@ function Agents({
   const budgetChanged = budget.trim() !== (project.token_budget ? String(project.token_budget) : "");
   const rules = (manifest.data?.files ?? []).filter((f) => f.path.startsWith("agent-rules/") && !f.deleted);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Agents</CardTitle>
-        <CardDescription>
+    <SettingsSection id="agents">
+      <SettingsHeader>
+        <SettingsTitle>Agents</SettingsTitle>
+        <SettingsDescription>
           The models the project&apos;s agents run on, how much one request may use, and the rules that shape how they behave.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-6">
+        </SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent className="grid gap-6">
         <form
           className="grid gap-2"
           onSubmit={(e: FormEvent) => {
@@ -314,8 +320,8 @@ function Agents({
             </ul>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </SettingsContent>
+    </SettingsSection>
   );
 }
 
@@ -331,30 +337,52 @@ export default function ProjectSettings() {
   }
   const canEdit = canManageProjects(workspace.role);
   const base = `/w/${workspace.slug}/p/${project.key}`;
+  const sections = [
+    ["general", "General"],
+    ["repository", "Repository"],
+    ["agents", "Agents"],
+    ...(canEdit ? [["export", "Export"]] : []),
+  ];
   return (
-    <div className="grid max-w-3xl content-start gap-4 p-4 md:p-6">
-      <General key={`g-${project.updated_at}`} project={project} workspace={workspace} canEdit={canEdit} />
-      <Repository project={project} workspace={workspace} canEdit={canEdit} />
-      <Agents key={`a-${project.model}-${project.specialist_model}-${project.token_budget}`} project={project} workspace={workspace} canEdit={canEdit} knowledgeHref={`${base}/knowledge`} />
-      {canEdit && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Export</CardTitle>
-            <CardDescription>
-              The whole <code className="font-mono">.pmagent/</code> as Markdown in a zip, with a config.yaml. Leaving the
-              platform loses nothing. Knowledge revision {project.knowledge_revision}.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button variant="outline" asChild>
-              <a href={exportUrl(scope)} download>
-                <DownloadIcon />
-                Download export
-              </a>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+    <div className="flex items-start gap-10 p-4 md:p-8">
+      <div className="grid max-w-5xl min-w-0 flex-1 content-start gap-8">
+        <General key={`g-${project.updated_at}`} project={project} workspace={workspace} canEdit={canEdit} />
+        <Repository project={project} workspace={workspace} canEdit={canEdit} />
+        <Agents
+          key={`a-${project.model}-${project.specialist_model}-${project.token_budget}`}
+          project={project}
+          workspace={workspace}
+          canEdit={canEdit}
+          knowledgeHref={`${base}/knowledge`}
+        />
+        {canEdit && (
+          <SettingsSection id="export">
+            <SettingsHeader>
+              <SettingsTitle>Export</SettingsTitle>
+              <SettingsDescription>
+                The whole <code className="font-mono">.pmagent/</code> as Markdown in a zip, with a config.yaml. Leaving the
+                platform loses nothing. Knowledge revision {project.knowledge_revision}.
+              </SettingsDescription>
+            </SettingsHeader>
+            <SettingsContent>
+              <Button variant="outline" asChild>
+                <a href={exportUrl(scope)} download>
+                  <DownloadIcon />
+                  Download export
+                </a>
+              </Button>
+            </SettingsContent>
+          </SettingsSection>
+        )}
+      </div>
+      <nav aria-label="On this page" className="sticky top-20 hidden w-40 shrink-0 text-sm xl:grid">
+        <p className="text-muted-foreground pb-2 text-xs font-medium">On this page</p>
+        {sections.map(([id, label]) => (
+          <a key={id} href={`#${id}`} className="text-muted-foreground hover:text-foreground rounded-md py-1">
+            {label}
+          </a>
+        ))}
+      </nav>
     </div>
   );
 }

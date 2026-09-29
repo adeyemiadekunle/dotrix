@@ -4,7 +4,6 @@ import type { Schemas } from "@pmagent/api-client";
 import { Avatar, AvatarFallback } from "@pmagent/ui/components/avatar";
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +17,13 @@ import { useRouter } from "next/navigation";
 
 import { useConfirm } from "@/components/confirm-dialog";
 import { timeAgo } from "@/components/issues/issue-activity";
+import {
+  SettingsContent,
+  SettingsDescription,
+  SettingsHeader,
+  SettingsSection,
+  SettingsTitle,
+} from "@/components/settings-section";
 import { useChangeRole, useRemoveMember, useTransferOwnership, type Role } from "@/lib/admin";
 import { useMembers } from "@/lib/issues";
 import { ROLE_LABELS, canManageProjects, initials } from "@/lib/labels";
@@ -49,15 +55,15 @@ export function MembersCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
       : ["admin", "member", "guest"];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Members</CardTitle>
-        <CardDescription>
+    <SettingsSection>
+      <SettingsHeader>
+        <SettingsTitle>Members</SettingsTitle>
+        <SettingsDescription>
           {members.data ? `${members.data.length} ${members.data.length === 1 ? "person" : "people"}` : "People"} in{" "}
           {workspace.name}. {workspace.via_organization && "You see it as owner of its organisation; manage people from there."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent>
         {members.isLoading && <Skeleton className="h-32" />}
         <ul className="divide-y rounded-md border">
           {members.data?.map((m) => {
@@ -172,7 +178,7 @@ export function MembersCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
           })}
         </ul>
         {confirmDialog}
-      </CardContent>
-    </Card>
+      </SettingsContent>
+    </SettingsSection>
   );
 }

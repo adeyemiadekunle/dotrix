@@ -6,22 +6,19 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@pmagent/ui/components/dropdown-menu";
 import { Input } from "@pmagent/ui/components/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from "@pmagent/ui/components/select";
 import { cn } from "@pmagent/ui/lib/utils";
-import { ChevronDownIcon, SearchIcon, UserIcon, XIcon } from "lucide-react";
-import { useMemo } from "react";
+import { ListFilterIcon, SearchIcon, TagIcon, UserIcon, XIcon, ZapIcon, type LucideIcon } from "lucide-react";
+import { useMemo, type ReactNode } from "react";
 
 import { useEpics, type BoardFilters, type IssueType, type Scope } from "@/lib/issues";
 import { useMe } from "@/lib/queries";
@@ -31,10 +28,35 @@ import { AGENTS, AGENT_LABELS, ISSUE_TYPES, TYPE_META, TypeIcon } from "./meta";
 
 const ANY = "__any";
 
-// Filters that aren't set stay quiet (dashed); set ones are tinted so you can see what's narrowing the board.
-const IDLE = "h-8 border-dashed bg-transparent shadow-none text-muted-foreground hover:text-foreground dark:bg-transparent";
-const SET = "h-8 border-brand/30 bg-brand-muted text-brand-muted-foreground hover:bg-brand-muted/80 dark:bg-brand-muted";
-const filterStyle = (on: boolean) => (on ? SET : IDLE);
+/** A set filter, shown as a chip you can remove. */
+function FilterChip({ name, value, onRemove }: { name: string; value: string; onRemove: () => void }) {
+  return (
+    <span className="bg-brand-muted text-brand-muted-foreground inline-flex h-8 max-w-64 items-center gap-1.5 rounded-md pr-1 pl-2.5 text-[13px]">
+      <span className="opacity-75">{name}</span>
+      <span className="truncate font-medium">{value}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove the ${name.toLowerCase()} filter`}
+        className="hover:bg-background/60 flex size-6 items-center justify-center rounded"
+      >
+        <XIcon className="size-3.5" />
+      </button>
+    </span>
+  );
+}
+
+function Sub({ icon: Icon, label, children }: { icon: LucideIcon; label: string; children: ReactNode }) {
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <Icon className="text-muted-foreground size-4" />
+        {label}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto">{children}</DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
 
 /** Board filters live in the URL, so a filtered board can be shared and survives a reload. */
 export function useFilters() {
@@ -87,12 +109,16 @@ export function IssueFilters({
   showEpic?: boolean;
 }) {
   const epics = useEpics(scope);
-  const typeLabel =
-    filters.type.length === 0
-      ? "All types"
-      : filters.type.length === 1
-        ? TYPE_META[filters.type[0]!].label
-        : `${filters.type.length} types`;
+  const hasEpics = showEpic && (epics.data?.length ?? 0) > 0;
+  const allLabels = [...new Set([...labels, ...(filters.label ? [filters.label] : [])])];
+
+  const assigneeName = (id: string) =>
+    id === "me"
+      ? "Me"
+      : id === "none"
+        ? "Nobody"
+        : (AGENT_LABELS[id as keyof typeof AGENT_LABELS] ?? members.find((m) => m.user_id === id)?.display_name ?? "Someone");
+  const epicName = (key: string) => epics.data?.find((e) => e.key === key)?.title ?? key;
 
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 pt-3 md:px-6">
@@ -108,10 +134,10 @@ export function IssueFilters({
       </div>
 
       <Button
-        variant="outline"
+        variant={filters.assignee === "me" ? "secondary" : "outline"}
         size="sm"
-        className={filterStyle(filters.assignee === "me")}
         aria-pressed={filters.assignee === "me"}
+        className={cn(filters.assignee === "me" && "bg-brand-muted text-brand-muted-foreground hover:bg-brand-muted/80")}
         onClick={() => filters.setAssignee(filters.assignee === "me" ? null : "me")}
       >
         <UserIcon />
@@ -120,92 +146,99 @@ export function IssueFilters({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className={filterStyle(filters.type.length > 0)}>
-            {typeLabel}
-            <ChevronDownIcon className="opacity-50" />
+          <Button variant="outline" size="sm" className="border-dashed">
+            <ListFilterIcon />
+            Filter
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          {ISSUE_TYPES.map((t) => (
-            <DropdownMenuCheckboxItem
-              key={t}
-              checked={filters.type.includes(t)}
-              onSelect={(e) => e.preventDefault()}
-              onCheckedChange={(on) =>
-                filters.setType(on ? [...filters.type, t] : filters.type.filter((x) => x !== t))
-              }
+        <DropdownMenuContent align="start" className="w-48">
+          <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">Narrow the board by</DropdownMenuLabel>
+          <Sub icon={TYPE_META.task.icon} label="Type">
+            {ISSUE_TYPES.map((t) => (
+              <DropdownMenuCheckboxItem
+                key={t}
+                checked={filters.type.includes(t)}
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={(on) =>
+                  filters.setType(on ? [...filters.type, t] : filters.type.filter((x) => x !== t))
+                }
+              >
+                <TypeIcon type={t} />
+                {TYPE_META[t].label}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </Sub>
+          <Sub icon={UserIcon} label="Assignee">
+            <DropdownMenuRadioGroup
+              value={filters.assignee ?? ANY}
+              onValueChange={(v) => filters.setAssignee(v === ANY ? null : v)}
             >
-              <TypeIcon type={t} />
-              {TYPE_META[t].label}
-            </DropdownMenuCheckboxItem>
-          ))}
+              <DropdownMenuRadioItem value={ANY}>Anyone</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="me">Assigned to me</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="none">Unassigned</DropdownMenuRadioItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">Agents</DropdownMenuLabel>
+              {AGENTS.map((a) => (
+                <DropdownMenuRadioItem key={a} value={a}>
+                  {AGENT_LABELS[a]}
+                </DropdownMenuRadioItem>
+              ))}
+              {members.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">People</DropdownMenuLabel>
+                  {members.map((m) => (
+                    <DropdownMenuRadioItem key={m.user_id} value={m.user_id}>
+                      {m.display_name}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </>
+              )}
+            </DropdownMenuRadioGroup>
+          </Sub>
+          {hasEpics && (
+            <Sub icon={ZapIcon} label="Epic">
+              <DropdownMenuRadioGroup value={filters.epic ?? ANY} onValueChange={(v) => filters.setEpic(v === ANY ? null : v)}>
+                <DropdownMenuRadioItem value={ANY}>All epics</DropdownMenuRadioItem>
+                {epics.data?.map((e) => (
+                  <DropdownMenuRadioItem key={e.key} value={e.key}>
+                    <span className="truncate">{e.title}</span>
+                    <span className="text-muted-foreground ml-auto font-mono text-xs">{e.key}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </Sub>
+          )}
+          {allLabels.length > 0 && (
+            <Sub icon={TagIcon} label="Label">
+              <DropdownMenuRadioGroup value={filters.label ?? ANY} onValueChange={(v) => filters.setLabel(v === ANY ? null : v)}>
+                <DropdownMenuRadioItem value={ANY}>All labels</DropdownMenuRadioItem>
+                {allLabels.map((l) => (
+                  <DropdownMenuRadioItem key={l} value={l}>
+                    {l}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </Sub>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Select value={filters.assignee ?? ANY} onValueChange={(v) => filters.setAssignee(v === ANY ? null : v)}>
-        <SelectTrigger size="sm" className={cn("w-40", filterStyle(Boolean(filters.assignee)))} aria-label="Assignee">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ANY}>Anyone</SelectItem>
-          <SelectItem value="me">Assigned to me</SelectItem>
-          <SelectItem value="none">Unassigned</SelectItem>
-          <SelectSeparator />
-          <SelectGroup>
-            <SelectLabel>Agents</SelectLabel>
-            {AGENTS.map((a) => (
-              <SelectItem key={a} value={a}>
-                {AGENT_LABELS[a]}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-          {members.length > 0 && (
-            <SelectGroup>
-              <SelectLabel>People</SelectLabel>
-              {members.map((m) => (
-                <SelectItem key={m.user_id} value={m.user_id}>
-                  {m.display_name}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          )}
-        </SelectContent>
-      </Select>
-
-      {showEpic && (epics.data?.length ?? 0) > 0 && (
-        <Select value={filters.epic ?? ANY} onValueChange={(v) => filters.setEpic(v === ANY ? null : v)}>
-          <SelectTrigger size="sm" className={cn("w-44", filterStyle(Boolean(filters.epic)))} aria-label="Epic">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ANY}>All epics</SelectItem>
-            {epics.data?.map((e) => (
-              <SelectItem key={e.key} value={e.key}>
-                <span className="text-muted-foreground font-mono text-xs">{e.key}</span> {e.title}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {filters.type.length > 0 && (
+        <FilterChip
+          name="Type"
+          value={filters.type.map((t) => TYPE_META[t].label).join(", ")}
+          onRemove={() => filters.setType([])}
+        />
       )}
-
-      {(labels.length > 0 || filters.label) && (
-        <Select value={filters.label ?? ANY} onValueChange={(v) => filters.setLabel(v === ANY ? null : v)}>
-          <SelectTrigger size="sm" className={cn("w-36", filterStyle(Boolean(filters.label)))} aria-label="Label">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ANY}>All labels</SelectItem>
-            {[...new Set([...labels, ...(filters.label ? [filters.label] : [])])].map((l) => (
-              <SelectItem key={l} value={l}>
-                {l}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {filters.assignee && filters.assignee !== "me" && (
+        <FilterChip name="Assignee" value={assigneeName(filters.assignee)} onRemove={() => filters.setAssignee(null)} />
       )}
+      {filters.epic && <FilterChip name="Epic" value={epicName(filters.epic)} onRemove={() => filters.setEpic(null)} />}
+      {filters.label && <FilterChip name="Label" value={filters.label} onRemove={() => filters.setLabel(null)} />}
 
       {filters.active && (
-        <Button variant="ghost" size="sm" className="h-8" onClick={filters.clear}>
+        <Button variant="ghost" size="sm" onClick={filters.clear}>
           <XIcon />
           Clear
         </Button>

@@ -3,7 +3,6 @@
 import { Avatar, AvatarFallback } from "@pmagent/ui/components/avatar";
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
 import { Input } from "@pmagent/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
@@ -14,6 +13,13 @@ import { useState, type FormEvent } from "react";
 import { useConfirm } from "@/components/confirm-dialog";
 import { SubmitButton } from "@/components/form";
 import { timeAgo } from "@/components/issues/issue-activity";
+import {
+  SettingsContent,
+  SettingsDescription,
+  SettingsHeader,
+  SettingsSection,
+  SettingsTitle,
+} from "@/components/settings-section";
 import { initials } from "@/lib/labels";
 import {
   ORG_ROLE_HINTS,
@@ -92,27 +98,27 @@ export default function OrgMembersPage() {
   const manage = canManageOrg(org.role);
 
   return (
-    <div className="grid max-w-3xl content-start gap-4 p-4 md:p-6">
+    <div className="grid max-w-5xl content-start gap-8 p-4 md:p-8">
       {manage && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Add someone</CardTitle>
-            <CardDescription>Everyone in the organisation&apos;s workspaces is an organisation member.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <SettingsSection>
+          <SettingsHeader>
+            <SettingsTitle>Add someone</SettingsTitle>
+            <SettingsDescription>Everyone in the organisation&apos;s workspaces is an organisation member.</SettingsDescription>
+          </SettingsHeader>
+          <SettingsContent>
             <AddMember org={org} />
-          </CardContent>
-        </Card>
+          </SettingsContent>
+        </SettingsSection>
       )}
-      <Card>
-        <CardHeader>
-          <CardTitle>Members</CardTitle>
-          <CardDescription>
+      <SettingsSection>
+        <SettingsHeader>
+          <SettingsTitle>Members</SettingsTitle>
+          <SettingsDescription>
             {members.data ? `${members.data.length} ${members.data.length === 1 ? "person" : "people"}` : "People"}. Removing
             someone also removes them from the organisation&apos;s workspaces.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </SettingsDescription>
+        </SettingsHeader>
+        <SettingsContent>
           {members.isLoading && <Skeleton className="h-32" />}
           <ul className="divide-y rounded-md border">
             {members.data?.map((m) => {
@@ -195,8 +201,8 @@ export default function OrgMembersPage() {
             })}
           </ul>
           {confirmDialog}
-        </CardContent>
-      </Card>
+        </SettingsContent>
+      </SettingsSection>
     </div>
   );
 }
