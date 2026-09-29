@@ -93,8 +93,9 @@ TAGS: list[dict[str, str]] = [
     },
     {
         "name": "agents",
-        "description": "Talk to the Project Manager agent and its team. Runs happen in the "
-        "background; every write pauses for a person to approve or reject it.",
+        "description": "Talk to the Project Manager agent and its team, and change who the agents are "
+        "(contracts per workspace, with per-project overrides). Runs happen in the background; every "
+        "write pauses for a person to approve or reject it, unless an owner allowed that low-risk action.",
     },
     {"name": "audit", "description": "Append-only log of knowledge changes, approvals, and agent runs."},
     {"name": "health", "description": "Liveness and readiness probes."},

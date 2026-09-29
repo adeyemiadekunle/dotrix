@@ -21,6 +21,7 @@ from pmagent_backend.modules.issues.schemas import CommentCreate, IssueCreate, I
 from pmagent_backend.modules.issues.service import IssueActor, IssueService
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
+from pmagent_engine.contracts import AgentPolicy
 
 from .storage_backend import SessionFactory, current_agent_role
 
@@ -62,6 +63,7 @@ class BoardContext:
     project_id: uuid.UUID
     instructed_by_id: uuid.UUID | None
     approved_by_id: uuid.UUID | None  # set only when resuming after a person approved
+    policy: AgentPolicy | None = None  # the run's agent contracts (built-ins when None)
 
 
 def _assignee(value: str | None) -> dict[str, Any]:
@@ -98,7 +100,7 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
             if project is None or member is None:
                 return {"error": "The project or the person who instructed this run is gone"}
             actor = IssueActor(
-                member, thinking_agent=current_agent_role(), approved_by_id=ctx.approved_by_id
+                member, thinking_agent=current_agent_role(), approved_by_id=ctx.approved_by_id, policy=ctx.policy
             )
             try:
                 return await fn(IssueService(session), project, actor)

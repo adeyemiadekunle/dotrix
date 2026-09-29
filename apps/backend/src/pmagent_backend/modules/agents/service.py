@@ -9,12 +9,14 @@ from sqlalchemy.orm import selectinload
 from uuid_utils.compat import uuid7
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
+from pmagent_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.workspaces.permissions import Permission, can
+from pmagent_engine.agent import PM_ROLE
 
 from .models import ACTIVE_STATUSES, AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .runner import BRIEFING_PROMPT, AgentRunner
@@ -60,6 +62,10 @@ class ModelNotAvailable(Unprocessable):
     code = "model_not_available"
 
 
+class UnknownAgent(Unprocessable):
+    code = "unknown_agent"
+
+
 class NotAwaitingApproval(Conflict):
     code = "not_awaiting_approval"
 
@@ -86,6 +92,12 @@ class AgentService:
         made from the message (`titles.py`; no model call), and its model, fixed from then on.
         `available` lists the models a conversation may start on (`llm.available_models`)."""
         project, member = access.project, access.member
+        if data.agent not in ("auto", PM_ROLE):
+            handles = {a.spec.handle for a in await AgentDefinitionRepository(self.session).resolve(
+                project.workspace_id, project.id
+            )}
+            if data.agent not in handles:
+                raise UnknownAgent(f"This project has no @{data.agent} agent")
         thread_id = data.thread_id or uuid7()
         if data.thread_id is not None:
             await self._check_thread(project.id, data.thread_id)
@@ -112,7 +124,7 @@ class AgentService:
             status=RunStatus.QUEUED,
             message=data.message,
             title=(title or title_from_message(data.message)) if data.thread_id is None else None,
-            agent=None if data.agent == "auto" else data.agent,
+            agent=None if data.agent in ("auto", PM_ROLE) else data.agent,
             conversation_model=model,
             requested_by_id=member.user_id,
             created_at=now,

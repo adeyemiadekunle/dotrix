@@ -50,6 +50,7 @@ from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_engine.agent import role_for_agent_name
+from pmagent_engine.contracts import AgentPolicy
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -71,8 +72,10 @@ class PlatformKnowledgeBackend(BackendProtocol):
         project_id: uuid.UUID,
         instructed_by_id: uuid.UUID | None,
         approved_by_id: uuid.UUID | None = None,
+        policy: AgentPolicy | None = None,
     ) -> None:
         self.session_factory = session_factory
+        self.policy = policy  # the run's agent contracts (built-ins when None)
         self.workspace_id = workspace_id
         self.project_id = project_id
         self.instructed_by_id = instructed_by_id
@@ -168,7 +171,7 @@ class PlatformKnowledgeBackend(BackendProtocol):
         """Write through KnowledgeService; returns an error message for the agent, or None."""
         if self.approved_by_id is None or self.instructed_by_id is None:
             return "Permission denied: writes need a person's instruction and approval"
-        actor = Actor.agent_run(current_agent_role(), self.instructed_by_id, self.approved_by_id)
+        actor = Actor.agent_run(current_agent_role(), self.instructed_by_id, self.approved_by_id, self.policy)
         async with self.session_factory() as session:
             project = await ProjectRepository(session).get(self.workspace_id, self.project_id)
             if project is None:

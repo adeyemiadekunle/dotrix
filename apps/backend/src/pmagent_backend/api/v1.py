@@ -1,5 +1,9 @@
 from fastapi import APIRouter
 
+from pmagent_backend.modules.agent_definitions.router import (
+    project_router as project_agent_definitions,
+)
+from pmagent_backend.modules.agent_definitions.router import router as agent_definitions
 from pmagent_backend.modules.agents.router import models_router as models
 from pmagent_backend.modules.agents.router import router as agents
 from pmagent_backend.modules.agents.router import workspace_router as workspace_approvals
@@ -34,6 +38,8 @@ for module_router in (
     projects,
     knowledge,
     documents,
+    agent_definitions,
+    project_agent_definitions,
     agents,
     models,
     workspace_approvals,

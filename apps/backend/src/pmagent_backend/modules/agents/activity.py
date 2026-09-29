@@ -7,9 +7,12 @@ subagent's name), never from free text the model wrote.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 _KNOWLEDGE_ROOT = "/pmagent/"
+# A custom agent's LangGraph name: its handle (validated: lower-case letters, digits, dashes) + "-agent".
+_AGENT_NAME = re.compile(r"^[a-z][a-z0-9-]{1,30}-agent$")
 _SUBAGENTS = {
     "product-agent": "the product agent",
     "architecture-agent": "the architecture agent",
@@ -62,7 +65,9 @@ def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
         case "comment_issue":
             return f"Drafting a comment on {_key(args)}"
         case "task":
-            who = _SUBAGENTS.get(str(args.get("subagent_type") or ""), "a specialist agent")
+            name = str(args.get("subagent_type") or "")
+            custom = f"@{name.removesuffix('-agent')}" if _AGENT_NAME.match(name) else "a specialist agent"
+            who = _SUBAGENTS.get(name, custom)
             return f"Asking {who}"
         case "web_search":
             return "Searching the web"

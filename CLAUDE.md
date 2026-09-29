@@ -84,6 +84,7 @@ apps/backend/
 │   │   ├── knowledge/           .pmagent/ files + version history + export
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge
 │   │   ├── issues/              issues, keys, board/backlog/epics, claim, Markdown render for export
+│   │   ├── agent_definitions/   agent contracts per workspace with project overrides, versions, resolution for runs (agents v2 step 1)
 │   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals and decisions, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis)
 │   │   ├── audit/               append-only audit log
 │   │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
@@ -124,7 +125,8 @@ apps/cli/src/pmagent_cli/
 ├── repo.py                      local git facts: root, remote (credentials stripped), README, repo summary
 └── mcp_server.py                FastMCP server for Claude Code / Codex (platform board when linked, local otherwise)
 packages/engine/src/pmagent_engine/
-├── agent.py                     build_team(): the PM + specialist subagents (deepagents), HITL interrupts
+├── agent.py                     build_team(): the team from agent contracts (deepagents), each agent's tools and approval gate
+├── contracts.py, catalog.py, builtins.py   AgentSpec + AgentPolicy (agents v2), the tool catalogue, the six built-ins as contracts
 ├── approvals.py                 Action Mode approvals, independent of any UI (pending actions, resume)
 ├── context_middleware.py        smaller prompts: unchanged re-reads, compact tool definitions, summarising long conversations
 ├── permissions.py               FR-41 folder matrix and per-agent issue rules

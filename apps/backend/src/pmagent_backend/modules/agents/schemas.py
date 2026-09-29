@@ -8,7 +8,8 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from .models import ApprovalStatus, RunKind, RunStatus
 
-AgentChoice = Literal["auto", "product", "architecture", "research", "reviewer", "documentation"]
+# `auto` (the Project Manager) or any agent handle the project has (built-in or custom).
+AgentChoice = Annotated[str, Field(pattern=r"^(auto|[a-z][a-z0-9-]{1,30})$")]
 
 
 class RunCreate(BaseModel):
@@ -19,8 +20,9 @@ class RunCreate(BaseModel):
     )
     agent: AgentChoice = Field(
         default="auto",
-        description="Who answers: `auto` (the Project Manager involves the specialists it needs) or one "
-        "specialist, who leads and may ask the others",
+        description="Who answers: `auto` (the Project Manager involves the specialists it needs) or an "
+        "agent's handle (`GET .../agents`: built-in or custom), who leads and may ask the agents it can call. "
+        "422 `unknown_agent` if the project has no such agent",
     )
     model: str | None = Field(
         default=None,
@@ -117,7 +119,7 @@ class AgentRunRead(BaseModel):
     error: str | None
     requested_by_id: uuid.UUID | None
     agent: Annotated[str, BeforeValidator(lambda v: v or "auto")] = Field(
-        default="auto", description="Who answered: `auto` (the Project Manager) or a specialist's role"
+        default="auto", description="Who answered: `auto` (the Project Manager) or the leading agent's handle"
     )
     conversation_model: str | None = Field(
         default=None,

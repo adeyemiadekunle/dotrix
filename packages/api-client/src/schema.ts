@@ -1314,6 +1314,207 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agents
+         * @description The workspace's agents: the six built-ins (as they are here) and its custom agents.
+         */
+        get: operations["list_agents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/agents/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Catalog
+         * @description What an agent can be given: tools, the actions autonomy rules name, access levels, and
+         *     issue types.
+         */
+        get: operations["get_agent_catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/agents/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent
+         * @description One of the workspace's agents.
+         */
+        get: operations["get_agent"];
+        /**
+         * Save Agent
+         * @description Create a custom agent, or change one (a built-in's first change makes it customised).
+         *     Owners and admins; only owners let an agent act without asking (`allow`). Each save is a new
+         *     version; send the `version` you edited as `base_version` (409 `agent_changed` otherwise).
+         *     422 `invalid_agent` with the reason when the contract breaks a rule.
+         */
+        put: operations["save_agent"];
+        post?: never;
+        /**
+         * Delete Agent
+         * @description Remove a custom agent, or reset a built-in to its default. Its history is kept.
+         */
+        delete: operations["delete_agent"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/agents/{handle}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Versions
+         * @description Every saved version of an agent here, newest first.
+         */
+        get: operations["list_agent_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/agents/{handle}/versions/{version}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Agent Version
+         * @description Make an earlier version the current one (saved as a new version).
+         */
+        post: operations["restore_agent_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Project Agents
+         * @description The agents this project's runs use: its overrides, else the workspace's, else the built-ins.
+         */
+        get: operations["list_project_agents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agents/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project Agent
+         * @description One agent as this project's runs use it.
+         */
+        get: operations["get_project_agent"];
+        /**
+         * Save Project Agent
+         * @description Override an agent for this project only, or create an agent only this project has.
+         */
+        put: operations["save_project_agent"];
+        post?: never;
+        /**
+         * Delete Project Agent
+         * @description Drop this project's override (the workspace's agent applies again), or remove an agent
+         *     only this project had.
+         */
+        delete: operations["delete_project_agent"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agents/{handle}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Project Agent Versions
+         * @description Every saved version of this project's override, newest first.
+         */
+        get: operations["list_project_agent_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agents/{handle}/versions/{version}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Project Agent Version
+         * @description Make an earlier version of this project's override the current one.
+         */
+        post: operations["restore_project_agent_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs": {
         parameters: {
             query?: never;
@@ -1833,11 +2034,200 @@ export interface components {
             token: string;
         };
         /**
+         * Access
+         * @enum {string}
+         */
+        Access: "read" | "propose" | "tidy" | "write";
+        /**
          * AgentAssignee
          * @description Agents that appear as assignable members.
          * @enum {string}
          */
         AgentAssignee: "coding-agent" | "claude-code" | "codex";
+        /** AgentCatalog */
+        AgentCatalog: {
+            /** Tools */
+            tools: components["schemas"]["ToolOption"][];
+            /**
+             * Actions
+             * @description Every action an autonomy rule can name
+             */
+            actions: string[];
+            /**
+             * Low Risk Actions
+             * @description The actions that may be set to allow (owners only)
+             */
+            low_risk_actions: string[];
+            /** Access Levels */
+            access_levels: components["schemas"]["Access"][];
+            /** Issue Types */
+            issue_types: string[];
+            /**
+             * Reserved Handles
+             * @description Handles a new agent can't take
+             */
+            reserved_handles: string[];
+        };
+        /**
+         * AgentFields
+         * @description An agent's contract without its handle (the handle is in the path). Validated against
+         *     `pmagent_engine.contracts.AgentSpec` on save (422 with the reason).
+         */
+        AgentFields: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Instructions
+             * @description Its role prompt (Markdown)
+             */
+            instructions: string;
+            /**
+             * Model
+             * @description provider:model; null uses the run's model
+             */
+            model?: string | null;
+            /**
+             * Budget Tokens
+             * @description Tokens one run it leads may use; null: the project's
+             */
+            budget_tokens?: number | null;
+            /**
+             * Tools
+             * @description Tool ids from `GET .../agents/catalog`
+             */
+            tools: string[];
+            /**
+             * Access
+             * @description Folder pattern relative to .pmagent/ (e.g. research/*) -> access
+             */
+            access?: {
+                [key: string]: components["schemas"]["Access"];
+            };
+            /**
+             * Issue Types
+             * @description Issue types it may open (needs issues.create)
+             */
+            issue_types?: string[];
+            /**
+             * Can Call
+             * @description Handles it may hand work to; ['*'] for all
+             */
+            can_call?: string[];
+            /**
+             * Autonomy
+             * @description Action -> allow, ask, or block (unlisted: ask). Only owners set allow, and only for low-risk actions
+             */
+            autonomy?: {
+                [key: string]: "allow" | "ask" | "block";
+            };
+            /** Output */
+            output?: string | null;
+            /** Pipeline */
+            pipeline?: string | null;
+            /**
+             * Triggers
+             * @description Stored for automations; not run yet
+             */
+            triggers?: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** AgentRead */
+        AgentRead: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Instructions
+             * @description Its role prompt (Markdown)
+             */
+            instructions: string;
+            /**
+             * Model
+             * @description provider:model; null uses the run's model
+             */
+            model?: string | null;
+            /**
+             * Budget Tokens
+             * @description Tokens one run it leads may use; null: the project's
+             */
+            budget_tokens?: number | null;
+            /**
+             * Tools
+             * @description Tool ids from `GET .../agents/catalog`
+             */
+            tools: string[];
+            /**
+             * Access
+             * @description Folder pattern relative to .pmagent/ (e.g. research/*) -> access
+             */
+            access?: {
+                [key: string]: components["schemas"]["Access"];
+            };
+            /**
+             * Issue Types
+             * @description Issue types it may open (needs issues.create)
+             */
+            issue_types?: string[];
+            /**
+             * Can Call
+             * @description Handles it may hand work to; ['*'] for all
+             */
+            can_call?: string[];
+            /**
+             * Autonomy
+             * @description Action -> allow, ask, or block (unlisted: ask). Only owners set allow, and only for low-risk actions
+             */
+            autonomy?: {
+                [key: string]: "allow" | "ask" | "block";
+            };
+            /** Output */
+            output?: string | null;
+            /** Pipeline */
+            pipeline?: string | null;
+            /**
+             * Triggers
+             * @description Stored for automations; not run yet
+             */
+            triggers?: {
+                [key: string]: unknown;
+            }[];
+            /** Handle */
+            handle: string;
+            /**
+             * Base
+             * @description The built-in it's based on, or null for a custom agent
+             */
+            base: string | null;
+            /**
+             * Source
+             * @description built_in (the default), customised (a changed built-in), or custom
+             * @enum {string}
+             */
+            source: "built_in" | "customised" | "custom";
+            /**
+             * Scope
+             * @description Where it's defined: default (built in), workspace, or project (an override for one project)
+             * @enum {string}
+             */
+            scope: "default" | "workspace" | "project";
+            /**
+             * Version
+             * @description Its definition's current version; null for an unchanged built-in
+             */
+            version: number | null;
+            /** Updated At */
+            updated_at: string | null;
+        };
         /** AgentRunRead */
         AgentRunRead: {
             /**
@@ -1867,7 +2257,7 @@ export interface components {
             requested_by_id: string | null;
             /**
              * Agent
-             * @description Who answered: `auto` (the Project Manager) or a specialist's role
+             * @description Who answered: `auto` (the Project Manager) or the leading agent's handle
              * @default auto
              */
             agent: string;
@@ -1921,6 +2311,21 @@ export interface components {
              */
             approvals: components["schemas"]["ApprovalRead"][];
         };
+        /** AgentSave */
+        AgentSave: {
+            agent: components["schemas"]["AgentFields"];
+            /**
+             * Note
+             * @description Why it changed, shown in its history
+             * @default
+             */
+            note: string;
+            /**
+             * Base Version
+             * @description The version you edited (from `version`); 409 `agent_changed` if someone saved since. Omit when creating
+             */
+            base_version?: number | null;
+        };
         /** AgentUsage */
         AgentUsage: {
             /**
@@ -1934,6 +2339,21 @@ export interface components {
             output_tokens: number;
             /** Model Calls */
             model_calls: number;
+        };
+        /** AgentVersionRead */
+        AgentVersionRead: {
+            /** Version */
+            version: number;
+            agent: components["schemas"]["AgentFields"];
+            /** Note */
+            note: string;
+            /** Author User Id */
+            author_user_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** ApiTokenCreate */
         ApiTokenCreate: {
@@ -3281,11 +3701,10 @@ export interface components {
             thread_id?: string | null;
             /**
              * Agent
-             * @description Who answers: `auto` (the Project Manager involves the specialists it needs) or one specialist, who leads and may ask the others
+             * @description Who answers: `auto` (the Project Manager involves the specialists it needs) or an agent's handle (`GET .../agents`: built-in or custom), who leads and may ask the agents it can call. 422 `unknown_agent` if the project has no such agent
              * @default auto
-             * @enum {string}
              */
-            agent: "auto" | "product" | "architecture" | "research" | "reviewer" | "documentation";
+            agent: string;
             /**
              * Model
              * @description For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model.
@@ -3394,6 +3813,17 @@ export interface components {
         TokenRequest: {
             /** Token */
             token: string;
+        };
+        /** ToolOption */
+        ToolOption: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Actions */
+            actions: string[];
         };
         /** ToolUsage */
         ToolUsage: {
@@ -7701,6 +8131,765 @@ export interface operations {
             };
             /** @description A dependency (such as file storage) is unavailable or not configured */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_agents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_agent_catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCatalog"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    save_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    delete_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_agent_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentVersionRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    restore_agent_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                version: number;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_project_agents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_project_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    save_project_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    delete_project_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_project_agent_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentVersionRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    restore_project_agent_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                version: number;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

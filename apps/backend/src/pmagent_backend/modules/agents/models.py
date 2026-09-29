@@ -62,6 +62,8 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     )
     # Who leads the run: None for Auto (the Project Manager), or a specialist's role.
     agent: Mapped[str | None] = mapped_column(String(32))
+    # The version of that agent's definition the run used; null for an unchanged built-in.
+    agent_version: Mapped[int | None] = mapped_column(Integer)
     # The conversation's model, fixed when it starts (every run of a thread has the same one).
     # Null only on conversations from before models were chosen: they use the project's.
     conversation_model: Mapped[str | None] = mapped_column(String(100))
