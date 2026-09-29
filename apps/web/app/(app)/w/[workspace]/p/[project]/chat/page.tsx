@@ -15,7 +15,7 @@ import { useMembers } from "@/lib/issues";
 import { useProjectScope } from "@/lib/queries";
 import { can } from "@/lib/labels";
 
-/** The PM on a full page, with the conversation list beside it on wide screens. */
+/** Chat on a full page, with the conversation list beside it on wide screens. */
 export default function ChatPage() {
   const { workspace, scope } = useProjectScope();
   const { threadId, setThreadId } = useChat();

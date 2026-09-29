@@ -6,21 +6,29 @@ import { ChatScroller } from "@pmagent/ui/components/chat-scroller";
 import { PromptInput, type PromptStatus } from "@pmagent/ui/components/prompt-input";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
-import { LayersIcon, NewspaperIcon, SparklesIcon } from "lucide-react";
+import { CpuIcon, LayersIcon, NewspaperIcon, SparklesIcon } from "lucide-react";
 import { useState } from "react";
 
 import { timeAgo } from "@/components/issues/issue-activity";
 import {
+  agentLabel,
   isActive,
+  mentionedAgent,
+  modelName,
   runTitle,
   useBriefing,
+  useModels,
   useSendMessage,
   useStopRun,
   useThread,
+  type AgentId,
   type Run,
 } from "@/lib/agent";
 import type { Scope } from "@/lib/issues";
+import { can } from "@/lib/labels";
+import { useCurrentProject } from "@/lib/queries";
 
+import { AgentPicker } from "./agent-picker";
 import { AgentReply } from "./agent-reply";
 
 const SUGGESTIONS = [
@@ -77,8 +85,10 @@ function RunView({
 }
 
 /**
- * One conversation with the PM and the box to continue it. The PM stays in Chat Mode (reads,
- * answers) unless told to change something; every change waits for approval.
+ * One conversation with the project's agents and the box to continue it. The + menu picks who
+ * answers (Auto, or one specialist) and, before the first message, the model the whole
+ * conversation runs on. Agents stay in Chat Mode (read, answer) unless told to change
+ * something; every change waits for approval.
  */
 export function Conversation({
   scope,
@@ -102,10 +112,24 @@ export function Conversation({
   const stop = useStopRun(scope);
   const briefing = useBriefing(scope);
   const [draft, setDraft] = useState("");
+  const { workspace, project } = useCurrentProject();
+  const models = useModels(workspace?.id);
+  // Picks made here, for this conversation (a new one has no thread yet).
+  const [pick, setPick] = useState<{ thread: string | null; agent?: AgentId; model?: string | null }>({
+    thread: threadId,
+  });
+  const picked = pick.thread === threadId ? pick : { thread: threadId };
   const runs = thread.data ?? [];
   const last = runs.at(-1);
   const working = runs.find(isActive);
   const waiting = runs.some((r) => r.status === "awaiting_approval");
+  // The conversation keeps the last agent picked until it's changed.
+  const agent: AgentId = picked.agent ?? ((last?.agent as AgentId | undefined) || "auto");
+  const projectModel = project?.model ?? "";
+  // A conversation's model is fixed once it starts; a new one may choose.
+  const fixedModel = threadId ? (runs[0]?.conversation_model ?? (runs.length ? projectModel : null)) : null;
+  const mayChooseModel = !threadId && can(workspace, "agents:choose_model");
+  const setAgent = (next: AgentId) => setPick({ ...picked, agent: next });
 
   const status: PromptStatus = stop.isPending
     ? "stopping"
@@ -119,10 +143,15 @@ export function Conversation({
 
   async function submit(text: string) {
     if (status !== "ready") return;
-    const run = await send.mutateAsync({ message: text, threadId }).catch(() => null);
+    const run = await send
+      .mutateAsync({ message: text, threadId, agent, model: threadId ? null : (picked.model ?? null) })
+      .catch(() => null);
     if (run) {
       setDraft("");
-      if (run.thread_id !== threadId) onThread(run.thread_id);
+      if (run.thread_id !== threadId) {
+        setPick({ thread: run.thread_id, agent });
+        onThread(run.thread_id);
+      }
     }
   }
 
@@ -133,14 +162,20 @@ export function Conversation({
         contentClassName={cn("mx-auto grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-6", compact ? "p-3" : "p-4 md:p-6")}
       >
         {threadId && thread.isLoading && <Skeleton className="h-24" />}
+        {fixedModel && (
+          <p className="text-muted-foreground flex items-center justify-center gap-1.5 text-xs">
+            <CpuIcon className="size-3.5" />
+            This conversation runs on <span className="font-mono">{modelName(fixedModel)}</span>
+          </p>
+        )}
         {!threadId && (
           <div className="grid gap-4 py-6 text-center">
             <SparklesIcon className="text-brand mx-auto size-6" />
             <div className="grid gap-1">
-              <p className="font-medium">Ask the project manager</p>
+              <p className="font-medium">Chat with the project&apos;s agents</p>
               <p className="text-muted-foreground text-sm">
-                It reads the whole project and answers without changing anything. When you ask for a change, each one
-                waits for your approval here.
+                They read the whole project and answer without changing anything. Use + to pick who answers (Auto brings
+                in the specialists it needs) and the model. When you ask for a change, each one waits for approval here.
               </p>
             </div>
             {canChat && (
@@ -181,19 +216,39 @@ export function Conversation({
           <PromptInput
             className="mx-auto w-full max-w-3xl"
             value={draft}
-            onValueChange={setDraft}
+            onValueChange={(value) => {
+              // "@research " at the start picks that agent.
+              const mention = mentionedAgent(value);
+              if (mention) {
+                setAgent(mention[0]);
+                setDraft(mention[1]);
+              } else {
+                setDraft(value);
+              }
+            }}
             onSubmit={(text) => void submit(text)}
             onStop={working ? () => stop.mutate(working.id) : undefined}
             status={status}
-            label="Message the project manager"
+            label={`Message ${agent === "auto" ? "the agents" : agentLabel(agent)}`}
+            start={
+              <AgentPicker
+                agent={agent}
+                onAgent={setAgent}
+                model={picked.model ?? null}
+                onModel={mayChooseModel ? (model) => setPick({ ...picked, model }) : undefined}
+                models={(models.data ?? []).map((m) => m.id)}
+                defaultModel={projectModel}
+                disabled={status !== "ready"}
+              />
+            }
             placeholder={
               status === "waiting" || last?.status === "awaiting_approval"
                 ? "Decide the changes above to continue"
                 : working
-                  ? "The PM is working…"
+                  ? `${working.agent === "auto" ? "The agents are" : `${agentLabel(working.agent)} is`} working…`
                   : threadId
-                    ? "Reply to the PM"
-                    : "Ask about the project, or ask for a change"
+                    ? "Reply"
+                    : "Ask about the project, or ask for a change (@ picks an agent)"
             }
             hint="Enter to send, Shift+Enter for a new line. Nothing changes without your approval."
           />

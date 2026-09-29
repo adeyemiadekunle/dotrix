@@ -54,10 +54,18 @@ class PlatformAgent:
         self.base = f"/workspaces/{state.workspace_id}/projects/{state.project_id}/agent"
         self.sleep = sleep
 
-    def start(self, message: str, thread_id: str | None = None) -> dict:
+    def start(
+        self, message: str, thread_id: str | None = None, *, agent: str | None = None, model: str | None = None
+    ) -> dict:
+        """Send a message: `agent` picks who answers (auto or a specialist); `model` is only for
+        a new conversation (an existing one keeps the model it started with)."""
         body: dict[str, Any] = {"message": message}
         if thread_id:
             body["thread_id"] = thread_id
+        if agent and agent != "auto":
+            body["agent"] = agent
+        if model and not thread_id:
+            body["model"] = model
         return self.client.post(f"{self.base}/runs", body)
 
     def briefing(self) -> dict:

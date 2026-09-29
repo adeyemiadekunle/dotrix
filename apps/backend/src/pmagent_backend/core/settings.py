@@ -84,6 +84,13 @@ class Settings(DatabaseSettings):
     )
     # Model for new projects ("provider:model"); each project can change its own.
     default_model: str = "anthropic:claude-sonnet-5"
+    # Models a conversation can be started on; only those whose provider has a key are offered.
+    models: list[str] = [
+        "google_genai:gemini-3.8-flash",
+        "anthropic:claude-opus-5-5",
+        "anthropic:claude-sonnet-5",
+        "anthropic:claude-haiku-4-5-20251001",
+    ]
     # The most tokens (input + output, over all its steps) one agent run may use before it
     # stops; a project can set its own. 0 turns the limit off.
     run_token_budget: int = Field(default=500_000, ge=0)

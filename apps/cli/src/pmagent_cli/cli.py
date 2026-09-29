@@ -263,21 +263,43 @@ def brief(project: str = ProjectOpt, local: bool = LocalOpt):
     typer.echo(result["messages"][-1].content)
 
 
+# Who can answer in the platform's chat (`agent` on a run).
+CHAT_AGENTS = ("auto", "product", "architecture", "research", "reviewer", "documentation")
+
+
 @app.command()
 def chat(
     project: str = ProjectOpt,
     local: bool = LocalOpt,
     thread: str | None = typer.Option(None, "--thread", help="Continue a platform conversation."),
+    agent: str = typer.Option(
+        "auto",
+        "--agent",
+        help="Who answers: auto (the project manager and the specialists it needs), product, "
+        "architecture, research, reviewer, or documentation. Change it in the chat with /agent NAME.",
+    ),
+    model: str | None = typer.Option(
+        None, "--model", help="The model for a new conversation (provider:model); it stays for the whole conversation."
+    ),
 ):
     """Interactive session. Any write pauses for your approval. That pause IS Action Mode.
 
     On a linked repo you talk to the platform's agents: every change they want is shown
     here (with a diff for files) and you approve or reject it inline. Otherwise it runs
     the local engine; safe alongside `pmagent run --background` jobs and coding agents."""
+    if agent not in CHAT_AGENTS:
+        raise typer.BadParameter(f"use one of: {', '.join(CHAT_AGENTS)}", param_hint="--agent")
+    if model and thread:
+        raise typer.BadParameter(
+            "a conversation keeps the model it started with; leave out --thread to start a new one",
+            param_hint="--model",
+        )
     config = _resolve_project(project)
     if not local and LinkState.load(config.pmagent_dir) is not None:
-        _platform_chat(project, thread)
+        _platform_chat(project, thread, agent=agent, model=model)
         return
+    if agent != "auto" or model:
+        typer.secho("--agent and --model are for the platform; the local engine uses its own setup.", dim=True)
     checkpoint_path = os.path.join(config.pmagent_dir, "checkpoints.sqlite")
 
     with SqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
@@ -751,11 +773,13 @@ def _platform_brief(project: str) -> None:
         raise typer.Exit(1)
 
 
-def _platform_chat(project: str, thread: str | None) -> None:
-    state, agent = _platform_agent(project)
+def _platform_chat(project: str, thread: str | None, *, agent: str = "auto", model: str | None = None) -> None:
+    state, client = _platform_agent(project)
+    who = f"the {state.project_key} team" if agent == "auto" else f"the {agent} agent on {state.project_key}"
     typer.echo(
-        f"Talking to the {state.project_key} team ({state.project_name}) on the platform. "
-        "Changes wait for your approval. /new starts a new conversation, /quit exits.\n"
+        f"Talking to {who} ({state.project_name}) on the platform"
+        f"{f', on {model}' if model else ''}. Changes wait for your approval. "
+        "/agent NAME picks who answers, /new starts a new conversation, /quit exits.\n"
     )
     while True:
         try:
@@ -768,15 +792,23 @@ def _platform_chat(project: str, thread: str | None) -> None:
             thread = None
             typer.echo("New conversation.")
             continue
+        if message.startswith("/agent"):
+            name = message.removeprefix("/agent").strip().lower() or "auto"
+            if name not in CHAT_AGENTS:
+                typer.secho(f"Use one of: {', '.join(CHAT_AGENTS)}", fg=typer.colors.RED)
+            else:
+                agent = name
+                typer.echo("Talking to the team." if agent == "auto" else f"Talking to the {agent} agent.")
+            continue
         if not message:
             continue
         try:
-            run = agent.start(message, thread)
+            run = client.start(message, thread, agent=agent, model=model)
             thread = run["thread_id"]
             typer.secho("(working…)", dim=True)
             printer = _StreamPrinter()
             _echo_outcome(
-                agent.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity),
+                client.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity),
                 printer,
             )
         except (PlatformError, TimeoutError) as exc:

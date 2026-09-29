@@ -60,6 +60,11 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     requested_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    # Who leads the run: None for Auto (the Project Manager), or a specialist's role.
+    agent: Mapped[str | None] = mapped_column(String(32))
+    # The conversation's model, fixed when it starts (every run of a thread has the same one).
+    # Null only on conversations from before models were chosen: they use the project's.
+    conversation_model: Mapped[str | None] = mapped_column(String(100))
     # The project's model when the run last worked, and the tokens it used over all its steps
     # (start, then resuming after approvals), the title included.
     model: Mapped[str | None] = mapped_column(String(100))

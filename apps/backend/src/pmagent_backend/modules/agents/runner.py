@@ -239,7 +239,7 @@ class AgentRunner:
                 project = await ProjectRepository(session).get(run.workspace_id, run.project_id)
                 assert project is not None
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
-                run.model = project.model
+                run.model = run.conversation_model or project.model
                 # The budget covers every step of the run: what earlier steps used counts.
                 run.token_budget = project.token_budget or self.token_budget
                 usage = TokenUsage(
@@ -251,7 +251,8 @@ class AgentRunner:
                 kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
                 name, description, project_key = project.name, project.description, project.key
-                choice = self.model_factory(project)
+                choice = self.model_factory(project, run.model)
+                lead = run.agent  # None: Auto (the Project Manager)
 
             backend = CompositeBackend(
                 default=StateBackend(),
@@ -294,6 +295,7 @@ class AgentRunner:
                 ),
                 specialist_model=choice.specialist_model,
                 summarize_after_tokens=self.summarize_after_tokens,
+                lead=lead,
             )
             config = {
                 "configurable": {"thread_id": str(thread_id)},
@@ -312,23 +314,24 @@ class AgentRunner:
             result = None
             if retry:
                 graph_input, result = await _continue_from_checkpoint(agent, config, payload, graph_input)
+            speaker = lead or PM_ROLE  # whose words are streamed to the person
             if result is None and kind is RunKind.BRIEFING and not resuming:
                 # One model call with no tools: the context pack already says what happened.
                 system = briefing_system_prompt(name, description, rules=rules, context=context)
                 result = await _brief(agent, choice.model, system, payload["message"], config, stream)
             if result is None:
-                result = await _run_graph(agent, graph_input, config, stream)
+                result = await _run_graph(agent, graph_input, config, stream, speaker)
             result = await self._settle(agent, kind, config, stream, result)
             if not hitl.has_pending(result) and not _reply(result):
                 logger.warning("agent run %s: no reply; asking once more", run_id)
-                result = await _run_graph(agent, _follow_up(result), config, stream)
+                result = await _run_graph(agent, _follow_up(result), config, stream, speaker)
                 result = await self._settle(agent, kind, config, stream, result)
                 if not hitl.has_pending(result) and not _reply(result):
                     await self._fail(
                         run_id, NO_REPLY_AFTER_DECISIONS_ERROR if resuming else NO_REPLY_ERROR, usage
                     )
                     return
-            await self._finish(run_id, result, usage)
+            await self._finish(run_id, result, usage, speaker)
         except asyncio.CancelledError:
             reason = self._stopped.pop(run_id, None)
             if reason is None and self.stop_reasons is not None:
@@ -364,7 +367,7 @@ class AgentRunner:
                 result = await _run_graph(agent, command, config, stream)
         return result
 
-    async def _finish(self, run_id: uuid.UUID, result: dict, usage: TokenUsage) -> None:
+    async def _finish(self, run_id: uuid.UUID, result: dict, usage: TokenUsage, speaker: str = PM_ROLE) -> None:
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id)
             assert run is not None
@@ -406,7 +409,7 @@ class AgentRunner:
                 action=action_name,
                 target=str(run.id),
                 actor_type=AuthorType.AGENT,
-                agent="project-manager",
+                agent=speaker,
                 instructed_by_id=run.requested_by_id,
                 details={"pending_actions": len(pending), **tokens} if pending else tokens,
             )
@@ -508,7 +511,7 @@ def _jsonable(value: Any) -> dict[str, Any]:
     return {"value": str(value)}
 
 
-async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream) -> dict:
+async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream, speaker: str = PM_ROLE) -> dict:
     """What `agent.ainvoke` returns (the final state, plus `__interrupt__` when actions wait for
     approval), collected from the graph's stream so the Project Manager's words can be
     published as they're written. Subagents' words aren't streamed: only the PM speaks to you."""
@@ -526,7 +529,7 @@ async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream)
             chunk, metadata = payload
             if getattr(chunk, "type", "") == "AIMessageChunk" and role_for_agent_name(
                 (metadata or {}).get("lc_agent_name")
-            ) == PM_ROLE:
+            ) == speaker:
                 await stream.publish(text_of(chunk.content))
     if interrupts:
         return {**latest, "__interrupt__": interrupts} if isinstance(latest, dict) else {"__interrupt__": interrupts}

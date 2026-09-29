@@ -135,9 +135,17 @@ def _subagents(
     rules: dict[str, str] | None = None,
     context: str | None = None,
     knowledge_tools: list | None = None,
+    lead: str | None = None,
+    board: str = "",
 ) -> list[dict]:
+    """The five specialists. The one named by `lead` (a role, e.g. "research") talks to the
+    person directly and may call the others; the rest answer whoever called them."""
+
     def role(title: str, body: str) -> str:
-        prompt = f"You are the {title} for {project_name}.\n{body}\n{_FINDINGS_GUIDE}"
+        if _ROLE_FOR_TITLE[title] == lead:
+            prompt = f"You are the {title} for {project_name}.\n{body}\n{board}\n{_LEAD_GUIDE}"
+        else:
+            prompt = f"You are the {title} for {project_name}.\n{body}\n{_FINDINGS_GUIDE}"
         return _with_context(_with_rules(rules, _ROLE_FOR_TITLE[title], prompt), context)
 
     # Custom tools per subagent are set explicitly so it's obvious who can do
@@ -240,6 +248,27 @@ Your reply goes back to the Project Manager, not to a person. Answer with findin
 answer first, then the key points, each with the path and section it comes from, and any
 changes you propose. Don't paste whole documents back; quote only the lines that matter."""
 
+# A specialist picked in the chat leads the run: it talks to the person, and may ask the
+# other specialists (one level: the ones it calls can't call anyone).
+_LEAD_GUIDE = """
+## You're in the project's chat
+You're talking with a person in the project's chat; they picked you for this. Answer them
+directly, in your role.
+
+Default to CHAT MODE: read, search, analyse, and discuss; don't call write_file, edit_file,
+or any board-changing tool. Only when the person explicitly asks for a change (e.g. "write
+that up", "create those stories") make it, say exactly what changed, and return to Chat Mode.
+Every change waits for a person's approval anyway.
+
+When part of the work needs another specialist's expertise, ask them with the `task` tool:
+a short brief (the question, what the person asked for, what you already know, where to
+start, what to return). They can't ask anyone else. For work that needs the whole team
+(planning across roles, editing or closing issues), suggest the person picks Auto.
+
+Work in few steps: every step re-sends everything so far. Ask for all the files, sections,
+and issues you need in one turn, and answer as soon as you can.
+"""
+
 _CONTEXT_GUIDE = """## Using the project context
 The project context below is built fresh for this run: every document with a one-line
 summary, the board, recent decisions, and what changed since this conversation's last
@@ -265,6 +294,8 @@ SUBAGENT_ROLES = {
     "documentation-agent": "documentation",
 }
 PM_ROLE = "project-manager"
+# Who can lead a chat: Auto (the Project Manager coordinating the team) or one specialist.
+LEADS = (PM_ROLE, *SUBAGENT_ROLES.values())
 _ROLE_FOR_TITLE = {
     "Product Agent": "product",
     "Architecture Agent": "architecture",
@@ -344,6 +375,7 @@ def build_team(
     knowledge_tools: list | None = None,
     specialist_model: Any = None,
     summarize_after_tokens: int | None = None,
+    lead: str | None = None,
 ):
     """The Project Manager plus five thinking subagents, over any storage backend.
 
@@ -358,7 +390,13 @@ def build_team(
     `knowledge_tools` are extra read-only tools for everyone (outline, sections, search).
     `specialist_model` runs the specialists and conversation summaries (a cheaper model);
     `summarize_after_tokens` sets when a long conversation's older turns are summarised.
+    `lead` picks who talks to the person: None or "project-manager" for the PM (Auto), or a
+    specialist's role ("research", ...), who then leads with its own prompt, tools, and folder
+    permissions and may call the other four (one level deep).
     """
+    if lead not in (None, *LEADS):
+        raise ValueError(f"Unknown lead agent {lead!r}; use one of {', '.join(LEADS)}")
+    lead = None if lead == PM_ROLE else lead
     read_task_tools, write_task_tools = task_tools or ([], [])
     if board_instructions is not None:
         board = board_instructions
@@ -432,11 +470,40 @@ blockers, and documentation status. A briefing never writes.
         rules,
         context,
         knowledge_tools,
+        lead=lead,
+        board=board,
     )
     for spec in subagents:
         spec["middleware"] = middleware()
         if specialist_model is not None:
             spec["model"] = specialist_model
+
+    if lead is not None:
+        # The picked specialist is the main agent; the others are the ones it may call.
+        leader = next(spec for spec in subagents if spec["name"] == f"{lead}-agent")
+        others = [spec for spec in subagents if spec is not leader]
+        permissions = leader.get("permissions")
+        if permissions:
+            for spec in others:  # they'd inherit the leader's restrictions otherwise
+                spec.setdefault("permissions", [])
+        gated = {getattr(tool, "__name__", "") for tool in subagent_task_tools or []}
+        return create_deep_agent(
+            model=model,
+            tools=leader.get("tools") or [],
+            system_prompt=leader["system_prompt"],
+            subagents=others,
+            middleware=middleware(),
+            permissions=permissions,
+            backend=backend,
+            checkpointer=checkpointer,
+            interrupt_on={
+                # A read-only lead (the reviewer) is refused file writes outright, rather
+                # than asking a person to approve a write that would then be refused.
+                **({} if permissions else {"write_file": _APPROVAL, "edit_file": _APPROVAL}),
+                **{name: _APPROVAL for name in gated if name},
+            },
+            name=leader["name"],
+        )
 
     return create_deep_agent(
         model=model,

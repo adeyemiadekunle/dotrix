@@ -143,7 +143,7 @@ function BacklogPage() {
           <EmptyState
             icon={ListTodoIcon}
             title={epic ? "Nothing open in this epic" : "The backlog is empty"}
-            description="New issues land here in To do. Create one with New issue, or ask the PM agent to plan a feature."
+            description="New issues land here in To do. Create one with New issue, or ask the agents in Chat to plan a feature."
           />
         ) : (
           <DndContext

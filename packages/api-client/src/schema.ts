@@ -1237,10 +1237,14 @@ export interface paths {
         put?: never;
         /**
          * Create Run
-         * @description Send a message to the Project Manager. It runs in the background: poll the run until
-         *     `status` is `completed`, `failed`, or `awaiting_approval`. Agents stay in Chat Mode
-         *     unless you instruct a change, and every write pauses for approval. Pass `thread_id` to
-         *     continue a conversation. 503 `model_unavailable` if the project's model has no API key.
+         * @description Send a message to the project's agents: `agent` picks who answers (`auto`, the Project
+         *     Manager with the specialists it needs, or one specialist, who leads and may ask the others).
+         *     It runs in the background: poll the run until `status` is `completed`, `failed`, or
+         *     `awaiting_approval`. Agents stay in Chat Mode unless you instruct a change, and every write
+         *     pauses for approval. Pass `thread_id` to continue a conversation; a new one may pick its
+         *     `model` (fixed from then on: 409 `model_locked` for another on an existing conversation;
+         *     403 without agents:choose_model; 422 `model_not_available`). 503 `model_unavailable` if the
+         *     model has no API key.
          */
         post: operations["create_run"];
         delete?: never;
@@ -1414,6 +1418,27 @@ export interface paths {
          *     run keeps waiting). Your decision is recorded next to who instructed the run.
          */
         post: operations["decide_approvals"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Models
+         * @description The models a conversation can be started on here: those whose provider has an API key.
+         *     A project's own model is always allowed too, even if it isn't listed.
+         */
+        get: operations["list_models"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1747,6 +1772,17 @@ export interface components {
             error: string | null;
             /** Requested By Id */
             requested_by_id: string | null;
+            /**
+             * Agent
+             * @description Who answered: `auto` (the Project Manager) or a specialist's role
+             * @default auto
+             */
+            agent: string;
+            /**
+             * Conversation Model
+             * @description The model the conversation runs on (fixed when it started); null on older conversations, which use the project's model
+             */
+            conversation_model?: string | null;
             /**
              * Model
              * @description The project's model when the run last worked, e.g. `google_genai:gemini-3.8-flash`. Owners and admins only (null otherwise)
@@ -2716,6 +2752,21 @@ export interface components {
         MemberRoleUpdate: {
             role: components["schemas"]["Role"];
         };
+        /** ModelOption */
+        ModelOption: {
+            /**
+             * Id
+             * @description provider:model, e.g. google_genai:gemini-3.8-flash
+             */
+            id: string;
+            /** Provider */
+            provider: string;
+            /**
+             * Name
+             * @description The model's name without the provider
+             */
+            name: string;
+        };
         /** OrgCreate */
         OrgCreate: {
             /** Name */
@@ -2857,7 +2908,7 @@ export interface components {
          * Permission
          * @enum {string}
          */
-        Permission: "workspace:view" | "agents:chat" | "issues:write" | "knowledge:write" | "agents:approve" | "agents:code" | "projects:manage" | "workspace:manage" | "members:manage" | "workspace:billing" | "usage:view";
+        Permission: "workspace:view" | "agents:chat" | "issues:write" | "knowledge:write" | "agents:approve" | "agents:code" | "projects:manage" | "workspace:manage" | "members:manage" | "workspace:billing" | "usage:view" | "agents:choose_model";
         /**
          * Priority
          * @enum {string}
@@ -3092,6 +3143,18 @@ export interface components {
              * @description Continue a conversation. Omit to start a new thread.
              */
             thread_id?: string | null;
+            /**
+             * Agent
+             * @description Who answers: `auto` (the Project Manager involves the specialists it needs) or one specialist, who leads and may ask the others
+             * @default auto
+             * @enum {string}
+             */
+            agent: "auto" | "product" | "architecture" | "research" | "reviewer" | "documentation";
+            /**
+             * Model
+             * @description For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model.
+             */
+            model?: string | null;
         };
         /** RunFileRead */
         RunFileRead: {
@@ -7989,6 +8052,55 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelOption"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

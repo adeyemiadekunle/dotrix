@@ -52,6 +52,14 @@ class ThreadBusy(Conflict):
     code = "thread_busy"
 
 
+class ModelLocked(Conflict):
+    code = "model_locked"
+
+
+class ModelNotAvailable(Unprocessable):
+    code = "model_not_available"
+
+
 class NotAwaitingApproval(Conflict):
     code = "not_awaiting_approval"
 
@@ -72,14 +80,28 @@ class AgentService:
         kind: RunKind = RunKind.CHAT,
         *,
         title: str | None = None,
+        available: list[str] | None = None,
     ) -> AgentRunRead:
         """Start a run. A new thread gets a title: `title` if given (built-in requests), else one
-        made from the message (`titles.py`; no model call)."""
+        made from the message (`titles.py`; no model call), and its model, fixed from then on.
+        `available` lists the models a conversation may start on (`llm.available_models`)."""
         project, member = access.project, access.member
-        self.runner.model_factory(project)  # fail fast (503) if the model can't run
         thread_id = data.thread_id or uuid7()
         if data.thread_id is not None:
             await self._check_thread(project.id, data.thread_id)
+            model = await self._thread_model(project.id, data.thread_id)
+            if data.model is not None and data.model != (model or project.model):
+                raise ModelLocked(
+                    "A conversation keeps the model it started with; start a new conversation to use another"
+                )
+        else:
+            model = data.model or project.model
+            if model != project.model:
+                if not can(member, Permission.CHOOSE_MODEL):
+                    raise Forbidden("Only owners and admins (or members the workspace allows) choose the model")
+                if available is not None and model not in available:
+                    raise ModelNotAvailable(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
+        self.runner.model_factory(project, model)  # fail fast (503) if the model can't run
         now = _now()
         run = AgentRun(
             id=uuid7(),
@@ -90,6 +112,8 @@ class AgentService:
             status=RunStatus.QUEUED,
             message=data.message,
             title=(title or title_from_message(data.message)) if data.thread_id is None else None,
+            agent=None if data.agent == "auto" else data.agent,
+            conversation_model=model,
             requested_by_id=member.user_id,
             created_at=now,
             updated_at=now,
@@ -103,7 +127,7 @@ class AgentService:
             actor_type=AuthorType.USER,
             actor_user_id=member.user_id,
             instructed_by_id=member.user_id,
-            details={"kind": kind.value, "thread_id": str(thread_id)},
+            details={"kind": kind.value, "thread_id": str(thread_id), "agent": data.agent, "model": model},
         )
         await self.session.commit()
         await self.runner.start(run.id, data.message)
@@ -312,6 +336,15 @@ class AgentService:
         )
         if found is None:
             raise NotFound("Run not found")
+
+    async def _thread_model(self, project_id: uuid.UUID, thread_id: uuid.UUID) -> str | None:
+        """The conversation's model, from its first run."""
+        return await self.session.scalar(
+            select(AgentRun.conversation_model)
+            .where(AgentRun.project_id == project_id, AgentRun.thread_id == thread_id)
+            .order_by(AgentRun.created_at)
+            .limit(1)
+        )
 
     async def _check_thread(self, project_id: uuid.UUID, thread_id: uuid.UUID) -> None:
         runs = list(

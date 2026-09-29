@@ -1,21 +1,26 @@
 "use client";
 
-import { ChatMessage, ChatNotice } from "@pmagent/ui/components/chat-message";
+import { ChatMessage, ChatMessageMeta, ChatNotice } from "@pmagent/ui/components/chat-message";
 import { BotIcon, ChevronDownIcon, CircleAlertIcon, CircleStopIcon } from "lucide-react";
 import { useState } from "react";
 
 import { Markdown } from "@/components/markdown";
-import { isActive, useRunStream, wasStopped, type Run } from "@/lib/agent";
+import { agentLabel, isActive, useRunStream, wasStopped, type Run } from "@/lib/agent";
 import type { Scope } from "@/lib/issues";
 import { agentName } from "@/lib/labels";
 
 import { RunApprovals } from "./approvals";
 
-/** What the PM is doing, while it works: the live activity when there is one. */
+/** Who's answering: "Research agent", or "The agents" for Auto. */
+function speaker(run: Run): string {
+  return run.agent && run.agent !== "auto" ? agentLabel(run.agent) : "The agents";
+}
+
+/** What the agent is doing, while it works: the live activity when there is one. */
 function progressText(run: Run, activity: string | null, writing: boolean): string {
   if (run.status === "queued") return "Waiting to start…";
   if (writing) return "Writing…";
-  return activity ? `${activity}…` : "The PM is working on it…";
+  return activity ? `${activity}…` : `${speaker(run)} ${run.agent && run.agent !== "auto" ? "is" : "are"} working on it…`;
 }
 
 const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
@@ -115,9 +120,9 @@ function UsageRow({ label, children }: { label: React.ReactNode; children: React
 }
 
 /**
- * The PM's side of a run, wherever a run is shown (a conversation, the briefing page): the
- * reply as it streams, what the PM is doing meanwhile, changes waiting for approval, the
- * final reply or why it stopped, and the run's usage.
+ * The agents' side of a run, wherever a run is shown (a conversation, the briefing page): who
+ * answered, the reply as it streams, what the agent is doing meanwhile, changes waiting for
+ * approval, the final reply or why it stopped, and the run's usage.
  */
 export function AgentReply({
   run,
@@ -137,6 +142,7 @@ export function AgentReply({
   const decided = run.status === "awaiting_approval" && (run.approvals ?? []).every((a) => a.status !== "pending");
   return (
     <ChatMessage from="agent" avatar={avatar ? <BotIcon /> : undefined} className={className}>
+      {run.kind === "chat" && <ChatMessageMeta>{agentLabel(run.agent)}</ChatMessageMeta>}
       {active && live.text && <Markdown>{live.text}</Markdown>}
       {active && <ChatNotice tone="progress">{progressText(run, live.activity, Boolean(live.text))}</ChatNotice>}
       {wasStopped(run) && <ChatNotice icon={<CircleStopIcon />}>{run.error}.</ChatNotice>}
@@ -146,11 +152,12 @@ export function AgentReply({
         </ChatNotice>
       )}
       <RunApprovals run={run} scope={scope} canDecide={canDecide} />
-      {decided && <ChatNotice tone="progress">The PM is working on it…</ChatNotice>}
+      {decided && <ChatNotice tone="progress">{speaker(run)} {run.agent && run.agent !== "auto" ? "is" : "are"} working on it…</ChatNotice>}
       {run.reply && <Markdown>{run.reply}</Markdown>}
       {run.status === "completed" && !run.reply?.trim() && (run.approvals ?? []).length === 0 && (
         <ChatNotice>
-          The PM finished without a reply. Models occasionally do this; ask again if you expected an answer or a change.
+          {speaker(run)} finished without a reply. Models occasionally do this; ask again if you expected an answer or a
+          change.
         </ChatNotice>
       )}
       <RunUsage run={run} />

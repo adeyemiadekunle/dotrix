@@ -67,3 +67,37 @@ def test_delegation_briefs_and_findings() -> None:
     assert "## Delegating" in pm and "delegate straight away" in pm
     assert "Answer with findings" in specialist and "ask for all of it in one turn" in specialist
     assert "## Delegating" not in specialist
+
+
+def test_a_specialist_can_lead_and_call_the_others() -> None:
+    import pytest
+
+    model = ScriptedChatModel.of(
+        tool_call("task", description="Which modules does multi-zone touch?", subagent_type="architecture-agent"),
+        "Dispatch and driver zones.",  # the architecture agent
+        "Stories drafted; architecture says dispatch and driver zones are affected.",
+    )
+    backend = CompositeBackend(default=StateBackend(), routes={"/pmagent/": StateBackend()})
+    agent = build_team("Kunemi", "Logistics platform", model, backend, checkpointer=InMemorySaver(), lead="product")
+    result = agent.invoke({"messages": [{"role": "user", "content": "draft multi-zone stories"}]}, config("t5"))
+    assert result["messages"][-1].content.startswith("Stories drafted")
+    lead_prompt, called_prompt = str(model.received[0][0].content), str(model.received[1][0].content)
+    assert "You are the Product Agent" in lead_prompt and "You're in the project's chat" in lead_prompt
+    assert "Project Manager for Kunemi" not in lead_prompt
+    assert "You are the Architecture Agent" in called_prompt and "Answer with findings" in called_prompt
+
+    with pytest.raises(ValueError, match="Unknown lead agent"):
+        build_team("Kunemi", "x", model, backend, lead="marketing")
+
+
+def test_the_reviewer_leads_read_only() -> None:
+    model = ScriptedChatModel.of(
+        tool_call("write_file", file_path="/pmagent/reviews/r.md", content="x"),
+        "I can't write; here is the review instead.",
+    )
+    backend = CompositeBackend(default=StateBackend(), routes={"/pmagent/": StateBackend()})
+    agent = build_team("Kunemi", "x", model, backend, checkpointer=InMemorySaver(), lead="reviewer")
+    result = agent.invoke({"messages": [{"role": "user", "content": "review it"}]}, config("t6"))
+    assert not approvals.has_pending(result)  # denied outright, never offered for approval
+    denied = [m for m in result["messages"] if m.type == "tool"][0]
+    assert "denied" in str(denied.content).lower()

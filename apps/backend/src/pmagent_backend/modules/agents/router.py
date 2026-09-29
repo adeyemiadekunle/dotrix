@@ -8,12 +8,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import StreamingResponse
 
-from pmagent_backend.api.deps import SessionDep, require_permission
+from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.projects.deps import ProjectAccess, require_project_permission
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
+from .llm import available_models
 from .models import RunKind
 from .runner import AgentRunner
 from .schemas import (
@@ -21,6 +22,7 @@ from .schemas import (
     ApprovalRead,
     ArchitectureDraftRequest,
     DecisionsRequest,
+    ModelOption,
     RunCreate,
     ThreadRead,
     ThreadRename,
@@ -51,13 +53,18 @@ Approver = Annotated[ProjectAccess, Depends(require_project_permission(Permissio
 SetupManager = Annotated[ProjectAccess, Depends(require_project_permission(Permission.MANAGE_PROJECTS))]
 
 
-@router.post("/runs", status_code=status.HTTP_202_ACCEPTED, responses=errors(409, 422, 503))
-async def create_run(data: RunCreate, access: Chatter, agents: Agents) -> AgentRunRead:
-    """Send a message to the Project Manager. It runs in the background: poll the run until
-    `status` is `completed`, `failed`, or `awaiting_approval`. Agents stay in Chat Mode
-    unless you instruct a change, and every write pauses for approval. Pass `thread_id` to
-    continue a conversation. 503 `model_unavailable` if the project's model has no API key."""
-    return await agents.create_run(access, data)
+@router.post("/runs", status_code=status.HTTP_202_ACCEPTED, responses=errors(403, 409, 422, 503))
+async def create_run(data: RunCreate, access: Chatter, agents: Agents, settings: SettingsDep) -> AgentRunRead:
+    """Send a message to the project's agents: `agent` picks who answers (`auto`, the Project
+    Manager with the specialists it needs, or one specialist, who leads and may ask the others).
+    It runs in the background: poll the run until `status` is `completed`, `failed`, or
+    `awaiting_approval`. Agents stay in Chat Mode unless you instruct a change, and every write
+    pauses for approval. Pass `thread_id` to continue a conversation; a new one may pick its
+    `model` (fixed from then on: 409 `model_locked` for another on an existing conversation;
+    403 without agents:choose_model; 422 `model_not_available`). 503 `model_unavailable` if the
+    model has no API key."""
+    available = available_models(settings, access.project.model)
+    return await agents.create_run(access, data, available=available)
 
 
 @router.post("/briefing", status_code=status.HTTP_202_ACCEPTED, responses=errors(503))
@@ -151,6 +158,21 @@ async def decide_approvals(
     permission; changes to `architecture/` need an owner or admin (403 otherwise, and the
     run keeps waiting). Your decision is recorded next to who instructed the run."""
     return await agents.decide(access, run_id, data)
+
+
+models_router = APIRouter(prefix="/workspaces/{workspace_id}/models", tags=["agents"], responses=errors(401, 404))
+
+
+@models_router.get("")
+async def list_models(
+    member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], settings: SettingsDep
+) -> list[ModelOption]:
+    """The models a conversation can be started on here: those whose provider has an API key.
+    A project's own model is always allowed too, even if it isn't listed."""
+    return [
+        ModelOption(id=model, provider=model.partition(":")[0], name=model.partition(":")[2])
+        for model in available_models(settings)
+    ]
 
 
 workspace_router = APIRouter(

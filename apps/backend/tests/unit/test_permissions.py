@@ -17,6 +17,7 @@ MATRIX = [
     (P.MANAGE_MEMBERS, True, True, False, False),
     (P.MANAGE_BILLING, True, False, False, False),
     (P.VIEW_USAGE, True, True, False, False),  # agent runs' token counts (spend)
+    (P.CHOOSE_MODEL, True, True, False, False),  # members: grantable per workspace
 ]
 
 
