@@ -57,14 +57,15 @@ async def test_removals_and_invites_are_audited(signup, create_team, add_member,
     events = await audit(db_client, team["id"], ada.headers)
     summary = [(e["action"], e["target"], e["actor_user_id"]) for e in events]
     assert summary == [
+        ("workspace.added_to_organization", "Kunemi", ada.id),
         ("member.removed", "bob@example.com", ada.id),
         ("invite.sent", "dan@example.com", ada.id),
         ("invite.revoked", "dan@example.com", ada.id),
         ("invite.link_created", None, ada.id),
         ("member.joined", "carol@example.com", carol.id),
     ]
-    assert events[3]["details"] == {"role": "member", "max_uses": 3, "expires_in_days": 7}
-    assert events[4]["details"] == {"role": "member", "via": "link invite"}
+    assert events[4]["details"] == {"role": "member", "max_uses": 3, "expires_in_days": 7}
+    assert events[5]["details"] == {"role": "member", "via": "link invite"}
     # Tokens never reach the log.
     assert token not in str(events)
 
@@ -86,8 +87,9 @@ async def test_organisation_placements_land_in_the_workspace_log(
 
     events = await audit(db_client, team["id"], ada.headers)
     assert [(e["action"], e["target"]) for e in events] == [
+        ("workspace.added_to_organization", "Kunemi"),
         ("member.placed", "bob@example.com"),
         ("member.role_changed", "bob@example.com"),
         ("member.removed", "bob@example.com"),
     ]
-    assert all(e["details"]["by_organization"] == org["id"] for e in events)
+    assert all(e["details"]["by_organization"] == org["id"] for e in events[1:])

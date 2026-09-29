@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pmagent_backend.core.errors import Conflict
+from pmagent_backend.core.errors import Conflict, Forbidden, NotFound
+from pmagent_backend.modules.agents.models import ACTIVE_STATUSES, AgentApproval, AgentRun
+from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.models import User
+from pmagent_backend.modules.documents.models import Document
+from pmagent_backend.modules.issues.models import Issue, IssueEvent
+from pmagent_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
 from pmagent_backend.modules.knowledge.service import KnowledgeService
+from pmagent_backend.modules.search.models import KnowledgeChunk
+from pmagent_backend.modules.workspaces.models import Membership
+from pmagent_backend.modules.workspaces.permissions import Permission, can
+from pmagent_backend.modules.workspaces.repository import MembershipRepository
 from pmagent_engine.layout import skeleton
 
 from .models import Project
@@ -21,6 +31,11 @@ class KeyTaken(Conflict):
 
 class RepoTaken(Conflict):
     code = "repo_taken"
+
+
+# Everything a project owns that carries its workspace, moved with it. Audit events stay: each
+# workspace's log keeps what happened while the project was there.
+_PROJECT_ROWS = (KnowledgeFile, KnowledgeVersion, Issue, AgentRun, AgentApproval, Document, KnowledgeChunk)
 
 
 class ProjectService:
@@ -84,4 +99,50 @@ class ProjectService:
             project.repo_url = data.repo_url
         await self.session.commit()
         await self.session.refresh(project)  # updated_at is set by the database
+        return ProjectRead.model_validate(project)
+
+    async def move(self, project: Project, actor: Membership, target_id: uuid.UUID) -> ProjectRead:
+        """Move a project, with everything in it, to another workspace where you can set up
+        projects (owners and admins in both). Its key and repo must be free there, and no agent
+        run may be working or waiting on an approval."""
+        target = await MembershipRepository(self.session).effective(target_id, actor.user_id)
+        if target is None:
+            raise NotFound("Workspace not found")
+        if not can(target, Permission.MANAGE_PROJECTS):
+            raise Forbidden(f"Your role there ({target.role}) can't add projects")
+        source_id = project.workspace_id
+        if target_id == source_id:
+            raise Conflict("The project is already in that workspace")
+        project = await self.projects.get(source_id, project.id, for_update=True)
+        assert project is not None  # the route found it
+        if await self.projects.key_exists(target_id, project.key):
+            raise KeyTaken(f"{target.workspace.name} already has a project with key {project.key}")
+        if project.repo_url and await self.projects.list(target_id, repo_url=project.repo_url):
+            raise RepoTaken(f"{target.workspace.name} already has a project for {project.repo_url}")
+        active = await self.session.scalar(
+            select(AgentRun.id).where(AgentRun.project_id == project.id, AgentRun.status.in_(ACTIVE_STATUSES)).limit(1)
+        )
+        if active is not None:
+            raise Conflict("An agent run is still working or waiting for approval; stop it or decide it first")
+
+        for model in _PROJECT_ROWS:
+            await self.session.execute(
+                update(model).where(model.project_id == project.id).values(workspace_id=target_id)
+            )
+        issues = select(Issue.id).where(Issue.project_id == project.id).scalar_subquery()
+        await self.session.execute(
+            update(IssueEvent).where(IssueEvent.issue_id.in_(issues)).values(workspace_id=target_id)
+        )
+        project.workspace_id = target_id
+        audit = AuditLog(self.session)
+        for workspace_id, direction, other in (
+            (source_id, "project.moved_out", target_id), (target_id, "project.moved_in", source_id)
+        ):
+            audit.record(
+                workspace_id=workspace_id, project_id=project.id, action=direction, target=project.key,
+                actor_type=AuthorType.USER, actor_user_id=actor.user_id,
+                details={"from": str(source_id), "to": str(target_id), "other_workspace": str(other)},
+            )
+        await self.session.commit()
+        await self.session.refresh(project)
         return ProjectRead.model_validate(project)

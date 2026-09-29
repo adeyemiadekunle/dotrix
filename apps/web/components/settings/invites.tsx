@@ -163,14 +163,14 @@ function NoInvites({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
         <SettingsTitle>Invite people</SettingsTitle>
         <SettingsDescription>
           {personal
-            ? "A personal workspace is just for you: nobody else can join it."
+            ? "A personal workspace is just for you: nobody else can join it while it stays personal."
             : `Only workspaces in an organisation can invite people, and ${workspace.name} isn't in one.`}
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="grid gap-3">
         <p className="text-muted-foreground text-sm">
           {personal
-            ? "To work with others, create a workspace in an organisation and invite them there."
+            ? "To work with others, add this workspace to an organisation from the organisation's Workspaces page (it becomes a team workspace and you get a new personal one), or move a project into an organisation's workspace from the project's settings."
             : "Create an organisation (or open one you own), then add this workspace to it from the organisation's Workspaces page."}
         </p>
         <div>

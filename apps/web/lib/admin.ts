@@ -161,3 +161,18 @@ export function useUpdateProject(workspaceId: string, projectId: string) {
     "Project updated",
   );
 }
+
+/** Move a project, with everything in it, to another workspace (owners and admins in both). */
+export function useMoveProject(workspaceId: string, projectId: string) {
+  return useAdminMutation(
+    (targetId: string) =>
+      unwrap(
+        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/move", {
+          params: { path: { workspace_id: workspaceId, project_id: projectId } },
+          body: { workspace_id: targetId },
+        }),
+      ),
+    [["projects"], ["workspaces"]],
+    "Project moved",
+  );
+}

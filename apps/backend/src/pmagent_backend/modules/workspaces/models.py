@@ -37,7 +37,8 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
-    # Set when an organisation owns this workspace; personal workspaces never have one.
+    # Set when an organisation owns this workspace; personal workspaces never have one (one
+    # brought into an organisation becomes a team workspace).
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organizations.id", ondelete="SET NULL"), index=True
     )

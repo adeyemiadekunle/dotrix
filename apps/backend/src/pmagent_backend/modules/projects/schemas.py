@@ -99,6 +99,7 @@ class ProjectRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    workspace_id: uuid.UUID
     key: str
     name: str
     description: str
@@ -112,3 +113,7 @@ class ProjectRead(BaseModel):
     knowledge_revision: int
     created_at: datetime
     updated_at: datetime
+
+
+class ProjectMove(BaseModel):
+    workspace_id: uuid.UUID = Field(description="The workspace to move the project into")

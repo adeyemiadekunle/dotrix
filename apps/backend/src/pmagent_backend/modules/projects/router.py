@@ -13,7 +13,7 @@ from pmagent_backend.modules.workspaces.permissions import Permission
 
 from .deps import ProjectManager, ProjectViewer
 from .repo_urls import normalize_repo_url
-from .schemas import ProjectCreate, ProjectRead, ProjectUpdate
+from .schemas import ProjectCreate, ProjectMove, ProjectRead, ProjectUpdate
 from .service import ProjectService
 
 router = APIRouter(
@@ -75,3 +75,13 @@ async def update_project(
     """Rename a project, change its description or its agents' model, or link or unlink its repo
     (one project per repo in a workspace: 409 if another has it). The key can't change."""
     return await ProjectService(session).update(access.project, data)
+
+
+@router.post("/{project_id}/move", responses=errors(403, 409, 422))
+async def move_project(data: ProjectMove, access: ProjectManager, session: SessionDep) -> ProjectRead:
+    """Move a project, with its knowledge, issues, documents, and conversations, to another
+    workspace: from your personal workspace into an organisation's, or back. You need to set up
+    projects in both (owners and admins). 409 if the other workspace already has a project with
+    its key or repo, or while one of its agent runs is working or waiting for approval. Linked
+    checkouts run `pmagent connect` again afterwards."""
+    return await ProjectService(session).move(access.project, access.member, data.workspace_id)

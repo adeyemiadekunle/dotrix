@@ -192,3 +192,100 @@ async def test_admins_set_up_projects(signup, create_team, add_member, db_client
     await add_member(team["id"], cy.id, Role.ADMIN)
     res = await db_client.post(projects_url(team), json={"key": "ADM", "name": "A"}, headers=cy.headers)
     assert res.status_code == 201
+
+
+async def _personal(db_client: AsyncClient, headers: dict) -> dict:
+    return next(w for w in (await db_client.get("/v1/workspaces", headers=headers)).json() if w["kind"] == "personal")
+
+
+async def test_move_a_project_from_personal_into_an_organisation_and_back(
+    signup, create_team, db_client: AsyncClient, agent_script
+) -> None:
+    ada = await signup()
+    personal = await _personal(db_client, ada.headers)
+    team = await create_team(ada.headers, "Acme", in_org=True)
+    project = (await db_client.post(projects_url(personal), json={"key": "KUN", "name": "Kunemi"}, headers=ada.headers)).json()
+    base = f"{projects_url(personal)}/{project['id']}"
+    issue = await db_client.post(f"{base}/issues", json={"type": "task", "title": "Ship it"}, headers=ada.headers)
+    assert issue.status_code == 201
+    await db_client.post(f"{base}/issues/KUN-1/comments", json={"body": "Soon"}, headers=ada.headers)
+    agent_script.say("Hello.")
+    run = (await db_client.post(f"{base}/agent/runs", json={"message": "Hi"}, headers=ada.headers)).json()
+    assert run["status"] == "completed", run
+
+    res = await db_client.post(f"{base}/move", json={"workspace_id": team["id"]}, headers=ada.headers)
+    assert res.status_code == 200, res.text
+    assert res.json()["workspace_id"] == team["id"] and res.json()["key"] == "KUN"
+
+    # Everything came with it, and nothing is left behind.
+    assert (await db_client.get(base, headers=ada.headers)).status_code == 404
+    assert (await db_client.get(projects_url(personal), headers=ada.headers)).json() == []
+    moved = f"{projects_url(team)}/{project['id']}"
+    got = (await db_client.get(f"{moved}/issues/KUN-1", headers=ada.headers)).json()
+    assert got["title"] == "Ship it"
+    files = (await db_client.get(f"{moved}/knowledge", headers=ada.headers)).json()["files"]
+    assert any(f["path"] == "project.md" for f in files)
+    assert [r["id"] for r in (await db_client.get(f"{moved}/agent/runs", headers=ada.headers)).json()] == [run["id"]]
+    new_issue = await db_client.post(f"{moved}/issues", json={"type": "task", "title": "Next"}, headers=ada.headers)
+    assert new_issue.json()["key"] == "KUN-2"  # numbering carries on
+
+    for ws, action in ((personal, "project.moved_out"), (team, "project.moved_in")):
+        audit = (await db_client.get(f"/v1/workspaces/{ws['id']}/audit", headers=ada.headers)).json()
+        assert action in {e["action"] for e in audit}
+
+    back = await db_client.post(f"{moved}/move", json={"workspace_id": personal["id"]}, headers=ada.headers)
+    assert back.status_code == 200 and back.json()["workspace_id"] == personal["id"]
+
+
+async def test_moving_needs_project_setup_rights_in_both_workspaces(
+    signup, create_team, add_member, db_client: AsyncClient
+) -> None:
+    ada = await signup()
+    bob = await signup(email="bob@example.com", name="Bob")
+    adas = await create_team(ada.headers, "Ada's")
+    bobs = await create_team(bob.headers, "Bob's")
+    project = (await db_client.post(projects_url(adas), json={"key": "KUN", "name": "K"}, headers=ada.headers)).json()
+    move = f"{projects_url(adas)}/{project['id']}/move"
+
+    # Not in the target: it looks like it doesn't exist.
+    res = await db_client.post(move, json={"workspace_id": bobs["id"]}, headers=ada.headers)
+    assert res.status_code == 404
+    # A member there can't add projects.
+    await add_member(bobs["id"], ada.id, Role.MEMBER)
+    assert (await db_client.post(move, json={"workspace_id": bobs["id"]}, headers=ada.headers)).status_code == 403
+    # A member of the source can't move it out.
+    await add_member(adas["id"], bob.id, Role.MEMBER)
+    assert (await db_client.post(move, json={"workspace_id": bobs["id"]}, headers=bob.headers)).status_code == 403
+    # Already there.
+    assert (await db_client.post(move, json={"workspace_id": adas["id"]}, headers=ada.headers)).status_code == 409
+
+
+async def test_moving_refuses_a_taken_key_or_repo_and_active_runs(
+    signup, create_team, db_client: AsyncClient, agent_script
+) -> None:
+    from pmagent_engine.testing import tool_call
+
+    ada = await signup()
+    one = await create_team(ada.headers, "One")
+    two = await create_team(ada.headers, "Two")
+    repo = "https://github.com/example/kunemi"
+    project = (await db_client.post(projects_url(one), json={"key": "KUN", "name": "K", "repo_url": repo},
+                                    headers=ada.headers)).json()
+    move = f"{projects_url(one)}/{project['id']}/move"
+    taken = await db_client.post(projects_url(two), json={"key": "KUN", "name": "Other"}, headers=ada.headers)
+    res = await db_client.post(move, json={"workspace_id": two["id"]}, headers=ada.headers)
+    assert res.status_code == 409 and res.json()["type"].endswith("/key_taken")
+
+    await db_client.patch(f"{projects_url(two)}/{taken.json()['id']}", json={"repo_url": repo}, headers=ada.headers)
+    three = await create_team(ada.headers, "Three")
+    await db_client.post(projects_url(three), json={"key": "OTH", "name": "O", "repo_url": repo}, headers=ada.headers)
+    res = await db_client.post(move, json={"workspace_id": three["id"]}, headers=ada.headers)
+    assert res.status_code == 409 and res.json()["type"].endswith("/repo_taken")
+
+    four = await create_team(ada.headers, "Four")
+    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
+    run = (await db_client.post(f"{projects_url(one)}/{project['id']}/agent/runs", json={"message": "Plan"},
+                                headers=ada.headers)).json()
+    assert run["status"] == "awaiting_approval"
+    res = await db_client.post(move, json={"workspace_id": four["id"]}, headers=ada.headers)
+    assert res.status_code == 409 and "agent run" in res.json()["detail"]

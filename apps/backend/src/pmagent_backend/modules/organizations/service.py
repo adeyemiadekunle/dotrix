@@ -14,7 +14,7 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.workspaces.models import Membership, Role, Workspace, WorkspaceKind
 from pmagent_backend.modules.workspaces.schemas import MemberRead
-from pmagent_backend.modules.workspaces.service import make_slug
+from pmagent_backend.modules.workspaces.service import WorkspaceService, make_slug
 
 from .models import Organization, OrgMembership, OrgRole
 from .permissions import OrgPermission, has_org_permission
@@ -188,7 +188,8 @@ class OrganizationService:
         return await self._org_workspace(actor, workspace.id)
 
     async def attach(self, actor: OrgMembership, workspace_id: uuid.UUID) -> OrgWorkspaceRead:
-        """Bring a workspace you own into the organisation; its people join the organisation."""
+        """Bring a workspace you own into the organisation; its people join the organisation. A
+        personal workspace becomes a team workspace, and its owner gets a new personal one."""
         workspace = await self.session.get(Workspace, workspace_id, with_for_update=True)
         own = workspace and await self.session.scalar(
             select(Membership.role).where(Membership.workspace_id == workspace_id, Membership.user_id == actor.user_id)
@@ -197,11 +198,19 @@ class OrganizationService:
             raise NotFound("Workspace not found")
         if own is not Role.OWNER:
             raise Forbidden("Only the workspace's owner can bring it into an organisation")
-        if workspace.kind is WorkspaceKind.PERSONAL:
-            raise Conflict("Personal workspaces stay personal; create a team workspace in the organisation instead")
         if workspace.organization_id is not None:
             raise Conflict("That workspace already belongs to an organisation")
+        if workspace.kind is WorkspaceKind.PERSONAL:
+            # It becomes a team workspace, with its projects; you get a new, empty personal one.
+            workspace.kind = WorkspaceKind.TEAM
+            owner = await self.session.get(User, actor.user_id)
+            await WorkspaceService(self.session).create_personal(owner)
         workspace.organization_id = actor.organization_id
+        AuditLog(self.session).record(
+            workspace_id=workspace_id, action="workspace.added_to_organization", target=workspace.name,
+            actor_type=AuthorType.USER, actor_user_id=actor.user_id,
+            details={"organization_id": str(actor.organization_id)},
+        )
         for user_id in await self.session.scalars(select(Membership.user_id).where(Membership.workspace_id == workspace_id)):
             await ensure_org_member(self.session, workspace, user_id)
         await self.session.commit()
@@ -210,6 +219,11 @@ class OrganizationService:
     async def detach(self, actor: OrgMembership, workspace_id: uuid.UUID) -> None:
         workspace = await self._org_ws(actor, workspace_id)
         workspace.organization_id = None  # its people stay org members; remove them separately if needed
+        AuditLog(self.session).record(
+            workspace_id=workspace_id, action="workspace.removed_from_organization", target=workspace.name,
+            actor_type=AuthorType.USER, actor_user_id=actor.user_id,
+            details={"organization_id": str(actor.organization_id)},
+        )
         await self.session.commit()
 
     async def workspace_members(self, actor: OrgMembership, workspace_id: uuid.UUID) -> list[MemberRead]:

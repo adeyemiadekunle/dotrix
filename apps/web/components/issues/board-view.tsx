@@ -181,11 +181,18 @@ export function BoardView({
     if (!dragging.current) setColumns(toColumns(board));
   }, [board]);
 
-  // The keyboard's coordinate getter runs outside React's render, so it reads the columns from a ref.
+  // The keyboard's coordinate getter and the drag handlers read the columns and the dragged card
+  // from refs, updated as they change: keys pressed in quick succession (Space, an arrow, Space)
+  // can arrive before React re-renders, and state from the last render would miss the move.
   const columnsRef = useRef(columns);
   useEffect(() => {
     columnsRef.current = columns;
   }, [columns]);
+  const activeRef = useRef<{ issue: IssueSummary; from: IssueStatus } | null>(null);
+  function updateColumns(next: Columns) {
+    columnsRef.current = next;
+    setColumns(next);
+  }
   const sensors = useSensors(
     // A small distance, so a click still opens the issue.
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -211,39 +218,42 @@ export function BoardView({
 
   function onDragStart({ active: a, activatorEvent }: DragStartEvent) {
     byKeyboard.current = activatorEvent instanceof KeyboardEvent;
+    const columns = columnsRef.current;
     const from = findColumn(columns, String(a.id));
     const issue = from && columns[from].find((i) => i.key === a.id);
     if (from && issue) {
       dragging.current = true;
-      setActive({ issue, from });
+      activeRef.current = { issue, from };
+      setActive(activeRef.current);
     }
   }
 
   function onDragOver({ active: a, over }: DragOverEvent) {
     if (!over) return;
-    const from = findColumn(columns, String(a.id));
-    const to = findColumn(columns, String(over.id));
+    const prev = columnsRef.current;
+    const from = findColumn(prev, String(a.id));
+    const to = findColumn(prev, String(over.id));
     if (!from || !to || from === to) return;
-    setColumns((prev) => {
-      const moving = prev[from].find((i) => i.key === a.id);
-      if (!moving) return prev;
-      const target = prev[to];
-      const overIndex = target.findIndex((i) => i.key === over.id);
-      const index = overIndex >= 0 ? overIndex : target.length;
-      return {
-        ...prev,
-        [from]: prev[from].filter((i) => i.key !== a.id),
-        [to]: [...target.slice(0, index), { ...moving, status: to }, ...target.slice(index)],
-      };
+    const moving = prev[from].find((i) => i.key === a.id);
+    if (!moving) return;
+    const target = prev[to];
+    const overIndex = target.findIndex((i) => i.key === over.id);
+    const index = overIndex >= 0 ? overIndex : target.length;
+    updateColumns({
+      ...prev,
+      [from]: prev[from].filter((i) => i.key !== a.id),
+      [to]: [...target.slice(0, index), { ...moving, status: to }, ...target.slice(index)],
     });
   }
 
   function onDragEnd({ active: a, over }: DragEndEvent) {
-    const started = active;
+    const started = activeRef.current;
+    activeRef.current = null;
     dragging.current = false;
     setActive(null);
     if (!over || !started) return;
     const key = String(a.id);
+    const columns = columnsRef.current;
     const column = findColumn(columns, key);
     if (!column) return;
     let list = columns[column];
@@ -251,7 +261,7 @@ export function BoardView({
     const overIndex = list.findIndex((i) => i.key === over.id);
     if (overIndex >= 0 && overIndex !== oldIndex) {
       list = arrayMove(list, oldIndex, overIndex);
-      setColumns((prev) => ({ ...prev, [column]: list }));
+      updateColumns({ ...columns, [column]: list });
     }
     const index = list.findIndex((i) => i.key === key);
     const next = list[index + 1];
@@ -274,9 +284,10 @@ export function BoardView({
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
       onDragCancel={() => {
+        activeRef.current = null;
         dragging.current = false;
         setActive(null);
-        setColumns(toColumns(board));
+        updateColumns(toColumns(board));
       }}
     >
       <div className="@container flex min-w-0 flex-1">
