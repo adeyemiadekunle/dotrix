@@ -91,3 +91,24 @@ test("project settings save through the unsaved-changes bar", async ({ page }) =
   await expect(page.getByText("Unsaved changes")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Kumove app" })).toBeVisible();
 });
+
+test("the keyboard moves a card to the next column", async ({ page }) => {
+  const { key } = await signUpWithProject(page);
+  await page.getByRole("button", { name: "New issue" }).click();
+  await page.getByLabel("Title").fill("Draft the pricing page");
+  await page.getByRole("button", { name: "Create issue" }).click();
+  await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
+  await page.keyboard.press("Escape");
+
+  // Space picks the card up, the right arrow moves it to In progress, Space drops it.
+  const card = page.getByRole("button", { name: /Draft the pricing page/ });
+  await card.focus();
+  await page.keyboard.press("Space");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Space");
+
+  const inProgress = page.locator("section").filter({ has: page.getByText("In progress", { exact: true }) });
+  await expect(inProgress.getByText("Draft the pricing page")).toBeVisible();
+  await page.reload();
+  await expect(inProgress.getByText("Draft the pricing page")).toBeVisible();
+});

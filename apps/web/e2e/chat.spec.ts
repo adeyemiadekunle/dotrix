@@ -10,6 +10,9 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await page.getByRole("link", { name: "Chat", exact: true }).click();
 
   const box = page.getByLabel("Message the agents");
+  // On screen even while the verify-email banner takes its line at the top.
+  await expect(page.getByText(/Confirm your email address/)).toBeVisible();
+  await expect(box).toBeInViewport();
   await box.fill("What's open?");
   await box.press("Enter");
   await expect(page.getByText("Test model reply: What's open?")).toBeVisible();

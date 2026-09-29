@@ -45,3 +45,23 @@ test("knowledge: edit a file, see its history, and restore the first version", a
   await page.getByRole("button", { name: "Restore v1" }).click();
   await expect(page.getByText("Restored version 1")).toBeVisible();
 });
+
+test("an organisation: create it from the workspace menu, then a workspace in it", async ({ page }) => {
+  await signUp(page);
+  await page.getByRole("button", { name: /Personal/ }).first().click();
+  await page.getByRole("menuitem", { name: /Create organisation/ }).click();
+  await page.getByLabel("Name").fill("Kunemi Ltd");
+  await page.getByRole("button", { name: "Create organisation" }).click();
+  await expect(page).toHaveURL(/\/o\/kunemi-ltd/);
+  await expect(page.getByRole("heading", { name: "Workspaces", exact: true })).toBeVisible();
+  await expect(page.getByText("No workspaces yet")).toBeVisible();
+  // The sidebar lists it once there is one.
+  await expect(page.getByRole("link", { name: "Kunemi Ltd" })).toBeVisible();
+
+  await page.getByRole("button", { name: "New workspace" }).click();
+  await page.getByLabel("Name").fill("Payments team");
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  const row = page.getByRole("listitem").filter({ hasText: "Payments team" });
+  await expect(row).toBeVisible();
+  await expect(row.getByText("you're owner")).toBeVisible();
+});

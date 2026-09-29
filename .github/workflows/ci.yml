@@ -121,7 +121,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @pmagent/shared --filter @pmagent/api-client build
+      - run: pnpm --filter @pmagent/api-client build
       - run: pnpm --filter @pmagent/web exec playwright install --with-deps chromium
       - run: pnpm --filter @pmagent/web e2e
       - uses: actions/upload-artifact@v4

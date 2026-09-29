@@ -12,7 +12,7 @@ Engine notes: [docs/engine.md](docs/engine.md).
 | `apps/web` | Web app | Next.js |
 | `apps/desktop` | Desktop shell around the web app | Electron |
 | `packages/engine` | UI-agnostic agent engine (`pmagent_engine`) | deepagents / LangGraph |
-| `packages/ui`, `api-client`, `shared` | shadcn/ui components and theme; the typed API client (generated from OpenAPI); shared TS constants (currently unused) | TypeScript |
+| `packages/ui`, `api-client` | shadcn/ui components and theme; the typed API client (generated from OpenAPI) | TypeScript |
 | `infra` | Local Postgres (with pgvector), Redis, MinIO (`docker-compose.yml`) | Docker |
 
 ## Commands
@@ -157,7 +157,7 @@ apps/web/
 │   ├── settings/                members, invites (workspace settings)
 │   └── orgs/                    create-organisation dialog
 └── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, knowledge.ts, admin.ts, orgs.ts, documents.ts, repo.ts, url-state.ts, labels.ts
-packages/ui/src/                 consumed as source (no build step); index.tsx's StatusBadge is a leftover placeholder
+packages/ui/src/                 consumed as source (no build step), by path: `@pmagent/ui/components/*`, `/lib/*`, `/hooks/*`, `/globals.css`
 ├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
 │                                plus our own chat kit: chat-scroller (follows new content unless you scroll up), chat-message (message, bubble, meta, notice), prompt-input (send / stop), code-block (copy, lazy Shiki highlighting)
 └── styles/globals.css           Tailwind entry + theme tokens (light and .dark)
@@ -282,7 +282,7 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 
 - [x] Shell: sign-in via httpOnly-cookie session and API proxy, auth pages, sidebar with workspace switcher (including workspaces seen through an organisation), create workspace/project, settings (profile, appearance, devices and tokens)
 - [x] Board (drag between statuses and within a column to rank; filters in the URL: search, type, assignee including "me", epic, label), issue drawer (`?issue=KEY`: every field, Markdown description, dependencies, activity log, comments, watch), new-issue dialog, backlog (drag to rank, epic progress, filter by epic)
-- [ ] Board keyboard drag only reorders within a column; add a multi-container keyboard coordinate getter so arrow keys can move between columns (the drawer's Status field covers it meanwhile)
+- [x] Board keyboard drag: Space picks a card up, up and down reorder it, left and right move it to the top of the neighbouring column (`betweenColumns` in `board-view.tsx`; keyboard drags match by overlap, pointer drags by closest corners), Space drops, Escape cancels
 - [x] Chat with the PM: a panel beside every project page (a sheet on phones) and a full Chat tab with the conversation list; suggestions and the daily briefing to start; runs polled while working (and slower while waiting, so decisions made elsewhere show up); inline approvals with coloured diffs or the fields an issue action sets, approve / reject with a reason, all of a run's decisions sent together
 - [x] Workspace Approvals page and sidebar count (`GET /v1/workspaces/{id}/approvals`); Docs tab "Draft architecture overview" (owners and admins) opens the run in the panel
 - [x] Conversation titles made from the first message by rules, with no model call (`agents/titles.py`: drops greetings and "can you / please", a short lead-in clause, keeps the first sentence up to seven words); built-in requests have fixed titles; people rename freely
@@ -295,9 +295,9 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 - [x] Organisation pages (`/o/[org]`, in the sidebar): create an organisation; Workspaces (new workspace with a chosen owner, add one you own, take one out, people per workspace: place, change role, remove; org admins can't place themselves), Members (add by email with an account, org roles, remove, leave), Settings (rename; what each org role can see)
 - [x] Backend: membership and invite changes are audited (rename, role changes, removals and leaving, ownership transfer, invites sent / links created / revoked, joining, org placements in the workspace's own log)
 - [x] Briefing tab (`/w/[ws]/p/[KEY]/briefing`): the newest daily briefing (streams with live activity while it's written), past briefings (`GET .../agent/runs?kind=briefing`), new briefing; the agent's side of a run is one shared component (`components/agent/agent-reply.tsx`) used by chat and briefing
-- [ ] Remove or update the leftovers: `packages/shared` (unused; its `Issue` type predates the API) and `packages/ui/src/index.tsx`'s StatusBadge. The generated API types are the source of truth.
-- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search and similar issues, a column's + and the Filter menu with chips, the settings save bar, chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
-- [ ] More browser tests as pages change: organisations, document upload (needs MinIO in CI), phone layouts
+- [x] Removed the leftovers: `packages/shared` (its `Issue` type predated the API) and `packages/ui`'s placeholder StatusBadge. The generated API types are the source of truth.
+- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search and similar issues, a column's + and the Filter menu with chips, moving a card between columns by keyboard, the settings save bar, an organisation and a workspace in it, a phone (stacked board, chat input on screen), chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
+- [ ] More browser tests as pages change: document upload (needs MinIO in CI)
 
 ## TODO: backend (priority order)
 

@@ -6,12 +6,15 @@ import {
   KeyboardSensor,
   PointerSensor,
   closestCorners,
+  rectIntersection,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type KeyboardCoordinateGetter,
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { cn } from "@pmagent/ui/lib/utils";
@@ -122,6 +125,27 @@ function Column({
 }
 
 /**
+ * Keyboard dragging: up and down move within the column (dnd-kit's sortable behaviour); left and
+ * right move the card to the top of the previous or next column, the way a pointer drag between
+ * columns does. Space picks a card up and drops it, Escape cancels.
+ */
+function betweenColumns(columnsRef: { current: Columns }): KeyboardCoordinateGetter {
+  return (event, args) => {
+    const step = event.code === "ArrowRight" ? 1 : event.code === "ArrowLeft" ? -1 : 0;
+    if (step === 0) return sortableKeyboardCoordinates(event, args);
+    const { active, droppableRects } = args.context;
+    const from = active ? findColumn(columnsRef.current, String(active.id)) : undefined;
+    const to = from && STATUSES[STATUSES.indexOf(from) + step];
+    if (!to) return undefined;
+    event.preventDefault();
+    // Aim at the target column's first card (so it lands on top), or the empty column itself.
+    const first = columnsRef.current[to].find((i) => i.key !== active?.id);
+    const rect = (first && droppableRects.get(first.key)) ?? droppableRects.get(`${COLUMN_ID}${to}`);
+    return rect ? { x: rect.left + 1, y: rect.top + 1 } : undefined;
+  };
+}
+
+/**
  * Columns by status, each in backlog (rank) order. Dragging a card to another column changes its
  * status; dropping it between cards ranks it next to them.
  */
@@ -157,10 +181,15 @@ export function BoardView({
     if (!dragging.current) setColumns(toColumns(board));
   }, [board]);
 
+  // The keyboard's coordinate getter runs outside React's render, so it reads the columns from a ref.
+  const columnsRef = useRef(columns);
+  useEffect(() => {
+    columnsRef.current = columns;
+  }, [columns]);
   const sensors = useSensors(
     // A small distance, so a click still opens the issue.
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    useSensor(KeyboardSensor, { coordinateGetter: useMemo(() => betweenColumns(columnsRef), []) }),
   );
 
   const visible = useMemo(() => {
@@ -170,7 +199,18 @@ export function BoardView({
     return Object.fromEntries(STATUSES.map((s) => [s, columns[s].filter(match)])) as Columns;
   }, [columns, search]);
 
-  function onDragStart({ active: a }: DragStartEvent) {
+  // Pointer drags find the nearest spot by corners; a keyboard move places the card squarely
+  // on its target, where corners can still favour the card's old spot next to a tall empty
+  // column, so keyboard drags go by overlap first.
+  const byKeyboard = useRef(false);
+  const collisionDetection: CollisionDetection = (args) => {
+    if (!byKeyboard.current) return closestCorners(args);
+    const overlapping = rectIntersection(args);
+    return overlapping.length ? overlapping : closestCorners(args);
+  };
+
+  function onDragStart({ active: a, activatorEvent }: DragStartEvent) {
+    byKeyboard.current = activatorEvent instanceof KeyboardEvent;
     const from = findColumn(columns, String(a.id));
     const issue = from && columns[from].find((i) => i.key === a.id);
     if (from && issue) {
@@ -229,7 +269,7 @@ export function BoardView({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetection}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
