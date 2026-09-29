@@ -183,3 +183,40 @@ async def test_mcp_task_tools_use_the_platform_board(platform: FakePlatform, sta
 
     with pytest.raises(ToolError, match="internal"):  # link state is never readable
         await server.call_tool("read_doc", {"path": STATE_FILE})
+
+
+# -- a project moved to another workspace --------------------------------------------------
+
+
+def test_follow_move_updates_the_link(platform: FakePlatform, state: LinkState, tmp_path: Path) -> None:
+    from pmagent_cli.sync import follow_move
+
+    assert follow_move(platform.client(), state, tmp_path) is None  # still where it was
+    assert state.workspace_id == WS
+
+    platform.moved_to = {"id": "ws-2", "slug": "acme-ab12cd", "name": "Acme", "role": "admin", "kind": "team",
+                         "projects": [{"id": PID, "key": "KUN", "name": "Kunemi app"}]}
+    assert follow_move(platform.client(), state, tmp_path) == "Acme"
+    saved = LinkState.load(tmp_path)
+    assert saved is not None and saved.workspace_id == "ws-2" and saved.project_name == "Kunemi app"
+    assert state.issues_path == f"/workspaces/ws-2/projects/{PID}/issues"
+
+
+def test_follow_move_leaves_a_project_it_cant_find(platform: FakePlatform, state: LinkState, tmp_path: Path) -> None:
+    from pmagent_cli.sync import follow_move
+
+    platform.moved_to = {"id": "ws-2", "slug": "other", "name": "Other", "role": "member", "kind": "team", "projects": []}
+    assert follow_move(platform.client(), state, tmp_path) is None
+    assert state.workspace_id == WS
+
+
+def test_commands_follow_a_moved_project(linked_repo: Path, platform: FakePlatform) -> None:
+    from typer.testing import CliRunner
+
+    from pmagent_cli import cli as cli_module
+
+    platform.moved_to = {"id": "ws-2", "slug": "acme", "name": "Acme", "role": "admin", "kind": "team",
+                         "projects": [{"id": PID, "key": "KUN", "name": "Kunemi"}]}
+    result = CliRunner().invoke(cli_module.app, ["pull", "--project", str(linked_repo)])
+    assert "KUN moved to the Acme workspace; link updated." in result.output
+    assert LinkState.load(linked_repo / ".pmagent").workspace_id == "ws-2"

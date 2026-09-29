@@ -4342,7 +4342,7 @@
           "projects"
         ],
         "summary": "Move Project",
-        "description": "Move a project, with its knowledge, issues, documents, and conversations, to another\nworkspace: from your personal workspace into an organisation's, or back. You need to set up\nprojects in both (owners and admins). 409 if the other workspace already has a project with\nits key or repo, or while one of its agent runs is working or waiting for approval. Linked\ncheckouts run `pmagent connect` again afterwards.",
+        "description": "Move a project, with its knowledge, issues, documents, and conversations, to another\nworkspace: from your personal workspace into an organisation's, or back. You need to set up\nprojects in both (owners and admins). 409 if the other workspace already has a project with\nits key or repo, or while one of its agent runs is working or waiting for approval. People\nwho can't see it there are unassigned from its issues (logged) and stop watching them; linked\ncheckouts follow the move on their next command.",
         "operationId": "move_project",
         "security": [
           {

@@ -54,6 +54,9 @@ class FakePlatform:
             {"id": WS, "slug": "kunemi-ab12cd", "name": "Kunemi", "role": "owner", "kind": "team"}
         ]
         self.projects: list[dict[str, Any]] = []
+        # Set to a workspace (with a "projects" list) when the linked project moved there: the
+        # project is then gone from WS and found in that workspace instead.
+        self.moved_to: dict[str, Any] | None = None
         self.me = {"id": "user-1", "email": "ada@example.com", "display_name": "Ada"}
 
     # -- state changes, as if someone edited on the platform ----------------------------
@@ -99,6 +102,15 @@ class FakePlatform:
             return self.problem(400, answer)
         if path == "/v1/me":
             return httpx.Response(200, json=self.me)
+        if path == f"/v1/workspaces/{WS}/projects/{PID}" and method == "GET":
+            if self.moved_to is not None:
+                return self.problem(404, "not_found")
+            return httpx.Response(200, json={"id": PID, "key": "KUN", "name": "Kunemi", "workspace_id": WS})
+        if self.moved_to is not None:
+            if path == "/v1/workspaces" and method == "GET":
+                return httpx.Response(200, json=[*self.workspaces, self.moved_to])
+            if path == f"/v1/workspaces/{self.moved_to['id']}/projects" and method == "GET":
+                return httpx.Response(200, json=self.moved_to["projects"])
         if path == "/v1/workspaces" and method == "GET":
             return httpx.Response(200, json=self.workspaces)
         if path == f"/v1/workspaces/{WS}/projects" and method == "GET":

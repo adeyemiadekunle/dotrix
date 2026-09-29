@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,11 +12,12 @@ from pmagent_backend.modules.agents.models import ACTIVE_STATUSES, AgentApproval
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.documents.models import Document
-from pmagent_backend.modules.issues.models import Issue, IssueEvent
+from pmagent_backend.modules.issues.models import Issue, IssueEvent, IssueEventKind, IssueWatcher
 from pmagent_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
 from pmagent_backend.modules.knowledge.service import KnowledgeService
+from pmagent_backend.modules.organizations.models import OrgMembership, OrgRole
 from pmagent_backend.modules.search.models import KnowledgeChunk
-from pmagent_backend.modules.workspaces.models import Membership
+from pmagent_backend.modules.workspaces.models import Membership, Role, Workspace
 from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
 from pmagent_engine.layout import skeleton
@@ -134,6 +136,7 @@ class ProjectService:
             update(IssueEvent).where(IssueEvent.issue_id.in_(issues)).values(workspace_id=target_id)
         )
         project.workspace_id = target_id
+        unassigned, unwatched = await self._drop_people_who_cant_see(project, target_id, actor)
         audit = AuditLog(self.session)
         for workspace_id, direction, other in (
             (source_id, "project.moved_out", target_id), (target_id, "project.moved_in", source_id)
@@ -141,8 +144,53 @@ class ProjectService:
             audit.record(
                 workspace_id=workspace_id, project_id=project.id, action=direction, target=project.key,
                 actor_type=AuthorType.USER, actor_user_id=actor.user_id,
-                details={"from": str(source_id), "to": str(target_id), "other_workspace": str(other)},
+                details={
+                    "from": str(source_id), "to": str(target_id), "other_workspace": str(other),
+                    "unassigned": unassigned, "watchers_removed": unwatched,
+                },
             )
         await self.session.commit()
         await self.session.refresh(project)
         return ProjectRead.model_validate(project)
+
+    async def _drop_people_who_cant_see(
+        self, project: Project, workspace_id: uuid.UUID, actor: Membership
+    ) -> tuple[int, int]:
+        """After a move, nobody stays assigned to or watching an issue they can no longer see:
+        the new workspace's members (not guests) and its organisation's owners can. Each
+        unassignment is written to the issue's log. Returns (unassigned, watchers removed)."""
+        members = select(Membership.user_id).where(
+            Membership.workspace_id == workspace_id, Membership.role != Role.GUEST
+        )
+        org_owners = (
+            select(OrgMembership.user_id)
+            .join(Workspace, Workspace.organization_id == OrgMembership.organization_id)
+            .where(Workspace.id == workspace_id, OrgMembership.role == OrgRole.OWNER)
+        )
+        can_see = members.union(org_owners).scalar_subquery()
+        issues = select(Issue.id).where(Issue.project_id == project.id).scalar_subquery()
+
+        stranded = list(
+            await self.session.scalars(
+                select(Issue).where(
+                    Issue.project_id == project.id,
+                    Issue.assignee_user_id.is_not(None),
+                    Issue.assignee_user_id.not_in(can_see),
+                )
+            )
+        )
+        now = datetime.now(UTC)
+        for issue in stranded:
+            self.session.add(
+                IssueEvent(
+                    workspace_id=workspace_id, issue_id=issue.id, kind=IssueEventKind.UPDATED,
+                    author_user_id=actor.user_id, changes={"assignee_user_id": [str(issue.assignee_user_id), None]},
+                    created_at=now,
+                )
+            )
+            issue.assignee_user_id = None
+            issue.updated_at = now
+        watchers = await self.session.execute(
+            delete(IssueWatcher).where(IssueWatcher.issue_id.in_(issues), IssueWatcher.user_id.not_in(can_see))
+        )
+        return len(stranded), watchers.rowcount or 0

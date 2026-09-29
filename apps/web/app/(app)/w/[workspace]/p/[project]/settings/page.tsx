@@ -375,7 +375,7 @@ function Move({ project, workspace }: { project: Project; workspace: Workspace }
                 ask({
                   title: `Move ${project.key} to ${target.name}?`,
                   description:
-                    "Everyone in that workspace will see it, and people who are only in this one won't. Linked checkouts run pmagent connect again afterwards.",
+                    "Everyone in that workspace will see it, and people who are only in this one won't: they're unassigned from its issues and stop watching them. Linked checkouts follow it on their next command.",
                   confirm: "Move project",
                   action: async () => {
                     await move.mutateAsync(target.id);

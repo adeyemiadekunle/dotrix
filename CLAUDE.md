@@ -388,7 +388,7 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] Organisation email invites for people without an account; verified email domains (auto-join)
 - [ ] Org-level audit log (org events today are not audited; `audit_events` is per workspace)
 - [ ] SSO/SCIM (FR-7), billing and pooled usage with per-workspace limits (FR-8/FR-28), org-wide base agent rules (FR-17) at the organisation level
-- [x] Move a project between workspaces (`POST .../projects/{id}/move`, project settings → Move project): personal → organisation workspace and back, or between any two where you're owner or admin. Its knowledge, issues and their log, documents, runs and approvals, and search chunks move with it; audit events stay where they happened (`project.moved_out` / `project.moved_in`). 409 if the key or repo is taken there, or while a run is working or awaiting approval. Linked checkouts `pmagent connect` again
+- [x] Move a project between workspaces (`POST .../projects/{id}/move`, project settings → Move project): personal → organisation workspace and back, or between any two where you're owner or admin. Its knowledge, issues and their log, documents, runs and approvals, and search chunks move with it; audit events stay where they happened (`project.moved_out` / `project.moved_in`). 409 if the key or repo is taken there, or while a run is working or awaiting approval. People who can't see it in the new workspace (not members, or guests) are unassigned from its issues (an entry in each issue's log) and stop watching them. The CLI and MCP server follow a moved project by its id and update `.platform.json` (`sync.follow_move`, one lookup per command)
 
 ### P0: Projects and source of truth
 

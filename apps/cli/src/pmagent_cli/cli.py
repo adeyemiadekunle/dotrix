@@ -46,7 +46,7 @@ from .platform import (
     api_url,
     device_login,
 )
-from .sync import LinkState, find_project, find_workspace, pull
+from .sync import LinkState, find_project, find_workspace, follow_move, pull
 
 app = typer.Typer(help="Multi-agent project management for any repo (init or connect).")
 task_app = typer.Typer(help="Create, list, and update tasks on the project board.")
@@ -913,7 +913,11 @@ def _linked(project: str) -> tuple[ProjectConfig, LinkState, PlatformClient]:
     state = LinkState.load(config.pmagent_dir)
     if state is None:
         _fail(f"{config.root_dir} isn't linked to the platform. Run `pmagent link --workspace <slug> --project <KEY>`.")
-    return config, state, _platform_call(lambda: PlatformClient.signed_in(state.api_url))
+    client = _platform_call(lambda: PlatformClient.signed_in(state.api_url))
+    moved_to = _platform_call(lambda: follow_move(client, state, config.pmagent_dir))
+    if moved_to:
+        typer.secho(f"{state.project_key} moved to the {moved_to} workspace; link updated.", fg=typer.colors.YELLOW, err=True)
+    return config, state, client
 
 
 def _echo_pull(result) -> None:

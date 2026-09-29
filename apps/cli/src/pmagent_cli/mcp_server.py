@@ -45,7 +45,7 @@ from pmagent_engine.config import ProjectConfig
 
 from .board import PlatformBoard
 from .platform import PlatformClient, PlatformError
-from .sync import STATE_FILE, LinkState, pull
+from .sync import STATE_FILE, LinkState, follow_move, pull
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 TASK_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False,
@@ -113,6 +113,11 @@ def build_server(config: ProjectConfig, assignee: str, *, client: PlatformClient
     mirror: _Mirror | None = None
     if state is not None:
         client = client or PlatformClient.signed_in(state.api_url)
+        try:
+            if moved_to := follow_move(client, state, root):
+                print(f"pmagent: {state.project_key} moved to the {moved_to} workspace; link updated", file=sys.stderr)
+        except PlatformError as exc:  # offline: the mirror still serves
+            print(f"pmagent: couldn't check the project's workspace ({exc})", file=sys.stderr)
         board = PlatformBoard(client, state, assignee)
         mirror = _Mirror(client, state, str(root))
         mirror.refresh()
