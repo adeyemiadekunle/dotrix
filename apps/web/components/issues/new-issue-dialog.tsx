@@ -88,43 +88,6 @@ export function NewIssueDialog({
             </DialogDescription>
           </DialogHeader>
           <FormError message={create.isError ? errorMessage(create.error) : null} />
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label>Type</Label>
-              <Select value={type} onValueChange={(v) => setType(v as IssueType)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ISSUE_TYPES.filter((t) => t !== "sub-task").map((t) => (
-                    <SelectItem key={t} value={t}>
-                      <TypeIcon type={t} />
-                      {TYPE_META[t].label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label>Priority</Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRIORITIES.map((p) => {
-                    const meta = PRIORITY_META[p];
-                    return (
-                      <SelectItem key={p} value={p}>
-                        <meta.icon className={meta.className} />
-                        {meta.label}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
           <Field
             label="Title"
             name="title"
@@ -156,6 +119,43 @@ export function NewIssueDialog({
               ) : undefined
             }
           />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2">
+              <Label>Type</Label>
+              <Select value={type} onValueChange={(v) => setType(v as IssueType)}>
+                <SelectTrigger className="w-full" aria-label="Type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ISSUE_TYPES.filter((t) => t !== "sub-task").map((t) => (
+                    <SelectItem key={t} value={t}>
+                      <TypeIcon type={t} />
+                      {TYPE_META[t].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Priority</Label>
+              <Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
+                <SelectTrigger className="w-full" aria-label="Priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITIES.map((p) => {
+                    const meta = PRIORITY_META[p];
+                    return (
+                      <SelectItem key={p} value={p}>
+                        <meta.icon className={meta.className} />
+                        {meta.label}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div className="grid gap-2">
             <Label htmlFor="new-issue-description">Description{needsDescription ? "" : " (optional)"}</Label>
             <Textarea
@@ -171,7 +171,7 @@ export function NewIssueDialog({
             <div className="grid gap-2">
               <Label>Epic</Label>
               <Select value={parent} onValueChange={setParent}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="Epic">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
