@@ -1683,6 +1683,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Project
+         * @description Search the project's documents (by section) and issues. Exact terms (issue keys, names,
+         *     error text) and paraphrases both match: full-text and meaning rankings are merged. Without
+         *     an embedding model configured, keywords only.
+         */
+        get: operations["search_project"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1750,6 +1772,8 @@ export interface components {
              * @description Model calls the run made (each re-sends the prompt). Owners and admins only (null otherwise)
              */
             model_calls?: number | null;
+            /** @description Where the tokens went: by agent, by tool, and the files read. Owners and admins only (null otherwise) */
+            breakdown?: components["schemas"]["RunBreakdown"] | null;
             /**
              * Created At
              * Format: date-time
@@ -1767,6 +1791,20 @@ export interface components {
              * @default []
              */
             approvals: components["schemas"]["ApprovalRead"][];
+        };
+        /** AgentUsage */
+        AgentUsage: {
+            /**
+             * Agent
+             * @description project-manager, or the specialist's role (product, research, ...)
+             */
+            agent: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Model Calls */
+            model_calls: number;
         };
         /** ApiTokenCreate */
         ApiTokenCreate: {
@@ -2010,6 +2048,11 @@ export interface components {
         CalendarFeedUpdate: {
             scope: components["schemas"]["FeedScope"];
         };
+        /**
+         * ChunkSource
+         * @enum {string}
+         */
+        ChunkSource: "document" | "issue";
         /** ClaimRequest */
         ClaimRequest: {
             /**
@@ -2908,6 +2951,16 @@ export interface components {
             repo_url: string | null;
             /** Model */
             model: string;
+            /**
+             * Specialist Model
+             * @description The specialists' and summaries' model; null means the project's model
+             */
+            specialist_model: string | null;
+            /**
+             * Token Budget
+             * @description Per-run token budget; null means the server's default
+             */
+            token_budget: number | null;
             /** Knowledge Revision */
             knowledge_revision: number;
             /**
@@ -2934,6 +2987,16 @@ export interface components {
             description?: string | null;
             /** Model */
             model?: string | null;
+            /**
+             * Specialist Model
+             * @description A cheaper model for the specialists and for summarising long conversations. Send null to use the project's model; leave it out to keep the current one.
+             */
+            specialist_model?: string | null;
+            /**
+             * Token Budget
+             * @description Send null for the server's default; leave it out to keep the current one.
+             */
+            token_budget?: number | null;
             /**
              * Repo Url
              * @description Link the project to its repo (any remote form; stored canonical). Send null to unlink; leave it out to keep the current link.
@@ -2994,6 +3057,32 @@ export interface components {
          * @enum {string}
          */
         Role: "owner" | "admin" | "member" | "guest";
+        /**
+         * RunBreakdown
+         * @description Where a run's tokens went.
+         */
+        RunBreakdown: {
+            /**
+             * By Agent
+             * @description Largest first
+             */
+            by_agent: components["schemas"]["AgentUsage"][];
+            /**
+             * Tools
+             * @description Largest results first
+             */
+            tools: components["schemas"]["ToolUsage"][];
+            /**
+             * Files Read
+             * @description Most read first
+             */
+            files_read: components["schemas"]["RunFileRead"][];
+            /**
+             * Token Budget
+             * @description The run's token budget (null: no limit)
+             */
+            token_budget: number | null;
+        };
         /** RunCreate */
         RunCreate: {
             /** Message */
@@ -3003,6 +3092,13 @@ export interface components {
              * @description Continue a conversation. Omit to start a new thread.
              */
             thread_id?: string | null;
+        };
+        /** RunFileRead */
+        RunFileRead: {
+            /** Path */
+            path: string;
+            /** Times */
+            times: number;
         };
         /**
          * RunKind
@@ -3019,6 +3115,35 @@ export interface components {
          * @enum {string}
          */
         Scope: "read" | "write";
+        /** SearchHit */
+        SearchHit: {
+            source: components["schemas"]["ChunkSource"];
+            /**
+             * Ref
+             * @description The document's path in `.pmagent/`, or the issue's key
+             */
+            ref: string;
+            /**
+             * Heading
+             * @description The document section (its heading trail), or the issue's title
+             */
+            heading: string | null;
+            /**
+             * Snippet
+             * @description The matching text (up to about 500 characters)
+             */
+            snippet: string;
+            /**
+             * Version
+             * @description The document version the text is from (0 for issues)
+             */
+            version: number;
+            /**
+             * Score
+             * @description Relevance (higher is better; only comparable within one search)
+             */
+            score: number;
+        };
         /** SignupRequest */
         SignupRequest: {
             /**
@@ -3070,6 +3195,18 @@ export interface components {
         TokenRequest: {
             /** Token */
             token: string;
+        };
+        /** ToolUsage */
+        ToolUsage: {
+            /** Tool */
+            tool: string;
+            /** Calls */
+            calls: number;
+            /**
+             * Result Tokens
+             * @description About how many tokens the tool's results added (re-sent with every later model call)
+             */
+            result_tokens: number;
         };
         /** UserCodeRequest */
         UserCodeRequest: {
@@ -8731,6 +8868,62 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    search_project: {
+        parameters: {
+            query: {
+                /** @description What to look for, in any words */
+                q: string;
+                /** @description Only documents, or only issues */
+                source?: components["schemas"]["ChunkSource"] | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchHit"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;

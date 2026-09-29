@@ -262,10 +262,25 @@ async def test_subagent_writes_are_attributed_to_its_role(
     assert latest["agent"] == "product"
 
 
+async def test_a_briefing_is_one_model_call_without_tools(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    model = agent_script.say("Briefing: discovery phase, nothing blocked.", "Nothing is blocked.")
+    brief = (await db_client.post(f"{base}/agent/briefing", headers=ada.headers)).json()
+    assert brief["status"] == "completed" and brief["reply"] == "Briefing: discovery phase, nothing blocked."
+    assert brief["model_calls"] == 1 and brief["breakdown"]["tools"] == []
+    system = str(model.received[0][0].content)
+    assert "You have no tools in this step" in system and "# Project context: Kunemi (KUN)" in system
+    # A follow-up in the same conversation goes to the team, with the briefing in its history.
+    follow = await run(db_client, base, ada.headers, "Any blockers?", thread_id=brief["thread_id"])
+    assert follow["reply"] == "Nothing is blocked."
+    assert any("Briefing: discovery phase" in str(m.content) for m in model.received[1])
+
+
 async def test_briefing_is_read_only(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
     agent_script.say(
-        tool_call("write_file", file_path="/pmagent/progress/blocked.md", content="changed"),
+        AIMessage(content=""),  # the one-call briefing came back empty: the team takes over...
+        tool_call("write_file", file_path="/pmagent/progress/blocked.md", content="changed"),  # ...and tries a write
         "Briefing: discovery phase, nothing blocked.",
     )
     res = await db_client.post(f"{base}/agent/briefing", headers=ada.headers)
@@ -482,6 +497,121 @@ async def test_a_failed_run_keeps_its_tokens(project, db_client: AsyncClient, ag
     events = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
     failed = next(e for e in events if e["action"] == "agent_run.failed")
     assert failed["details"]["input_tokens"] == 170 and failed["details"]["output_tokens"] == 0
+
+
+async def test_owners_see_where_the_tokens_went(
+    project, db_client: AsyncClient, agent_script, signup, add_member
+) -> None:
+    ada, team, base = await project()
+    agent_script.say(
+        used(tool_call("read_file", file_path="/pmagent/project.md"), 100, 10),
+        used(tool_call("task", description="Check the vision", subagent_type="research-agent"), 120, 10),
+        used(tool_call("read_file", file_path="/pmagent/vision.md"), 40, 5),  # the research agent
+        used("Vision checked.", 50, 5),  # the research agent's answer
+        used("All good.", 150, 5),
+    )
+    done = await run(db_client, base, ada.headers, "Check the vision")
+    assert done["status"] == "completed", done
+    breakdown = done["breakdown"]
+    assert breakdown["by_agent"] == [
+        {"agent": "project-manager", "input_tokens": 370, "output_tokens": 25, "model_calls": 3},
+        {"agent": "research", "input_tokens": 90, "output_tokens": 10, "model_calls": 2},
+    ]
+    tools = {t["tool"]: t for t in breakdown["tools"]}
+    assert tools["read_file"]["calls"] == 2 and tools["read_file"]["result_tokens"] > 0
+    assert tools["task"]["calls"] == 1
+    assert {f["path"] for f in breakdown["files_read"]} == {"/pmagent/project.md", "/pmagent/vision.md"}
+    assert breakdown["token_budget"] is None  # tests run without a default budget
+
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    as_member = (await db_client.get(f"{base}/agent/runs/{done['id']}", headers=bob.headers)).json()
+    assert as_member["breakdown"] is None
+
+
+async def test_a_run_stops_at_its_token_budget(project, db_client: AsyncClient, agent_script) -> None:
+    ada, team, base = await project()
+    res = await db_client.patch(base, json={"token_budget": 10_000}, headers=ada.headers)
+    assert res.status_code == 200 and res.json()["token_budget"] == 10_000
+    model = agent_script.say(
+        used(tool_call("read_file", file_path="/pmagent/project.md"), 8_000, 100),
+        used(tool_call("read_file", file_path="/pmagent/roadmap.md"), 3_000, 0),
+        "never reached",
+    )
+    done = await run(db_client, base, ada.headers, "Read everything")
+    assert done["status"] == "failed"
+    assert "reached its token budget (11,100 of 10,000 tokens)" in done["error"]
+    assert (done["input_tokens"], done["output_tokens"]) == (11_000, 100)
+    assert done["breakdown"]["token_budget"] == 10_000
+    assert len(model.received) == 2  # the third call never went out
+    events = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
+    assert next(e for e in events if e["action"] == "agent_run.failed")["details"]["input_tokens"] == 11_000
+
+
+async def test_the_budget_covers_specialists_too(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    await db_client.patch(base, json={"token_budget": 10_000}, headers=ada.headers)
+    agent_script.say(
+        used(tool_call("task", description="Research it", subagent_type="research-agent"), 6_000, 0),
+        used(tool_call("read_file", file_path="/pmagent/vision.md"), 5_000, 0),  # the research agent
+        "never reached",
+    )
+    done = await run(db_client, base, ada.headers, "Research it")
+    assert done["status"] == "failed", done
+    assert "token budget (11,000 of 10,000 tokens)" in done["error"]
+
+
+async def test_the_budget_counts_every_step_of_a_run(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    await db_client.patch(base, json={"token_budget": 10_000}, headers=ada.headers)
+    agent_script.say(
+        used(tool_call("write_file", file_path="/pmagent/roadmap.md", content="New"), 10_500, 0),
+        "never reached",
+    )
+    paused = await run(db_client, base, ada.headers, "Update the roadmap")
+    assert paused["status"] == "awaiting_approval"
+    done = (await decide(db_client, base, paused, ada.headers, ("approve",))).json()
+    assert done["status"] == "failed" and "token budget" in done["error"]
+    # The approved change was still made.
+    assert await read(db_client, base, "roadmap.md", ada.headers) == "New"
+
+
+async def test_specialists_can_run_on_a_cheaper_model(project, db_client: AsyncClient, agent_script) -> None:
+    ada, _, base = await project()
+    pm = agent_script.say(
+        tool_call("task", description="Summarise the vision", subagent_type="product-agent"),
+        "Product says: logistics.",
+    )
+    specialist = agent_script.specialists_say("The vision is logistics.")
+    done = await run(db_client, base, ada.headers, "Ask product")
+    assert done["status"] == "completed" and done["reply"] == "Product says: logistics."
+    assert len(pm.received) == 2 and len(specialist.received) == 1
+    assert "You are the Product Agent" in str(specialist.received[0][0].content)
+
+
+async def test_project_model_settings(project, db_client: AsyncClient, signup, add_member) -> None:
+    ada, team, base = await project()
+    res = await db_client.patch(
+        base,
+        json={"specialist_model": "google_genai:gemini-3.8-flash-lite", "token_budget": 200_000},
+        headers=ada.headers,
+    )
+    assert res.status_code == 200
+    assert (res.json()["specialist_model"], res.json()["token_budget"]) == (
+        "google_genai:gemini-3.8-flash-lite",
+        200_000,
+    )
+    kept = (await db_client.patch(base, json={"name": "Kunemi 2"}, headers=ada.headers)).json()
+    assert kept["specialist_model"] and kept["token_budget"] == 200_000  # left out: unchanged
+    reset = (
+        await db_client.patch(base, json={"specialist_model": None, "token_budget": None}, headers=ada.headers)
+    ).json()
+    assert (reset["specialist_model"], reset["token_budget"]) == (None, None)
+    assert (await db_client.patch(base, json={"specialist_model": "nope"}, headers=ada.headers)).status_code == 422
+    assert (await db_client.patch(base, json={"token_budget": 5}, headers=ada.headers)).status_code == 422
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    assert (await db_client.patch(base, json={"token_budget": 50_000}, headers=bob.headers)).status_code == 403
 
 
 async def test_only_owners_and_admins_see_token_usage(

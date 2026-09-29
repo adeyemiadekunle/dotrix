@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from deepagents.backends import CompositeBackend, StateBackend
-from langchain_core.messages import HumanMessage, RemoveMessage
+from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
 from sqlalchemy import select
 
 from pmagent_backend.modules.audit.service import AuditLog
@@ -24,26 +24,28 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_engine import approvals as hitl
-from pmagent_engine.agent import PM_ROLE, build_team, role_for_agent_name
+from pmagent_engine.agent import PM_ROLE, briefing_system_prompt, build_team, role_for_agent_name
 from pmagent_engine.layout import AGENTS
 
 from .activity import activity_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
 from .context import build_context_pack
+from .knowledge_tools import KNOWLEDGE_TOOLS_GUIDE, build_knowledge_tools
 from .llm import ModelFactory
 from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
-from .usage import TokenUsage
+from .usage import TokenBudgetExceeded, TokenUsage, merge_breakdown
 
 logger = logging.getLogger(__name__)
 
 BRIEFING_PROMPT = (
     "Give me my briefing: phase and health, what changed, today's priorities, recent decisions, "
-    "open questions, blockers, and documentation status. Write it from the project context: it "
-    "already has the board and what changed since the last briefing. Open a file only if something "
-    "needs explaining that the context doesn't cover, and don't ask the specialists. Read only."
+    "open questions, blockers, and documentation status. Write it from the project context, in one "
+    "reply: it already has the board (with what's next) and what changed since the last briefing. "
+    "Use a tool only if something the briefing must explain isn't in the context, and don't ask the "
+    "specialists. Read only."
 )
 READ_ONLY_REJECTION = "This is a read-only briefing; no changes were made. Don't retry the write."
 MAX_AUTO_REJECTIONS = 5
@@ -60,6 +62,11 @@ NO_REPLY_ERROR = "The PM finished without writing a reply, even when asked again
 NO_REPLY_AFTER_DECISIONS_ERROR = (
     "The PM finished without writing a reply, even when asked again. "
     "The approved actions above were applied."
+)
+BUDGET_ERROR = (
+    "Stopped: this run reached its token budget ({used:,} of {budget:,} tokens). Changes already "
+    "approved were kept. Ask a narrower question, or an owner or admin can raise the budget in the "
+    "project's settings."
 )
 
 
@@ -132,8 +139,17 @@ class AgentRunner:
         queue: RunQueue | None = None,
         stop_reasons: RunQueue | None = None,
         streams: Streams | None = None,
+        token_budget: int | None = None,
+        summarize_after_tokens: int | None = None,
+        embedder: Any = None,
     ) -> None:
         self.session_factory = session_factory
+        # Defaults for every project (a project may set its own budget); None: no limit / the
+        # engine's own summarisation.
+        self.token_budget = token_budget or None
+        self.summarize_after_tokens = summarize_after_tokens
+        # The search index's embedding model (None: agents search by keywords only).
+        self.embedder = embedder
         self.checkpointer = checkpointer
         self.model_factory = model_factory
         self.inline = inline
@@ -224,6 +240,11 @@ class AgentRunner:
                 assert project is not None
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
                 run.model = project.model
+                # The budget covers every step of the run: what earlier steps used counts.
+                run.token_budget = project.token_budget or self.token_budget
+                usage = TokenUsage(
+                    budget=run.token_budget, used=(run.input_tokens or 0) + (run.output_tokens or 0)
+                )
                 await session.commit()
                 rules = await self._rules(session, project.id)
                 context = await build_context_pack(session, project, run)
@@ -263,8 +284,16 @@ class AgentRunner:
                 rules=rules,
                 task_tools=(read_tools, pm_write_tools),
                 subagent_task_tools=specialist_write_tools,
-                board_instructions=board_instructions(project_key),
+                board_instructions=board_instructions(project_key) + KNOWLEDGE_TOOLS_GUIDE,
                 context=context,
+                knowledge_tools=build_knowledge_tools(
+                    self.session_factory,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    embedder=self.embedder,
+                ),
+                specialist_model=choice.specialist_model,
+                summarize_after_tokens=self.summarize_after_tokens,
             )
             config = {
                 "configurable": {"thread_id": str(thread_id)},
@@ -283,6 +312,10 @@ class AgentRunner:
             result = None
             if retry:
                 graph_input, result = await _continue_from_checkpoint(agent, config, payload, graph_input)
+            if result is None and kind is RunKind.BRIEFING and not resuming:
+                # One model call with no tools: the context pack already says what happened.
+                system = briefing_system_prompt(name, description, rules=rules, context=context)
+                result = await _brief(agent, choice.model, system, payload["message"], config, stream)
             if result is None:
                 result = await _run_graph(agent, graph_input, config, stream)
             result = await self._settle(agent, kind, config, stream, result)
@@ -308,7 +341,14 @@ class AgentRunner:
             # In the worker the run stays "running": its job is retried and continues from the
             # last checkpoint.
             raise
+        except TokenBudgetExceeded as exc:
+            logger.info("agent run %s: %s", run_id, exc)
+            await self._fail(run_id, BUDGET_ERROR.format(used=exc.used, budget=exc.budget), usage)
         except Exception as exc:
+            if (budget := _budget_error(exc)) is not None:  # raised inside a tool (a subagent)
+                logger.info("agent run %s: %s", run_id, budget)
+                await self._fail(run_id, BUDGET_ERROR.format(used=budget.used, budget=budget.budget), usage)
+                return
             logger.exception("agent run %s failed", run_id)
             await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}", usage)
         finally:
@@ -329,8 +369,7 @@ class AgentRunner:
             run = await session.get(AgentRun, run_id)
             assert run is not None
             now = _now()
-            tokens = usage.take()
-            _add_tokens(run, tokens)
+            tokens = _add_tokens(run, usage)
             pending = hitl.pending_actions(result)
             if pending:
                 files = {
@@ -379,8 +418,7 @@ class AgentRunner:
             run = await session.get(AgentRun, run_id)
             if run is None:
                 return
-            tokens = usage.take()
-            _add_tokens(run, tokens)
+            tokens = _add_tokens(run, usage)
             run.status, run.error = RunStatus.FAILED, error[:2000]
             run.updated_at = run.finished_at = _now()
             AuditLog(session).record(
@@ -413,11 +451,28 @@ async def mark_interrupted_runs(session_factory: SessionFactory) -> None:
         await session.commit()
 
 
-def _add_tokens(run: AgentRun, tokens: dict[str, int]) -> None:
+def _add_tokens(run: AgentRun, usage: TokenUsage) -> dict[str, int]:
+    """Record the step's usage on the run; returns the step's totals (for the audit log)."""
+    tokens, breakdown = usage.take()
     run.input_tokens = (run.input_tokens or 0) + tokens["input_tokens"]
     run.output_tokens = (run.output_tokens or 0) + tokens["output_tokens"]
     run.cached_input_tokens = (run.cached_input_tokens or 0) + tokens["cached_input_tokens"]
     run.model_calls = (run.model_calls or 0) + tokens["model_calls"]
+    run.usage = merge_breakdown(run.usage, breakdown)
+    return tokens
+
+
+def _budget_error(exc: BaseException) -> TokenBudgetExceeded | None:
+    """The budget error behind an exception (a subagent's model call raises it inside the
+    `task` tool, which may wrap it)."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, TokenBudgetExceeded):
+            return current
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return None
 
 
 def _preview(action: dict, files: dict[str, str]) -> tuple[str | None, str | None]:
@@ -476,6 +531,22 @@ async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream)
     if interrupts:
         return {**latest, "__interrupt__": interrupts} if isinstance(latest, dict) else {"__interrupt__": interrupts}
     return latest if isinstance(latest, dict) else {}
+
+
+async def _brief(agent: Any, model: Any, system: str, message: str, config: dict, stream: Stream) -> dict:
+    """A briefing: the PM's reply from one streamed model call, then saved into the
+    conversation (as the PM's turn), so a follow-up in the same thread goes to the whole team
+    with the briefing in its history."""
+    reply = ""
+    async for chunk in model.astream(
+        [SystemMessage(system), HumanMessage(message)], config={"callbacks": config["callbacks"]}
+    ):
+        if delta := text_of(chunk.content):
+            reply += delta
+            await stream.publish(delta)
+    messages = [HumanMessage(message), AIMessage(reply)]
+    await agent.aupdate_state(config, {"messages": messages}, as_node="model")
+    return {"messages": messages}
 
 
 def _activities(update: dict) -> list[str]:

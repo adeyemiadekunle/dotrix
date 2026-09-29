@@ -19,6 +19,22 @@ export const PROJECT_SOURCE_LABELS: Record<Schemas["ProjectSource"], string> = {
   docs_only: "Docs only",
 };
 
+const AGENT_NAMES: Record<string, string> = {
+  "project-manager": "PM agent",
+  product: "Product agent",
+  architecture: "Architecture agent",
+  research: "Research agent",
+  reviewer: "Reviewer agent",
+  documentation: "Documentation agent",
+  coding: "Coding agent",
+};
+
+/** An agent's name from its role ("research") or LangGraph name ("research-agent"). */
+export function agentName(agent: string | null | undefined): string {
+  const key = agent?.replace(/-agent$/, "") ?? "";
+  return AGENT_NAMES[key] ?? AGENT_NAMES[agent ?? ""] ?? (agent ? `${agent} agent` : "An agent");
+}
+
 /** Mirrors the backend's permission matrix for showing or hiding controls; the API still decides. */
 export function canManageProjects(role: Schemas["Role"] | undefined): boolean {
   return role === "owner" || role === "admin";

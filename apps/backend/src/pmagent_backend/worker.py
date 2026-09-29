@@ -25,12 +25,13 @@ from .core.logging import configure_logging
 from .core.settings import get_settings
 from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
-from .jobs import JOBS, cleanup_expired
+from .jobs import JOBS, cleanup_expired, index_knowledge
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner
 from .modules.agents.streams import RedisRunStreams
+from .modules.search.embeddings import build_embedder
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +48,15 @@ async def startup(ctx: dict[str, Any]) -> None:
     engine = ctx["engine"] = create_engine(settings.database_url, echo=settings.database_echo)
     redis = ctx["redis"]
     sessionmaker = create_sessionmaker(engine)
-    ctx["jobs"] = JobContext(sessionmaker, settings, build_email_sender(settings), build_storage(settings))
+    embedder = build_embedder(settings)
+    ctx["jobs"] = JobContext(sessionmaker, settings, build_email_sender(settings), build_storage(settings), embedder)
     ctx["runner"] = AgentRunner(
         session_factory=sessionmaker,
         checkpointer=await open_checkpointer(settings.database_url, stack),
         model_factory=settings_model_factory(settings),
+        token_budget=settings.run_token_budget,
+        embedder=embedder,
+        summarize_after_tokens=settings.summarize_after_tokens,
         inline=True,  # this process executes the runs
         stop_reasons=RunQueue(redis),
         streams=RedisRunStreams(redis),
@@ -87,13 +92,21 @@ async def cleanup(ctx: dict[str, Any]) -> None:
     await cleanup_expired(ctx["jobs"])
 
 
+async def index(ctx: dict[str, Any]) -> None:
+    await index_knowledge(ctx["jobs"])
+
+
 class WorkerSettings:
     functions = [
         func(run_agent, timeout=RUN_TIMEOUT_SECONDS, max_tries=RUN_MAX_TRIES),
         *(job_function(name, job) for name, job in JOBS.items()),
     ]
     # Hourly; arq gives each run a unique job ID, so with several workers only one does it.
-    cron_jobs = [cron(cleanup, minute={17}, run_at_startup=True)]
+    # The search index every minute (only what changed is re-chunked or embedded).
+    cron_jobs = [
+        cron(cleanup, minute={17}, run_at_startup=True),
+        cron(index, run_at_startup=True, timeout=10 * 60),
+    ]
     queue_name = QUEUE_NAME
     on_startup = startup
     on_shutdown = shutdown

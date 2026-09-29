@@ -16,6 +16,8 @@ from .modules.auth.repository import (
 from .modules.auth.service import AuthService
 from .modules.documents.service import DocumentService
 from .modules.invites.repository import InviteRepository
+from .modules.projects.models import Project
+from .modules.search.service import KnowledgeIndex
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,7 @@ logger = logging.getLogger(__name__)
 TOKEN_RETENTION = timedelta(days=7)  # refresh tokens after expiry; email links after use or expiry; device logins
 INVITE_RETENTION = timedelta(days=30)  # after expiry, revocation, or acceptance
 CLEANUP_INTERVAL_SECONDS = 3600
+INDEX_INTERVAL_SECONDS = 60
 
 
 async def send_email(ctx: JobContext, *, to: str, subject: str, body: str, html: str | None = None) -> None:
@@ -76,10 +79,29 @@ async def send_magic_link(ctx: JobContext, *, email: str) -> None:
         await AuthService(session, ctx.settings, ctx.email).send_magic_link(email)
 
 
+async def index_knowledge(ctx: JobContext, *, project_id: str | None = None) -> int:
+    """Bring the search index up to date: re-chunk changed documents and issues and embed what
+    has no vector yet, for one project or every project that's behind. Runs every minute (the
+    worker's cron, or a loop in the API in local mode); searches keep keyword results current
+    themselves, so this mostly adds the vectors."""
+    done = 0
+    async with ctx.session_factory() as session:
+        index = KnowledgeIndex(session, ctx.embedder)
+        ids = [uuid.UUID(project_id)] if project_id else await index.stale_projects()
+        for pid in ids:
+            project = await session.get(Project, pid)
+            if project is None:
+                continue
+            await index.sync(project)
+            done += await index.embed_pending(project)
+    return done
+
+
 JOBS: dict[str, JobFunction] = {
     "send_email": send_email,
     "send_password_reset": send_password_reset,
     "send_magic_link": send_magic_link,
     "cleanup_expired": cleanup_expired,
     "convert_document": convert_document,
+    "index_knowledge": index_knowledge,
 }

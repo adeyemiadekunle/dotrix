@@ -1,4 +1,4 @@
-from pmagent_engine.knowledge_index import describe
+from pmagent_engine.knowledge_index import describe, find_section, sections
 
 
 def test_title_summary_and_outline() -> None:
@@ -35,3 +35,43 @@ def test_empty_and_front_matter() -> None:
     assert describe("empty.md", "").summary == "(empty)"
     d = describe("issues/KUN-1.md", "---\nkey: KUN-1\nstatus: todo\n---\n# KUN-1 Ship it\n\nThe work.\n")
     assert d.title == "KUN-1 Ship it" and d.summary == "The work."
+
+
+DOC = """Intro before any heading.
+
+# Requirements
+
+## Goals
+- Multi-zone drivers
+
+### Later
+Night deliveries.
+
+## Non-goals
+```
+# not a heading
+```
+"""
+
+
+def test_sections_nest_and_own_text() -> None:
+    nested = sections(DOC)
+    assert [(s.heading, s.trail, s.start_line, s.end_line) for s in nested] == [
+        (None, "", 1, 2),
+        ("# Requirements", "Requirements", 3, 15),
+        ("## Goals", "Requirements > Goals", 5, 10),
+        ("### Later", "Requirements > Goals > Later", 8, 10),
+        ("## Non-goals", "Requirements > Non-goals", 11, 15),
+    ]
+    assert "Night deliveries." in nested[2].text  # an H2 includes its H3s
+    own = {s.trail: s.text for s in sections(DOC, nested=False)}
+    assert "Night deliveries." not in own["Requirements > Goals"]  # indexing: no text twice
+    assert "# not a heading" in own["Requirements > Non-goals"]  # headings in code don't count
+
+
+def test_find_section_by_heading_or_trail() -> None:
+    assert find_section(DOC, "## Goals").trail == "Requirements > Goals"
+    assert find_section(DOC, "goals").heading == "## Goals"
+    assert find_section(DOC, "Goals > Later").heading == "### Later"
+    assert find_section(DOC, "Requirements > Non-goals").start_line == 11
+    assert find_section(DOC, "Pricing") is None

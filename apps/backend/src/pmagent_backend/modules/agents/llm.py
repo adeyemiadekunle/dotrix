@@ -38,6 +38,8 @@ PROVIDERS = {
 class ModelChoice:
     model: Any  # a chat model instance
     web_search: dict | None
+    # A cheaper model for the specialists and conversation summaries (None: `model`).
+    specialist_model: Any = None
 
 
 # (project) -> the model to run it with. Tests swap in a scripted model.
@@ -82,13 +84,18 @@ def settings_model_factory(settings: Settings) -> ModelFactory:
             from pmagent_engine.testing import RuleBasedChatModel
 
             return ModelChoice(model=RuleBasedChatModel(), web_search=None)
-        provider = provider_of(project.model)
+        specialist = project.specialist_model
+        return ModelChoice(
+            model=_build(project.model),
+            web_search=_web_search_tool(project.model),
+            specialist_model=_build(specialist) if specialist and specialist != project.model else None,
+        )
+
+    def _build(model: str) -> Any:
+        provider = provider_of(model)
         key = getattr(settings, provider.setting)
         if key is None or not key.get_secret_value().strip():  # `KEY=` in .env is empty
-            raise ModelUnavailable(
-                f"No API key for {project.model}: set {provider.env_var} in .env and restart"
-            )
-        model = build_chat_model(project.model, key.get_secret_value())
-        return ModelChoice(model=model, web_search=_web_search_tool(project.model))
+            raise ModelUnavailable(f"No API key for {model}: set {provider.env_var} in .env and restart")
+        return build_chat_model(model, key.get_secret_value())
 
     return factory

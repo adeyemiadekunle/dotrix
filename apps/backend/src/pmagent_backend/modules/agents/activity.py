@@ -39,6 +39,12 @@ def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
     match tool:
         case "read_file":
             return f"Reading {_path(args)}"
+        case "read_section":
+            return f"Reading part of {_path(args)}"
+        case "document_outline":
+            return f"Looking over {_path(args)}"
+        case "search_knowledge":
+            return "Searching the project's documents and issues"
         case "ls" | "glob" | "grep":
             return "Looking through the project files"
         case "write_file" | "edit_file":

@@ -53,3 +53,17 @@ def test_role_for_agent_name() -> None:
     assert role_for_agent_name("documentation-agent") == "documentation"
     assert role_for_agent_name(None) == "project-manager"
     assert role_for_agent_name("unknown") == "project-manager"
+
+
+def test_delegation_briefs_and_findings() -> None:
+    model = ScriptedChatModel.of(
+        tool_call("task", description="Check the vision", subagent_type="product-agent"),
+        "The vision covers drivers.",
+        "Done.",
+    )
+    agent = team(model)
+    agent.invoke({"messages": [{"role": "user", "content": "check the vision"}]}, config("t4"))
+    pm, specialist = str(model.received[0][0].content), str(model.received[1][0].content)
+    assert "## Delegating" in pm and "delegate straight away" in pm
+    assert "Answer with findings" in specialist and "ask for all of it in one turn" in specialist
+    assert "## Delegating" not in specialist

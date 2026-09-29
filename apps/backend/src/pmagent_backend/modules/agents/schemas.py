@@ -53,6 +53,35 @@ class WorkspaceApprovalRead(ApprovalRead):
     requested_by_id: uuid.UUID | None = Field(description="Who instructed the run")
 
 
+class AgentUsage(BaseModel):
+    agent: str = Field(description="project-manager, or the specialist's role (product, research, ...)")
+    input_tokens: int
+    output_tokens: int
+    model_calls: int
+
+
+class ToolUsage(BaseModel):
+    tool: str
+    calls: int
+    result_tokens: int = Field(
+        description="About how many tokens the tool's results added (re-sent with every later model call)"
+    )
+
+
+class RunFileRead(BaseModel):
+    path: str
+    times: int
+
+
+class RunBreakdown(BaseModel):
+    """Where a run's tokens went."""
+
+    by_agent: list[AgentUsage] = Field(description="Largest first")
+    tools: list[ToolUsage] = Field(description="Largest results first")
+    files_read: list[RunFileRead] = Field(description="Most read first")
+    token_budget: int | None = Field(description="The run's token budget (null: no limit)")
+
+
 class AgentRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -91,6 +120,11 @@ class AgentRunRead(BaseModel):
     model_calls: int | None = Field(
         default=None,
         description="Model calls the run made (each re-sends the prompt). Owners and admins only (null otherwise)",
+    )
+    breakdown: RunBreakdown | None = Field(
+        default=None,
+        description="Where the tokens went: by agent, by tool, and the files read. Owners and admins only "
+        "(null otherwise)",
     )
     created_at: datetime
     updated_at: datetime

@@ -168,3 +168,17 @@ async def test_a_briefing_hears_what_happened_since_the_last_one(project, db_cli
     # The briefing is told to write from this, not to explore.
     human = next(str(m.content) for m in model.received[0] if m.type == "human")
     assert "don't ask the specialists" in human
+
+
+async def test_the_board_lists_whats_next_by_priority(project, db_client: AsyncClient, agent_script) -> None:
+    ada, base = await project()
+    for title, priority in (("Tidy the docs", "low"), ("Fix payouts", "urgent"), ("Add zones", "high")):
+        res = await db_client.post(
+            f"{base}/issues", json={"type": "task", "title": title, "priority": priority}, headers=ada.headers
+        )
+        assert res.status_code == 201
+    model = agent_script.say("ok")
+    await db_client.post(f"{base}/agent/runs", json={"message": "What's next?"}, headers=ada.headers)
+    board = system_prompt(model).split("## Board", 1)[1]
+    next_up = board.split("Next up (to do, most urgent first):", 1)[1]
+    assert next_up.index("Fix payouts") < next_up.index("Add zones") < next_up.index("Tidy the docs")

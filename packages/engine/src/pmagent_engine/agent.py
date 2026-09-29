@@ -26,6 +26,7 @@ from deepagents.backends import CompositeBackend, StateBackend
 from . import tasks as T
 from .backend import LockingFilesystemBackend
 from .config import ProjectConfig
+from .context_middleware import CompactTools, UnchangedReads, summarization
 
 # Tools that change task state, gated exactly like write_file/edit_file.
 TASK_WRITE_TOOLS = ("create_task", "update_task", "comment_task")
@@ -133,9 +134,10 @@ def _subagents(
     web_search: dict | None,
     rules: dict[str, str] | None = None,
     context: str | None = None,
+    knowledge_tools: list | None = None,
 ) -> list[dict]:
     def role(title: str, body: str) -> str:
-        prompt = f"You are the {title} for {project_name}.\n{body}"
+        prompt = f"You are the {title} for {project_name}.\n{body}\n{_FINDINGS_GUIDE}"
         return _with_context(_with_rules(rules, _ROLE_FOR_TITLE[title], prompt), context)
 
     # Custom tools per subagent are set explicitly so it's obvious who can do
@@ -155,7 +157,7 @@ def _subagents(
                 "criteria, priority, dependencies) in your reply. The PM creates them. "
                 "Never write application code."
             )),
-            "tools": list(read_task_tools),
+            "tools": [*read_task_tools, *(knowledge_tools or [])],
         },
         {
             "name": "architecture-agent",
@@ -165,7 +167,7 @@ def _subagents(
                 "proposed change, name every existing module/entity it touches. "
                 "Never write application code."
             )),
-            "tools": list(read_task_tools),
+            "tools": [*read_task_tools, *(knowledge_tools or [])],
         },
         {
             "name": "research-agent",
@@ -174,7 +176,7 @@ def _subagents(
                 "Investigate using web search. Clearly separate verified facts "
                 "(with sources) from assumptions. Write findings under /pmagent/research/."
             )),
-            "tools": [web_search] if web_search else [],
+            "tools": [*(knowledge_tools or []), *([web_search] if web_search else [])],
         },
         {
             "name": "reviewer-agent",
@@ -190,7 +192,7 @@ def _subagents(
                 "specific changes. You cannot write anything; report findings "
                 "in your reply."
             )),
-            "tools": list(read_task_tools),
+            "tools": [*read_task_tools, *(knowledge_tools or [])],
             # Structurally read-only: every filesystem write is denied.
             "permissions": [FilesystemPermission(operations=["write"], paths=["/**"], mode="deny")],
         },
@@ -204,7 +206,7 @@ def _subagents(
                 "with: Decision, Reason, Date, Affected modules, Status. Never "
                 "edit /pmagent/tasks/ files directly."
             )),
-            "tools": list(read_task_tools),
+            "tools": [*read_task_tools, *(knowledge_tools or [])],
         },
     ]
 
@@ -216,6 +218,27 @@ def _with_rules(rules: dict[str, str] | None, role: str, prompt: str) -> str:
     parts = [rules.get("base", ""), rules.get(role, ""), prompt]
     return "\n\n".join(part.strip() for part in parts if part.strip())
 
+
+# Delegation that doesn't start from zero: a specialist starts with the project context but
+# not this conversation, so the brief carries what it needs, and it answers with findings.
+_DELEGATION_GUIDE = """## Delegating
+A specialist sees the project context, but not this conversation. When the person asks for
+a specialist, or the work needs one, delegate straight away: don't research first, since the
+specialist reads and searches for itself. Write each `task` as a short brief: the question,
+what the person asked for, anything from this conversation it needs (quote what you've
+already read rather than making it read it again), the paths, sections, or issue keys to start
+from, and what to return. Ask several at once when their parts are independent.
+"""
+
+_FINDINGS_GUIDE = """
+Work in few steps: every step re-sends everything so far. Decide what you need from the
+brief and the project context, then ask for all of it in one turn (several read_file,
+read_section, get_issue, or search calls at once), and answer as soon as you can; an empty
+document needs no second look.
+
+Your reply goes back to the Project Manager, not to a person. Answer with findings: a short
+answer first, then the key points, each with the path and section it comes from, and any
+changes you propose. Don't paste whole documents back; quote only the lines that matter."""
 
 _CONTEXT_GUIDE = """## Using the project context
 The project context below is built fresh for this run: every document with a one-line
@@ -280,6 +303,31 @@ Action Mode change like any other.
 """
 
 
+_BRIEFING_INSTRUCTIONS = """You are the Project Manager for {project_name}.
+
+{description}
+
+Write the daily briefing for the person who asked, from the project context below. It was
+built for this briefing from the board, the documents, recent decisions, and what changed
+since the last briefing. You have no tools in this step, and nothing you write changes the
+project. Cover phase and health (with rough % progress), what changed, today's priorities,
+recent decisions, open questions, blockers, and documentation status (flag documents that
+look out of date). Be concise and specific: name issue keys and documents. If something the
+briefing should cover isn't in the context, say what's missing rather than guessing."""
+
+
+def briefing_system_prompt(
+    project_name: str, description: str, *, rules: dict[str, str] | None = None, context: str | None = None
+) -> str:
+    """The Project Manager's prompt for a briefing written in one model call, with no tools:
+    the platform has already worked out what happened (the context pack), so the model only
+    narrates it. Much cheaper than letting the PM explore the project to find out."""
+    prompt = _with_rules(
+        rules, PM_ROLE, _BRIEFING_INSTRUCTIONS.format(project_name=project_name, description=description)
+    )
+    return f"{prompt}\n\n{context.strip()}" if context else prompt
+
+
 def build_team(
     project_name: str,
     description: str,
@@ -293,6 +341,9 @@ def build_team(
     board_instructions: str | None = None,
     subagent_task_tools: list | None = None,
     context: str | None = None,
+    knowledge_tools: list | None = None,
+    specialist_model: Any = None,
+    summarize_after_tokens: int | None = None,
 ):
     """The Project Manager plus five thinking subagents, over any storage backend.
 
@@ -304,6 +355,9 @@ def build_team(
     CLI's task files). `subagent_task_tools` are extra board tools the specialists
     get (e.g. opening their own issue types); they're gated like every write. `context` is the
     run's project context pack (the platform builds it): the PM and every specialist get it.
+    `knowledge_tools` are extra read-only tools for everyone (outline, sections, search).
+    `specialist_model` runs the specialists and conversation summaries (a cheaper model);
+    `summarize_after_tokens` sets when a long conversation's older turns are summarised.
     """
     read_task_tools, write_task_tools = task_tools or ([], [])
     if board_instructions is not None:
@@ -342,6 +396,7 @@ report exactly what changed, then return to Chat Mode. Every write pauses for
 the user's approval regardless. That gate exists as a backstop, not as a
 substitute for staying in Chat Mode.
 
+{_DELEGATION_GUIDE}
 ## Concurrency
 Other sessions, background jobs, or coding agents may be working on this
 project right now. Before starting substantial work, check /pmagent/progress/
@@ -361,13 +416,39 @@ blockers, and documentation status. A briefing never writes.
         **{tool.__name__: _APPROVAL for tool in write_task_tools},
     }
 
+    summary_model = specialist_model or model
+
+    def middleware() -> list[Any]:
+        """Fresh instances for each agent: files already read, and when to summarise."""
+        extra: list[Any] = [CompactTools(), UnchangedReads()]
+        if summarize_after_tokens:
+            extra.append(summarization(summary_model, backend, summarize_after_tokens))
+        return extra
+
+    subagents = _subagents(
+        project_name,
+        [*read_task_tools, *(subagent_task_tools or [])],
+        web_search,
+        rules,
+        context,
+        knowledge_tools,
+    )
+    for spec in subagents:
+        spec["middleware"] = middleware()
+        if specialist_model is not None:
+            spec["model"] = specialist_model
+
     return create_deep_agent(
         model=model,
-        tools=[*read_task_tools, *write_task_tools, *([web_search] if web_search else [])],
+        tools=[
+            *read_task_tools,
+            *write_task_tools,
+            *(knowledge_tools or []),
+            *([web_search] if web_search else []),
+        ],
         system_prompt=_with_context(_with_rules(rules, PM_ROLE, pm_instructions), context),
-        subagents=_subagents(
-            project_name, [*read_task_tools, *(subagent_task_tools or [])], web_search, rules, context
-        ),
+        subagents=subagents,
+        middleware=middleware(),
         backend=backend,
         checkpointer=checkpointer,
         interrupt_on=interrupt_on,

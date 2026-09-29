@@ -15,6 +15,7 @@ from pmagent_backend.modules.issues.router import router as issues
 from pmagent_backend.modules.knowledge.router import router as knowledge
 from pmagent_backend.modules.organizations.router import router as organizations
 from pmagent_backend.modules.projects.router import router as projects
+from pmagent_backend.modules.search.router import router as search
 from pmagent_backend.modules.workspaces.router import router as workspaces
 
 router = APIRouter(prefix="/v1")
@@ -36,5 +37,6 @@ for module_router in (
     workspace_approvals,
     audit,
     issues,
+    search,
 ):
     router.include_router(module_router)

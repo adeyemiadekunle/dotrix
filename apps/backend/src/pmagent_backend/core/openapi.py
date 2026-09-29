@@ -82,6 +82,11 @@ TAGS: list[dict[str, str]] = [
         "markdown conversion under `docs/normalized/` in the project's knowledge.",
     },
     {
+        "name": "search",
+        "description": "Search a project's documents (by section) and issues by keywords and meaning "
+        "(Postgres full-text search and pgvector, merged).",
+    },
+    {
         "name": "issues",
         "description": "Jira-style issues: epics, stories, tasks, bugs, spikes, sub-tasks with keys "
         "like `KUN-42`; board, backlog, epic progress, dependencies, and atomic `claim` for agents.",

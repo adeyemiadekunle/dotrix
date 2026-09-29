@@ -21,25 +21,24 @@ from .core.ratelimit import build_rate_limiter
 from .core.settings import Settings, get_settings
 from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
-from .jobs import CLEANUP_INTERVAL_SECONDS, JOBS
+from .jobs import CLEANUP_INTERVAL_SECONDS, INDEX_INTERVAL_SECONDS, JOBS
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner, mark_interrupted_runs
 from .modules.agents.streams import RedisRunStreams
 from .modules.documents.service import mark_interrupted_conversions
+from .modules.search.embeddings import build_embedder
 
 API_VERSION = "0.1.0"
 logger = logging.getLogger(__name__)
 
 
-async def _clean_up_hourly(jobs: LocalJobs) -> None:
+async def _every(jobs: LocalJobs, name: str, seconds: float) -> None:
+    """Run a job, wait, run it again: one at a time, however long a run takes."""
     while True:
-        try:
-            await jobs.enqueue("cleanup_expired")
-        except Exception:
-            logger.exception("scheduling cleanup failed")
-        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+        await jobs.run(name)  # logs its own failures
+        await asyncio.sleep(seconds)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -58,7 +57,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 stack.push_async_callback(redis.aclose)
             app.state.rate_limiter = build_rate_limiter(settings, redis)
             job_context = JobContext(
-                sessionmaker, settings, build_email_sender(settings), app.state.storage
+                sessionmaker, settings, build_email_sender(settings), app.state.storage, app.state.embedder
             )
             queue, streams, local_jobs = None, None, None
             if settings.jobs == "worker":
@@ -78,17 +77,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 session_factory=sessionmaker,
                 checkpointer=await open_checkpointer(settings.database_url, stack),
                 model_factory=settings_model_factory(settings),
+                token_budget=settings.run_token_budget,
+                embedder=app.state.embedder,
+                summarize_after_tokens=settings.summarize_after_tokens,
                 inline=settings.jobs == "inline",
                 queue=queue,
                 streams=streams,
             )
-            cleanup = None
+            loops: list[asyncio.Task[None]] = []
             if local_jobs is not None:
-                # No worker (and so no cron) in local mode: clean up from here, hourly.
-                cleanup = asyncio.create_task(_clean_up_hourly(local_jobs))
+                # No worker (and so no cron) in local mode: clean up hourly and keep the search
+                # index current from here.
+                loops = [
+                    asyncio.create_task(_every(local_jobs, "cleanup_expired", CLEANUP_INTERVAL_SECONDS)),
+                    asyncio.create_task(_every(local_jobs, "index_knowledge", INDEX_INTERVAL_SECONDS)),
+                ]
             yield
-            if cleanup is not None:
-                cleanup.cancel()
+            for loop in loops:
+                loop.cancel()
             await runner.shutdown()
             if local_jobs is not None:
                 await local_jobs.drain()
@@ -112,6 +118,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.email_sender = build_email_sender(settings)
     app.state.rate_limiter = build_rate_limiter(settings, None)
     app.state.storage = build_storage(settings)
+    app.state.embedder = build_embedder(settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
