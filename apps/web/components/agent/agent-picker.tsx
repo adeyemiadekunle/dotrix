@@ -12,7 +12,7 @@ import {
 } from "@pmagent/ui/components/dropdown-menu";
 import { PlusIcon, XIcon } from "lucide-react";
 
-import { AGENTS, agentLabel, modelName, type AgentId } from "@/lib/agent";
+import { AGENTS, agentLabel, modelName, type AgentId, type AgentOption } from "@/lib/agent";
 
 /**
  * The chat input's + menu: who answers (Auto or one specialist) and, for a new conversation
@@ -22,6 +22,7 @@ import { AGENTS, agentLabel, modelName, type AgentId } from "@/lib/agent";
 export function AgentPicker({
   agent,
   onAgent,
+  options = AGENTS,
   model,
   onModel,
   models,
@@ -30,6 +31,8 @@ export function AgentPicker({
 }: {
   agent: AgentId;
   onAgent: (agent: AgentId) => void;
+  /** Who can answer: Auto and the project's agents (built-in and custom). */
+  options?: AgentOption[];
   /** The chosen model, or null for the project's. */
   model: string | null;
   /** Unset for an existing conversation (its model is fixed) or when you may not choose. */
@@ -58,7 +61,7 @@ export function AgentPicker({
         <DropdownMenuContent align="start" side="top" className="w-80">
           <DropdownMenuLabel>Who answers</DropdownMenuLabel>
           <DropdownMenuRadioGroup value={agent} onValueChange={(v) => onAgent(v as AgentId)}>
-            {AGENTS.map((a) => (
+            {options.map((a) => (
               <DropdownMenuRadioItem key={a.id} value={a.id} className="items-start">
                 <span className="grid gap-0.5">
                   <span>{a.name}</span>
@@ -91,7 +94,7 @@ export function AgentPicker({
       {agent === "auto" ? (
         <Chip label="Auto" removeLabel="" />
       ) : (
-        <Chip label={agentLabel(agent)} onRemove={disabled ? undefined : () => onAgent("auto")} removeLabel="Back to Auto" />
+        <Chip label={agentLabel(agent, options)} onRemove={disabled ? undefined : () => onAgent("auto")} removeLabel="Back to Auto" />
       )}
       {model && onModel && (
         <Chip label={modelName(model)} mono onRemove={disabled ? undefined : () => onModel(null)} removeLabel="Use the project's model" />

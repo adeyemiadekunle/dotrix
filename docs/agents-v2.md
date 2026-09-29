@@ -1,8 +1,44 @@
 # Agents v2: spec
 
-Status: draft for review (2026-09-29). Plan: "Plan: agents v2" in [CLAUDE.md](../CLAUDE.md).
+Status: reviewed 2026-09-29; D1, D2, and D6 decided (§12). Plan: "Plan: agents v2" in [CLAUDE.md](../CLAUDE.md).
 Background: the 2026-09-29 review of our agents against ChatGPT's workspace agents, dots, and
 Space (DevDay 2026), deep-research agents, code knowledge graphs, and AGENTS.md / Agent Skills.
+
+## 0. Step 0: one tenant, Personal or Organisation
+
+Decided (D6). Today an organisation (`modules/organizations`) is a layer of roles above several
+workspaces, and the workspace is the tenant: `workspace_id` on 12 tables and every query, the
+isolation suite, and `/w/{slug}` URLs. The two overlap. The workspace stays the tenant and
+takes on the organisation's job; the organisations layer goes.
+
+- **Kinds:** `personal` (one per person, just its owner, never invites) and `organization` (a
+  team: invites, roles, many projects). `team` and `business` go.
+- **Roles:** the workspace roles (owner, admin, member, guest) are the organisation's roles. Org
+  owners' implicit access through `MembershipRepository.effective` goes; access is a membership.
+- **Migration (dev and test data only):** team and business workspaces become organisations;
+  an org owner who could see a workspace through the organisation gets an owner membership
+  there; org admins and members keep only the memberships they had. Drop `organizations`,
+  `org_memberships`, and `workspaces.organization_id`; drop the org routes and the `{org_id}`
+  scope from the isolation suite.
+- **Invites** need `kind == organization` (was: the workspace belongs to an organisation). A
+  personal workspace never invites.
+- **Turn into an organisation** replaces attach: a personal workspace becomes an organisation
+  with its projects, and its owner gets a new, empty personal workspace. Moving a project
+  between workspaces stays as built (#56, #57).
+- **Project access** replaces "several workspaces per team": `Project.access` is `workspace`
+  (every member) or `restricted` (owners and admins, plus the people in `project_members`).
+  `require_project_permission` checks it, so a restricted project is a 404 to anyone else;
+  project lists, search, the calendar feed, and the approvals queue filter by it; the
+  isolation suite gets a restricted project in its `World`.
+- **Web:** the switcher lists Personal and your organisations; "Create organisation" makes an
+  organisation workspace; the `/o/…` pages go, their people and settings move into the
+  organisation's settings; project settings gain "Who can see this project".
+- **Agents v2 scope (D2):** contracts, skills, the Space, and automations belong to the
+  workspace (Personal or Organisation), with per-project overrides where the spec says so.
+- **Delivery:** (1) backend model, migration, removals, invites, "turn into an organisation";
+  (2) project access; (3) web. **Acceptance:** the backend, CLI, and browser suites pass with
+  organisations removed; a restricted project is invisible to a member not added to it; a
+  personal workspace turned into an organisation keeps its projects and can invite.
 
 ## 1. Goals and non-goals
 
@@ -161,12 +197,11 @@ filtered by the existing `CompactTools` middleware plus `access`: an agent witho
 - `allow`: the action runs without interrupting. It is only offered for **low-risk actions**:
   `issues.comment`, `issues.label`, `graph.write`. Document writes, creating and updating
   issues stay `ask` in v2.
-- **Decision needed (D1):** CLAUDE.md says "No agent write without instruction and approval".
-  A standing `allow` rule is a pre-approval by an owner. Proposal: amend the rule to "every
-  agent write is approved, by a person at the time or by a standing rule an owner or admin set
-  (versioned and audited)". Until that's agreed, `allow` is built but hidden.
+- **Decided (D1):** a standing `allow` rule is a pre-approval by an owner. CLAUDE.md's rule now
+  reads: every agent write is approved, by a person at the time or by a standing rule an owner
+  approved (low-risk actions only; versioned and audited). Only owners set `allow` rules.
 - In the approval queue, a low-risk action gets "Always allow this for <agent>", which saves a
-  new contract version (owners and admins only).
+  new contract version (owners only; admins can set `ask` and `block`).
 - The audit event of an allowed action records `approved_by = null` and
   `details.rule = {definition_id, version}`.
 
@@ -453,15 +488,16 @@ something changed, with proposed document updates to approve.
 - **Comments with `@handle`** on documents: a comment thread on a section; mentioning an
   agent starts a run with the section as context; its change is proposed as usual.
 
-## 12. Decisions needed
+## 12. Decisions
 
-| # | Decision | Proposal |
+| # | Decision | Outcome |
 |---|---|---|
-| D1 | Standing `allow` rules vs "no agent write without approval" | Amend the rule as in §4.5; low-risk actions only |
-| D2 | Where contracts live | Workspace, with per-project overrides |
+| D1 | Standing `allow` rules vs "no agent write without approval" | **Decided:** owners approve standing rules; low-risk actions only; the CLAUDE.md rule is amended (§4.5) |
+| D2 | Where contracts live | **Decided:** the workspace (Personal or Organisation), with per-project overrides |
 | D3 | Search provider | Tavily (built for agents, simple pricing); Exa or Brave also fit |
 | D4 | Quality evals | On demand with a key, not in CI |
 | D5 | GitHub App | Register when step 5 starts; one app for sign-in and repos |
+| D6 | Workspace vs organisation | **Decided:** fold organisations into workspaces; Personal or Organisation; project access for teams (§0) |
 
 ## 13. Sources
 

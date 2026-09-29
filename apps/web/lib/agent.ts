@@ -22,8 +22,11 @@ export type ModelOption = Schemas["ModelOption"];
 
 export const isActive = (run: Pick<Run, "status">) => run.status === "queued" || run.status === "running";
 
-/** Who can answer in the chat, in the + menu's order. */
-export const AGENTS: { id: AgentId; name: string; description: string }[] = [
+export type AgentOption = { id: AgentId; name: string; description: string };
+
+/** Who can answer in the chat, in the + menu's order: the built-ins. A project's own list
+ * (with custom agents) comes from `useChatAgents` in `lib/agents.ts`. */
+export const AGENTS: AgentOption[] = [
   { id: "auto", name: "Auto", description: "The project manager answers and brings in the specialists it needs" },
   { id: "product", name: "Product agent", description: "Features, user stories, business rules, acceptance criteria" },
   { id: "architecture", name: "Architecture agent", description: "The system's design and what a change would touch" },
@@ -32,16 +35,18 @@ export const AGENTS: { id: AgentId; name: string; description: string }[] = [
   { id: "documentation", name: "Documentation agent", description: "Keeps the documents tidy and writes decisions down" },
 ];
 
-/** "Research agent", or "Auto" for the project manager. */
-export function agentLabel(id: string | null | undefined): string {
-  return AGENTS.find((a) => a.id === (id || "auto"))?.name ?? `${id} agent`;
+/** "Research agent", or "Auto" for the project manager; "@handle" for an agent not in `options`. */
+export function agentLabel(id: string | null | undefined, options: AgentOption[] = AGENTS): string {
+  return options.find((a) => a.id === (id || "auto"))?.name ?? `@${id}`;
 }
 
 /** "@research …" at the start of a message picks that agent: [agent, the rest], or null. */
-export function mentionedAgent(text: string): [AgentId, string] | null {
-  const match = /^@([a-z]+)\s+/i.exec(text);
-  const agent = match && AGENTS.find((a) => a.id === match[1].toLowerCase() || a.name.toLowerCase().startsWith(match[1].toLowerCase()));
-  return agent && match ? [agent.id, text.slice(match[0].length)] : null;
+export function mentionedAgent(text: string, options: AgentOption[] = AGENTS): [AgentId, string] | null {
+  const match = /^@([a-z][a-z0-9-]*)\s+/i.exec(text);
+  if (!match) return null;
+  const said = match[1].toLowerCase();
+  const agent = options.find((a) => a.id === said) ?? options.find((a) => a.name.toLowerCase().startsWith(said));
+  return agent ? [agent.id, text.slice(match[0].length)] : null;
 }
 
 /** The models a conversation can start on in this workspace. */

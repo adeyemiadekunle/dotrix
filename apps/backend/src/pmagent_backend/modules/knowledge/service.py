@@ -28,7 +28,7 @@ from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine import permissions as agent_permissions
+from pmagent_engine.contracts import AgentPolicy
 from pmagent_engine.knowledge_index import describe
 from pmagent_engine.layout import MAX_FILE_BYTES, InvalidPath, normalize_path
 
@@ -37,6 +37,7 @@ from .repository import KnowledgeRepository
 from .schemas import FileEntry, FileRead, Manifest, VersionDiff, VersionEntry, VersionRead
 
 RULES_PREFIX = "agent-rules/"
+_BUILTIN_POLICY = AgentPolicy()
 
 
 class InvalidKnowledgePath(Unprocessable):
@@ -61,6 +62,8 @@ class Actor:
     agent: str | None = None  # when kind is AGENT
     instructed_by_id: uuid.UUID | None = None
     approved_by_id: uuid.UUID | None = None
+    # The run's agent contracts (built-ins when None): what each agent may write.
+    policy: AgentPolicy | None = None
 
     @classmethod
     def person(cls, user_id: uuid.UUID, role: Role) -> Actor:
@@ -68,8 +71,10 @@ class Actor:
         return cls(AuthorType.USER, user_id, role, None, user_id, user_id)
 
     @classmethod
-    def agent_run(cls, agent: str, instructed_by_id: uuid.UUID, approved_by_id: uuid.UUID) -> Actor:
-        return cls(AuthorType.AGENT, None, None, agent, instructed_by_id, approved_by_id)
+    def agent_run(
+        cls, agent: str, instructed_by_id: uuid.UUID, approved_by_id: uuid.UUID, policy: AgentPolicy | None = None
+    ) -> Actor:
+        return cls(AuthorType.AGENT, None, None, agent, instructed_by_id, approved_by_id, policy)
 
     @classmethod
     def system(cls) -> Actor:
@@ -238,8 +243,9 @@ class KnowledgeService:
         if actor.kind is AuthorType.AGENT:
             if actor.instructed_by_id is None or actor.approved_by_id is None:
                 raise Forbidden("Agent writes need an instructing and an approving person")
-            if not agent_permissions.can_write(actor.agent or "", path):
-                owner = agent_permissions.access(actor.agent or "", path)
+            policy = actor.policy or _BUILTIN_POLICY
+            if not policy.can_write(actor.agent or "", path):
+                owner = policy.access(actor.agent or "", path)
                 raise Forbidden(
                     f"The {actor.agent} agent can't write {path} (its access there is "
                     f"'{owner}'); ask the Project Manager to route the change to the owner"

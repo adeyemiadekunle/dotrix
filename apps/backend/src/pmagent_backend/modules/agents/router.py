@@ -23,6 +23,7 @@ from .schemas import (
     ArchitectureDraftRequest,
     DecisionsRequest,
     ModelOption,
+    OutputItemUpdate,
     RunCreate,
     ThreadRead,
     ThreadRename,
@@ -51,6 +52,7 @@ Agents = Annotated[AgentService, Depends(get_agent_service)]
 Chatter = Annotated[ProjectAccess, Depends(require_project_permission(Permission.CHAT))]
 Approver = Annotated[ProjectAccess, Depends(require_project_permission(Permission.APPROVE_ACTIONS))]
 SetupManager = Annotated[ProjectAccess, Depends(require_project_permission(Permission.MANAGE_PROJECTS))]
+IssueEditor = Annotated[ProjectAccess, Depends(require_project_permission(Permission.EDIT_ISSUES))]
 
 
 @router.post("/runs", status_code=status.HTTP_202_ACCEPTED, responses=errors(403, 409, 422, 503))
@@ -188,3 +190,12 @@ async def list_workspace_approvals(
     with the project and the instruction it came from. Decide them per run with
     `POST .../agent/runs/{run_id}/decisions`."""
     return await agents.workspace_pending(member.workspace_id)
+
+
+@router.patch("/runs/{run_id}/outputs/{output_id}/items/{index}", responses=errors(422))
+async def update_run_output_item(
+    run_id: uuid.UUID, output_id: uuid.UUID, index: int, data: OutputItemUpdate, access: IssueEditor, agents: Agents
+) -> AgentRunRead:
+    """Act on one item of a run's result: `done` with what it became (e.g. the issue key you
+    created from a finding), `dismissed` with why, or `open` again. Anyone who works the board."""
+    return await agents.update_output_item(access, run_id, output_id, index, data)

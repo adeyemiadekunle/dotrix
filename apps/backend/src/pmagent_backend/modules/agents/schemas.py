@@ -8,7 +8,8 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from .models import ApprovalStatus, RunKind, RunStatus
 
-AgentChoice = Literal["auto", "product", "architecture", "research", "reviewer", "documentation"]
+# `auto` (the Project Manager) or any agent handle the project has (built-in or custom).
+AgentChoice = Annotated[str, Field(pattern=r"^(auto|[a-z][a-z0-9-]{1,30})$")]
 
 
 class RunCreate(BaseModel):
@@ -19,8 +20,9 @@ class RunCreate(BaseModel):
     )
     agent: AgentChoice = Field(
         default="auto",
-        description="Who answers: `auto` (the Project Manager involves the specialists it needs) or one "
-        "specialist, who leads and may ask the others",
+        description="Who answers: `auto` (the Project Manager involves the specialists it needs) or an "
+        "agent's handle (`GET .../agents`: built-in or custom), who leads and may ask the agents it can call. "
+        "422 `unknown_agent` if the project has no such agent",
     )
     model: str | None = Field(
         default=None,
@@ -102,6 +104,33 @@ class RunBreakdown(BaseModel):
     token_budget: int | None = Field(description="The run's token budget (null: no limit)")
 
 
+class RunOutputItem(BaseModel):
+    index: int
+    data: dict[str, Any] = Field(description="The item, in its schema (e.g. a finding's severity, title, detail)")
+    state: Literal["open", "done", "dismissed"]
+    reason: str | None = Field(default=None, description="Why it was dismissed")
+    link: str | None = Field(default=None, description="What it became, e.g. the issue key it was turned into")
+    acted_by_id: uuid.UUID | None = None
+    acted_at: datetime | None = None
+
+
+class RunOutputRead(BaseModel):
+    """What the leading agent recorded as its result (its contract's output schema)."""
+
+    id: uuid.UUID
+    agent: str
+    kind: str = Field(description="The output schema: finding, plan, spec, impact, report, doc_update, or brief")
+    actions: list[str] = Field(description="What its items can become in the app, e.g. create_issue, dismiss")
+    items: list[RunOutputItem]
+    created_at: datetime
+
+
+class OutputItemUpdate(BaseModel):
+    state: Literal["done", "dismissed", "open"]
+    reason: str | None = Field(default=None, max_length=500, description="Why it's dismissed (shown to the agent later)")
+    link: str | None = Field(default=None, max_length=100, description="What it became, e.g. the issue key")
+
+
 class AgentRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -117,7 +146,7 @@ class AgentRunRead(BaseModel):
     error: str | None
     requested_by_id: uuid.UUID | None
     agent: Annotated[str, BeforeValidator(lambda v: v or "auto")] = Field(
-        default="auto", description="Who answered: `auto` (the Project Manager) or a specialist's role"
+        default="auto", description="Who answered: `auto` (the Project Manager) or the leading agent's handle"
     )
     conversation_model: str | None = Field(
         default=None,
@@ -158,6 +187,7 @@ class AgentRunRead(BaseModel):
     updated_at: datetime
     finished_at: datetime | None
     approvals: list[ApprovalRead] = []
+    outputs: list[RunOutputRead] = Field(default_factory=list, description="The structured results the run recorded")
 
 
 class Decision(BaseModel):

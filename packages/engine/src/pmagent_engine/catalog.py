@@ -1,0 +1,97 @@
+"""The tools an agent can be given (agent contracts, docs/agents-v2.md §4.3).
+
+A contract lists tool ids from here. The platform (or the local CLI) supplies the actual
+tools; `tool_id` says which id a supplied tool belongs to, by its name. Each id also names
+the actions it can take, which autonomy rules (allow / ask / block) refer to.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ToolGroup:
+    id: str
+    label: str
+    description: str
+    names: tuple[str, ...]  # the supplied tools' names that belong to it
+    actions: tuple[str, ...] = ()  # what it can change, for autonomy rules
+
+
+CATALOG: tuple[ToolGroup, ...] = (
+    ToolGroup(
+        "knowledge.read", "Read documents",
+        "List, read, and search inside the project's documents; outlines and sections.",
+        ("ls", "read_file", "glob", "grep", "document_outline", "read_section"),
+    ),
+    ToolGroup(
+        "knowledge.search", "Search the project",
+        "Search documents and issues by meaning and keywords.",
+        ("search_knowledge",),
+    ),
+    ToolGroup(
+        "knowledge.write", "Write documents",
+        "Create and edit documents in the folders its access allows. Every write waits for approval.",
+        ("write_file", "edit_file"),
+        ("knowledge.write",),
+    ),
+    ToolGroup(
+        "board.read", "Read the board",
+        "List issues and read them in full.",
+        ("list_issues", "get_issue", "list_tasks", "get_task"),
+    ),
+    ToolGroup(
+        "issues.create", "Open issues",
+        "Open issues of the types it may create.",
+        ("create_issue", "create_task"),
+        ("issues.create",),
+    ),
+    ToolGroup(
+        "issues.update", "Edit issues",
+        "Change issues' fields and status; closing always needs a person.",
+        ("update_issue", "update_task"),
+        ("issues.update",),
+    ),
+    ToolGroup(
+        "issues.comment", "Comment on issues",
+        "Add comments to issues.",
+        ("comment_issue", "comment_task"),
+        ("issues.comment",),
+    ),
+    ToolGroup(
+        "web.search", "Search the web",
+        "Search the web for outside information.",
+        ("web_search",),
+    ),
+    ToolGroup(
+        "delegate", "Ask other agents",
+        "Hand part of the work to the agents it may call (one level deep).",
+        ("task",),
+    ),
+)
+
+TOOL_IDS: tuple[str, ...] = tuple(group.id for group in CATALOG)
+_BY_ID = {group.id: group for group in CATALOG}
+_ID_BY_NAME = {name: group.id for group in CATALOG for name in group.names}
+
+# Every action an autonomy rule can name, and the ones that may be allowed without asking
+# (low-risk; decided D1). Everything else is `ask` at most.
+ACTIONS: tuple[str, ...] = tuple(action for group in CATALOG for action in group.actions)
+LOW_RISK_ACTIONS = frozenset({"issues.comment"})
+
+
+def group(tool_id: str) -> ToolGroup:
+    return _BY_ID[tool_id]
+
+
+def tool_name(tool: object) -> str:
+    """A supplied tool's name: a function's `__name__`, a LangChain tool's `name`, or a
+    provider-native tool dict's `name` (web search is the only dict we pass)."""
+    if isinstance(tool, dict):
+        return str(tool.get("name") or "web_search")
+    return str(getattr(tool, "name", None) or getattr(tool, "__name__", ""))
+
+
+def tool_id(tool: object) -> str | None:
+    """Which catalogue id a supplied tool belongs to, or None if it isn't in the catalogue."""
+    return _ID_BY_NAME.get(tool_name(tool))

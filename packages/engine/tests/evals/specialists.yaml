@@ -1,0 +1,50 @@
+- name: product opens epics and stories but doesn't edit issues
+  agent: product
+  message: draft stories
+  script:
+    - tool: create_issue
+      args: {type: story, title: Multi-zone, description: "As a dispatcher..."}
+  expect:
+    tools_include: [list_issues, create_issue, comment_issue, task]
+    tools_exclude: [update_issue, web_search]
+    pending: [create_issue]
+    prompt_contains: ["You are the Product Agent", "You're in the project's chat"]
+
+- name: architecture may open tasks
+  agent: architecture
+  message: what does this touch?
+  script:
+    - text: Dispatch and zones.
+  expect:
+    tools_include: [create_issue, list_issues]
+    tools_exclude: [update_issue]
+
+- name: research searches the web and may open spikes
+  agent: research
+  message: who else does multi-zone?
+  script:
+    - text: Three competitors.
+  expect:
+    tools_include: [web_search, create_issue, search_knowledge]
+    tools_exclude: [update_issue, comment_issue]
+
+- name: the reviewer is read-only, refused outright
+  agent: reviewer
+  message: review it
+  script:
+    - tool: write_file
+      args: {file_path: /pmagent/reviews/r.md, content: x}
+    - text: I can't write; here's the review.
+  expect:
+    pending: []
+    denied: true
+    tools_include: [create_issue, comment_issue]
+
+- name: documentation comments but never opens issues
+  agent: documentation
+  message: tidy up
+  script:
+    - text: Tidy.
+  expect:
+    tools_include: [comment_issue]
+    tools_exclude: [create_issue, update_issue]

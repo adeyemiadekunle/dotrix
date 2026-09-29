@@ -24,6 +24,7 @@ import {
   type AgentId,
   type Run,
 } from "@/lib/agent";
+import { useChatAgents } from "@/lib/agents";
 import type { Scope } from "@/lib/issues";
 import { can } from "@/lib/labels";
 import { useCurrentProject } from "@/lib/queries";
@@ -114,6 +115,7 @@ export function Conversation({
   const [draft, setDraft] = useState("");
   const { workspace, project } = useCurrentProject();
   const models = useModels(workspace?.id);
+  const agentOptions = useChatAgents(scope);
   // Picks made here, for this conversation (a new one has no thread yet).
   const [pick, setPick] = useState<{ thread: string | null; agent?: AgentId; model?: string | null }>({
     thread: threadId,
@@ -218,7 +220,7 @@ export function Conversation({
             value={draft}
             onValueChange={(value) => {
               // "@research " at the start picks that agent.
-              const mention = mentionedAgent(value);
+              const mention = mentionedAgent(value, agentOptions);
               if (mention) {
                 setAgent(mention[0]);
                 setDraft(mention[1]);
@@ -229,12 +231,13 @@ export function Conversation({
             onSubmit={(text) => void submit(text)}
             onStop={working ? () => stop.mutate(working.id) : undefined}
             status={status}
-            label={`Message ${agent === "auto" ? "the agents" : agentLabel(agent)}`}
+            label={`Message ${agent === "auto" ? "the agents" : agentLabel(agent, agentOptions)}`}
             footer={
               <>
                 <AgentPicker
                   agent={agent}
                   onAgent={setAgent}
+                  options={agentOptions}
                   model={picked.model ?? null}
                   onModel={mayChooseModel ? (model) => setPick({ ...picked, model }) : undefined}
                   models={(models.data ?? []).map((m) => m.id)}
@@ -253,7 +256,7 @@ export function Conversation({
               status === "waiting" || last?.status === "awaiting_approval"
                 ? "Decide the changes above to continue"
                 : working
-                  ? `${working.agent === "auto" ? "The agents are" : `${agentLabel(working.agent)} is`} working…`
+                  ? `${working.agent === "auto" ? "The agents are" : `${agentLabel(working.agent, agentOptions)} is`} working…`
                   : threadId
                     ? "Reply"
                     : "Ask about the project, or ask for a change (@ picks an agent)"

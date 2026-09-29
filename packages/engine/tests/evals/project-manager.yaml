@@ -1,0 +1,21 @@
+# Structural evals: what an agent is offered, what pauses for approval, and what it's refused.
+# Run by tests/test_evals.py with the scripted model; they catch contract regressions, not
+# answer quality (that's `pmagent eval --live`, later).
+- name: the PM has the whole board and delegates
+  agent: project-manager
+  message: status?
+  script:
+    - text: On track.
+  expect:
+    tools_include: [list_issues, get_issue, create_issue, update_issue, comment_issue, task, search_knowledge]
+    prompt_contains: ["Project Manager for Kunemi", "## Delegating"]
+    reply: On track.
+
+- name: the PM's writes wait for approval
+  agent: project-manager
+  message: log the decision
+  script:
+    - tool: write_file
+      args: {file_path: /pmagent/decisions/ADR-001.md, content: "# ADR-001"}
+  expect:
+    pending: [write_file]

@@ -25,8 +25,20 @@ from deepagents.backends import CompositeBackend, StateBackend
 
 from . import tasks as T
 from .backend import LockingFilesystemBackend
+from .builtins import BUILTIN_HANDLES, SPECIALISTS, builtin_specs
+from .catalog import group as catalog_group
+from .catalog import tool_id, tool_name
 from .config import ProjectConfig
 from .context_middleware import CompactTools, UnchangedReads, summarization
+from .contracts import PM_HANDLE, AgentSpec
+from .outputs import (
+    ResultSink,
+    StageSink,
+    pipeline_instructions,
+    result_instructions,
+    result_tool,
+    stage_tool,
+)
 
 # Tools that change task state, gated exactly like write_file/edit_file.
 TASK_WRITE_TOOLS = ("create_task", "update_task", "comment_task")
@@ -128,97 +140,6 @@ def _task_tools(config: ProjectConfig) -> tuple[list, list]:
     return [list_tasks, get_task], [create_task, update_task, comment_task]
 
 
-def _subagents(
-    project_name: str,
-    read_task_tools: list,
-    web_search: dict | None,
-    rules: dict[str, str] | None = None,
-    context: str | None = None,
-    knowledge_tools: list | None = None,
-    lead: str | None = None,
-    board: str = "",
-) -> list[dict]:
-    """The five specialists. The one named by `lead` (a role, e.g. "research") talks to the
-    person directly and may call the others; the rest answer whoever called them."""
-
-    def role(title: str, body: str) -> str:
-        if _ROLE_FOR_TITLE[title] == lead:
-            prompt = f"You are the {title} for {project_name}.\n{body}\n{board}\n{_LEAD_GUIDE}"
-        else:
-            prompt = f"You are the {title} for {project_name}.\n{body}\n{_FINDINGS_GUIDE}"
-        return _with_context(_with_rules(rules, _ROLE_FOR_TITLE[title], prompt), context)
-
-    # Custom tools per subagent are set explicitly so it's obvious who can do
-    # what. Filesystem tools are always present (middleware) and gated by
-    # interrupt_on / permissions, not by this list.
-    return [
-        {
-            "name": "product-agent",
-            "description": "Owns product thinking: features, user stories, business rules, acceptance criteria.",
-            "system_prompt": role("Product Agent", (
-                "Given a feature request, work through: why it's needed, who "
-                "uses it, user stories, business rules, edge cases, acceptance "
-                "criteria, and dependencies on other parts of the system. "
-                "Write/update files under /pmagent/requirements/ via write_file. "
-                "When asked to break a feature into tasks, use list_tasks to avoid "
-                "duplicates, then propose them (title, description with acceptance "
-                "criteria, priority, dependencies) in your reply. The PM creates them. "
-                "Never write application code."
-            )),
-            "tools": [*read_task_tools, *(knowledge_tools or [])],
-        },
-        {
-            "name": "architecture-agent",
-            "description": "Tracks system architecture and the ripple effects of proposed changes.",
-            "system_prompt": role("Architecture Agent", (
-                "Maintain files under /pmagent/architecture/. When asked about a "
-                "proposed change, name every existing module/entity it touches. "
-                "Never write application code."
-            )),
-            "tools": [*read_task_tools, *(knowledge_tools or [])],
-        },
-        {
-            "name": "research-agent",
-            "description": "Runs external research (regulations, APIs, competitors, market changes).",
-            "system_prompt": role("Research Agent", (
-                "Investigate using web search. Clearly separate verified facts "
-                "(with sources) from assumptions. Write findings under /pmagent/research/."
-            )),
-            "tools": [*(knowledge_tools or []), *([web_search] if web_search else [])],
-        },
-        {
-            "name": "reviewer-agent",
-            "description": ("Reviews what has been built against stated requirements, including "
-                            "tasks in 'review' status handed back by coding agents. Read-only."),
-            "system_prompt": role("Reviewer Agent", (
-                "Read /pmagent/requirements/ and /pmagent/architecture/ (and the "
-                "actual repo, if you're given a way to see it) and produce a "
-                "requirement-by-requirement status table (done / partial / "
-                "missing) with what's missing and why. For a task in 'review', "
-                "check the coding agent's final log note against the task's "
-                "acceptance criteria and recommend: close, or send back with "
-                "specific changes. You cannot write anything; report findings "
-                "in your reply."
-            )),
-            "tools": [*read_task_tools, *(knowledge_tools or [])],
-            # Structurally read-only: every filesystem write is denied.
-            "permissions": [FilesystemPermission(operations=["write"], paths=["/**"], mode="deny")],
-        },
-        {
-            "name": "documentation-agent",
-            "description": "Keeps /pmagent/ organized; writes the decision log.",
-            "system_prompt": role("Documentation Agent", (
-                "Keep /pmagent/ tidy across project.md, requirements/, "
-                "architecture/, decisions/, research/, progress/. When a "
-                "decision is made, write a new /pmagent/decisions/ADR-NNN.md "
-                "with: Decision, Reason, Date, Affected modules, Status. Never "
-                "edit /pmagent/tasks/ files directly."
-            )),
-            "tools": [*read_task_tools, *(knowledge_tools or [])],
-        },
-    ]
-
-
 def _with_rules(rules: dict[str, str] | None, role: str, prompt: str) -> str:
     """Prepend the project's agent rules (base.md + the role's file) when given."""
     if not rules:
@@ -285,29 +206,19 @@ def _with_context(prompt: str, context: str | None) -> str:
     return f"{prompt}\n\n{_CONTEXT_GUIDE}\n\n{context.strip()}"
 
 
-# Subagent name -> role name used by agent-rules/ and the folder permissions.
-SUBAGENT_ROLES = {
-    "product-agent": "product",
-    "architecture-agent": "architecture",
-    "research-agent": "research",
-    "reviewer-agent": "reviewer",
-    "documentation-agent": "documentation",
-}
-PM_ROLE = "project-manager"
-# Who can lead a chat: Auto (the Project Manager coordinating the team) or one specialist.
-LEADS = (PM_ROLE, *SUBAGENT_ROLES.values())
-_ROLE_FOR_TITLE = {
-    "Product Agent": "product",
-    "Architecture Agent": "architecture",
-    "Research Agent": "research",
-    "Reviewer Agent": "reviewer",
-    "Documentation Agent": "documentation",
-}
+# Subagent name -> role name used by agent-rules/ and the folder permissions (the built-ins).
+SUBAGENT_ROLES = {f"{role}-agent": role for role in SPECIALISTS}
+PM_ROLE = PM_HANDLE
+# Who can lead a chat among the built-ins: Auto (the Project Manager) or one specialist.
+LEADS = BUILTIN_HANDLES
 
 
 def role_for_agent_name(name: str | None) -> str:
-    """The role behind a LangGraph agent name: a subagent's, else the Project Manager."""
-    return SUBAGENT_ROLES.get(name or "", PM_ROLE)
+    """The handle behind a LangGraph agent name ("<handle>-agent"), else the Project Manager
+    (the main agent, and deepagents' own general-purpose helper)."""
+    if name and name.endswith("-agent") and name != "-agent":
+        return name[: -len("-agent")]
+    return PM_ROLE
 
 
 _BOARD_SECTION = """
@@ -359,6 +270,57 @@ def briefing_system_prompt(
     return f"{prompt}\n\n{context.strip()}" if context else prompt
 
 
+_WRITE_TOOL_GROUPS = ("issues.create", "issues.update", "issues.comment")
+_DENY_FILE_WRITES = [FilesystemPermission(operations=["write"], paths=["/**"], mode="deny")]
+
+
+def _toolbox(tools: list[Any]) -> dict[str, list[Any]]:
+    """Supplied tools by catalogue id (first of each name wins)."""
+    box: dict[str, list[Any]] = {}
+    seen: set[str] = set()
+    for tool in tools:
+        name, group_id = tool_name(tool), tool_id(tool)
+        if group_id is None or name in seen:
+            continue
+        seen.add(name)
+        box.setdefault(group_id, []).append(tool)
+    return box
+
+
+def _tools_for(spec: AgentSpec, box: dict[str, list[Any]]) -> list[Any]:
+    """The supplied tools its contract lists, minus the ones whose actions are blocked."""
+    return [tool for group_id in spec.tools if spec.can(group_id) for tool in box.get(group_id, [])]
+
+
+def _gate(spec: AgentSpec, box: dict[str, list[Any]]) -> dict[str, Any]:
+    """What pauses for approval when this agent acts: its file writes and board changes, except
+    the low-risk actions an owner allowed it to take without asking."""
+    gated: dict[str, Any] = {}
+    if spec.can("knowledge.write"):
+        gated |= {"write_file": _APPROVAL, "edit_file": _APPROVAL}
+    for group_id in _WRITE_TOOL_GROUPS:
+        if spec.can(group_id) and not all(spec.allowed(a) for a in catalog_group(group_id).actions):
+            gated |= {tool_name(tool): _APPROVAL for tool in box.get(group_id, [])}
+    return gated
+
+
+def _permissions(spec: AgentSpec) -> list[FilesystemPermission]:
+    """Structurally read-only unless it may write documents (the Reviewer's way)."""
+    return [] if spec.can("knowledge.write") else list(_DENY_FILE_WRITES)
+
+
+def _callable(caller: AgentSpec, specs: list[AgentSpec]) -> list[AgentSpec]:
+    """The agents `caller` may hand work to: its `can_call` (["*"]: everyone), never the
+    Project Manager and never itself; nobody without the delegate tool."""
+    if not caller.has("delegate"):
+        return []
+    wanted = set(caller.can_call)
+    return [
+        spec for spec in specs
+        if spec.handle not in (caller.handle, PM_HANDLE) and ("*" in wanted or spec.handle in wanted)
+    ]
+
+
 def build_team(
     project_name: str,
     description: str,
@@ -376,28 +338,51 @@ def build_team(
     specialist_model: Any = None,
     summarize_after_tokens: int | None = None,
     lead: str | None = None,
+    agents: list[AgentSpec] | None = None,
+    models: Any = None,
+    result_sink: ResultSink | None = None,
+    stage_sink: StageSink | None = None,
 ):
-    """The Project Manager plus five thinking subagents, over any storage backend.
+    """The Project Manager plus the specialists, over any storage backend.
+
+    The team comes from `agents` (contracts, `pmagent_engine.contracts`); without them, the
+    six built-ins. Each agent gets the supplied tools its contract lists, pauses for approval
+    on its own writes, and is structurally read-only without `knowledge.write`.
 
     `backend` must serve the project's `.pmagent/` under `/pmagent/`. `model` is a
-    "provider:model" string or a chat model instance. `rules` maps role names
-    ("base", "project-manager", "product", ...) to agent-rules/ text. Without
-    `task_tools`, the board section is left out of the PM's instructions;
-    `board_instructions` replaces it (the platform's issue board differs from the
-    CLI's task files). `subagent_task_tools` are extra board tools the specialists
-    get (e.g. opening their own issue types); they're gated like every write. `context` is the
-    run's project context pack (the platform builds it): the PM and every specialist get it.
-    `knowledge_tools` are extra read-only tools for everyone (outline, sections, search).
-    `specialist_model` runs the specialists and conversation summaries (a cheaper model);
-    `summarize_after_tokens` sets when a long conversation's older turns are summarised.
-    `lead` picks who talks to the person: None or "project-manager" for the PM (Auto), or a
-    specialist's role ("research", ...), who then leads with its own prompt, tools, and folder
-    permissions and may call the other four (one level deep).
+    "provider:model" string or a chat model instance. `rules` maps handles ("base",
+    "project-manager", "product", ...) to agent-rules/ text. Without `task_tools`, the board
+    section is left out of the PM's instructions; `board_instructions` replaces it (the
+    platform's issue board differs from the CLI's task files). The PM's tools come from
+    `task_tools` (read, write); the specialists' board changes come from `subagent_task_tools`
+    (the platform passes them all and checks each agent's contract on every change; the CLI
+    passes none, so its specialists only read the board). `context` is the run's project
+    context pack: the PM and every specialist get it. `knowledge_tools` are extra read-only
+    tools (outline, sections, search). `specialist_model` runs the specialists and summaries
+    (a cheaper model); a contract's own `model` is turned into a chat model by `models(name)`
+    when given. `summarize_after_tokens` sets when a long conversation's older turns are
+    summarised. `lead` picks who talks to the person: None or "project-manager" for the PM
+    (Auto), or another agent's handle, who then leads with its own prompt, tools, and folder
+    permissions and may call the agents its contract lists (one level deep).
+
+    An agent whose contract names a `pipeline` reports its stages to `stage_sink`; the agent
+    talking to the person, when its contract names an `output`, records its result items with
+    `result_sink` (`pmagent_engine.outputs`). Without the sinks, neither tool is given.
     """
-    if lead not in (None, *LEADS):
-        raise ValueError(f"Unknown lead agent {lead!r}; use one of {', '.join(LEADS)}")
-    lead = None if lead == PM_ROLE else lead
+    specs = list(agents) if agents else builtin_specs()
+    if not any(spec.handle == PM_HANDLE for spec in specs):
+        specs = [builtin_specs()[0], *specs]
+    by_handle = {spec.handle: spec for spec in specs}
+    if lead not in (None, *by_handle):
+        raise ValueError(f"Unknown lead agent {lead!r}; use one of {', '.join(by_handle)}")
+    lead = None if lead == PM_HANDLE else lead
+    pm = by_handle[PM_HANDLE]
+
     read_task_tools, write_task_tools = task_tools or ([], [])
+    web = [web_search] if web_search else []
+    pm_box = _toolbox([*read_task_tools, *write_task_tools, *(knowledge_tools or []), *web])
+    specialist_box = _toolbox([*read_task_tools, *(subagent_task_tools or []), *(knowledge_tools or []), *web])
+
     if board_instructions is not None:
         board = board_instructions
     else:
@@ -411,18 +396,14 @@ def build_team(
         else f"read /pmagent/progress/*.md, /pmagent/decisions/*.md,\n/pmagent/current-state.md{board_source}"
     )
 
-    pm_instructions = f"""You are the Project Manager for {project_name}.
+    team = _callable(pm, specs)
+    names = ", ".join(spec.agent_name for spec in team) or "none yet"
+    pm_instructions = f"""You are the {pm.name} for {project_name}.
 
 {description}
 
-You coordinate five specialist subagents via the `task` tool (product-agent,
-architecture-agent, research-agent, reviewer-agent, documentation-agent) and
-keep /pmagent/ (project.md, requirements/, architecture/, decisions/,
-research/, progress/, docs/) as the single source of truth. Ingested
-reference docs live under /pmagent/docs/normalized/ as markdown regardless
-of their original format. Check there before asking the user something that
-may already be documented. You do not write application code, and neither
-do your subagents.
+You coordinate the specialist subagents via the `task` tool ({names}).
+{pm.instructions}
 {board}
 ## Chat Mode vs Action Mode
 Default to CHAT MODE: read files, read the board, delegate to subagents for
@@ -448,12 +429,6 @@ today's priorities, what's in progress, recent decisions, open questions,
 blockers, and documentation status. A briefing never writes.
 """
 
-    interrupt_on = {
-        "write_file": _APPROVAL,
-        "edit_file": _APPROVAL,
-        **{tool.__name__: _APPROVAL for tool in write_task_tools},
-    }
-
     summary_model = specialist_model or model
 
     def middleware() -> list[Any]:
@@ -463,62 +438,70 @@ blockers, and documentation status. A briefing never writes.
             extra.append(summarization(summary_model, backend, summarize_after_tokens))
         return extra
 
-    subagents = _subagents(
-        project_name,
-        [*read_task_tools, *(subagent_task_tools or [])],
-        web_search,
-        rules,
-        context,
-        knowledge_tools,
-        lead=lead,
-        board=board,
-    )
-    for spec in subagents:
-        spec["middleware"] = middleware()
-        if specialist_model is not None:
-            spec["model"] = specialist_model
+    speaker = lead or PM_HANDLE
+
+    def extras(spec: AgentSpec) -> tuple[list[Any], str]:
+        """The result and stage tools its contract asks for, and how to use them."""
+        tools: list[Any] = []
+        text = ""
+        if spec.pipeline and stage_sink is not None:
+            tools.append(stage_tool(spec.pipeline, lambda pipeline, name, h=spec.handle: stage_sink(h, name)))
+            text += pipeline_instructions(spec.pipeline)
+        if spec.output and result_sink is not None and spec.handle == speaker:
+            tools.append(result_tool(spec.output, result_sink))
+            text += result_instructions(spec.output)
+        return tools, text
+
+    def prompt(spec: AgentSpec) -> str:
+        if spec.handle == lead:
+            text = f"You are the {spec.name} for {project_name}.\n{spec.instructions}\n{board}\n{_LEAD_GUIDE}"
+        else:
+            text = f"You are the {spec.name} for {project_name}.\n{spec.instructions}\n{_FINDINGS_GUIDE}"
+        text += extras(spec)[1]
+        return _with_context(_with_rules(rules, spec.handle, text), context)
+
+    def subagent(spec: AgentSpec) -> dict:
+        entry: dict[str, Any] = {
+            "name": spec.agent_name,
+            "description": spec.description or spec.name,
+            "system_prompt": prompt(spec),
+            "tools": [*_tools_for(spec, specialist_box), *extras(spec)[0]],
+            "interrupt_on": _gate(spec, specialist_box),
+            "permissions": _permissions(spec),
+            "middleware": middleware(),
+        }
+        if spec.model and models is not None:
+            entry["model"] = models(spec.model)
+        elif specialist_model is not None:
+            entry["model"] = specialist_model
+        return entry
 
     if lead is not None:
-        # The picked specialist is the main agent; the others are the ones it may call.
-        leader = next(spec for spec in subagents if spec["name"] == f"{lead}-agent")
-        others = [spec for spec in subagents if spec is not leader]
-        permissions = leader.get("permissions")
-        if permissions:
-            for spec in others:  # they'd inherit the leader's restrictions otherwise
-                spec.setdefault("permissions", [])
-        gated = {getattr(tool, "__name__", "") for tool in subagent_task_tools or []}
+        # The picked agent is the main agent; the ones it may call are its subagents.
+        leader = by_handle[lead]
         return create_deep_agent(
             model=model,
-            tools=leader.get("tools") or [],
-            system_prompt=leader["system_prompt"],
-            subagents=others,
+            tools=[*_tools_for(leader, specialist_box), *extras(leader)[0]],
+            system_prompt=prompt(leader),
+            subagents=[subagent(spec) for spec in _callable(leader, specs)],
             middleware=middleware(),
-            permissions=permissions,
+            permissions=_permissions(leader),
             backend=backend,
             checkpointer=checkpointer,
-            interrupt_on={
-                # A read-only lead (the reviewer) is refused file writes outright, rather
-                # than asking a person to approve a write that would then be refused.
-                **({} if permissions else {"write_file": _APPROVAL, "edit_file": _APPROVAL}),
-                **{name: _APPROVAL for name in gated if name},
-            },
-            name=leader["name"],
+            interrupt_on=_gate(leader, specialist_box),
+            name=leader.agent_name,
         )
 
     return create_deep_agent(
         model=model,
-        tools=[
-            *read_task_tools,
-            *write_task_tools,
-            *(knowledge_tools or []),
-            *([web_search] if web_search else []),
-        ],
-        system_prompt=_with_context(_with_rules(rules, PM_ROLE, pm_instructions), context),
-        subagents=subagents,
+        tools=[*_tools_for(pm, pm_box), *extras(pm)[0]],
+        system_prompt=_with_context(_with_rules(rules, PM_HANDLE, pm_instructions + extras(pm)[1]), context),
+        subagents=[subagent(spec) for spec in team],
         middleware=middleware(),
+        permissions=_permissions(pm),
         backend=backend,
         checkpointer=checkpointer,
-        interrupt_on=interrupt_on,
+        interrupt_on=_gate(pm, pm_box),
     )
 
 

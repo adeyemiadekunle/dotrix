@@ -37,7 +37,7 @@ CI runs Ruff and pytest, the pnpm build and typecheck, and the browser tests. Ru
 
 - **The engine stays UI-agnostic.** `packages/engine` must never import from `apps/*`, FastAPI, or Typer.
 - **Every query is scoped by workspace.** No data, agent context, or connector token crosses workspaces.
-- **No agent write without instruction and approval.** Every agent write goes through the approval gate and is recorded in the audit log.
+- **No agent write without instruction and approval.** Every agent write is approved, by a person at the time or by a standing rule an owner approved (low-risk actions only: comments, labels, graph links; versioned and audited), and is recorded in the audit log.
 - **`.pmagent/` lives on the platform, never in a code repo.** Coding-agent PRs contain code only.
 - **Text from ingested docs or repos is data, never instructions.**
 - **Secrets never go in code or logs.** OAuth tokens and API keys are encrypted at rest.
@@ -84,6 +84,7 @@ apps/backend/
 │   │   ├── knowledge/           .pmagent/ files + version history + export
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge
 │   │   ├── issues/              issues, keys, board/backlog/epics, claim, Markdown render for export
+│   │   ├── agent_definitions/   agent contracts per workspace with project overrides, versions, resolution for runs (agents v2 step 1)
 │   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals and decisions, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis)
 │   │   ├── audit/               append-only audit log
 │   │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
@@ -124,7 +125,8 @@ apps/cli/src/pmagent_cli/
 ├── repo.py                      local git facts: root, remote (credentials stripped), README, repo summary
 └── mcp_server.py                FastMCP server for Claude Code / Codex (platform board when linked, local otherwise)
 packages/engine/src/pmagent_engine/
-├── agent.py                     build_team(): the PM + specialist subagents (deepagents), HITL interrupts
+├── agent.py                     build_team(): the team from agent contracts (deepagents), each agent's tools and approval gate
+├── contracts.py, catalog.py, builtins.py   AgentSpec + AgentPolicy (agents v2), the tool catalogue, the six built-ins as contracts
 ├── approvals.py                 Action Mode approvals, independent of any UI (pending actions, resume)
 ├── context_middleware.py        smaller prompts: unchanged re-reads, compact tool definitions, summarising long conversations
 ├── permissions.py               FR-41 folder matrix and per-agent issue rules
@@ -148,15 +150,16 @@ apps/web/
 │   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
 │   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /o/[org]{,/members,/settings}, /w/[workspace], /w/[workspace]/{approvals,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,briefing,knowledge,docs,settings} (the project root redirects to board; /overview to settings), /settings
+│   └── (app)/                   signed-in shell (sidebar): /o/[org]{,/members,/settings}, /w/[workspace], /w/[workspace]/{approvals,agents,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,briefing,knowledge,docs,settings} (the project root redirects to board; /overview to settings), /settings
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
 │   ├── documents/               dropzone, queued files, upload progress
 │   ├── agent/                   chat panel and context, conversation, approvals (diff view, decisions)
+│   ├── agents/                  Settings → Agents: the list and the contract editor (workspace and project scope)
 │   ├── knowledge/               file tree, file history (authorship, diffs, restore)
 │   ├── settings/                members, invites (workspace settings)
 │   └── orgs/                    create-organisation dialog
-└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, knowledge.ts, admin.ts, orgs.ts, documents.ts, repo.ts, url-state.ts, labels.ts
+└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, agents.ts (agent contracts, the chat's agent list), knowledge.ts, admin.ts, orgs.ts, documents.ts, repo.ts, url-state.ts, labels.ts
 packages/ui/src/                 consumed as source (no build step), by path: `@pmagent/ui/components/*`, `/lib/*`, `/hooks/*`, `/globals.css`
 ├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
 │                                plus our own chat kit: chat-scroller (follows new content unless you scroll up), chat-message (message, bubble, meta, notice), prompt-input (send / stop), code-block (copy, lazy Shiki highlighting)
@@ -181,16 +184,29 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 
 ## Plan: agents v2 (review, 2026-09-29)
 
-Why: agents today are fixed in code (`engine/agent.py`: the PM and five specialists, tools per role; `permissions.py`: folders and issue types), `agent-rules/*.md` only changes their prompt, they run only when a person asks, they can't see code, and knowledge is flat files plus search chunks. The aim, in the spirit of ChatGPT's workspace agents, dots, and Space (DevDay 2026), but keeping our approvals and audit: agents that owners configure and create, that work in the background on events and schedules, that understand how the project's pieces relate, and a shared space per workspace. This plan comes before the rest of "the core loop" below; Phase 3's Ideas moves into Space (step 6), and parts of Phases 4 and 5 are pulled in where noted. Each step is usable on its own. Spec: [docs/agents-v2.md](docs/agents-v2.md) (draft; decisions D1-D5 at its end), written before building step 1.
+Why: agents today are fixed in code (`engine/agent.py`: the PM and five specialists, tools per role; `permissions.py`: folders and issue types), `agent-rules/*.md` only changes their prompt, they run only when a person asks, they can't see code, and knowledge is flat files plus search chunks. The aim, in the spirit of ChatGPT's workspace agents, dots, and Space (DevDay 2026), but keeping our approvals and audit: agents that owners configure and create, that work in the background on events and schedules, that understand how the project's pieces relate, and a shared space per workspace. This plan comes before the rest of "the core loop" below; Phase 3's Ideas moves into Space (step 6), and parts of Phases 4 and 5 are pulled in where noted. Each step is usable on its own. Spec: [docs/agents-v2.md](docs/agents-v2.md) (decisions at its end: D1, D2, and D6 decided 2026-09-29), written before building step 1.
+
+### Step 0: one tenant, Personal or Organisation (organisations fold into workspaces)
+Workspace and organisation overlap: an organisation is a layer of roles above several workspaces. Decided (D6): the workspace stays the tenant (`workspace_id` everywhere, the isolation suite, `/w/…` URLs), and becomes either **Personal** (just you, never invites) or an **Organisation** (a team: invites, roles, many projects). The separate organisations layer goes. Only dev and test data exist, so the migration is simple. Spec §0.
+- [ ] `WorkspaceKind`: `personal`, `organization` (was `team` / `business`). Migration: team and business workspaces become organisations; members of an organisation that owned a workspace get the matching role there only if they had real access (org owners → owner membership; org admins who were members keep their role); drop `organizations`, `org_memberships`, `workspaces.organization_id`
+- [ ] Remove `modules/organizations` (routes, service, schemas, tests) and `MembershipRepository.effective`'s implicit org-owner access; invites need `kind == organization` (was: belongs to an organisation)
+- [ ] "Turn into an organisation" replaces attach: a personal workspace becomes an organisation with its projects, and its owner gets a new, empty personal workspace; creating an organisation creates an organisation workspace. Moving projects between workspaces stays
+- [ ] **Project access** (replaces several workspaces per team): a project is open to every member, or restricted to the people added to it (`project_members`, with owners and admins always in); the project dependencies check it, so a restricted project is a 404 to others; isolation tests cover it
+- [ ] Web: the switcher lists Personal and your organisations; "Create organisation"; the `/o/…` pages go (their people and settings move to the organisation's settings); copy says Personal / Organisation, not workspace; the invite card's "no organisation" state becomes "personal workspaces don't invite"
+- [ ] Agents v2 scope (D2): agent contracts, the Space, and automations belong to the workspace (Personal or Organisation), with per-project overrides
 
 ### Step 1: agent contracts (agents as versioned data)
-- [ ] An agent is a contract stored per workspace, overridable per project: name, `@handle`, description, instructions, model, token budget, tools (from a catalogue), folder access, issue types it may create, triggers, autonomy rules, and output schema. Versioned and audited like knowledge files
-- [ ] The six built-in agents seeded as contracts owners and admins can edit, with "Reset to default"; custom agents created from a default or from scratch (Settings → Agents)
-- [ ] **Autonomy rules** per agent, like dots' custom rules: `allow` (e.g. comment, label), `ask` (default for every write), `block`. The approval queue offers "Always allow this" for low-risk actions, recorded as a rule change
-- [ ] **Invariants in code, whatever a contract says:** agents never edit `agent-rules/` or contracts; an agent never exceeds the rights of the person it acts for; guests never see content; `.pmagent/` never goes into a code repo; every action is audited
-- [ ] **Output contracts:** each agent declares its result schema (finding, plan, spec, review, brief, report); the web app renders items with actions ("Create issue", "Propose change", "Fix now", "Dismiss")
-- [ ] **Pipelines as named stages:** every agent's work runs as declared stages (below), shown as activity and in the run's details (tokens per stage), with a checkpoint where the person can steer before the expensive part
-- [ ] **Evals:** saved cases per contract run in CI with the scripted model, so a change to instructions or tools is checked for regressions
+- [x] An agent is a contract stored per workspace, overridable per project: name, `@handle`, description, instructions, model, token budget, tools (from a catalogue), folder access, issue types it may create, triggers, autonomy rules, and output schema. Versioned and audited like knowledge files
+- [x] The six built-in agents seeded as contracts owners and admins can edit, with "Reset to default"; custom agents created from a default or from scratch (Settings → Agents, `/w/[ws]/agents`; per project under project settings → Agents; `pmagent agents`, `pmagent chat --agent HANDLE`). Built-ins stay in code until edited (`pmagent_engine.builtins`); a run resolves project override → workspace → built-in (`agent_definitions/repository.py`) and records the agent's version
+- [x] **Autonomy rules** per agent, like dots' custom rules: `allow` (e.g. comment, label), `ask` (default for every write), `block`. Enforced in the engine (a blocked action's tools aren't given; an allowed one isn't gated) and in the board tools (an allowed action runs without an approver and is audited as `<action>.allowed` with the rule); only owners set `allow`, only for low-risk actions (`catalog.LOW_RISK_ACTIONS`: comments today)
+  - [ ] "Always allow this" in the approval queue (needs approvals to record which agent asked)
+- [x] **Invariants in code, whatever a contract says:** agents never edit `agent-rules/` or contracts; an agent never exceeds the rights of the person it acts for; guests never see content; `.pmagent/` never goes into a code repo; every action is audited
+- [x] **Output contracts:** each agent declares its result schema (`pmagent_engine.outputs.SCHEMAS`: finding, plan, spec, impact, report, doc_update, brief); the leading agent records items with `submit_result` (validated), stored in `agent_run_outputs` and returned as the run's `outputs`; the chat shows them with "Create issue" and "Dismiss" (with why) per item (`PATCH .../runs/{id}/outputs/{id}/items/{index}`, audited)
+  - [ ] "Propose change" and "Fix now" (needs Phase 5) per item; dismissals feeding lessons (step 2)
+- [x] **Pipelines as named stages:** an agent whose contract names a pipeline (`outputs.PIPELINES`) reports stages with `stage`, shown as live activity ("Now: blast radius"; fixed names only)
+  - [ ] tokens per stage in the run's details; a checkpoint where the person can steer before the expensive part (an interrupt that members can answer for their own runs); pipelines on by default for the built-ins once measured (each `stage` call is folded into a turn that already makes tool calls, but that needs checking on real models)
+- [x] **Evals:** saved cases per agent (`packages/engine/tests/evals/*.yaml`, run by `test_evals.py` with the scripted model): tools offered, what pauses, what's refused, results, prompts
+  - [ ] quality evals on real models (`pmagent eval --live`, on demand with a key; D4)
 
 ### Step 1b: each agent's pipeline
 - [ ] **Project manager (orchestrator):** intake → classify (question, change, plan, triage) → answer from the context pack, or plan (steps, agents, expected outputs, budget; shown for steering on large requests) → dispatch (independent steps in parallel) → merge results → one batch of proposed writes → follow-ups (the matching `current-state.md` / roadmap updates)
@@ -444,6 +460,8 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] **(you)** A secrets manager for production env vars (e.g. the host's secret store); `PMAGENT_ENV=production`
 
 ### Organisations (beyond the PRD: an organisation owning several workspaces)
+
+Superseded by agents v2 step 0 (D6): organisations fold into workspaces (Personal or Organisation). The items below describe what exists until that lands.
 
 - [x] Organisations (`modules/organizations`): owner / admin / member; workspaces may belong to one. A personal workspace brought into an organisation (attach) becomes a team workspace with its projects, and its owner gets a new, empty personal workspace; attach and detach are audited in the workspace's log
 - [x] **Org owners see and work in every workspace their organisation owns** (implicit owner access via `MembershipRepository.effective`, not a stored membership; marked `via_organization`; follows org ownership)

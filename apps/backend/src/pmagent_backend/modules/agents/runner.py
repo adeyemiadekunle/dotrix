@@ -19,12 +19,14 @@ from deepagents.backends import CompositeBackend, StateBackend
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
 from sqlalchemy import select
 
+from pmagent_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_engine import approvals as hitl
 from pmagent_engine.agent import PM_ROLE, briefing_system_prompt, build_team, role_for_agent_name
+from pmagent_engine.contracts import AgentPolicy
 from pmagent_engine.layout import AGENTS
 
 from .activity import activity_label
@@ -32,7 +34,7 @@ from .board_tools import BoardContext, board_instructions, build_board_tools
 from .context import build_context_pack
 from .knowledge_tools import KNOWLEDGE_TOOLS_GUIDE, build_knowledge_tools
 from .llm import ModelFactory
-from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
+from .models import AgentApproval, AgentRun, AgentRunOutput, ApprovalStatus, RunKind, RunStatus
 from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
@@ -229,6 +231,7 @@ class AgentRunner:
         # ends (finished, paused, failed, or stopped). Known gap: in worker mode, a cut-off
         # attempt's tokens are lost when its job is retried.
         usage = TokenUsage()
+        results: list[tuple[str, list[dict[str, Any]]]] = []  # what the leading agent submitted
         try:
             async with self.session_factory() as session:
                 run = await session.get(AgentRun, run_id)
@@ -238,21 +241,36 @@ class AgentRunner:
                 retry = run.status is RunStatus.RUNNING  # a previous attempt was cut off
                 project = await ProjectRepository(session).get(run.workspace_id, run.project_id)
                 assert project is not None
+                # The agents in effect for this project: its overrides, the workspace's, the built-ins.
+                resolved = {a.spec.handle: a for a in await AgentDefinitionRepository(session).resolve(
+                    run.workspace_id, run.project_id
+                )}
+                lead_agent = resolved.get(run.agent or PM_ROLE)
+                if lead_agent is None:
+                    gone = f"The @{run.agent} agent no longer exists; pick another agent"
+                    await session.rollback()
+                    await self._fail(run_id, gone, usage)
+                    return
+                specs = [a.spec for a in resolved.values()]
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
                 run.model = run.conversation_model or project.model
-                # The budget covers every step of the run: what earlier steps used counts.
-                run.token_budget = project.token_budget or self.token_budget
+                run.agent_version = lead_agent.version
+                # The budget covers every step of the run: what earlier steps used counts. The
+                # leading agent's own budget wins over the project's.
+                run.token_budget = lead_agent.spec.budget_tokens or project.token_budget or self.token_budget
                 usage = TokenUsage(
                     budget=run.token_budget, used=(run.input_tokens or 0) + (run.output_tokens or 0)
                 )
                 await session.commit()
-                rules = await self._rules(session, project.id)
+                rules = await self._rules(session, project.id, list(resolved))
                 context = await build_context_pack(session, project, run)
                 kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
                 name, description, project_key = project.name, project.description, project.key
                 choice = self.model_factory(project, run.model)
                 lead = run.agent  # None: Auto (the Project Manager)
+                policy = AgentPolicy(specs)
+                versions = {handle: agent.version for handle, agent in resolved.items()}
 
             backend = CompositeBackend(
                 default=StateBackend(),
@@ -263,16 +281,19 @@ class AgentRunner:
                         project_id=project_id,
                         instructed_by_id=instructed_by,
                         approved_by_id=approved_by_id,
+                        policy=policy,
                     )
                 },
             )
-            read_tools, pm_write_tools, specialist_write_tools = build_board_tools(
+            read_tools, pm_write_tools, _ = build_board_tools(
                 BoardContext(
                     session_factory=self.session_factory,
                     workspace_id=workspace_id,
                     project_id=project_id,
                     instructed_by_id=instructed_by,
                     approved_by_id=approved_by_id,
+                    policy=policy,
+                    versions=versions,
                 )
             )
             agent = build_team(
@@ -284,7 +305,11 @@ class AgentRunner:
                 web_search=choice.web_search,
                 rules=rules,
                 task_tools=(read_tools, pm_write_tools),
-                subagent_task_tools=specialist_write_tools,
+                # Every agent's board changes come from the same tools; each gets the ones its
+                # contract lists, and the issue service checks the contract again on every change.
+                subagent_task_tools=pm_write_tools,
+                agents=specs,
+                models=lambda name: self.model_factory(project, name).model,
                 board_instructions=board_instructions(project_key) + KNOWLEDGE_TOOLS_GUIDE,
                 context=context,
                 knowledge_tools=build_knowledge_tools(
@@ -296,6 +321,9 @@ class AgentRunner:
                 specialist_model=choice.specialist_model,
                 summarize_after_tokens=self.summarize_after_tokens,
                 lead=lead,
+                result_sink=lambda schema, items: results.append((schema, items)),
+                # Stages show as live activity from the `stage` calls themselves (activity.py).
+                stage_sink=lambda handle, stage: None,
             )
             config = {
                 "configurable": {"thread_id": str(thread_id)},
@@ -331,6 +359,8 @@ class AgentRunner:
                         run_id, NO_REPLY_AFTER_DECISIONS_ERROR if resuming else NO_REPLY_ERROR, usage
                     )
                     return
+            if results:
+                await self._save_outputs(run_id, speaker, results)
             await self._finish(run_id, result, usage, speaker)
         except asyncio.CancelledError:
             reason = self._stopped.pop(run_id, None)
@@ -435,10 +465,25 @@ class AgentRunner:
             )
             await session.commit()
 
-    async def _rules(self, session: Any, project_id: uuid.UUID) -> dict[str, str]:
-        """The project's agent-rules/*.md, keyed by role ("base", "product", ...)."""
+    async def _save_outputs(
+        self, run_id: uuid.UUID, agent: str, results: list[tuple[str, list[dict[str, Any]]]]
+    ) -> None:
+        """The structured results the leading agent recorded, one row per submit."""
+        async with self.session_factory() as session:
+            run = await session.get(AgentRun, run_id)
+            if run is None:
+                return
+            for schema, items in results:
+                session.add(AgentRunOutput(
+                    workspace_id=run.workspace_id, run_id=run.id, project_id=run.project_id, agent=agent,
+                    schema_name=schema, items=[{"data": item, "state": "open"} for item in items], created_at=_now(),
+                ))
+            await session.commit()
+
+    async def _rules(self, session: Any, project_id: uuid.UUID, handles: list[str] | None = None) -> dict[str, str]:
+        """The project's agent-rules/*.md, keyed by handle ("base", "product", a custom agent's)."""
         files = await KnowledgeRepository(session).list_files(project_id)
-        wanted = {f"agent-rules/{name}.md": name for name in ("base", *AGENTS)}
+        wanted = {f"agent-rules/{name}.md": name for name in ("base", *AGENTS, *(handles or []))}
         return {wanted[f.path]: f.content for f in files if f.path in wanted}
 
 

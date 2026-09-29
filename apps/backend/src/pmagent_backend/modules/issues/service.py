@@ -27,7 +27,7 @@ from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
-from pmagent_engine.permissions import can_create_issue, can_edit_issues
+from pmagent_engine.contracts import AgentPolicy
 
 from .models import (
     DESCRIPTION_REQUIRED,
@@ -79,6 +79,8 @@ class NothingReady(NotFound):
     code = "nothing_ready"
 
 
+_BUILTIN_POLICY = AgentPolicy()
+
 @dataclass(frozen=True)
 class IssueActor:
     """Who is changing the board. `member` is the person behind it: the caller, or the
@@ -89,6 +91,8 @@ class IssueActor:
     # A platform agent ("project-manager", "product", ...) in an approved agent run.
     thinking_agent: str | None = None
     approved_by_id: uuid.UUID | None = None
+    # The run's agent contracts (built-ins when None): which issues each agent may open or edit.
+    policy: AgentPolicy | None = None
 
     @property
     def user_id(self) -> uuid.UUID:
@@ -143,7 +147,9 @@ class IssueService:
         if actor.agent is not None:
             if data.type is not IssueType.SUB_TASK or parent is None or parent.assignee_agent is not actor.agent:
                 raise Forbidden(f"{actor.agent} can only add sub-tasks to issues assigned to it")
-        if actor.thinking_agent is not None and not can_create_issue(actor.thinking_agent, data.type.value):
+        if actor.thinking_agent is not None and not (actor.policy or _BUILTIN_POLICY).can_create_issue(
+            actor.thinking_agent, data.type.value
+        ):
             raise Forbidden(
                 f"The {actor.thinking_agent} agent can't open {data.type} issues; "
                 "ask the Project Manager to create it"
@@ -329,7 +335,7 @@ class IssueService:
         sent = data.model_dump(exclude_unset=True)
         note = sent.pop("note", None)
         sent.pop("as_agent", None)
-        if actor.thinking_agent is not None and not can_edit_issues(actor.thinking_agent):
+        if actor.thinking_agent is not None and not (actor.policy or _BUILTIN_POLICY).can_edit_issues(actor.thinking_agent):
             raise Forbidden(
                 f"The {actor.thinking_agent} agent can't edit issues; ask the Project Manager"
             )

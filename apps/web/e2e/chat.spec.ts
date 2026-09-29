@@ -77,3 +77,28 @@ test("pick who answers with the + menu or @", async ({ page }) => {
   await page.getByRole("button", { name: "Product agent: back to auto" }).click();
   await expect(page.getByLabel("Message the agents")).toBeVisible();
 });
+
+test("an owner creates an agent, and it answers in the chat when picked", async ({ page }) => {
+  await signUpWithProject(page);
+  const projectUrl = page.url().replace(/\/board.*$/, "");
+  await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await expect(page.getByText("@research")).toBeVisible();
+  await page.getByRole("link", { name: "New agent" }).click();
+  await page.getByLabel("Handle").fill("security");
+  await page.getByLabel("Name", { exact: true }).fill("Security reviewer");
+  await page.getByLabel("Description").fill("Reviews changes for security risks.");
+  await page.getByLabel("Instructions").fill("Look for leaked secrets and unsafe defaults.");
+  await page.getByRole("button", { name: "Create agent" }).click();
+  await expect(page).toHaveURL(/\/agents\/security$/);
+  await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await expect(page.getByText("@security")).toBeVisible();
+
+  // "@security" at the start of a message picks it; its reply is labelled with its name.
+  await page.goto(`${projectUrl}/chat`);
+  const box = page.getByLabel("Message the agents");
+  await box.fill("@security Any leaks?");
+  await expect(page.getByLabel("Message Security reviewer")).toBeVisible();
+  await page.getByLabel("Message Security reviewer").press("Enter");
+  await expect(page.getByText("Test model reply: Any leaks?")).toBeVisible();
+  await expect(page.getByText("Security reviewer", { exact: true }).first()).toBeVisible();
+});

@@ -17,7 +17,15 @@ import {
   SidebarRail,
   useSidebar,
 } from "@pmagent/ui/components/sidebar";
-import { BuildingIcon, FolderKanbanIcon, PlusIcon, ScrollTextIcon, SettingsIcon, ShieldCheckIcon } from "lucide-react";
+import {
+  BotIcon,
+  BuildingIcon,
+  FolderKanbanIcon,
+  PlusIcon,
+  ScrollTextIcon,
+  SettingsIcon,
+  ShieldCheckIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -74,6 +82,14 @@ export function AppSidebar() {
                     {waiting}
                   </SidebarMenuBadge>
                 )}
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname.startsWith(`${base}/agents`)} tooltip="Agents">
+                  <Link href={`${base}/agents`}>
+                    <BotIcon />
+                    <span>Agents</span>
+                  </Link>
+                </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={pathname === `${base}/settings`} tooltip="Members and settings">

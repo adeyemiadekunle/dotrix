@@ -62,6 +62,8 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     )
     # Who leads the run: None for Auto (the Project Manager), or a specialist's role.
     agent: Mapped[str | None] = mapped_column(String(32))
+    # The version of that agent's definition the run used; null for an unchanged built-in.
+    agent_version: Mapped[int | None] = mapped_column(Integer)
     # The conversation's model, fixed when it starts (every run of a thread has the same one).
     # Null only on conversations from before models were chosen: they use the project's.
     conversation_model: Mapped[str | None] = mapped_column(String(100))
@@ -83,6 +85,8 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     approvals: Mapped[list[AgentApproval]] = relationship(
         back_populates="run", order_by="AgentApproval.created_at, AgentApproval.position", lazy="raise"
     )
+    # (Not named `outputs`: AgentRunRead builds its `outputs` from these, with each item's index.)
+    output_rows: Mapped[list[AgentRunOutput]] = relationship(order_by="AgentRunOutput.created_at", lazy="raise")
 
 
 class AgentApproval(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
@@ -106,3 +110,18 @@ class AgentApproval(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     run: Mapped[AgentRun] = relationship(back_populates="approvals", lazy="raise")
+
+
+class AgentRunOutput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """A run's structured result (docs/agents-v2.md §4.6): the items the leading agent recorded
+    with `submit_result`, in its contract's output schema, each with what people did with it."""
+
+    __tablename__ = "agent_run_outputs"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    agent: Mapped[str] = mapped_column(String(32))  # the handle that recorded it
+    schema_name: Mapped[str] = mapped_column("schema", String(32))  # finding, plan, report, ...
+    # [{"data": {...}, "state": "open" | "done" | "dismissed", "reason", "link", "acted_by_id", "acted_at"}]
+    items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
