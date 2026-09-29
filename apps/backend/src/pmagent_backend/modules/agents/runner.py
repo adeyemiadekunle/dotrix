@@ -269,6 +269,7 @@ class AgentRunner:
                 choice = self.model_factory(project, run.model)
                 lead = run.agent  # None: Auto (the Project Manager)
                 policy = AgentPolicy(specs)
+                versions = {handle: agent.version for handle, agent in resolved.items()}
 
             backend = CompositeBackend(
                 default=StateBackend(),
@@ -291,6 +292,7 @@ class AgentRunner:
                     instructed_by_id=instructed_by,
                     approved_by_id=approved_by_id,
                     policy=policy,
+                    versions=versions,
                 )
             )
             agent = build_team(

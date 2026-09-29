@@ -26,6 +26,7 @@ from deepagents.backends import CompositeBackend, StateBackend
 from . import tasks as T
 from .backend import LockingFilesystemBackend
 from .builtins import BUILTIN_HANDLES, SPECIALISTS, builtin_specs
+from .catalog import group as catalog_group
 from .catalog import tool_id, tool_name
 from .config import ProjectConfig
 from .context_middleware import CompactTools, UnchangedReads, summarization
@@ -279,23 +280,25 @@ def _toolbox(tools: list[Any]) -> dict[str, list[Any]]:
 
 
 def _tools_for(spec: AgentSpec, box: dict[str, list[Any]]) -> list[Any]:
-    return [tool for group_id in spec.tools for tool in box.get(group_id, [])]
+    """The supplied tools its contract lists, minus the ones whose actions are blocked."""
+    return [tool for group_id in spec.tools if spec.can(group_id) for tool in box.get(group_id, [])]
 
 
 def _gate(spec: AgentSpec, box: dict[str, list[Any]]) -> dict[str, Any]:
-    """What pauses for approval when this agent acts: its file writes and board changes."""
+    """What pauses for approval when this agent acts: its file writes and board changes, except
+    the low-risk actions an owner allowed it to take without asking."""
     gated: dict[str, Any] = {}
-    if spec.has("knowledge.write"):
+    if spec.can("knowledge.write"):
         gated |= {"write_file": _APPROVAL, "edit_file": _APPROVAL}
     for group_id in _WRITE_TOOL_GROUPS:
-        if spec.has(group_id):
+        if spec.can(group_id) and not all(spec.allowed(a) for a in catalog_group(group_id).actions):
             gated |= {tool_name(tool): _APPROVAL for tool in box.get(group_id, [])}
     return gated
 
 
 def _permissions(spec: AgentSpec) -> list[FilesystemPermission]:
     """Structurally read-only unless it may write documents (the Reviewer's way)."""
-    return [] if spec.has("knowledge.write") else list(_DENY_FILE_WRITES)
+    return [] if spec.can("knowledge.write") else list(_DENY_FILE_WRITES)
 
 
 def _callable(caller: AgentSpec, specs: list[AgentSpec]) -> list[AgentSpec]:

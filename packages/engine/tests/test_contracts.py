@@ -141,3 +141,24 @@ def test_a_custom_agent_without_document_writes_is_refused_outright() -> None:
 def test_an_unknown_lead_is_refused() -> None:
     with pytest.raises(ValueError, match="Unknown lead agent"):
         build_team("Kunemi", "x", ScriptedChatModel.of("hi"), _backend(), lead="security")
+
+
+def test_autonomy_shapes_tools_and_gates() -> None:
+    from pmagent_engine.agent import _gate, _tools_for, _toolbox
+
+    def create_issue(): ...
+    def comment_issue(): ...
+    def list_issues(): ...
+
+    box = _toolbox([create_issue, comment_issue, list_issues])
+    agent = spec(tools=["board.read", "issues.create", "issues.comment", "knowledge.write"],
+                 issue_types=["bug"], autonomy={"issues.comment": "allow", "issues.create": "block"})
+    names = {t.__name__ for t in _tools_for(agent, box)}
+    assert names == {"list_issues", "comment_issue"}  # blocked: no create tool at all
+    gate = _gate(agent, box)
+    assert "comment_issue" not in gate and "write_file" in gate  # allowed: no pause
+    policy = AgentPolicy([agent])
+    assert policy.allowed("security", "issues.comment")
+    assert not policy.allowed("security", "issues.create") and not policy.can_create_issue("security", "bug")
+    blocked_writes = spec(tools=["knowledge.write"], access={"reviews/*": "write"}, autonomy={"knowledge.write": "block"})
+    assert not AgentPolicy([blocked_writes]).can_write("security", "reviews/r.md")

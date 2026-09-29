@@ -18,7 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .catalog import ACTIONS, LOW_RISK_ACTIONS, TOOL_IDS
+from .catalog import ACTIONS, CATALOG, LOW_RISK_ACTIONS, TOOL_IDS, group
 from .permissions import ISSUE_TYPES, Access
 
 HANDLE = re.compile(r"^[a-z][a-z0-9-]{1,30}$")
@@ -120,12 +120,20 @@ class AgentSpec(BaseModel):
         """allow, ask, or block. Unlisted actions ask."""
         return self.autonomy.get(action, "ask")
 
+    def can(self, tool: str) -> bool:
+        """It has the tool and none of the tool's actions is blocked."""
+        return self.has(tool) and not any(self.rule(a) == "block" for a in group(tool).actions)
+
+    def allowed(self, action: str) -> bool:
+        """It may take `action` without asking: an owner's standing rule, low-risk actions only."""
+        return self.rule(action) == "allow" and action in LOW_RISK_ACTIONS
+
     def folder_access(self, path: str) -> Access:
         """What this agent may do to `path` (relative to `.pmagent/`): the first matching pattern
         in its `access`, else read. People-only folders are always read, whatever it says."""
         if any(fnmatchcase(path, p) for p in PEOPLE_ONLY):
             return Access.READ
-        if not self.has("knowledge.write"):
+        if not self.can("knowledge.write"):
             return min(self._matching(path), Access.PROPOSE, key=_RANK.index)
         return self._matching(path)
 
@@ -137,6 +145,7 @@ class AgentSpec(BaseModel):
 
 
 _RANK = [Access.READ, Access.PROPOSE, Access.TIDY, Access.WRITE]
+_TOOL_FOR_ACTION = {action: g.id for g in CATALOG for action in g.actions}
 
 
 class AgentPolicy:
@@ -161,12 +170,17 @@ class AgentPolicy:
 
     def can_create_issue(self, handle: str, issue_type: str) -> bool:
         spec = self.spec(handle)
-        return bool(spec and spec.has("issues.create") and issue_type in spec.issue_types)
+        return bool(spec and spec.can("issues.create") and issue_type in spec.issue_types)
 
     def can_edit_issues(self, handle: str) -> bool:
         spec = self.spec(handle)
-        return bool(spec and spec.has("issues.update"))
+        return bool(spec and spec.can("issues.update"))
 
     def can_comment(self, handle: str) -> bool:
         spec = self.spec(handle)
-        return bool(spec and spec.has("issues.comment"))
+        return bool(spec and spec.can("issues.comment"))
+
+    def allowed(self, handle: str, action: str) -> bool:
+        """Whether the agent may take `action` without a person approving it (a standing rule)."""
+        spec = self.spec(handle)
+        return bool(spec and spec.can(_TOOL_FOR_ACTION.get(action, action)) and spec.allowed(action))

@@ -169,3 +169,33 @@ async def test_a_project_overrides_an_agent_for_itself_only(world, db_client: As
 
     assert (await db_client.delete(f"{base}/agents/research", headers=ada.headers)).status_code == 204
     assert (await db_client.get(f"{base}/agents/research", headers=ada.headers)).json()["source"] == "built_in"
+
+
+async def test_an_allowed_comment_needs_no_approval_and_a_blocked_action_is_gone(
+    world, db_client: AsyncClient, agent_script
+) -> None:
+    ada, _, _, ws, base = await world()
+    issue = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Rotate keys"}, headers=ada.headers)).json()
+    triage = {
+        "name": "Triage", "instructions": "Comment on issues; never open them.",
+        "tools": ["board.read", "issues.create", "issues.comment"], "issue_types": ["bug"],
+        "autonomy": {"issues.comment": "allow", "issues.create": "block"},
+    }
+    assert (await save(db_client, f"{ws}/agents/triage", ada.headers, triage)).status_code == 200
+
+    agent_script.say(
+        tool_call("comment_issue", key=issue["key"], text="Looks like a duplicate of nothing."),
+        tool_call("create_issue", type="bug", title="Should not exist"),
+        "Commented.",
+    )
+    done = (await db_client.post(f"{base}/agent/runs", json={"message": "triage it", "agent": "triage"},
+                                 headers=ada.headers)).json()
+    assert done["status"] == "completed", done  # nothing paused for approval
+    log = (await db_client.get(f"{base}/issues/{issue['key']}", headers=ada.headers)).json()["log"]
+    comment = next(e for e in log if e["kind"] == "commented")
+    assert comment["author_agent"] == "triage" and "duplicate" in comment["body"]
+    titles = [i["title"] for i in (await db_client.get(f"{base}/issues", headers=ada.headers)).json()]
+    assert "Should not exist" not in titles  # blocked: it had no create tool
+    audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
+    allowed = next(e for e in audit if e["action"] == "issues.comment.allowed")
+    assert allowed["agent"] == "triage" and allowed["details"]["rule"] == {"agent": "triage", "action": "issues.comment", "version": 1}

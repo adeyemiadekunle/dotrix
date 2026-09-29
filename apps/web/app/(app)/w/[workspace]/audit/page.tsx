@@ -41,6 +41,14 @@ const ACTIONS: Record<string, string> = {
   "invite.sent": "invited",
   "invite.link_created": "created an invite link",
   "invite.revoked": "revoked the invite for",
+  "agent.created": "created the agent",
+  "agent.customised": "customised the agent",
+  "agent.updated": "changed the agent",
+  "agent.reset": "reset the agent to its default",
+  "agent.removed": "removed the agent",
+  "issues.comment.allowed": "commented without asking (a standing rule) on",
+  "issues.create.allowed": "opened an issue without asking (a standing rule):",
+  "issues.update.allowed": "changed an issue without asking (a standing rule):",
 };
 
 /** Extra words for people changes (the new role, the old and new name). */
