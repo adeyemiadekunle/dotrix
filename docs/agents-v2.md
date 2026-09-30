@@ -6,7 +6,8 @@ Space (DevDay 2026), deep-research agents, code knowledge graphs, and AGENTS.md 
 
 ## 0. Step 0: one tenant, Personal or Organisation
 
-Decided (D6). Today an organisation (`modules/organizations`) is a layer of roles above several
+Decided (D6); built 2026-09-29 (the endpoint is `POST /v1/workspaces/{id}/convert-to-organization`,
+project people are at `.../projects/{id}/members`). Before it, an organisation (`modules/organizations`) was a layer of roles above several
 workspaces, and the workspace is the tenant: `workspace_id` on 12 tables and every query, the
 isolation suite, and `/w/{slug}` URLs. The two overlap. The workspace stays the tenant and
 takes on the organisation's job; the organisations layer goes.

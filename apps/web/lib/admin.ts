@@ -35,6 +35,19 @@ export function useRenameWorkspace(workspaceId: string) {
   );
 }
 
+/** Turn a personal workspace into an organisation (with its projects); its owner gets a new,
+ * empty personal workspace. */
+export function useConvertToOrganization(workspaceId: string) {
+  return useAdminMutation(
+    (name: string | null) =>
+      unwrap(
+        api.POST("/v1/workspaces/{workspace_id}/convert-to-organization", { ...ws(workspaceId), body: { name } }),
+      ),
+    [["workspaces"]],
+    "It's an organisation now; you have a new personal workspace too",
+  );
+}
+
 /** What members may do beyond chatting, brainstorming, and working the board. */
 export function useMemberPermissions(workspaceId: string) {
   return useAdminMutation(
@@ -160,6 +173,37 @@ export function useUpdateProject(workspaceId: string, projectId: string) {
     [["projects", workspaceId]],
     "Project updated",
   );
+}
+
+/** Everyone who can see a project, and why (their role, the workspace, or being added). */
+export function useProjectMembers(workspaceId: string, projectId: string) {
+  return useQuery({
+    queryKey: ["project-members", projectId],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/members", {
+          params: { path: { workspace_id: workspaceId, project_id: projectId } },
+        }),
+      ),
+  });
+}
+
+export function useProjectMember(workspaceId: string, projectId: string) {
+  const path = (userId: string) => ({
+    params: { path: { workspace_id: workspaceId, project_id: projectId, user_id: userId } },
+  });
+  const refresh = [["project-members", projectId], ["projects", workspaceId]];
+  return {
+    add: useAdminMutation(
+      (userId: string) => unwrap(api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}", path(userId))),
+      refresh,
+    ),
+    remove: useAdminMutation(
+      (userId: string) =>
+        unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}", path(userId))),
+      refresh,
+    ),
+  };
 }
 
 /** Move a project, with everything in it, to another workspace (owners and admins in both). */

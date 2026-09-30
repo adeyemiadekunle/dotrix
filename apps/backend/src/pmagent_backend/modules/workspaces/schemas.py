@@ -15,8 +15,9 @@ WorkspaceName = Field(min_length=1, max_length=100)
 
 class WorkspaceCreate(BaseModel):
     name: str = WorkspaceName
-    # Personal workspaces are created automatically at sign-up, one per user.
-    kind: Literal[WorkspaceKind.TEAM, WorkspaceKind.BUSINESS] = WorkspaceKind.TEAM
+    # Personal workspaces are created automatically at sign-up, one per user; a new one is an
+    # organisation.
+    kind: Literal[WorkspaceKind.ORGANIZATION] = WorkspaceKind.ORGANIZATION
 
 
 class WorkspaceUpdate(BaseModel):
@@ -47,8 +48,7 @@ class WorkspaceRead(BaseModel):
     id: uuid.UUID
     name: str
     slug: str
-    kind: WorkspaceKind
-    organization_id: uuid.UUID | None = None
+    kind: WorkspaceKind = Field(description="personal (just you) or organization (a team that invites people)")
     created_at: datetime
     member_permissions: list[Permission] = Field(
         default_factory=list, description="What this workspace lets members do beyond the defaults"
@@ -62,21 +62,17 @@ class WorkspaceRead(BaseModel):
 
 class WorkspaceWithRole(WorkspaceRead):
     role: Role
-    via_organization: bool = Field(
-        default=False, description="You have this role because you own the workspace's organisation"
-    )
     permissions: list[Permission] = Field(
         default_factory=list,
         description="What you can do here: your role's permissions plus what the workspace grants members",
     )
 
     @classmethod
-    def of(cls, workspace: object, role: Role, via_organization: bool = False) -> WorkspaceWithRole:
+    def of(cls, workspace: object, role: Role) -> WorkspaceWithRole:
         mine = effective_permissions(SimpleNamespace(role=role, workspace=workspace))
         return cls(
             **WorkspaceRead.model_validate(workspace).model_dump(),
             role=role,
-            via_organization=via_organization,
             permissions=mine,
         )
 
@@ -95,3 +91,7 @@ class MemberRoleUpdate(BaseModel):
 
 class OwnershipTransfer(BaseModel):
     user_id: uuid.UUID
+
+
+class OrganizationConversion(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100, description="A new name, e.g. the team's")

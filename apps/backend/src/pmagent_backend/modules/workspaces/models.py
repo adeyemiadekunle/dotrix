@@ -16,9 +16,8 @@ from pmagent_backend.db.base import (
 
 
 class WorkspaceKind(enum.StrEnum):
-    PERSONAL = "personal"
-    TEAM = "team"
-    BUSINESS = "business"
+    PERSONAL = "personal"  # one per person, just its owner; never invites
+    ORGANIZATION = "organization"  # a team: invites, roles, many projects
 
 
 class Role(enum.StrEnum):
@@ -36,11 +35,6 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     kind: Mapped[WorkspaceKind] = mapped_column(str_enum(WorkspaceKind, 20))
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
-    )
-    # Set when an organisation owns this workspace; personal workspaces never have one (one
-    # brought into an organisation becomes a team workspace).
-    organization_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("organizations.id", ondelete="SET NULL"), index=True
     )
     # Permissions this workspace grants its members beyond the defaults (permissions.py
     # MEMBER_GRANTABLE: edit documents, approve agent changes, instruct the coding agent).

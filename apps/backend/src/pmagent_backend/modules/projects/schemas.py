@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     AfterValidator,
@@ -13,7 +13,9 @@ from pydantic import (
     StringConstraints,
 )
 
-from .models import ProjectSource
+from pmagent_backend.modules.workspaces.models import Role
+
+from .models import ProjectAccessLevel, ProjectSource
 from .repo_urls import normalize_repo_url
 
 ProjectKey = Annotated[
@@ -63,6 +65,10 @@ class ProjectCreate(BaseModel):
         max_length=100_000,
         description="An existing README to import into project.md (connect flow).",
     )
+    access: ProjectAccessLevel = Field(
+        default=ProjectAccessLevel.WORKSPACE,
+        description="workspace (every member sees it) or restricted (owners, admins, and the people added to it)",
+    )
 
 
 TokenBudget = Annotated[
@@ -77,6 +83,10 @@ TokenBudget = Annotated[
 
 
 class ProjectUpdate(BaseModel):
+    access: ProjectAccessLevel | None = Field(
+        default=None,
+        description="workspace (every member) or restricted (owners, admins, and the people added to it)",
+    )
     name: ProjectName | None = None
     description: Description | None = None
     model: ModelName | None = None
@@ -105,6 +115,9 @@ class ProjectRead(BaseModel):
     description: str
     source: ProjectSource
     repo_url: str | None
+    access: ProjectAccessLevel = Field(
+        description="workspace (every member sees it) or restricted (owners, admins, and the people added to it)"
+    )
     model: str
     specialist_model: str | None = Field(
         description="The specialists' and summaries' model; null means the project's model"
@@ -117,3 +130,15 @@ class ProjectRead(BaseModel):
 
 class ProjectMove(BaseModel):
     workspace_id: uuid.UUID = Field(description="The workspace to move the project into")
+
+
+class ProjectMemberRead(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    display_name: str
+    role: Role = Field(description="Their role in the workspace")
+    via: Literal["role", "workspace", "added"] = Field(
+        description="Why they see it: their role (owners and admins see every project), the workspace "
+        "(an open project), or being added to it (a restricted project)"
+    )
+    added: bool = Field(description="On the project's list (what counts once it's restricted)")

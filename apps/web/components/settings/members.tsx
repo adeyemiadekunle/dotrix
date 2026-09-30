@@ -45,8 +45,8 @@ export function MembersCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
   const remove = useRemoveMember(workspace.id);
   const transfer = useTransferOwnership(workspace.id);
   const [ask, confirmDialog] = useConfirm();
-  const manage = canManageProjects(workspace.role) && !workspace.via_organization;
-  const iAmOwner = workspace.role === "owner" && !workspace.via_organization;
+  const manage = canManageProjects(workspace.role);
+  const iAmOwner = workspace.role === "owner";
   const personal = workspace.kind === "personal"; // only the owner and guests
   const assignable: Role[] = personal
     ? ["guest"]
@@ -60,7 +60,7 @@ export function MembersCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
         <SettingsTitle>Members</SettingsTitle>
         <SettingsDescription>
           {members.data ? `${members.data.length} ${members.data.length === 1 ? "person" : "people"}` : "People"} in{" "}
-          {workspace.name}. {workspace.via_organization && "You see it as owner of its organisation; manage people from there."}
+          {workspace.name}.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent>

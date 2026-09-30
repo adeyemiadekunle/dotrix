@@ -8,11 +8,11 @@ from pmagent_backend.modules.workspaces.models import Role
 async def test_create_and_list_workspaces(signup, create_team, db_client: AsyncClient) -> None:
     ada = await signup()
     team = await create_team(ada.headers, "Kunemi Logistics")
-    assert team["kind"] == "team" and team["role"] == "owner"
+    assert team["kind"] == "organization" and team["role"] == "owner"
     assert team["slug"].startswith("kunemi-logistics-")
 
     listed = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()
-    assert [w["kind"] for w in listed] == ["personal", "team"]
+    assert [w["kind"] for w in listed] == ["personal", "organization"]
 
 
 async def test_cannot_create_a_second_personal_workspace(signup, db_client: AsyncClient) -> None:
@@ -136,3 +136,30 @@ async def test_remove_and_leave(signup, create_team, add_member, db_client: Asyn
     assert (await db_client.delete(f"{ws}/members/{cy.id}", headers=ada.headers)).status_code == 204
     members = (await db_client.get(f"{ws}/members", headers=ada.headers)).json()
     assert [m["email"] for m in members] == ["ada@example.com"]
+
+
+async def test_turn_a_personal_workspace_into_an_organisation(signup, add_member, db_client: AsyncClient) -> None:
+    ada = await signup()
+    bob = await signup(email="bob@example.com", name="Bob")
+    personal = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()[0]
+    ws = f"/v1/workspaces/{personal['id']}"
+    project = await db_client.post(f"{ws}/projects", json={"key": "KUN", "name": "Kunemi"}, headers=ada.headers)
+    assert project.status_code == 201
+
+    # Only its owner can; a guest gets 403.
+    await add_member(personal["id"], bob.id, Role.GUEST)
+    assert (await db_client.post(f"{ws}/convert-to-organization", json={}, headers=bob.headers)).status_code == 403
+
+    res = await db_client.post(f"{ws}/convert-to-organization", json={"name": "Kunemi"}, headers=ada.headers)
+    assert res.status_code == 200
+    assert res.json()["kind"] == "organization" and res.json()["name"] == "Kunemi" and res.json()["id"] == personal["id"]
+    # Its projects stay with it, and Ada gets a new, empty personal workspace.
+    assert [p["key"] for p in (await db_client.get(f"{ws}/projects", headers=ada.headers)).json()] == ["KUN"]
+    listed = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()
+    assert [w["kind"] for w in listed] == ["organization", "personal"]
+    fresh = listed[1]
+    assert (await db_client.get(f"/v1/workspaces/{fresh['id']}/projects", headers=ada.headers)).json() == []
+
+    # Already an organisation.
+    again = await db_client.post(f"{ws}/convert-to-organization", json={}, headers=ada.headers)
+    assert again.status_code == 409

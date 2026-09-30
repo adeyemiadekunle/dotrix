@@ -1,8 +1,8 @@
 """Cross-workspace isolation (NFR multi-tenancy): nothing in one workspace is reachable from
 another, whatever IDs a caller knows.
 
-The route checks are generated from the app's own routes, so a new workspace, project, or
-organisation route is covered automatically. If a new route has a path parameter this file
+The route checks are generated from the app's own routes, so a new workspace or project route
+is covered automatically. If a new route has a path parameter this file
 doesn't know, `test_every_scoped_route_is_covered` fails: add a value to `World.params`.
 """
 from dataclasses import dataclass
@@ -13,7 +13,7 @@ from httpx import AsyncClient
 
 from pmagent_engine.testing import tool_call
 
-SCOPES = ("{workspace_id}", "{org_id}")
+SCOPES = ("{workspace_id}",)
 
 
 @dataclass
@@ -22,6 +22,8 @@ class World:
 
     headers: dict[str, str]
     params: dict[str, str]
+    colleague_headers: dict[str, str]  # a member of the workspace, not added to the restricted project
+    restricted_id: str  # a restricted project nobody was added to
 
 
 @pytest.fixture
@@ -29,7 +31,7 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
     async def _build(email: str, name: str) -> World:
         owner = await signup(email=email, name=name)
         h = owner.headers
-        team = await create_team(h, name=f"{name}'s team", in_org=True)  # invites need an organisation
+        team = await create_team(h, name=f"{name}'s team")
         ws = f"/v1/workspaces/{team['id']}"
         # Same project key and issue key in every world, so keys alone never identify one.
         project = (await db_client.post(f"{ws}/projects", json={"key": "KUN", "name": "K"}, headers=h)).json()
@@ -44,7 +46,10 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
         assert invite.status_code == 201, invite.text
         colleague = await signup(email=f"colleague-{email}", name="Colleague")
         await add_member(team["id"], colleague.id, "member")
-        org = {"id": team["organization_id"]}
+        restricted = await db_client.post(
+            f"{ws}/projects", json={"key": "SEC", "name": "Secret", "access": "restricted"}, headers=h
+        )
+        assert restricted.status_code == 201, restricted.text
         token = (await db_client.post("/v1/me/tokens", json={"name": "script"}, headers=h)).json()
         params = {
             "workspace_id": team["id"],
@@ -56,7 +61,6 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             "document_id": document.json()["id"],
             "invite_id": invite.json()["id"],
             "user_id": colleague.id,
-            "org_id": org["id"],
             "token_id": token["id"],
             "handle": "product",
             "output_id": "01a0e000-0000-7000-8000-000000000000",
@@ -67,13 +71,15 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
         run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=h)).json()
         assert run["status"] == "awaiting_approval", run
         params |= {"run_id": run["id"], "thread_id": run["thread_id"]}
-        return World(headers=h, params=params)
+        return World(
+            headers=h, params=params, colleague_headers=colleague.headers, restricted_id=restricted.json()["id"]
+        )
 
     return _build
 
 
 def _scoped_routes(client: AsyncClient) -> list[tuple[str, str, bool]]:
-    """(method, path template, takes a body) for every workspace or organisation route, from
+    """(method, path template, takes a body) for every workspace route, from
     the OpenAPI schema (the API's contract)."""
     app = client._transport.app  # type: ignore[attr-defined]
     routes = []
@@ -115,7 +121,7 @@ async def _call(client: AsyncClient, method: str, url: str, body: bool, headers:
 
 async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
     known = {"workspace_id", "project_id", "key", "path", "version", "document_id", "invite_id",
-             "user_id", "org_id", "run_id", "thread_id", "handle", "output_id", "index"}
+             "user_id", "run_id", "thread_id", "handle", "output_id", "index"}
     routes = _scoped_routes(db_client)
     assert len(routes) > 60  # sanity: the whole API is being walked
     for _, template, _ in routes:
@@ -162,8 +168,6 @@ async def test_lists_show_only_your_own(db_client: AsyncClient, build_world) -> 
 
     workspaces = (await db_client.get("/v1/workspaces", headers=h)).json()
     assert ada.params["workspace_id"] not in {w["id"] for w in workspaces}
-    orgs = (await db_client.get("/v1/organizations", headers=h)).json()
-    assert ada.params["org_id"] not in {o["id"] for o in orgs}
     tokens = (await db_client.get("/v1/me/tokens", headers=h)).json()
     assert ada.params["token_id"] not in {t["id"] for t in tokens}
     assert (await db_client.delete(f"/v1/me/tokens/{ada.params['token_id']}", headers=h)).status_code == 404
@@ -173,7 +177,7 @@ async def test_lists_show_only_your_own(db_client: AsyncClient, build_world) -> 
     audit = (await db_client.get(f"{ws}/audit", headers=h)).json()
     assert ada.params["workspace_id"] not in str(audit) and "ada@example.com" not in str(audit)
     projects = (await db_client.get(f"{ws}/projects", headers=h)).json()
-    assert [p["id"] for p in projects] == [mallory.params["project_id"]]
+    assert [p["id"] for p in projects] == [mallory.params["project_id"], mallory.restricted_id]
     base = f"{ws}/projects/{mallory.params['project_id']}"
     runs = (await db_client.get(f"{base}/agent/runs", headers=h)).json()
     assert [r["id"] for r in runs] == [mallory.params["run_id"]]
@@ -183,3 +187,25 @@ async def test_lists_show_only_your_own(db_client: AsyncClient, build_world) -> 
     # Mallory's KUN-1 is her own issue, not Ada's.
     issue = (await db_client.get(f"{base}/issues/KUN-1", headers=h)).json()
     assert issue["id"] == mallory.params["issue_id"] != ada.params["issue_id"]
+
+
+async def test_a_restricted_project_is_404_to_a_member_not_added(db_client: AsyncClient, build_world) -> None:
+    ada = await build_world("ada@example.com", "Ada")
+    """Answered exactly as for a project that doesn't exist: 404, or a 403 from the role check
+    that runs before any project is looked up."""
+    params = ada.params | {"project_id": ada.restricted_id}
+    missing = ada.params | {"project_id": "01a0e000-0000-7000-8000-00000000dead"}
+    leaks = []
+    for method, template, body in _scoped_routes(db_client):
+        if "{project_id}" not in template:
+            continue
+        status = await _call(db_client, method, _fill(template, params), body, ada.colleague_headers, template)
+        expected = await _call(db_client, method, _fill(template, missing), body, ada.colleague_headers, template)
+        if status not in (403, 404) or status != expected:
+            leaks.append(f"{method} {template} -> {status} (missing project: {expected})")
+    assert leaks == []
+    ws = f"/v1/workspaces/{ada.params['workspace_id']}"
+    listed = (await db_client.get(f"{ws}/projects", headers=ada.colleague_headers)).json()
+    assert [p["key"] for p in listed] == ["KUN"]
+    # Its owner sees both.
+    assert [p["key"] for p in (await db_client.get(f"{ws}/projects", headers=ada.headers)).json()] == ["KUN", "SEC"]

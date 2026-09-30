@@ -94,8 +94,7 @@ SessionUser = Annotated[User, Depends(get_session_user)]
 async def get_membership(
     workspace_id: uuid.UUID, user: CurrentUser, session: SessionDep
 ) -> Membership:
-    # Your membership, or implicit owner access if you own the workspace's organisation.
-    membership = await MembershipRepository(session).effective(workspace_id, user.id)
+    membership = await MembershipRepository(session).get(workspace_id, user.id)
     if membership is None:
         raise NotFound("Workspace not found")
     return membership

@@ -16,6 +16,8 @@ from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
+from pmagent_backend.modules.projects.repository import visible_to
+from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_engine.agent import PM_ROLE
 from pmagent_engine.outputs import ACTIONS as OUTPUT_ACTIONS
@@ -218,13 +220,17 @@ class AgentService:
         )
         return [ApprovalRead.model_validate(a) for a in result]
 
-    async def workspace_pending(self, workspace_id: uuid.UUID) -> list[WorkspaceApprovalRead]:
-        """Every pending action in the workspace's projects, oldest first."""
+    async def workspace_pending(self, member: Membership) -> list[WorkspaceApprovalRead]:
+        """Every pending action in the workspace's projects you can see, oldest first."""
         rows = await self.session.execute(
             select(AgentApproval, Project.key, Project.name, AgentRun.message, AgentRun.requested_by_id)
             .join(Project, Project.id == AgentApproval.project_id)
             .join(AgentRun, AgentRun.id == AgentApproval.run_id)
-            .where(Project.workspace_id == workspace_id, AgentApproval.status == ApprovalStatus.PENDING)
+            .where(
+                Project.workspace_id == member.workspace_id,
+                AgentApproval.status == ApprovalStatus.PENDING,
+                visible_to(member.user_id, member.role),
+            )
             .order_by(AgentApproval.created_at, AgentApproval.position)
         )
         return [

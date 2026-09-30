@@ -63,11 +63,10 @@ TAGS: list[dict[str, str]] = [
         "calendar app. Only the workspaces you can see, checked on every fetch.",
     },
     {
-        "name": "organizations",
-        "description": "Organisations own several workspaces (e.g. per division or client) and manage "
-        "people across them. Org admins don't see inside a workspace unless they're in it.",
+        "name": "workspaces",
+        "description": "Workspaces, the tenant everything belongs to: your personal one (just you) or "
+        "organisations (a team: invites, roles, many projects). Members, roles, ownership transfer.",
     },
-    {"name": "workspaces", "description": "Workspaces, members, roles, and ownership transfer."},
     {"name": "invites", "description": "Invite people by email or shareable link; accept invites."},
     {"name": "projects", "description": "Projects: start from a new repo, an existing repo, or docs only."},
     {

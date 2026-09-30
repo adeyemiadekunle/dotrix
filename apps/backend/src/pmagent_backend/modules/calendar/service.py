@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from urllib.parse import quote
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pmagent_backend.core import security
@@ -19,6 +19,7 @@ from pmagent_backend.core.settings import Settings
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.issues.models import Issue, IssueStatus, IssueWatcher
 from pmagent_backend.modules.projects.models import Project
+from pmagent_backend.modules.projects.repository import visible_to
 from pmagent_backend.modules.workspaces.models import Role, Workspace
 from pmagent_backend.modules.workspaces.repository import WorkspaceRepository
 from pmagent_engine.ics import CalendarEvent, render_calendar
@@ -95,7 +96,8 @@ class CalendarService:
 
     async def _events(self, user: User, scope: FeedScope, now: datetime) -> list[CalendarEvent]:
         # Only workspaces you can see projects in (guests see none), checked on every fetch.
-        visible = [ws for ws, role, _ in await WorkspaceRepository(self.session).list_for_user(user.id) if role is not Role.GUEST]
+        visible = [(ws, role) for ws, role in await WorkspaceRepository(self.session).list_for_user(user.id)
+                   if role is not Role.GUEST]
         if not visible:
             return []
         since = now - LOOKBACK
@@ -104,7 +106,7 @@ class CalendarService:
             .join(Project, Project.id == Issue.project_id)
             .join(Workspace, Workspace.id == Issue.workspace_id)
             .where(
-                Issue.workspace_id.in_([ws.id for ws in visible]),
+                or_(*(and_(Issue.workspace_id == ws.id, visible_to(user.id, role)) for ws, role in visible)),
                 or_(Issue.due >= since.date(), Issue.scheduled >= since),
             )
             .order_by(Issue.created_at)

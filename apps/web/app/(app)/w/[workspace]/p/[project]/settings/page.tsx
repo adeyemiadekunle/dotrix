@@ -8,7 +8,7 @@ import { Label } from "@pmagent/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { Textarea } from "@pmagent/ui/components/textarea";
-import { ArrowRightLeftIcon, BotIcon, DownloadIcon, FileTextIcon } from "lucide-react";
+import { ArrowRightLeftIcon, BotIcon, DownloadIcon, FileTextIcon, LockIcon, UsersIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -23,9 +23,10 @@ import {
   SettingsSection,
   SettingsTitle,
 } from "@/components/settings-section";
-import { useMoveProject, useUpdateProject } from "@/lib/admin";
+import { useMoveProject, useProjectMember, useProjectMembers, useUpdateProject } from "@/lib/admin";
+import { useMembers } from "@/lib/issues";
 import { exportUrl, useManifest } from "@/lib/knowledge";
-import { PROJECT_SOURCE_LABELS, WORKSPACE_KIND_LABELS, can, canManageProjects } from "@/lib/labels";
+import { PROJECT_SOURCE_LABELS, ROLE_LABELS, WORKSPACE_KIND_LABELS, can, canManageProjects } from "@/lib/labels";
 import { useProjectScope, useWorkspaces } from "@/lib/queries";
 
 type Project = Schemas["ProjectRead"];
@@ -344,6 +345,121 @@ function Agents({
   );
 }
 
+const VIA_LABELS: Record<Schemas["ProjectMemberRead"]["via"], string> = {
+  role: "sees every project",
+  workspace: "in the workspace",
+  added: "added",
+};
+
+/** Who can see the project: every member of the workspace, or only its owners, admins, and the
+ * people added to it. */
+function Access({ project, workspace, canEdit }: { project: Project; workspace: Workspace; canEdit: boolean }) {
+  const update = useUpdateProject(workspace.id, project.id);
+  const people = useProjectMembers(workspace.id, project.id);
+  const members = useMembers(workspace.id);
+  const { add, remove } = useProjectMember(workspace.id, project.id);
+  const [ask, confirmDialog] = useConfirm();
+  const [adding, setAdding] = useState("");
+  const restricted = project.access === "restricted";
+  const seeing = new Set(people.data?.map((p) => p.user_id));
+  const addable = (members.data ?? []).filter((m) => m.role === "member" && !seeing.has(m.user_id));
+  return (
+    <SettingsSection id="access">
+      <SettingsHeader>
+        <SettingsTitle>Who can see this project</SettingsTitle>
+        <SettingsDescription>
+          Open to everyone in {workspace.name}, or restricted to owners, admins, and the people you add. To anyone else a
+          restricted project doesn&apos;t exist. Guests never see projects.
+        </SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent className="grid gap-4">
+        <Select
+          value={project.access}
+          disabled={!canEdit || update.isPending || workspace.kind === "personal"}
+          onValueChange={(value) => {
+            const access = value as Project["access"];
+            if (access === "restricted")
+              ask({
+                title: `Restrict ${project.key}?`,
+                description:
+                  "Only owners, admins, and the people you add will see it. Others are unassigned from its issues and stop watching them.",
+                confirm: "Restrict",
+                action: () => update.mutateAsync({ access }),
+              });
+            else update.mutate({ access });
+          }}
+        >
+          <SelectTrigger className="w-full sm:w-80" aria-label="Who can see this project">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="workspace">
+              <UsersIcon /> Everyone in the workspace
+            </SelectItem>
+            <SelectItem value="restricted">
+              <LockIcon /> Only people added
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        {workspace.kind === "personal" && (
+          <p className="text-muted-foreground text-xs">A personal workspace is just you, so there&apos;s no one to hide it from.</p>
+        )}
+        {people.isLoading ? (
+          <Skeleton className="h-20" />
+        ) : (
+          <ul className="divide-y rounded-md border" aria-label="People who can see it">
+            {people.data?.map((p) => (
+              <li key={p.user_id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                <span className="min-w-0 flex-1 truncate">
+                  {p.display_name} <span className="text-muted-foreground">· {p.email}</span>
+                </span>
+                <Badge variant="outline">{ROLE_LABELS[p.role]}</Badge>
+                <span className="text-muted-foreground hidden text-xs sm:inline">{VIA_LABELS[p.via]}</span>
+                {canEdit && p.added && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-7"
+                    aria-label={`Take ${p.display_name} off the project`}
+                    disabled={remove.isPending}
+                    onClick={() => remove.mutate(p.user_id)}
+                  >
+                    <XIcon />
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {canEdit && restricted && (
+          <div className="flex flex-wrap gap-2">
+            <Select value={adding} onValueChange={setAdding}>
+              <SelectTrigger className="min-w-64" aria-label="Person to add">
+                <SelectValue placeholder={addable.length ? "Add a member" : "Every member is added"} />
+              </SelectTrigger>
+              <SelectContent>
+                {addable.map((m) => (
+                  <SelectItem key={m.user_id} value={m.user_id}>
+                    {m.display_name} · {m.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              disabled={!adding || add.isPending}
+              onClick={() => add.mutate(adding, { onSuccess: () => setAdding("") })}
+            >
+              Add
+            </Button>
+          </div>
+        )}
+        {confirmDialog}
+      </SettingsContent>
+    </SettingsSection>
+  );
+}
+
 /** Move the project to another workspace where you can set up projects: from your personal
  * workspace into an organisation's, or back. */
 function Move({ project, workspace }: { project: Project; workspace: Workspace }) {
@@ -361,7 +477,7 @@ function Move({ project, workspace }: { project: Project; workspace: Workspace }
         <SettingsDescription>
           Move {project.name} to another workspace, for example from your personal workspace into an organisation&apos;s
           so you can work on it with others. Its documents, issues, uploads, and conversations go with it; the people who
-          see it are the other workspace&apos;s.
+          see it are the other workspace&apos;s (only those added, if it&apos;s restricted).
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="grid gap-3">
@@ -430,6 +546,7 @@ export default function ProjectSettings() {
   const sections = [
     ["general", "General"],
     ["repository", "Repository"],
+    ["access", "Who can see it"],
     ["agents", "Agents"],
     ...(canEdit ? [["export", "Export"], ["move", "Move project"]] : []),
   ];
@@ -438,6 +555,7 @@ export default function ProjectSettings() {
       <div className="grid max-w-5xl min-w-0 flex-1 content-start gap-8">
         <General key={`g-${project.updated_at}`} project={project} workspace={workspace} canEdit={canEdit} />
         <Repository project={project} workspace={workspace} canEdit={canEdit} />
+        <Access project={project} workspace={workspace} canEdit={canEdit} />
         <Agents
           key={`a-${project.model}-${project.specialist_model}-${project.token_budget}`}
           project={project}

@@ -102,11 +102,11 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
         async with ctx.session_factory() as session:
             project = await ProjectRepository(session).get(ctx.workspace_id, ctx.project_id)
             member = (
-                await MembershipRepository(session).effective(ctx.workspace_id, ctx.instructed_by_id)
+                await MembershipRepository(session).get(ctx.workspace_id, ctx.instructed_by_id)
                 if ctx.instructed_by_id
                 else None
             )
-            if project is None or member is None:
+            if project is None or member is None or not await ProjectRepository(session).can_see(project, member.user_id):
                 return {"error": "The project or the person who instructed this run is gone"}
             actor = IssueActor(
                 member, thinking_agent=current_agent_role(), approved_by_id=ctx.approved_by_id, policy=ctx.policy

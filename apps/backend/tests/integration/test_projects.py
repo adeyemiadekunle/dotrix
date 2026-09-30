@@ -203,7 +203,7 @@ async def test_move_a_project_from_personal_into_an_organisation_and_back(
 ) -> None:
     ada = await signup()
     personal = await _personal(db_client, ada.headers)
-    team = await create_team(ada.headers, "Acme", in_org=True)
+    team = await create_team(ada.headers, "Acme")
     project = (await db_client.post(projects_url(personal), json={"key": "KUN", "name": "Kunemi"}, headers=ada.headers)).json()
     base = f"{projects_url(personal)}/{project['id']}"
     issue = await db_client.post(f"{base}/issues", json={"type": "task", "title": "Ship it"}, headers=ada.headers)

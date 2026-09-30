@@ -19,7 +19,6 @@ import {
 } from "@pmagent/ui/components/sidebar";
 import {
   BotIcon,
-  BuildingIcon,
   FolderKanbanIcon,
   PlusIcon,
   ScrollTextIcon,
@@ -28,15 +27,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { NavUser } from "@/components/nav-user";
 import { ProjectTile } from "@/components/project-tile";
-import { CreateOrgDialog } from "@/components/orgs/create-org-dialog";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { canManageProjects } from "@/lib/labels";
 import { useWorkspaceApprovals } from "@/lib/agent";
-import { useOrgs } from "@/lib/orgs";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
 
 export function AppSidebar() {
@@ -45,8 +42,6 @@ export function AppSidebar() {
   const projects = useProjects(workspace?.id);
   const approvals = useWorkspaceApprovals(workspace?.id, Boolean(workspace && workspace.role !== "guest"));
   const waiting = approvals.data?.length ?? 0;
-  const orgs = useOrgs();
-  const [creatingOrg, setCreatingOrg] = useState(false);
   const { setOpenMobile } = useSidebar();
   // On phones the sidebar is a sheet over the page: close it once you've picked somewhere to go.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
@@ -155,31 +150,7 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {(orgs.data?.length ?? 0) > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Organisations</SidebarGroupLabel>
-            <SidebarGroupAction title="New organisation" onClick={() => setCreatingOrg(true)}>
-              <PlusIcon />
-              <span className="sr-only">New organisation</span>
-            </SidebarGroupAction>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {orgs.data?.map((o) => (
-                  <SidebarMenuItem key={o.id}>
-                    <SidebarMenuButton asChild isActive={pathname.startsWith(`/o/${o.slug}`)} tooltip={o.name}>
-                      <Link href={`/o/${o.slug}`}>
-                        <BuildingIcon />
-                        <span className="truncate">{o.name}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
       </SidebarContent>
-      <CreateOrgDialog open={creatingOrg} onOpenChange={setCreatingOrg} />
       <SidebarFooter>
         <NavUser />
       </SidebarFooter>

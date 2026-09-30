@@ -132,6 +132,16 @@ export function Conversation({
   const fixedModel = threadId ? (runs[0]?.conversation_model ?? (runs.length ? projectModel : null)) : null;
   const mayChooseModel = !threadId && can(workspace, "agents:choose_model");
   const setAgent = (next: AgentId) => setPick({ ...picked, agent: next });
+  // An "@handle " typed before the workspace's agents loaded is picked once they arrive.
+  const [optionsSeen, setOptionsSeen] = useState(agentOptions);
+  if (optionsSeen !== agentOptions) {
+    setOptionsSeen(agentOptions);
+    const mention = mentionedAgent(draft, agentOptions);
+    if (mention) {
+      setAgent(mention[0]);
+      setDraft(mention[1]);
+    }
+  }
 
   const status: PromptStatus = stop.isPending
     ? "stopping"
@@ -145,13 +155,21 @@ export function Conversation({
 
   async function submit(text: string) {
     if (status !== "ready") return;
+    // Sent before the mention was picked up: pick it now.
+    const mention = mentionedAgent(text, agentOptions);
+    const who = mention ? mention[0] : agent;
     const run = await send
-      .mutateAsync({ message: text, threadId, agent, model: threadId ? null : (picked.model ?? null) })
+      .mutateAsync({
+        message: mention ? mention[1] : text,
+        threadId,
+        agent: who,
+        model: threadId ? null : (picked.model ?? null),
+      })
       .catch(() => null);
     if (run) {
       setDraft("");
       if (run.thread_id !== threadId) {
-        setPick({ thread: run.thread_id, agent });
+        setPick({ thread: run.thread_id, agent: who });
         onThread(run.thread_id);
       }
     }

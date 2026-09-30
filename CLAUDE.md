@@ -70,17 +70,16 @@ apps/backend/
 │   │   ├── models.py            imports every module's models (for Alembic)
 │   │   └── session.py           async engine + get_session dependency
 │   ├── api/
-│   │   ├── deps.py              SessionDep; current_user, require_permission(...) (effective membership, incl. org owners)
+│   │   ├── deps.py              SessionDep; current_user, require_permission(...)
 │   │   ├── health.py            /health (liveness), /health/ready (database)
 │   │   └── v1.py                mounts every module router under /v1
 │   ├── modules/
 │   │   ├── auth/                users, sign-up/login, refresh tokens, email verification, password reset, GitHub sign-in (github.py)
 │   │   ├── api_tokens/          personal access tokens (pmat_…) and CLI device login
 │   │   ├── calendar/            per-person iCalendar feed of issue dates at a secret URL (FR-32)
-│   │   ├── workspaces/          workspaces, members, roles, the permission matrix (permissions.py)
+│   │   ├── workspaces/          workspaces (personal or organisation), members, roles, the permission matrix (permissions.py), turn into an organisation
 │   │   ├── invites/             email and link invites
-│   │   ├── organizations/       organisations owning workspaces; org roles and permissions
-│   │   ├── projects/            projects, project access deps, canonical repo URLs
+│   │   ├── projects/            projects, who can see them (open or restricted, project_members; `visible_to`), project access deps, canonical repo URLs
 │   │   ├── knowledge/           .pmagent/ files + version history + export
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge
 │   │   ├── issues/              issues, keys, board/backlog/epics, claim, Markdown render for export
@@ -150,16 +149,15 @@ apps/web/
 │   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
 │   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /o/[org]{,/members,/settings}, /w/[workspace], /w/[workspace]/{approvals,agents,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,briefing,knowledge,docs,settings} (the project root redirects to board; /overview to settings), /settings
+│   └── (app)/                   signed-in shell (sidebar): /w/[workspace], /w/[workspace]/{approvals,agents,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,briefing,knowledge,docs,settings} (the project root redirects to board; /overview to settings), /settings
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
 │   ├── documents/               dropzone, queued files, upload progress
 │   ├── agent/                   chat panel and context, conversation, approvals (diff view, decisions)
 │   ├── agents/                  Settings → Agents: the list and the contract editor (workspace and project scope)
 │   ├── knowledge/               file tree, file history (authorship, diffs, restore)
-│   ├── settings/                members, invites (workspace settings)
-│   └── orgs/                    create-organisation dialog
-└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, agents.ts (agent contracts, the chat's agent list), knowledge.ts, admin.ts, orgs.ts, documents.ts, repo.ts, url-state.ts, labels.ts
+│   ├── settings/                members, invites and "turn into an organisation" (workspace settings)
+└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, agents.ts (agent contracts, the chat's agent list), knowledge.ts, admin.ts, documents.ts, repo.ts, url-state.ts, labels.ts
 packages/ui/src/                 consumed as source (no build step), by path: `@pmagent/ui/components/*`, `/lib/*`, `/hooks/*`, `/globals.css`
 ├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
 │                                plus our own chat kit: chat-scroller (follows new content unless you scroll up), chat-message (message, bubble, meta, notice), prompt-input (send / stop), code-block (copy, lazy Shiki highlighting)
@@ -188,11 +186,11 @@ Why: agents today are fixed in code (`engine/agent.py`: the PM and five speciali
 
 ### Step 0: one tenant, Personal or Organisation (organisations fold into workspaces)
 Workspace and organisation overlap: an organisation is a layer of roles above several workspaces. Decided (D6): the workspace stays the tenant (`workspace_id` everywhere, the isolation suite, `/w/…` URLs), and becomes either **Personal** (just you, never invites) or an **Organisation** (a team: invites, roles, many projects). The separate organisations layer goes. Only dev and test data exist, so the migration is simple. Spec §0.
-- [ ] `WorkspaceKind`: `personal`, `organization` (was `team` / `business`). Migration: team and business workspaces become organisations; members of an organisation that owned a workspace get the matching role there only if they had real access (org owners → owner membership; org admins who were members keep their role); drop `organizations`, `org_memberships`, `workspaces.organization_id`
-- [ ] Remove `modules/organizations` (routes, service, schemas, tests) and `MembershipRepository.effective`'s implicit org-owner access; invites need `kind == organization` (was: belongs to an organisation)
-- [ ] "Turn into an organisation" replaces attach: a personal workspace becomes an organisation with its projects, and its owner gets a new, empty personal workspace; creating an organisation creates an organisation workspace. Moving projects between workspaces stays
-- [ ] **Project access** (replaces several workspaces per team): a project is open to every member, or restricted to the people added to it (`project_members`, with owners and admins always in); the project dependencies check it, so a restricted project is a 404 to others; isolation tests cover it
-- [ ] Web: the switcher lists Personal and your organisations; "Create organisation"; the `/o/…` pages go (their people and settings move to the organisation's settings); copy says Personal / Organisation, not workspace; the invite card's "no organisation" state becomes "personal workspaces don't invite"
+- [x] `WorkspaceKind`: `personal`, `organization` (was `team` / `business`). Migration `d45008d17038`: team and business workspaces become organisations; an org owner who saw a workspace only through the organisation gets an owner membership there; drops `organizations`, `org_memberships`, `workspaces.organization_id`
+- [x] Removed `modules/organizations` (routes, service, schemas, tests) and the implicit org-owner access (`MembershipRepository.get` is your access); invites need `kind == organization` (409 `invites_need_organization` in a personal workspace)
+- [x] "Turn into an organisation" (`POST /v1/workspaces/{id}/convert-to-organization`, owners; optional new name; audited `workspace.converted_to_organization`): a personal workspace becomes an organisation with its projects, and its owner gets a new, empty personal workspace. `POST /v1/workspaces` creates an organisation. Moving projects between workspaces stays
+- [x] **Project access:** `Project.access` is `workspace` (every member) or `restricted` (owners and admins, plus `project_members`). `ProjectRepository.visible` / `visible_to(...)` decide it: the project dependencies 404 others (a 403 from a role check comes first, the same as for a missing project), and project lists, the approvals queue, the calendar feed, issue assignees, and board tools acting for a person follow it. `GET/PUT/DELETE .../projects/{id}/members[/{user_id}]` (who sees it and why; add or take off, owners and admins; audited `project.member_added` / `_removed`, `project.access_changed`). Restricting a project or taking someone off unassigns people who can no longer see it and drops their watches (logged); a move keeps only people in the new workspace on the list. The isolation suite has a restricted project in its `World` (`test_a_restricted_project_is_404_to_a_member_not_added`)
+- [x] Web: the switcher lists Personal and Organisations with "Create organisation" (`components/create-organization-dialog.tsx`); the `/o/…` pages, `lib/orgs.ts`, and the create-workspace dialog are gone; the invite card in a personal workspace says it doesn't invite and offers "Turn into an organisation" (owners) or a new organisation; project settings → "Who can see this project" (open or only people added, the people and why, add and take off)
 - [ ] Agents v2 scope (D2): agent contracts, the Space, and automations belong to the workspace (Personal or Organisation), with per-project overrides
 
 ### Step 1: agent contracts (agents as versioned data)
@@ -230,7 +228,7 @@ Workspace and organisation overlap: an organisation is a layer of roles above se
 - [ ] **Watches** (needs step 4): scheduled re-checks of a topic (a regulation, a competitor, dependencies' release notes and CVEs), diffed against the last run; people are told only when something changed, with proposed updates to approve
 
 ### Step 2: rules that layer and learn
-- [ ] Layers: organisation → workspace → project → agent; the more specific wins; invariants can't be overridden (covers FR-17)
+- [ ] Layers: workspace (Personal or Organisation) → project → agent; the more specific wins; invariants can't be overridden (covers FR-17)
 - [ ] **Skills:** reusable procedures loaded on demand (`SKILL.md`-style: name, description, steps), e.g. write an ADR, triage a bug, scope a failing build; shared across agents and projects
 - [ ] **Lessons:** a rejection reason, a dismissed finding, or a person's edit of an agent's draft becomes a proposed line in `agent-rules/lessons.md` (per agent); owners approve it; audited and reversible
 - [ ] Read a connected repo's `AGENTS.md` / `CLAUDE.md` as data for reviews and coding briefs (conventions, how to test), never as instructions
@@ -360,7 +358,7 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 
 ## TODO: web (build order)
 
-- [x] Shell: sign-in via httpOnly-cookie session and API proxy, auth pages, sidebar with workspace switcher (including workspaces seen through an organisation), create workspace/project, settings (profile, appearance, devices and tokens)
+- [x] Shell: sign-in via httpOnly-cookie session and API proxy, auth pages, sidebar with workspace switcher (Personal and your organisations), create organisation/project, settings (profile, appearance, devices and tokens)
 - [x] Board (drag between statuses and within a column to rank; filters in the URL: search, type, assignee including "me", epic, label), issue drawer (`?issue=KEY`: every field, Markdown description, dependencies, activity log, comments, watch), new-issue dialog, backlog (drag to rank, epic progress, filter by epic)
 - [x] Board keyboard drag: Space picks a card up, up and down reorder it, left and right move it to the top of the neighbouring column (`betweenColumns` in `board-view.tsx`; keyboard drags match by overlap, pointer drags by closest corners), Space drops, Escape cancels
 - [x] Chat with the PM: a panel beside every project page (a sheet on phones) and a full Chat tab with the conversation list; suggestions and the daily briefing to start; runs polled while working (and slower while waiting, so decisions made elsewhere show up); inline approvals with coloured diffs or the fields an issue action sets, approve / reject with a reason, all of a run's decisions sent together
@@ -371,12 +369,11 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 - [x] Project setup on the web (`/w/[ws]/projects/new`, owners and admins): start from an existing repo (pasted address; public GitHub repos are looked up to confirm and prefill) or documents only, with documents uploaded as part of creating it; Docs tab (upload, list, view the converted Markdown, download originals); link, change, or unlink the repo later from Overview
 - [ ] "Connect GitHub" (needs FR-10's GitHub App): pick a repo from your account, private repos, "new repository"
 - [x] Knowledge tab: `.pmagent/` tree with search (deleted files on request), Markdown or source view, edit with a change note (`base_version` guards against overwriting), delete, history with who wrote / asked / approved each version, diffs, restore (including deleted files), zip export for owners and admins; `agent-rules/` editable by owners and admins only
-- [x] Workspace "Members and settings" (`/w/[ws]/settings`): rename; members with role changes, remove, leave, transfer ownership (personal workspaces: just the owner); invites by email or link, pending list, revoke (only in a workspace that belongs to an organisation; otherwise the section explains why and offers to create an organisation). Create workspace (the switcher) makes it inside an organisation you own or run, or offers to create one first. Audit log (`/w/[ws]/audit`, owners and admins) with project and action filters and paging. Project Settings tab (was Overview): name, description, repo, agent model, agent-rules links into Knowledge, zip export
-- [x] Organisation pages (`/o/[org]`, in the sidebar): create an organisation; Workspaces (new workspace with a chosen owner, add one you own, take one out, people per workspace: place, change role, remove; org admins can't place themselves), Members (add by email with an account, org roles, remove, leave), Settings (rename; what each org role can see)
+- [x] Workspace "Members and settings" (`/w/[ws]/settings`): rename; members with role changes, remove, leave, transfer ownership (personal workspaces: just the owner); invites by email or link, pending list, revoke (only in an organisation; a personal workspace's section offers to turn it into one or create one). Audit log (`/w/[ws]/audit`, owners and admins) with project and action filters and paging. Project Settings tab (was Overview): name, description, repo, agent model, agent-rules links into Knowledge, zip export
 - [x] Backend: membership and invite changes are audited (rename, role changes, removals and leaving, ownership transfer, invites sent / links created / revoked, joining, org placements in the workspace's own log)
 - [x] Briefing tab (`/w/[ws]/p/[KEY]/briefing`): the newest daily briefing (streams with live activity while it's written), past briefings (`GET .../agent/runs?kind=briefing`), new briefing; the agent's side of a run is one shared component (`components/agent/agent-reply.tsx`) used by chat and briefing
 - [x] Removed the leftovers: `packages/shared` (its `Issue` type predated the API) and `packages/ui`'s placeholder StatusBadge. The generated API types are the source of truth.
-- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search and similar issues, a column's + and the Filter menu with chips, moving a card between columns by keyboard, the settings save bar, an organisation and a workspace in it, a phone (stacked board, chat input on screen), chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
+- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search and similar issues, a column's + and the Filter menu with chips, moving a card between columns by keyboard, the settings save bar, turning a personal workspace into an organisation and restricting a project, moving a project into an organisation, a phone (stacked board, chat input on screen), chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
 - [ ] More browser tests as pages change: document upload (needs MinIO in CI)
 
 ## TODO: backend (priority order)
@@ -399,15 +396,15 @@ Work top to bottom; each item depends on the ones above it. FR numbers refer to 
 - [x] **FR-1** Magic-link login: "Email me a sign-in link" on the login page (`POST /v1/auth/magic-link/request`, rate-limited, the lookup in a background job so responses don't reveal accounts); the link (`/magic-link`, 15 minutes, once) takes a click to sign in, because mail scanners open links; following it verifies the email. For an address with no account the same request sends a "Finish creating your account" link instead (`email_signups`, same limits); `/signup/finish` asks only for a name and creates a verified, password-less account with its personal workspace (a password can be set later with "Forgot password?"); the sign-up page offers it too
 - [x] **FR-1** GitHub login: "Continue with GitHub" on the sign-in and sign-up pages when `PMAGENT_GITHUB_CLIENT_ID` / `_SECRET` are set (`GET /v1/auth/providers`). The web app starts it (`/api/auth/github`: the backend's authorize URL, its `state` in a short httpOnly cookie) and finishes it (`/api/auth/github/callback`: checks the state, `POST /v1/auth/oauth/github/finish` trades the code). Accounts are found by GitHub's account id (`oauth_accounts`); the first time, linked to the account with the same email only if GitHub reports it verified, else a new verified, password-less account with its personal workspace. No GitHub tokens are stored. The API's `/v1/auth/oauth/github/callback` forwards to the web app's, for an app registered with the API as its callback
 - [ ] **FR-1** Google OAuth login; TOTP 2FA
-- [x] **FR-2** Workspaces (personal / team / business); auto-create a personal workspace on sign-up; one user can belong to many
+- [x] **FR-2** Workspaces (personal or organisation; agents v2 step 0); auto-create a personal workspace on sign-up; one user can belong to many
 - [x] **FR-3** Membership with roles (Owner, Admin, Member, Guest); `require_permission` dependency implementing the PRD matrix
 - [x] **FR-4** Invites by email and by link; revoke invites; remove members; change roles; Owner transfer
-- [x] Only workspaces in an organisation invite people (`invites_need_organization`, 409): a personal workspace is just for its owner, and a team workspace outside an organisation keeps the people already in it. Accepting checks it too, so older invites stop working once their workspace has no organisation. `POST /v1/workspaces` still creates a standalone team workspace (it can join an organisation later); the web creates workspaces in an organisation
+- [x] Only organisations invite people (`invites_need_organization`, 409): a personal workspace is just for its owner. Accepting checks it too
 - [x] **FR-6** Device-login flow for the CLI and external tools; scoped, revocable personal access tokens (backend)
 - [x] **FR-6** `pmagent login` / `logout` / `whoami` in `apps/cli` using the device flow; token in the OS keychain (`keyring`), `PMAGENT_TOKEN` for CI
 - [x] Web pages the backend now links to: `/verify-email`, `/reset-password`, `/invites/accept`, `/device` (apps/web)
 - [x] Cleanup job (`cleanup_expired`, hourly: the worker's cron, or a loop in the API in local mode): refresh tokens a week after expiry (revoked ones are kept until then, so reuse detection still works), email-link tokens a week after use or expiry, device logins, invites 30 days after expiry/revocation/acceptance
-- [x] Cross-workspace isolation suite (`tests/integration/test_isolation.py`): walks every workspace and organisation route in the OpenAPI schema; an outsider with real IDs gets 404 everywhere, and another workspace's IDs used inside your own workspace get 404; lists show only your own. New routes are covered automatically (a new path parameter fails the suite until it's given a value)
+- [x] Cross-workspace isolation suite (`tests/integration/test_isolation.py`): walks every workspace route in the OpenAPI schema; an outsider with real IDs gets 404 everywhere, and another workspace's IDs used inside your own workspace get 404; lists show only your own. New routes are covered automatically (a new path parameter fails the suite until it's given a value)
 - [x] Rate limits on sign-up, login, password reset, and verification resend, per IP and per email (`core/ratelimit.py`, sliding window; Redis in production, `PMAGENT_RATE_LIMITS`); client IP from X-Forwarded-For only via `PMAGENT_TRUSTED_PROXIES` (the web app forwards it; in production the web app needs a proxy in front that appends the real address)
 - [x] Emails are sent from background jobs (`QueuedEmailSender`), and a password-reset request does its lookup in a job too, so response time doesn't reveal whether an account exists
 - [x] Real email provider: Sendly (`SendlyEmailSender`, https://developer.sendlyai.com), chosen automatically when its key is set; text and HTML, click tracking off (links carry tokens), an idempotency key per message, retryable vs permanent errors in the `send_email` job
@@ -459,18 +456,13 @@ External accounts, keys, and config have to exist before these items can be buil
 - [ ] **(you)** Domain and HTTPS for the API and web app; set `PMAGENT_APP_URL` and the OAuth redirect URIs to it
 - [ ] **(you)** A secrets manager for production env vars (e.g. the host's secret store); `PMAGENT_ENV=production`
 
-### Organisations (beyond the PRD: an organisation owning several workspaces)
+### Organisations
 
-Superseded by agents v2 step 0 (D6): organisations fold into workspaces (Personal or Organisation). The items below describe what exists until that lands.
+Organisations are workspaces of kind `organization` (agents v2 step 0, D6); the separate organisations layer is gone.
 
-- [x] Organisations (`modules/organizations`): owner / admin / member; workspaces may belong to one. A personal workspace brought into an organisation (attach) becomes a team workspace with its projects, and its owner gets a new, empty personal workspace; attach and detach are audited in the workspace's log
-- [x] **Org owners see and work in every workspace their organisation owns** (implicit owner access via `MembershipRepository.effective`, not a stored membership; marked `via_organization`; follows org ownership)
-- [x] Org admins create, attach (their own), and detach workspaces, add people, and place others into any org workspace, but **manage without seeing**: they need a real workspace membership, and can't place themselves
-- [x] Everyone in an org workspace is an org member (attach, invites, placements); leaving the org leaves its workspaces (owners must hand over first); the org always keeps an owner
-- [ ] Organisation email invites for people without an account; verified email domains (auto-join)
-- [ ] Org-level audit log (org events today are not audited; `audit_events` is per workspace)
-- [ ] SSO/SCIM (FR-7), billing and pooled usage with per-workspace limits (FR-8/FR-28), org-wide base agent rules (FR-17) at the organisation level
-- [x] Move a project between workspaces (`POST .../projects/{id}/move`, project settings → Move project): personal → organisation workspace and back, or between any two where you're owner or admin. Its knowledge, issues and their log, documents, runs and approvals, and search chunks move with it; audit events stay where they happened (`project.moved_out` / `project.moved_in`). 409 if the key or repo is taken there, or while a run is working or awaiting approval. People who can't see it in the new workspace (not members, or guests) are unassigned from its issues (an entry in each issue's log) and stop watching them. The CLI and MCP server follow a moved project by its id and update `.platform.json` (`sync.follow_move`, one lookup per command)
+- [ ] Email invites for people without an account; verified email domains (auto-join)
+- [ ] SSO/SCIM (FR-7), billing and pooled usage (FR-8/FR-28)
+- [x] Move a project between workspaces (`POST .../projects/{id}/move`, project settings → Move project): personal → organisation and back, or between any two where you're owner or admin. Its knowledge, issues and their log, documents, runs and approvals, and search chunks move with it; audit events stay where they happened (`project.moved_out` / `project.moved_in`). 409 if the key or repo is taken there, or while a run is working or awaiting approval. People who can't see it in the new workspace (not members, or guests) are unassigned from its issues (an entry in each issue's log) and stop watching them. The CLI and MCP server follow a moved project by its id and update `.platform.json` (`sync.follow_move`, one lookup per command)
 
 ### P0: Projects and source of truth
 

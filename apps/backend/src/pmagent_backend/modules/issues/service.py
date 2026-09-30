@@ -26,7 +26,6 @@ from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission, can
-from pmagent_backend.modules.workspaces.repository import MembershipRepository
 from pmagent_engine.contracts import AgentPolicy
 
 from .models import (
@@ -609,9 +608,8 @@ class IssueService:
             raise Forbidden(f"{issue.key} isn't assigned to {actor.agent}")
 
     async def _check_member(self, project: Project, user_id: uuid.UUID) -> None:
-        # Real members, and the owner of the workspace's organisation.
-        if await MembershipRepository(self.session).effective(project.workspace_id, user_id) is None:
-            raise InvalidIssue("The assignee must be a member of this workspace")
+        if not await ProjectRepository(self.session).can_see(project, user_id):
+            raise InvalidIssue("The assignee must be someone who can see this project")
 
     async def _dependency_keys(self, issue: Issue) -> list[str]:
         return sorted(

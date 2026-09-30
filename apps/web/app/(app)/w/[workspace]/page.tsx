@@ -38,8 +38,8 @@ export default function WorkspaceHome() {
       <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
         {workspace && (
           <p className="text-muted-foreground text-sm">
-            {workspace.via_organization
-              ? `You see ${workspace.name} as an owner because you own its organisation.`
+            {workspace.kind === "personal"
+              ? "Your personal workspace: just you. Create an organisation to work with others."
               : `You're ${withArticle(ROLE_LABELS[workspace.role].toLowerCase())} in ${workspace.name}.`}
           </p>
         )}
