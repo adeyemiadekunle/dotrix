@@ -1,0 +1,78 @@
+# Pipelines (docs/agents-v2.md §5): each built-in follows its default stages, a run can pick a
+# mode for the agent that leads it, and the agent talking to the person may stop at a
+# checkpoint on a large job.
+- name: the PM follows its request pipeline and may checkpoint
+  agent: project-manager
+  message: plan the multi-zone launch
+  script:
+    - tool: stage
+      args: {current: plan}
+    - tool: checkpoint
+      args: {summary: "Three specialists, eight steps", plan: ["Product: spec", "Architecture: impact"]}
+  expect:
+    tools_include: [stage, checkpoint]
+    tools_exclude: [submit_result]
+    pending: [checkpoint]
+    prompt_contains: ["## How you work: Handle a request", "1. **classify**: ", "**plan** (checkpoint)", "call `checkpoint`"]
+
+- name: a small question needs no stages
+  agent: project-manager
+  message: what's the project about?
+  script:
+    - text: Logistics.
+  expect:
+    pending: []
+    reply: Logistics.
+
+- name: product writes specs and returns them
+  agent: product
+  message: spec multi-zone
+  script:
+    - tool: submit_result
+      args: {items: [{path: requirements/multi-zone.md, summary: Zones per depot}]}
+    - text: Here's the spec.
+  expect:
+    tools_include: [stage, submit_result]
+    tools_exclude: [checkpoint]
+    results: 1
+    prompt_contains: ["## How you work: Write a spec", "every spec item"]
+
+- name: research plans with a checkpoint
+  agent: research
+  message: who else does multi-zone?
+  script:
+    - text: Three competitors.
+  expect:
+    tools_include: [stage, checkpoint, submit_result]
+    prompt_contains: ["## How you work: Research a question", "every report item"]
+
+- name: the reviewer reviews one issue in its own mode
+  agent: reviewer
+  mode: reviewer.issue
+  message: review KUN-1
+  script:
+    - tool: stage
+      args: {current: criteria}
+    - tool: submit_result
+      args: {items: [{severity: medium, title: No retry test, detail: "Criterion 2 isn't shown"}]}
+    - text: Send it back.
+  expect:
+    tools_exclude: [checkpoint]
+    results: 1
+    prompt_contains: ["## How you work: Review an issue", "every finding item"]
+    prompt_excludes: ["Review coverage"]
+    reply: Send it back.
+
+- name: the PM triages a report
+  agent: project-manager
+  mode: pm.triage
+  message: "Report: drivers see the wrong zone"
+  script:
+    - tool: stage
+      args: {current: duplicates}
+    - tool: create_issue
+      args: {type: bug, title: Wrong zone shown, description: Drivers see the wrong zone}
+  expect:
+    tools_exclude: [checkpoint, submit_result]
+    pending: [create_issue]
+    prompt_contains: ["## How you work: Triage a report", "**duplicates**"]

@@ -1429,6 +1429,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/triage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Triage Report
+         * @description Have the Project Manager triage a bug report or feature request: it looks for duplicates on
+         *     the board and in the documents, then proposes a comment on the existing issue or a new issue
+         *     with its type, priority, and links (each waits for approval). A new conversation.
+         */
+        post: operations["triage_report"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/issues/{key}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Issue
+         * @description Have the Reviewer review one issue against its acceptance criteria. It recommends closing
+         *     it or sending it back, and records each unmet criterion as a finding in the run's
+         *     `outputs`. A new conversation; 404 for an unknown key.
+         */
+        post: operations["review_issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/architecture-draft": {
         parameters: {
             query?: never;
@@ -1568,10 +1612,13 @@ export interface paths {
         put?: never;
         /**
          * Decide Approvals
-         * @description Approve or reject every pending action of a paused run (one decision each), then the
-         *     run resumes. Rejection reasons are sent back to the agent. Needs the approve
-         *     permission; changes to `architecture/` need an owner or admin (403 otherwise, and the
-         *     run keeps waiting). Your decision is recorded next to who instructed the run.
+         * @description Decide every pending action of a paused run (one decision each), then the run resumes.
+         *     Changes are approved or rejected, with the reason sent back to the agent; they need the
+         *     approve permission, and changes to `architecture/` an owner or admin (403 otherwise, and
+         *     the run keeps waiting). A checkpoint (`checkpoint`, the agent's plan before a large job)
+         *     is answered by whoever asked, or anyone who may approve: approve to continue, `steer` with
+         *     the changes as `reason`, or reject to stop. Your decision is recorded next to who
+         *     instructed the run.
          */
         post: operations["decide_approvals"];
         delete?: never;
@@ -2157,6 +2204,11 @@ export interface components {
              */
             agent: string;
             /**
+             * Mode
+             * @description The pipeline the leading agent followed for this run (pm.triage, reviewer.issue); null: its own
+             */
+            mode?: string | null;
+            /**
              * Conversation Model
              * @description The model the conversation runs on (fixed when it started); null on older conversations, which use the project's model
              */
@@ -2528,12 +2580,13 @@ export interface components {
             approval_id: string;
             /**
              * Decision
+             * @description approve or reject a change; at a checkpoint (tool `checkpoint`): approve to continue, steer to continue with the changes in `reason`, reject to stop
              * @enum {string}
              */
-            decision: "approve" | "reject";
+            decision: "approve" | "reject" | "steer";
             /**
              * Reason
-             * @description Sent back to the agent when rejecting
+             * @description Sent back to the agent when rejecting or steering
              */
             reason?: string | null;
         };
@@ -3518,6 +3571,11 @@ export interface components {
              */
             by_agent: components["schemas"]["AgentUsage"][];
             /**
+             * By Stage
+             * @description Tokens per pipeline stage, in the order the stages came
+             */
+            by_stage?: components["schemas"]["StageUsage"][];
+            /**
              * Tools
              * @description Largest results first
              */
@@ -3683,6 +3741,22 @@ export interface components {
             user: components["schemas"]["UserRead"];
             tokens: components["schemas"]["TokenPair"];
         };
+        /** StageUsage */
+        StageUsage: {
+            /** Agent */
+            agent: string;
+            /**
+             * Stage
+             * @description A pipeline stage the agent reported (pmagent_engine.pipelines)
+             */
+            stage: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Model Calls */
+            model_calls: number;
+        };
         /** ThreadRead */
         ThreadRead: {
             /**
@@ -3740,6 +3814,14 @@ export interface components {
              * @description About how many tokens the tool's results added (re-sent with every later model call)
              */
             result_tokens: number;
+        };
+        /** TriageRequest */
+        TriageRequest: {
+            /**
+             * Report
+             * @description The bug report or feature request, as it came in (an email, a support ticket, a note)
+             */
+            report: string;
         };
         /** UserCodeRequest */
         UserCodeRequest: {
@@ -8306,6 +8388,147 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    triage_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TriageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    review_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
                 project_id: string;
                 workspace_id: string;
             };

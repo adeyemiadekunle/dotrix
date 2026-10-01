@@ -2,7 +2,7 @@
 
 import { Button } from "@pmagent/ui/components/button";
 import { cn } from "@pmagent/ui/lib/utils";
-import { PanelRightIcon, PlusIcon, SettingsIcon } from "lucide-react";
+import { InboxIcon, PanelRightIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState, type ReactNode } from "react";
@@ -10,6 +10,7 @@ import { Suspense, useState, type ReactNode } from "react";
 import { AfterHydration } from "@/components/after-hydration";
 import { ChatProvider, useChat } from "@/components/agent/chat-context";
 import { ChatPanel } from "@/components/agent/chat-panel";
+import { TriageDialog } from "@/components/agent/triage-dialog";
 import { PageHeader } from "@/components/app-shell";
 import { ProjectTile } from "@/components/project-tile";
 import { IssueDrawer } from "@/components/issues/issue-drawer";
@@ -28,9 +29,10 @@ const TABS = [
 
 function ProjectFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { workspace, project, canEdit } = useProjectScope();
+  const { workspace, project, scope, canEdit } = useProjectScope();
   const chat = useChat();
   const [creating, setCreating] = useState(false);
+  const [triaging, setTriaging] = useState(false);
   const onChatPage = pathname.endsWith("/chat");
 
   const base = workspace && project ? `/w/${workspace.slug}/p/${project.key}` : "";
@@ -54,6 +56,12 @@ function ProjectFrame({ children }: { children: ReactNode }) {
                     title="Chat panel"
                   >
                     <PanelRightIcon />
+                  </Button>
+                )}
+                {canEdit && (
+                  <Button size="sm" variant="outline" onClick={() => setTriaging(true)} title="Triage a bug report or request">
+                    <InboxIcon />
+                    <span className="hidden sm:inline">Triage</span>
                   </Button>
                 )}
                 {canEdit && (
@@ -117,6 +125,7 @@ function ProjectFrame({ children }: { children: ReactNode }) {
         <Suspense>
           <IssueDrawer />
           {creating && <NewIssueDialog open={creating} onOpenChange={setCreating} />}
+          {triaging && scope && <TriageDialog scope={scope} open={triaging} onOpenChange={setTriaging} />}
         </Suspense>
       </AfterHydration>
     </div>

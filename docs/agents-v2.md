@@ -308,7 +308,10 @@ everyone who sees projects to read.
 
 ## 5. Step 1b: the pipelines
 
-Each is the default for its built-in agent; custom agents pick one or none.
+Each is the default for its built-in agent; custom agents pick one or none. Built 2026-10-01 in
+`pmagent_engine.pipelines` (stages with guidance, `steer` checkpoints, run modes for triage and
+issue review); stages that need the graph (step 3), web tools (1c), or code (step 5) say so and
+fall back to search and documents until those land.
 
 | Pipeline | Stages (`steer` marks a checkpoint) | Output |
 |---|---|---|

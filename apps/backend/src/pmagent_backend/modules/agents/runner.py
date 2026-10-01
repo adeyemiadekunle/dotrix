@@ -32,6 +32,7 @@ from pmagent_engine.layout import AGENTS
 from .activity import activity_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
 from .context import build_context_pack
+from .findings import dedupe_findings
 from .knowledge_tools import KNOWLEDGE_TOOLS_GUIDE, build_knowledge_tools
 from .llm import ModelFactory
 from .models import AgentApproval, AgentRun, AgentRunOutput, ApprovalStatus, RunKind, RunStatus
@@ -176,7 +177,7 @@ class AgentRunner:
         *,
         interrupt_ids: list[str | None],
         decisions: list[tuple[str, str | None]],
-        approved_by_id: uuid.UUID,
+        approved_by_id: uuid.UUID | None,
     ) -> None:
         await self._dispatch(
             run_id,
@@ -184,7 +185,8 @@ class AgentRunner:
                 "kind": "resume",
                 "interrupt_ids": interrupt_ids,
                 "decisions": [list(d) for d in decisions],
-                "approved_by_id": str(approved_by_id),
+                # None when only checkpoints were answered: nothing was approved.
+                "approved_by_id": str(approved_by_id) if approved_by_id else None,
             },
         )
 
@@ -226,7 +228,7 @@ class AgentRunner:
         failure. Safe to call again for a step that was cut off (a retried queue job): it
         continues from the last checkpoint instead of starting over."""
         resuming = payload["kind"] == "resume"
-        approved_by_id = uuid.UUID(payload["approved_by_id"]) if resuming else None
+        approved_by_id = uuid.UUID(payload["approved_by_id"]) if resuming and payload.get("approved_by_id") else None
         # Every model call of this step, subagents' included; recorded on the run when the step
         # ends (finished, paused, failed, or stopped). Known gap: in worker mode, a cut-off
         # attempt's tokens are lost when its job is retried.
@@ -259,7 +261,9 @@ class AgentRunner:
                 # leading agent's own budget wins over the project's.
                 run.token_budget = lead_agent.spec.budget_tokens or project.token_budget or self.token_budget
                 usage = TokenUsage(
-                    budget=run.token_budget, used=(run.input_tokens or 0) + (run.output_tokens or 0)
+                    budget=run.token_budget,
+                    used=(run.input_tokens or 0) + (run.output_tokens or 0),
+                    stages=(run.usage or {}).get("stages"),
                 )
                 await session.commit()
                 rules = await self._rules(session, project.id, list(resolved))
@@ -269,6 +273,7 @@ class AgentRunner:
                 name, description, project_key = project.name, project.description, project.key
                 choice = self.model_factory(project, run.model)
                 lead = run.agent  # None: Auto (the Project Manager)
+                mode = run.mode
                 policy = AgentPolicy(specs)
                 versions = {handle: agent.version for handle, agent in resolved.items()}
 
@@ -321,9 +326,11 @@ class AgentRunner:
                 specialist_model=choice.specialist_model,
                 summarize_after_tokens=self.summarize_after_tokens,
                 lead=lead,
+                mode=mode,
                 result_sink=lambda schema, items: results.append((schema, items)),
-                # Stages show as live activity from the `stage` calls themselves (activity.py).
-                stage_sink=lambda handle, stage: None,
+                # Stages show as live activity from the `stage` calls themselves (activity.py);
+                # here they split the run's tokens by stage.
+                stage_sink=usage.enter_stage,
             )
             config = {
                 "configurable": {"thread_id": str(thread_id)},
@@ -468,15 +475,21 @@ class AgentRunner:
     async def _save_outputs(
         self, run_id: uuid.UUID, agent: str, results: list[tuple[str, list[dict[str, Any]]]]
     ) -> None:
-        """The structured results the leading agent recorded, one row per submit."""
+        """The structured results the leading agent recorded, one row per submit; findings that
+        repeat an open finding or issue are settled as such (findings.py)."""
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id)
             if run is None:
                 return
             for schema, items in results:
+                entries = (
+                    await dedupe_findings(session, run.project_id, items)
+                    if schema == "finding"
+                    else [{"data": item, "state": "open"} for item in items]
+                )
                 session.add(AgentRunOutput(
                     workspace_id=run.workspace_id, run_id=run.id, project_id=run.project_id, agent=agent,
-                    schema_name=schema, items=[{"data": item, "state": "open"} for item in items], created_at=_now(),
+                    schema_name=schema, items=entries, created_at=_now(),
                 ))
             await session.commit()
 

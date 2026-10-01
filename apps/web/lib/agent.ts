@@ -209,6 +209,29 @@ export function useArchitectureDraft(scope: Scope | undefined) {
   );
 }
 
+/** The Project Manager triages a bug report or request: duplicates first, then a proposed issue or comment. */
+export function useTriage(scope: Scope | undefined) {
+  return useAgentMutation(scope, (s, report: string) =>
+    unwrap(
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/triage", {
+        params: { path: path(s) },
+        body: { report },
+      }),
+    ),
+  );
+}
+
+/** The Reviewer reviews one issue against its acceptance criteria. */
+export function useReviewIssue(scope: Scope | undefined) {
+  return useAgentMutation(scope, (s, key: string) =>
+    unwrap(
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/issues/{key}/review", {
+        params: { path: { ...path(s), key } },
+      }),
+    ),
+  );
+}
+
 export function useDecide(scope: Scope | undefined) {
   return useAgentMutation(scope, (s, { runId, decisions }: { runId: string; decisions: Decision[] }) =>
     unwrap(

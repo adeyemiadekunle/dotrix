@@ -84,7 +84,7 @@ apps/backend/
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge
 │   │   ├── issues/              issues, keys, board/backlog/epics, claim, Markdown render for export
 │   │   ├── agent_definitions/   agent contracts per workspace with project overrides, versions, resolution for runs (agents v2 step 1)
-│   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals and decisions, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis)
+│   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals, checkpoints and decisions, triage and issue review, findings dedup, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis)
 │   │   ├── audit/               append-only audit log
 │   │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
 │   │   └── connectors/          (planned, FR-10/12) GitHub, GitLab, doc sources (OAuth)
@@ -116,7 +116,7 @@ apps/backend/
 
 ```
 apps/cli/src/pmagent_cli/
-├── cli.py                       Typer commands: login/logout/whoami, init/connect/link/pull, docs-add, chat/brief, run/jobs/jobs-approve/jobs-stop, issue …, architecture draft, mcp
+├── cli.py                       Typer commands: login/logout/whoami, init/connect/link/pull, docs-add, chat/brief, triage/review, run/jobs/jobs-approve/jobs-stop, issue …, architecture draft, mcp
 ├── platform.py                  PlatformClient (httpx), KeyringStore (OS keychain; PMAGENT_TOKEN for CI), device login
 ├── sync.py                      LinkState (.pmagent/.platform.json), pulling the mirror, git exclude + pre-commit hook
 ├── board.py                     PlatformBoard: the issue board for the CLI and the MCP server
@@ -126,6 +126,7 @@ apps/cli/src/pmagent_cli/
 packages/engine/src/pmagent_engine/
 ├── agent.py                     build_team(): the team from agent contracts (deepagents), each agent's tools and approval gate
 ├── contracts.py, catalog.py, builtins.py   AgentSpec + AgentPolicy (agents v2), the tool catalogue, the six built-ins as contracts
+├── pipelines.py, outputs.py     pipelines (stages with guidance, checkpoints, run modes) and result schemas (`submit_result`)
 ├── approvals.py                 Action Mode approvals, independent of any UI (pending actions, resume)
 ├── context_middleware.py        smaller prompts: unchanged re-reads, compact tool definitions, summarising long conversations
 ├── permissions.py               FR-41 folder matrix and per-agent issue rules
@@ -153,7 +154,7 @@ apps/web/
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
 │   ├── documents/               dropzone, queued files, upload progress
-│   ├── agent/                   chat panel and context, conversation, approvals (diff view, decisions)
+│   ├── agent/                   chat panel and context, conversation, approvals (diff view, decisions, plan checkpoints), run results, triage dialog
 │   ├── agents/                  Settings → Agents: the list and the contract editor (workspace and project scope)
 │   ├── knowledge/               file tree, file history (authorship, diffs, restore)
 │   ├── settings/                members, invites and "turn into an organisation" (workspace settings)
@@ -202,22 +203,32 @@ Workspace and organisation overlap: an organisation is a layer of roles above se
 - [x] **Output contracts:** each agent declares its result schema (`pmagent_engine.outputs.SCHEMAS`: finding, plan, spec, impact, report, doc_update, brief); the leading agent records items with `submit_result` (validated), stored in `agent_run_outputs` and returned as the run's `outputs`; the chat shows them with "Create issue" and "Dismiss" (with why) per item (`PATCH .../runs/{id}/outputs/{id}/items/{index}`, audited)
   - [ ] "Propose change" and "Fix now" (needs Phase 5) per item; dismissals feeding lessons (step 2)
 - [x] **Pipelines as named stages:** an agent whose contract names a pipeline (`outputs.PIPELINES`) reports stages with `stage`, shown as live activity ("Now: blast radius"; fixed names only)
-  - [ ] tokens per stage in the run's details; a checkpoint where the person can steer before the expensive part (an interrupt that members can answer for their own runs); pipelines on by default for the built-ins once measured (each `stage` call is folded into a turn that already makes tool calls, but that needs checking on real models)
+  - [x] tokens per stage in the run's details (`breakdown.by_stage`, "agent/stage" keys; the stage each agent is in carries across steps); a checkpoint where the person can steer before the expensive part (step 1b)
+  - [ ] measure the pipelines on real models (each `stage` call is folded into a turn that already makes tool calls; the built-ins follow theirs by default since 1b, unmeasured: no model key here)
 - [x] **Evals:** saved cases per agent (`packages/engine/tests/evals/*.yaml`, run by `test_evals.py` with the scripted model): tools offered, what pauses, what's refused, results, prompts
   - [ ] quality evals on real models (`pmagent eval --live`, on demand with a key; D4)
 
 ### Step 1b: each agent's pipeline
-- [ ] **Project manager (orchestrator):** intake → classify (question, change, plan, triage) → answer from the context pack, or plan (steps, agents, expected outputs, budget; shown for steering on large requests) → dispatch (independent steps in parallel) → merge results → one batch of proposed writes → follow-ups (the matching `current-state.md` / roadmap updates)
-- [ ] **Triage (PM mode, later on connector events):** incoming bug or feature → find duplicates (search + graph) → classify type, priority, area → propose the issue with fields and links to requirements, or a comment on the existing one
-- [ ] **Product:** request → clarifying questions when ambiguous → related requirements, issues, and decisions (graph + search) → spec from the requirements template (why, users, stories, rules, edge cases, acceptance criteria, dependencies) → consistency check against existing requirements and ADRs → proposed document plus epic and stories as one batch
-- [ ] **Architecture:** change or feature → impact analysis (project graph; code graph once connected) → options with trade-offs → recommendation → ADR draft (to Documentation), module map update, tasks. Keeps the graph's module nodes current
-- [ ] **Research:** plan (sub-questions; shown for steering on large requests) → search our own knowledge and earlier research first → web search → read full pages and PDFs → extract claims with quotes → verify each claim against its quote (supported / weak / unsupported) → report from the template → save to `research/` for approval. Sub-questions in parallel, one level, within the budget
-- [ ] **Reviewer**, three modes, all read-only with `finding[]` output (severity rubric; deduplicated against open findings and issues; dismissals become lessons):
-  - coverage: requirements vs board vs code (done / partial / missing)
-  - issue review: an issue in `review` against its acceptance criteria → close, or send back with specific changes
-  - commit / PR review (step 5): blast radius → findings
-- [ ] **Documentation:** after approved changes → documents affected (graph neighbours) → proposed updates; ADRs from decisions; a scheduled staleness sweep; follows the folder templates and the space's instructions
-- [ ] **Coding hand-off (Phase 5):** issue → brief (acceptance criteria, linked requirement and ADR excerpts, blast radius, tests to run) → Claude Code or Codex → PR back on the board → Reviewer run → a person merges
+- [x] **Pipelines with guidance** (`pmagent_engine.pipelines`): each stage says what it's for; the prompt lists them, the agent reports each with `stage`. Every built-in follows its default (`pipelines.DEFAULTS`) and returns that pipeline's result (Product `spec`, Architecture `impact`, Research `report`, Reviewer `finding`, Documentation `doc_update`; the PM none). A run can follow another pipeline for its leading agent (`AgentRun.mode`, `build_team(mode=...)`, `pipelines.MODES`: `pm.triage`, `reviewer.issue`). Evals in `tests/evals/pipelines.yaml`
+- [x] **Checkpoints** (`steer` stages, §4.7): on a large job the agent talking to the person calls `checkpoint(summary, plan)`, which pauses like a write (an `agent_approvals` row with tool `checkpoint`). Whoever asked answers it, or anyone who may approve: continue (`approve`), change the plan (`steer` with the changes as `reason`, sent back to the agent), or stop (`reject`: it wraps up with what it found). Audited `checkpoint.continued` / `.steered` / `.stopped`; answering only checkpoints approves nothing (`approved_by_id` stays empty). Web: a plan card with Continue / Change the plan / Stop; CLI: `[c]ontinue, c[h]ange, [s]top` inline
+- [x] **Findings deduplicated** as they're saved (`agents/findings.py`): a fingerprint from the title and refs; one matching an open issue's title is marked done with its key, one matching an open finding from an earlier run is dismissed as a repeat (both stay visible, with why)
+- [x] **Project manager (orchestrator)** `pm.request`: classify → answer from the context pack, or plan (a checkpoint on large jobs) → dispatch (independent steps together) → merge → one batch of proposed writes → follow-ups (`current-state.md` / roadmap). Prompt-led: the stages guide the model
+- [x] **Triage (PM mode)** `pm.triage`: read → duplicates (search and the board) → classify type, priority, area → propose the issue with fields and links, or a comment on the existing one. `POST .../agent/triage` (anyone who chats; the writes wait for approval), the board's "Triage" button, `pmagent triage "report"` (or stdin)
+  - [ ] on connector events (step 4); duplicates through the project graph (step 3)
+- [x] **Product** `product.spec`: clarify → related requirements, issues, and decisions → spec (why, users, stories, rules, edge cases, acceptance criteria, dependencies) → consistency check → proposed document plus epic and stories as one batch; returns `spec` items
+  - [ ] the requirements template (step 2); related work through the graph (step 3)
+- [x] **Architecture** `architecture.impact`: the change → impact (documents and search) → options with trade-offs → recommendation → ADR draft, module map update, tasks; returns `impact` items
+  - [ ] impact through the project graph (step 3) and the code graph (step 5); keeping the graph's module nodes current
+- [x] **Research** `research.report`: plan (a checkpoint on large jobs) → our knowledge first → web search → read → extract claims → verify → report; returns `report` items
+  - [ ] the tools and sources that make it real (step 1c)
+- [ ] **Reviewer**, three modes, all read-only with `finding[]` output (deduplicated, above):
+  - [x] coverage (`reviewer.coverage`, its default): requirements vs board vs code (done / partial / missing)
+  - [x] issue review (`reviewer.issue`): an issue against its acceptance criteria → close, or send back with specific changes. `POST .../agent/issues/{key}/review`, "Review" in the issue drawer, `pmagent review KUN-12`
+  - [ ] commit / PR review (step 5): blast radius → findings
+  - [ ] a severity rubric; dismissals become lessons (step 2)
+- [x] **Documentation** `docs.update`: the change → affected documents → proposed updates and ADRs; returns `doc_update` items
+  - [ ] affected documents through graph neighbours (step 3); the scheduled staleness sweep (step 4); folder templates and the space's instructions (steps 2, 6)
+- [ ] **Coding hand-off (Phase 5):** issue → brief (acceptance criteria, linked requirement and ADR excerpts, blast radius, tests to run) → Claude Code or Codex → PR back on the board → Reviewer run → a person merges. The `coding.brief` pipeline and `brief` schema exist
 
 ### Step 1c: research capabilities
 - [ ] Our own tools, whatever the model: `web_search` through one pluggable provider (Tavily, Exa, or Brave; domain and recency filters; the provider's native search stays as fallback), `fetch_page` / `fetch_pdf` to Markdown (via `ingest`; size cap, cache, per-domain rate limit, robots.txt), and a fake provider for tests. **(you)** pick the provider and add its key to `.env`
@@ -373,7 +384,7 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 - [x] Backend: membership and invite changes are audited (rename, role changes, removals and leaving, ownership transfer, invites sent / links created / revoked, joining, org placements in the workspace's own log)
 - [x] Briefing tab (`/w/[ws]/p/[KEY]/briefing`): the newest daily briefing (streams with live activity while it's written), past briefings (`GET .../agent/runs?kind=briefing`), new briefing; the agent's side of a run is one shared component (`components/agent/agent-reply.tsx`) used by chat and briefing
 - [x] Removed the leftovers: `packages/shared` (its `Issue` type predated the API) and `packages/ui`'s placeholder StatusBadge. The generated API types are the source of truth.
-- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search and similar issues, a column's + and the Filter menu with chips, moving a card between columns by keyboard, the settings save bar, turning a personal workspace into an organisation and restricting a project, moving a project into an organisation, a phone (stacked board, chat input on screen), chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
+- [x] Browser tests (Playwright, `apps/web/e2e`, CI job `e2e`): sign-in and redirects, theme, board issue create/move/comment/search and similar issues, a column's + and the Filter menu with chips, moving a card between columns by keyboard, the settings save bar, turning a personal workspace into an organisation and restricting a project, moving a project into an organisation, changing the plan at an agent's checkpoint, reviewing an issue and triaging a report, a phone (stacked board, chat input on screen), chat answer and an approval from the queue (with the conversation title), invite link + revoke in the audit log, knowledge edit/history/restore. The backend runs `scripts/e2e_server.py` with the `e2e:rules` model (`pmagent_engine.testing.RuleBasedChatModel`, allowed only with PMAGENT_E2E_MODELS=true, never in production)
 - [ ] More browser tests as pages change: document upload (needs MinIO in CI)
 
 ## TODO: backend (priority order)

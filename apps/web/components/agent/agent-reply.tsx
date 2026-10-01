@@ -81,6 +81,15 @@ function UsageDetails({ run, breakdown }: { run: Run; breakdown: NonNullable<Run
           ))}
         </UsageList>
       )}
+      {(breakdown.by_stage ?? []).length > 0 && (
+        <UsageList title="By stage">
+          {(breakdown.by_stage ?? []).map((s) => (
+            <UsageRow key={`${s.agent}/${s.stage}`} label={`${agentName(s.agent)}: ${s.stage.replaceAll("_", " ")}`}>
+              {s.input_tokens.toLocaleString()} in / {s.output_tokens.toLocaleString()} out · {plural(s.model_calls, "call")}
+            </UsageRow>
+          ))}
+        </UsageList>
+      )}
       {breakdown.tools.length > 0 && (
         <UsageList title="Tool results (re-sent with every later call)">
           {breakdown.tools.map((t) => (

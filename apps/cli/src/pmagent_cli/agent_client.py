@@ -20,7 +20,7 @@ from .platform import PlatformClient, PlatformError
 from .sync import LinkState
 
 DONE_STATUSES = ("completed", "failed", "awaiting_approval")
-Decision = tuple[str, str | None]  # ("approve" | "reject", reason)
+Decision = tuple[str, str | None]  # ("approve" | "reject" | "steer" (a checkpoint), reason)
 
 
 class ApprovalNotAllowed(Exception):
@@ -70,6 +70,14 @@ class PlatformAgent:
 
     def briefing(self) -> dict:
         return self.client.post(f"{self.base}/briefing")
+
+    def triage(self, report: str) -> dict:
+        """The Project Manager triages a report: duplicates, then a proposed issue or comment."""
+        return self.client.post(f"{self.base}/triage", {"report": report})
+
+    def review(self, key: str) -> dict:
+        """The Reviewer reviews one issue against its acceptance criteria."""
+        return self.client.post(f"{self.base}/issues/{key}/review")
 
     def get(self, run_id: str) -> dict:
         return self.client.get(f"{self.base}/runs/{run_id}")
@@ -179,7 +187,7 @@ class PlatformAgent:
             decisions: list[tuple[dict, Decision]] = []
             approve_rest = False
             for index, approval in enumerate(pending, 1):
-                if approve_rest:
+                if approve_rest and approval["tool"] != "checkpoint":  # a plan is answered, not approved in bulk
                     decisions.append((approval, ("approve", None)))
                     continue
                 answer = decide(approval, index, len(pending))

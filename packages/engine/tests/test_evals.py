@@ -76,7 +76,7 @@ def test_eval(case: dict[str, Any]) -> None:
         checkpointer=InMemorySaver(),
         task_tools=(reads[:2], writes), subagent_task_tools=writes, knowledge_tools=reads[2:],
         web_search={"name": "web_search", "type": "web_search_20250305"},
-        agents=agents, lead=case["agent"],
+        agents=agents, lead=case["agent"], mode=case.get("mode"),
         result_sink=lambda schema, items: results.extend(items), stage_sink=lambda handle, stage: None,
     )
     result = team.invoke({"messages": [{"role": "user", "content": case["message"]}]},
@@ -101,3 +101,5 @@ def test_eval(case: dict[str, Any]) -> None:
     system = str(model.received[0][0].content)
     for text in expect.get("prompt_contains", []):
         assert text in system, text
+    for text in expect.get("prompt_excludes", []):
+        assert text not in system, text
