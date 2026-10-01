@@ -120,6 +120,19 @@ class Settings(DatabaseSettings):
     # unrelated query are still "nearest"). Depends on the model: measured on
     # gemini-embedding-001, the right passage scored 0.68-0.72 and unrelated queries at most 0.56.
     embedding_min_similarity: float = Field(default=0.6, ge=0, le=1)
+    # Research on the web (docs/agents-v2.md §6). Search: "tavily" (needs the key), "native"
+    # (the model's built-in search), or "auto" (Tavily when the key is set). Agents read pages
+    # themselves either way.
+    tavily_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("PMAGENT_TAVILY_API_KEY", "TAVILY_API_KEY")
+    )
+    search_provider: Literal["auto", "tavily", "native"] = "auto"
+    # Pages our reader can't read (JavaScript-only, blocking readers) are read by Tavily instead.
+    tavily_extract: bool = True
+    # Per run: web searches and pages read. Per workspace per day: Tavily credits (0: no limit).
+    research_max_searches: int = Field(default=10, ge=0, le=100)
+    research_max_fetches: int = Field(default=20, ge=0, le=200)
+    tavily_daily_credits: int = Field(default=500, ge=0)
     # Where background work executes (agent runs, emails, password-reset requests):
     # - "local": tasks in the API process (simplest; an API restart cuts runs off)
     # - "worker": queued in Redis and executed by `python -m pmagent_backend.worker`; work
@@ -146,6 +159,8 @@ class Settings(DatabaseSettings):
             raise ValueError("email_backend=console logs tokens; not allowed in production")
         if self.env == "production" and self.rate_limits != "redis":
             raise ValueError("rate_limits must be redis in production (limits shared by every process)")
+        if self.search_provider == "tavily" and not self.tavily_api_key:
+            raise ValueError("search_provider=tavily needs PMAGENT_TAVILY_API_KEY")
         if self.env == "production" and self.e2e_models:
             raise ValueError("e2e_models is for end-to-end tests; not allowed in production")
         return self

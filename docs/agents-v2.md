@@ -376,8 +376,9 @@ stored, dated, tiered source its claims cite and are checked against.
   `content_hash`, `tier`, `flagged` (instructions found). A search hit becomes a source when it
   is shown; `fetch_page` fills in the rest. Isolation rows like every other table.
 - **`web_pages`** cache per workspace: URL hash, final URL, fetched at, content hash, Markdown;
-  reused for a day, so repeated research doesn't refetch. Nothing crosses workspaces.
-  `cleanup_expired` drops pages older than 30 days that no source points to.
+  reused for a day, so repeated research doesn't refetch, and kept for claims to be checked
+  against. Nothing crosses workspaces; a project moved to another workspace takes its sources,
+  not the cache. `cleanup_expired` drops pages read more than 30 days ago.
 - **Tiers** (deterministic, `web/tiers.py`): `primary` (government and legislation, standards
   bodies, regulators, the subject's own official site or docs when the agent names it and the
   domain matches), `reputable` (a short list of established press, journals, preprint servers),
@@ -393,13 +394,15 @@ stored, dated, tiered source its claims cite and are checked against.
 
 ### 6.3 Claims and verification
 
-- `ReportFinding` gains `quotes: [{source: "S3", text}]` (each claim cites at least one) and a
-  `status` the platform sets: `supported`, `weak`, or `unsupported`.
-- **In code, on `submit_result`:** each quote must occur in its source's stored page (whitespace
-  and punctuation normalised; a sliding-window fuzzy match ≥ 0.9 for small extraction
-  differences). A claim with no quote found is `unsupported`; one whose quotes are all from
-  `other` sources, or only from search snippets, is at most `weak`; the agent's own verify stage
-  (does the quote support the claim?) can lower a status, never raise it. No extra model call.
+- `ReportFinding` gains `quotes: [{source: "S3", text}]` (each claim cites at least one); the
+  platform records each item's `check`: a `status` (`supported`, `weak`, or `unsupported`) and
+  where each quote was found (`pmagent_engine.web.verify`, when the result is saved).
+- **In code, no model call:** each quote must occur in its source's stored page, or failing that
+  its search snippet (case, whitespace, punctuation, and Markdown link targets normalised; only
+  the differences extraction makes are tolerated, a word split or joined or a word's ending,
+  never a changed word or number). A claim with no quote found is `unsupported`; one found only
+  in snippets or only in `other` sources is `weak`; one from a `primary` or `reputable` page read
+  in full is `supported`. A `low` confidence from the agent lowers it to `weak`, never raises.
 - The reply and the app show each claim with its status, sources (title, publisher, tier, date),
   and confidence; unsupported claims are shown under "Assumptions", not "Findings".
 

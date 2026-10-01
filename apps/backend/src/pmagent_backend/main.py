@@ -28,6 +28,7 @@ from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner, mark_interrupted_runs
 from .modules.agents.streams import RedisRunStreams
 from .modules.documents.service import mark_interrupted_conversions
+from .modules.research.service import build_web_research
 from .modules.search.embeddings import build_embedder
 
 API_VERSION = "0.1.0"
@@ -92,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 model_factory=settings_model_factory(settings),
                 token_budget=settings.run_token_budget,
                 embedder=app.state.embedder,
+                web=build_web_research(settings),
                 summarize_after_tokens=settings.summarize_after_tokens,
                 inline=settings.jobs == "inline",
                 queue=queue,

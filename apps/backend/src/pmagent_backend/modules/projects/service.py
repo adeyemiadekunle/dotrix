@@ -8,7 +8,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound
-from pmagent_backend.modules.agents.models import ACTIVE_STATUSES, AgentApproval, AgentRun
+from pmagent_backend.modules.agents.models import (
+    ACTIVE_STATUSES,
+    AgentApproval,
+    AgentRun,
+    AgentRunOutput,
+)
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.auth.repository import UserRepository
@@ -16,6 +21,7 @@ from pmagent_backend.modules.documents.models import Document
 from pmagent_backend.modules.issues.models import Issue, IssueEvent, IssueEventKind, IssueWatcher
 from pmagent_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
 from pmagent_backend.modules.knowledge.service import KnowledgeService
+from pmagent_backend.modules.research.models import ResearchSource
 from pmagent_backend.modules.search.models import KnowledgeChunk
 from pmagent_backend.modules.workspaces.models import Membership, Role
 from pmagent_backend.modules.workspaces.permissions import Permission, can
@@ -36,9 +42,11 @@ class RepoTaken(Conflict):
 
 
 # Everything a project owns that carries its workspace, moved with it. Audit events stay: each
-# workspace's log keeps what happened while the project was there.
+# workspace's log keeps what happened while the project was there. The web page cache stays
+# too: it belongs to the workspace, not the project.
 _PROJECT_ROWS = (
-    KnowledgeFile, KnowledgeVersion, Issue, AgentRun, AgentApproval, Document, KnowledgeChunk, ProjectMember
+    KnowledgeFile, KnowledgeVersion, Issue, AgentRun, AgentApproval, AgentRunOutput, ResearchSource, Document,
+    KnowledgeChunk, ProjectMember,
 )
 
 

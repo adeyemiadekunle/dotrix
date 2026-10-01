@@ -9999,6 +9999,14 @@
             "type": "array",
             "title": "Outputs",
             "description": "The structured results the run recorded"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceRead"
+            },
+            "type": "array",
+            "title": "Sources",
+            "description": "Web pages its agents found or read, by id"
           }
         },
         "type": "object",
@@ -10723,6 +10731,34 @@
           "issue"
         ],
         "title": "ChunkSource"
+      },
+      "ClaimCheck": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "supported",
+              "weak",
+              "unsupported"
+            ],
+            "title": "Status",
+            "description": "supported: quoted from a primary or reputable page read in full; weak: only from snippets, `other` sources, or with low confidence; unsupported: no quote found (an assumption, not a finding)"
+          },
+          "quotes": {
+            "items": {
+              "$ref": "#/components/schemas/QuoteCheck"
+            },
+            "type": "array",
+            "title": "Quotes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "quotes"
+        ],
+        "title": "ClaimCheck",
+        "description": "A report item checked against its sources (docs/agents-v2.md \u00a76.3)."
       },
       "ClaimRequest": {
         "properties": {
@@ -13113,6 +13149,37 @@
         "type": "object",
         "title": "ProjectUpdate"
       },
+      "QuoteCheck": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "description": "The source id the quote cites, e.g. S3"
+          },
+          "found": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "page",
+                  "snippet"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Found",
+            "description": "Where the quote was found: the page as read, only the search snippet, or nowhere"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "found"
+        ],
+        "title": "QuoteCheck"
+      },
       "RankRequest": {
         "properties": {
           "before": {
@@ -13272,6 +13339,17 @@
             ],
             "title": "Token Budget",
             "description": "The run's token budget (null: no limit)"
+          },
+          "web": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WebUsageRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its web searches and page reads (null: none)"
           }
         },
         "type": "object",
@@ -13426,6 +13504,17 @@
               }
             ],
             "title": "Acted At"
+          },
+          "check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimCheck"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For report items: the claim checked against its sources"
           }
         },
         "type": "object",
@@ -13596,6 +13685,94 @@
           "tokens"
         ],
         "title": "SignupResponse"
+      },
+      "SourceRead": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "The id claims cite, e.g. S3"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host",
+            "description": "The site, e.g. gov.uk"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "reputable",
+              "other"
+            ],
+            "title": "Tier",
+            "description": "primary: government, regulators, standards bodies; reputable: established press, journals, universities; other: everything else"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "search",
+              "page"
+            ],
+            "title": "Kind",
+            "description": "search: seen in results only; page: read in full"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published",
+            "description": "When the page says it was published, as it says it"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At",
+            "description": "When it was read (null: seen in results only)"
+          },
+          "flagged": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flagged",
+            "description": "Why it looks like it addresses AI agents (its text was ignored)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "url",
+          "title",
+          "host",
+          "tier",
+          "kind",
+          "published",
+          "fetched_at",
+          "flagged"
+        ],
+        "title": "SourceRead",
+        "description": "A web page the run's agents found or read, under the id its report cites."
       },
       "StageUsage": {
         "properties": {
@@ -14064,6 +14241,41 @@
           "content"
         ],
         "title": "VersionRead"
+      },
+      "WebUsageRead": {
+        "properties": {
+          "searches": {
+            "type": "integer",
+            "title": "Searches",
+            "description": "Web searches the run made"
+          },
+          "fetches": {
+            "type": "integer",
+            "title": "Fetches",
+            "description": "Web pages it read (pages from the workspace's cache aren't counted)"
+          },
+          "credits": {
+            "type": "integer",
+            "title": "Credits",
+            "description": "Tavily credits it used"
+          },
+          "flagged": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flagged",
+            "description": "Source ids of pages that addressed AI agents (their text was ignored)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "searches",
+          "fetches",
+          "credits",
+          "flagged"
+        ],
+        "title": "WebUsageRead"
       },
       "WorkspaceApprovalRead": {
         "properties": {

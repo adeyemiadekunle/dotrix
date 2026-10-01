@@ -110,6 +110,13 @@ class StageUsage(BaseModel):
     model_calls: int
 
 
+class WebUsageRead(BaseModel):
+    searches: int = Field(description="Web searches the run made")
+    fetches: int = Field(description="Web pages it read (pages from the workspace's cache aren't counted)")
+    credits: int = Field(description="Tavily credits it used")
+    flagged: list[str] = Field(description="Source ids of pages that addressed AI agents (their text was ignored)")
+
+
 class RunBreakdown(BaseModel):
     """Where a run's tokens went."""
 
@@ -120,6 +127,24 @@ class RunBreakdown(BaseModel):
     tools: list[ToolUsage] = Field(description="Largest results first")
     files_read: list[RunFileRead] = Field(description="Most read first")
     token_budget: int | None = Field(description="The run's token budget (null: no limit)")
+    web: WebUsageRead | None = Field(default=None, description="Its web searches and page reads (null: none)")
+
+
+class QuoteCheck(BaseModel):
+    source: str = Field(description="The source id the quote cites, e.g. S3")
+    found: Literal["page", "snippet"] | None = Field(
+        description="Where the quote was found: the page as read, only the search snippet, or nowhere"
+    )
+
+
+class ClaimCheck(BaseModel):
+    """A report item checked against its sources (docs/agents-v2.md §6.3)."""
+
+    status: Literal["supported", "weak", "unsupported"] = Field(
+        description="supported: quoted from a primary or reputable page read in full; weak: only from snippets, "
+        "`other` sources, or with low confidence; unsupported: no quote found (an assumption, not a finding)"
+    )
+    quotes: list[QuoteCheck]
 
 
 class RunOutputItem(BaseModel):
@@ -130,6 +155,7 @@ class RunOutputItem(BaseModel):
     link: str | None = Field(default=None, description="What it became, e.g. the issue key it was turned into")
     acted_by_id: uuid.UUID | None = None
     acted_at: datetime | None = None
+    check: ClaimCheck | None = Field(default=None, description="For report items: the claim checked against its sources")
 
 
 class RunOutputRead(BaseModel):
@@ -147,6 +173,25 @@ class OutputItemUpdate(BaseModel):
     state: Literal["done", "dismissed", "open"]
     reason: str | None = Field(default=None, max_length=500, description="Why it's dismissed (shown to the agent later)")
     link: str | None = Field(default=None, max_length=100, description="What it became, e.g. the issue key")
+
+
+class SourceRead(BaseModel):
+    """A web page the run's agents found or read, under the id its report cites."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    label: str = Field(description="The id claims cite, e.g. S3")
+    url: str
+    title: str
+    host: str = Field(description="The site, e.g. gov.uk")
+    tier: Literal["primary", "reputable", "other"] = Field(
+        description="primary: government, regulators, standards bodies; reputable: established press, journals, "
+        "universities; other: everything else"
+    )
+    kind: Literal["search", "page"] = Field(description="search: seen in results only; page: read in full")
+    published: str | None = Field(description="When the page says it was published, as it says it")
+    fetched_at: datetime | None = Field(description="When it was read (null: seen in results only)")
+    flagged: list[str] = Field(description="Why it looks like it addresses AI agents (its text was ignored)")
 
 
 class AgentRunRead(BaseModel):
@@ -210,6 +255,7 @@ class AgentRunRead(BaseModel):
     finished_at: datetime | None
     approvals: list[ApprovalRead] = []
     outputs: list[RunOutputRead] = Field(default_factory=list, description="The structured results the run recorded")
+    sources: list[SourceRead] = Field(default_factory=list, description="Web pages its agents found or read, by id")
 
 
 class Decision(BaseModel):
