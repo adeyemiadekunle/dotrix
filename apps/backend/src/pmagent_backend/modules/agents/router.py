@@ -10,7 +10,11 @@ from fastapi.responses import StreamingResponse
 
 from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.openapi import errors
-from pmagent_backend.modules.projects.deps import ProjectAccess, require_project_permission
+from pmagent_backend.modules.projects.deps import (
+    KnowledgeEditor,
+    ProjectAccess,
+    require_project_permission,
+)
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
@@ -218,3 +222,14 @@ async def update_run_output_item(
     """Act on one item of a run's result: `done` with what it became (e.g. the issue key you
     created from a finding), `dismissed` with why, or `open` again. Anyone who works the board."""
     return await agents.update_output_item(access, run_id, output_id, index, data)
+
+
+@router.post("/runs/{run_id}/outputs/{output_id}/note", responses=errors(403, 422))
+async def save_research_note(
+    run_id: uuid.UUID, output_id: uuid.UUID, access: KnowledgeEditor, agents: Agents
+) -> AgentRunRead:
+    """Save a research report as a note in `research/` (`YYYY-MM-DD-question.md`): the short
+    answer, the findings backed by what was read, the assumptions (claims no quote was found
+    for), what it affects, and every source with its tier and dates. Written as you; saving
+    again updates the same note. Needs permission to edit documents."""
+    return await agents.save_research_note(access, run_id, output_id)

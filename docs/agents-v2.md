@@ -445,6 +445,11 @@ something changed, with proposed document updates to approve.
    (claims with status and source chips, the sources list), CLI (sources after the reply).
    **Acceptance:** a browser test (e2e model + `FakeSearch`): research → report with sources →
    save as note; one live run on Tavily, measured (searches, credits, tokens) in the PR.
+   **Measured 2026-10-01** (Gemini 3.8 Flash + Tavily, "What is the current standard VAT rate in
+   the UK, and what is the VAT registration threshold?"): 30 s, 7 model calls, 74k-83k input
+   tokens, 2 searches, 2 pages read, 2 credits; both claims `supported` from gov.uk pages. The
+   first run showed the same page twice (http and https) and a heading as the note's short
+   answer; source URLs are now compared without scheme or `www.`, and the note skips headings.
 
 ## 7. Step 2: rules that layer and learn
 

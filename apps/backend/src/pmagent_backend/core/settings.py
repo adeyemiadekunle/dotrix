@@ -122,11 +122,11 @@ class Settings(DatabaseSettings):
     embedding_min_similarity: float = Field(default=0.6, ge=0, le=1)
     # Research on the web (docs/agents-v2.md §6). Search: "tavily" (needs the key), "native"
     # (the model's built-in search), or "auto" (Tavily when the key is set). Agents read pages
-    # themselves either way.
+    # themselves either way. "fake": a canned search and site, for end-to-end tests only.
     tavily_api_key: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("PMAGENT_TAVILY_API_KEY", "TAVILY_API_KEY")
     )
-    search_provider: Literal["auto", "tavily", "native"] = "auto"
+    search_provider: Literal["auto", "tavily", "native", "fake"] = "auto"
     # Pages our reader can't read (JavaScript-only, blocking readers) are read by Tavily instead.
     tavily_extract: bool = True
     # Per run: web searches and pages read. Per workspace per day: Tavily credits (0: no limit).
@@ -161,6 +161,8 @@ class Settings(DatabaseSettings):
             raise ValueError("rate_limits must be redis in production (limits shared by every process)")
         if self.search_provider == "tavily" and not self.tavily_api_key:
             raise ValueError("search_provider=tavily needs PMAGENT_TAVILY_API_KEY")
+        if self.search_provider == "fake" and not self.e2e_models:
+            raise ValueError("search_provider=fake is for end-to-end tests (needs PMAGENT_E2E_MODELS=true)")
         if self.env == "production" and self.e2e_models:
             raise ValueError("e2e_models is for end-to-end tests; not allowed in production")
         return self

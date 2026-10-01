@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx
 from sqlalchemy import Integer, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,8 +27,10 @@ from pmagent_backend.core.settings import Settings
 from pmagent_backend.modules.agents.models import AgentRun
 from pmagent_backend.modules.agents.storage_backend import SessionFactory
 from pmagent_engine.web import (
+    FakeSearch,
     Page,
     PageFetcher,
+    SearchHit,
     SearchProvider,
     Source,
     SourceLog,
@@ -220,8 +223,36 @@ class WebResearch:
         return RunWeb([_flushing(tool, sources) for tool in tools], usage, fetcher, sources)
 
 
+FAKE_PAGE = (
+    "<html><head><title>VAT rates</title></head><body><h1>VAT rates</h1>"
+    "<p>The standard rate of VAT is 20% on most goods and services.</p>"
+    "<p>A reduced rate of 5% applies to some goods, such as home energy.</p>"
+    "<p>Some goods are zero rated, which means VAT is charged at 0%.</p></body></html>"
+)
+
+
+def fake_web_research() -> WebResearch:
+    """End-to-end tests: every search finds one gov.uk page, and every page is the same
+    canned one. Nothing leaves the machine."""
+
+    async def public(host: str, port: int) -> list[str]:
+        return ["93.184.215.14"]
+
+    def serve(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=FAKE_PAGE.encode(), headers={"content-type": "text/html"})
+
+    return WebResearch(
+        search=FakeSearch(default=[SearchHit("https://www.gov.uk/vat-rates", "VAT rates", "The standard rate is 20%")]),
+        fetcher_factory=lambda: PageFetcher(
+            resolver=public, transport=httpx.MockTransport(serve), min_interval=0, respect_robots=False
+        ),
+    )
+
+
 def build_web_research(settings: Settings) -> WebResearch:
     provider = settings.search_provider
+    if provider == "fake":
+        return fake_web_research()
     if provider == "auto":
         provider = "tavily" if settings.tavily_api_key else "native"
     search: TavilySearch | None = None

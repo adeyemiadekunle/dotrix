@@ -201,3 +201,72 @@ async def test_research_moves_with_its_project(
     assert moved.status_code == 200, moved.text
     for model in (ResearchSource, AgentRunOutput):
         assert {str(w) for w in await db_session.scalars(select(model.workspace_id))} == {acme["id"]}
+
+
+async def test_a_report_is_saved_as_a_research_note(world, web, db_client: AsyncClient, agent_script) -> None:
+    ada, cat, _, base = await world()
+    agent_script.say(
+        tool_call("web_search", query="uk vat rate"),
+        tool_call("fetch_page", url=GOV),
+        _report(("VAT is 20%", "S1", QUOTE), ("VAT will rise", "S1", "It will rise to 25% next year, they said.")),
+        "It's 20% [S1].",
+    )
+    run = await _research(db_client, base, ada.headers)
+    [output] = run["outputs"]
+    url = f"{base}/agent/runs/{run['id']}/outputs/{output['id']}/note"
+
+    # Members don't edit documents by default.
+    assert (await db_client.post(url, headers=cat.headers)).status_code == 403
+    saved = await db_client.post(url, headers=ada.headers)
+    assert saved.status_code == 200, saved.text
+    path = saved.json()["outputs"][0]["note"]
+    assert path.startswith("research/") and path.endswith("-uk-vat-rate.md")
+
+    note = (await db_client.get(f"{base}/knowledge/files/{path}", headers=ada.headers)).json()
+    assert note["version"] == 1
+    assert "## Short answer\n\nIt's 20% [S1]." in note["content"]
+    assert "- VAT is 20% [S1] (high confidence, supported)" in note["content"]
+    assert "## Assumptions" in note["content"] and "- VAT will rise [S1]" in note["content"]
+    assert f"[VAT rates](<{GOV}>): gov.uk · primary" in note["content"]
+
+    # Saving again updates the same note; the audit log says who saved it.
+    await db_client.patch(f"{base}/agent/runs/{run['id']}/outputs/{output['id']}/items/1",
+                          json={"state": "dismissed", "reason": "Speculation"}, headers=ada.headers)
+    again = await db_client.post(url, headers=ada.headers)
+    assert again.json()["outputs"][0]["note"] == path
+    note = (await db_client.get(f"{base}/knowledge/files/{path}", headers=ada.headers)).json()
+    assert note["version"] == 2 and "VAT will rise" not in note["content"]
+    audit = (await db_client.get(f"{world_ws(base)}/audit", headers=ada.headers)).json()
+    assert [e["details"]["path"] for e in audit if e["action"] == "agent_output.note_saved"] == [path, path]
+
+
+async def test_only_reports_are_saved_as_notes(world, db_client: AsyncClient, agent_script) -> None:
+    ada, _, _, base = await world()
+    agent_script.say(tool_call("submit_result", items=[{"severity": "low", "title": "Gap", "detail": "x"}]), "One.")
+    run = (await db_client.post(f"{base}/agent/runs", json={"message": "review", "agent": "reviewer"},
+                                headers=ada.headers)).json()
+    [output] = run["outputs"]
+    res = await db_client.post(f"{base}/agent/runs/{run['id']}/outputs/{output['id']}/note", headers=ada.headers)
+    assert res.status_code == 404
+
+
+async def test_the_end_to_end_model_researches_on_the_fake_web(world, db_client: AsyncClient, agent_script) -> None:
+    """What the browser test drives: the rule-based model on the canned web."""
+    from pmagent_backend.modules.research.service import fake_web_research
+    from pmagent_engine.testing import RuleBasedChatModel
+
+    ada, _, _, base = await world()
+    runner = db_client._transport.app.state.runner  # type: ignore[attr-defined]
+    runner.web = fake_web_research()
+    agent_script.model = RuleBasedChatModel()
+    try:
+        run = await _research(db_client, base, ada.headers, "research: uk vat rate")
+    finally:
+        runner.web = None
+    assert run["reply"].startswith("Research done"), run
+    assert [s["label"] for s in run["sources"]] == ["S1"] and run["sources"][0]["kind"] == "page"
+    assert [i["check"]["status"] for i in run["outputs"][0]["items"]] == ["supported", "unsupported"]
+
+
+def world_ws(base: str) -> str:
+    return base.split("/projects/")[0]

@@ -61,7 +61,7 @@ async def test_reading_a_page_reuses_its_search_id() -> None:
     log = SourceLog()
     web = tools(sources=log)
     await web["web_search"]("uk vat")
-    assert (await web["fetch_page"]("https://gov.uk/vat")).startswith("[S3]")  # another URL, another source
+    assert (await web["fetch_page"]("https://other.example/vat")).startswith("[S3]")  # another page, another source
     out = await web["fetch_page"]("https://www.gov.uk/vat#rates")
     assert out.startswith("[S1] VAT rates | gov.uk")
     source = log.get("S1")
@@ -163,3 +163,10 @@ def test_suspicious_text(text: str) -> None:
 
 def test_ordinary_text_isnt_suspicious() -> None:
     assert suspicious("The standard rate of VAT is 20%. Businesses must register above £90,000.") == ()
+
+
+def test_the_same_page_listed_several_ways_is_one_source() -> None:
+    log = SourceLog()
+    first = log.note("https://www.gov.uk/vat/", kind="search")
+    assert log.note("http://gov.uk/vat#rates", kind="search").label == first.label == "S1"
+    assert len(log) == 1

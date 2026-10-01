@@ -132,4 +132,6 @@ class AgentRunOutput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     schema_name: Mapped[str] = mapped_column("schema", String(32))  # finding, plan, report, ...
     # [{"data": {...}, "state": "open" | "done" | "dismissed", "reason", "link", "acted_by_id", "acted_at"}]
     items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    # A report saved as a research note: the note's path in `.pmagent/` (null: not saved).
+    note: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

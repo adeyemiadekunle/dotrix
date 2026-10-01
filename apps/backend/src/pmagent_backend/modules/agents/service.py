@@ -15,14 +15,17 @@ from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.issues.service import IssueService
 from pmagent_backend.modules.knowledge.models import AuthorType
+from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import visible_to
+from pmagent_backend.modules.research.models import ResearchSource
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_engine.agent import PM_ROLE
 from pmagent_engine.outputs import ACTIONS as OUTPUT_ACTIONS
 from pmagent_engine.permissions import REVIEWER
+from pmagent_engine.web.note import note_path, render_note
 
 from .models import (
     ACTIVE_STATUSES,
@@ -461,6 +464,45 @@ class AgentService:
         await self.session.commit()
         return await self.get(access, run_id)
 
+    async def save_research_note(self, access: ProjectAccess, run_id: uuid.UUID, output_id: uuid.UUID) -> AgentRunRead:
+        """Write a report as a research note (`pmagent_engine.web.note`), as the person saving it.
+        Saving it again updates the same note (a new version), so research isn't duplicated."""
+        row = await self.session.scalar(
+            select(AgentRunOutput)
+            .where(AgentRunOutput.id == output_id, AgentRunOutput.run_id == run_id,
+                   AgentRunOutput.project_id == access.project.id)
+            .with_for_update()
+        )
+        if row is None or row.schema_name != "report":
+            raise NotFound("No such report in this run")
+        run = await self.session.get(AgentRun, run_id)
+        assert run is not None
+        sources = await self.session.scalars(
+            select(ResearchSource).where(ResearchSource.run_id == run_id).order_by(ResearchSource.number)
+        )
+        today = _now().date()
+        path = row.note or note_path(run.message, today)
+        content = render_note(
+            question=run.message, answer=run.reply or "", items=row.items, researched=today, run_id=str(run.id),
+            sources=[SourceRead.model_validate(source).model_dump() for source in sources],
+        )
+        row.note = path
+        AuditLog(self.session).record(
+            workspace_id=access.project.workspace_id,
+            project_id=access.project.id,
+            action="agent_output.note_saved",
+            target=str(run_id),
+            actor_type=AuthorType.USER,
+            actor_user_id=access.member.user_id,
+            details={"output_id": str(output_id), "agent": row.agent, "path": path},
+        )
+        # Commits the note, the output's link to it, and the audit entry together.
+        await KnowledgeService(self.session).write(
+            access.project, path, content, Actor.person(access.member.user_id, access.member.role),
+            message=f"Research note from @{row.agent}'s report",
+        )
+        return await self.get(access, run_id)
+
     async def rename_thread(self, access: ProjectAccess, thread_id: uuid.UUID, data: ThreadRename) -> ThreadRead:
         """A conversation's title lives on its first run."""
         first = await self.session.scalar(
@@ -514,7 +556,8 @@ def _outputs(run: AgentRun) -> list[RunOutputRead]:
     return [
         RunOutputRead(
             id=row.id, agent=row.agent, kind=row.schema_name, actions=list(OUTPUT_ACTIONS.get(row.schema_name, ())),
-            items=[RunOutputItem(index=i, **item) for i, item in enumerate(row.items)], created_at=row.created_at,
+            items=[RunOutputItem(index=i, **item) for i, item in enumerate(row.items)], note=row.note,
+            created_at=row.created_at,
         )
         for row in run.output_rows
     ]

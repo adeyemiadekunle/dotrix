@@ -37,7 +37,7 @@ export function RunUsage({ run }: { run: Run }) {
   const cached = run.cached_input_tokens ?? 0;
   const calls = run.model_calls ?? 0;
   const breakdown = run.breakdown;
-  const hasDetails = !!breakdown && (breakdown.by_agent.length > 0 || breakdown.tools.length > 0);
+  const hasDetails = !!breakdown && (breakdown.by_agent.length > 0 || breakdown.tools.length > 0 || !!breakdown.web);
   return (
     <div className="text-muted-foreground grid gap-2 text-xs">
       <p>
@@ -97,6 +97,16 @@ function UsageDetails({ run, breakdown }: { run: Run; breakdown: NonNullable<Run
               {plural(t.calls, "call")} · about {t.result_tokens.toLocaleString()} tokens
             </UsageRow>
           ))}
+        </UsageList>
+      )}
+      {breakdown.web && (
+        <UsageList title="Web">
+          <UsageRow label="Searches">{breakdown.web.searches}</UsageRow>
+          <UsageRow label="Pages read">{breakdown.web.fetches}</UsageRow>
+          {breakdown.web.credits > 0 && <UsageRow label="Tavily credits">{breakdown.web.credits}</UsageRow>}
+          {breakdown.web.flagged.length > 0 && (
+            <UsageRow label="Pages that addressed AI agents">{breakdown.web.flagged.join(", ")}</UsageRow>
+          )}
         </UsageList>
       )}
       {breakdown.files_read.length > 0 && (
