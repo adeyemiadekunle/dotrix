@@ -12,12 +12,14 @@ from .tools import (
     WebLimits,
     WebUsage,
     build_web_tools,
+    url_key,
 )
 from .untrusted import suspicious, wrap
+from .verify import check_claim, quote_in
 
 __all__ = [
     "WEB_GUIDE", "BlockedAddress", "FakeSearch", "FetchError", "MemoryPageCache", "Page",
     "PageCache", "PageFetcher", "PublicOnlyTransport", "SearchHit", "SearchProvider",
     "SearchUnavailable", "Source", "SourceLog", "TavilySearch", "WebLimits", "WebUsage",
-    "build_web_tools", "is_public", "suspicious", "tier", "wrap",
+    "build_web_tools", "check_claim", "is_public", "quote_in", "suspicious", "tier", "url_key", "wrap",
 ]

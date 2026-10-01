@@ -47,11 +47,13 @@ from .schemas import (
     RunFileRead,
     RunOutputItem,
     RunOutputRead,
+    SourceRead,
     StageUsage,
     ThreadRead,
     ThreadRename,
     ToolUsage,
     TriageRequest,
+    WebUsageRead,
     WorkspaceApprovalRead,
 )
 from .titles import title_from_message
@@ -248,7 +250,8 @@ class AgentService:
     async def get(self, access: ProjectAccess, run_id: uuid.UUID) -> AgentRunRead:
         run = await self.session.scalar(
             select(AgentRun)
-            .options(selectinload(AgentRun.approvals), selectinload(AgentRun.output_rows))
+            .options(selectinload(AgentRun.approvals), selectinload(AgentRun.output_rows),
+                     selectinload(AgentRun.source_rows))
             .where(AgentRun.project_id == access.project.id, AgentRun.id == run_id)
             .execution_options(populate_existing=True)
         )
@@ -261,7 +264,8 @@ class AgentService:
     ) -> list[AgentRunRead]:
         stmt = (
             select(AgentRun)
-            .options(selectinload(AgentRun.approvals), selectinload(AgentRun.output_rows))
+            .options(selectinload(AgentRun.approvals), selectinload(AgentRun.output_rows),
+                     selectinload(AgentRun.source_rows))
             .where(AgentRun.project_id == access.project.id)
         )
         if thread_id is not None:
@@ -516,9 +520,15 @@ def _outputs(run: AgentRun) -> list[RunOutputRead]:
     ]
 
 
+def _sources(run: AgentRun) -> list[SourceRead]:
+    if "source_rows" in sa_inspect(run).unloaded:
+        return []
+    return [SourceRead.model_validate(row) for row in run.source_rows]
+
+
 def _read(access: ProjectAccess, run: AgentRun) -> AgentRunRead:
     """A run as its viewer may see it: token usage and the model only with usage:view."""
-    read = AgentRunRead.model_validate(run).model_copy(update={"outputs": _outputs(run)})
+    read = AgentRunRead.model_validate(run).model_copy(update={"outputs": _outputs(run), "sources": _sources(run)})
     if not can(access.member, Permission.VIEW_USAGE):
         return read.model_copy(
             update={
@@ -552,4 +562,5 @@ def _breakdown(run: AgentRun) -> RunBreakdown:
             key=lambda f: (-f.times, f.path),
         ),
         token_budget=run.token_budget,
+        web=WebUsageRead(**usage["web"]) if usage.get("web") else None,
     )

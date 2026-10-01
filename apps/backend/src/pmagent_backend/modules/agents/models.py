@@ -11,13 +11,16 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pmagent_backend.db.base import Base, UUIDPrimaryKeyMixin, WorkspaceScopedMixin, str_enum
+
+if TYPE_CHECKING:
+    from pmagent_backend.modules.research.models import ResearchSource
 
 
 class RunKind(enum.StrEnum):
@@ -90,6 +93,8 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     )
     # (Not named `outputs`: AgentRunRead builds its `outputs` from these, with each item's index.)
     output_rows: Mapped[list[AgentRunOutput]] = relationship(order_by="AgentRunOutput.created_at", lazy="raise")
+    # The web pages its agents found or read (research/models.py), by id: S1, S2, ...
+    source_rows: Mapped[list[ResearchSource]] = relationship(order_by="ResearchSource.number", lazy="raise")
 
 
 class AgentApproval(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):

@@ -55,7 +55,7 @@ class Source:
     flagged: tuple[str, ...] = ()
 
 
-def _key(url: str) -> str:
+def url_key(url: str) -> str:
     """The same page whatever its fragment, case of host, or trailing slash."""
     parts = urlsplit(url.strip())
     path = parts.path.rstrip("/") or "/"
@@ -71,7 +71,7 @@ class SourceLog:
         self._on_change = on_change
         for source in existing:
             self._by_label[source.label] = source
-            self._by_key[_key(source.url)] = source.label
+            self._by_key[url_key(source.url)] = source.label
 
     def __iter__(self):
         return iter(self._by_label.values())
@@ -83,7 +83,7 @@ class SourceLog:
         return self._by_label.get(label)
 
     def find(self, url: str) -> Source | None:
-        label = self._by_key.get(_key(url))
+        label = self._by_key.get(url_key(url))
         return self._by_label[label] if label else None
 
     def note(self, url: str, **fields: Any) -> Source:
@@ -101,7 +101,7 @@ class SourceLog:
             flagged = tuple(dict.fromkeys((*current.flagged, *fields.pop("flagged", ()))))
             source = replace(current, **{k: v for k, v in fields.items() if v not in (None, "")}, flagged=flagged)
         self._by_label[source.label] = source
-        self._by_key[_key(url)] = source.label
+        self._by_key[url_key(url)] = source.label
         if self._on_change is not None:
             self._on_change(source)
         return source
@@ -132,10 +132,10 @@ class MemoryPageCache:
         self._pages: dict[str, Page] = {}
 
     async def get(self, url: str) -> Page | None:
-        return self._pages.get(_key(url))
+        return self._pages.get(url_key(url))
 
     async def put(self, page: Page) -> None:
-        self._pages[_key(page.url)] = page
+        self._pages[url_key(page.url)] = page
 
 
 def _header(source: Source) -> str:

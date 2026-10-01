@@ -2262,6 +2262,11 @@ export interface components {
              * @description The structured results the run recorded
              */
             outputs?: components["schemas"]["RunOutputRead"][];
+            /**
+             * Sources
+             * @description Web pages its agents found or read, by id
+             */
+            sources?: components["schemas"]["SourceRead"][];
         };
         /** AgentSave */
         AgentSave: {
@@ -2554,6 +2559,20 @@ export interface components {
          * @enum {string}
          */
         ChunkSource: "document" | "issue";
+        /**
+         * ClaimCheck
+         * @description A report item checked against its sources (docs/agents-v2.md §6.3).
+         */
+        ClaimCheck: {
+            /**
+             * Status
+             * @description supported: quoted from a primary or reputable page read in full; weak: only from snippets, `other` sources, or with low confidence; unsupported: no quote found (an assumption, not a finding)
+             * @enum {string}
+             */
+            status: "supported" | "weak" | "unsupported";
+            /** Quotes */
+            quotes: components["schemas"]["QuoteCheck"][];
+        };
         /** ClaimRequest */
         ClaimRequest: {
             /**
@@ -3506,6 +3525,19 @@ export interface components {
              */
             repo_url?: string | null;
         };
+        /** QuoteCheck */
+        QuoteCheck: {
+            /**
+             * Source
+             * @description The source id the quote cites, e.g. S3
+             */
+            source: string;
+            /**
+             * Found
+             * @description Where the quote was found: the page as read, only the search snippet, or nowhere
+             */
+            found: ("page" | "snippet") | null;
+        };
         /** RankRequest */
         RankRequest: {
             /**
@@ -3590,6 +3622,8 @@ export interface components {
              * @description The run's token budget (null: no limit)
              */
             token_budget: number | null;
+            /** @description Its web searches and page reads (null: none) */
+            web?: components["schemas"]["WebUsageRead"] | null;
         };
         /** RunCreate */
         RunCreate: {
@@ -3654,6 +3688,8 @@ export interface components {
             acted_by_id?: string | null;
             /** Acted At */
             acted_at?: string | null;
+            /** @description For report items: the claim checked against its sources */
+            check?: components["schemas"]["ClaimCheck"] | null;
         };
         /**
          * RunOutputRead
@@ -3740,6 +3776,53 @@ export interface components {
         SignupResponse: {
             user: components["schemas"]["UserRead"];
             tokens: components["schemas"]["TokenPair"];
+        };
+        /**
+         * SourceRead
+         * @description A web page the run's agents found or read, under the id its report cites.
+         */
+        SourceRead: {
+            /**
+             * Label
+             * @description The id claims cite, e.g. S3
+             */
+            label: string;
+            /** Url */
+            url: string;
+            /** Title */
+            title: string;
+            /**
+             * Host
+             * @description The site, e.g. gov.uk
+             */
+            host: string;
+            /**
+             * Tier
+             * @description primary: government, regulators, standards bodies; reputable: established press, journals, universities; other: everything else
+             * @enum {string}
+             */
+            tier: "primary" | "reputable" | "other";
+            /**
+             * Kind
+             * @description search: seen in results only; page: read in full
+             * @enum {string}
+             */
+            kind: "search" | "page";
+            /**
+             * Published
+             * @description When the page says it was published, as it says it
+             */
+            published: string | null;
+            /**
+             * Fetched At
+             * @description When it was read (null: seen in results only)
+             */
+            fetched_at: string | null;
+            /**
+             * Flagged
+             * @description Why it looks like it addresses AI agents (its text was ignored)
+             */
+            flagged: string[];
         };
         /** StageUsage */
         StageUsage: {
@@ -3919,6 +4002,29 @@ export interface components {
             created_at: string;
             /** Content */
             content: string;
+        };
+        /** WebUsageRead */
+        WebUsageRead: {
+            /**
+             * Searches
+             * @description Web searches the run made
+             */
+            searches: number;
+            /**
+             * Fetches
+             * @description Web pages it read (pages from the workspace's cache aren't counted)
+             */
+            fetches: number;
+            /**
+             * Credits
+             * @description Tavily credits it used
+             */
+            credits: number;
+            /**
+             * Flagged
+             * @description Source ids of pages that addressed AI agents (their text was ignored)
+             */
+            flagged: string[];
         };
         /**
          * WorkspaceApprovalRead

@@ -10,6 +10,7 @@ from pmagent_backend.modules.invites import models as _invites  # noqa: F401
 from pmagent_backend.modules.issues import models as _issues  # noqa: F401
 from pmagent_backend.modules.knowledge import models as _knowledge  # noqa: F401
 from pmagent_backend.modules.projects import models as _projects  # noqa: F401
+from pmagent_backend.modules.research import models as _research  # noqa: F401
 from pmagent_backend.modules.search import models as _search  # noqa: F401
 from pmagent_backend.modules.workspaces import models as _workspaces  # noqa: F401
 

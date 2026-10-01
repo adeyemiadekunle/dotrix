@@ -50,9 +50,17 @@ class Impact(BaseModel):
     severity: Severity = "medium"
 
 
+class Quote(BaseModel):
+    source: str = Field(max_length=300, description="The source id it comes from, e.g. S3")
+    text: str = Field(max_length=1000, description="The sentence that supports the claim, word for word")
+
+
 class ReportFinding(BaseModel):
     claim: str = Field(max_length=1000)
-    sources: list[str] = Field(default_factory=list, description="URLs or source ids")
+    sources: list[str] = Field(default_factory=list, description="Source ids (S3) or URLs")
+    quotes: list[Quote] = Field(
+        default_factory=list, description="For each source, the sentence that supports the claim, word for word"
+    )
     confidence: Literal["low", "medium", "high"] = "medium"
     affects: list[str] = Field(default_factory=list)
 

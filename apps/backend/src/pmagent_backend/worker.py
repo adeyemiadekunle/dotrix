@@ -31,6 +31,7 @@ from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner
 from .modules.agents.streams import RedisRunStreams
+from .modules.research.service import build_web_research
 from .modules.search.embeddings import build_embedder
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         model_factory=settings_model_factory(settings),
         token_budget=settings.run_token_budget,
         embedder=embedder,
+        web=build_web_research(settings),
         summarize_after_tokens=settings.summarize_after_tokens,
         inline=True,  # this process executes the runs
         stop_reasons=RunQueue(redis),

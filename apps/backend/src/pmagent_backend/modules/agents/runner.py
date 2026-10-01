@@ -24,6 +24,7 @@ from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.projects.repository import ProjectRepository
+from pmagent_backend.modules.research.service import RunWeb, WebResearch, check_report
 from pmagent_engine import approvals as hitl
 from pmagent_engine.agent import PM_ROLE, briefing_system_prompt, build_team, role_for_agent_name
 from pmagent_engine.contracts import AgentPolicy
@@ -145,8 +146,11 @@ class AgentRunner:
         token_budget: int | None = None,
         summarize_after_tokens: int | None = None,
         embedder: Any = None,
+        web: WebResearch | None = None,
     ) -> None:
         self.session_factory = session_factory
+        # Agents' web tools (search, reading pages, sources); None: only the model's own search.
+        self.web = web
         # Defaults for every project (a project may set its own budget); None: no limit / the
         # engine's own summarisation.
         self.token_budget = token_budget or None
@@ -234,6 +238,7 @@ class AgentRunner:
         # attempt's tokens are lost when its job is retried.
         usage = TokenUsage()
         results: list[tuple[str, list[dict[str, Any]]]] = []  # what the leading agent submitted
+        run_web: RunWeb | None = None
         try:
             async with self.session_factory() as session:
                 run = await session.get(AgentRun, run_id)
@@ -276,6 +281,7 @@ class AgentRunner:
                 mode = run.mode
                 policy = AgentPolicy(specs)
                 versions = {handle: agent.version for handle, agent in resolved.items()}
+                prior_web = (run.usage or {}).get("web")
 
             backend = CompositeBackend(
                 default=StateBackend(),
@@ -301,6 +307,12 @@ class AgentRunner:
                     versions=versions,
                 )
             )
+            if self.web is not None:
+                run_web = await self.web.for_run(
+                    self.session_factory, workspace_id=workspace_id, project_id=project_id, run_id=run_id,
+                    prior=prior_web,
+                )
+                usage.web = run_web.usage
             agent = build_team(
                 name,
                 description,
@@ -308,6 +320,7 @@ class AgentRunner:
                 backend,
                 checkpointer=self.checkpointer,
                 web_search=choice.web_search,
+                web_tools=run_web.tools if run_web is not None else None,
                 rules=rules,
                 task_tools=(read_tools, pm_write_tools),
                 # Every agent's board changes come from the same tools; each gets the ones its
@@ -392,6 +405,8 @@ class AgentRunner:
             logger.exception("agent run %s failed", run_id)
             await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}", usage)
         finally:
+            if run_web is not None:
+                await run_web.aclose()
             await self.streams.close(run_id)
 
     async def _settle(self, agent: Any, kind: RunKind, config: dict, stream: Stream, result: dict) -> dict:
@@ -482,11 +497,14 @@ class AgentRunner:
             if run is None:
                 return
             for schema, items in results:
-                entries = (
-                    await dedupe_findings(session, run.project_id, items)
-                    if schema == "finding"
-                    else [{"data": item, "state": "open"} for item in items]
-                )
+                if schema == "finding":
+                    entries = await dedupe_findings(session, run.project_id, items)
+                elif schema == "report":
+                    # Each claim checked against what its sources said (research/service.py).
+                    checks = await check_report(session, run.workspace_id, run.id, items)
+                    entries = [{"data": item, "state": "open", "check": check} for item, check in zip(items, checks, strict=True)]
+                else:
+                    entries = [{"data": item, "state": "open"} for item in items]
                 session.add(AgentRunOutput(
                     workspace_id=run.workspace_id, run_id=run.id, project_id=run.project_id, agent=agent,
                     schema_name=schema, items=entries, created_at=_now(),

@@ -17,6 +17,7 @@ from .modules.auth.service import AuthService
 from .modules.documents.service import DocumentService
 from .modules.invites.repository import InviteRepository
 from .modules.projects.models import Project
+from .modules.research.service import KEEP_PAGES_FOR, delete_stale_pages
 from .modules.search.service import KnowledgeIndex
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ async def send_password_reset(ctx: JobContext, *, email: str) -> None:
 
 async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[str, int]:
     """Delete rows nothing will use again: expired refresh tokens, used or expired email-link
-    tokens, finished device logins, and old invites. Runs hourly (the worker's cron, or a loop
+    tokens, finished device logins, old invites, and web pages read over a month ago. Runs hourly (the worker's cron, or a loop
     in the API process in local mode); safe to run any time, from any number of processes."""
     at = datetime.fromisoformat(now) if now else datetime.now(UTC)
     token_cutoff, invite_cutoff = at - TOKEN_RETENTION, at - INVITE_RETENTION
@@ -58,6 +59,7 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
             "email_signups": await EmailSignupRepository(session).delete_stale(token_cutoff),
             "device_authorizations": await DeviceAuthorizationRepository(session).delete_stale(token_cutoff),
             "invites": await InviteRepository(session).delete_stale(invite_cutoff),
+            "web_pages": await delete_stale_pages(session, at - KEEP_PAGES_FOR),
         }
         await session.commit()
     if any(deleted.values()):

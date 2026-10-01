@@ -106,7 +106,7 @@ async def db_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
             await outer.rollback()
 
 
-def make_settings(database_url: str = UNUSED_DATABASE_URL) -> Settings:
+def make_settings(database_url: str = UNUSED_DATABASE_URL, **overrides: Any) -> Settings:
     """Explicit test settings, so tests never depend on a developer's .env or CI secrets."""
     return Settings(
         env="test",
@@ -123,6 +123,9 @@ def make_settings(database_url: str = UNUSED_DATABASE_URL) -> Settings:
         # Not offered unless a test sets it up (a developer's .env may have it).
         github_client_id=None,
         github_client_secret=None,
+        # No real web searches (a developer's .env may have a Tavily key).
+        tavily_api_key=None,
+        **overrides,
     )
 
 

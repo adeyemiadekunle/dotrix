@@ -63,6 +63,8 @@ class TokenUsage(BaseCallbackHandler):
         self.budget = budget or None
         self.used_before = used
         self.stages = dict(stages or {})
+        # The step's web use (pmagent_engine.web.WebUsage: run totals, seeded from earlier steps).
+        self.web: Any = None
         self._reset()
 
     def _reset(self) -> None:
@@ -176,6 +178,8 @@ class TokenUsage(BaseCallbackHandler):
             "tools": {name: dict(counts) for name, counts in self.tools.items()},
             "files_read": dict(self.files_read),
             "stages": dict(self.stages),
+            **({"web": {"searches": self.web.searches, "fetches": self.web.fetches, "credits": self.web.credits,
+                        "flagged": list(self.web.flagged)}} if self.web is not None else {}),
         }
 
     def take(self) -> tuple[dict[str, int], dict[str, Any]]:
@@ -201,6 +205,9 @@ def merge_breakdown(stored: dict[str, Any] | None, step: dict[str, Any]) -> dict
             merged["files_read"][path] = merged["files_read"].get(path, 0) + int(times)
     # Where each agent is now: the latest step's word wins.
     merged["stages"] = {**((stored or {}).get("stages") or {}), **(step.get("stages") or {})}
+    # Web use is kept as run totals (each step starts from the last), so the latest wins.
+    if web := step.get("web") or (stored or {}).get("web"):
+        merged["web"] = web
     if len(merged["files_read"]) > MAX_FILES_LISTED:
         top = sorted(merged["files_read"].items(), key=lambda item: -item[1])[:MAX_FILES_LISTED]
         merged["files_read"] = dict(top)
