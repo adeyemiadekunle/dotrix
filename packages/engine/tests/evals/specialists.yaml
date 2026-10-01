@@ -26,7 +26,8 @@
     - text: Three competitors.
   expect:
     tools_include: [web_search, create_issue, search_knowledge]
-    tools_exclude: [update_issue, comment_issue]
+    tools_exclude: [update_issue, comment_issue, fetch_page]
+    prompt_excludes: ["## Researching on the web"]
 
 - name: the reviewer is read-only, refused outright
   agent: reviewer

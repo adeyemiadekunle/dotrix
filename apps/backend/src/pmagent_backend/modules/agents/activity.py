@@ -3,7 +3,7 @@ roadmap.md", "Checking the board", "Asking the research agent". Shown while a ru
 people aren't staring at a spinner; never stored.
 
 Labels are built from the tool name and a few safe arguments (file paths, issue keys, the
-subagent's name), never from free text the model wrote.
+subagent's name, a web page's host), never from free text the model wrote.
 """
 from __future__ import annotations
 
@@ -11,10 +11,12 @@ import re
 from typing import Any
 
 from pmagent_engine.outputs import PIPELINES
+from pmagent_engine.web.tiers import host_of
 
 _KNOWLEDGE_ROOT = "/pmagent/"
 # A custom agent's LangGraph name: its handle (validated: lower-case letters, digits, dashes) + "-agent".
 _AGENT_NAME = re.compile(r"^[a-z][a-z0-9-]{1,30}-agent$")
+_HOST = re.compile(r"^[a-z0-9][a-z0-9.-]{0,79}$")
 _STAGES = {stage for stages in PIPELINES.values() for stage in stages}
 _SUBAGENTS = {
     "product-agent": "the product agent",
@@ -82,5 +84,8 @@ def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
             return f"Asking {who}"
         case "web_search":
             return "Searching the web"
+        case "fetch_page":
+            host = host_of(str(args.get("url") or ""))
+            return f"Reading {host}" if _HOST.match(host) else "Reading a web page"
         case _:
             return None

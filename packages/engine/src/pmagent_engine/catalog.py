@@ -59,9 +59,9 @@ CATALOG: tuple[ToolGroup, ...] = (
         ("issues.comment",),
     ),
     ToolGroup(
-        "web.search", "Search the web",
-        "Search the web for outside information.",
-        ("web_search",),
+        "web.search", "Search and read the web",
+        "Search the web and read pages in full, citing each as a source.",
+        ("web_search", "fetch_page"),
     ),
     ToolGroup(
         "delegate", "Ask other agents",

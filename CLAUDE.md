@@ -132,6 +132,7 @@ packages/engine/src/pmagent_engine/
 ├── permissions.py               FR-41 folder matrix and per-agent issue rules
 ├── layout.py, rules/            the .pmagent/ skeleton and default agent rules (base + role files)
 ├── ingest.py                    any document -> Markdown (markitdown)
+├── web/                         research on the web: search (Tavily, fake), safe page reads, sources with ids, tiers, untrusted wrapping
 ├── testing.py                   scripted chat model for tests without an API key
 └── config.py, registry.py, backend.py, tasks.py, jobs*.py, handoff.py, gitguard.py, ics.py   local (no platform) mode
 ```
@@ -233,7 +234,7 @@ Workspace and organisation overlap: an organisation is a layer of roles above se
 ### Step 1c: research capabilities
 Decided (D3, 2026-10-01): Tavily, behind a pluggable provider; without a key the model's built-in search stays. Spec §6.
 - [ ] **(you)** a Tavily API key in `.env` (`PMAGENT_TAVILY_API_KEY`)
-- [ ] **Engine tools** (`pmagent_engine.web`): `web_search` through `SearchProvider` (Tavily, `FakeSearch` for tests; recency and domain filters), `fetch_page` to Markdown via `ingest` (public addresses only, checked on every redirect; size and time caps; robots.txt; per-domain rate limit; Tavily `/extract` fallback for pages we can't read). Same catalogue id `web.search`
+- [x] **Engine tools** (`pmagent_engine.web`, `build_team(web_tools=…)`; the platform passes them in the next PR): `web_search` through `SearchProvider` (Tavily, `FakeSearch` for tests; recency and domain filters), `fetch_page` to Markdown via `ingest` (public addresses only, checked on every redirect; size and time caps; robots.txt; per-domain rate limit; Tavily `/extract` fallback for pages we can't read). Same catalogue id `web.search`
 - [ ] **Sources as records** (`modules/research`: `research_sources` with run-local ids `S1…`, publisher, dates, content hash, tier `primary` / `reputable` / `other`); a per-workspace page cache (`web_pages`, a day); per-run search and fetch limits and a daily Tavily credit cap; searches, fetches, and credits in the run's details
 - [ ] **Claims verified in code:** each report claim quotes its sources; a quote not found in the stored page makes it `unsupported` (shown as an assumption); `other`-only or snippet-only is at most `weak`
 - [ ] **Report template** and "Save as research note" (`research/YYYY-MM-DD-slug.md`, sources list rendered by the platform); per-finding actions: create a spike, propose a requirement change, record a decision

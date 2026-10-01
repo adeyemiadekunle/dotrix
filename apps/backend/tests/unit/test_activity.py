@@ -14,6 +14,8 @@ def test_labels_say_what_the_pm_is_doing() -> None:
     assert activity_label("task", {"subagent_type": "research-agent", "description": "..."}) == "Asking the research agent"
     assert activity_label("task", {"subagent_type": "someone-new"}) == "Asking a specialist agent"
     assert activity_label("read_file", None) == "Reading the project files"
+    assert activity_label("fetch_page", {"url": "https://www.gov.uk/guidance/vat"}) == "Reading gov.uk"
+    assert activity_label("fetch_page", {"url": "not a url"}) == "Reading a web page"
     assert activity_label("some_new_tool", {"x": 1}) is None  # unknown tools show nothing
 
 

@@ -164,7 +164,7 @@ and the actions it can take. The platform supplies the implementations (as today
 | `issues.update` | `update_issue` | `issues.update`, `issues.close` |
 | `issues.comment` | `comment_issue` | `issues.comment` |
 | `issues.label` | `label_issue`, `link_issue` (new, low risk) | `issues.label` |
-| `web.search` | `web_search` (§6) | none |
+| `web.search` | `web_search`, `fetch_page` (§6) | none |
 | `web.fetch` | `fetch_page`, `fetch_pdf` (§6) | none |
 | `graph.read` | `graph_neighbors`, `graph_impact`, `graph_path` (§8) | none |
 | `graph.propose` | `propose_edge` | `graph.write` |
