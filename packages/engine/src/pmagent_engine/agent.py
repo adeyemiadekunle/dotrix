@@ -34,6 +34,7 @@ from .contracts import PM_HANDLE, AgentSpec
 from .outputs import ResultSink, StageSink, result_instructions, result_tool, stage_tool
 from .pipelines import MODES, PIPELINES, checkpoint_tool
 from .pipelines import instructions as pipeline_instructions
+from .web import WEB_GUIDE
 
 # Tools that change task state, gated exactly like write_file/edit_file.
 TASK_WRITE_TOOLS = ("create_task", "update_task", "comment_task")
@@ -52,7 +53,7 @@ def _web_search_tool(model: str) -> dict:
         return {"google_search": {}}
     raise ValueError(
         f"No built-in web search known for provider {provider!r}. "
-        f"Pass a search tool (e.g. Tavily) in _web_search_tool()."
+        f"Pass our own search (`pmagent_engine.web`, Tavily) as `web_tools` instead."
     )
 
 
@@ -325,6 +326,7 @@ def build_team(
     checkpointer: object | None = None,
     task_tools: tuple[list, list] | None = None,
     web_search: dict | None = None,
+    web_tools: list | None = None,
     rules: dict[str, str] | None = None,
     board_instructions: str | None = None,
     subagent_task_tools: list | None = None,
@@ -354,7 +356,10 @@ def build_team(
     (the platform passes them all and checks each agent's contract on every change; the CLI
     passes none, so its specialists only read the board). `context` is the run's project
     context pack: the PM and every specialist get it. `knowledge_tools` are extra read-only
-    tools (outline, sections, search). `specialist_model` runs the specialists and summaries
+    tools (outline, sections, search). `web_tools` are our web tools (`pmagent_engine.web`:
+    `web_search`, `fetch_page`), given to agents granted `web.search` with how to cite what they
+    find; our `web_search` replaces `web_search` (the model's built-in search) when both are
+    given. `specialist_model` runs the specialists and summaries
     (a cheaper model); a contract's own `model` is turned into a chat model by `models(name)`
     when given. `summarize_after_tokens` sets when a long conversation's older turns are
     summarised. `lead` picks who talks to the person: None or "project-manager" for the PM
@@ -381,7 +386,9 @@ def build_team(
     pm = by_handle[PM_HANDLE]
 
     read_task_tools, write_task_tools = task_tools or ([], [])
-    web = [web_search] if web_search else []
+    # Our web tools come first, so our `web_search` wins over the model's built-in one (a
+    # provider-native dict) when both are given; without our search, the built-in one stays.
+    web = [*(web_tools or []), *([web_search] if web_search else [])]
     pm_box = _toolbox([*read_task_tools, *write_task_tools, *(knowledge_tools or []), *web])
     specialist_box = _toolbox([*read_task_tools, *(subagent_task_tools or []), *(knowledge_tools or []), *web])
 
@@ -479,6 +486,8 @@ blockers, and documentation status. A briefing never writes.
         else:
             text = f"You are the {spec.name} for {project_name}.\n{spec.instructions}\n{_FINDINGS_GUIDE}"
         text += extras(spec)[1]
+        if web_tools and spec.can("web.search"):
+            text += WEB_GUIDE
         return _with_context(_with_rules(rules, spec.handle, text), context)
 
     def subagent(spec: AgentSpec) -> dict:
@@ -516,7 +525,8 @@ blockers, and documentation status. A briefing never writes.
     return create_deep_agent(
         model=model,
         tools=[*_tools_for(pm, pm_box), *extras(pm)[0]],
-        system_prompt=_with_context(_with_rules(rules, PM_HANDLE, pm_instructions + extras(pm)[1]), context),
+        system_prompt=_with_context(_with_rules(rules, PM_HANDLE, pm_instructions + extras(pm)[1] + (
+            WEB_GUIDE if web_tools and pm.can("web.search") else "")), context),
         subagents=[subagent(spec) for spec in team],
         middleware=middleware(),
         permissions=_permissions(pm),

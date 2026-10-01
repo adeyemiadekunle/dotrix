@@ -132,6 +132,7 @@ packages/engine/src/pmagent_engine/
 ├── permissions.py               FR-41 folder matrix and per-agent issue rules
 ├── layout.py, rules/            the .pmagent/ skeleton and default agent rules (base + role files)
 ├── ingest.py                    any document -> Markdown (markitdown)
+├── web/                         research on the web: search (Tavily, fake), safe page reads, sources with ids, tiers, untrusted wrapping
 ├── testing.py                   scripted chat model for tests without an API key
 └── config.py, registry.py, backend.py, tasks.py, jobs*.py, handoff.py, gitguard.py, ics.py   local (no platform) mode
 ```
@@ -231,11 +232,14 @@ Workspace and organisation overlap: an organisation is a layer of roles above se
 - [ ] **Coding hand-off (Phase 5):** issue → brief (acceptance criteria, linked requirement and ADR excerpts, blast radius, tests to run) → Claude Code or Codex → PR back on the board → Reviewer run → a person merges. The `coding.brief` pipeline and `brief` schema exist
 
 ### Step 1c: research capabilities
-- [ ] Our own tools, whatever the model: `web_search` through one pluggable provider (Tavily, Exa, or Brave; domain and recency filters; the provider's native search stays as fallback), `fetch_page` / `fetch_pdf` to Markdown (via `ingest`; size cap, cache, per-domain rate limit, robots.txt), and a fake provider for tests. **(you)** pick the provider and add its key to `.env`
-- [ ] Sources as records (`research_sources`: URL, title, publisher, fetched at, content hash, quoted excerpt); reports cite `[S3]`; source tiers (official or primary > reputable press > blogs and forums); every finding dated with a confidence
-- [ ] Report template: question, short answer, findings (claim, source, confidence), assumptions, open questions, what it affects in the project (graph links); per-finding actions: propose a requirement change, create a spike, record a decision
-- [ ] Reuse before searching: earlier research is checked first; stale findings are refreshed, not duplicated
-- [ ] Fetched text is labelled untrusted data; instructions on pages are never followed and are flagged in the report
+Decided (D3, 2026-10-01): Tavily, behind a pluggable provider; without a key the model's built-in search stays. Spec §6.
+- [ ] **(you)** a Tavily API key in `.env` (`PMAGENT_TAVILY_API_KEY`)
+- [x] **Engine tools** (`pmagent_engine.web`, `build_team(web_tools=…)`; the platform passes them in the next PR): `web_search` through `SearchProvider` (Tavily, `FakeSearch` for tests; recency and domain filters), `fetch_page` to Markdown via `ingest` (public addresses only, checked on every redirect; size and time caps; robots.txt; per-domain rate limit; Tavily `/extract` fallback for pages we can't read). Same catalogue id `web.search`
+- [ ] **Sources as records** (`modules/research`: `research_sources` with run-local ids `S1…`, publisher, dates, content hash, tier `primary` / `reputable` / `other`); a per-workspace page cache (`web_pages`, a day); per-run search and fetch limits and a daily Tavily credit cap; searches, fetches, and credits in the run's details
+- [ ] **Claims verified in code:** each report claim quotes its sources; a quote not found in the stored page makes it `unsupported` (shown as an assumption); `other`-only or snippet-only is at most `weak`
+- [ ] **Report template** and "Save as research note" (`research/YYYY-MM-DD-slug.md`, sources list rendered by the platform); per-finding actions: create a spike, propose a requirement change, record a decision
+- [ ] Reuse before searching: research notes under 90 days old are reused, older ones refreshed (a new version), not duplicated
+- [ ] Fetched text is wrapped as untrusted data; pages with instructions aimed at agents are flagged in the report
 - [ ] **Watches** (needs step 4): scheduled re-checks of a topic (a regulation, a competitor, dependencies' release notes and CVEs), diffed against the last run; people are told only when something changed, with proposed updates to approve
 
 ### Step 2: rules that layer and learn
