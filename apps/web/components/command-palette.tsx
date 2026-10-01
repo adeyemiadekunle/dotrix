@@ -31,6 +31,15 @@ interface PaletteState {
 
 const PaletteContext = createContext<PaletteState | null>(null);
 
+/** "⌘K" on a Mac, "Ctrl K" elsewhere; known only in the browser, so it starts as "Ctrl K". */
+export function useShortcutLabel(): string {
+  const [label, setLabel] = useState("Ctrl K");
+  useEffect(() => {
+    if (/Mac|iPhone|iPad/.test(navigator.userAgent)) setLabel("⌘K");
+  }, []);
+  return label;
+}
+
 /** Opens the search palette (⌘K / Ctrl+K anywhere, or a Search button). */
 export function usePalette(): PaletteState {
   const palette = useContext(PaletteContext);

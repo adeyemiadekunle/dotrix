@@ -27,6 +27,8 @@ import {
   BotIcon,
   CircleCheckIcon,
   FolderKanbanIcon,
+  LockIcon,
+  ChartGanttIcon,
   HomeIcon,
   LayoutGridIcon,
   ListTodoIcon,
@@ -42,23 +44,33 @@ import { useEffect } from "react";
 
 import { NavUser } from "@/components/nav-user";
 import { ProjectTile } from "@/components/project-tile";
-import { usePalette } from "@/components/command-palette";
+import { usePalette, useShortcutLabel } from "@/components/command-palette";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { canManageProjects } from "@/lib/labels";
 import { useWorkspaceApprovals } from "@/lib/agent";
+import { useWorkspaceIssues } from "@/lib/issues";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
 
-// The open project's views, the same as its tabs (Chat and Briefing aside, which move to the
-// workspace Chat).
-const PROJECT_VIEWS = [
+// The open project's views, the same as its tabs. Timeline is shown but not built yet.
+const PROJECT_VIEWS: { href: string; label: string; later?: boolean }[] = [
   { href: "overview", label: "Overview" },
   { href: "board", label: "Board" },
   { href: "list", label: "List" },
   { href: "table", label: "Table" },
+  { href: "", label: "Timeline", later: true },
   { href: "files", label: "Files" },
   { href: "knowledge", label: "Knowledge" },
   { href: "activity", label: "Activity" },
 ];
+
+/** A "Later" tag on what's planned but not built (Timeline). */
+function Later() {
+  return (
+    <span className="ml-auto rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800 group-data-[collapsible=icon]:hidden dark:bg-amber-950 dark:text-amber-300">
+      Later
+    </span>
+  );
+}
 
 /**
  * Placeholder rows while the workspace loads: links without it would point outside it. Fixed
@@ -83,6 +95,10 @@ export function AppSidebar() {
   const waiting = approvals.data?.length ?? 0;
   const { setOpenMobile } = useSidebar();
   const palette = usePalette();
+  const shortcut = useShortcutLabel();
+  const canSee = Boolean(workspace && workspace.role !== "guest");
+  const mine = useWorkspaceIssues(canSee ? workspace?.id : undefined, { assignee: "me" });
+  const myOpen = (mine.data ?? []).filter((i) => i.status !== "done").length;
   // On phones the sidebar is a sheet over the page: close it once you've picked somewhere to go.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
   const base = workspace ? `/w/${workspace.slug}` : "";
@@ -128,13 +144,14 @@ export function AppSidebar() {
                         <span>My issues</span>
                       </Link>
                     </SidebarMenuButton>
+                    {myOpen > 0 && <SidebarMenuBadge className="text-muted-foreground">{myOpen}</SidebarMenuBadge>}
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton onClick={palette.open} tooltip="Search (Ctrl K)">
+                    <SidebarMenuButton onClick={palette.open} tooltip={`Search (${shortcut})`}>
                       <SearchIcon />
                       <span>Search</span>
                       <kbd className="text-muted-foreground ml-auto rounded border px-1 font-mono text-[10px] group-data-[collapsible=icon]:hidden">
-                        Ctrl K
+                        {shortcut}
                       </kbd>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -185,18 +202,17 @@ export function AppSidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
+                    <SidebarMenuButton aria-disabled tooltip="Timeline (later)" className="text-muted-foreground cursor-default hover:bg-transparent">
+                      <ChartGanttIcon />
+                      <span>Timeline</span>
+                      <Later />
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={pathname === `${base}/activity`} tooltip="Activity">
                       <Link href={`${base}/activity`}>
                         <ActivityIcon />
                         <span>Activity</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={pathname === `${base}/settings`} tooltip="Members and settings">
-                      <Link href={`${base}/settings`}>
-                        <SettingsIcon />
-                        <span>Members and settings</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -255,18 +271,25 @@ export function AppSidebar() {
                       <Link href={href}>
                         <ProjectTile projectKey={project.key} className="-ml-0.5 group-data-[collapsible=icon]:ml-0 group-data-[collapsible=icon]:size-4 group-data-[collapsible=icon]:text-[9px]" />
                         <span className="flex-1 truncate">{project.name}</span>
-                        <span className="text-muted-foreground font-mono text-[11px] group-data-[collapsible=icon]:hidden">
-                          {project.key}
-                        </span>
+                        {project.access === "restricted" && (
+                          <LockIcon className="text-muted-foreground size-3.5! group-data-[collapsible=icon]:hidden" aria-label="Only people added" />
+                        )}
                       </Link>
                     </SidebarMenuButton>
                     {open && (
                       <SidebarMenuSub aria-label={`${project.name} views`}>
                         {PROJECT_VIEWS.map((view) => (
-                          <SidebarMenuSubItem key={view.href}>
-                            <SidebarMenuSubButton asChild isActive={pathname === `${href}/${view.href}`}>
-                              <Link href={`${href}/${view.href}`}>{view.label}</Link>
-                            </SidebarMenuSubButton>
+                          <SidebarMenuSubItem key={view.label}>
+                            {view.later ? (
+                              <SidebarMenuSubButton aria-disabled className="text-muted-foreground cursor-default hover:bg-transparent">
+                                <span>{view.label}</span>
+                                <Later />
+                              </SidebarMenuSubButton>
+                            ) : (
+                              <SidebarMenuSubButton asChild isActive={pathname === `${href}/${view.href}`}>
+                                <Link href={`${href}/${view.href}`}>{view.label}</Link>
+                              </SidebarMenuSubButton>
+                            )}
                           </SidebarMenuSubItem>
                         ))}
                       </SidebarMenuSub>
@@ -284,6 +307,18 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
+        {workspace && (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={pathname === `${base}/settings`} tooltip="Settings">
+                <Link href={`${base}/settings`}>
+                  <SettingsIcon />
+                  <span>Settings</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        )}
         <NavUser />
       </SidebarFooter>
       <SidebarRail />

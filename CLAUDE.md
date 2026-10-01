@@ -190,9 +190,9 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 
 ### Phase 1: shell and My issues
 - [x] Board columns fit their cards (`@2xl:items-start` on the columns row; they stretched to the tallest)
-- [x] Sidebar in three groups: you (Home, Notifications, My issues), Workspace (Projects; Members and settings, and for owners and admins Agents and Audit log until Phase 5), Projects. Notifications is the Approvals page renamed (`/approvals`) until Phase 6
-  - [x] Search, Chat, Overview, Tasks, Activity; the open project expanding to its views
-  - [ ] Timeline *later*; starred projects first (needs favourites); Settings at the bottom (Phase 5)
+- [x] Sidebar in three groups: you (Home, Notifications, My issues with its open count, Search with ⌘K on a Mac and Ctrl K elsewhere), Workspace (Chat, Overview, Projects, Tasks, Timeline, Activity; for owners and admins Agents and Audit log until Phase 5), Projects (a lock on restricted ones, the open project expanding to its views), and Settings at the bottom above you. Notifications is the Approvals page renamed (`/approvals`) until Phase 6
+  - [x] Timeline shown as *Later* (disabled) in the Workspace group and under each project
+  - [ ] starred projects first (needs favourites)
 - [x] Top bar on every page: breadcrumb, the page's actions, Search (Ctrl/⌘ K), and the notifications bell (a dot while something waits for a decision)
 - [x] Home (the workspace root): greeting, counts, what waits for a decision, my next issues, project progress (done/total from the issues across projects); the Projects grid moved to `/w/[ws]/projects`
   - [ ] agent activity on Home (needs the Activity feed, Phase 2)

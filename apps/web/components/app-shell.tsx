@@ -12,7 +12,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { AppSidebar } from "@/components/app-sidebar";
-import { PaletteProvider, usePalette } from "@/components/command-palette";
+import { PaletteProvider, usePalette, useShortcutLabel } from "@/components/command-palette";
 import { useWorkspaceApprovals } from "@/lib/agent";
 import { api, errorMessage, unwrap } from "@/lib/api";
 import { useCurrentWorkspace, useMe, useWorkspaces } from "@/lib/queries";
@@ -121,6 +121,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 /** Search (⌘K) and the notifications bell, at the right of every page's top bar. */
 function TopBarTools() {
   const palette = usePalette();
+  const shortcut = useShortcutLabel();
   const { workspace } = useCurrentWorkspace();
   const approvals = useWorkspaceApprovals(workspace?.id, Boolean(workspace && workspace.role !== "guest"));
   const waiting = new Set((approvals.data ?? []).map((a) => a.run_id)).size;
@@ -134,7 +135,7 @@ function TopBarTools() {
       >
         <SearchIcon />
         Search
-        <kbd className="ml-auto rounded border px-1 font-mono text-[10px]">Ctrl K</kbd>
+        <kbd className="ml-auto rounded border px-1 font-mono text-[10px]">{shortcut}</kbd>
       </Button>
       <Button variant="ghost" size="icon-sm" onClick={palette.open} aria-label="Search" className="lg:hidden">
         <SearchIcon />

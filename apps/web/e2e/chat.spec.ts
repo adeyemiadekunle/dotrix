@@ -19,6 +19,9 @@ test("the agents answer, and a change waits for approval before it happens", asy
 
   // A new conversation for the change.
   await page.getByRole("button", { name: "New chat", exact: true }).click();
+  // Wait for the new conversation: opening it resets the message box.
+  await expect(page).not.toHaveURL(/thread=/);
+  await expect(page.getByRole("button", { name: "What changed since yesterday?" })).toBeVisible();
   await box.fill("Create issue: Add dark mode");
   await box.press("Enter");
   await expect(page.getByText("1 change waits for your approval")).toBeVisible();
