@@ -18,13 +18,18 @@ import { NewIssueDialog } from "@/components/issues/new-issue-dialog";
 import { NotFound } from "@/components/states";
 import { useProjectScope } from "@/lib/queries";
 
+// Every project has the same views. Chat and Briefing stay here until Chat moves to the
+// workspace (then a summary is something you ask Chat for).
 const TABS = [
+  { href: "overview", label: "Overview" },
   { href: "board", label: "Board" },
-  { href: "backlog", label: "Backlog" },
+  { href: "list", label: "List" },
+  { href: "table", label: "Table" },
+  { href: "files", label: "Files" },
+  { href: "knowledge", label: "Knowledge" },
+  { href: "activity", label: "Activity" },
   { href: "chat", label: "Chat" },
   { href: "briefing", label: "Briefing" },
-  { href: "knowledge", label: "Knowledge" },
-  { href: "docs", label: "Docs" },
 ];
 
 function ProjectFrame({ children }: { children: ReactNode }) {

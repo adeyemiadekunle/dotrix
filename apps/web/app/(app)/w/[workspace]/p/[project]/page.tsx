@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
-/** A project opens on its board. */
+/** A project opens on its Overview. */
 export default async function ProjectHome({ params }: { params: Promise<{ workspace: string; project: string }> }) {
   const { workspace, project } = await params;
-  redirect(`/w/${workspace}/p/${project}/board`);
+  redirect(`/w/${workspace}/p/${project}/overview`);
 }

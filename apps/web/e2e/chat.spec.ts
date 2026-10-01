@@ -29,7 +29,7 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await expect(page.getByText("Add dark mode")).toHaveCount(0);
 
   // It's in the workspace queue too; approve it there.
-  await page.getByRole("link", { name: "Approvals" }).click();
+  await page.getByRole("link", { name: "Notifications" }).click();
   await expect(page.getByText("“Create issue: Add dark mode”")).toBeVisible();
   await page.getByRole("button", { name: "Approve" }).click();
   await page.getByRole("button", { name: "Send decision" }).click();

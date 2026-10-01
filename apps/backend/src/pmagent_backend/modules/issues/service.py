@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import and_, case, delete, exists, func, or_, select
@@ -23,7 +23,7 @@ from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocess
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.models import Project
-from pmagent_backend.modules.projects.repository import ProjectRepository
+from pmagent_backend.modules.projects.repository import ProjectRepository, visible_to
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_engine.contracts import AgentPolicy
@@ -54,6 +54,7 @@ from .schemas import (
     IssueSummary,
     IssueUpdate,
     RankRequest,
+    WorkspaceIssue,
 )
 
 RANK_STEP = 1024.0
@@ -284,6 +285,62 @@ class IssueService:
         }[order]
         rows = await self.session.execute(stmt.order_by(*ordering, Issue.number).limit(limit).offset(offset))
         return [self._summary(issue, parent_key) for issue, parent_key in rows]
+
+    async def across_projects(
+        self,
+        member: Membership,
+        *,
+        types: Sequence[IssueType] = (),
+        statuses: Sequence[IssueStatus] = (),
+        assignee: str | None = None,
+        reporter: str | None = None,
+        watching: bool = False,
+        label: str | None = None,
+        due_before: date | None = None,
+        order: str = "due",
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[WorkspaceIssue]:
+        """Issues in every project of the workspace that `member` can see (My issues, Tasks).
+        `me` stands for the member in `assignee` and `reporter`."""
+        me = str(member.user_id)
+        stmt = (
+            select(Issue, Parent.key, Project.key, Project.name)
+            .join(Project, Project.id == Issue.project_id)
+            .outerjoin(Parent, Parent.id == Issue.parent_id)
+            .where(
+                Issue.workspace_id == member.workspace_id,
+                Project.workspace_id == member.workspace_id,
+                visible_to(member.user_id, member.role),
+            )
+        )
+        stmt = self._filtered(stmt, types, statuses, me if assignee == "me" else assignee, label)
+        if reporter is not None:
+            try:
+                reporter_id = uuid.UUID(me if reporter == "me" else reporter)
+            except ValueError as exc:
+                raise InvalidIssue("reporter must be a user ID or 'me'") from exc
+            stmt = stmt.where(Issue.reporter_user_id == reporter_id)
+        if watching:
+            stmt = stmt.where(
+                exists().where(IssueWatcher.issue_id == Issue.id, IssueWatcher.user_id == member.user_id)
+            )
+        if due_before is not None:
+            stmt = stmt.where(Issue.due <= due_before)
+        ordering = {
+            "due": (Issue.due.asc().nulls_last(), priority_rank(), Issue.created_at),
+            "priority": (priority_rank(), Issue.due.asc().nulls_last(), Issue.created_at),
+            "created": (Issue.created_at.desc(),),
+            "updated": (Issue.updated_at.desc(),),
+        }[order]
+        rows = await self.session.execute(stmt.order_by(*ordering, Issue.id).limit(limit).offset(offset))
+        return [
+            WorkspaceIssue.model_validate(
+                self._summary(issue, parent_key).model_dump()
+                | {"project_id": issue.project_id, "project_key": key, "project_name": name}
+            )
+            for issue, parent_key, key, name in rows
+        ]
 
     async def board(
         self,
@@ -523,6 +580,16 @@ class IssueService:
             .outerjoin(Parent, Parent.id == Issue.parent_id)
             .where(Issue.project_id == project.id)
         )
+        return self._filtered(stmt, types, statuses, assignee, label)
+
+    @staticmethod
+    def _filtered(
+        stmt: Any,
+        types: Sequence[IssueType],
+        statuses: Sequence[IssueStatus],
+        assignee: str | None,
+        label: str | None,
+    ) -> Any:
         if types:
             stmt = stmt.where(Issue.type.in_(types))
         if statuses:

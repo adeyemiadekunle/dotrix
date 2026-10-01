@@ -135,6 +135,14 @@ class IssueSummary(BaseModel):
     updated_at: datetime
 
 
+class WorkspaceIssue(IssueSummary):
+    """An issue in a list across projects (My issues, Tasks): the row plus which project it's in."""
+
+    project_id: uuid.UUID
+    project_key: str
+    project_name: str
+
+
 class IssueEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

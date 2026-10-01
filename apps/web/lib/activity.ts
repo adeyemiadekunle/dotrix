@@ -1,0 +1,30 @@
+"use client";
+
+import type { Schemas } from "@pmagent/api-client";
+import { useInfiniteQuery } from "@tanstack/react-query";
+
+import { api, unwrap } from "./api";
+import type { Scope } from "./issues";
+
+export type ActivityItem = Schemas["ActivityItem"];
+
+const PAGE = 50;
+
+/** A project's activity, newest first, a page at a time (`fetchNextPage` loads older items). */
+export function useProjectActivity(scope: Scope | undefined, limit = PAGE) {
+  return useInfiniteQuery({
+    queryKey: ["activity", scope?.projectId, limit],
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/activity", {
+          params: {
+            path: { workspace_id: scope!.workspaceId, project_id: scope!.projectId },
+            query: { limit, ...(pageParam ? { before: pageParam } : {}) },
+          },
+        }),
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => (last.length < limit ? undefined : last[last.length - 1]!.at),
+    enabled: Boolean(scope),
+  });
+}

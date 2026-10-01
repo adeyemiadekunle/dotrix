@@ -32,7 +32,7 @@ test("an organisation: invite link, revoke, and the audit log records both", asy
 
 test("knowledge: edit a file, see its history, and restore the first version", async ({ page }) => {
   await signUpWithProject(page);
-  await page.getByRole("link", { name: "Knowledge", exact: true }).click();
+  await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Knowledge", exact: true }).click();
   await page.getByRole("button", { name: "vision.md" }).click();
   await expect(page).toHaveURL(/file=vision\.md/);
 

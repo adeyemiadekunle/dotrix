@@ -10,7 +10,7 @@ test("signed-out visitors are sent to sign in, and come back afterwards", async 
 test("sign up, sign out, and sign back in", async ({ page }) => {
   const user = await signUp(page, newUser("Grace Hopper"));
   await expect(page.getByText(`Confirm your email address using the link we sent to ${user.email}`)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
 
   await page.getByRole("button", { name: /Grace Hopper/ }).click();
   await page.getByRole("menuitem", { name: "Sign out" }).click();

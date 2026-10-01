@@ -58,10 +58,11 @@ export default function ApprovalsPage() {
   if (notFound) return <NotFound what="workspace" />;
   return (
     <>
-      <PageHeader title="Approvals" parent={workspace?.name} />
+      <PageHeader title="Notifications" parent={workspace?.name} />
       <div className="grid max-w-3xl content-start gap-4 p-4 md:p-6">
         <p className="text-muted-foreground text-sm">
-          Changes the agents want to make, across every project. Nothing is written until someone decides.
+          Changes the agents want to make, across every project, waiting for a decision. Nothing is written until
+          someone decides. Mentions, assignments, and agent findings will show here too.
         </p>
         {!canSee && workspace && <p className="text-sm">Guests don&apos;t see or approve changes.</p>}
         {canSee && !canDecide && (
