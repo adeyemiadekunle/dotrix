@@ -479,6 +479,79 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /**
+         * Update Profile
+         * @description Change your name or what you do (shown next to your name to your team).
+         */
+        patch: operations["update_profile"];
+        trace?: never;
+    };
+    "/v1/me/sign-in-methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sign In Methods
+         * @description How you can sign in: a password, an email link (always), and linked accounts (GitHub).
+         */
+        get: operations["sign_in_methods"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/sign-in-methods/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Unlink Sign In Method
+         * @description Stop signing in with a linked account. 409 while it's your only way in besides an email
+         *     link: set a password first (Forgot password).
+         */
+        delete: operations["unlink_sign_in_method"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Avatar
+         * @description Your profile photo. 404 without one.
+         */
+        get: operations["get_avatar"];
+        /**
+         * Set Avatar
+         * @description Set your profile photo, replacing any earlier one.
+         */
+        put: operations["set_avatar"];
+        post?: never;
+        /**
+         * Remove Avatar
+         * @description Remove your profile photo (your initials show instead).
+         */
+        delete: operations["remove_avatar"];
+        options?: never;
+        head?: never;
         patch?: never;
         trace?: never;
     };
@@ -664,9 +737,30 @@ export interface paths {
         };
         /**
          * List Members
-         * @description Everyone in the workspace, with their roles.
+         * @description Everyone in the workspace, with their roles, what they do, and the projects they see
+         *     (among the ones you see).
          */
         get: operations["list_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/members/{user_id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Member Avatar
+         * @description A colleague's profile photo. 404 without one, or if they aren't in this workspace.
+         */
+        get: operations["get_member_avatar"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2743,6 +2837,14 @@ export interface components {
             /** Issues */
             issues: components["schemas"]["IssueSummary"][];
         };
+        /** Body_set_avatar */
+        Body_set_avatar: {
+            /**
+             * File
+             * @description PNG, JPEG, or WebP, at most 500 KB (256 px square is plenty)
+             */
+            file: string;
+        };
         /** Body_upload_document */
         Body_upload_document: {
             /**
@@ -3449,6 +3551,24 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** LinkedAccount */
+        LinkedAccount: {
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "github";
+            /**
+             * Login
+             * @description Your username there
+             */
+            login: string | null;
+            /**
+             * Linked At
+             * Format: date-time
+             */
+            linked_at: string;
+        };
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -3488,12 +3608,32 @@ export interface components {
             email: string;
             /** Display Name */
             display_name: string;
+            /**
+             * Title
+             * @description What they do
+             */
+            title: string | null;
+            /**
+             * Avatar Updated At
+             * @description When their photo last changed; null without one
+             */
+            avatar_updated_at: string | null;
             role: components["schemas"]["Role"];
             /**
              * Joined At
              * Format: date-time
              */
             joined_at: string;
+            /**
+             * Sees All Projects
+             * @description Owners and admins see every project
+             */
+            sees_all_projects: boolean;
+            /**
+             * Project Ids
+             * @description The projects they see, among those you see (restricted ones only if they were added)
+             */
+            project_ids: string[];
         };
         /** MemberRoleUpdate */
         MemberRoleUpdate: {
@@ -3610,6 +3750,16 @@ export interface components {
             errors?: {
                 [key: string]: unknown;
             }[] | null;
+        };
+        /**
+         * ProfileUpdate
+         * @description Change your name or what you do; leave a field out to keep it. An empty title clears it.
+         */
+        ProfileUpdate: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Title */
+            title?: string | null;
         };
         /**
          * ProjectAccessLevel
@@ -4006,6 +4156,21 @@ export interface components {
              */
             score: number;
         };
+        /** SignInMethods */
+        SignInMethods: {
+            /**
+             * Password
+             * @description You have a password (else: set one with Forgot password)
+             */
+            password: boolean;
+            /**
+             * Email Link
+             * @description A sign-in link by email always works
+             */
+            email_link: boolean;
+            /** Accounts */
+            accounts: components["schemas"]["LinkedAccount"][];
+        };
         /** SignupRequest */
         SignupRequest: {
             /**
@@ -4170,6 +4335,16 @@ export interface components {
             display_name: string;
             /** Email Verified */
             email_verified: boolean;
+            /**
+             * Title
+             * @description What they do, e.g. Product designer
+             */
+            title: string | null;
+            /**
+             * Avatar Updated At
+             * @description When their photo last changed; null without one
+             */
+            avatar_updated_at: string | null;
             /**
              * Created At
              * Format: date-time
@@ -5510,6 +5685,244 @@ export interface operations {
             };
         };
     };
+    update_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    sign_in_methods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInMethods"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    unlink_sign_in_method: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The photo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                    "image/jpeg": unknown;
+                    "image/webp": unknown;
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_set_avatar"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    remove_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     list_tokens: {
         parameters: {
             query?: never;
@@ -6116,6 +6529,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_member_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The photo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                    "image/jpeg": unknown;
+                    "image/webp": unknown;
                 };
             };
             /** @description Missing, invalid, or expired credentials */

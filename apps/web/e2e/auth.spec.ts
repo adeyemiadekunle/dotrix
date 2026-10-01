@@ -24,14 +24,16 @@ test("sign up, sign out, and sign back in", async ({ page }) => {
 
   await page.getByLabel("Password").fill(user.password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/settings$/);
+  // Settings live in the workspace: /settings opens your profile there.
+  await expect(page).toHaveURL(/\/w\/[^/]+\/settings\/profile$/);
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await expect(page.getByRole("definition").filter({ hasText: user.email })).toBeVisible();
+  await expect(page.getByRole("main").getByText(user.email, { exact: true })).toBeVisible();
 });
 
 test("the theme follows the choice in settings and survives a reload", async ({ page }) => {
   await signUp(page);
   await page.goto("/settings");
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Appearance" }).click();
   await page.getByText("Dark", { exact: true }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await page.reload();

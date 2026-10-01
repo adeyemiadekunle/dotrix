@@ -1,6 +1,5 @@
 "use client";
 
-import { Avatar, AvatarFallback } from "@pmagent/ui/components/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,13 +12,14 @@ import {
 } from "@pmagent/ui/components/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@pmagent/ui/components/sidebar";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { ChevronsUpDownIcon, LogOutIcon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
+import { ChevronsUpDownIcon, LogOutIcon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 
+import { UserAvatar } from "@/components/user-avatar";
 import { authPost } from "@/lib/api";
-import { initials } from "@/lib/labels";
-import { useMe } from "@/lib/queries";
+import { myAvatarSrc } from "@/lib/profile";
+import { useCurrentWorkspace, useMe } from "@/lib/queries";
 
 async function signOut() {
   await authPost("logout").catch(() => undefined);
@@ -29,15 +29,14 @@ async function signOut() {
 export function NavUser() {
   const { isMobile } = useSidebar();
   const me = useMe();
+  const { workspace } = useCurrentWorkspace();
   const { theme, setTheme } = useTheme();
   if (!me.data) return <Skeleton className="h-12 w-full" />;
   const user = me.data;
 
   const who = (
     <>
-      <Avatar className="size-8 rounded-lg">
-        <AvatarFallback className="rounded-lg text-xs">{initials(user.display_name)}</AvatarFallback>
-      </Avatar>
+      <UserAvatar name={user.display_name} src={myAvatarSrc(user)} className="rounded-lg *:rounded-lg" />
       <div className="grid flex-1 text-left text-sm leading-tight">
         <span className="truncate font-medium">{user.display_name}</span>
         <span className="text-muted-foreground truncate text-xs">{user.email}</span>
@@ -69,7 +68,13 @@ export function NavUser() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/settings">
+              <Link href={workspace ? `/w/${workspace.slug}/settings/profile` : "/settings"}>
+                <UserIcon />
+                Profile
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href={workspace ? `/w/${workspace.slug}/settings` : "/settings"}>
                 <SettingsIcon />
                 Settings
               </Link>

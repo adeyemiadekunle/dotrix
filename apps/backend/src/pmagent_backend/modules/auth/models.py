@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, Uuid, true
+from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, UniqueConstraint, Uuid, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pmagent_backend.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum
@@ -20,6 +20,10 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     password_hash: Mapped[str | None] = mapped_column(String(255))
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_active: Mapped[bool] = mapped_column(default=True, server_default=true())
+    # What they do ("Product designer"), shown next to their name.
+    title: Mapped[str | None] = mapped_column(String(100))
+    # When their photo last changed (null: no photo); clients add it to the photo's address.
+    avatar_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
     def email_verified(self) -> bool:
@@ -92,3 +96,14 @@ class OAuthAccount(UUIDPrimaryKeyMixin, Base):
     provider_user_id: Mapped[str] = mapped_column(String(64))
     login: Mapped[str | None] = mapped_column(String(100))  # their username there, for display
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class UserAvatar(Base):
+    """A person's profile photo: small (the web app crops and scales it to 256 px before upload),
+    so it lives in the database rather than object storage."""
+
+    __tablename__ = "user_avatars"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(32))
+    content: Mapped[bytes] = mapped_column(LargeBinary)

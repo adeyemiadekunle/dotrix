@@ -2,17 +2,20 @@ import { cn } from "@pmagent/ui/lib/utils";
 import type { ComponentProps } from "react";
 
 // A settings page is a column of sections: what the section is on the left, its controls on the
-// right (stacked on narrow screens). The parts mirror Card's, so a card converts by renaming.
+// right (stacked when the section itself is narrow, e.g. beside the settings nav on a laptop).
+// The parts mirror Card's, so a card converts by renaming.
 
-export function SettingsSection({ className, ...props }: ComponentProps<"section">) {
+export function SettingsSection({
+  className,
+  children,
+  stacked = false,
+  ...props
+}: ComponentProps<"section"> & { stacked?: boolean }) {
   return (
-    <section
-      className={cn(
-        "grid scroll-mt-6 gap-4 border-t pt-8 first:border-t-0 first:pt-0 md:grid-cols-[15rem_minmax(0,1fr)] md:gap-10",
-        className,
-      )}
-      {...props}
-    />
+    <section className={cn("@container scroll-mt-6 border-t pt-8 first:border-t-0 first:pt-0", className)} {...props}>
+      {/* `stacked`: the title above, for content that needs the whole width (a list of people). */}
+      <div className={cn("grid gap-4", !stacked && "@3xl:grid-cols-[15rem_minmax(0,1fr)] @3xl:gap-10")}>{children}</div>
+    </section>
   );
 }
 

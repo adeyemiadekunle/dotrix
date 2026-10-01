@@ -87,7 +87,9 @@ test("pick who answers with the + menu or @", async ({ page }) => {
 test("an owner creates an agent, and it answers in the chat when picked", async ({ page }) => {
   await signUpWithProject(page);
   const projectUrl = page.url().replace(/\/board.*$/, "");
-  await page.getByRole("link", { name: "Agents", exact: true }).click();
+  // Agents live in Settings (owners and admins).
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Agents", exact: true }).click();
   await expect(page.getByText("@research")).toBeVisible();
   await page.getByRole("link", { name: "New agent" }).click();
   await page.getByLabel("Handle").fill("security");
@@ -95,10 +97,10 @@ test("an owner creates an agent, and it answers in the chat when picked", async 
   await page.getByLabel("Description").fill("Reviews changes for security risks.");
   await page.getByLabel("Instructions").fill("Look for leaked secrets and unsafe defaults.");
   await page.getByRole("button", { name: "Create agent" }).click();
-  await expect(page).toHaveURL(/\/agents\/security$/);
-  await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/agents\/security$/);
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Agents", exact: true }).click();
   // The list, not the agent's own page (or Next's route announcer) while it navigates.
-  await expect(page).toHaveURL(/\/agents$/);
+  await expect(page).toHaveURL(/\/settings\/agents$/);
   await expect(page.getByRole("main").getByText("@security")).toBeVisible();
 
   // "@security" at the start of a message picks it; its reply is labelled with its name.

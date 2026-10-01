@@ -14,6 +14,9 @@ import {
   ListTodoIcon,
   MessageSquareIcon,
   SearchIcon,
+  SettingsIcon,
+  UserIcon,
+  UsersIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -65,6 +68,9 @@ const PAGES: { label: string; path: string; icon: LucideIcon }[] = [
   { label: "Projects", path: "/projects", icon: FolderKanbanIcon },
   { label: "Tasks", path: "/tasks", icon: ListTodoIcon },
   { label: "Activity", path: "/activity", icon: ActivityIcon },
+  { label: "Settings", path: "/settings", icon: SettingsIcon },
+  { label: "Profile", path: "/settings/profile", icon: UserIcon },
+  { label: "Members", path: "/settings/members", icon: UsersIcon },
 ];
 
 /** Waits for typing to pause before searching documents on the server. */

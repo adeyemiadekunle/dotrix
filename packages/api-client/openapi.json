@@ -1144,6 +1144,304 @@
             "HTTPBearer": []
           }
         ]
+      },
+      "patch": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Update Profile",
+        "description": "Change your name or what you do (shown next to your name to your team).",
+        "operationId": "update_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/sign-in-methods": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign In Methods",
+        "description": "How you can sign in: a password, an email link (always), and linked accounts (GitHub).",
+        "operationId": "sign_in_methods",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInMethods"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/sign-in-methods/{provider}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Unlink Sign In Method",
+        "description": "Stop signing in with a linked account. 409 while it's your only way in besides an email\nlink: set a password first (Forgot password).",
+        "operationId": "unlink_sign_in_method",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/avatar": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get Avatar",
+        "description": "Your profile photo. 404 without one.",
+        "operationId": "get_avatar",
+        "responses": {
+          "200": {
+            "description": "The photo",
+            "content": {
+              "image/png": {},
+              "image/jpeg": {},
+              "image/webp": {}
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Set Avatar",
+        "description": "Set your profile photo, replacing any earlier one.",
+        "operationId": "set_avatar",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_set_avatar"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Remove Avatar",
+        "description": "Remove your profile photo (your initials show instead).",
+        "operationId": "remove_avatar",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/v1/me/tokens": {
@@ -1928,7 +2226,7 @@
           "workspaces"
         ],
         "summary": "List Members",
-        "description": "Everyone in the workspace, with their roles.",
+        "description": "Everyone in the workspace, with their roles, what they do, and the projects they see\n(among the ones you see).",
         "operationId": "list_members",
         "security": [
           {
@@ -1960,6 +2258,83 @@
                   "title": "Response List Members"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/members/{user_id}/avatar": {
+      "get": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Get Member Avatar",
+        "description": "A colleague's profile photo. 404 without one, or if they aren't in this workspace.",
+        "operationId": "get_member_avatar",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The photo",
+            "content": {
+              "image/png": {},
+              "image/jpeg": {},
+              "image/webp": {}
             }
           },
           "401": {
@@ -11745,6 +12120,21 @@
         ],
         "title": "BoardColumn"
       },
+      "Body_set_avatar": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "PNG, JPEG, or WebP, at most 500 KB (256 px square is plenty)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_set_avatar"
+      },
       "Body_upload_document": {
         "properties": {
           "file": {
@@ -13585,6 +13975,39 @@
         "title": "LinkInviteCreated",
         "description": "Returned once, at creation: the only time the link's token is visible."
       },
+      "LinkedAccount": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "const": "github",
+            "title": "Provider"
+          },
+          "login": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Login",
+            "description": "Your username there"
+          },
+          "linked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Linked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "login",
+          "linked_at"
+        ],
+        "title": "LinkedAccount"
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -13656,6 +14079,31 @@
             "type": "string",
             "title": "Display Name"
           },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "What they do"
+          },
+          "avatar_updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Updated At",
+            "description": "When their photo last changed; null without one"
+          },
           "role": {
             "$ref": "#/components/schemas/Role"
           },
@@ -13663,6 +14111,20 @@
             "type": "string",
             "format": "date-time",
             "title": "Joined At"
+          },
+          "sees_all_projects": {
+            "type": "boolean",
+            "title": "Sees All Projects",
+            "description": "Owners and admins see every project"
+          },
+          "project_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Project Ids",
+            "description": "The projects they see, among those you see (restricted ones only if they were added)"
           }
         },
         "type": "object",
@@ -13670,8 +14132,12 @@
           "user_id",
           "email",
           "display_name",
+          "title",
+          "avatar_updated_at",
           "role",
-          "joined_at"
+          "joined_at",
+          "sees_all_projects",
+          "project_ids"
         ],
         "title": "MemberRead"
       },
@@ -13923,6 +14389,38 @@
         ],
         "title": "ProblemDetail",
         "description": "RFC 9457 problem details. Every error response has this shape."
+      },
+      "ProfileUpdate": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "title": "ProfileUpdate",
+        "description": "Change your name or what you do; leave a field out to keep it. An empty title clears it."
       },
       "ProjectAccessLevel": {
         "type": "string",
@@ -14784,6 +15282,34 @@
         ],
         "title": "SearchHit"
       },
+      "SignInMethods": {
+        "properties": {
+          "password": {
+            "type": "boolean",
+            "title": "Password",
+            "description": "You have a password (else: set one with Forgot password)"
+          },
+          "email_link": {
+            "type": "boolean",
+            "title": "Email Link",
+            "description": "A sign-in link by email always works"
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/LinkedAccount"
+            },
+            "type": "array",
+            "title": "Accounts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password",
+          "email_link",
+          "accounts"
+        ],
+        "title": "SignInMethods"
+      },
       "SignupRequest": {
         "properties": {
           "email": {
@@ -15131,6 +15657,31 @@
             "type": "boolean",
             "title": "Email Verified"
           },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "What they do, e.g. Product designer"
+          },
+          "avatar_updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Updated At",
+            "description": "When their photo last changed; null without one"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -15143,6 +15694,8 @@
           "email",
           "display_name",
           "email_verified",
+          "title",
+          "avatar_updated_at",
           "created_at"
         ],
         "title": "UserRead"
