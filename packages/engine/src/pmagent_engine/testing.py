@@ -104,6 +104,8 @@ class RuleBasedChatModel(_StreamsReplies, GenericFakeChatModel):
 
     - "create issue: <title>" asks to create that task (an Action Mode write, so it pauses
       for approval); after the tool runs, it confirms.
+    - "plan: <step>; <step>; ..." stops at a checkpoint with those steps, for the person to
+      continue, change the plan, or stop; then it says what it heard.
     - anything else is echoed: "Test model reply: <message>".
 
     Enabled only when the backend runs with PMAGENT_E2E_MODELS=true (never in production).
@@ -123,6 +125,9 @@ class RuleBasedChatModel(_StreamsReplies, GenericFakeChatModel):
         if lowered.startswith("create issue:"):
             title = text.split(":", 1)[1].strip() or "Untitled"
             return tool_call("create_issue", type="task", title=title, priority="medium")
+        if lowered.startswith("plan:"):
+            steps = [s.strip() for s in text.split(":", 1)[1].split(";") if s.strip()] or ["Do it"]
+            return tool_call("checkpoint", summary="A plan for this request", plan=steps)
         return AIMessage(content=f"Test model reply: {text[:500]}")
 
     def _generate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:

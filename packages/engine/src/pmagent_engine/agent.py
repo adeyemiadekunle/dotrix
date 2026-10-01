@@ -31,14 +31,9 @@ from .catalog import tool_id, tool_name
 from .config import ProjectConfig
 from .context_middleware import CompactTools, UnchangedReads, summarization
 from .contracts import PM_HANDLE, AgentSpec
-from .outputs import (
-    ResultSink,
-    StageSink,
-    pipeline_instructions,
-    result_instructions,
-    result_tool,
-    stage_tool,
-)
+from .outputs import ResultSink, StageSink, result_instructions, result_tool, stage_tool
+from .pipelines import MODES, PIPELINES, checkpoint_tool
+from .pipelines import instructions as pipeline_instructions
 
 # Tools that change task state, gated exactly like write_file/edit_file.
 TASK_WRITE_TOOLS = ("create_task", "update_task", "comment_task")
@@ -342,6 +337,7 @@ def build_team(
     models: Any = None,
     result_sink: ResultSink | None = None,
     stage_sink: StageSink | None = None,
+    mode: str | None = None,
 ):
     """The Project Manager plus the specialists, over any storage backend.
 
@@ -367,8 +363,14 @@ def build_team(
 
     An agent whose contract names a `pipeline` reports its stages to `stage_sink`; the agent
     talking to the person, when its contract names an `output`, records its result items with
-    `result_sink` (`pmagent_engine.outputs`). Without the sinks, neither tool is given.
+    `result_sink` (`pmagent_engine.outputs`). Without the sinks, neither tool is given. `mode`
+    is a pipeline from `pipelines.MODES` the leading agent follows for this run instead of its
+    own (with that pipeline's output). The agent talking to the person gets `checkpoint` when
+    its pipeline has a checkpoint stage: it pauses like a write, for the person to continue,
+    change the plan, or stop.
     """
+    if mode is not None and mode not in MODES:
+        raise ValueError(f"Unknown mode {mode!r}; use one of {', '.join(MODES)}")
     specs = list(agents) if agents else builtin_specs()
     if not any(spec.handle == PM_HANDLE for spec in specs):
         specs = [builtin_specs()[0], *specs]
@@ -440,17 +442,36 @@ blockers, and documentation status. A briefing never writes.
 
     speaker = lead or PM_HANDLE
 
+    def plan_of(spec: AgentSpec) -> tuple[str | None, str | None]:
+        """(pipeline, output) for this run: the run's mode for the speaker, else its contract's."""
+        if mode is not None and spec.handle == speaker:
+            return mode, PIPELINES[mode].output
+        return spec.pipeline, spec.output
+
+    def steers(spec: AgentSpec) -> bool:
+        pipeline = plan_of(spec)[0]
+        return spec.handle == speaker and pipeline is not None and PIPELINES[pipeline].steers
+
     def extras(spec: AgentSpec) -> tuple[list[Any], str]:
-        """The result and stage tools its contract asks for, and how to use them."""
+        """The stage, checkpoint, and result tools it gets, and how to use them."""
         tools: list[Any] = []
         text = ""
-        if spec.pipeline and stage_sink is not None:
-            tools.append(stage_tool(spec.pipeline, lambda pipeline, name, h=spec.handle: stage_sink(h, name)))
-            text += pipeline_instructions(spec.pipeline)
-        if spec.output and result_sink is not None and spec.handle == speaker:
-            tools.append(result_tool(spec.output, result_sink))
-            text += result_instructions(spec.output)
+        pipeline, output = plan_of(spec)
+        if pipeline and stage_sink is not None:
+            tools.append(stage_tool(pipeline, lambda pipeline, name, h=spec.handle: stage_sink(h, name)))
+            if steers(spec):
+                tools.append(checkpoint_tool())
+            text += pipeline_instructions(pipeline, can_steer=steers(spec))
+        if output and result_sink is not None and spec.handle == speaker:
+            tools.append(result_tool(output, result_sink))
+            text += result_instructions(output)
         return tools, text
+
+    def gate(spec: AgentSpec, box: dict[str, list[Any]]) -> dict[str, Any]:
+        gated = _gate(spec, box)
+        if steers(spec) and stage_sink is not None:
+            gated["checkpoint"] = _APPROVAL
+        return gated
 
     def prompt(spec: AgentSpec) -> str:
         if spec.handle == lead:
@@ -488,7 +509,7 @@ blockers, and documentation status. A briefing never writes.
             permissions=_permissions(leader),
             backend=backend,
             checkpointer=checkpointer,
-            interrupt_on=_gate(leader, specialist_box),
+            interrupt_on=gate(leader, specialist_box),
             name=leader.agent_name,
         )
 
@@ -501,7 +522,7 @@ blockers, and documentation status. A briefing never writes.
         permissions=_permissions(pm),
         backend=backend,
         checkpointer=checkpointer,
-        interrupt_on=_gate(pm, pm_box),
+        interrupt_on=gate(pm, pm_box),
     )
 
 

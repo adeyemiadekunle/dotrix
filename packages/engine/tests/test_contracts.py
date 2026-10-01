@@ -182,7 +182,7 @@ def test_an_agent_reports_stages_and_submits_a_result() -> None:
     assert results == [("finding", [{"severity": "high", "title": "Token in logs", "detail": "auth.py logs it",
                                      "refs": ["auth.py"], "suggested_fix": ""}])]
     system = str(model.received[0][0].content)
-    assert "diff → blast_radius" in system and "call `submit_result` once" in system
+    assert "1. **diff**: " in system and "2. **blast_radius**: " in system and "call `submit_result` once" in system
 
 
 def test_output_and_pipeline_names_are_checked() -> None:

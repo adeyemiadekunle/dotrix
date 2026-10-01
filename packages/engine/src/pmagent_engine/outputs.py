@@ -2,8 +2,9 @@
 
 An agent whose contract names an `output` ends its work by calling `submit_result` with items
 of that schema, so the app can show each item with actions (create an issue from a finding,
-dismiss it, ...). One whose contract names a `pipeline` reports its stages with `stage`, so
-people see where it is. Both are plain tools; the platform decides where results go (`sink`).
+dismiss it, ...). One that follows a pipeline (`pmagent_engine.pipelines`) reports its stages
+with `stage`, so people see where it is. Both are plain tools; the platform decides where
+results go (`sink`).
 """
 from __future__ import annotations
 
@@ -12,6 +13,8 @@ from typing import Any, Literal
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, ValidationError, create_model
+
+from .pipelines import PIPELINES as _PIPELINES
 
 Severity = Literal["low", "medium", "high", "critical"]
 
@@ -87,20 +90,8 @@ ACTIONS: dict[str, tuple[str, ...]] = {
     "brief": ("dismiss",),
 }
 
-# Pipelines: named stages an agent works through (docs/agents-v2.md §5). Stage names are fixed
-# here, so what the app shows comes from this list, never from model text.
-PIPELINES: dict[str, tuple[str, ...]] = {
-    "pm.request": ("classify", "plan", "dispatch", "merge", "propose", "follow_up"),
-    "pm.triage": ("read", "duplicates", "classify", "propose"),
-    "product.spec": ("clarify", "related", "draft", "check", "propose"),
-    "architecture.impact": ("understand", "impact", "options", "recommend", "propose"),
-    "research.report": ("plan", "our_knowledge", "search", "read", "extract", "verify", "report"),
-    "reviewer.coverage": ("requirements", "board", "code", "assess"),
-    "reviewer.issue": ("issue", "criteria", "evidence", "recommend"),
-    "reviewer.commit": ("diff", "blast_radius", "related", "findings"),
-    "docs.update": ("change", "affected", "propose"),
-    "coding.brief": ("issue", "criteria", "excerpts", "blast_radius", "tests", "hand_off"),
-}
+# Pipeline stage names by pipeline (`pmagent_engine.pipelines` holds the pipelines themselves).
+PIPELINES: dict[str, tuple[str, ...]] = {name: p.stage_names for name, p in _PIPELINES.items()}
 
 ResultSink = Callable[[str, list[dict[str, Any]]], None]
 StageSink = Callable[[str, str], None]
@@ -110,17 +101,9 @@ def result_instructions(schema: str) -> str:
     fields = ", ".join(SCHEMAS[schema].model_fields)
     return (
         f"\n## Your result\nWhen your work is done, call `submit_result` once with every {schema} item "
-        f"({fields}), in the same turn as your final answer if you can. The app shows each item with "
-        "actions, so keep items specific; your reply still explains them to the person."
-    )
-
-
-def pipeline_instructions(pipeline: str) -> str:
-    stages = " → ".join(PIPELINES[pipeline])
-    return (
-        f"\n## How you work\nWork through these stages in order: {stages}. When you start a stage, call "
-        "`stage` with its name in the same turn as that stage's first reads or searches (never on its own), "
-        "so people see where you are. Skip a stage that doesn't apply."
+        f"({fields}), in the same turn as your final answer if you can; skip it when the work produced "
+        "none (a plain question). The app shows each item with actions, so keep items specific; your "
+        "reply still explains them to the person."
     )
 
 

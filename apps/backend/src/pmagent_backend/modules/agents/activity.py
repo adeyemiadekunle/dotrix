@@ -69,10 +69,12 @@ def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
             return f"Drafting a comment on {_key(args)}"
         case "stage":
             current = str(args.get("current") or "")
-            # Only the fixed stage names (pmagent_engine.outputs.PIPELINES), never model text.
+            # Only the fixed stage names (pmagent_engine.pipelines), never model text.
             return f"Now: {current.replace('_', ' ')}" if current in _STAGES else None
         case "submit_result":
             return "Recording the result"
+        case "checkpoint":
+            return "Showing the plan before going on"
         case "task":
             name = str(args.get("subagent_type") or "")
             custom = f"@{name.removesuffix('-agent')}" if _AGENT_NAME.match(name) else "a specialist agent"

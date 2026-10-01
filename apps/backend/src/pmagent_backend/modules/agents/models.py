@@ -64,6 +64,9 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     agent: Mapped[str | None] = mapped_column(String(32))
     # The version of that agent's definition the run used; null for an unchanged built-in.
     agent_version: Mapped[int | None] = mapped_column(Integer)
+    # A pipeline the leading agent follows for this run instead of its own
+    # (pmagent_engine.pipelines.MODES: triaging a report, reviewing an issue); null: its own.
+    mode: Mapped[str | None] = mapped_column(String(32))
     # The conversation's model, fixed when it starts (every run of a thread has the same one).
     # Null only on conversations from before models were chosen: they use the project's.
     conversation_model: Mapped[str | None] = mapped_column(String(100))

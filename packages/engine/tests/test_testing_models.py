@@ -13,3 +13,6 @@ def test_rules() -> None:
     assert create.tool_calls[0]["args"] == {"type": "task", "title": "Add dark mode", "priority": "medium"}
     done = model.invoke([HumanMessage("Create issue: x"), ToolMessage("Created KUN-9", tool_call_id="c")])
     assert done.content.startswith("Done.")
+    plan = model.invoke([HumanMessage("Plan: Spec it; Assess impact")])
+    assert plan.tool_calls[0]["name"] == "checkpoint"
+    assert plan.tool_calls[0]["args"]["plan"] == ["Spec it", "Assess impact"]

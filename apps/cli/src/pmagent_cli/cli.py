@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -376,6 +377,27 @@ def run(
         typer.echo(job.get("result", ""))
 
 
+@app.command()
+def triage(
+    report: str = typer.Argument(None, help="The report; leave it out to read it from stdin"),
+    project: str = ProjectOpt,
+):
+    """Have the platform's agents triage a bug report or request: they look for duplicates, then
+    propose the issue (or a comment on the existing one), which you approve here."""
+    if not report:
+        report = sys.stdin.read()
+    if not report.strip():
+        raise typer.BadParameter("give the report as an argument or on stdin", param_hint="REPORT")
+    _platform_start(project, lambda agent: agent.triage(report.strip()))
+
+
+@app.command()
+def review(key: str = typer.Argument(..., help="The issue, e.g. KUN-12"), project: str = ProjectOpt):
+    """Have the Reviewer check an issue against its acceptance criteria: it recommends closing it
+    or sending it back, with each unmet criterion as a finding."""
+    _platform_start(project, lambda agent: agent.review(key.upper()))
+
+
 @app.command("agents")
 def agents_list(project: str = ProjectOpt):
     """The agents a linked project has: the built-ins (as its workspace or it has changed them)
@@ -684,7 +706,29 @@ def _echo_approval(approval: dict, full: bool = False) -> None:
         typer.echo("\n".join(f"    {line}" for line in (text if full else text[:1500]).splitlines()))
 
 
+def _ask_checkpoint(approval: dict):
+    """The agent's plan before a large job: continue, change it, or stop."""
+    args = approval.get("args") or {}
+    typer.secho("\nThe plan, before going on:", bold=True)
+    if args.get("summary"):
+        typer.echo(args["summary"])
+    for i, step in enumerate(args.get("plan") or [], 1):
+        typer.echo(f"  {i}. {step}")
+    while True:
+        choice = typer.prompt("[c]ontinue, c[h]ange the plan, [s]top", default="c", show_default=False).strip()
+        if choice in ("c", "continue"):
+            return ("approve", None)
+        if choice in ("h", "change"):
+            changes = typer.prompt("What to change (sent to the agent)").strip()
+            if changes:
+                return ("steer", changes)
+        if choice in ("s", "stop"):
+            return ("reject", None)
+
+
 def _ask_decision(approval: dict, index: int, total: int):
+    if approval["tool"] == "checkpoint":
+        return _ask_checkpoint(approval)
     target = f" -> {approval['target']}" if approval.get("target") else ""
     typer.secho(f"\n[{index}/{total}] The agents want to: {approval['tool']}{target}", bold=True)
     _echo_approval(approval)
@@ -844,6 +888,17 @@ def _follow_run(agent: PlatformAgent, run: dict) -> Outcome:
     )
     _echo_outcome(outcome, printer)
     return outcome
+
+
+def _platform_start(project: str, start: Callable[[PlatformAgent], dict]) -> None:
+    """Start a run with `start` and follow it here (triage, review)."""
+    _, agent = _platform_agent(project)
+    run = _platform_call(lambda: start(agent))
+    typer.secho("(working…)", dim=True)
+    outcome = _follow_run(agent, run)
+    typer.secho(f"Continue this conversation with: pmagent chat --thread {run['thread_id']}", dim=True)
+    if outcome.status == "failed":
+        raise typer.Exit(1)
 
 
 def _platform_run(project: str, instruction: str, background: bool, thread: str | None) -> None:

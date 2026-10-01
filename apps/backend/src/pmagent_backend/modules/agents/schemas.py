@@ -39,6 +39,13 @@ class ModelOption(BaseModel):
     name: str = Field(description="The model's name without the provider")
 
 
+class TriageRequest(BaseModel):
+    report: str = Field(
+        min_length=1, max_length=10_000,
+        description="The bug report or feature request, as it came in (an email, a support ticket, a note)",
+    )
+
+
 class ArchitectureDraftRequest(BaseModel):
     repo_summary: str | None = Field(
         default=None,
@@ -95,10 +102,21 @@ class RunFileRead(BaseModel):
     times: int
 
 
+class StageUsage(BaseModel):
+    agent: str
+    stage: str = Field(description="A pipeline stage the agent reported (pmagent_engine.pipelines)")
+    input_tokens: int
+    output_tokens: int
+    model_calls: int
+
+
 class RunBreakdown(BaseModel):
     """Where a run's tokens went."""
 
     by_agent: list[AgentUsage] = Field(description="Largest first")
+    by_stage: list[StageUsage] = Field(
+        default_factory=list, description="Tokens per pipeline stage, in the order the stages came"
+    )
     tools: list[ToolUsage] = Field(description="Largest results first")
     files_read: list[RunFileRead] = Field(description="Most read first")
     token_budget: int | None = Field(description="The run's token budget (null: no limit)")
@@ -148,6 +166,10 @@ class AgentRunRead(BaseModel):
     agent: Annotated[str, BeforeValidator(lambda v: v or "auto")] = Field(
         default="auto", description="Who answered: `auto` (the Project Manager) or the leading agent's handle"
     )
+    mode: str | None = Field(
+        default=None, description="The pipeline the leading agent followed for this run (pm.triage, reviewer.issue); "
+        "null: its own"
+    )
     conversation_model: str | None = Field(
         default=None,
         description="The model the conversation runs on (fixed when it started); null on older conversations, "
@@ -192,9 +214,12 @@ class AgentRunRead(BaseModel):
 
 class Decision(BaseModel):
     approval_id: uuid.UUID
-    decision: Literal["approve", "reject"]
+    decision: Literal["approve", "reject", "steer"] = Field(
+        description="approve or reject a change; at a checkpoint (tool `checkpoint`): approve to "
+        "continue, steer to continue with the changes in `reason`, reject to stop"
+    )
     reason: str | None = Field(
-        default=None, max_length=500, description="Sent back to the agent when rejecting"
+        default=None, max_length=500, description="Sent back to the agent when rejecting or steering"
     )
 
 

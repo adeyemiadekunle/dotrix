@@ -27,6 +27,7 @@ from .schemas import (
     RunCreate,
     ThreadRead,
     ThreadRename,
+    TriageRequest,
     WorkspaceApprovalRead,
 )
 from .service import AgentService
@@ -50,7 +51,6 @@ def get_agent_service(
 
 Agents = Annotated[AgentService, Depends(get_agent_service)]
 Chatter = Annotated[ProjectAccess, Depends(require_project_permission(Permission.CHAT))]
-Approver = Annotated[ProjectAccess, Depends(require_project_permission(Permission.APPROVE_ACTIONS))]
 SetupManager = Annotated[ProjectAccess, Depends(require_project_permission(Permission.MANAGE_PROJECTS))]
 IssueEditor = Annotated[ProjectAccess, Depends(require_project_permission(Permission.EDIT_ISSUES))]
 
@@ -73,6 +73,22 @@ async def create_run(data: RunCreate, access: Chatter, agents: Agents, settings:
 async def create_briefing(access: Chatter, agents: Agents) -> AgentRunRead:
     """Ask for the daily briefing. Read-only: any write it attempts is rejected automatically."""
     return await agents.briefing(access)
+
+
+@router.post("/triage", status_code=status.HTTP_202_ACCEPTED, responses=errors(422, 503))
+async def triage_report(data: TriageRequest, access: Chatter, agents: Agents) -> AgentRunRead:
+    """Have the Project Manager triage a bug report or feature request: it looks for duplicates on
+    the board and in the documents, then proposes a comment on the existing issue or a new issue
+    with its type, priority, and links (each waits for approval). A new conversation."""
+    return await agents.triage(access, data)
+
+
+@router.post("/issues/{key}/review", status_code=status.HTTP_202_ACCEPTED, responses=errors(503))
+async def review_issue(key: str, access: Chatter, agents: Agents) -> AgentRunRead:
+    """Have the Reviewer review one issue against its acceptance criteria. It recommends closing
+    it or sending it back, and records each unmet criterion as a finding in the run's
+    `outputs`. A new conversation; 404 for an unknown key."""
+    return await agents.review_issue(access, key)
 
 
 @router.post("/architecture-draft", status_code=status.HTTP_202_ACCEPTED, responses=errors(422, 503))
@@ -151,14 +167,17 @@ async def list_pending_approvals(access: Chatter, agents: Agents) -> list[Approv
     return await agents.pending_approvals(access)
 
 
-@router.post("/runs/{run_id}/decisions", responses=errors(409, 422))
+@router.post("/runs/{run_id}/decisions", responses=errors(403, 409, 422))
 async def decide_approvals(
-    run_id: uuid.UUID, data: DecisionsRequest, access: Approver, agents: Agents
+    run_id: uuid.UUID, data: DecisionsRequest, access: Chatter, agents: Agents
 ) -> AgentRunRead:
-    """Approve or reject every pending action of a paused run (one decision each), then the
-    run resumes. Rejection reasons are sent back to the agent. Needs the approve
-    permission; changes to `architecture/` need an owner or admin (403 otherwise, and the
-    run keeps waiting). Your decision is recorded next to who instructed the run."""
+    """Decide every pending action of a paused run (one decision each), then the run resumes.
+    Changes are approved or rejected, with the reason sent back to the agent; they need the
+    approve permission, and changes to `architecture/` an owner or admin (403 otherwise, and
+    the run keeps waiting). A checkpoint (`checkpoint`, the agent's plan before a large job)
+    is answered by whoever asked, or anyone who may approve: approve to continue, `steer` with
+    the changes as `reason`, or reject to stop. Your decision is recorded next to who
+    instructed the run."""
     return await agents.decide(access, run_id, data)
 
 

@@ -3,12 +3,24 @@
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
 import { Input } from "@pmagent/ui/components/input";
+import { Textarea } from "@pmagent/ui/components/textarea";
 import { cn } from "@pmagent/ui/lib/utils";
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, Loader2Icon, ShieldCheckIcon, XIcon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CircleStopIcon,
+  ListChecksIcon,
+  Loader2Icon,
+  PencilIcon,
+  ShieldCheckIcon,
+  XIcon,
+} from "lucide-react";
 import { useState } from "react";
 
 import { useDecide, type Approval, type Decision, type Run } from "@/lib/agent";
 import type { Scope } from "@/lib/issues";
+import { useMe } from "@/lib/queries";
 
 const TOOL_LABELS: Record<string, string> = {
   write_file: "Write file",
@@ -16,7 +28,10 @@ const TOOL_LABELS: Record<string, string> = {
   create_issue: "Create issue",
   update_issue: "Update issue",
   comment_issue: "Comment on issue",
+  checkpoint: "Plan checkpoint",
 };
+
+const CHECKPOINT = "checkpoint";
 
 export function toolLabel(tool: string): string {
   return TOOL_LABELS[tool] ?? tool.replaceAll("_", " ");
@@ -144,14 +159,111 @@ function ApprovalCard({
   );
 }
 
+const CHECKPOINT_OUTCOMES: Record<string, string> = {
+  approved: "Continued",
+  rejected: "Stopped",
+};
+
+/**
+ * Before the expensive part of a large job, the agent shows its plan and waits: continue, change
+ * the plan (the agent adjusts and carries on), or stop (it wraps up with what it found). Whoever
+ * asked answers it, or anyone who may approve changes.
+ */
+function CheckpointCard({
+  approval,
+  canAnswer,
+  pending: sending,
+  onAnswer,
+}: {
+  approval: Approval;
+  canAnswer: boolean;
+  pending: boolean;
+  onAnswer: (decision: Decision["decision"], reason: string | null) => void;
+}) {
+  const [changing, setChanging] = useState(false);
+  const [changes, setChanges] = useState("");
+  const args = approval.args as { summary?: string; plan?: string[] };
+  const open = approval.status === "pending";
+  const outcome = !open && (approval.status === "approved" && approval.reason ? "Changed the plan" : CHECKPOINT_OUTCOMES[approval.status]);
+  return (
+    <div className={cn("grid gap-2 rounded-lg border p-3 text-sm", open && "border-primary/50 bg-brand-muted/40")}>
+      <p className="flex items-center gap-2 font-medium">
+        <ListChecksIcon className="size-4" />
+        {open ? "The plan, before going on" : "The plan"}
+        <span className="flex-1" />
+        {outcome && <Badge variant="outline">{outcome}</Badge>}
+      </p>
+      {args.summary && <p className="text-muted-foreground">{args.summary}</p>}
+      {args.plan && args.plan.length > 0 && (
+        <ol className="grid list-decimal gap-0.5 pl-5">
+          {args.plan.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
+        </ol>
+      )}
+      {!open && approval.reason && <p className="text-muted-foreground text-xs">“{approval.reason}”</p>}
+      {open && !canAnswer && <p className="text-muted-foreground text-xs">Waiting for whoever asked to continue, change, or stop it.</p>}
+      {open && canAnswer && !changing && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" disabled={sending} onClick={() => onAnswer("approve", null)}>
+            {sending ? <Loader2Icon className="animate-spin" /> : <CheckIcon />}
+            Continue
+          </Button>
+          <Button size="sm" variant="outline" disabled={sending} onClick={() => setChanging(true)}>
+            <PencilIcon />
+            Change the plan
+          </Button>
+          <Button size="sm" variant="ghost" disabled={sending} onClick={() => onAnswer("reject", null)}>
+            <CircleStopIcon />
+            Stop
+          </Button>
+        </div>
+      )}
+      {open && canAnswer && changing && (
+        <form
+          className="grid gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (changes.trim()) onAnswer("steer", changes.trim());
+          }}
+        >
+          <Textarea
+            value={changes}
+            onChange={(e) => setChanges(e.target.value)}
+            placeholder="What to change, e.g. skip the impact analysis; focus on the API"
+            aria-label="What to change in the plan"
+            maxLength={500}
+            rows={2}
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={!changes.trim() || sending}>
+              Continue with changes
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setChanging(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
 /**
  * The actions a run is waiting on. Every pending action needs a decision, and they're sent
- * together (the run resumes once, with all of them).
+ * together (the run resumes once, with all of them). A checkpoint on its own is answered with
+ * its own card.
  */
 export function RunApprovals({ run, scope, canDecide }: { run: Run; scope: Scope; canDecide: boolean }) {
   const decide = useDecide(scope);
+  const me = useMe();
   const approvals = run.approvals ?? [];
   const pending = approvals.filter((a) => a.status === "pending");
+  const checkpoints = approvals.filter((a) => a.tool === CHECKPOINT);
+  const changes = approvals.filter((a) => a.tool !== CHECKPOINT);
+  const onlyCheckpoints = pending.length > 0 && pending.every((a) => a.tool === CHECKPOINT);
+  const canAnswer = canDecide || (!!me.data && run.requested_by_id === me.data.id);
   const [choices, setChoices] = useState<Record<string, Choice>>({});
   const decided = pending.filter((a) => choices[a.id]).length;
 
@@ -164,9 +276,27 @@ export function RunApprovals({ run, scope, canDecide }: { run: Run; scope: Scope
   }
 
   if (approvals.length === 0) return null;
+  // A checkpoint answered on its own card; changes (if any) as usual below it.
+  const shownCheckpoints = onlyCheckpoints || pending.length === 0 ? checkpoints : [];
+  const listed = shownCheckpoints.length ? changes : approvals;
+  const pendingListed = listed.filter((a) => a.status === "pending");
   return (
     <div className="grid gap-2">
-      {pending.length > 0 && (
+      {shownCheckpoints.map((approval) => (
+        <CheckpointCard
+          key={approval.id}
+          approval={approval}
+          canAnswer={canAnswer}
+          pending={decide.isPending}
+          onAnswer={(decision, reason) =>
+            decide.mutate({
+              runId: run.id,
+              decisions: pending.map((a) => ({ approval_id: a.id, decision, reason })),
+            })
+          }
+        />
+      ))}
+      {pendingListed.length > 0 && (
         <p className="text-warning-foreground flex items-center gap-1.5 text-xs font-medium">
           <ShieldCheckIcon className="size-3.5" />
           {canDecide
@@ -178,7 +308,7 @@ export function RunApprovals({ run, scope, canDecide }: { run: Run; scope: Scope
               : `${pending.length} changes wait for an owner or admin to review`}
         </p>
       )}
-      {approvals.map((approval) => (
+      {listed.map((approval) => (
         <ApprovalCard
           key={approval.id}
           approval={approval}
@@ -188,7 +318,7 @@ export function RunApprovals({ run, scope, canDecide }: { run: Run; scope: Scope
           expanded={approval.status === "pending" && pending.length <= 3}
         />
       ))}
-      {pending.length > 0 && canDecide && (
+      {pendingListed.length > 0 && canDecide && (
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" disabled={decided < pending.length || decide.isPending} onClick={() => submit()}>
             {decide.isPending && <Loader2Icon className="animate-spin" />}

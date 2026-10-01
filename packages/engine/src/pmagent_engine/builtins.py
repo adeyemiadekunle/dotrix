@@ -1,8 +1,8 @@
 """The six built-in agents as contracts: the defaults every workspace starts from.
 
 Their instructions, tools, folder access, and issue types are what the team has always had
-(the folder matrix and issue rules come from `permissions`), so building the team from these
-specs behaves exactly as before. Owners can edit them per workspace or project; "Reset to
+(the folder matrix and issue rules come from `permissions`). Each follows its default pipeline
+(`pipelines.DEFAULTS`) and returns that pipeline's result. Owners can edit them per workspace or project; "Reset to
 default" goes back to these.
 """
 from __future__ import annotations
@@ -19,6 +19,8 @@ from .permissions import (
     REVIEWER,
     Access,
 )
+from .pipelines import DEFAULTS as DEFAULT_PIPELINES
+from .pipelines import PIPELINES
 
 SPECIALISTS = (PRODUCT, ARCH, RESEARCH, REVIEWER, DOCS)
 
@@ -123,6 +125,7 @@ def builtin_specs() -> list[AgentSpec]:
         access=_access(PM),
         issue_types=_issue_types(PM, _TOOLS[PM]),
         can_call=["*"],
+        pipeline=DEFAULT_PIPELINES[PM],
     )
     specialists = [
         AgentSpec(
@@ -135,6 +138,8 @@ def builtin_specs() -> list[AgentSpec]:
             access=_access(role),
             issue_types=_issue_types(role, _TOOLS[role]),
             can_call=[other for other in SPECIALISTS if other != role],
+            pipeline=DEFAULT_PIPELINES[role],
+            output=PIPELINES[DEFAULT_PIPELINES[role]].output,
         )
         for role, (name, description, instructions) in _SPECIALIST_TEXT.items()
     ]

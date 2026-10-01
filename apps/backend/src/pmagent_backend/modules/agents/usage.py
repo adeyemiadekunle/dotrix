@@ -2,7 +2,7 @@
 limits, and shows when a model stopped early: an empty reply with zero output tokens).
 
 Besides the totals, a run keeps a breakdown for owners and admins: tokens by agent (the PM
-and each specialist), what each tool returned (tool results are re-sent with every later
+and each specialist) and by pipeline stage (`agent/stage`), what each tool returned (tool results are re-sent with every later
 call, so a big result is paid for many times), and which files were read. And a budget: a
 run stops before a model call once it has used its token budget.
 """
@@ -58,10 +58,11 @@ class TokenUsage(BaseCallbackHandler):
     run_inline = True
     raise_error = True
 
-    def __init__(self, *, budget: int | None = None, used: int = 0) -> None:
+    def __init__(self, *, budget: int | None = None, used: int = 0, stages: dict[str, str] | None = None) -> None:
         super().__init__()
         self.budget = budget or None
         self.used_before = used
+        self.stages = dict(stages or {})
         self._reset()
 
     def _reset(self) -> None:
@@ -75,10 +76,20 @@ class TokenUsage(BaseCallbackHandler):
         self.by_agent: dict[str, dict[str, int]] = defaultdict(
             lambda: {"input_tokens": 0, "output_tokens": 0, "model_calls": 0}
         )
+        # Keyed "agent/stage": the calls each agent made while in a pipeline stage.
+        self.by_stage: dict[str, dict[str, int]] = defaultdict(
+            lambda: {"input_tokens": 0, "output_tokens": 0, "model_calls": 0}
+        )
         self.tools: dict[str, dict[str, int]] = defaultdict(lambda: {"calls": 0, "result_tokens": 0})
         self.files_read: dict[str, int] = defaultdict(int)
         self._agents: dict[UUID, str] = {}
         self._tool_names: dict[UUID, str] = {}
+
+    # The stage each agent is in, from its `stage` calls (kept across steps of a run).
+    stages: dict[str, str]
+
+    def enter_stage(self, agent: str, stage: str) -> None:
+        self.stages[agent] = stage
 
     @property
     def used(self) -> int:
@@ -103,9 +114,14 @@ class TokenUsage(BaseCallbackHandler):
 
     def on_llm_end(self, response: LLMResult, *, run_id: UUID | None = None, **kwargs: Any) -> None:
         self.model_calls += 1
-        agent = self.by_agent[self._agents.pop(run_id, None) or role_for_agent_name(None)] if run_id else None
-        if agent is not None:
-            agent["model_calls"] += 1
+        name = (self._agents.pop(run_id, None) or role_for_agent_name(None)) if run_id else None
+        counters = []
+        if name is not None:
+            counters.append(self.by_agent[name])
+            if name in self.stages:
+                counters.append(self.by_stage[f"{name}/{self.stages[name]}"])
+        for counter in counters:
+            counter["model_calls"] += 1
         for generations in response.generations:
             for generation in generations:
                 usage = getattr(getattr(generation, "message", None), "usage_metadata", None)
@@ -116,9 +132,9 @@ class TokenUsage(BaseCallbackHandler):
                     self.output_tokens += output_tokens
                     details = usage.get("input_token_details") or {}
                     self.cached_input_tokens += int(details.get("cache_read") or 0)
-                    if agent is not None:
-                        agent["input_tokens"] += input_tokens
-                        agent["output_tokens"] += output_tokens
+                    for counter in counters:
+                        counter["input_tokens"] += input_tokens
+                        counter["output_tokens"] += output_tokens
 
     # -- tools -------------------------------------------------------------------------
 
@@ -156,8 +172,10 @@ class TokenUsage(BaseCallbackHandler):
         """This step's breakdown, in the shape stored on the run (`merge_breakdown`)."""
         return {
             "by_agent": {name: dict(counts) for name, counts in self.by_agent.items()},
+            "by_stage": {name: dict(counts) for name, counts in self.by_stage.items()},
             "tools": {name: dict(counts) for name, counts in self.tools.items()},
             "files_read": dict(self.files_read),
+            "stages": dict(self.stages),
         }
 
     def take(self) -> tuple[dict[str, int], dict[str, Any]]:
@@ -171,8 +189,8 @@ class TokenUsage(BaseCallbackHandler):
 
 def merge_breakdown(stored: dict[str, Any] | None, step: dict[str, Any]) -> dict[str, Any]:
     """A run's breakdown with one more step's added (runs resume after approvals)."""
-    merged: dict[str, Any] = {"by_agent": {}, "tools": {}, "files_read": {}}
-    for part in ("by_agent", "tools"):
+    merged: dict[str, Any] = {"by_agent": {}, "by_stage": {}, "tools": {}, "files_read": {}}
+    for part in ("by_agent", "by_stage", "tools"):
         for source in ((stored or {}).get(part) or {}, step.get(part) or {}):
             for name, counts in source.items():
                 into = merged[part].setdefault(name, {})
@@ -181,6 +199,8 @@ def merge_breakdown(stored: dict[str, Any] | None, step: dict[str, Any]) -> dict
     for source in ((stored or {}).get("files_read") or {}, step.get("files_read") or {}):
         for path, times in source.items():
             merged["files_read"][path] = merged["files_read"].get(path, 0) + int(times)
+    # Where each agent is now: the latest step's word wins.
+    merged["stages"] = {**((stored or {}).get("stages") or {}), **(step.get("stages") or {})}
     if len(merged["files_read"]) > MAX_FILES_LISTED:
         top = sorted(merged["files_read"].items(), key=lambda item: -item[1])[:MAX_FILES_LISTED]
         merged["files_read"] = dict(top)

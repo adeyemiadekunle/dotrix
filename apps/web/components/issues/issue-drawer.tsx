@@ -10,11 +10,13 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { Textarea } from "@pmagent/ui/components/textarea";
 import { cn } from "@pmagent/ui/lib/utils";
-import { BellIcon, LinkIcon, PencilIcon } from "lucide-react";
+import { BellIcon, ClipboardCheckIcon, LinkIcon, Loader2Icon, PencilIcon } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { useChat } from "@/components/agent/chat-context";
 import { Markdown } from "@/components/markdown";
+import { useReviewIssue } from "@/lib/agent";
 import {
   useComment,
   useEpics,
@@ -435,8 +437,23 @@ function IssueActions({ issue, scope }: { issue: Issue; scope: Scope }) {
   const watch = useWatch(scope);
   const me = useMe();
   const watching = Boolean(me.data && issue.watchers?.includes(me.data.id));
+  const review = useReviewIssue(scope);
+  const chat = useChat();
   return (
     <div className="flex items-center gap-1">
+      <Button
+        size="sm"
+        variant={issue.status === "review" ? "default" : "outline"}
+        disabled={review.isPending}
+        title="The Reviewer checks it against its acceptance criteria and recommends closing it or sending it back"
+        onClick={async () => {
+          const run = await review.mutateAsync(issue.key).catch(() => null);
+          if (run) chat.show(run.thread_id);
+        }}
+      >
+        {review.isPending ? <Loader2Icon className="animate-spin" /> : <ClipboardCheckIcon />}
+        Review
+      </Button>
       <Button
         size="icon-sm"
         variant="ghost"
