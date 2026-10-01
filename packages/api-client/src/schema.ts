@@ -1955,6 +1955,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspace Issues
+         * @description Issues across every project in the workspace that you can see (My issues, Tasks), each
+         *     with its project. Restricted projects you aren't on are left out. `order=due` is earliest
+         *     due first (no date last), then most urgent.
+         */
+        get: operations["list_workspace_issues"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Project Activity
+         * @description What people and agents did in the project, newest first: issues created, changed,
+         *     commented on, or claimed; documents changed; and, for people who can chat with the agents,
+         *     agent runs and approval decisions. Page back with `before`.
+         */
+        get: operations["list_project_activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
         parameters: {
             query?: never;
@@ -1991,6 +2035,76 @@ export interface components {
          * @enum {string}
          */
         Access: "read" | "propose" | "tidy" | "write";
+        /**
+         * ActivityItem
+         * @description One thing that happened in a project, by a person or an agent. Only the fields for its
+         *     `kind` are set: issue events carry the issue; document changes the path and version; runs the
+         *     request; decisions what was decided.
+         */
+        ActivityItem: {
+            kind: components["schemas"]["ActivityKind"];
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Actor User Id
+             * @description The person who did it, if a person did
+             */
+            actor_user_id: string | null;
+            /**
+             * Actor Agent
+             * @description The agent who did it, if an agent did
+             */
+            actor_agent: string | null;
+            /** Issue Key */
+            issue_key?: string | null;
+            /** Issue Title */
+            issue_title?: string | null;
+            /**
+             * Changes
+             * @description Issue fields changed: old → new
+             */
+            changes?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Body
+             * @description A comment, a change note, or what was asked
+             */
+            body?: string | null;
+            /** Path */
+            path?: string | null;
+            /** Version */
+            version?: number | null;
+            /** Instructed By Id */
+            instructed_by_id?: string | null;
+            /** Approved By Id */
+            approved_by_id?: string | null;
+            /** Run Id */
+            run_id?: string | null;
+            /** Run Kind */
+            run_kind?: string | null;
+            /** Run Status */
+            run_status?: string | null;
+            /** Tool */
+            tool?: string | null;
+            /** Target */
+            target?: string | null;
+            /**
+             * Decision
+             * @description `approved` or `rejected`
+             */
+            decision?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * ActivityKind
+         * @enum {string}
+         */
+        ActivityKind: "issue.created" | "issue.updated" | "issue.commented" | "issue.claimed" | "document.changed" | "document.deleted" | "run.started" | "approval.decided";
         /**
          * AgentAssignee
          * @description Agents that appear as assignable members.
@@ -4132,6 +4246,46 @@ export interface components {
              * @constant
              */
             kind: "organization";
+        };
+        /**
+         * WorkspaceIssue
+         * @description An issue in a list across projects (My issues, Tasks): the row plus which project it's in.
+         */
+        WorkspaceIssue: {
+            /** Key */
+            key: string;
+            type: components["schemas"]["IssueType"];
+            /** Title */
+            title: string;
+            status: components["schemas"]["IssueStatus"];
+            priority: components["schemas"]["Priority"];
+            /** Assignee User Id */
+            assignee_user_id: string | null;
+            assignee_agent: components["schemas"]["AgentAssignee"] | null;
+            /** Parent Key */
+            parent_key?: string | null;
+            /** Labels */
+            labels: string[];
+            /** Estimate */
+            estimate: number | null;
+            /** Due */
+            due: string | null;
+            /** Rank */
+            rank: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Key */
+            project_key: string;
+            /** Project Name */
+            project_name: string;
         };
         /**
          * WorkspaceKind
@@ -10228,6 +10382,124 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_workspace_issues: {
+        parameters: {
+            query?: {
+                type?: components["schemas"]["IssueType"][];
+                status?: components["schemas"]["IssueStatus"][];
+                /** @description `me`, a user ID, an agent (coding-agent, claude-code, codex), or `none` */
+                assignee?: string | null;
+                /** @description `me` or a user ID */
+                reporter?: string | null;
+                /** @description Only issues you watch */
+                watching?: boolean;
+                label?: string | null;
+                /** @description Due on or before this day */
+                due_before?: string | null;
+                order?: "due" | "priority" | "created" | "updated";
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceIssue"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_project_activity: {
+        parameters: {
+            query?: {
+                /** @description Only items older than this (the last `at` you have) */
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityItem"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;

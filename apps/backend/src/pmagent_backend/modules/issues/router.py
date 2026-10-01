@@ -4,17 +4,19 @@ Issue keys (`KUN-42`) go in the URL and are case-insensitive.
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, status
 
-from pmagent_backend.api.deps import SessionDep
+from pmagent_backend.api.deps import SessionDep, require_permission
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.projects.deps import (
     ProjectAccess,
     ProjectViewer,
     require_project_permission,
 )
+from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
 from .models import AgentAssignee, IssueStatus, IssueType
@@ -28,6 +30,7 @@ from .schemas import (
     IssueSummary,
     IssueUpdate,
     RankRequest,
+    WorkspaceIssue,
 )
 from .service import IssueActor, IssueService
 
@@ -172,4 +175,32 @@ async def unwatch_issue(key: str, access: ProjectViewer, session: SessionDep) ->
     return await IssueService(session).watch(access.project, key, access.member.user_id, on=False)
 
 
+workspace_router = APIRouter(
+    prefix="/workspaces/{workspace_id}/issues", tags=["issues"], responses=errors(401, 404)
+)
 
+
+@workspace_router.get("", responses=errors(422))
+async def list_workspace_issues(
+    member: Annotated[Membership, Depends(require_permission(Permission.VIEW))],
+    session: SessionDep,
+    type: Annotated[list[IssueType], Query()] = [],  # noqa: B006
+    status: Annotated[list[IssueStatus], Query()] = [],  # noqa: B006
+    assignee: str | None = Query(
+        default=None, description="`me`, a user ID, an agent (coding-agent, claude-code, codex), or `none`"
+    ),
+    reporter: str | None = Query(default=None, description="`me` or a user ID"),
+    watching: bool = Query(default=False, description="Only issues you watch"),
+    label: str | None = None,
+    due_before: date | None = Query(default=None, description="Due on or before this day"),
+    order: Literal["due", "priority", "created", "updated"] = "due",
+    limit: int = Query(default=500, ge=1, le=5000),
+    offset: int = Query(default=0, ge=0),
+) -> list[WorkspaceIssue]:
+    """Issues across every project in the workspace that you can see (My issues, Tasks), each
+    with its project. Restricted projects you aren't on are left out. `order=due` is earliest
+    due first (no date last), then most urgent."""
+    return await IssueService(session).across_projects(
+        member, types=type, statuses=status, assignee=assignee, reporter=reporter, watching=watching,
+        label=label, due_before=due_before, order=order, limit=limit, offset=offset,
+    )

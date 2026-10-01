@@ -291,7 +291,7 @@ export function BoardView({
       }}
     >
       <div className="@container flex min-w-0 flex-1">
-        <div className="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4 md:px-6 md:pb-6 @2xl:flex-row @2xl:overflow-x-auto">
+        <div className="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4 md:px-6 md:pb-6 @2xl:flex-row @2xl:items-start @2xl:overflow-x-auto">
           {STATUSES.map((status) => (
             <Column
               key={status}

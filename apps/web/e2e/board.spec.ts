@@ -22,6 +22,7 @@ test("create an issue, move it, and comment on it", async ({ page }) => {
   await drawer.getByRole("button", { name: "Comment" }).click();
   await expect(drawer.getByText("Starting with the")).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
 
   // On the board, in the In progress column.
   const inProgress = page.locator("section").filter({ has: page.getByText("In progress", { exact: true }) });

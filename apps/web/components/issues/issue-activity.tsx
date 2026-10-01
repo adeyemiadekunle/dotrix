@@ -14,7 +14,7 @@ import { AGENT_LABELS, PRIORITY_META, STATUS_META, TYPE_META, type MemberMap } f
 
 type Event = Schemas["IssueEventRead"];
 
-const FIELD_LABELS: Record<string, string> = {
+export const FIELD_LABELS: Record<string, string> = {
   assignee_user_id: "assignee",
   assignee_agent: "assignee",
   depends_on: "dependencies",
@@ -47,7 +47,7 @@ function authorOf(event: Event, members: MemberMap): { name: string; agent: bool
   return { name: "Someone", agent: false };
 }
 
-function show(field: string, value: unknown, members: MemberMap): string {
+export function show(field: string, value: unknown, members: MemberMap): string {
   if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) return "none";
   if (field === "status") return STATUS_META[value as keyof typeof STATUS_META]?.label ?? String(value);
   if (field === "priority") return PRIORITY_META[value as keyof typeof PRIORITY_META]?.label ?? String(value);

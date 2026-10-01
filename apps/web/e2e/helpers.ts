@@ -21,7 +21,7 @@ export async function signUp(page: Page, user = newUser()) {
   return user;
 }
 
-/** Signs up, then creates a docs-only project; lands on its board. Returns the project key. */
+/** Signs up, then creates a docs-only project (it opens on its Overview) and goes to its board. Returns the project key. */
 export async function signUpWithProject(page: Page, name = "Kumove", key = "KUM") {
   const user = await signUp(page);
   await page.getByRole("link", { name: "New project" }).first().click();
@@ -29,6 +29,8 @@ export async function signUpWithProject(page: Page, name = "Kumove", key = "KUM"
   await page.getByLabel("Name").fill(name);
   await page.getByLabel("Key").fill(key);
   await page.getByRole("button", { name: "Create project", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${key}/overview`));
+  await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Board", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/p/${key}/board`));
   return { user, key };
 }

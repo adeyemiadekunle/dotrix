@@ -39,6 +39,45 @@ export const issueKeys = {
   issue: (s: Scope, key: string) => ["issues", s.projectId, "issue", key] as const,
 };
 
+export type WorkspaceIssue = Schemas["WorkspaceIssue"];
+
+/** Filters for issues across the workspace's projects; `me` stands for you. */
+export interface WorkspaceIssueFilters {
+  assignee?: string;
+  reporter?: string;
+  watching?: boolean;
+  status?: IssueStatus[];
+}
+
+/** Issues in every project of the workspace you can see (Home, My issues). */
+export function useWorkspaceIssues(workspaceId: string | undefined, filters: WorkspaceIssueFilters) {
+  return useQuery({
+    queryKey: ["issues", "workspace", workspaceId, filters],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/issues", {
+          params: { path: { workspace_id: workspaceId! }, query: { ...filters, limit: 5000 } },
+        }),
+      ),
+    enabled: Boolean(workspaceId),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Every issue in the project, done ones too, in backlog order (the Table). */
+export function useAllIssues(scope: Scope | undefined) {
+  return useQuery({
+    queryKey: scope ? [...issueKeys.all(scope), "all"] : ["issues", "none"],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", {
+          params: { path: path(scope!), query: { order: "rank", limit: 5000 } },
+        }),
+      ),
+    enabled: Boolean(scope),
+  });
+}
+
 export function useBoard(scope: Scope | undefined, filters: BoardFilters) {
   return useQuery({
     queryKey: scope ? issueKeys.board(scope, filters) : ["issues", "none"],

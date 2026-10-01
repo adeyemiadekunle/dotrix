@@ -359,3 +359,52 @@ async def test_issues_are_in_the_export(project, db_client: AsyncClient) -> None
     assert f"parent: {epic['key']}" in text and "Acceptance: merchant picks a slot." in text
     assert "## Log" in text and "updated: Started" in text
     assert f".pmagent/issues/{epic['key']}.md" in archive.namelist()
+
+
+# -- across projects (My issues, Tasks) ---------------------------------------------------
+
+
+async def test_issues_across_projects(signup, create_team, add_member, db_client: AsyncClient) -> None:
+    ada = await signup()
+    bob = await signup(email="bob@example.com", name="Bob")
+    team = await create_team(ada.headers)
+    ws = f"/v1/workspaces/{team['id']}"
+    await add_member(team["id"], bob.id, Role.MEMBER)
+
+    async def project(key: str) -> tuple[dict, str]:
+        res = await db_client.post(f"{ws}/projects", json={"key": key, "name": key.title()}, headers=ada.headers)
+        assert res.status_code == 201, res.text
+        return res.json(), f"{ws}/projects/{res.json()['id']}/issues"
+
+    kun, kun_url = await project("KUN")
+    _, mob_url = await project("MOB")
+    sec, sec_url = await project("SEC")
+    await db_client.patch(f"{ws}/projects/{sec['id']}", json={"access": "restricted"}, headers=ada.headers)
+
+    late = await new(db_client, kun_url, ada.headers, title="Late", assignee_user_id=bob.id, due="2026-09-30")
+    soon = await new(db_client, mob_url, ada.headers, title="Soon", assignee_user_id=bob.id, due="2026-10-07")
+    await new(db_client, mob_url, ada.headers, title="Undated", assignee_user_id=bob.id)
+    await new(db_client, kun_url, ada.headers, title="Ada's own")
+    await new(db_client, sec_url, ada.headers, title="Hidden from Bob")
+
+    mine = (await db_client.get(f"{ws}/issues", params={"assignee": "me"}, headers=bob.headers)).json()
+    # Earliest due first, undated last.
+    assert [i["title"] for i in mine] == ["Late", "Soon", "Undated"]
+    # The restricted project Bob isn't on is left out of everything he lists.
+    everything = (await db_client.get(f"{ws}/issues", headers=bob.headers)).json()
+    assert len(everything) == 4 and "Hidden from Bob" not in [i["title"] for i in everything]
+    assert mine[0]["project_key"] == "KUN" and mine[0]["project_id"] == kun["id"]
+    assert mine[0]["key"] == late["key"] and mine[1]["key"] == soon["key"]
+
+    due = await db_client.get(f"{ws}/issues", params={"assignee": "me", "due_before": "2026-10-01"}, headers=bob.headers)
+    assert [i["title"] for i in due.json()] == ["Late"]
+
+    # An owner sees every project; reporter and watching filters follow the person.
+    reported = (await db_client.get(f"{ws}/issues", params={"reporter": "me"}, headers=ada.headers)).json()
+    assert len(reported) == 5
+    assert (await db_client.get(f"{ws}/issues", params={"reporter": "me"}, headers=bob.headers)).json() == []
+    watched = (await db_client.get(f"{ws}/issues", params={"watching": True}, headers=ada.headers)).json()
+    assert len(watched) == 5  # the reporter watches what they create
+
+    bad = await db_client.get(f"{ws}/issues", params={"reporter": "someone"}, headers=ada.headers)
+    assert bad.status_code == 422

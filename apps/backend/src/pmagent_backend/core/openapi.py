@@ -96,6 +96,11 @@ TAGS: list[dict[str, str]] = [
         "(contracts per workspace, with per-project overrides). Runs happen in the background; every "
         "write pauses for a person to approve or reject it, unless an owner allowed that low-risk action.",
     },
+    {
+        "name": "activity",
+        "description": "What people and agents did in a project, for everyone who can see it: issue "
+        "changes, document versions, agent runs, and approval decisions.",
+    },
     {"name": "audit", "description": "Append-only log of knowledge changes, approvals, and agent runs."},
     {"name": "health", "description": "Liveness and readiness probes."},
 ]

@@ -139,7 +139,7 @@ export default function NewProjectPage() {
       setPhase("uploading");
       const { failed } = await upload(workspace.id, project.id, files);
       if (failed === 0) {
-        router.push(`/w/${workspace.slug}/p/${project.key}/docs`);
+        router.push(`/w/${workspace.slug}/p/${project.key}/files`);
         return;
       }
       setPhase("done");
@@ -275,7 +275,7 @@ export default function NewProjectPage() {
         <div className="flex justify-end gap-2">
           {phase === "done" && created ? (
             <Button asChild>
-              <Link href={`${projectHref}/docs`}>Open project</Link>
+              <Link href={`${projectHref}/files`}>Open project</Link>
             </Button>
           ) : (
             <>

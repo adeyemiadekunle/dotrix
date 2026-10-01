@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from pmagent_backend.modules.activity.router import router as activity
 from pmagent_backend.modules.agent_definitions.router import (
     project_router as project_agent_definitions,
 )
@@ -17,6 +18,7 @@ from pmagent_backend.modules.documents.router import router as documents
 from pmagent_backend.modules.invites.router import router as invites
 from pmagent_backend.modules.invites.router import workspace_router as workspace_invites
 from pmagent_backend.modules.issues.router import router as issues
+from pmagent_backend.modules.issues.router import workspace_router as workspace_issues
 from pmagent_backend.modules.knowledge.router import router as knowledge
 from pmagent_backend.modules.projects.router import router as projects
 from pmagent_backend.modules.search.router import router as search
@@ -43,6 +45,8 @@ for module_router in (
     workspace_approvals,
     audit,
     issues,
+    workspace_issues,
+    activity,
     search,
 ):
     router.include_router(module_router)

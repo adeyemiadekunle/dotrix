@@ -6,13 +6,16 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@pmagent/ui/components/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@pmagent/ui/components/sidebar";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { ChevronsUpDownIcon, LogOutIcon, SettingsIcon } from "lucide-react";
+import { ChevronsUpDownIcon, LogOutIcon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
 import Link from "next/link";
+import { useTheme } from "next-themes";
 
 import { authPost } from "@/lib/api";
 import { initials } from "@/lib/labels";
@@ -26,6 +29,7 @@ async function signOut() {
 export function NavUser() {
   const { isMobile } = useSidebar();
   const me = useMe();
+  const { theme, setTheme } = useTheme();
   if (!me.data) return <Skeleton className="h-12 w-full" />;
   const user = me.data;
 
@@ -70,6 +74,23 @@ export function NavUser() {
                 Settings
               </Link>
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-muted-foreground text-xs font-medium">Theme</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={setTheme}>
+              <DropdownMenuRadioItem value="light" onSelect={(e) => e.preventDefault()}>
+                <SunIcon />
+                Light
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="dark" onSelect={(e) => e.preventDefault()}>
+                <MoonIcon />
+                Dark
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="system" onSelect={(e) => e.preventDefault()}>
+                <MonitorIcon />
+                System
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => void signOut()}>
               <LogOutIcon />
               Sign out

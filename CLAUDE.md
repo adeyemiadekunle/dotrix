@@ -82,9 +82,10 @@ apps/backend/
 │   │   ├── projects/            projects, who can see them (open or restricted, project_members; `visible_to`), project access deps, canonical repo URLs
 │   │   ├── knowledge/           .pmagent/ files + version history + export
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge
-│   │   ├── issues/              issues, keys, board/backlog/epics, claim, Markdown render for export
+│   │   ├── issues/              issues, keys, board/backlog/epics, claim, issues across a workspace's visible projects, Markdown render for export
 │   │   ├── agent_definitions/   agent contracts per workspace with project overrides, versions, resolution for runs (agents v2 step 1)
 │   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals, checkpoints and decisions, triage and issue review, findings dedup, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis)
+│   │   ├── activity/            a project's activity feed for everyone who sees it, read from issue logs, document versions, runs, and decisions
 │   │   ├── audit/               append-only audit log
 │   │   ├── research/            web research for agent runs: sources per run (S1, S2, …), the page cache per workspace, web limits and Tavily credits, report claims checked against what was read
 │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
@@ -152,7 +153,7 @@ apps/web/
 │   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
 │   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /w/[workspace], /w/[workspace]/{approvals,agents,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{board,backlog,chat,briefing,knowledge,docs,settings} (the project root redirects to board; /overview to settings), /settings
+│   └── (app)/                   signed-in shell (sidebar): /w/[workspace] (Home), /w/[workspace]/{approvals (Notifications),my-issues,projects,agents,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{overview,board,list,table,files,knowledge,activity,chat,briefing,settings} (the project root redirects to overview; /backlog to list, /docs to files), /settings
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
 │   ├── documents/               dropzone, queued files, upload progress
@@ -182,6 +183,58 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 - **Hydration:** a project's tab content, chat panel, and issue drawer render only after hydration (`components/after-hydration.tsx`, in the project layout). Their data comes from browser-side queries, and a part that hydrates late (a Suspense boundary, a page the dev server is still compiling) would otherwise get data another component fetched meanwhile and no longer match the server's markup. Wrap new client-data areas that sit under a Suspense boundary the same way.
 - If the dev server starts 404ing routes that exist (typically after a `git switch` rewrote files under it), stop it and delete `apps/web/.next`.
 - The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@pmagent/ui/lib/utils` and `@/hooks/…` → `@pmagent/ui/hooks/…`.
+
+## Plan: UI redesign (design review, 2026-10-01)
+
+Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised shell than ours, but nothing about agents, approvals, chat, or documents. We take their layout and navigation and give our agent surfaces the prominent places. The reviewed mockups are a Design canvas (claude.ai artifact "UI ideas review"). Decisions from the review: approvals live in Notifications (no Approvals page); agents are configured only in Settings, by owners and admins; one Chat for the whole workspace (conversations grouped by project, summaries on request, no Briefing tab); project documents are Files (was Docs), Knowledge stays; every project has the same views. One PR per phase; each phase is usable on its own.
+
+### Phase 1: shell and My issues
+- [x] Board columns fit their cards (`@2xl:items-start` on the columns row; they stretched to the tallest)
+- [x] Sidebar in three groups: you (Home, Notifications, My issues), Workspace (Projects; Members and settings, and for owners and admins Agents and Audit log until Phase 5), Projects. Notifications is the Approvals page renamed (`/approvals`) until Phase 6
+  - [ ] the rest as each lands: Search (Phase 4), Chat (Phase 3), Overview, Tasks, Timeline *later*, Activity (Phase 4); starred projects first; the open project expanding to its views (Phase 2); Settings at the bottom (Phase 5)
+- [ ] Top bar on every page: breadcrumb, ⌘K search box, notifications bell, one primary action ("New issue"); with Phase 4's search
+- [x] Home (the workspace root): greeting, counts, what waits for a decision, my next issues, project progress (done/total from the issues across projects); the Projects grid moved to `/w/[ws]/projects`
+  - [ ] agent activity on Home (needs the Activity feed, Phase 2)
+- [x] Backend: issues across the projects you can see (`GET /v1/workspaces/{id}/issues`: type, status, assignee incl. `me`, reporter incl. `me`, watching, label, due_before; order due / priority / created / updated; restricted projects follow `visible_to`), tested
+- [x] My issues (`/w/[ws]/my-issues`): Overdue / Today / Upcoming / No due date / Done this week; Assigned to me, Watching, Reported by me (`?who=`); rows open the issue in its project's board
+  - [ ] views Board, Table, Timeline *later* (with Phase 2's views)
+- [x] Profile menu: Light / Dark / System
+  - [ ] switch workspace, keyboard shortcuts, connect the CLI (with Phase 5's Profile page)
+
+### Phase 2: project views
+- [x] Tabs: Overview, Board, List, Table, Files, Knowledge, Activity (then Chat and Briefing until Phase 3; settings stays the gear); the open project expands to the same views in the sidebar. A project opens on Overview; `/backlog` and `/docs` redirect to `/list` and `/files`
+  - [ ] Timeline *later* (needs start dates and the project graph)
+- [x] Overview as the landing tab: about, progress by status, coming up (soonest due first), epics, details, "Ask Chat" for a summary, recent activity
+- [x] List replaces Backlog: Ranked (drag to reorder, the old backlog) or By status (`?group=status`), with the epics alongside; Table: every issue, sortable columns, a Columns menu (remembered per browser), search, Export CSV
+  - [ ] Table bulk actions (change status, assign)
+- [x] Files replaces Docs: drop zone, type filter, sort (newest, name, largest), conversion status
+  - [ ] retry a failed conversion (needs an endpoint)
+- [x] Board: label chips, due dates, and + per column were already there; columns fit their cards (Phase 1)
+  - [ ] Sort control
+- [x] Backend + web: project Activity (`GET .../projects/{id}/activity`, module `activity`): issue events, document versions (not the skeleton), and for people who can chat agent runs and approval decisions; newest first, paged with `before`. The Activity tab filters Everything / Issues / Documents / Agents / Approvals; Overview shows the latest
+
+### Phase 3: workspace Chat
+- [ ] Backend: conversations at the workspace level; a conversation names zero, one, or several projects and the context pack comes from those; existing project threads migrate
+- [ ] Chat in the sidebar (Workspace group); the list grouped by project with + per project, then Chats; "Ask in Chat" on a project opens it with the project chosen
+- [ ] New chat screen: project, agent (Auto by default), model (fixed after the first message); suggestions only here (summaries of all projects or one, what changed, plan, brainstorm, research)
+- [ ] Remove the project Chat and Briefing tabs and the chat side panel; briefings become summaries on request
+
+### Phase 4: workspace pages and search
+- [ ] Workspace Overview: portfolio, issues by status, workload, agents this week (owners and admins)
+- [ ] Tasks: every issue across visible projects (same endpoint as My issues)
+- [ ] Workspace Activity: the project feed across visible projects (the audit log stays the strict record)
+- [ ] Projects page: status, progress, due, people, restricted lock, search, status filter, sort, Grid / List
+- [ ] ⌘K palette: issues, documents (sections), projects, agents, people, actions ("Ask in Chat"); needs workspace-wide search
+
+### Phase 5: one Settings
+- [ ] Settings with a left nav: Account (Profile, Appearance, Notifications, Devices and tokens, Calendar) and the workspace (General, Members, Invites, What members can do, Agents and Audit log for owners and admins only)
+- [ ] Agents move out of the sidebar into Settings → Agents (list with Default / Edited / Custom, workspace or project overrides)
+- [ ] Members: search, role chips, role dropdown per row, "Projects they see"
+- [ ] Profile page: photo, name, what you do, email (verified), sign-in methods (password, GitHub, unlink)
+
+### Phase 6: Notifications (with agents v2 step 4)
+- [ ] Backend: notification records (approvals and checkpoints waiting, mentions, assignments, agent findings), read state per person
+- [ ] Notifications page: list and detail, tabs All / Approvals / Mentions / Assigned / Findings, approve or reject in the detail with the diff; replaces the Approvals page; the badge and the bell count it
 
 ## Plan: agents v2 (review, 2026-09-29)
 
