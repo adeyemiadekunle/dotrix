@@ -1,6 +1,6 @@
 # Agents v2: spec
 
-Status: reviewed 2026-09-29; D1, D2, and D6 decided (§12). Plan: "Plan: agents v2" in [CLAUDE.md](../CLAUDE.md).
+Status: reviewed 2026-09-29; D1, D2, and D6 decided, D3 on 2026-10-01 (§12). Plan: "Plan: agents v2" in [CLAUDE.md](../CLAUDE.md).
 Background: the 2026-09-29 review of our agents against ChatGPT's workspace agents, dots, and
 Space (DevDay 2026), deep-research agents, code knowledge graphs, and AGENTS.md / Agent Skills.
 
@@ -328,45 +328,120 @@ fall back to search and documents until those land.
 
 ## 6. Step 1c: research
 
-### 6.1 Tools
+Planned 2026-10-01; provider decided (D3: Tavily). Research works today through each model
+provider's built-in search, which hides what was searched and read: no source records, no
+filters or caching, different on every provider, untestable without a key. 1c gives the Research
+agent (and any contract granted `web.search`) our own tools, so every page it relies on becomes a
+stored, dated, tiered source its claims cite and are checked against.
 
-- **Search provider interface** in the engine (`pmagent_engine.search.SearchProvider`:
-  `search(query, *, recency_days, include_domains, exclude_domains, limit)`), with Tavily,
-  Exa, and Brave implementations and a `FakeSearch` for tests. Settings:
-  `PMAGENT_SEARCH_PROVIDER`, `PMAGENT_SEARCH_API_KEY`. Without a key, the model's native
-  search stays as the fallback (today's behaviour). **(you)** choose the provider (D3).
-- **`fetch_page(url)` / `fetch_pdf(url)`** return Markdown (via `ingest.to_markdown`) with a
-  source id. Safety: http(s) only; public addresses only (no private, loopback, or link-local
-  IPs, checked after DNS resolution and on every redirect); 2 MB and 20 s limits; allowed
-  content types; robots.txt respected; per-domain rate limit. Fetched text is wrapped as
-  untrusted data before the model sees it.
-- A cache per workspace (`web_pages`: URL hash, fetched at, content hash, Markdown), reused for
-  a day, so repeated research doesn't refetch. Per workspace, so nothing crosses workspaces.
+### 6.1 Tools (engine, `pmagent_engine.web`)
 
-### 6.2 Sources and claims
+- **`SearchProvider`** (`web/search.py`): `search(query, *, recency_days, include_domains,
+  exclude_domains, limit) -> list[SearchHit]` (url, title, snippet, published date, score).
+  - `TavilySearch`: `POST https://api.tavily.com/search` with httpx, bearer key, `search_depth`
+    `basic` (1 credit; `advanced`, 2 credits, when the agent asks for depth), `topic` `general`
+    or `news`, `time_range` / `days` from `recency_days`, domain filters, `max_results` ≤ 10
+    (default 5), `include_raw_content=false` (we read pages ourselves). 429 and 5xx retried
+    once with backoff; 401 and quota errors come back to the agent as "web search unavailable"
+    and are logged without the key.
+  - `FakeSearch`: canned hits per query (tests, evals, e2e).
+- **`web_search(query, recency_days=None, domains=None, max_results=5)`**: our tool, under the
+  same name and catalogue id (`web.search`) as today's. Each hit gets a run-local source id
+  (`S1`, `S2`, …); snippets are marked untrusted.
+- **`fetch_page(url)`** (`web/fetch.py`; PDFs too, by content type): Markdown via
+  `ingest.to_markdown` (`.html` / `.pdf` by content type), returned with its source id, title,
+  and published date when the page gives one, capped at ~6,000 tokens with a note
+  (`part=2` for the rest).
+  - **Safety:** http(s) only; ports 80 and 443; every address the host resolves to must be
+    public (no private, loopback, link-local, CGNAT, multicast, or cloud metadata addresses),
+    checked on the connection actually made and again on every redirect (≤ 5); 3 MB and 20 s
+    limits; content types HTML, PDF, plain text, Markdown; robots.txt respected for our user
+    agent (`pmagent-research`); per-domain rate limit (1 request a second per run).
+  - Pages our fetcher can't read (JS-only pages, blocked) fall back to Tavily `/extract` (1
+    credit per 5 URLs), which fetches from Tavily's side; off with `PMAGENT_TAVILY_EXTRACT=false`.
+- **Untrusted text:** everything from the web reaches the model inside
+  `<web_content source="S3">…</web_content>`, after a line saying it's data to cite, never
+  instructions. A small detector (`web/untrusted.py`: "ignore previous instructions", "you are
+  an AI", hidden-text tricks, our tool names) flags a source; flagged sources are listed in the
+  report and in the run's details.
+- **Fallback:** without a Tavily key, the provider's built-in search stays (today's
+  behaviour); `fetch_page`, source records, and verification work either way.
+- Catalogue: `web.search` becomes "Search and read the web" (`web_search`, `fetch_page`).
+  Activity: "Searching the web for …", "Reading example.com".
 
-- `research_sources`: `id`, `workspace_id`, `project_id`, `run_id`, `url`, `title`,
-  `publisher`, `fetched_at`, `content_hash`, `tier` (`primary`, `reputable`, `other`).
-- Each claim in a `report` item cites source ids and a **quote**. Verification has two parts:
-  a deterministic check that the quote occurs in the stored page (normalised whitespace,
-  fuzzy match above a threshold), then a model check that the quote supports the claim.
-  Result: `supported`, `weak`, or `unsupported`. Unsupported claims are moved to
-  "Assumptions" in the saved report.
-- The saved `research/*.md` note has the fixed sections (question, short answer, findings,
-  assumptions, open questions, what it affects) and a sources list with dates.
-- Pages that contain instructions aimed at the agent are flagged in the report.
+### 6.2 Sources, cache, and limits (platform, `modules/research`)
 
-### 6.3 Watches (needs step 4)
+- **`research_sources`**: `id`, `workspace_id`, `project_id`, `run_id`, `label` (`S3`, unique
+  per run), `url`, `title`, `publisher` (the registrable domain), `published_at`, `fetched_at`,
+  `content_hash`, `tier`, `flagged` (instructions found). A search hit becomes a source when it
+  is shown; `fetch_page` fills in the rest. Isolation rows like every other table.
+- **`web_pages`** cache per workspace: URL hash, final URL, fetched at, content hash, Markdown;
+  reused for a day, so repeated research doesn't refetch. Nothing crosses workspaces.
+  `cleanup_expired` drops pages older than 30 days that no source points to.
+- **Tiers** (deterministic, `web/tiers.py`): `primary` (government and legislation, standards
+  bodies, regulators, the subject's own official site or docs when the agent names it and the
+  domain matches), `reputable` (a short list of established press, journals, preprint servers),
+  `other` (blogs, forums, everything else). The report says when a claim rests only on `other`.
+- **Limits** per run: 10 searches and 20 fetches by default (`PMAGENT_RESEARCH_MAX_SEARCHES`,
+  `_MAX_FETCHES`), and a workspace-wide daily cap on Tavily credits
+  (`PMAGENT_TAVILY_DAILY_CREDITS`, 500). Past a limit the tool says so and the agent reports
+  with what it has. Searches, fetches, and credits appear in the run's details next to tokens
+  (`breakdown.web`).
+- **Settings:** `PMAGENT_TAVILY_API_KEY` (also reads `TAVILY_API_KEY`), a `SecretStr`, never
+  logged; `PMAGENT_SEARCH_PROVIDER` (`tavily` when the key is set, else `native`; `fake` only
+  with `PMAGENT_E2E_MODELS=true`).
+
+### 6.3 Claims and verification
+
+- `ReportFinding` gains `quotes: [{source: "S3", text}]` (each claim cites at least one) and a
+  `status` the platform sets: `supported`, `weak`, or `unsupported`.
+- **In code, on `submit_result`:** each quote must occur in its source's stored page (whitespace
+  and punctuation normalised; a sliding-window fuzzy match ≥ 0.9 for small extraction
+  differences). A claim with no quote found is `unsupported`; one whose quotes are all from
+  `other` sources, or only from search snippets, is at most `weak`; the agent's own verify stage
+  (does the quote support the claim?) can lower a status, never raise it. No extra model call.
+- The reply and the app show each claim with its status, sources (title, publisher, tier, date),
+  and confidence; unsupported claims are shown under "Assumptions", not "Findings".
+
+### 6.4 The report and reuse
+
+- **Template** (default in `rules/`, editable in `agent-rules/`): question, short answer,
+  findings (claim, sources, confidence), assumptions, open questions, what it affects in the
+  project (paths and issue keys; graph links after step 3), sources (with dates and tiers).
+- **"Save as research note"** on a report (people who may edit documents): the platform renders
+  the template from the result and its sources into `research/YYYY-MM-DD-<slug>.md` (front
+  matter: question, `researched` date, run id), written as that person with the research agent
+  as author, so the sources list is always exact. The agent can still propose its own note
+  with `write_file` when asked (approval as usual).
+- **Per-item actions:** "Create issue" (exists; a spike for an open question), "Propose a
+  requirement change" (asks the Product agent in the same conversation), "Record a decision"
+  (asks Documentation for an ADR draft). Both go through approvals as usual.
+- **Reuse before searching:** the `our_knowledge` stage searches `research/` first
+  (`search_knowledge`); a note younger than 90 days that answers the question is reused and
+  cited as `research/…`; an older one is refreshed (same file, a new version), not duplicated.
+
+### 6.5 Watches (needs step 4)
 
 A watch is an automation (§9) with the research agent and a topic: it re-runs the pipeline on
 a schedule, compares claims with the last report, and creates an inbox item only when
 something changed, with proposed document updates to approve.
 
-### 6.4 Acceptance
+### 6.6 Delivery (PRs) and acceptance
 
-- With `FakeSearch`, a research run plans, searches, fetches, verifies, and saves a report with
-  sources; a quote that isn't in the page is marked unsupported.
-- The SSRF checks are unit-tested (private IPs, redirects to private IPs, non-http schemes).
+1. **Engine:** `pmagent_engine.web` (provider, Tavily, Fake, fetcher with its safety checks,
+   untrusted wrapping), `web_search` / `fetch_page` tools, the catalogue entry, native fallback.
+   **Acceptance:** SSRF unit tests (private and metadata IPs, DNS that resolves to one, a
+   redirect to one, other schemes and ports, oversize and slow responses); Tavily request shape
+   against an httpx mock; evals with `FakeSearch` (tools offered, `web_content` wrapping).
+2. **Platform:** `modules/research` (sources, cache, tiers, limits, usage), settings,
+   verification on `submit_result`, sources in the run's API and details, isolation rows.
+   **Acceptance:** with `FakeSearch`, a research run plans, searches, fetches, verifies, and
+   records a report with sources; a quote that isn't in the page is `unsupported`; another
+   workspace never sees the cache or sources.
+3. **Report and apps:** the template, "Save as research note", per-item actions, reuse; web
+   (claims with status and source chips, the sources list), CLI (sources after the reply).
+   **Acceptance:** a browser test (e2e model + `FakeSearch`): research → report with sources →
+   save as note; one live run on Tavily, measured (searches, credits, tokens) in the PR.
 
 ## 7. Step 2: rules that layer and learn
 
@@ -498,7 +573,7 @@ something changed, with proposed document updates to approve.
 |---|---|---|
 | D1 | Standing `allow` rules vs "no agent write without approval" | **Decided:** owners approve standing rules; low-risk actions only; the CLAUDE.md rule is amended (§4.5) |
 | D2 | Where contracts live | **Decided:** the workspace (Personal or Organisation), with per-project overrides |
-| D3 | Search provider | Tavily (built for agents, simple pricing); Exa or Brave also fit |
+| D3 | Search provider | **Decided:** Tavily (built for agents, simple pricing), behind a `SearchProvider` interface; the model's built-in search stays as the fallback without a key (§6) |
 | D4 | Quality evals | On demand with a key, not in CI |
 | D5 | GitHub App | Register when step 5 starts; one app for sign-in and repos |
 | D6 | Workspace vs organisation | **Decided:** fold organisations into workspaces; Personal or Organisation; project access for teams (§0) |
