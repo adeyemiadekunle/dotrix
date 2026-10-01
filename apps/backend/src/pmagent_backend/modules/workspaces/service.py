@@ -4,13 +4,17 @@ import re
 import secrets
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound
 from pmagent_backend.modules.audit.service import AuditLog
-from pmagent_backend.modules.auth.models import User
+from pmagent_backend.modules.auth.models import User, UserAvatar
+from pmagent_backend.modules.auth.profile import ProfileService
 from pmagent_backend.modules.auth.repository import UserRepository
 from pmagent_backend.modules.knowledge.models import AuthorType
+from pmagent_backend.modules.projects.models import ProjectAccessLevel, ProjectMember
+from pmagent_backend.modules.projects.repository import ProjectRepository
 
 from .models import Membership, Role, Workspace, WorkspaceKind
 from .permissions import Permission, can
@@ -115,17 +119,43 @@ class WorkspaceService:
         await self.session.commit()
         return WorkspaceWithRole.of(workspace, member.role)
 
-    async def list_members(self, workspace_id: uuid.UUID) -> list[MemberRead]:
+    async def list_members(self, workspace_id: uuid.UUID, viewer: Membership | None = None) -> list[MemberRead]:
+        """Everyone in the workspace. With `viewer`, each person's projects are the ones they see
+        among those the viewer sees, so a restricted project's name never leaks."""
+        projects = await ProjectRepository(self.session).list(workspace_id, member=viewer)
+        added: dict[uuid.UUID, set[uuid.UUID]] = {}
+        for project_id, user_id in await self.session.execute(
+            select(ProjectMember.project_id, ProjectMember.user_id).where(ProjectMember.workspace_id == workspace_id)
+        ):
+            added.setdefault(user_id, set()).add(project_id)
+
+        def sees(m: Membership) -> list[uuid.UUID]:
+            if m.role is Role.GUEST:
+                return []
+            if m.role in (Role.OWNER, Role.ADMIN):
+                return [p.id for p in projects]
+            mine = added.get(m.user_id, set())
+            return [p.id for p in projects if p.access is ProjectAccessLevel.WORKSPACE or p.id in mine]
+
         return [
             MemberRead(
                 user_id=user.id,
                 email=user.email,
                 display_name=user.display_name,
+                title=user.title,
+                avatar_updated_at=user.avatar_updated_at,
                 role=m.role,
                 joined_at=m.created_at,
+                sees_all_projects=m.role in (Role.OWNER, Role.ADMIN),
+                project_ids=sees(m),
             )
             for m, user in await self.members.list_with_users(workspace_id)
         ]
+
+    async def avatar(self, member: Membership, user_id: uuid.UUID) -> UserAvatar:
+        """A colleague's photo: they must be in the workspace too."""
+        await self._get_member(member.workspace_id, user_id)
+        return await ProfileService(self.session).avatar(user_id)
 
     async def change_role(
         self, actor: Membership, target_user_id: uuid.UUID, role: Role
@@ -144,7 +174,7 @@ class WorkspaceService:
             )
         target.role = role
         await self.session.commit()
-        members = await self.list_members(actor.workspace_id)
+        members = await self.list_members(actor.workspace_id, actor)
         return next(m for m in members if m.user_id == target_user_id)
 
     async def transfer_ownership(self, actor: Membership, target_user_id: uuid.UUID) -> MemberRead:
@@ -162,7 +192,7 @@ class WorkspaceService:
         target.role = Role.OWNER
         actor.role = Role.ADMIN
         await self.session.commit()
-        members = await self.list_members(actor.workspace_id)
+        members = await self.list_members(actor.workspace_id, actor)
         return next(m for m in members if m.user_id == target_user_id)
 
     async def remove_member(self, actor: Membership, target_user_id: uuid.UUID) -> None:

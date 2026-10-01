@@ -24,7 +24,6 @@ import { Skeleton } from "@pmagent/ui/components/skeleton";
 import {
   ActivityIcon,
   BellIcon,
-  BotIcon,
   CircleCheckIcon,
   FolderKanbanIcon,
   LockIcon,
@@ -34,7 +33,6 @@ import {
   ListTodoIcon,
   MessageSquareIcon,
   PlusIcon,
-  ScrollTextIcon,
   SearchIcon,
   SettingsIcon,
 } from "lucide-react";
@@ -216,26 +214,6 @@ export function AppSidebar() {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  {canManageProjects(workspace?.role) && (
-                    <SidebarMenuItem>
-                      <SidebarMenuButton asChild isActive={pathname.startsWith(`${base}/agents`)} tooltip="Agents">
-                        <Link href={`${base}/agents`}>
-                          <BotIcon />
-                          <span>Agents</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )}
-                  {canManageProjects(workspace?.role) && (
-                    <SidebarMenuItem>
-                      <SidebarMenuButton asChild isActive={pathname === `${base}/audit`} tooltip="Audit log">
-                        <Link href={`${base}/audit`}>
-                          <ScrollTextIcon />
-                          <span>Audit log</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )}
                 </>
               ) : (
                 <NavSkeleton rows={6} />
@@ -310,7 +288,7 @@ export function AppSidebar() {
         {workspace && (
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={pathname === `${base}/settings`} tooltip="Settings">
+              <SidebarMenuButton asChild isActive={pathname.startsWith(`${base}/settings`)} tooltip="Settings">
                 <Link href={`${base}/settings`}>
                   <SettingsIcon />
                   <span>Settings</span>

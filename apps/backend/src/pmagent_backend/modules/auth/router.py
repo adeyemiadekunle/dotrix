@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile, status
 from fastapi.responses import RedirectResponse
 
 from pmagent_backend.api.deps import CurrentUser, EmailDep, JobsDep, SessionDep, SettingsDep
@@ -13,6 +13,7 @@ from pmagent_backend.core.openapi import errors
 
 from .github import GitHubDep
 from .limits import LOGIN, MAGIC_LINK, PASSWORD_RESET, SIGNUP, VERIFY_RESEND, ThrottleDep
+from .profile import MAX_AVATAR_BYTES, ProfileService
 from .schemas import (
     AuthProviders,
     EmailSignupAddress,
@@ -23,7 +24,9 @@ from .schemas import (
     MagicLinkRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
+    ProfileUpdate,
     RefreshRequest,
+    SignInMethods,
     SignupRequest,
     SignupResponse,
     TokenPair,
@@ -171,3 +174,66 @@ async def confirm_password_reset(data: PasswordResetConfirm, auth: Auth) -> None
 async def me(user: CurrentUser) -> UserRead:
     """The signed-in user."""
     return UserRead.model_validate(user)
+
+
+def get_profile_service(session: SessionDep) -> ProfileService:
+    return ProfileService(session)
+
+
+Profile = Annotated[ProfileService, Depends(get_profile_service)]
+
+# Photo responses: the address carries the photo's version (`?v=`), so browsers may keep it.
+IMAGE_RESPONSE = {200: {"content": {"image/png": {}, "image/jpeg": {}, "image/webp": {}}, "description": "The photo"}}
+
+
+def image(content_type: str, content: bytes) -> Response:
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={"Cache-Control": "private, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@me_router.patch("/me", responses=errors(401, 422))
+async def update_profile(data: ProfileUpdate, user: CurrentUser, profile: Profile) -> UserRead:
+    """Change your name or what you do (shown next to your name to your team)."""
+    return await profile.update(user, data)
+
+
+@me_router.get("/me/sign-in-methods", responses=errors(401))
+async def sign_in_methods(user: CurrentUser, profile: Profile) -> SignInMethods:
+    """How you can sign in: a password, an email link (always), and linked accounts (GitHub)."""
+    return await profile.sign_in_methods(user)
+
+
+@me_router.delete(
+    "/me/sign-in-methods/{provider}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(401, 404, 409)
+)
+async def unlink_sign_in_method(provider: str, user: CurrentUser, profile: Profile) -> None:
+    """Stop signing in with a linked account. 409 while it's your only way in besides an email
+    link: set a password first (Forgot password)."""
+    await profile.unlink(user, provider)
+
+
+@me_router.put("/me/avatar", responses=errors(401, 422))
+async def set_avatar(
+    user: CurrentUser,
+    profile: Profile,
+    file: Annotated[UploadFile, File(description="PNG, JPEG, or WebP, at most 500 KB (256 px square is plenty)")],
+) -> UserRead:
+    """Set your profile photo, replacing any earlier one."""
+    content = await file.read(MAX_AVATAR_BYTES + 1)
+    return await profile.set_avatar(user, file.content_type or "", content)
+
+
+@me_router.delete("/me/avatar", responses=errors(401))
+async def remove_avatar(user: CurrentUser, profile: Profile) -> UserRead:
+    """Remove your profile photo (your initials show instead)."""
+    return await profile.remove_avatar(user)
+
+
+@me_router.get("/me/avatar", response_class=Response, responses=IMAGE_RESPONSE | errors(401, 404))
+async def get_avatar(user: CurrentUser, profile: Profile) -> Response:
+    """Your profile photo. 404 without one."""
+    avatar = await profile.avatar(user.id)
+    return image(avatar.content_type, avatar.content)

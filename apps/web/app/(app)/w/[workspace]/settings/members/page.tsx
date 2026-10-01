@@ -2,12 +2,12 @@
 
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 
-import { GeneralCard } from "@/components/settings/workspace";
+import { MembersCard } from "@/components/settings/members";
 import { useCurrentWorkspace } from "@/lib/queries";
 
-/** Settings → General: the workspace's name and kind. */
+/** Settings → Members: everyone sees the people; owners and admins manage them. */
 export default function Page() {
   const { workspace } = useCurrentWorkspace();
   if (!workspace) return <Skeleton className="h-64" />;
-  return <GeneralCard key={workspace.id} workspace={workspace} />;
+  return <MembersCard workspace={workspace} />;
 }

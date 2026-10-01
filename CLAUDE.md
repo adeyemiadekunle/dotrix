@@ -74,7 +74,7 @@ apps/backend/
 │   │   ├── health.py            /health (liveness), /health/ready (database)
 │   │   └── v1.py                mounts every module router under /v1
 │   ├── modules/
-│   │   ├── auth/                users, sign-up/login, refresh tokens, email verification, password reset, GitHub sign-in (github.py)
+│   │   ├── auth/                users, sign-up/login, refresh tokens, email verification, password reset, GitHub sign-in (github.py), your profile (profile.py: name, what you do, photo, sign-in methods)
 │   │   ├── api_tokens/          personal access tokens (pmat_…) and CLI device login
 │   │   ├── calendar/            per-person iCalendar feed of issue dates at a secret URL (FR-32)
 │   │   ├── workspaces/          workspaces (personal or organisation), members, roles, the permission matrix (permissions.py), turn into an organisation
@@ -153,14 +153,14 @@ apps/web/
 │   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
 │   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /w/[workspace] (Home), /w/[workspace]/{chat,overview,tasks,activity,approvals (Notifications),my-issues,projects,agents,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{overview,board,list,table,files,knowledge,activity,settings} (the project root redirects to overview; /backlog to list, /docs to files, /chat and /briefing to the workspace Chat), /settings
+│   └── (app)/                   signed-in shell (sidebar): /w/[workspace] (Home), /w/[workspace]/{chat,overview,tasks,activity,approvals (Notifications),my-issues,projects,projects/new}, /w/[workspace]/settings/{profile,appearance,devices,calendar (your account), (General),members,invites,permissions,agents,audit} (/agents and /audit redirect there), /w/[workspace]/p/[KEY]/{overview,board,list,table,files,knowledge,activity,settings} (the project root redirects to overview; /backlog to list, /docs to files, /chat and /briefing to the workspace Chat), /settings (opens your profile in the workspace you were last in)
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
 │   ├── documents/               dropzone, queued files, upload progress
 │   ├── agent/                   chat context (opens conversations in the workspace Chat), conversation, approvals (diff view, decisions, plan checkpoints), run results, triage dialog
 │   ├── agents/                  Settings → Agents: the list and the contract editor (workspace and project scope)
 │   ├── knowledge/               file tree, file history (authorship, diffs, restore)
-│   ├── settings/                members, invites and "turn into an organisation" (workspace settings)
+│   ├── settings/                Settings' pages: profile, appearance, devices, calendar, the workspace (general, what members can do), members (search, roles, projects they see), invites and "turn into an organisation"
 └── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, agents.ts (agent contracts, the chat's agent list), knowledge.ts, admin.ts, documents.ts, repo.ts, url-state.ts, labels.ts
 packages/ui/src/                 consumed as source (no build step), by path: `@pmagent/ui/components/*`, `/lib/*`, `/hooks/*`, `/globals.css`
 ├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
@@ -232,10 +232,11 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
   - [ ] agents and people in the palette; Chat started with the query
 
 ### Phase 5: one Settings
-- [ ] Settings with a left nav: Account (Profile, Appearance, Notifications, Devices and tokens, Calendar) and the workspace (General, Members, Invites, What members can do, Agents and Audit log for owners and admins only)
-- [ ] Agents move out of the sidebar into Settings → Agents (list with Default / Edited / Custom, workspace or project overrides)
-- [ ] Members: search, role chips, role dropdown per row, "Projects they see"
-- [ ] Profile page: photo, name, what you do, email (verified), sign-in methods (password, GitHub, unlink)
+- [x] Settings at `/w/[ws]/settings/…` with a left nav (a scrolling row on phones): Account (Profile, Appearance, Notifications *later*, Devices and tokens, Calendar) and the workspace (General, Members, Invites for owners and admins, What members can do in organisations, Agents and Audit log for owners and admins). `/settings` opens your profile in the workspace you were last in; the user menu has Profile and Settings; sections stack when narrow (`SettingsSection` is a container query, `stacked` for full-width lists)
+- [x] Agents and the Audit log move out of the sidebar into Settings (owners and admins; the list shows Built-in / Customised / Custom); `/agents` and `/audit` redirect
+- [x] Members: search (name, email, what they do), role chips with counts, role dropdown per row, photo, "Projects they see" (`MemberRead.sees_all_projects`, `project_ids`: among the projects the viewer sees, so a restricted one never leaks)
+- [x] Profile: photo (cropped to a 256 px square in the browser; `PUT/DELETE/GET /v1/me/avatar`, PNG/JPEG/WebP checked by their first bytes, ≤ 500 KB, kept in `user_avatars`; colleagues' at `GET /v1/workspaces/{id}/members/{user_id}/avatar`), name and what you do (`PATCH /v1/me`, `User.title`), email (verified), sign-in methods (`GET /v1/me/sign-in-methods`: password, email link, GitHub; `DELETE /v1/me/sign-in-methods/github`, 409 without a password)
+  - [ ] photos next to assignees, comments, and activity; linking GitHub from Settings (today: sign in with GitHub once); changing the password in place (today: an emailed link)
 
 ### Phase 6: Notifications (with agents v2 step 4)
 - [ ] Backend: notification records (approvals and checkpoints waiting, mentions, assignments, agent findings), read state per person
@@ -512,7 +513,7 @@ External accounts, keys, and config have to exist before these items can be buil
 - [x] **(you)** Register it with callback URL `http://localhost:3000/api/auth/github/callback` (or `http://localhost:8000/v1/auth/oauth/github/callback`, which forwards there); a GitHub App needs Account permissions → Email addresses: read-only
 - [x] `PMAGENT_GITHUB_CLIENT_ID`, `PMAGENT_GITHUB_CLIENT_SECRET` (`GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` are read too; `PMAGENT_GITHUB_REDIRECT_URI` only if the app has several callback URLs). FR-10 will also need `PMAGENT_GITHUB_APP_ID` and a private key
 - [x] Only link accounts by email when the provider reports that email as verified
-- [ ] Settings: see and unlink a linked GitHub account (keep a way to sign in)
+- [x] Settings: see and unlink a linked GitHub account (keep a way to sign in): Settings → Profile → Sign-in methods; refused without a password
 
 **Magic-link login**
 - [x] Depends on **real email sending** above: done (Sendly)

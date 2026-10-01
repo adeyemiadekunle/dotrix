@@ -68,7 +68,31 @@ class UserRead(BaseModel):
     email: str
     display_name: str
     email_verified: bool
+    title: str | None = Field(description="What they do, e.g. Product designer")
+    avatar_updated_at: datetime | None = Field(description="When their photo last changed; null without one")
     created_at: datetime
+
+
+Title = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
+
+
+class ProfileUpdate(BaseModel):
+    """Change your name or what you do; leave a field out to keep it. An empty title clears it."""
+
+    display_name: DisplayName | None = None
+    title: Title | None = None
+
+
+class LinkedAccount(BaseModel):
+    provider: Literal["github"]
+    login: str | None = Field(description="Your username there")
+    linked_at: datetime
+
+
+class SignInMethods(BaseModel):
+    password: bool = Field(description="You have a password (else: set one with Forgot password)")
+    email_link: bool = Field(description="A sign-in link by email always works")
+    accounts: list[LinkedAccount]
 
 
 class SignupResponse(BaseModel):

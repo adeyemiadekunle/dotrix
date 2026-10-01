@@ -4,10 +4,11 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
 from pmagent_backend.api.deps import CurrentUser, SessionDep, require_permission
 from pmagent_backend.core.openapi import errors
+from pmagent_backend.modules.auth.router import IMAGE_RESPONSE, image
 
 from .models import Membership
 from .permissions import Permission
@@ -72,8 +73,20 @@ async def update_workspace(
 
 @router.get("/{workspace_id}/members", responses=errors(404))
 async def list_members(member: Viewer, session: SessionDep) -> list[MemberRead]:
-    """Everyone in the workspace, with their roles."""
-    return await WorkspaceService(session).list_members(member.workspace_id)
+    """Everyone in the workspace, with their roles, what they do, and the projects they see
+    (among the ones you see)."""
+    return await WorkspaceService(session).list_members(member.workspace_id, member)
+
+
+@router.get(
+    "/{workspace_id}/members/{user_id}/avatar",
+    response_class=Response,
+    responses=IMAGE_RESPONSE | errors(404),
+)
+async def get_member_avatar(user_id: uuid.UUID, member: Viewer, session: SessionDep) -> Response:
+    """A colleague's profile photo. 404 without one, or if they aren't in this workspace."""
+    avatar = await WorkspaceService(session).avatar(member, user_id)
+    return image(avatar.content_type, avatar.content)
 
 
 @router.patch("/{workspace_id}/members/{user_id}", responses=errors(403, 404, 409, 422))

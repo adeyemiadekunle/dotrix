@@ -81,8 +81,14 @@ class MemberRead(BaseModel):
     user_id: uuid.UUID
     email: str
     display_name: str
+    title: str | None = Field(description="What they do")
+    avatar_updated_at: datetime | None = Field(description="When their photo last changed; null without one")
     role: Role
     joined_at: datetime
+    sees_all_projects: bool = Field(description="Owners and admins see every project")
+    project_ids: list[uuid.UUID] = Field(
+        description="The projects they see, among those you see (restricted ones only if they were added)"
+    )
 
 
 class MemberRoleUpdate(BaseModel):
