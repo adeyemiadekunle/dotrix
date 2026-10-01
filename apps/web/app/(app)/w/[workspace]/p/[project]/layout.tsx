@@ -2,14 +2,13 @@
 
 import { Button } from "@pmagent/ui/components/button";
 import { cn } from "@pmagent/ui/lib/utils";
-import { InboxIcon, PanelRightIcon, PlusIcon, SettingsIcon } from "lucide-react";
+import { InboxIcon, MessageSquareIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState, type ReactNode } from "react";
 
 import { AfterHydration } from "@/components/after-hydration";
 import { ChatProvider, useChat } from "@/components/agent/chat-context";
-import { ChatPanel } from "@/components/agent/chat-panel";
 import { TriageDialog } from "@/components/agent/triage-dialog";
 import { PageHeader } from "@/components/app-shell";
 import { ProjectTile } from "@/components/project-tile";
@@ -18,8 +17,8 @@ import { NewIssueDialog } from "@/components/issues/new-issue-dialog";
 import { NotFound } from "@/components/states";
 import { useProjectScope } from "@/lib/queries";
 
-// Every project has the same views. Chat and Briefing stay here until Chat moves to the
-// workspace (then a summary is something you ask Chat for).
+// Every project has the same views. Chat is the workspace's (about this project via "Ask in
+// Chat"); a summary is something you ask it for.
 const TABS = [
   { href: "overview", label: "Overview" },
   { href: "board", label: "Board" },
@@ -28,8 +27,6 @@ const TABS = [
   { href: "files", label: "Files" },
   { href: "knowledge", label: "Knowledge" },
   { href: "activity", label: "Activity" },
-  { href: "chat", label: "Chat" },
-  { href: "briefing", label: "Briefing" },
 ];
 
 function ProjectFrame({ children }: { children: ReactNode }) {
@@ -38,7 +35,6 @@ function ProjectFrame({ children }: { children: ReactNode }) {
   const chat = useChat();
   const [creating, setCreating] = useState(false);
   const [triaging, setTriaging] = useState(false);
-  const onChatPage = pathname.endsWith("/chat");
 
   const base = workspace && project ? `/w/${workspace.slug}/p/${project.key}` : "";
   return (
@@ -51,18 +47,12 @@ function ProjectFrame({ children }: { children: ReactNode }) {
           actions={
             project && (
               <div className="flex gap-2">
-                {!onChatPage && (
-                  <Button
-                    size="icon-sm"
-                    variant={chat.open ? "secondary" : "outline"}
-                    onClick={() => chat.setOpen(!chat.open)}
-                    aria-pressed={chat.open}
-                    aria-label={chat.open ? "Close the chat panel" : "Open the chat panel"}
-                    title="Chat panel"
-                  >
-                    <PanelRightIcon />
-                  </Button>
-                )}
+                <Button size="sm" variant="outline" asChild>
+                  <Link href={chat.href} aria-label="Ask in Chat" title="Ask the agents about this project">
+                    <MessageSquareIcon />
+                    <span className="hidden sm:inline">Ask in Chat</span>
+                  </Link>
+                </Button>
                 {canEdit && (
                   <Button size="sm" variant="outline" onClick={() => setTriaging(true)} title="Triage a bug report or request">
                     <InboxIcon />
@@ -126,7 +116,6 @@ function ProjectFrame({ children }: { children: ReactNode }) {
         <AfterHydration>{children}</AfterHydration>
       </div>
       <AfterHydration>
-        {!onChatPage && <ChatPanel />}
         <Suspense>
           <IssueDrawer />
           {creating && <NewIssueDialog open={creating} onOpenChange={setCreating} />}
@@ -138,10 +127,10 @@ function ProjectFrame({ children }: { children: ReactNode }) {
 }
 
 export default function ProjectLayout({ children }: { children: ReactNode }) {
-  const { project, notFound } = useProjectScope();
+  const { workspace, project, notFound } = useProjectScope();
   if (notFound) return <NotFound what="project" />;
   return (
-    <ChatProvider projectId={project?.id}>
+    <ChatProvider workspaceSlug={workspace?.slug} projectKey={project?.key}>
       <ProjectFrame>{children}</ProjectFrame>
     </ChatProvider>
   );

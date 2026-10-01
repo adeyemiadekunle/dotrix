@@ -76,6 +76,32 @@ async def test_conversation_threads(project, db_client: AsyncClient, agent_scrip
     assert [r["message"] for r in thread] == ["two", "one"]
 
 
+async def test_workspace_conversations(project, db_client: AsyncClient, agent_script, signup, add_member) -> None:
+    ada, team, base = await project()
+    ws = f"/v1/workspaces/{team['id']}"
+    other = (await db_client.post(f"{ws}/projects", json={"key": "MOB", "name": "Mobile"}, headers=ada.headers)).json()
+    other_base = f"{ws}/projects/{other['id']}"
+    agent_script.say("One.", "Two.", "Three.")
+    first = await run(db_client, base, ada.headers, "What's blocking the release?")
+    await run(db_client, other_base, ada.headers, "Plan offline sync")
+    await run(db_client, base, ada.headers, "And after that?", thread_id=first["thread_id"])
+
+    threads = (await db_client.get(f"{ws}/threads", headers=ada.headers)).json()
+    # Most recently active first, each named by its first message, with its project.
+    assert [(t["project_key"], t["title"]) for t in threads] == [
+        ("KUN", "What's blocking the release"),
+        ("MOB", "Plan offline sync"),
+    ]
+    assert threads[0]["thread_id"] == first["thread_id"] and threads[0]["waiting"] is False
+
+    # A member doesn't see conversations in a restricted project they aren't on.
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    await db_client.patch(other_base, json={"access": "restricted"}, headers=ada.headers)
+    seen = (await db_client.get(f"{ws}/threads", headers=bob.headers)).json()
+    assert [t["project_key"] for t in seen] == ["KUN"]
+
+
 async def test_new_threads_get_titles(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
     model = agent_script.say("Here's the board.", "And more.")

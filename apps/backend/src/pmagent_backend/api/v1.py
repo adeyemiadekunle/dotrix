@@ -7,6 +7,7 @@ from pmagent_backend.modules.agent_definitions.router import (
 from pmagent_backend.modules.agent_definitions.router import router as agent_definitions
 from pmagent_backend.modules.agents.router import models_router as models
 from pmagent_backend.modules.agents.router import router as agents
+from pmagent_backend.modules.agents.router import threads_router as workspace_threads
 from pmagent_backend.modules.agents.router import workspace_router as workspace_approvals
 from pmagent_backend.modules.api_tokens.router import device_router, tokens_router
 from pmagent_backend.modules.audit.router import router as audit
@@ -43,6 +44,7 @@ for module_router in (
     agents,
     models,
     workspace_approvals,
+    workspace_threads,
     audit,
     issues,
     workspace_issues,

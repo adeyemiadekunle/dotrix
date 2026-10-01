@@ -66,6 +66,13 @@ export function useCurrentWorkspace() {
   };
 }
 
+/** A project of the current workspace by its id, for pages that choose the project themselves (Chat). */
+export function useWorkspaceProject(projectId: string | undefined) {
+  const { workspace } = useCurrentWorkspace();
+  const projects = useProjects(workspace?.id);
+  return { workspace, project: projects.data?.find((p) => p.id === projectId) };
+}
+
 /** The project in the URL (/w/[workspace]/p/[project]), by its key. */
 export function useCurrentProject() {
   const params = useParams<{ project?: string }>();

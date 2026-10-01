@@ -1,70 +1,37 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { createContext, useCallback, useContext, type ReactNode } from "react";
 
 interface ChatState {
-  /** The side panel is open (desktop) or the sheet is showing (phones). */
-  open: boolean;
-  setOpen: (open: boolean) => void;
-  /** The conversation being shown; null starts a new one with the next message. */
-  threadId: string | null;
-  setThreadId: (threadId: string | null) => void;
-  /** Show a conversation (e.g. one a button just started) and open the panel. */
+  /** Open a conversation (e.g. one a button just started) in the workspace's Chat. */
   show: (threadId: string) => void;
+  /** Where Chat about this project starts. */
+  href: string;
 }
 
 const ChatContext = createContext<ChatState | null>(null);
 
-function read(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function write(key: string, value: string | null) {
-  try {
-    if (value === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
-  } catch {
-    // Remembering the panel is a convenience; blocked storage just means it starts fresh.
-  }
-}
-
-/** Chat state for one project: which conversation is open, and whether the panel is. */
-export function ChatProvider({ projectId, children }: { projectId: string | undefined; children: ReactNode }) {
-  const [open, setOpenState] = useState(false);
-  const [threadId, setThreadState] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!projectId) return;
-    setThreadState(read(`pmagent.thread.${projectId}`));
-    // Reopen the panel beside the page on wide screens; on phones it's a sheet over the page,
-    // which should only appear when asked for.
-    setOpenState(read("pmagent.chatOpen") === "1" && window.matchMedia("(min-width: 768px)").matches);
-  }, [projectId]);
-
-  const setOpen = useCallback((next: boolean) => {
-    setOpenState(next);
-    write("pmagent.chatOpen", next ? "1" : null);
-  }, []);
-  const setThreadId = useCallback(
-    (next: string | null) => {
-      setThreadState(next);
-      if (projectId) write(`pmagent.thread.${projectId}`, next);
-    },
-    [projectId],
-  );
+/** Chat for one project's pages: conversations open in the workspace's Chat, about this project. */
+export function ChatProvider({
+  workspaceSlug,
+  projectKey,
+  children,
+}: {
+  workspaceSlug: string | undefined;
+  projectKey: string | undefined;
+  children: ReactNode;
+}) {
+  const router = useRouter();
+  const href = workspaceSlug ? `/w/${workspaceSlug}/chat${projectKey ? `?project=${projectKey}` : ""}` : "/";
   const show = useCallback(
-    (next: string) => {
-      setThreadId(next);
-      setOpen(true);
+    (threadId: string) => {
+      if (!workspaceSlug) return;
+      router.push(`/w/${workspaceSlug}/chat?project=${projectKey ?? ""}&thread=${threadId}`);
     },
-    [setOpen, setThreadId],
+    [router, workspaceSlug, projectKey],
   );
-
-  return <ChatContext value={{ open, setOpen, threadId, setThreadId, show }}>{children}</ChatContext>;
+  return <ChatContext value={{ show, href }}>{children}</ChatContext>;
 }
 
 export function useChat(): ChatState {

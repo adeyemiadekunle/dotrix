@@ -30,11 +30,13 @@ test("ask the Reviewer to review an issue, and triage a report", async ({ page }
   await page.getByRole("button", { name: "Create issue" }).click();
   await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
 
+  const board = page.url().replace(/\?.*$/, "");
   await page.getByRole("dialog").getByRole("button", { name: "Review", exact: true }).click();
-  // The review opens in the chat panel, answered by the Reviewer.
+  // The review opens in the workspace's Chat, about this project, answered by the Reviewer.
+  await expect(page).toHaveURL(new RegExp(`/chat\\?project=${key}&thread=`));
   await expect(page.getByText(new RegExp(`Test model reply: Review ${key}-1 \\(Retry failed uploads`))).toBeVisible();
   await expect(page.getByText("Reviewer agent").first()).toBeVisible();
-  await page.keyboard.press("Escape");
+  await page.goto(board);
 
   await page.getByRole("button", { name: "Triage", exact: true }).click();
   await page.getByLabel("Report", { exact: true }).fill("Drivers see the wrong zone after switching depots");

@@ -33,6 +33,7 @@ from .schemas import (
     ThreadRename,
     TriageRequest,
     WorkspaceApprovalRead,
+    WorkspaceThread,
 )
 from .service import AgentService
 
@@ -203,6 +204,21 @@ async def list_models(
 workspace_router = APIRouter(
     prefix="/workspaces/{workspace_id}/approvals", tags=["agents"], responses=errors(401, 403, 404)
 )
+threads_router = APIRouter(
+    prefix="/workspaces/{workspace_id}/threads", tags=["agents"], responses=errors(401, 403, 404)
+)
+
+
+@threads_router.get("", responses=errors(422))
+async def list_workspace_threads(
+    member: Annotated[Membership, Depends(require_permission(Permission.CHAT))],
+    agents: Agents,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[WorkspaceThread]:
+    """The workspace's conversations with the agents, most recently active first, each with its
+    project, title, and whether it waits for a decision. Only projects you can see. Read one
+    with `GET .../projects/{project_id}/agent/runs?thread_id=`."""
+    return await agents.workspace_threads(member, limit=limit)
 
 
 @workspace_router.get("")

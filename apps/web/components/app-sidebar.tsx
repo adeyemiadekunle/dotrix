@@ -20,12 +20,14 @@ import {
   SidebarRail,
   useSidebar,
 } from "@pmagent/ui/components/sidebar";
+import { Skeleton } from "@pmagent/ui/components/skeleton";
 import {
   BellIcon,
   BotIcon,
   CircleCheckIcon,
   FolderKanbanIcon,
   HomeIcon,
+  MessageSquareIcon,
   PlusIcon,
   ScrollTextIcon,
   SettingsIcon,
@@ -53,11 +55,17 @@ const PROJECT_VIEWS = [
   { href: "activity", label: "Activity" },
 ];
 
-/** Placeholder rows while the workspace loads: links without it would point outside it. */
+/**
+ * Placeholder rows while the workspace loads: links without it would point outside it. Fixed
+ * widths, since these render on the server too (SidebarMenuSkeleton's random width wouldn't match).
+ */
 function NavSkeleton({ rows }: { rows: number }) {
-  return Array.from({ length: rows }, (_, i) => (
-    <SidebarMenuItem key={i}>
-      <SidebarMenuSkeleton showIcon />
+  return ["70%", "55%", "62%"].slice(0, rows).map((width) => (
+    <SidebarMenuItem key={width}>
+      <div className="flex h-8 items-center gap-2 rounded-md px-2">
+        <Skeleton className="size-4 rounded-md" />
+        <Skeleton className="h-4 flex-1" style={{ maxWidth: width }} />
+      </div>
     </SidebarMenuItem>
   ));
 }
@@ -72,6 +80,8 @@ export function AppSidebar() {
   // On phones the sidebar is a sheet over the page: close it once you've picked somewhere to go.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
   const base = workspace ? `/w/${workspace.slug}` : "";
+  // From inside a project, Chat opens about that project.
+  const projectKey = pathname.match(/^\/w\/[^/]+\/p\/([^/]+)/)?.[1];
 
   return (
     <Sidebar collapsible="icon">
@@ -128,6 +138,14 @@ export function AppSidebar() {
               {workspace ? (
                 <>
                   <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={pathname === `${base}/chat`} tooltip="Chat">
+                      <Link href={`${base}/chat${projectKey ? `?project=${projectKey}` : ""}`}>
+                        <MessageSquareIcon />
+                        <span>Chat</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={pathname === `${base}/projects`} tooltip="Projects">
                       <Link href={`${base}/projects`}>
                         <FolderKanbanIcon />
@@ -165,7 +183,7 @@ export function AppSidebar() {
                   )}
                 </>
               ) : (
-                <NavSkeleton rows={2} />
+                <NavSkeleton rows={3} />
               )}
             </SidebarMenu>
           </SidebarGroupContent>

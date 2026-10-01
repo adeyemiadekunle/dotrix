@@ -24,7 +24,7 @@ import { agentKeys, useSendMessage, type AgentId, type Run } from "@/lib/agent";
 import { api, errorMessage, unwrap } from "@/lib/api";
 import { useCreateIssue, type Scope } from "@/lib/issues";
 import { can } from "@/lib/labels";
-import { useCurrentProject } from "@/lib/queries";
+import { useWorkspaceProject } from "@/lib/queries";
 
 type Output = Schemas["RunOutputRead"];
 type Item = Schemas["RunOutputItem"];
@@ -163,7 +163,7 @@ function OutputView({ run, output, scope, canAct }: { run: Run; output: Output; 
 /** "Save as research note" (people who may edit documents), or where it was saved. */
 function SaveNote({ run, output, scope }: { run: Run; output: Output; scope: Scope }) {
   const queryClient = useQueryClient();
-  const { workspace, project } = useCurrentProject();
+  const { workspace, project } = useWorkspaceProject(scope.projectId);
   const save = useMutation({
     mutationFn: () =>
       unwrap(
