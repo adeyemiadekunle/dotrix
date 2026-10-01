@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from pydantic import BaseModel, Field
 
 from .models import ChunkSource
@@ -12,3 +14,11 @@ class SearchHit(BaseModel):
     snippet: str = Field(description="The matching text (up to about 500 characters)")
     version: int = Field(description="The document version the text is from (0 for issues)")
     score: float = Field(description="Relevance (higher is better; only comparable within one search)")
+
+
+class WorkspaceSearchHit(SearchHit):
+    """A hit from any project you can see, with the project it's in."""
+
+    project_id: uuid.UUID
+    project_key: str
+    project_name: str

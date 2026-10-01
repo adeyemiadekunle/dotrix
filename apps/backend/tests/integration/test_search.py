@@ -232,3 +232,28 @@ async def test_near_duplicate_issues_match_without_embeddings(db_client: AsyncCl
     hits = await search(db_client, base, ada.headers, "Add a dark mode toggle", source="issue", limit=3)
     assert [h["heading"] for h in hits] == ["Add dark mode to the dispatch screen"]  # most words, not just "add"
     assert await search(db_client, base, ada.headers, "Add payment reminders", source="issue") == []
+
+
+async def test_search_across_the_workspace(signup, create_team, add_member, db_client: AsyncClient) -> None:
+    ada = await signup()
+    bob = await signup(email="bob@example.com", name="Bob")
+    team = await create_team(ada.headers)
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    ws = f"/v1/workspaces/{team['id']}"
+    projects = {}
+    for key in ("KUN", "MOB"):
+        res = await db_client.post(f"{ws}/projects", json={"key": key, "name": key.title()}, headers=ada.headers)
+        projects[key] = res.json()
+    for key, title in (("KUN", "Driver payouts every week"), ("MOB", "Driver onboarding in the app")):
+        res = await db_client.post(
+            f"{ws}/projects/{projects[key]['id']}/issues", json={"title": title}, headers=ada.headers
+        )
+        assert res.status_code == 201, res.text
+
+    hits = (await db_client.get(f"{ws}/search", params={"q": "driver", "source": "issue"}, headers=ada.headers)).json()
+    assert sorted((h["project_key"], h["ref"]) for h in hits) == [("KUN", "KUN-1"), ("MOB", "MOB-1")]
+
+    # Restricted projects you aren't on are left out.
+    await db_client.patch(f"{ws}/projects/{projects['MOB']['id']}", json={"access": "restricted"}, headers=ada.headers)
+    seen = (await db_client.get(f"{ws}/search", params={"q": "driver", "source": "issue"}, headers=bob.headers)).json()
+    assert [h["project_key"] for h in seen] == ["KUN"]

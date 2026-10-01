@@ -201,8 +201,8 @@ export default function OverviewPage() {
             {activity.data && activity.data.pages[0]?.length === 0 && (
               <p className="text-muted-foreground py-6 text-sm">Nothing yet.</p>
             )}
-            {activity.data && (
-              <ActivityFeed items={activity.data.pages[0] ?? []} members={memberMap} base={base} compact />
+            {activity.data && workspace && (
+              <ActivityFeed items={activity.data.pages[0] ?? []} members={memberMap} workspaceSlug={workspace.slug} compact />
             )}
           </div>
         </Card>

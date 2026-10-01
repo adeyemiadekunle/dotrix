@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy import inspect as sa_inspect
@@ -39,6 +39,7 @@ from .models import (
 )
 from .runner import BRIEFING_PROMPT, AgentRunner
 from .schemas import (
+    AgentRunCount,
     AgentRunRead,
     AgentUsage,
     ApprovalRead,
@@ -58,6 +59,7 @@ from .schemas import (
     ToolUsage,
     TriageRequest,
     WebUsageRead,
+    WorkspaceAgentUsage,
     WorkspaceApprovalRead,
     WorkspaceThread,
 )
@@ -315,6 +317,53 @@ class AgentService:
             )
             for approval, key, name, message, requested_by_id in rows
         ]
+
+    async def workspace_usage(self, member: Membership, *, days: int) -> WorkspaceAgentUsage:
+        """Runs, tokens, and decisions in the last `days` days, across the projects you can see."""
+        since = datetime.now(UTC) - timedelta(days=days)
+        visible = select(Project.id).where(
+            Project.workspace_id == member.workspace_id, visible_to(member.user_id, member.role)
+        )
+        agent = func.coalesce(AgentRun.agent, "auto")
+        totals = (
+            await self.session.execute(
+                select(
+                    func.count(AgentRun.id),
+                    func.coalesce(func.sum(AgentRun.input_tokens), 0),
+                    func.coalesce(func.sum(AgentRun.output_tokens), 0),
+                    func.coalesce(func.sum(AgentRun.model_calls), 0),
+                ).where(AgentRun.project_id.in_(visible), AgentRun.created_at >= since)
+            )
+        ).one()
+        per_agent = await self.session.execute(
+            select(agent, func.count(AgentRun.id))
+            .where(AgentRun.project_id.in_(visible), AgentRun.created_at >= since)
+            .group_by(agent)
+            .order_by(func.count(AgentRun.id).desc())
+        )
+        decisions = dict(
+            (
+                await self.session.execute(
+                    select(AgentApproval.status, func.count(AgentApproval.id))
+                    .where(
+                        AgentApproval.project_id.in_(visible),
+                        AgentApproval.decided_by_id.is_not(None),
+                        AgentApproval.decided_at >= since,
+                    )
+                    .group_by(AgentApproval.status)
+                )
+            ).all()
+        )
+        return WorkspaceAgentUsage(
+            days=days,
+            runs=totals[0],
+            input_tokens=totals[1],
+            output_tokens=totals[2],
+            model_calls=totals[3],
+            approved=decisions.get(ApprovalStatus.APPROVED, 0),
+            rejected=decisions.get(ApprovalStatus.REJECTED, 0),
+            by_agent=[AgentRunCount(agent=name, runs=count) for name, count in per_agent],
+        )
 
     async def workspace_threads(self, member: Membership, *, limit: int) -> list[WorkspaceThread]:
         """The most recently active conversations in the workspace's projects you can see."""

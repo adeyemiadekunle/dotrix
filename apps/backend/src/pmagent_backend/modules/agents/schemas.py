@@ -95,6 +95,24 @@ class WorkspaceThread(BaseModel):
     waiting: bool = Field(description="A run in it waits for a decision")
 
 
+class AgentRunCount(BaseModel):
+    agent: str = Field(description="The agent the person picked (`auto` for the project manager's choice)")
+    runs: int
+
+
+class WorkspaceAgentUsage(BaseModel):
+    """What the agents did across the workspace's projects in a period (owners and admins)."""
+
+    days: int
+    runs: int
+    input_tokens: int
+    output_tokens: int
+    model_calls: int
+    approved: int = Field(description="Changes people approved")
+    rejected: int = Field(description="Changes people rejected")
+    by_agent: list[AgentRunCount] = Field(description="Runs per agent, most first")
+
+
 class AgentUsage(BaseModel):
     agent: str = Field(description="project-manager, or the specialist's role (product, research, ...)")
     input_tokens: int

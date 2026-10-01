@@ -25,6 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pmagent_backend.modules.issues.models import Issue, IssueEvent, IssueEventKind
 from pmagent_backend.modules.knowledge.models import KnowledgeFile
 from pmagent_backend.modules.projects.models import Project
+from pmagent_backend.modules.projects.repository import ProjectRepository
+from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_engine.knowledge_index import sections
 
 from .embeddings import CHARS_PER_TOKEN, Embedder
@@ -50,6 +52,10 @@ class Hit:
     snippet: str
     version: int
     score: float
+
+
+# A workspace search looks in at most this many projects (alphabetical by key).
+MAX_SEARCHED_PROJECTS = 30
 
 
 def _hash(value: str) -> str:
@@ -349,6 +355,19 @@ class KnowledgeIndex:
             .limit(CANDIDATES - len(found))
         )
         return found + list(most)
+
+    async def search_workspace(
+        self, member: Membership, query: str, *, limit: int = 10, source: ChunkSource | None = None
+    ) -> list[tuple[Project, Hit]]:
+        """The best hits across the projects `member` can see (the ⌘K palette). Each project is
+        searched as usual and the hits merged by score: scores are close to comparable across
+        projects (both rankings are reciprocal-rank fused), which is enough to order a short list."""
+        projects = await ProjectRepository(self.session).list(member.workspace_id, member=member)
+        found: list[tuple[Project, Hit]] = []
+        for project in projects[:MAX_SEARCHED_PROJECTS]:
+            found += [(project, hit) for hit in await self.search(project, query, limit=limit, source=source)]
+        found.sort(key=lambda pair: pair[1].score, reverse=True)
+        return found[:limit]
 
     async def search(
         self, project: Project, query: str, *, limit: int = 8, source: ChunkSource | None = None

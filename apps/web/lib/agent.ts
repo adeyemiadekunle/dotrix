@@ -325,3 +325,17 @@ export function useRenameThread(scope: Scope | undefined) {
 /** A run someone stopped (it's recorded as failed with "Stopped by …"). */
 export const wasStopped = (run: Pick<Run, "status" | "error">) =>
   run.status === "failed" && (run.error ?? "").startsWith("Stopped");
+
+/** What the agents did across the workspace in the last `days` days (owners and admins). */
+export function useWorkspaceAgentUsage(workspaceId: string | undefined, enabled: boolean, days = 7) {
+  return useQuery({
+    queryKey: ["agent-usage", workspaceId, days],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/agent-usage", {
+          params: { path: { workspace_id: workspaceId! }, query: { days } },
+        }),
+      ),
+    enabled: Boolean(workspaceId) && enabled,
+  });
+}

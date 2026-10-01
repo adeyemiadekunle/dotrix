@@ -25,5 +25,5 @@ test("on a phone the board stacks its columns and chat keeps its input on screen
 
   // The sidebar opens as a sheet from the header's toggle.
   await page.getByRole("button", { name: "Toggle Sidebar" }).first().click();
-  await expect(page.getByRole("link", { name: "Notifications" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Notifications", exact: true })).toBeVisible();
 });

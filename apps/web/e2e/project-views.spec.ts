@@ -19,6 +19,7 @@ test("a project's views: overview, list, table, activity, and My issues", async 
 
   // List: ranked, or grouped by status.
   await tabs.getByRole("link", { name: "List", exact: true }).click();
+  await expect(page).toHaveURL(/\/list/);
   await expect(page.getByText("Write the onboarding docs")).toBeVisible();
   await page.getByRole("button", { name: "By status" }).click();
   await expect(page).toHaveURL(/group=status/);

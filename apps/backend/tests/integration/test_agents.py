@@ -102,6 +102,24 @@ async def test_workspace_conversations(project, db_client: AsyncClient, agent_sc
     assert [t["project_key"] for t in seen] == ["KUN"]
 
 
+async def test_workspace_agent_usage(project, db_client: AsyncClient, agent_script, signup, add_member) -> None:
+    ada, team, base = await project()
+    ws = f"/v1/workspaces/{team['id']}"
+    agent_script.say("One.", "Two.")
+    await run(db_client, base, ada.headers, "hello")
+    await run(db_client, base, ada.headers, "again", agent="research")
+
+    usage = (await db_client.get(f"{ws}/agent-usage", params={"days": 7}, headers=ada.headers)).json()
+    assert usage["days"] == 7 and usage["runs"] == 2
+    assert usage["input_tokens"] >= 0 and usage["approved"] == 0 and usage["rejected"] == 0
+    assert sorted((a["agent"], a["runs"]) for a in usage["by_agent"]) == [("auto", 1), ("research", 1)]
+
+    # Spend is for owners and admins.
+    bob = await signup(email="bob@example.com", name="Bob")
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    assert (await db_client.get(f"{ws}/agent-usage", headers=bob.headers)).status_code == 403
+
+
 async def test_new_threads_get_titles(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
     model = agent_script.say("Here's the board.", "And more.")

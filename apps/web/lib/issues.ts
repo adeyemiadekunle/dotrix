@@ -180,13 +180,21 @@ export function useMembers(workspaceId: string | undefined) {
   });
 }
 
-/** Refresh everything issue-shaped in the project; show the API's reason when it says no. */
+/**
+ * Refresh everything issue-shaped in the project, the lists across projects (Home, My issues,
+ * Tasks), and the activity feeds; show the API's reason when it says no.
+ */
 function useIssueMutation<Vars>(scope: Scope | undefined, fn: (scope: Scope, vars: Vars) => Promise<unknown>) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (vars: Vars) => fn(scope!, vars),
     onError: (e) => toast.error(errorMessage(e)),
-    onSettled: () => (scope ? queryClient.invalidateQueries({ queryKey: issueKeys.all(scope) }) : undefined),
+    onSettled: async () => {
+      if (!scope) return;
+      await queryClient.invalidateQueries({ queryKey: issueKeys.all(scope) });
+      await queryClient.invalidateQueries({ queryKey: ["issues", "workspace", scope.workspaceId] });
+      await queryClient.invalidateQueries({ queryKey: ["activity"] });
+    },
   });
 }
 

@@ -7844,6 +7844,97 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/agent-usage": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Get Workspace Agent Usage",
+        "description": "What the agents did in the last `days` days across the projects you can see: runs,\ntokens, model calls, changes approved and rejected, and runs per agent. Owners and admins.",
+        "operationId": "get_workspace_agent_usage",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "default": 7,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceAgentUsage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/audit": {
       "get": {
         "tags": [
@@ -9760,6 +9851,120 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/activity": {
+      "get": {
+        "tags": [
+          "activity"
+        ],
+        "summary": "List Workspace Activity",
+        "description": "The same feed as a project's, across every project in the workspace you can see, each\nitem with its project. Page back with `before`.",
+        "operationId": "list_workspace_activity",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only items older than this (the last `at` you have)",
+              "title": "Before"
+            },
+            "description": "Only items older than this (the last `at` you have)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActivityItem"
+                  },
+                  "title": "Response List Workspace Activity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
       "get": {
         "tags": [
@@ -9885,6 +10090,132 @@
           }
         }
       }
+    },
+    "/v1/workspaces/{workspace_id}/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Workspace",
+        "description": "Search documents and issues in every project you can see (up to 30), best first, each\nhit with its project. The same matching as a project's search.",
+        "operationId": "search_workspace",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "What to look for, in any words",
+              "title": "Q"
+            },
+            "description": "What to look for, in any words"
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ChunkSource"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only documents, or only issues",
+              "title": "Source"
+            },
+            "description": "Only documents, or only issues"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 25,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceSearchHit"
+                  },
+                  "title": "Response Search Workspace"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -9922,6 +10253,19 @@
             "type": "string",
             "format": "date-time",
             "title": "At"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_key": {
+            "type": "string",
+            "title": "Project Key"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
           },
           "actor_user_id": {
             "anyOf": [
@@ -10118,6 +10462,9 @@
         "required": [
           "kind",
           "at",
+          "project_id",
+          "project_key",
+          "project_name",
           "actor_user_id",
           "actor_agent"
         ],
@@ -10556,6 +10903,25 @@
           "updated_at"
         ],
         "title": "AgentRead"
+      },
+      "AgentRunCount": {
+        "properties": {
+          "agent": {
+            "type": "string",
+            "title": "Agent",
+            "description": "The agent the person picked (`auto` for the project manager's choice)"
+          },
+          "runs": {
+            "type": "integer",
+            "title": "Runs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent",
+          "runs"
+        ],
+        "title": "AgentRunCount"
       },
       "AgentRunRead": {
         "properties": {
@@ -15053,6 +15419,61 @@
         ],
         "title": "WebUsageRead"
       },
+      "WorkspaceAgentUsage": {
+        "properties": {
+          "days": {
+            "type": "integer",
+            "title": "Days"
+          },
+          "runs": {
+            "type": "integer",
+            "title": "Runs"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "model_calls": {
+            "type": "integer",
+            "title": "Model Calls"
+          },
+          "approved": {
+            "type": "integer",
+            "title": "Approved",
+            "description": "Changes people approved"
+          },
+          "rejected": {
+            "type": "integer",
+            "title": "Rejected",
+            "description": "Changes people rejected"
+          },
+          "by_agent": {
+            "items": {
+              "$ref": "#/components/schemas/AgentRunCount"
+            },
+            "type": "array",
+            "title": "By Agent",
+            "description": "Runs per agent, most first"
+          }
+        },
+        "type": "object",
+        "required": [
+          "days",
+          "runs",
+          "input_tokens",
+          "output_tokens",
+          "model_calls",
+          "approved",
+          "rejected",
+          "by_agent"
+        ],
+        "title": "WorkspaceAgentUsage",
+        "description": "What the agents did across the workspace's projects in a period (owners and admins)."
+      },
       "WorkspaceApprovalRead": {
         "properties": {
           "id": {
@@ -15355,6 +15776,72 @@
           "organization"
         ],
         "title": "WorkspaceKind"
+      },
+      "WorkspaceSearchHit": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/ChunkSource"
+          },
+          "ref": {
+            "type": "string",
+            "title": "Ref",
+            "description": "The document's path in `.pmagent/`, or the issue's key"
+          },
+          "heading": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading",
+            "description": "The document section (its heading trail), or the issue's title"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet",
+            "description": "The matching text (up to about 500 characters)"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "The document version the text is from (0 for issues)"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "Relevance (higher is better; only comparable within one search)"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_key": {
+            "type": "string",
+            "title": "Project Key"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "ref",
+          "heading",
+          "snippet",
+          "version",
+          "score",
+          "project_id",
+          "project_key",
+          "project_name"
+        ],
+        "title": "WorkspaceSearchHit",
+        "description": "A hit from any project you can see, with the project it's in."
       },
       "WorkspaceThread": {
         "properties": {

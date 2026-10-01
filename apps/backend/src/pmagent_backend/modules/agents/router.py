@@ -32,6 +32,7 @@ from .schemas import (
     ThreadRead,
     ThreadRename,
     TriageRequest,
+    WorkspaceAgentUsage,
     WorkspaceApprovalRead,
     WorkspaceThread,
 )
@@ -204,6 +205,22 @@ async def list_models(
 workspace_router = APIRouter(
     prefix="/workspaces/{workspace_id}/approvals", tags=["agents"], responses=errors(401, 403, 404)
 )
+usage_router = APIRouter(
+    prefix="/workspaces/{workspace_id}/agent-usage", tags=["agents"], responses=errors(401, 403, 404)
+)
+
+
+@usage_router.get("", responses=errors(422))
+async def get_workspace_agent_usage(
+    member: Annotated[Membership, Depends(require_permission(Permission.VIEW_USAGE))],
+    agents: Agents,
+    days: int = Query(default=7, ge=1, le=90),
+) -> WorkspaceAgentUsage:
+    """What the agents did in the last `days` days across the projects you can see: runs,
+    tokens, model calls, changes approved and rejected, and runs per agent. Owners and admins."""
+    return await agents.workspace_usage(member, days=days)
+
+
 threads_router = APIRouter(
     prefix="/workspaces/{workspace_id}/threads", tags=["agents"], responses=errors(401, 403, 404)
 )

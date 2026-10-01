@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger } from "@pmagent/ui/components/tabs";
 import { CalendarIcon, CheckCircle2Icon, ChevronDownIcon, ChevronRightIcon, ClockAlertIcon, InboxIcon, SunIcon } from "lucide-react";
 import { Suspense, useMemo, useState, type ComponentType } from "react";
 
+import { AfterHydration } from "@/components/after-hydration";
 import { PageHeader } from "@/components/app-shell";
 import { today, WorkspaceIssueRow } from "@/components/issues/workspace-issue-row";
 import { EmptyState, NotFound } from "@/components/states";
@@ -134,8 +135,12 @@ function MyIssues() {
 
 export default function MyIssuesPage() {
   return (
+    // Under a Suspense boundary: rendered after hydration so data fetched meanwhile can't make
+    // it differ from the server's markup (see AfterHydration).
     <Suspense>
-      <MyIssues />
+      <AfterHydration>
+        <MyIssues />
+      </AfterHydration>
     </Suspense>
   );
 }

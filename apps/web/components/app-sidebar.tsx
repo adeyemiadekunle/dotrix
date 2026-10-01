@@ -22,14 +22,18 @@ import {
 } from "@pmagent/ui/components/sidebar";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import {
+  ActivityIcon,
   BellIcon,
   BotIcon,
   CircleCheckIcon,
   FolderKanbanIcon,
   HomeIcon,
+  LayoutGridIcon,
+  ListTodoIcon,
   MessageSquareIcon,
   PlusIcon,
   ScrollTextIcon,
+  SearchIcon,
   SettingsIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -38,6 +42,7 @@ import { useEffect } from "react";
 
 import { NavUser } from "@/components/nav-user";
 import { ProjectTile } from "@/components/project-tile";
+import { usePalette } from "@/components/command-palette";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { canManageProjects } from "@/lib/labels";
 import { useWorkspaceApprovals } from "@/lib/agent";
@@ -60,7 +65,7 @@ const PROJECT_VIEWS = [
  * widths, since these render on the server too (SidebarMenuSkeleton's random width wouldn't match).
  */
 function NavSkeleton({ rows }: { rows: number }) {
-  return ["70%", "55%", "62%"].slice(0, rows).map((width) => (
+  return ["70%", "55%", "62%", "48%", "66%", "58%"].slice(0, rows).map((width) => (
     <SidebarMenuItem key={width}>
       <div className="flex h-8 items-center gap-2 rounded-md px-2">
         <Skeleton className="size-4 rounded-md" />
@@ -77,6 +82,7 @@ export function AppSidebar() {
   const approvals = useWorkspaceApprovals(workspace?.id, Boolean(workspace && workspace.role !== "guest"));
   const waiting = approvals.data?.length ?? 0;
   const { setOpenMobile } = useSidebar();
+  const palette = usePalette();
   // On phones the sidebar is a sheet over the page: close it once you've picked somewhere to go.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
   const base = workspace ? `/w/${workspace.slug}` : "";
@@ -123,9 +129,18 @@ export function AppSidebar() {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton onClick={palette.open} tooltip="Search (Ctrl K)">
+                      <SearchIcon />
+                      <span>Search</span>
+                      <kbd className="text-muted-foreground ml-auto rounded border px-1 font-mono text-[10px] group-data-[collapsible=icon]:hidden">
+                        Ctrl K
+                      </kbd>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </>
               ) : (
-                <NavSkeleton rows={3} />
+                <NavSkeleton rows={4} />
               )}
             </SidebarMenu>
           </SidebarGroupContent>
@@ -146,10 +161,34 @@ export function AppSidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={pathname === `${base}/overview`} tooltip="Overview">
+                      <Link href={`${base}/overview`}>
+                        <LayoutGridIcon />
+                        <span>Overview</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={pathname === `${base}/projects`} tooltip="Projects">
                       <Link href={`${base}/projects`}>
                         <FolderKanbanIcon />
                         <span>Projects</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={pathname === `${base}/tasks`} tooltip="Tasks">
+                      <Link href={`${base}/tasks`}>
+                        <ListTodoIcon />
+                        <span>Tasks</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={pathname === `${base}/activity`} tooltip="Activity">
+                      <Link href={`${base}/activity`}>
+                        <ActivityIcon />
+                        <span>Activity</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -183,7 +222,7 @@ export function AppSidebar() {
                   )}
                 </>
               ) : (
-                <NavSkeleton rows={3} />
+                <NavSkeleton rows={6} />
               )}
             </SidebarMenu>
           </SidebarGroupContent>

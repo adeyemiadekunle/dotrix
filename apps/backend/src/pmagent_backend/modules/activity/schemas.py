@@ -26,6 +26,9 @@ class ActivityItem(BaseModel):
 
     kind: ActivityKind
     at: datetime
+    project_id: uuid.UUID
+    project_key: str
+    project_name: str
     actor_user_id: uuid.UUID | None = Field(description="The person who did it, if a person did")
     actor_agent: str | None = Field(description="The agent who did it, if an agent did")
     issue_key: str | None = None
