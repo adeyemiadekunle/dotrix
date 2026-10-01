@@ -94,7 +94,7 @@ function ConnectionErrorBanner() {
 }
 
 /** Pages whose content fills the window and scrolls inside itself (a message list and its input). */
-const FILL_WINDOW = /\/p\/[^/]+\/(chat|briefing)$/;
+const FILL_WINDOW = /^\/w\/[^/]+\/chat$/;
 
 /** The signed-in frame: sidebar, a top bar with the page title, and the page. */
 export function AppShell({ children }: { children: ReactNode }) {

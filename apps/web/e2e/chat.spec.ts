@@ -18,14 +18,14 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await expect(page.getByText("Test model reply: What's open?")).toBeVisible();
 
   // A new conversation for the change.
-  await page.getByRole("button", { name: "New conversation" }).first().click();
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
   await box.fill("Create issue: Add dark mode");
   await box.press("Enter");
   await expect(page.getByText("1 change waits for your approval")).toBeVisible();
   await expect(page.getByText("Create issue", { exact: true })).toBeVisible();
 
   // Nothing on the board yet.
-  await page.goto(`${page.url().split("/chat")[0]}/board`);
+  await page.goto(page.url().replace(/\/chat\?.*$/, `/p/${key}/board`));
   await expect(page.getByText("Add dark mode")).toHaveCount(0);
 
   // It's in the workspace queue too; approve it there.
@@ -35,9 +35,12 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await page.getByRole("button", { name: "Send decision" }).click();
   await expect(page.getByText("Nothing waiting")).toBeVisible();
 
-  // The run resumed and the issue exists.
+  // The run resumes in the background and creates the issue; the board shows it once it exists.
   await page.goto(page.url().replace("/approvals", `/p/${key}/board`));
-  await expect(page.getByText("Add dark mode")).toBeVisible();
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByText("Add dark mode")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
 
   // The conversations are titled from their first message (no model call).
   await page.getByRole("link", { name: "Chat", exact: true }).click();

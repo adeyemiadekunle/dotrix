@@ -13,9 +13,9 @@ test("on a phone the board stacks its columns and chat keeps its input on screen
   await page.getByRole("button", { name: "Show Done" }).click();
   await expect(page.getByRole("button", { name: "Hide Done" })).toBeVisible();
 
-  // The tabs scroll sideways; Chat is reachable and its input sits inside the screen.
-  await page.getByRole("link", { name: "Chat", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/p/${key}/chat`));
+  // "Ask in Chat" opens the workspace's Chat about this project; its input sits inside the screen.
+  await page.getByRole("link", { name: "Ask in Chat" }).click();
+  await expect(page).toHaveURL(new RegExp(`/chat\\?project=${key}`));
   const box = page.getByLabel("Message the agents");
   await expect(box).toBeInViewport();
   await box.fill("What's open?");

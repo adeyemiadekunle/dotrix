@@ -153,11 +153,11 @@ apps/web/
 │   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
 │   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /w/[workspace] (Home), /w/[workspace]/{approvals (Notifications),my-issues,projects,agents,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{overview,board,list,table,files,knowledge,activity,chat,briefing,settings} (the project root redirects to overview; /backlog to list, /docs to files), /settings
+│   └── (app)/                   signed-in shell (sidebar): /w/[workspace] (Home), /w/[workspace]/{chat,approvals (Notifications),my-issues,projects,agents,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{overview,board,list,table,files,knowledge,activity,settings} (the project root redirects to overview; /backlog to list, /docs to files, /chat and /briefing to the workspace Chat), /settings
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
 │   ├── documents/               dropzone, queued files, upload progress
-│   ├── agent/                   chat panel and context, conversation, approvals (diff view, decisions, plan checkpoints), run results, triage dialog
+│   ├── agent/                   chat context (opens conversations in the workspace Chat), conversation, approvals (diff view, decisions, plan checkpoints), run results, triage dialog
 │   ├── agents/                  Settings → Agents: the list and the contract editor (workspace and project scope)
 │   ├── knowledge/               file tree, file history (authorship, diffs, restore)
 │   ├── settings/                members, invites and "turn into an organisation" (workspace settings)
@@ -214,10 +214,12 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 - [x] Backend + web: project Activity (`GET .../projects/{id}/activity`, module `activity`): issue events, document versions (not the skeleton), and for people who can chat agent runs and approval decisions; newest first, paged with `before`. The Activity tab filters Everything / Issues / Documents / Agents / Approvals; Overview shows the latest
 
 ### Phase 3: workspace Chat
-- [ ] Backend: conversations at the workspace level; a conversation names zero, one, or several projects and the context pack comes from those; existing project threads migrate
-- [ ] Chat in the sidebar (Workspace group); the list grouped by project with + per project, then Chats; "Ask in Chat" on a project opens it with the project chosen
-- [ ] New chat screen: project, agent (Auto by default), model (fixed after the first message); suggestions only here (summaries of all projects or one, what changed, plan, brainstorm, research)
-- [ ] Remove the project Chat and Briefing tabs and the chat side panel; briefings become summaries on request
+- [x] Backend: the workspace's conversations across the projects you can see (`GET /v1/workspaces/{id}/threads`: project, title from the first run, last activity, waiting for a decision); a conversation is still about one project and runs stay per project, so nothing migrates
+  - [ ] conversations about zero or several projects (the context pack from several projects, or none): engine and runner work
+- [x] Chat at `/w/[ws]/chat?project=KEY&thread=ID`, in the sidebar's Workspace group (from inside a project it opens about that project); conversations grouped by project, each with + for a new chat there; a project picker fixed once the chat has started; "Ask in Chat" on a project, and triage, review, and the architecture draft open their conversation there
+- [x] New chat: project (asked for when the workspace has several), agent (Auto by default) and model from the + menu (model fixed after the first message), suggestions only here (summarise the project, what changed since yesterday, what to build next, requirements into stories, a quick summary from the board)
+  - [ ] summaries of all projects at once (needs conversations about several projects)
+- [x] The project Chat and Briefing tabs and the chat side panel are gone (`/p/[KEY]/chat` and `/briefing` redirect to the workspace Chat); a briefing is a summary you ask for (the briefing endpoint stays for the CLI)
 
 ### Phase 4: workspace pages and search
 - [ ] Workspace Overview: portfolio, issues by status, workload, agents this week (owners and admins)

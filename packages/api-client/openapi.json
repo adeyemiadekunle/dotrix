@@ -7749,6 +7749,101 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/threads": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Workspace Threads",
+        "description": "The workspace's conversations with the agents, most recently active first, each with its\nproject, title, and whether it waits for a decision. Only projects you can see. Read one\nwith `GET .../projects/{project_id}/agent/runs?thread_id=`.",
+        "operationId": "list_workspace_threads",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceThread"
+                  },
+                  "title": "Response List Workspace Threads"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/audit": {
       "get": {
         "tags": [
@@ -15260,6 +15355,61 @@
           "organization"
         ],
         "title": "WorkspaceKind"
+      },
+      "WorkspaceThread": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Thread Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_key": {
+            "type": "string",
+            "title": "Project Key"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "The conversation's title (its first message if it has none)"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "`chat`, or `briefing` for a summary the platform wrote"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "waiting": {
+            "type": "boolean",
+            "title": "Waiting",
+            "description": "A run in it waits for a decision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "project_id",
+          "project_key",
+          "project_name",
+          "title",
+          "kind",
+          "updated_at",
+          "waiting"
+        ],
+        "title": "WorkspaceThread",
+        "description": "A conversation, for the workspace's Chat list: which project it's in and how it stands."
       },
       "WorkspaceUpdate": {
         "properties": {

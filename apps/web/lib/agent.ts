@@ -116,6 +116,19 @@ export interface ThreadSummary {
 }
 
 /** Recent conversations, newest activity first (grouped from recent runs). */
+export type WorkspaceThread = Schemas["WorkspaceThread"];
+
+/** Every conversation in the workspace's projects you can see, most recently active first (Chat). */
+export function useWorkspaceThreads(workspaceId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["threads", workspaceId],
+    queryFn: () =>
+      unwrap(api.GET("/v1/workspaces/{workspace_id}/threads", { params: { path: { workspace_id: workspaceId! } } })),
+    enabled: Boolean(workspaceId) && enabled,
+    refetchInterval: 20_000,
+  });
+}
+
 export function useRecentThreads(scope: Scope | undefined) {
   return useQuery({
     queryKey: scope ? agentKeys.recent(scope) : ["agent", "none"],
@@ -154,6 +167,7 @@ function useAgentMutation<Vars>(scope: Scope | undefined, fn: (scope: Scope, var
       if (!scope) return;
       await queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
       await queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
+      await queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
       // Approved actions may have changed issues or files.
       await queryClient.invalidateQueries({ queryKey: ["issues", scope.projectId] });
     },
@@ -175,21 +189,6 @@ export function useSendMessage(scope: Scope | undefined) {
         }),
       ),
   );
-}
-
-/** Past daily briefings, newest first (polled while one is being written). */
-export function useBriefings(scope: Scope | undefined) {
-  return useQuery({
-    queryKey: scope ? [...agentKeys.project(scope), "briefings"] : ["agent", "none", "briefings"],
-    queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs", {
-          params: { path: path(scope!), query: { kind: "briefing", limit: 30 } },
-        }),
-      ),
-    enabled: Boolean(scope),
-    refetchInterval: (query) => ((query.state.data ?? []).some(isActive) ? POLL_MS : false),
-  });
 }
 
 export function useBriefing(scope: Scope | undefined) {
@@ -286,6 +285,7 @@ export function useRunStream(scope: Scope | undefined, runId: string, active: bo
       setActivity(null);
       void queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
       void queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
     });
     source.onerror = () => source.close();
     return () => source.close();
@@ -314,7 +314,11 @@ export function useRenameThread(scope: Scope | undefined) {
         }),
       ),
     onError: (e) => toast.error(errorMessage(e)),
-    onSettled: () => (scope ? queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) }) : undefined),
+    onSettled: async () => {
+      if (!scope) return;
+      await queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
+      await queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
+    },
   });
 }
 

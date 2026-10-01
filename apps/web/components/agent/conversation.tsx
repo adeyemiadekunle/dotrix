@@ -27,13 +27,15 @@ import {
 import { useChatAgents } from "@/lib/agents";
 import type { Scope } from "@/lib/issues";
 import { can } from "@/lib/labels";
-import { useCurrentProject } from "@/lib/queries";
+import { useWorkspaceProject } from "@/lib/queries";
 
 import { AgentPicker } from "./agent-picker";
 import { AgentReply } from "./agent-reply";
 
+// Shown only on a new conversation.
 const SUGGESTIONS = [
-  "What's the state of the project?",
+  "Summarise the project: what moved, what's blocked, and what's due this week",
+  "What changed since yesterday?",
   "What should we build next, and why?",
   "Turn the latest requirements into an epic with stories",
 ];
@@ -113,7 +115,7 @@ export function Conversation({
   const stop = useStopRun(scope);
   const briefing = useBriefing(scope);
   const [draft, setDraft] = useState("");
-  const { workspace, project } = useCurrentProject();
+  const { workspace, project } = useWorkspaceProject(scope.projectId);
   const models = useModels(workspace?.id);
   const agentOptions = useChatAgents(scope);
   // Picks made here, for this conversation (a new one has no thread yet).
@@ -221,7 +223,7 @@ export function Conversation({
                   }}
                 >
                   <NewspaperIcon />
-                  Daily briefing
+                  Quick summary from the board
                 </Button>
               </div>
             )}

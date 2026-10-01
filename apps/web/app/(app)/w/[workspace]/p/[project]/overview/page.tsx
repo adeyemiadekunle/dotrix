@@ -7,6 +7,7 @@ import { MessageSquareIcon } from "lucide-react";
 import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 
+import { useChat } from "@/components/agent/chat-context";
 import { ActivityFeed } from "@/components/activity-feed";
 import { STATUS_META, STATUSES, TypeIcon, type MemberMap } from "@/components/issues/meta";
 import { formatDue, today } from "@/components/issues/workspace-issue-row";
@@ -41,6 +42,7 @@ function Card({ title, action, children }: { title: string; action?: ReactNode; 
 /** The project at a glance: what it's for, how far along, what's next, and what just happened. */
 export default function OverviewPage() {
   const { workspace, project, scope } = useProjectScope();
+  const chat = useChat();
   const board = useBoard(scope, {});
   const epics = useEpics(scope);
   const members = useMembers(workspace?.id);
@@ -174,7 +176,7 @@ export default function OverviewPage() {
           title="Summary"
           action={
             <Button size="xs" variant="outline" asChild>
-              <Link href={`${base}/chat`}>
+              <Link href={chat.href}>
                 <MessageSquareIcon />
                 Ask Chat
               </Link>

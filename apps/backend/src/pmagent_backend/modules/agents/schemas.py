@@ -82,6 +82,19 @@ class WorkspaceApprovalRead(ApprovalRead):
     requested_by_id: uuid.UUID | None = Field(description="Who instructed the run")
 
 
+class WorkspaceThread(BaseModel):
+    """A conversation, for the workspace's Chat list: which project it's in and how it stands."""
+
+    thread_id: uuid.UUID
+    project_id: uuid.UUID
+    project_key: str
+    project_name: str
+    title: str = Field(description="The conversation's title (its first message if it has none)")
+    kind: str = Field(description="`chat`, or `briefing` for a summary the platform wrote")
+    updated_at: datetime
+    waiting: bool = Field(description="A run in it waits for a decision")
+
+
 class AgentUsage(BaseModel):
     agent: str = Field(description="project-manager, or the specialist's role (product, research, ...)")
     input_tokens: int

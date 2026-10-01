@@ -3,8 +3,9 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import func, select
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from uuid_utils.compat import uuid7
@@ -58,6 +59,7 @@ from .schemas import (
     TriageRequest,
     WebUsageRead,
     WorkspaceApprovalRead,
+    WorkspaceThread,
 )
 from .titles import title_from_message
 
@@ -312,6 +314,50 @@ class AgentService:
                 requested_by_id=requested_by_id,
             )
             for approval, key, name, message, requested_by_id in rows
+        ]
+
+    async def workspace_threads(self, member: Membership, *, limit: int) -> list[WorkspaceThread]:
+        """The most recently active conversations in the workspace's projects you can see."""
+        latest = (
+            select(
+                AgentRun.thread_id,
+                AgentRun.project_id,
+                Project.key,
+                Project.name,
+                func.max(AgentRun.updated_at).label("updated_at"),
+                func.bool_or(AgentRun.status == RunStatus.AWAITING_APPROVAL).label("waiting"),
+            )
+            .join(Project, Project.id == AgentRun.project_id)
+            .where(Project.workspace_id == member.workspace_id, visible_to(member.user_id, member.role))
+            .group_by(AgentRun.thread_id, AgentRun.project_id, Project.key, Project.name)
+            .order_by(func.max(AgentRun.updated_at).desc())
+            .limit(limit)
+        )
+        rows = (await self.session.execute(latest)).all()
+        if not rows:
+            return []
+        # Each conversation is named by its first run.
+        firsts = {
+            run.thread_id: run
+            for run in await self.session.scalars(
+                select(AgentRun)
+                .where(AgentRun.thread_id.in_([row.thread_id for row in rows]))
+                .ext(distinct_on(AgentRun.thread_id))
+                .order_by(AgentRun.thread_id, AgentRun.created_at)
+            )
+        }
+        return [
+            WorkspaceThread(
+                thread_id=row.thread_id,
+                project_id=row.project_id,
+                project_key=row.key,
+                project_name=row.name,
+                title=firsts[row.thread_id].title or firsts[row.thread_id].message[:80],
+                kind=firsts[row.thread_id].kind.value,
+                updated_at=row.updated_at,
+                waiting=bool(row.waiting),
+            )
+            for row in rows
         ]
 
     async def decide(
