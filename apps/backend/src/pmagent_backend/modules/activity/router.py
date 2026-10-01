@@ -28,11 +28,14 @@ async def list_project_activity(
     session: SessionDep,
     before: datetime | None = Query(default=None, description="Only items older than this (the last `at` you have)"),
     limit: int = Query(default=50, ge=1, le=200),
+    agents: bool = Query(
+        default=False, description="Only what agents did: their runs, decisions on their changes, and their edits"
+    ),
 ) -> list[ActivityItem]:
     """What people and agents did in the project, newest first: issues created, changed,
     commented on, or claimed; documents changed; and, for people who can chat with the agents,
     agent runs and approval decisions. Page back with `before`."""
-    return await ActivityService(session).project(access, before=before, limit=limit)
+    return await ActivityService(session).project(access, before=before, limit=limit, agents=agents)
 
 
 workspace_router = APIRouter(prefix="/workspaces/{workspace_id}/activity", tags=["activity"], responses=errors(401, 404))
@@ -44,7 +47,10 @@ async def list_workspace_activity(
     session: SessionDep,
     before: datetime | None = Query(default=None, description="Only items older than this (the last `at` you have)"),
     limit: int = Query(default=50, ge=1, le=200),
+    agents: bool = Query(
+        default=False, description="Only what agents did: their runs, decisions on their changes, and their edits"
+    ),
 ) -> list[ActivityItem]:
     """The same feed as a project's, across every project in the workspace you can see, each
     item with its project. Page back with `before`."""
-    return await ActivityService(session).workspace(member, before=before, limit=limit)
+    return await ActivityService(session).workspace(member, before=before, limit=limit, agents=agents)

@@ -1,6 +1,6 @@
 "use client";
 
-import { Avatar, AvatarFallback } from "@pmagent/ui/components/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@pmagent/ui/components/avatar";
 import { BotIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -10,6 +10,7 @@ import { AGENT_LABELS, type MemberMap } from "@/components/issues/meta";
 import { ProjectTile } from "@/components/project-tile";
 import type { ActivityItem } from "@/lib/activity";
 import { initials } from "@/lib/labels";
+import { useMemberAvatarSrc, type Member } from "@/lib/profile";
 
 /** The agent's name as people say it: "Claude Code", "Product agent". */
 function agentName(handle: string): string {
@@ -104,6 +105,11 @@ function describe(item: ActivityItem, members: MemberMap, base: string): { text:
   }
 }
 
+function ActorPhoto({ member }: { member: Member | undefined }) {
+  const photo = useMemberAvatarSrc(member);
+  return photo ? <AvatarImage src={photo} alt="" className="rounded-lg object-cover" /> : null;
+}
+
 /** A feed of what people and agents did, grouped by day; agents get a bot tile, people their initials. */
 export function ActivityFeed({
   items,
@@ -139,6 +145,9 @@ export function ActivityFeed({
             )}
             <div className="flex items-start gap-3 border-b py-3 last:border-b-0">
               <Avatar className="size-7 rounded-lg">
+                {!agent && item.actor_user_id && (
+                  <ActorPhoto member={members.get(item.actor_user_id)} />
+                )}
                 <AvatarFallback
                   className={agent ? "bg-brand-muted text-brand-muted-foreground rounded-lg" : "rounded-lg text-[10px]"}
                 >
