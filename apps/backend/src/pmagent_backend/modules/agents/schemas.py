@@ -166,6 +166,7 @@ class RunOutputRead(BaseModel):
     kind: str = Field(description="The output schema: finding, plan, spec, impact, report, doc_update, or brief")
     actions: list[str] = Field(description="What its items can become in the app, e.g. create_issue, dismiss")
     items: list[RunOutputItem]
+    note: str | None = Field(default=None, description="For a report saved as a research note: the note's path")
     created_at: datetime
 
 

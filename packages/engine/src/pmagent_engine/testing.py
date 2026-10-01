@@ -1,6 +1,7 @@
 """Test helpers: a scripted chat model, so agent runs can be tested without an API key."""
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from typing import Any
 
@@ -106,6 +107,8 @@ class RuleBasedChatModel(_StreamsReplies, GenericFakeChatModel):
       for approval); after the tool runs, it confirms.
     - "plan: <step>; <step>; ..." stops at a checkpoint with those steps, for the person to
       continue, change the plan, or stop; then it says what it heard.
+    - "research: <question>" searches the web, reads the first result, and records a report:
+      one claim quoted from the page and one that isn't on it (the check marks it unsupported).
     - anything else is echoed: "Test model reply: <message>".
 
     Enabled only when the backend runs with PMAGENT_E2E_MODELS=true (never in production).
@@ -119,16 +122,34 @@ class RuleBasedChatModel(_StreamsReplies, GenericFakeChatModel):
     def _reply(self, messages: list[BaseMessage]) -> AIMessage:
         last = messages[-1] if messages else None
         if last is not None and last.type == "tool":
-            return AIMessage(content=f"Done. {str(last.content)[:200]}")
+            return self._after_tool(str(getattr(last, "name", "") or ""), str(last.content))
         text = str(last.content if last is not None else "").strip()
         lowered = text.lower()
         if lowered.startswith("create issue:"):
             title = text.split(":", 1)[1].strip() or "Untitled"
             return tool_call("create_issue", type="task", title=title, priority="medium")
+        if lowered.startswith("research:"):
+            return tool_call("web_search", query=text.split(":", 1)[1].strip() or "research")
         if lowered.startswith("plan:"):
             steps = [s.strip() for s in text.split(":", 1)[1].split(";") if s.strip()] or ["Do it"]
             return tool_call("checkpoint", summary="A plan for this request", plan=steps)
         return AIMessage(content=f"Test model reply: {text[:500]}")
+
+    def _after_tool(self, name: str, content: str) -> AIMessage:
+        if name == "web_search" and (url := re.search(r"https?://\S+", content)):
+            return tool_call("fetch_page", url=url.group(0))
+        if name == "fetch_page" and (label := re.search(r"\[(S\d+)\]", content)):
+            body = content.split("<web_content", 1)[-1].split(">", 1)[-1]
+            quote = next((s.strip() for s in re.split(r"(?<=[.!?])\s+", body) if len(s.split()) >= 5), "")
+            claims = [(quote.rstrip("."), quote), ("It changes every month", "This sentence is not on the page.")]
+            return tool_call("submit_result", items=[
+                {"claim": claim, "sources": [label.group(1)], "confidence": "high",
+                 "quotes": [{"source": label.group(1), "text": text}]}
+                for claim, text in claims
+            ])
+        if name == "submit_result":
+            return AIMessage(content="Research done: the findings and their sources are below.")
+        return AIMessage(content=f"Done. {content[:200]}")
 
     def _generate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
         from langchain_core.outputs import ChatGeneration, ChatResult

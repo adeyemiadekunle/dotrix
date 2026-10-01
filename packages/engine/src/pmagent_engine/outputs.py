@@ -93,7 +93,9 @@ ACTIONS: dict[str, tuple[str, ...]] = {
     "plan": ("dismiss",),
     "spec": ("dismiss",),
     "impact": ("create_issue", "dismiss"),
-    "report": ("create_issue", "dismiss"),
+    # A claim can also become a requirement change (Product) or a decision (Documentation),
+    # asked for in the same conversation; the report as a whole can be saved as a research note.
+    "report": ("create_issue", "propose_change", "record_decision", "dismiss"),
     "doc_update": ("dismiss",),
     "brief": ("dismiss",),
 }

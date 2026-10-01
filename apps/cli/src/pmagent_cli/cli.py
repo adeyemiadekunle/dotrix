@@ -814,10 +814,43 @@ def _echo_outcome(outcome: Outcome, printer: _StreamPrinter | None = None) -> No
             typer.secho("\n(The PM finished without writing a reply. Try asking again.)", dim=True)
         elif not outcome.reply_shown:
             typer.echo(f"\n{run['reply']}")
+        _echo_research(run)
         if decided:
             approved = sum(a["status"] == "approved" for a in decided)
             typer.secho(f"({approved} change(s) approved, {len(decided) - approved} rejected)", dim=True)
         typer.echo("")
+
+
+_CHECKS = {"supported": "supported", "weak": "weak support", "unsupported": "no quote found"}
+
+
+def _echo_research(run: dict) -> None:
+    """A research run's claims, each with how well its quotes were found in what was read, and
+    the sources they cite (saving it as a note is in the web app)."""
+    for output in run.get("outputs") or []:
+        if output.get("kind") != "report":
+            continue
+        items = [i for i in output.get("items") or [] if i.get("state") != "dismissed"]
+        found = [i for i in items if (i.get("check") or {}).get("status") != "unsupported"]
+        assumed = [i for i in items if (i.get("check") or {}).get("status") == "unsupported"]
+        for title, group in (("Findings", found), ("Assumptions (no quote found in the pages read)", assumed)):
+            if not group:
+                continue
+            typer.secho(f"\n{title}:", bold=True)
+            for item in group:
+                data, check = item.get("data") or {}, (item.get("check") or {}).get("status")
+                cites = "".join(f"[{s}]" for s in data.get("sources") or [])
+                label = f" ({_CHECKS[check]})" if check in _CHECKS and group is found else ""
+                typer.echo(f"  - {data.get('claim', '')} {cites}{label}".rstrip())
+    sources = run.get("sources") or []
+    if sources:
+        typer.secho("\nSources:", bold=True)
+        for source in sources:
+            seen = "read" if source.get("kind") == "page" else "search result"
+            warning = "  (addressed AI agents; ignored)" if source.get("flagged") else ""
+            typer.echo(f"  [{source['label']}] {source.get('title') or source['url']} - {source.get('host')}, "
+                       f"{source.get('tier')}, {seen}{warning}")
+            typer.secho(f"       {source['url']}", dim=True)
 
 
 def _platform_agent(project: str) -> tuple[LinkState, PlatformAgent]:

@@ -65,3 +65,27 @@ def test_stopping_at_a_checkpoint(linked_repo: Path, platform: FakePlatform) -> 
     result = invoke(linked_repo, "run", "Plan the launch", input="s\n")
     assert result.exit_code == 0, result.output
     assert platform.bodies("/decisions")[0]["decisions"][0]["decision"] == "reject"
+
+
+def test_research_shows_claims_and_sources(linked_repo: Path, platform: FakePlatform) -> None:
+    report = {"id": "o1", "agent": "research", "kind": "report", "actions": [], "note": None, "items": [
+        {"index": 0, "state": "open", "data": {"claim": "VAT is 20%", "sources": ["S1"]},
+         "check": {"status": "supported", "quotes": []}},
+        {"index": 1, "state": "open", "data": {"claim": "It will rise", "sources": ["S2"]},
+         "check": {"status": "unsupported", "quotes": []}},
+        {"index": 2, "state": "dismissed", "data": {"claim": "Dropped"}, "check": None},
+    ]}
+    sources = [
+        {"label": "S1", "url": "https://www.gov.uk/vat", "title": "VAT rates", "host": "gov.uk", "tier": "primary",
+         "kind": "page", "flagged": []},
+        {"label": "S2", "url": "https://blog.example/x", "title": "", "host": "blog.example", "tier": "other",
+         "kind": "search", "flagged": ["addresses an AI"]},
+    ]
+    platform.agent_script = [{"status": "completed", "reply": "It's 20%.", "outputs": [report], "sources": sources}]
+    result = invoke(linked_repo, "run", "What's the UK VAT rate?")
+    assert result.exit_code == 0, result.output
+    assert "Findings:\n  - VAT is 20% [S1] (supported)" in result.output
+    assert "Assumptions (no quote found in the pages read):\n  - It will rise [S2]" in result.output
+    assert "Dropped" not in result.output
+    assert "[S1] VAT rates - gov.uk, primary, read" in result.output
+    assert "[S2] https://blog.example/x - blog.example, other, search result  (addressed AI agents; ignored)" in result.output

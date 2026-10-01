@@ -56,10 +56,12 @@ class Source:
 
 
 def url_key(url: str) -> str:
-    """The same page whatever its fragment, case of host, or trailing slash."""
+    """The same page whatever its scheme (http or https), `www.`, fragment, case of host, or
+    trailing slash: search results list the same page several ways."""
     parts = urlsplit(url.strip())
     path = parts.path.rstrip("/") or "/"
-    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, parts.query, ""))
+    host = parts.netloc.lower().removeprefix("www.")
+    return urlunsplit(("https", host, path, parts.query, ""))
 
 
 class SourceLog:

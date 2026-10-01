@@ -1648,6 +1648,29 @@ export interface paths {
         patch: operations["update_run_output_item"];
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Research Note
+         * @description Save a research report as a note in `research/` (`YYYY-MM-DD-question.md`): the short
+         *     answer, the findings backed by what was read, the assumptions (claims no quote was found
+         *     for), what it affects, and every source with its tier and dates. Written as you; saving
+         *     again updates the same note. Needs permission to edit documents.
+         */
+        post: operations["save_research_note"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/models": {
         parameters: {
             query?: never;
@@ -3715,6 +3738,11 @@ export interface components {
             actions: string[];
             /** Items */
             items: components["schemas"]["RunOutputItem"][];
+            /**
+             * Note
+             * @description For a report saved as a research note: the note's path
+             */
+            note?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -9173,6 +9201,67 @@ export interface operations {
                 "application/json": components["schemas"]["OutputItemUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    save_research_note: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                output_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
