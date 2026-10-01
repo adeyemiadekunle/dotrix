@@ -2,7 +2,7 @@
 
 // How issue types, statuses, priorities, and assignees look everywhere they appear.
 import type { Schemas } from "@pmagent/api-client";
-import { Avatar, AvatarFallback } from "@pmagent/ui/components/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@pmagent/ui/components/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@pmagent/ui/components/tooltip";
 import { cn } from "@pmagent/ui/lib/utils";
 import {
@@ -20,6 +20,7 @@ import type { ComponentType } from "react";
 
 import type { AgentAssignee, IssueStatus, IssueType, Priority } from "@/lib/issues";
 import { initials } from "@/lib/labels";
+import { useMemberAvatarSrc } from "@/lib/profile";
 
 export const ISSUE_TYPES: IssueType[] = ["epic", "story", "task", "bug", "spike", "sub-task"];
 export const STATUSES: IssueStatus[] = ["todo", "in_progress", "blocked", "review", "done"];
@@ -185,11 +186,13 @@ export function AssigneeAvatar({
   showUnassigned?: boolean;
 }) {
   const name = assigneeName(issue, members);
+  const photo = useMemberAvatarSrc(issue.assignee_user_id ? members.get(issue.assignee_user_id) : undefined);
   if (!name && !showUnassigned) return null;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Avatar className={cn("size-6", className)}>
+          {photo && <AvatarImage src={photo} alt="" className="object-cover" />}
           <AvatarFallback
             className={cn(
               "text-[10px]",

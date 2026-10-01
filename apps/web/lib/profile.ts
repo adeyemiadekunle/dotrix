@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { ApiError, api, errorMessage, unwrap } from "./api";
+import { useCurrentWorkspace } from "./queries";
 
 export type Me = Schemas["UserRead"];
 export type Member = Schemas["MemberRead"];
@@ -19,6 +20,12 @@ export function memberAvatarSrc(workspaceId: string, member: Pick<Member, "user_
   return member.avatar_updated_at
     ? `/api/v1/workspaces/${workspaceId}/members/${member.user_id}/avatar?v=${Date.parse(member.avatar_updated_at)}`
     : undefined;
+}
+
+/** A colleague's photo in the workspace you're in (undefined without one, or outside a workspace). */
+export function useMemberAvatarSrc(member: Pick<Member, "user_id" | "avatar_updated_at"> | undefined): string | undefined {
+  const { workspace } = useCurrentWorkspace();
+  return workspace && member ? memberAvatarSrc(workspace.id, member) : undefined;
 }
 
 /** After a change to your profile: you, and every member list you appear in. */

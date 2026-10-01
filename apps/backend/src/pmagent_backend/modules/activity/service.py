@@ -33,20 +33,25 @@ class ActivityService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def project(self, access: ProjectAccess, *, before: datetime | None, limit: int) -> list[ActivityItem]:
-        return await self._feed(access.member, [access.project], before=before, limit=limit)
+    async def project(
+        self, access: ProjectAccess, *, before: datetime | None, limit: int, agents: bool = False
+    ) -> list[ActivityItem]:
+        return await self._feed(access.member, [access.project], before=before, limit=limit, agents=agents)
 
-    async def workspace(self, member: Membership, *, before: datetime | None, limit: int) -> list[ActivityItem]:
+    async def workspace(
+        self, member: Membership, *, before: datetime | None, limit: int, agents: bool = False
+    ) -> list[ActivityItem]:
         """Every project in the workspace that `member` can see."""
         projects = await ProjectRepository(self.session).list(member.workspace_id, member=member)
-        return await self._feed(member, projects, before=before, limit=limit)
+        return await self._feed(member, projects, before=before, limit=limit, agents=agents)
 
     async def _feed(
-        self, member: Membership, projects: list[Project], *, before: datetime | None, limit: int
+        self, member: Membership, projects: list[Project], *, before: datetime | None, limit: int, agents: bool
     ) -> list[ActivityItem]:
         """The newest `limit` items older than `before`. Each source gives at most `limit`, so
-        merging them and cutting at `limit` is exact."""
-        if not projects:
+        merging them and cutting at `limit` is exact. With `agents`, only what agents did (issue
+        and document changes they made, runs, decisions), and nothing for people who can't chat."""
+        if not projects or (agents and not can(member, Permission.CHAT)):
             return []
         by_id: dict[uuid.UUID, Project] = {p.id: p for p in projects}
         ids = list(by_id)
@@ -63,6 +68,8 @@ class ActivityService:
         )
         if before is not None:
             events = events.where(IssueEvent.created_at < before)
+        if agents:
+            events = events.where(IssueEvent.author_agent.is_not(None))
         for event, key, title, project_id in await self.session.execute(
             events.order_by(IssueEvent.created_at.desc()).limit(limit)
         ):
@@ -90,6 +97,8 @@ class ActivityService:
         )
         if before is not None:
             versions = versions.where(KnowledgeVersion.created_at < before)
+        if agents:
+            versions = versions.where(KnowledgeVersion.author_type == AuthorType.AGENT)
         for version, path in await self.session.execute(
             versions.order_by(KnowledgeVersion.created_at.desc()).limit(limit)
         ):

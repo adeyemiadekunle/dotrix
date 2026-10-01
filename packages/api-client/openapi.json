@@ -10176,6 +10176,18 @@
               "default": 50,
               "title": "Limit"
             }
+          },
+          {
+            "name": "agents",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Only what agents did: their runs, decisions on their changes, and their edits",
+              "default": false,
+              "title": "Agents"
+            },
+            "description": "Only what agents did: their runs, decisions on their changes, and their edits"
           }
         ],
         "responses": {
@@ -10280,6 +10292,18 @@
               "default": 50,
               "title": "Limit"
             }
+          },
+          {
+            "name": "agents",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Only what agents did: their runs, decisions on their changes, and their edits",
+              "default": false,
+              "title": "Agents"
+            },
+            "description": "Only what agents did: their runs, decisions on their changes, and their edits"
           }
         ],
         "responses": {

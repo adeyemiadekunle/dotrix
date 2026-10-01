@@ -195,7 +195,7 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
   - [ ] starred projects first (needs favourites)
 - [x] Top bar on every page: breadcrumb, the page's actions, Search (Ctrl/⌘ K), and the notifications bell (a dot while something waits for a decision)
 - [x] Home (the workspace root): greeting, counts, what waits for a decision, my next issues, project progress (done/total from the issues across projects); the Projects grid moved to `/w/[ws]/projects`
-  - [ ] agent activity on Home (needs the Activity feed, Phase 2)
+  - [x] agent activity on Home, for people who can chat (`?agents=true` on both activity routes: agents' runs, edits, and the decisions on their changes)
 - [x] Backend: issues across the projects you can see (`GET /v1/workspaces/{id}/issues`: type, status, assignee incl. `me`, reporter incl. `me`, watching, label, due_before; order due / priority / created / updated; restricted projects follow `visible_to`), tested
 - [x] My issues (`/w/[ws]/my-issues`): Overdue / Today / Upcoming / No due date / Done this week; Assigned to me, Watching, Reported by me (`?who=`); rows open the issue in its project's board
   - [ ] views Board, Table, Timeline *later* (with Phase 2's views)
@@ -236,7 +236,8 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 - [x] Agents and the Audit log move out of the sidebar into Settings (owners and admins; the list shows Built-in / Customised / Custom); `/agents` and `/audit` redirect
 - [x] Members: search (name, email, what they do), role chips with counts, role dropdown per row, photo, "Projects they see" (`MemberRead.sees_all_projects`, `project_ids`: among the projects the viewer sees, so a restricted one never leaks)
 - [x] Profile: photo (cropped to a 256 px square in the browser; `PUT/DELETE/GET /v1/me/avatar`, PNG/JPEG/WebP checked by their first bytes, ≤ 500 KB, kept in `user_avatars`; colleagues' at `GET /v1/workspaces/{id}/members/{user_id}/avatar`), name and what you do (`PATCH /v1/me`, `User.title`), email (verified), sign-in methods (`GET /v1/me/sign-in-methods`: password, email link, GitHub; `DELETE /v1/me/sign-in-methods/github`, 409 without a password)
-  - [ ] photos next to assignees, comments, and activity; linking GitHub from Settings (today: sign in with GitHub once); changing the password in place (today: an emailed link)
+  - [x] photos next to assignees, comments, and activity (`useMemberAvatarSrc`)
+  - [ ] linking GitHub from Settings (today: sign in with GitHub once); changing the password in place (today: an emailed link)
 
 ### Phase 6: Notifications (with agents v2 step 4)
 - [ ] Backend: notification records (approvals and checkpoints waiting, mentions, assignments, agent findings), read state per person

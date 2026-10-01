@@ -2,6 +2,7 @@
 from httpx import AsyncClient
 
 from pmagent_backend.modules.workspaces.models import Role
+from pmagent_engine.testing import tool_call
 
 
 async def test_project_activity(signup, create_team, add_member, db_client: AsyncClient) -> None:
@@ -70,3 +71,37 @@ async def test_workspace_activity(signup, create_team, add_member, db_client: As
     await db_client.patch(f"{ws}/projects/{projects['MOB']['id']}", json={"access": "restricted"}, headers=ada.headers)
     seen = (await db_client.get(f"{ws}/activity", headers=bob.headers)).json()
     assert [i["project_key"] for i in seen] == ["KUN"]
+
+
+async def test_only_what_agents_did(signup, create_team, add_member, db_client: AsyncClient, agent_script) -> None:
+    ada = await signup()
+    gus = await signup(email="gus@example.com", name="Gus")
+    team = await create_team(ada.headers)
+    await add_member(team["id"], gus.id, Role.GUEST)
+    ws = f"/v1/workspaces/{team['id']}"
+    project = (await db_client.post(f"{ws}/projects", json={"key": "KUN", "name": "Kunemi"}, headers=ada.headers)).json()
+    base = f"{ws}/projects/{project['id']}"
+    await db_client.post(f"{base}/issues", json={"title": "Ada's own work"}, headers=ada.headers)
+
+    agent_script.say(
+        tool_call("write_file", file_path="/pmagent/roadmap.md", content="# Roadmap\n\nPhase 1.\n"),
+        "Updated the roadmap.",
+    )
+    run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan phase 1"}, headers=ada.headers)).json()
+    [approval] = run["approvals"]
+    decided = await db_client.post(
+        f"{base}/agent/runs/{run['id']}/decisions",
+        json={"decisions": [{"approval_id": approval["id"], "decision": "approve"}]},
+        headers=ada.headers,
+    )
+    assert decided.status_code == 200, decided.text
+
+    for url in (f"{ws}/activity", f"{base}/activity"):
+        feed = (await db_client.get(url, params={"agents": True}, headers=ada.headers)).json()
+        assert sorted(item["kind"] for item in feed) == ["approval.decided", "document.changed", "run.started"]
+        [edit] = [item for item in feed if item["kind"] == "document.changed"]
+        assert edit["actor_agent"] == "project-manager" and edit["path"] == "roadmap.md"
+    everything = (await db_client.get(f"{ws}/activity", headers=ada.headers)).json()
+    assert "issue.created" in {item["kind"] for item in everything}
+    # Guests see no projects, so nothing agents did either.
+    assert (await db_client.get(f"{ws}/activity", params={"agents": True}, headers=gus.headers)).json() == []

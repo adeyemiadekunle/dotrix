@@ -29,14 +29,18 @@ export function useProjectActivity(scope: Scope | undefined, limit = PAGE) {
   });
 }
 
-/** Activity across every project in the workspace you can see, a page at a time. */
-export function useWorkspaceActivity(workspaceId: string | undefined, limit = PAGE) {
+/** Activity across every project in the workspace you can see, a page at a time; with `agents`,
+ * only what agents did. */
+export function useWorkspaceActivity(workspaceId: string | undefined, limit = PAGE, { agents = false } = {}) {
   return useInfiniteQuery({
-    queryKey: ["activity", "workspace", workspaceId, limit],
+    queryKey: ["activity", "workspace", workspaceId, limit, agents],
     queryFn: ({ pageParam }) =>
       unwrap(
         api.GET("/v1/workspaces/{workspace_id}/activity", {
-          params: { path: { workspace_id: workspaceId! }, query: { limit, ...(pageParam ? { before: pageParam } : {}) } },
+          params: {
+            path: { workspace_id: workspaceId! },
+            query: { limit, ...(agents ? { agents } : {}), ...(pageParam ? { before: pageParam } : {}) },
+          },
         }),
       ),
     initialPageParam: null as string | null,

@@ -45,6 +45,11 @@ test("the agents answer, and a change waits for approval before it happens", asy
     await expect(page.getByText("Add dark mode")).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
 
+  // Home shows what the agents did: the issue they created, not the people's own work.
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  const agentWork = page.locator("section").filter({ has: page.getByRole("heading", { name: "Agent activity" }) });
+  await expect(agentWork.getByRole("link", { name: /Add dark mode/ })).toBeVisible();
+
   // The conversations are titled from their first message (no model call).
   await page.getByRole("link", { name: "Chat", exact: true }).click();
   const conversations = page.getByRole("navigation", { name: "Conversations" });
