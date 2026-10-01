@@ -1736,6 +1736,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/agent-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Agent Usage
+         * @description What the agents did in the last `days` days across the projects you can see: runs,
+         *     tokens, model calls, changes approved and rejected, and runs per agent. Owners and admins.
+         */
+        get: operations["get_workspace_agent_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/audit": {
         parameters: {
             query?: never;
@@ -2021,6 +2042,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspace Activity
+         * @description The same feed as a project's, across every project in the workspace you can see, each
+         *     item with its project. Page back with `before`.
+         */
+        get: operations["list_workspace_activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
         parameters: {
             query?: never;
@@ -2035,6 +2077,27 @@ export interface paths {
          *     an embedding model configured, keywords only.
          */
         get: operations["search_project"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Workspace
+         * @description Search documents and issues in every project you can see (up to 30), best first, each
+         *     hit with its project. The same matching as a project's search.
+         */
+        get: operations["search_workspace"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2070,6 +2133,15 @@ export interface components {
              * Format: date-time
              */
             at: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Key */
+            project_key: string;
+            /** Project Name */
+            project_name: string;
             /**
              * Actor User Id
              * @description The person who did it, if a person did
@@ -2328,6 +2400,16 @@ export interface components {
             version: number | null;
             /** Updated At */
             updated_at: string | null;
+        };
+        /** AgentRunCount */
+        AgentRunCount: {
+            /**
+             * Agent
+             * @description The agent the person picked (`auto` for the project manager's choice)
+             */
+            agent: string;
+            /** Runs */
+            runs: number;
         };
         /** AgentRunRead */
         AgentRunRead: {
@@ -4191,6 +4273,37 @@ export interface components {
             flagged: string[];
         };
         /**
+         * WorkspaceAgentUsage
+         * @description What the agents did across the workspace's projects in a period (owners and admins).
+         */
+        WorkspaceAgentUsage: {
+            /** Days */
+            days: number;
+            /** Runs */
+            runs: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Model Calls */
+            model_calls: number;
+            /**
+             * Approved
+             * @description Changes people approved
+             */
+            approved: number;
+            /**
+             * Rejected
+             * @description Changes people rejected
+             */
+            rejected: number;
+            /**
+             * By Agent
+             * @description Runs per agent, most first
+             */
+            by_agent: components["schemas"]["AgentRunCount"][];
+        };
+        /**
          * WorkspaceApprovalRead
          * @description A pending action with where it's from, for the workspace's approvals queue.
          */
@@ -4314,6 +4427,47 @@ export interface components {
          * @enum {string}
          */
         WorkspaceKind: "personal" | "organization";
+        /**
+         * WorkspaceSearchHit
+         * @description A hit from any project you can see, with the project it's in.
+         */
+        WorkspaceSearchHit: {
+            source: components["schemas"]["ChunkSource"];
+            /**
+             * Ref
+             * @description The document's path in `.pmagent/`, or the issue's key
+             */
+            ref: string;
+            /**
+             * Heading
+             * @description The document section (its heading trail), or the issue's title
+             */
+            heading: string | null;
+            /**
+             * Snippet
+             * @description The matching text (up to about 500 characters)
+             */
+            snippet: string;
+            /**
+             * Version
+             * @description The document version the text is from (0 for issues)
+             */
+            version: number;
+            /**
+             * Score
+             * @description Relevance (higher is better; only comparable within one search)
+             */
+            score: number;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Key */
+            project_key: string;
+            /** Project Name */
+            project_name: string;
+        };
         /**
          * WorkspaceThread
          * @description A conversation, for the workspace's Chat list: which project it's in and how it stands.
@@ -9693,6 +9847,66 @@ export interface operations {
             };
         };
     };
+    get_workspace_agent_usage: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceAgentUsage"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     list_audit_events: {
         parameters: {
             query?: {
@@ -10632,6 +10846,68 @@ export interface operations {
             };
         };
     };
+    list_workspace_activity: {
+        parameters: {
+            query?: {
+                /** @description Only items older than this (the last `at` you have) */
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityItem"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     search_project: {
         parameters: {
             query: {
@@ -10661,6 +10937,70 @@ export interface operations {
             };
             /** @description Missing, invalid, or expired credentials */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    search_workspace: {
+        parameters: {
+            query: {
+                /** @description What to look for, in any words */
+                q: string;
+                /** @description Only documents, or only issues */
+                source?: components["schemas"]["ChunkSource"] | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSearchHit"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

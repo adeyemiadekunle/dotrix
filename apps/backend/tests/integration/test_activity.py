@@ -49,3 +49,24 @@ async def test_project_activity(signup, create_team, add_member, db_client: Asyn
 
     # Guests see no projects, so no activity either.
     assert (await db_client.get(f"{base}/activity", headers=guest.headers)).status_code == 404
+
+
+async def test_workspace_activity(signup, create_team, add_member, db_client: AsyncClient) -> None:
+    ada = await signup()
+    bob = await signup(email="bob@example.com", name="Bob")
+    team = await create_team(ada.headers)
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    ws = f"/v1/workspaces/{team['id']}"
+    projects = {}
+    for key in ("KUN", "MOB"):
+        projects[key] = (
+            await db_client.post(f"{ws}/projects", json={"key": key, "name": key.title()}, headers=ada.headers)
+        ).json()
+        await db_client.post(f"{ws}/projects/{projects[key]['id']}/issues", json={"title": f"{key} work"}, headers=ada.headers)
+
+    feed = (await db_client.get(f"{ws}/activity", headers=ada.headers)).json()
+    assert [(i["project_key"], i["issue_title"]) for i in feed] == [("MOB", "MOB work"), ("KUN", "KUN work")]
+
+    await db_client.patch(f"{ws}/projects/{projects['MOB']['id']}", json={"access": "restricted"}, headers=ada.headers)
+    seen = (await db_client.get(f"{ws}/activity", headers=bob.headers)).json()
+    assert [i["project_key"] for i in seen] == ["KUN"]

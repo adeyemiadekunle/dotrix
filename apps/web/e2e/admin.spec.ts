@@ -5,7 +5,7 @@ import { signUp, signUpWithProject } from "./helpers";
 test("an organisation: invite link, revoke, and the audit log records both", async ({ page }) => {
   await signUp(page);
   // A personal workspace invites nobody.
-  await page.getByRole("link", { name: "Members and settings" }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByText("Personal workspaces don't invite: this one is just for you.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Create link" })).toHaveCount(0);
 
@@ -15,7 +15,7 @@ test("an organisation: invite link, revoke, and the audit log records both", asy
   await page.getByRole("button", { name: "Create organisation" }).click();
   await expect(page).toHaveURL(/\/w\/e2e-ltd-/);
 
-  await page.getByRole("link", { name: "Members and settings" }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByText("1 person in E2E Ltd.")).toBeVisible();
 
   await page.getByRole("button", { name: "Create link" }).click();
@@ -53,7 +53,7 @@ test("knowledge: edit a file, see its history, and restore the first version", a
 test("turn the personal workspace into an organisation, then restrict a project", async ({ page }) => {
   await signUpWithProject(page, "Kuturn", "KUT");
   const projectSettings = page.url().replace(/\/board.*$/, "/settings");
-  await page.getByRole("link", { name: "Members and settings" }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByLabel("Organisation name").fill("Kunemi Ltd");
   await page.getByRole("button", { name: "Turn into an organisation" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Turn into an organisation" }).click();

@@ -19,6 +19,9 @@ test("the agents answer, and a change waits for approval before it happens", asy
 
   // A new conversation for the change.
   await page.getByRole("button", { name: "New chat", exact: true }).click();
+  // Wait for the new conversation: opening it resets the message box.
+  await expect(page).not.toHaveURL(/thread=/);
+  await expect(page.getByRole("button", { name: "What changed since yesterday?" })).toBeVisible();
   await box.fill("Create issue: Add dark mode");
   await box.press("Enter");
   await expect(page.getByText("1 change waits for your approval")).toBeVisible();
@@ -29,7 +32,7 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await expect(page.getByText("Add dark mode")).toHaveCount(0);
 
   // It's in the workspace queue too; approve it there.
-  await page.getByRole("link", { name: "Notifications" }).click();
+  await page.getByRole("link", { name: "Notifications", exact: true }).click();
   await expect(page.getByText("“Create issue: Add dark mode”")).toBeVisible();
   await page.getByRole("button", { name: "Approve" }).click();
   await page.getByRole("button", { name: "Send decision" }).click();

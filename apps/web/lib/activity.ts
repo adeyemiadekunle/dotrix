@@ -28,3 +28,19 @@ export function useProjectActivity(scope: Scope | undefined, limit = PAGE) {
     enabled: Boolean(scope),
   });
 }
+
+/** Activity across every project in the workspace you can see, a page at a time. */
+export function useWorkspaceActivity(workspaceId: string | undefined, limit = PAGE) {
+  return useInfiniteQuery({
+    queryKey: ["activity", "workspace", workspaceId, limit],
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/activity", {
+          params: { path: { workspace_id: workspaceId! }, query: { limit, ...(pageParam ? { before: pageParam } : {}) } },
+        }),
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => (last.length < limit ? undefined : last[last.length - 1]!.at),
+    enabled: Boolean(workspaceId),
+  });
+}

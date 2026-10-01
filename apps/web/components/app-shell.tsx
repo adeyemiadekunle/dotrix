@@ -5,14 +5,17 @@ import { Separator } from "@pmagent/ui/components/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@pmagent/ui/components/sidebar";
 import { cn } from "@pmagent/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
-import { CloudOffIcon, MailWarningIcon, XIcon } from "lucide-react";
+import { BellIcon, CloudOffIcon, MailWarningIcon, SearchIcon, XIcon } from "lucide-react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { PaletteProvider, usePalette, useShortcutLabel } from "@/components/command-palette";
+import { useWorkspaceApprovals } from "@/lib/agent";
 import { api, errorMessage, unwrap } from "@/lib/api";
-import { useMe, useWorkspaces } from "@/lib/queries";
+import { useCurrentWorkspace, useMe, useWorkspaces } from "@/lib/queries";
 
 const DISMISSED = "pmagent:verify-banner-dismissed";
 
@@ -101,15 +104,55 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   return (
     <SidebarProvider>
-      <AppSidebar />
-      {/* Filling pages get exactly the window's height, so banners, header, and tabs take what
-          they need and the page's own flex-1 area gets the rest (no hard-coded offsets). */}
-      <SidebarInset className={cn(FILL_WINDOW.test(pathname) && "h-svh min-h-0 overflow-hidden")}>
-        <ConnectionErrorBanner />
-        <VerifyEmailBanner />
-        {children}
-      </SidebarInset>
+      <PaletteProvider>
+        <AppSidebar />
+        {/* Filling pages get exactly the window's height, so banners, header, and tabs take what
+            they need and the page's own flex-1 area gets the rest (no hard-coded offsets). */}
+        <SidebarInset className={cn(FILL_WINDOW.test(pathname) && "h-svh min-h-0 overflow-hidden")}>
+          <ConnectionErrorBanner />
+          <VerifyEmailBanner />
+          {children}
+        </SidebarInset>
+      </PaletteProvider>
     </SidebarProvider>
+  );
+}
+
+/** Search (⌘K) and the notifications bell, at the right of every page's top bar. */
+function TopBarTools() {
+  const palette = usePalette();
+  const shortcut = useShortcutLabel();
+  const { workspace } = useCurrentWorkspace();
+  const approvals = useWorkspaceApprovals(workspace?.id, Boolean(workspace && workspace.role !== "guest"));
+  const waiting = new Set((approvals.data ?? []).map((a) => a.run_id)).size;
+  return (
+    <div className="flex items-center gap-1.5">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={palette.open}
+        className="text-muted-foreground hidden w-48 justify-start font-normal lg:flex"
+      >
+        <SearchIcon />
+        Search
+        <kbd className="ml-auto rounded border px-1 font-mono text-[10px]">{shortcut}</kbd>
+      </Button>
+      <Button variant="ghost" size="icon-sm" onClick={palette.open} aria-label="Search" className="lg:hidden">
+        <SearchIcon />
+      </Button>
+      {workspace && (
+        <Button variant="ghost" size="icon-sm" className="relative" asChild>
+          <Link
+            href={`/w/${workspace.slug}/approvals`}
+            aria-label={waiting ? `Open notifications (${waiting} waiting)` : "Open notifications"}
+            title="Notifications"
+          >
+            <BellIcon />
+            {waiting > 0 && <span className="bg-primary absolute top-1 right-1 size-2 rounded-full" />}
+          </Link>
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -140,6 +183,7 @@ export function PageHeader({
         <h1 className="truncate font-semibold">{title}</h1>
       </div>
       {actions}
+      <TopBarTools />
     </header>
   );
 }

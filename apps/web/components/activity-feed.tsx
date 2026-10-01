@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 
 import { FIELD_LABELS, show, timeAgo } from "@/components/issues/issue-activity";
 import { AGENT_LABELS, type MemberMap } from "@/components/issues/meta";
+import { ProjectTile } from "@/components/project-tile";
 import type { ActivityItem } from "@/lib/activity";
 import { initials } from "@/lib/labels";
 
@@ -107,14 +108,17 @@ function describe(item: ActivityItem, members: MemberMap, base: string): { text:
 export function ActivityFeed({
   items,
   members,
-  base,
+  workspaceSlug,
   compact = false,
+  showProject = false,
 }: {
   items: ActivityItem[];
   members: MemberMap;
-  /** The project's URL (`/w/…/p/KEY`), for links to issues and documents. */
-  base: string;
+  /** For links to each item's issue or document, in its project. */
+  workspaceSlug: string;
   compact?: boolean;
+  /** Name the project on each item (feeds across projects). */
+  showProject?: boolean;
 }) {
   let lastDay = "";
   return (
@@ -125,7 +129,7 @@ export function ActivityFeed({
         lastDay = day;
         const agent = item.actor_agent;
         const actor = agent ? agentName(agent) : personName(item.actor_user_id, members);
-        const { text, detail } = describe(item, members, base);
+        const { text, detail } = describe(item, members, `/w/${workspaceSlug}/p/${item.project_key}`);
         return (
           <li key={`${item.at}-${index}`} className="flex flex-col">
             {heading && (
@@ -146,6 +150,15 @@ export function ActivityFeed({
                   <span className="font-semibold">{actor}</span> <span className="text-muted-foreground">{text}</span>
                 </p>
                 {detail && <p className="text-muted-foreground line-clamp-2 text-xs">{detail}</p>}
+                {showProject && (
+                  <Link
+                    href={`/w/${workspaceSlug}/p/${item.project_key}`}
+                    className="text-muted-foreground flex items-center gap-1.5 text-xs hover:underline"
+                  >
+                    <ProjectTile projectKey={item.project_key} className="size-3.5 text-[7px]" />
+                    {item.project_name}
+                  </Link>
+                )}
               </div>
               <time dateTime={item.at} className="text-muted-foreground shrink-0 text-xs" title={new Date(item.at).toLocaleString()}>
                 {timeAgo(item.at)}

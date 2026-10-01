@@ -153,7 +153,7 @@ apps/web/
 │   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
 │   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /w/[workspace] (Home), /w/[workspace]/{chat,approvals (Notifications),my-issues,projects,agents,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{overview,board,list,table,files,knowledge,activity,settings} (the project root redirects to overview; /backlog to list, /docs to files, /chat and /briefing to the workspace Chat), /settings
+│   └── (app)/                   signed-in shell (sidebar): /w/[workspace] (Home), /w/[workspace]/{chat,overview,tasks,activity,approvals (Notifications),my-issues,projects,agents,audit,settings,projects/new}, /w/[workspace]/p/[KEY]/{overview,board,list,table,files,knowledge,activity,settings} (the project root redirects to overview; /backlog to list, /docs to files, /chat and /briefing to the workspace Chat), /settings
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
 │   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
 │   ├── documents/               dropzone, queued files, upload progress
@@ -190,9 +190,10 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 
 ### Phase 1: shell and My issues
 - [x] Board columns fit their cards (`@2xl:items-start` on the columns row; they stretched to the tallest)
-- [x] Sidebar in three groups: you (Home, Notifications, My issues), Workspace (Projects; Members and settings, and for owners and admins Agents and Audit log until Phase 5), Projects. Notifications is the Approvals page renamed (`/approvals`) until Phase 6
-  - [ ] the rest as each lands: Search (Phase 4), Chat (Phase 3), Overview, Tasks, Timeline *later*, Activity (Phase 4); starred projects first; the open project expanding to its views (Phase 2); Settings at the bottom (Phase 5)
-- [ ] Top bar on every page: breadcrumb, ⌘K search box, notifications bell, one primary action ("New issue"); with Phase 4's search
+- [x] Sidebar in three groups: you (Home, Notifications, My issues with its open count, Search with ⌘K on a Mac and Ctrl K elsewhere), Workspace (Chat, Overview, Projects, Tasks, Timeline, Activity; for owners and admins Agents and Audit log until Phase 5), Projects (a lock on restricted ones, the open project expanding to its views), and Settings at the bottom above you. Notifications is the Approvals page renamed (`/approvals`) until Phase 6
+  - [x] Timeline shown as *Later* (disabled) in the Workspace group and under each project
+  - [ ] starred projects first (needs favourites)
+- [x] Top bar on every page: breadcrumb, the page's actions, Search (Ctrl/⌘ K), and the notifications bell (a dot while something waits for a decision)
 - [x] Home (the workspace root): greeting, counts, what waits for a decision, my next issues, project progress (done/total from the issues across projects); the Projects grid moved to `/w/[ws]/projects`
   - [ ] agent activity on Home (needs the Activity feed, Phase 2)
 - [x] Backend: issues across the projects you can see (`GET /v1/workspaces/{id}/issues`: type, status, assignee incl. `me`, reporter incl. `me`, watching, label, due_before; order due / priority / created / updated; restricted projects follow `visible_to`), tested
@@ -222,11 +223,13 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 - [x] The project Chat and Briefing tabs and the chat side panel are gone (`/p/[KEY]/chat` and `/briefing` redirect to the workspace Chat); a briefing is a summary you ask for (the briefing endpoint stays for the CLI)
 
 ### Phase 4: workspace pages and search
-- [ ] Workspace Overview: portfolio, issues by status, workload, agents this week (owners and admins)
-- [ ] Tasks: every issue across visible projects (same endpoint as My issues)
-- [ ] Workspace Activity: the project feed across visible projects (the audit log stays the strict record)
-- [ ] Projects page: status, progress, due, people, restricted lock, search, status filter, sort, Grid / List
-- [ ] ⌘K palette: issues, documents (sections), projects, agents, people, actions ("Ask in Chat"); needs workspace-wide search
+- [x] Workspace Overview (`/w/[ws]/overview`): counts, portfolio (progress, open, overdue per project), issues by status, workload (open issues per person, linking to Tasks), agents this week for owners and admins (`GET /v1/workspaces/{id}/agent-usage?days=`: runs, tokens, model calls, changes approved and rejected, runs per agent)
+- [x] Tasks (`/w/[ws]/tasks`): every issue across visible projects by status, with search and project and assignee filters in the URL
+- [x] Workspace Activity (`/w/[ws]/activity`, `GET /v1/workspaces/{id}/activity`): the project feed across visible projects, each item naming its project; the same filters (one `ActivityView`)
+- [x] Projects page: progress, done/total, overdue, restricted lock, search, sort (recently active, name, most done), Grid / List
+  - [ ] a project status (On track / At risk), due date, and people on the card (needs those fields)
+- [x] ⌘K / Ctrl+K palette (`components/command-palette.tsx`): issues (matched in the browser), documents by section (`GET /v1/workspaces/{id}/search`: each visible project searched, up to 30, hits merged by score), projects, pages, and "Ask the agents in Chat"; arrows and Enter
+  - [ ] agents and people in the palette; Chat started with the query
 
 ### Phase 5: one Settings
 - [ ] Settings with a left nav: Account (Profile, Appearance, Notifications, Devices and tokens, Calendar) and the workspace (General, Members, Invites, What members can do, Agents and Audit log for owners and admins only)

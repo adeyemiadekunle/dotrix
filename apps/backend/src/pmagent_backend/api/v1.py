@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from pmagent_backend.modules.activity.router import router as activity
+from pmagent_backend.modules.activity.router import workspace_router as workspace_activity
 from pmagent_backend.modules.agent_definitions.router import (
     project_router as project_agent_definitions,
 )
@@ -8,6 +9,7 @@ from pmagent_backend.modules.agent_definitions.router import router as agent_def
 from pmagent_backend.modules.agents.router import models_router as models
 from pmagent_backend.modules.agents.router import router as agents
 from pmagent_backend.modules.agents.router import threads_router as workspace_threads
+from pmagent_backend.modules.agents.router import usage_router as workspace_agent_usage
 from pmagent_backend.modules.agents.router import workspace_router as workspace_approvals
 from pmagent_backend.modules.api_tokens.router import device_router, tokens_router
 from pmagent_backend.modules.audit.router import router as audit
@@ -23,6 +25,7 @@ from pmagent_backend.modules.issues.router import workspace_router as workspace_
 from pmagent_backend.modules.knowledge.router import router as knowledge
 from pmagent_backend.modules.projects.router import router as projects
 from pmagent_backend.modules.search.router import router as search
+from pmagent_backend.modules.search.router import workspace_router as workspace_search
 from pmagent_backend.modules.workspaces.router import router as workspaces
 
 router = APIRouter(prefix="/v1")
@@ -45,10 +48,13 @@ for module_router in (
     models,
     workspace_approvals,
     workspace_threads,
+    workspace_agent_usage,
     audit,
     issues,
     workspace_issues,
     activity,
+    workspace_activity,
     search,
+    workspace_search,
 ):
     router.include_router(module_router)
