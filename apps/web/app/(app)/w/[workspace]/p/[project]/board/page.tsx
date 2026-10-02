@@ -1,9 +1,20 @@
 "use client";
 
+import { Button } from "@pmagent/ui/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@pmagent/ui/components/dropdown-menu";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { ArrowUpDownIcon } from "lucide-react";
 import { Suspense, useMemo, useState } from "react";
 
-import { BoardView } from "@/components/issues/board-view";
+import { BOARD_SORTS, BoardView, type BoardSort } from "@/components/issues/board-view";
 import { IssueFilters, useFilters } from "@/components/issues/filters";
 import type { EpicMap } from "@/components/issues/issue-card";
 import type { MemberMap } from "@/components/issues/meta";
@@ -22,6 +33,8 @@ function BoardPage() {
   const [adding, setAdding] = useState<IssueStatus | null>(null);
   const epicMap: EpicMap = useMemo(() => new Map(epics.data?.map((e) => [e.key, e])), [epics.data]);
   const [, openIssue] = useSearchParam("issue");
+  const [sortParam, setSort] = useSearchParam("sort");
+  const sort: BoardSort = sortParam && sortParam in BOARD_SORTS ? (sortParam as BoardSort) : "rank";
   const memberMap: MemberMap = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m])), [members.data]);
   const labels = useMemo(
     () => [...new Set(board.data?.columns.flatMap((c) => c.issues.flatMap((i) => i.labels)))].sort(),
@@ -30,7 +43,40 @@ function BoardPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <IssueFilters filters={filters} members={members.data ?? []} labels={labels} scope={scope} />
+      <IssueFilters
+        filters={filters}
+        members={members.data ?? []}
+        labels={labels}
+        scope={scope}
+        trailing={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant={sort === "rank" ? "outline" : "secondary"}>
+                <ArrowUpDownIcon />
+                Sort: {BOARD_SORTS[sort].label}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Order cards by</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={sort} onValueChange={(v) => setSort(v === "rank" ? null : v)}>
+                {(Object.keys(BOARD_SORTS) as BoardSort[]).map((id) => (
+                  <DropdownMenuRadioItem key={id} value={id}>
+                    {BOARD_SORTS[id].label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              {canEdit && (
+                <>
+                  <DropdownMenuSeparator />
+                  <p className="text-muted-foreground max-w-56 px-2 py-1.5 text-xs">
+                    Drag cards to reorder or move them in Ranked order.
+                  </p>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
       {board.isLoading ? (
         <div className="flex gap-3 p-4 md:p-6">
           {Array.from({ length: 5 }, (_, i) => (
@@ -43,6 +89,7 @@ function BoardPage() {
           members={memberMap}
           epics={epicMap}
           search={filters.search}
+          sort={sort}
           canEdit={canEdit}
           onOpen={openIssue}
           onMove={(m) => move.mutate(m)}

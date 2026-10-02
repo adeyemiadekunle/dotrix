@@ -36,4 +36,32 @@ test("the workspace's pages: overview, tasks, activity, projects, and search", a
   await expect(page.getByRole("option", { name: /Retry failed uploads/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(new RegExp(`/p/${key}/board\\?issue=${key}-1`));
+  await page.keyboard.press("Escape");
+
+  // People: open their issues on Tasks.
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByRole("combobox", { name: "Search" }).fill("ada");
+  await page.getByRole("option", { name: /Ada Tester/ }).click();
+  await expect(page).toHaveURL(/\/tasks\?assignee=/);
+
+  // Agents: Chat opens with that agent picked; or ask the agents what you typed.
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByRole("combobox", { name: "Search" }).fill("research");
+  await page.getByRole("option", { name: /Research agent/ }).click();
+  await expect(page).toHaveURL(/\/chat\?/);
+  await expect(page.getByLabel("Message Research agent")).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByRole("combobox", { name: "Search" }).fill("what is blocked");
+  await page.getByRole("option", { name: /Ask the agents in Chat/ }).click();
+  await expect(page.getByLabel("Message the agents")).toHaveValue("what is blocked");
+
+  // The profile menu: keyboard shortcuts and connecting the CLI.
+  const userMenu = sidebar.getByRole("button", { name: /Ada Tester/ });
+  await userMenu.click();
+  await page.getByRole("menuitem", { name: "Keyboard shortcuts" }).click();
+  await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toContainText("Show or hide the sidebar");
+  await page.keyboard.press("Escape");
+  await userMenu.click();
+  await page.getByRole("menuitem", { name: "Connect the CLI" }).click();
+  await expect(page.getByRole("dialog", { name: "Connect the CLI" })).toContainText("pmagent login");
 });

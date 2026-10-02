@@ -101,6 +101,7 @@ export function Conversation({
   canChat,
   canDecide,
   compact,
+  initialDraft,
 }: {
   scope: Scope;
   threadId: string | null;
@@ -109,18 +110,25 @@ export function Conversation({
   canChat: boolean;
   canDecide: boolean;
   compact?: boolean;
+  /** What the message box starts with (from search); "@handle …" picks that agent. */
+  initialDraft?: string;
 }) {
   const thread = useThread(scope, threadId);
   const send = useSendMessage(scope);
   const stop = useStopRun(scope);
   const briefing = useBriefing(scope);
-  const [draft, setDraft] = useState("");
   const { workspace, project } = useWorkspaceProject(scope.projectId);
   const models = useModels(workspace?.id);
   const agentOptions = useChatAgents(scope);
+  const [start] = useState(() => {
+    const mention = initialDraft ? mentionedAgent(initialDraft, agentOptions) : null;
+    return { draft: mention ? mention[1] : (initialDraft ?? ""), agent: mention?.[0] };
+  });
+  const [draft, setDraft] = useState(start.draft);
   // Picks made here, for this conversation (a new one has no thread yet).
   const [pick, setPick] = useState<{ thread: string | null; agent?: AgentId; model?: string | null }>({
     thread: threadId,
+    agent: start.agent,
   });
   const picked = pick.thread === threadId ? pick : { thread: threadId };
   const runs = thread.data ?? [];

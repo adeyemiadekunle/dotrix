@@ -1,10 +1,12 @@
 "use client";
 
 import { Button } from "@pmagent/ui/components/button";
+import { Checkbox } from "@pmagent/ui/components/checkbox";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -12,11 +14,23 @@ import {
 import { Input } from "@pmagent/ui/components/input";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
-import { ArrowDownIcon, ArrowUpIcon, Columns3Icon, DownloadIcon, SearchIcon, TableIcon } from "lucide-react";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CircleDotIcon,
+  Columns3Icon,
+  DownloadIcon,
+  SearchIcon,
+  TableIcon,
+  UserIcon,
+  XIcon,
+} from "lucide-react";
+import { toast } from "sonner";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   AGENT_LABELS,
+  AGENTS,
   AssigneeAvatar,
   PRIORITIES,
   PRIORITY_META,
@@ -30,7 +44,8 @@ import {
 } from "@/components/issues/meta";
 import { formatDue, today } from "@/components/issues/workspace-issue-row";
 import { EmptyState } from "@/components/states";
-import { useAllIssues, useMembers, type IssueSummary } from "@/lib/issues";
+import { useAllIssues, useMembers, useUpdateIssue, type IssueSummary } from "@/lib/issues";
+import { can } from "@/lib/labels";
 import { useProjectScope } from "@/lib/queries";
 import { useSearchParam } from "@/lib/url-state";
 
@@ -145,8 +160,97 @@ function csv(rows: IssueSummary[], columns: Column[], members: MemberMap): strin
   return [columns.map((c) => quote(c.label)).join(","), ...rows.map((r) => columns.map((c) => quote(plain(c, r))).join(","))].join("\n");
 }
 
+type Changes = Parameters<ReturnType<typeof useUpdateIssue>["mutateAsync"]>[0]["changes"];
+
+/** Change the selected issues together: status, or who they're assigned to. */
+function BulkBar({
+  keys,
+  members,
+  canAssignCodingAgent,
+  busy,
+  onApply,
+  onClear,
+}: {
+  keys: string[];
+  members: MemberMap;
+  canAssignCodingAgent: boolean;
+  busy: boolean;
+  onApply: (changes: Changes, what: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div
+      role="toolbar"
+      aria-label="Selected issues"
+      className="bg-brand-muted text-brand-muted-foreground flex flex-wrap items-center gap-2 px-4 py-2 text-sm md:px-6"
+    >
+      <span className="font-medium">{keys.length} selected</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="sm" variant="outline" disabled={busy}>
+            <CircleDotIcon />
+            Status
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {STATUSES.map((status) => (
+            <DropdownMenuItem key={status} onSelect={() => onApply({ status }, `moved to ${STATUS_META[status].label}`)}>
+              <StatusIcon status={status} />
+              {STATUS_META[status].label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="sm" variant="outline" disabled={busy}>
+            <UserIcon />
+            Assign
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
+          <DropdownMenuItem onSelect={() => onApply({ assignee_user_id: null, assignee_agent: null }, "unassigned")}>
+            Unassigned
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>People</DropdownMenuLabel>
+          {[...members.values()]
+            .filter((m) => m.role !== "guest")
+            .map((m) => (
+              <DropdownMenuItem
+                key={m.user_id}
+                onSelect={() => onApply({ assignee_user_id: m.user_id, assignee_agent: null }, `assigned to ${m.display_name}`)}
+              >
+                {m.display_name}
+              </DropdownMenuItem>
+            ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Agents</DropdownMenuLabel>
+          {AGENTS.map((agent) => (
+            <DropdownMenuItem
+              key={agent}
+              disabled={agent === "coding-agent" && !canAssignCodingAgent}
+              onSelect={() => onApply({ assignee_agent: agent, assignee_user_id: null }, `assigned to ${AGENT_LABELS[agent]}`)}
+            >
+              {AGENT_LABELS[agent]}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <span className="flex-1" />
+      <Button size="sm" variant="ghost" onClick={onClear} disabled={busy}>
+        <XIcon />
+        Clear selection
+      </Button>
+    </div>
+  );
+}
+
 function TablePage() {
-  const { workspace, project, scope } = useProjectScope();
+  const { workspace, project, scope, canEdit } = useProjectScope();
+  const update = useUpdateIssue(scope);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
   const issues = useAllIssues(scope);
   const members = useMembers(workspace?.id);
   const memberMap: MemberMap = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m])), [members.data]);
@@ -189,6 +293,35 @@ function TablePage() {
     }
     return list;
   }, [issues.data, query, sort, memberMap]);
+
+  // Selection follows what's shown: an issue filtered out by the search isn't changed.
+  const shownKeys = useMemo(() => new Set(rows.map((r) => r.key)), [rows]);
+  const chosen = [...selected].filter((key) => shownKeys.has(key));
+  const allChosen = rows.length > 0 && chosen.length === rows.length;
+
+  function toggle(key: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  async function apply(changes: Changes, what: string) {
+    setBusy(true);
+    const results = await Promise.allSettled(chosen.map((key) => update.mutateAsync({ key, changes })));
+    setBusy(false);
+    const done = results.filter((r) => r.status === "fulfilled").length;
+    if (done === chosen.length) {
+      toast.success(`${done} ${done === 1 ? "issue" : "issues"} ${what}`);
+      setSelected(new Set());
+    } else if (done > 0) {
+      toast.warning(`${done} of ${chosen.length} issues ${what}; the rest are still selected`);
+      const failed = new Set(chosen.filter((_, i) => results[i]!.status === "rejected"));
+      setSelected(failed);
+    }
+  }
 
   function download() {
     const blob = new Blob([csv(rows, columns, memberMap)], { type: "text/csv" });
@@ -241,6 +374,16 @@ function TablePage() {
           Export CSV
         </Button>
       </div>
+      {canEdit && chosen.length > 0 && (
+        <BulkBar
+          keys={chosen}
+          members={memberMap}
+          canAssignCodingAgent={can(workspace, "agents:code")}
+          busy={busy}
+          onApply={(changes, what) => void apply(changes, what)}
+          onClear={() => setSelected(new Set())}
+        />
+      )}
       {issues.isLoading && <Skeleton className="mx-4 h-64 md:mx-6" />}
       {issues.data?.length === 0 && (
         <div className="px-4 md:px-6">
@@ -252,6 +395,15 @@ function TablePage() {
           <table className="w-full border-collapse text-sm">
             <thead className="bg-muted/40">
               <tr>
+                {canEdit && (
+                  <th scope="col" className="w-10 border-b pr-0 pl-4 md:pl-6">
+                    <Checkbox
+                      aria-label="Select all issues"
+                      checked={allChosen ? true : chosen.length > 0 ? "indeterminate" : false}
+                      onCheckedChange={() => setSelected(allChosen ? new Set() : new Set(rows.map((r) => r.key)))}
+                    />
+                  </th>
+                )}
                 {columns.map((c) => (
                   <th key={c.id} scope="col" className="border-b px-3 py-0 text-left text-xs font-medium whitespace-nowrap">
                     <button
@@ -271,8 +423,17 @@ function TablePage() {
                 <tr
                   key={issue.key}
                   onClick={() => openIssue(issue.key)}
-                  className="hover:bg-muted/50 cursor-pointer border-b"
+                  className={cn("hover:bg-muted/50 cursor-pointer border-b", selected.has(issue.key) && "bg-muted/60")}
                 >
+                  {canEdit && (
+                    <td className="w-10 pr-0 pl-4 md:pl-6" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        aria-label={`Select ${issue.key}`}
+                        checked={selected.has(issue.key)}
+                        onCheckedChange={() => toggle(issue.key)}
+                      />
+                    </td>
+                  )}
                   {columns.map((c) => (
                     <td key={c.id} className={cn("h-10 px-3 whitespace-nowrap", c.className)}>
                       {c.id === "title" ? (

@@ -8,18 +8,35 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@pmagent/ui/components/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@pmagent/ui/components/sidebar";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { ChevronsUpDownIcon, LogOutIcon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon, UserIcon } from "lucide-react";
+import {
+  ArrowLeftRightIcon,
+  CheckIcon,
+  ChevronsUpDownIcon,
+  KeyboardIcon,
+  LogOutIcon,
+  MonitorIcon,
+  MoonIcon,
+  SettingsIcon,
+  SunIcon,
+  TerminalIcon,
+  UserIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
+import { useState } from "react";
 
+import { ConnectCliDialog, KeyboardShortcutsDialog } from "@/components/user-menu-dialogs";
 import { UserAvatar } from "@/components/user-avatar";
 import { authPost } from "@/lib/api";
 import { myAvatarSrc } from "@/lib/profile";
-import { useCurrentWorkspace, useMe } from "@/lib/queries";
+import { useCurrentWorkspace, useMe, useWorkspaces } from "@/lib/queries";
 
 async function signOut() {
   await authPost("logout").catch(() => undefined);
@@ -30,7 +47,9 @@ export function NavUser() {
   const { isMobile } = useSidebar();
   const me = useMe();
   const { workspace } = useCurrentWorkspace();
+  const workspaces = useWorkspaces();
   const { theme, setTheme } = useTheme();
+  const [dialog, setDialog] = useState<"shortcuts" | "cli" | null>(null);
   if (!me.data) return <Skeleton className="h-12 w-full" />;
   const user = me.data;
 
@@ -79,6 +98,32 @@ export function NavUser() {
                 Settings
               </Link>
             </DropdownMenuItem>
+            {(workspaces.data?.length ?? 0) > 1 && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <ArrowLeftRightIcon />
+                  Switch workspace
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-80 min-w-48 overflow-y-auto">
+                  {workspaces.data?.map((w) => (
+                    <DropdownMenuItem key={w.id} asChild>
+                      <Link href={`/w/${w.slug}`}>
+                        <span className="min-w-0 flex-1 truncate">{w.name}</span>
+                        {w.id === workspace?.id && <CheckIcon className="ml-auto" />}
+                      </Link>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
+            <DropdownMenuItem onSelect={() => setDialog("shortcuts")}>
+              <KeyboardIcon />
+              Keyboard shortcuts
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setDialog("cli")}>
+              <TerminalIcon />
+              Connect the CLI
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-muted-foreground text-xs font-medium">Theme</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={setTheme}>
@@ -102,6 +147,12 @@ export function NavUser() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <KeyboardShortcutsDialog open={dialog === "shortcuts"} onOpenChange={(open) => !open && setDialog(null)} />
+        <ConnectCliDialog
+          open={dialog === "cli"}
+          onOpenChange={(open) => !open && setDialog(null)}
+          workspaceSlug={workspace?.slug}
+        />
       </SidebarMenuItem>
     </SidebarMenu>
   );

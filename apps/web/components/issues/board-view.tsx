@@ -24,7 +24,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Board, IssueStatus, IssueSummary, RankTarget } from "@/lib/issues";
 
 import { IssueCard, SortableIssueCard, type EpicMap } from "./issue-card";
-import { STATUSES, STATUS_META, StatusIcon, type MemberMap } from "./meta";
+import { PRIORITIES, STATUSES, STATUS_META, StatusIcon, type MemberMap } from "./meta";
 
 type Columns = Record<IssueStatus, IssueSummary[]>;
 
@@ -35,6 +35,29 @@ function toColumns(board: Board | undefined): Columns {
 }
 
 const COLUMN_ID = "column:";
+
+/** How cards are ordered in each column. Only `rank` (the backlog order) can be dragged. */
+export const BOARD_SORTS = {
+  rank: { label: "Ranked" },
+  priority: { label: "Priority" },
+  due: { label: "Due date" },
+  updated: { label: "Recently updated" },
+  created: { label: "Newest" },
+} as const;
+export type BoardSort = keyof typeof BOARD_SORTS;
+
+const BY: Record<Exclude<BoardSort, "rank">, (a: IssueSummary, b: IssueSummary) => number> = {
+  priority: (a, b) => PRIORITIES.indexOf(a.priority) - PRIORITIES.indexOf(b.priority),
+  // Soonest first; issues without a due date last.
+  due: (a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"),
+  updated: (a, b) => b.updated_at.localeCompare(a.updated_at),
+  // Keys are numbered in order within a project, so the highest number is the newest.
+  created: (a, b) => keyNumber(b.key) - keyNumber(a.key),
+};
+
+function keyNumber(key: string): number {
+  return Number(key.slice(key.lastIndexOf("-") + 1)) || 0;
+}
 
 function findColumn(columns: Columns, id: string): IssueStatus | undefined {
   if (id.startsWith(COLUMN_ID)) return id.slice(COLUMN_ID.length) as IssueStatus;
@@ -154,6 +177,7 @@ export function BoardView({
   members,
   epics,
   search,
+  sort = "rank",
   canEdit,
   onOpen,
   onMove,
@@ -163,6 +187,8 @@ export function BoardView({
   members: MemberMap;
   epics: EpicMap;
   search: string;
+  /** Card order in each column (`rank` by default); dragging works only in rank order. */
+  sort?: BoardSort;
   canEdit: boolean;
   onOpen: (key: string) => void;
   onMove: (move: { key: string; status?: IssueStatus; rank?: RankTarget }) => void;
@@ -201,10 +227,16 @@ export function BoardView({
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return columns;
-    const match = (i: IssueSummary) => i.title.toLowerCase().includes(q) || i.key.toLowerCase().includes(q);
-    return Object.fromEntries(STATUSES.map((s) => [s, columns[s].filter(match)])) as Columns;
-  }, [columns, search]);
+    if (!q && sort === "rank") return columns;
+    const match = (i: IssueSummary) => !q || i.title.toLowerCase().includes(q) || i.key.toLowerCase().includes(q);
+    const order = sort === "rank" ? undefined : BY[sort];
+    return Object.fromEntries(
+      STATUSES.map((s) => {
+        const list = columns[s].filter(match);
+        return [s, order ? [...list].sort(order) : list];
+      }),
+    ) as Columns;
+  }, [columns, search, sort]);
 
   // Pointer drags find the nearest spot by corners; a keyboard move places the card squarely
   // on its target, where corners can still favour the card's old spot next to a tall empty
@@ -300,7 +332,7 @@ export function BoardView({
               members={members}
               epics={epics}
               onOpen={onOpen}
-              canEdit={canEdit && !search}
+              canEdit={canEdit && !search && sort === "rank"}
               collapsed={collapsed.has(status)}
               onAdd={onAdd && status !== "done" ? () => onAdd(status) : undefined}
               onToggle={() =>

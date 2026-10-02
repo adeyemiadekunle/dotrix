@@ -201,18 +201,18 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 - [x] My issues (`/w/[ws]/my-issues`): Overdue / Today / Upcoming / No due date / Done this week; Assigned to me, Watching, Reported by me (`?who=`); rows open the issue in its project's board
   - [ ] views Board, Table, Timeline *later* (with Phase 2's views)
 - [x] Profile menu: Light / Dark / System
-  - [ ] switch workspace, keyboard shortcuts, connect the CLI (with Phase 5's Profile page)
+  - [x] switch workspace, keyboard shortcuts (a dialog listing every shortcut), connect the CLI (install, sign in, link a checkout) (`components/user-menu-dialogs.tsx`)
 
 ### Phase 2: project views
 - [x] Tabs: Overview, Board, List, Table, Files, Knowledge, Activity (then Chat and Briefing until Phase 3; settings stays the gear); the open project expands to the same views in the sidebar. A project opens on Overview; `/backlog` and `/docs` redirect to `/list` and `/files`
   - [ ] Timeline *later* (needs start dates and the project graph)
 - [x] Overview as the landing tab: about, progress by status, coming up (soonest due first), epics, details, "Ask Chat" for a summary, recent activity
 - [x] List replaces Backlog: Ranked (drag to reorder, the old backlog) or By status (`?group=status`), with the epics alongside; Table: every issue, sortable columns, a Columns menu (remembered per browser), search, Export CSV
-  - [ ] Table bulk actions (change status, assign)
+  - [x] Table bulk actions: select rows (or all shown), then change status or assign them together; failures stay selected
 - [x] Files replaces Docs: drop zone, type filter, sort (newest, name, largest), conversion status
   - [ ] retry a failed conversion (needs an endpoint)
 - [x] Board: label chips, due dates, and + per column were already there; columns fit their cards (Phase 1)
-  - [ ] Sort control
+  - [x] Sort control (`?sort=`: Ranked, Priority, Due date, Recently updated, Newest); cards drag only in Ranked order
 - [x] Backend + web: project Activity (`GET .../projects/{id}/activity`, module `activity`): issue events, document versions (not the skeleton), and for people who can chat agent runs and approval decisions; newest first, paged with `before`. The Activity tab filters Everything / Issues / Documents / Agents / Approvals; Overview shows the latest
 
 ### Phase 3: workspace Chat
@@ -230,7 +230,7 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 - [x] Projects page: progress, done/total, overdue, restricted lock, search, sort (recently active, name, most done), Grid / List
   - [ ] a project status (On track / At risk), due date, and people on the card (needs those fields)
 - [x] ⌘K / Ctrl+K palette (`components/command-palette.tsx`): issues (matched in the browser), documents by section (`GET /v1/workspaces/{id}/search`: each visible project searched, up to 30, hits merged by score), projects, pages, and "Ask the agents in Chat"; arrows and Enter
-  - [ ] agents and people in the palette; Chat started with the query
+  - [x] agents (Chat opens with that agent picked) and people (their issues on Tasks) in the palette; "Ask the agents" starts Chat with the query (`/chat?q=`, about the project you're in)
 
 ### Phase 5: one Settings
 - [x] Settings at `/w/[ws]/settings/…` with a left nav (a scrolling row on phones): Account (Profile, Appearance, Notifications *later*, Devices and tokens, Calendar) and the workspace (General, Members, Invites for owners and admins, What members can do in organisations, Agents and Audit log for owners and admins). `/settings` opens your profile in the workspace you were last in; the user menu has Profile and Settings; sections stack when narrow (`SettingsSection` is a container query, `stacked` for full-width lists)
