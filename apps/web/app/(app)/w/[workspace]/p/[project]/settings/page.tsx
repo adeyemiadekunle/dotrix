@@ -15,6 +15,7 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { Automations } from "@/components/automations";
+import { Lessons } from "@/components/lessons";
 import { useConfirm } from "@/components/confirm-dialog";
 import { Field, SaveBar } from "@/components/form";
 import { GitHubMark } from "@/components/github-sign-in";
@@ -752,6 +753,7 @@ export default function ProjectSettings() {
     ["repository", "Repository"],
     ["access", "Who can see it"],
     ["automations", "Automations"],
+    ...(canEdit ? [["lessons", "Lessons"]] : []),
     ["agents", "Agents"],
     ...(canEdit ? [["export", "Export"], ["move", "Move project"]] : []),
   ];
@@ -763,6 +765,7 @@ export default function ProjectSettings() {
         <Repository project={project} workspace={workspace} canEdit={canEdit} />
         <Access project={project} workspace={workspace} canEdit={canEdit} />
         <Automations scope={scope} canEdit={canEdit} workspaceSlug={workspace.slug} projectKey={project.key} />
+        {canEdit && <Lessons scope={scope} knowledgeHref={`${base}/knowledge`} />}
         <Agents
           key={`a-${project.model}-${project.specialist_model}-${project.token_budget}`}
           project={project}
