@@ -48,6 +48,16 @@ async def upload_document(
     return await documents.upload(access, file.filename or "document", data, max_bytes=limit)
 
 
+@router.post("/{document_id}/retry", responses=errors(403, 409, 503))
+async def retry_document_conversion(
+    document_id: uuid.UUID, access: ProjectManager, documents: Documents
+) -> DocumentRead:
+    """Convert a document that failed again, from its stored original: it's `converting`
+    until the job finishes, then `ready` or `failed` with a new `error`. 409 unless it failed.
+    Owners and admins (the people who add documents)."""
+    return await documents.retry(access.project.id, document_id)
+
+
 @router.get("")
 async def list_documents(access: ProjectViewer, documents: Documents) -> list[DocumentRead]:
     """Uploaded documents, newest first."""

@@ -326,3 +326,48 @@ async def test_moving_unassigns_and_unwatches_people_who_cant_see_it(
     audit = (await db_client.get(f"/v1/workspaces/{two['id']}/audit", headers=ada.headers)).json()
     moved_in = next(e for e in audit if e["action"] == "project.moved_in")
     assert moved_in["details"]["unassigned"] == 1 and moved_in["details"]["watchers_removed"] == 1
+
+
+async def test_status_and_target_date(signup, create_team, add_member, db_client: AsyncClient) -> None:
+    ada = await signup()
+    cat = await signup(email="cat@example.com", name="Cat")
+    team = await create_team(ada.headers)
+    await add_member(team["id"], cat.id, Role.MEMBER)
+    project = (await db_client.post(projects_url(team), json={"key": "KUN", "name": "K"}, headers=ada.headers)).json()
+    assert project["health"] is None and project["target_date"] is None
+    url = f"{projects_url(team)}/{project['id']}"
+    res = await db_client.patch(url, json={"health": "at_risk", "target_date": "2026-12-01"}, headers=ada.headers)
+    assert res.status_code == 200 and (res.json()["health"], res.json()["target_date"]) == ("at_risk", "2026-12-01")
+    # Leaving them out keeps them; null clears.
+    assert (await db_client.patch(url, json={"name": "Kunemi"}, headers=ada.headers)).json()["health"] == "at_risk"
+    cleared = (await db_client.patch(url, json={"health": None, "target_date": None}, headers=ada.headers)).json()
+    assert cleared["health"] is None and cleared["target_date"] is None
+    assert (await db_client.patch(url, json={"health": "sideways"}, headers=ada.headers)).status_code == 422
+    # Members see it, but don't set it.
+    assert (await db_client.patch(url, json={"health": "on_track"}, headers=cat.headers)).status_code == 403
+
+
+async def test_stars_are_per_person_and_follow_what_you_can_see(
+    signup, create_team, add_member, db_client: AsyncClient
+) -> None:
+    ada = await signup()
+    cat = await signup(email="cat@example.com", name="Cat")
+    team = await create_team(ada.headers)
+    await add_member(team["id"], cat.id, Role.MEMBER)
+    url = projects_url(team)
+    kun = (await db_client.post(url, json={"key": "KUN", "name": "K"}, headers=ada.headers)).json()
+    mob = (await db_client.post(url, json={"key": "MOB", "name": "M"}, headers=ada.headers)).json()
+    assert (await db_client.get(f"{url}/starred", headers=cat.headers)).json() == []
+
+    for project in (mob, kun):
+        assert (await db_client.put(f"{url}/{project['id']}/star", headers=cat.headers)).status_code == 204
+    await db_client.put(f"{url}/{mob['id']}/star", headers=cat.headers)  # starring twice is fine
+    assert (await db_client.get(f"{url}/starred", headers=cat.headers)).json() == [mob["id"], kun["id"]]
+    assert (await db_client.get(f"{url}/starred", headers=ada.headers)).json() == []  # nobody else's
+
+    # Restricted without Cat on it: it drops out of Cat's stars.
+    await db_client.patch(f"{url}/{mob['id']}", json={"access": "restricted"}, headers=ada.headers)
+    assert (await db_client.get(f"{url}/starred", headers=cat.headers)).json() == [kun["id"]]
+    assert (await db_client.delete(f"{url}/{kun['id']}/star", headers=cat.headers)).status_code == 204
+    assert (await db_client.delete(f"{url}/{kun['id']}/star", headers=cat.headers)).status_code == 204
+    assert (await db_client.get(f"{url}/starred", headers=cat.headers)).json() == []

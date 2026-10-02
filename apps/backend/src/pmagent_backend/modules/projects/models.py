@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import enum
 import uuid
+from datetime import date
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import Date, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pmagent_backend.db.base import (
@@ -21,6 +22,14 @@ class ProjectSource(enum.StrEnum):
     NEW_REPO = "new_repo"  # `init`: a new code repo
     EXISTING_REPO = "existing_repo"  # `connect`: an existing repo
     DOCS_ONLY = "docs_only"  # no code (yet), or not software
+
+
+class ProjectHealth(enum.StrEnum):
+    """How the project is going, as its owners and admins say (shown on its card)."""
+
+    ON_TRACK = "on_track"
+    AT_RISK = "at_risk"
+    OFF_TRACK = "off_track"
 
 
 class ProjectAccessLevel(enum.StrEnum):
@@ -53,6 +62,19 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    # Its status and target date, set by owners and admins; null: not said.
+    health: Mapped[ProjectHealth | None] = mapped_column(str_enum(ProjectHealth, 20))
+    target_date: Mapped[date | None] = mapped_column(Date)
+
+
+class ProjectStar(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):
+    """A project someone starred: it comes first in their sidebar and Projects page."""
+
+    __tablename__ = "project_stars"
+    __table_args__ = (UniqueConstraint("user_id", "project_id"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
 
 
 class ProjectMember(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -15,7 +15,7 @@ from pydantic import (
 
 from pmagent_backend.modules.workspaces.models import Role
 
-from .models import ProjectAccessLevel, ProjectSource
+from .models import ProjectAccessLevel, ProjectHealth, ProjectSource
 from .repo_urls import normalize_repo_url
 
 ProjectKey = Annotated[
@@ -103,6 +103,12 @@ class ProjectUpdate(BaseModel):
         description="Link the project to its repo (any remote form; stored canonical). Send null to unlink; "
         "leave it out to keep the current link.",
     )
+    health: ProjectHealth | None = Field(
+        default=None, description="on_track, at_risk, or off_track; send null to clear, leave it out to keep it"
+    )
+    target_date: date | None = Field(
+        default=None, description="When it should be done; send null to clear, leave it out to keep it"
+    )
 
 
 class ProjectRead(BaseModel):
@@ -123,6 +129,8 @@ class ProjectRead(BaseModel):
         description="The specialists' and summaries' model; null means the project's model"
     )
     token_budget: int | None = Field(description="Per-run token budget; null means the server's default")
+    health: ProjectHealth | None = Field(description="How it's going, as its owners and admins say; null: not said")
+    target_date: date | None = Field(description="When it should be done; null: no date")
     knowledge_revision: int
     created_at: datetime
     updated_at: datetime

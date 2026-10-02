@@ -16,7 +16,7 @@ import jwt
 from fastapi import Depends
 
 from pmagent_backend.api.deps import SettingsDep
-from pmagent_backend.core.errors import NotFound
+from pmagent_backend.core.errors import Conflict, Forbidden, NotFound
 from pmagent_backend.core.settings import Settings
 from pmagent_backend.modules.auth.github import API_URL, GitHubUnavailable
 
@@ -59,6 +59,9 @@ class GitHubApp(Protocol):
     async def repositories(self, installation_id: int) -> list[Repo]: ...
     async def repository(self, installation_id: int, repo_id: int) -> Repo: ...
     async def access_token(self, installation_id: int) -> str: ...
+    async def create_repository(
+        self, installation_id: int, org: str, name: str, *, private: bool, description: str
+    ) -> Repo: ...
 
 
 class GitHubAppClient:
@@ -101,6 +104,32 @@ class GitHubAppClient:
     async def repository(self, installation_id: int, repo_id: int) -> Repo:
         """One repo, if this installation can see it (else NotFound)."""
         return _repo(await self._get(f"/repositories/{repo_id}", await self._installation_token(installation_id)))
+
+    async def create_repository(
+        self, installation_id: int, org: str, name: str, *, private: bool, description: str
+    ) -> Repo:
+        """A new repo in an organisation the app is installed on (with a README, so it has a
+        default branch). Needs the app's Administration (write) permission there."""
+        token = await self._installation_token(installation_id)
+        async with httpx.AsyncClient(transport=self.transport, timeout=15) as http:
+            try:
+                res = await http.post(
+                    f"{API_URL}/orgs/{org}/repos",
+                    headers={**HEADERS, "Authorization": f"Bearer {token}"},
+                    json={"name": name, "private": private, "description": description, "auto_init": True},
+                )
+            except httpx.HTTPError as exc:
+                raise GitHubUnavailable("GitHub couldn't be reached; try again shortly") from exc
+        if res.status_code == 201:
+            return _repo(res.json())
+        if res.status_code == 422:
+            raise Conflict(f"{org} already has a repository called {name}, or GitHub didn't accept that name")
+        if res.status_code in (403, 404):
+            raise Forbidden(
+                f"The GitHub App can't create repositories in {org}: it needs the Administration (write) "
+                "permission there"
+            )
+        raise GitHubUnavailable(f"GitHub answered {res.status_code}; try again shortly")
 
     async def access_token(self, installation_id: int) -> str:
         """An installation token (an hour long) to fetch its repos with git; never stored."""

@@ -63,3 +63,10 @@ class ConnectedRepoRead(BaseModel):
     checkout_sha: str | None = Field(description="The commit agents read (null until the first sync)")
     checked_out_at: datetime | None
     checkout_error: str | None = Field(description="Why the last sync didn't work (null when it did)")
+
+
+class RepoCreate(BaseModel):
+    installation_ref: uuid.UUID = Field(description="The organisation's installation to create it in")
+    name: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9._-]+$")
+    private: bool = True
+    description: str = Field(default="", max_length=350)

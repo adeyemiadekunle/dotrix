@@ -29,8 +29,8 @@ from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
 from pmagent_engine.layout import skeleton
 
-from .models import Project, ProjectAccessLevel, ProjectMember
-from .repository import ProjectRepository
+from .models import Project, ProjectAccessLevel, ProjectMember, ProjectStar
+from .repository import ProjectRepository, visible_to
 from .schemas import ProjectCreate, ProjectMemberRead, ProjectRead, ProjectUpdate
 
 
@@ -109,6 +109,10 @@ class ProjectService:
             project.specialist_model = data.specialist_model
         if "token_budget" in data.model_fields_set:
             project.token_budget = data.token_budget
+        if "health" in data.model_fields_set:
+            project.health = data.health
+        if "target_date" in data.model_fields_set:
+            project.target_date = data.target_date
         if "repo_url" in data.model_fields_set and data.repo_url != project.repo_url:
             if data.repo_url and (
                 taken := [p for p in await self.projects.list(project.workspace_id, repo_url=data.repo_url)
@@ -119,6 +123,32 @@ class ProjectService:
         await self.session.commit()
         await self.session.refresh(project)  # updated_at is set by the database
         return ProjectRead.model_validate(project)
+
+    # -- stars (per person) --------------------------------------------------------------
+
+    async def starred(self, member: Membership) -> list[uuid.UUID]:
+        """The projects this person starred here, among those they can still see."""
+        ids = await self.session.scalars(
+            select(ProjectStar.project_id)
+            .join(Project, Project.id == ProjectStar.project_id)
+            .where(
+                ProjectStar.workspace_id == member.workspace_id,
+                ProjectStar.user_id == member.user_id,
+                visible_to(member.user_id, member.role),
+            )
+            .order_by(ProjectStar.created_at)
+        )
+        return list(ids)
+
+    async def star(self, project: Project, member: Membership, starred: bool) -> None:
+        existing = await self.session.scalar(
+            select(ProjectStar).where(ProjectStar.project_id == project.id, ProjectStar.user_id == member.user_id)
+        )
+        if starred and existing is None:
+            self.session.add(ProjectStar(workspace_id=project.workspace_id, project_id=project.id, user_id=member.user_id))
+        elif not starred and existing is not None:
+            await self.session.delete(existing)
+        await self.session.commit()
 
     async def move(self, project: Project, actor: Membership, target_id: uuid.UUID) -> ProjectRead:
         """Move a project, with everything in it, to another workspace where you can set up
@@ -146,6 +176,8 @@ class ProjectService:
 
         # Its repo was reached through this workspace's GitHub installation: connect it again there.
         await self.session.execute(delete(ConnectedRepo).where(ConnectedRepo.project_id == project.id))
+        # Stars are per workspace (a sidebar's order there); people star it again where it went.
+        await self.session.execute(delete(ProjectStar).where(ProjectStar.project_id == project.id))
         for model in _PROJECT_ROWS:
             await self.session.execute(
                 update(model).where(model.project_id == project.id).values(workspace_id=target_id)

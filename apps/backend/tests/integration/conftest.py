@@ -30,15 +30,17 @@ def _repo(repo_id: int, full_name: str, private: bool = False) -> dict[str, Any]
 
 
 class FakeGitHub:
-    """GitHub's App API, its sign-in, and two installations; the person signing in manages 111."""
+    """GitHub's App API, its sign-in, and three installations: the person signing in manages 111 (an
+    organisation) and 333 (their own account), not 222."""
 
     def __init__(self) -> None:
         self.installations = {
             111: {"account": {"login": "kunemi", "type": "Organization"},
                   "repos": [_repo(9001, "kunemi/api", private=True), _repo(9002, "kunemi/web")]},
             222: {"account": {"login": "someone-else", "type": "User"}, "repos": [_repo(9100, "someone-else/x")]},
+            333: {"account": {"login": "ada-gh", "type": "User"}, "repos": []},
         }
-        self.manages = {111}
+        self.manages = {111, 333}
         self.codes = {"code-1", "code-2", "code-3"}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -64,6 +66,16 @@ class FakeGitHub:
             return httpx.Response(200, json={"id": installation_id, **self.installations[installation_id]})
         installation = self.installations.get(int(auth.removeprefix("Bearer ghs_") or 0))
         assert installation is not None, auth
+        if path.startswith("/orgs/") and path.endswith("/repos") and request.method == "POST":
+            body = json.loads(request.content)
+            org = path.split("/")[2]
+            if org != installation["account"]["login"]:
+                return httpx.Response(404)
+            if any(r["full_name"] == f"{org}/{body['name']}" for r in installation["repos"]):
+                return httpx.Response(422, json={"message": "name already exists"})
+            repo = _repo(9500 + len(installation["repos"]), f"{org}/{body['name']}", private=body["private"])
+            installation["repos"].append(repo)
+            return httpx.Response(201, json=repo)
         if path == "/installation/repositories":
             return httpx.Response(200, json={"repositories": installation["repos"]})
         if path.startswith("/repositories/"):

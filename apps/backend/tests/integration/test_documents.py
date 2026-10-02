@@ -197,3 +197,25 @@ async def test_storage_not_configured_is_503(project, db_client: AsyncClient) ->
     app.state.storage = None
     res = await upload(db_client, base, ada.headers, "a.md", b"a")
     assert res.status_code == 503 and res.json()["type"].endswith("/storage_unavailable")
+
+
+async def test_retry_a_failed_conversion(project, db_client: AsyncClient, storage, add_member, signup) -> None:
+    ada, team, base = await project()
+    doc = (await upload(db_client, base, ada.headers, "notes.txt", b"x" * 1_500_000)).json()
+    assert doc["status"] == "failed"
+    retry = f"{base}/documents/{doc['id']}/retry"
+    # Members don't add documents, so they don't retry them either.
+    cat = await signup(email="cat@example.com", name="Cat")
+    await add_member(team["id"], cat.id, Role.MEMBER)
+    assert (await db_client.post(retry, headers=cat.headers)).status_code == 403
+
+    # Still too big: it fails again, with the reason.
+    again = await db_client.post(retry, headers=ada.headers)
+    assert again.status_code == 200 and again.json()["status"] == "failed" and again.json()["error"]
+    # Whatever made it fail is fixed (here: the stored original): the retry converts it.
+    (key,) = storage.objects
+    storage.objects[key] = (b"# Notes\n\nShorter now.\n", "text/plain")
+    done = (await db_client.post(retry, headers=ada.headers)).json()
+    assert done["status"] == "ready" and done["error"] is None and done["knowledge_version"] == 1
+    # Only a failed conversion can be retried.
+    assert (await db_client.post(retry, headers=ada.headers)).status_code == 409

@@ -49,6 +49,12 @@ import {
 
 const NONE = "__none";
 
+/** "YYYY-MM-DD" in this browser's time zone, for a date input. */
+function dayOf(timestamp: string): string {
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid min-h-9 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2 text-sm">
@@ -364,11 +370,23 @@ function IssueDetails({
             onSave={(v) => void save({ estimate: v === "" ? null : Number(v) })}
           />
         </Field>
+        <Field label="Start">
+          <SaveOnBlur
+            value={issue.scheduled ? dayOf(issue.scheduled) : ""}
+            disabled={!canEdit}
+            type="date"
+            aria-label="Start date"
+            className={GHOST}
+            // The start of that day where you are; the timeline draws it from there to the due date.
+            onSave={(v) => void save({ scheduled: v ? new Date(`${v}T00:00:00`).toISOString() : null })}
+          />
+        </Field>
         <Field label="Due">
           <SaveOnBlur
             value={issue.due ?? ""}
             disabled={!canEdit}
             type="date"
+            aria-label="Due date"
             className={GHOST}
             onSave={(v) => void save({ due: v || null })}
           />

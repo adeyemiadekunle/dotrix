@@ -18,6 +18,7 @@ import { useConfirm } from "@/components/confirm-dialog";
 import { Field, SaveBar } from "@/components/form";
 import { GitHubMark } from "@/components/github-sign-in";
 import { RepoPicker } from "@/components/github-repos";
+import { HEALTH_LABELS } from "@/components/project-health";
 import { RepoPreview } from "@/components/repo-preview";
 import {
   SettingsContent,
@@ -92,6 +93,75 @@ function General({ project, workspace, canEdit }: { project: Project; workspace:
               onDiscard={() => {
                 setName(project.name);
                 setDescription(project.description);
+              }}
+            />
+          )}
+        </form>
+      </SettingsContent>
+    </SettingsSection>
+  );
+}
+
+const NO_HEALTH = "__none";
+
+/** How it's going and when it should be done: shown on its card on Projects. */
+function Status({ project, workspace, canEdit }: { project: Project; workspace: Workspace; canEdit: boolean }) {
+  const update = useUpdateProject(workspace.id, project.id);
+  const [health, setHealth] = useState<string>(project.health ?? NO_HEALTH);
+  const [target, setTarget] = useState(project.target_date ?? "");
+  const changed = health !== (project.health ?? NO_HEALTH) || target !== (project.target_date ?? "");
+  return (
+    <SettingsSection id="status">
+      <SettingsHeader>
+        <SettingsTitle>Status</SettingsTitle>
+        <SettingsDescription>How the project is going and when it should be done, shown on its card on Projects.</SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent>
+        <form
+          className="grid gap-4"
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            update.mutate({
+              health: health === NO_HEALTH ? null : (health as NonNullable<Project["health"]>),
+              target_date: target || null,
+            });
+          }}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="project-health">Status</Label>
+              <Select value={health} onValueChange={setHealth} disabled={!canEdit}>
+                <SelectTrigger id="project-health">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_HEALTH}>Not set</SelectItem>
+                  {Object.entries(HEALTH_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="project-target">Target date</Label>
+              <Input
+                id="project-target"
+                type="date"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+          {canEdit && (
+            <SaveBar
+              dirty={changed}
+              pending={update.isPending}
+              onDiscard={() => {
+                setHealth(project.health ?? NO_HEALTH);
+                setTarget(project.target_date ?? "");
               }}
             />
           )}
@@ -677,6 +747,7 @@ export default function ProjectSettings() {
   const base = `/w/${workspace.slug}/p/${project.key}`;
   const sections = [
     ["general", "General"],
+    ["status", "Status"],
     ["repository", "Repository"],
     ["access", "Who can see it"],
     ["agents", "Agents"],
@@ -686,6 +757,7 @@ export default function ProjectSettings() {
     <div className="flex items-start gap-10 p-4 md:p-8">
       <div className="grid max-w-5xl min-w-0 flex-1 content-start gap-8">
         <General key={`g-${project.updated_at}`} project={project} workspace={workspace} canEdit={canEdit} />
+        <Status key={`s-${project.health}-${project.target_date}`} project={project} workspace={workspace} canEdit={canEdit} />
         <Repository project={project} workspace={workspace} canEdit={canEdit} />
         <Access project={project} workspace={workspace} canEdit={canEdit} />
         <Agents
