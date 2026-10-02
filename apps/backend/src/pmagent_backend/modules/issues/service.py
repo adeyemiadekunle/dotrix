@@ -114,6 +114,24 @@ def normalize_key(key: str) -> str:
     return key.strip().upper()
 
 
+_FIELD_NAMES = {
+    "assignee_user_id": "assignee", "assignee_agent": "assignee", "due": "due date", "scheduled": "start date",
+    "depends_on": "dependencies",
+}
+
+
+def _what_changed(changes: dict[str, list[Any]]) -> str:
+    """"moved to done; changed the due date and priority", for watchers."""
+    parts = []
+    if "status" in changes:
+        parts.append(f"moved to {str(changes['status'][1]).replace('_', ' ')}")
+    fields = list(dict.fromkeys(_FIELD_NAMES.get(f, f) for f in changes if f != "status"))
+    if fields:
+        listed = fields[0] if len(fields) == 1 else f"{', '.join(fields[:-1])} and {fields[-1]}"
+        parts.append(f"changed the {listed}")
+    return "; ".join(parts)
+
+
 def blocked_clause() -> Any:
     """True while some issue this one depends on isn't done."""
     return exists(
@@ -294,8 +312,9 @@ class IssueService:
             "created": (Issue.created_at.desc(),),
             "updated": (Issue.updated_at.desc(),),
         }[order]
-        rows = await self.session.execute(stmt.order_by(*ordering, Issue.number).limit(limit).offset(offset))
-        return [self._summary(issue, parent_key) for issue, parent_key in rows]
+        rows = (await self.session.execute(stmt.order_by(*ordering, Issue.number).limit(limit).offset(offset))).all()
+        deps = await self._dependency_map([issue.id for issue, _ in rows])
+        return [self._summary(issue, parent_key, deps) for issue, parent_key in rows]
 
     async def across_projects(
         self,
@@ -344,10 +363,11 @@ class IssueService:
             "created": (Issue.created_at.desc(),),
             "updated": (Issue.updated_at.desc(),),
         }[order]
-        rows = await self.session.execute(stmt.order_by(*ordering, Issue.id).limit(limit).offset(offset))
+        rows = (await self.session.execute(stmt.order_by(*ordering, Issue.id).limit(limit).offset(offset))).all()
+        deps = await self._dependency_map([row[0].id for row in rows])
         return [
             WorkspaceIssue.model_validate(
-                self._summary(issue, parent_key).model_dump()
+                self._summary(issue, parent_key, deps).model_dump()
                 | {"project_id": issue.project_id, "project_key": key, "project_name": name}
             )
             for issue, parent_key, key, name in rows
@@ -366,10 +386,11 @@ class IssueService:
         if epic is not None:
             epic_issue = await self._by_key(project, epic)
             stmt = stmt.where(Issue.parent_id == epic_issue.id)
-        rows = await self.session.execute(stmt.order_by(Issue.rank, Issue.number))
+        rows = (await self.session.execute(stmt.order_by(Issue.rank, Issue.number))).all()
+        deps = await self._dependency_map([issue.id for issue, _ in rows])
         columns: dict[IssueStatus, list[IssueSummary]] = {status: [] for status in IssueStatus}
         for issue, parent_key in rows:
-            columns[issue.status].append(self._summary(issue, parent_key))
+            columns[issue.status].append(self._summary(issue, parent_key, deps))
         return Board(columns=[BoardColumn(status=s, issues=columns[s]) for s in IssueStatus])
 
     async def epics(self, project: Project) -> list[EpicProgress]:
@@ -476,10 +497,16 @@ class IssueService:
                 await self._set_dependencies(project, issue, new_keys, replace=True)
                 changes["depends_on"] = [old_keys, new_keys]
 
+        told: list[uuid.UUID] = []
         if changes.get("assignee_user_id") and issue.assignee_user_id is not None:
             self._notify_assignee(project, issue, actor)
+            told.append(issue.assignee_user_id)
         if changes or note:
             issue.updated_at = _now()
+            await Notifier(self.session).watched(
+                project, issue.id, f"{issue.key} {issue.title}", _what_changed(changes) or "added a note",
+                issue.updated_at, actor_user_id=actor.user_id, actor_agent=actor.agent_name, excerpt=note, skip=told,
+            )
             self._event(issue, actor, IssueEventKind.UPDATED, changes=changes, body=note)
             self._audit(project, actor, "issue.update", issue, {"fields": sorted(changes)})
             if "status" in changes and issue.status is IssueStatus.DONE and actor.agent_name is None:
@@ -497,11 +524,14 @@ class IssueService:
             self._check_agent_owns(actor, issue)
         issue.updated_at = _now()
         self._event(issue, actor, IssueEventKind.COMMENTED, body=data.body)
-        if data.mentions:
-            await Notifier(self.session).mentioned(
-                project, data.mentions, data.body, issue.updated_at, title=issue.title,
-                actor_user_id=actor.user_id, issue_id=issue.id,
-            )
+        mentioned = await Notifier(self.session).mentioned(
+            project, data.mentions, data.body, issue.updated_at, title=issue.title,
+            actor_user_id=actor.user_id, issue_id=issue.id,
+        ) if data.mentions else []
+        await Notifier(self.session).watched(
+            project, issue.id, f"{issue.key} {issue.title}", "a new comment", issue.updated_at,
+            actor_user_id=actor.user_id, actor_agent=actor.agent_name, excerpt=data.body, skip=mentioned,
+        )
         await self.session.commit()
         return await self.get(project, issue.key)
 
@@ -633,8 +663,25 @@ class IssueService:
         return stmt
 
     @staticmethod
-    def _summary(issue: Issue, parent_key: str | None) -> IssueSummary:
-        return IssueSummary.model_validate(issue).model_copy(update={"parent_key": parent_key})
+    def _summary(issue: Issue, parent_key: str | None, deps: dict[uuid.UUID, list[str]] | None = None) -> IssueSummary:
+        return IssueSummary.model_validate(issue).model_copy(
+            update={"parent_key": parent_key, "depends_on": (deps or {}).get(issue.id, [])}
+        )
+
+    async def _dependency_map(self, issue_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+        """The keys each of these issues waits for, in one query."""
+        if not issue_ids:
+            return {}
+        found: dict[uuid.UUID, list[str]] = {}
+        rows = await self.session.execute(
+            select(IssueDependency.issue_id, Blocker.key)
+            .join(Blocker, Blocker.id == IssueDependency.depends_on_id)
+            .where(IssueDependency.issue_id.in_(issue_ids))
+            .order_by(Blocker.number)
+        )
+        for issue_id, key in rows:
+            found.setdefault(issue_id, []).append(key)
+        return found
 
     def _ready_query(self, project: Project, mine: Any) -> Any:
         unassigned = and_(Issue.assignee_user_id.is_(None), Issue.assignee_agent.is_(None))

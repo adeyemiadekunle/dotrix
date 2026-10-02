@@ -83,16 +83,16 @@ _SPECIALIST_TEXT: dict[str, tuple[str, str, str]] = {
 }
 
 # The tools each built-in has always had.
-_READ = ["knowledge.read", "knowledge.search", "code.read"]
+_READ = ["knowledge.read", "knowledge.search", "code.read", "graph.read"]
 _TOOLS: dict[str, list[str]] = {
     PM: [*_READ, "knowledge.write", "board.read", "issues.create", "issues.update", "issues.comment",
-         "web.search", "delegate"],
-    PRODUCT: [*_READ, "knowledge.write", "board.read", "issues.create", "issues.comment", "delegate"],
-    ARCH: [*_READ, "knowledge.write", "board.read", "issues.create", "issues.comment", "delegate"],
+         "graph.link", "web.search", "delegate"],
+    PRODUCT: [*_READ, "knowledge.write", "board.read", "issues.create", "issues.comment", "graph.link", "delegate"],
+    ARCH: [*_READ, "knowledge.write", "board.read", "issues.create", "issues.comment", "graph.link", "delegate"],
     # Research opens spikes (its rules say so); it had no board tools before contracts.
-    RESEARCH: [*_READ, "knowledge.write", "board.read", "issues.create", "web.search", "delegate"],
+    RESEARCH: [*_READ, "knowledge.write", "board.read", "issues.create", "graph.link", "web.search", "delegate"],
     REVIEWER: [*_READ, "board.read", "issues.create", "issues.comment", "delegate"],
-    DOCS: [*_READ, "knowledge.write", "board.read", "issues.comment", "delegate"],
+    DOCS: [*_READ, "knowledge.write", "board.read", "issues.comment", "graph.link", "delegate"],
 }
 
 

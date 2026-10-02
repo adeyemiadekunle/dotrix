@@ -3,6 +3,7 @@
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 
 import { AgentList } from "@/components/agents/agent-list";
+import { WorkspaceRules } from "@/components/agents/workspace-rules";
 import { canManageProjects } from "@/lib/labels";
 import { useCurrentWorkspace } from "@/lib/queries";
 
@@ -14,9 +15,12 @@ export default function AgentsPage() {
     return <p className="text-muted-foreground text-sm">Only owners and admins manage the agents.</p>;
   }
   return (
-    <section className="grid gap-3">
-      <h2 className="font-semibold">Agents</h2>
-      <AgentList scope={{ workspaceId: workspace.id }} base={`/w/${workspace.slug}/settings/agents`} canEdit />
-    </section>
+    <div className="grid gap-10">
+      <section className="grid gap-3">
+        <h2 className="font-semibold">Agents</h2>
+        <AgentList scope={{ workspaceId: workspace.id }} base={`/w/${workspace.slug}/settings/agents`} canEdit />
+      </section>
+      <WorkspaceRules workspaceId={workspace.id} />
+    </div>
   );
 }

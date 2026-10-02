@@ -12,6 +12,7 @@ import {
   CheckCheckIcon,
   CircleCheckIcon,
   CircleUserIcon,
+  EyeIcon,
   ListChecksIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -41,7 +42,7 @@ const TABS: { id: string; label: string; kinds?: NotificationKind[] }[] = [
   { id: "all", label: "All" },
   { id: "approvals", label: "Approvals", kinds: ["approval", "checkpoint", "decided"] },
   { id: "mentions", label: "Mentions", kinds: ["mention"] },
-  { id: "assigned", label: "Assigned", kinds: ["assigned"] },
+  { id: "assigned", label: "Issues", kinds: ["assigned", "watching"] },
   { id: "findings", label: "Findings", kinds: ["finding"] },
 ];
 
@@ -72,6 +73,8 @@ function headline(n: Notification, members: MemberMap): string {
       return n.issue_key ? `${who} mentioned you on ${n.issue_key}` : `${who} mentioned you in Chat`;
     case "decided":
       return `${who} decided the changes you asked for`;
+    case "watching":
+      return `${who} on ${n.issue_key ?? "an issue"} you watch`;
   }
 }
 
@@ -81,7 +84,7 @@ function conversationHref(slug: string, n: Notification): string {
 
 function NotificationIcon({ n }: { n: Notification }) {
   const Icon =
-    n.kind === "assigned" ? CircleUserIcon : n.kind === "finding" ? ListChecksIcon : n.kind === "mention" ? AtSignIcon : n.kind === "decided" ? CircleCheckIcon : BotIcon;
+    n.kind === "assigned" ? CircleUserIcon : n.kind === "watching" ? EyeIcon : n.kind === "finding" ? ListChecksIcon : n.kind === "mention" ? AtSignIcon : n.kind === "decided" ? CircleCheckIcon : BotIcon;
   return (
     <Avatar className="size-7 rounded-lg">
       <AvatarFallback className="bg-brand-muted text-brand-muted-foreground rounded-lg">
@@ -153,7 +156,7 @@ function Detail({
         </span>
         <h2 className="text-lg font-semibold">{headline(n, members)}</h2>
         <p className="text-muted-foreground text-sm">
-          {n.kind === "assigned" || (n.kind === "mention" && n.issue_key) ? n.title : <>&ldquo;{n.title}&rdquo;</>}
+          {n.kind === "assigned" || n.kind === "watching" || (n.kind === "mention" && n.issue_key) ? n.title : <>&ldquo;{n.title}&rdquo;</>}
         </p>
       </header>
 
@@ -161,7 +164,7 @@ function Detail({
         <blockquote className="bg-muted/60 rounded-lg border-l-2 px-3 py-2 text-sm whitespace-pre-wrap">Why: {n.excerpt}</blockquote>
       )}
 
-      {n.kind === "mention" && n.excerpt && (
+      {(n.kind === "mention" || n.kind === "watching") && n.excerpt && (
         <blockquote className="bg-muted/60 rounded-lg border-l-2 px-3 py-2 text-sm whitespace-pre-wrap">{n.excerpt}</blockquote>
       )}
 
@@ -179,7 +182,7 @@ function Detail({
       )}
 
       <div className="flex flex-wrap gap-2">
-        {(n.kind === "assigned" || n.kind === "mention") && n.issue_key && (
+        {(n.kind === "assigned" || n.kind === "mention" || n.kind === "watching") && n.issue_key && (
           <Button size="sm" asChild>
             <Link href={`${projectBase}/board?issue=${n.issue_key}`}>Open {n.issue_key}</Link>
           </Button>

@@ -137,6 +137,8 @@ class Settings(DatabaseSettings):
     run_token_budget: int = Field(default=500_000, ge=0)
     # Automation runs a workspace may start per day (UTC), across all its projects.
     automation_daily_runs: int = Field(default=50, ge=0)
+    # Tokens (input + output) a workspace's automation runs may use per UTC day; 0: no limit.
+    automation_daily_tokens: int = Field(default=2_000_000, ge=0)
     # A conversation's older turns are summarised once its prompt passes this many tokens
     # (the most recent turns are kept word for word).
     summarize_after_tokens: int = Field(default=40_000, ge=5_000)

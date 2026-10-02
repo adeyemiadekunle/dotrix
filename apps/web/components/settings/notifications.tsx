@@ -23,6 +23,7 @@ const KINDS: { id: Exclude<keyof Settings, "email">; label: string; description:
   { id: "assigned", label: "Assigned to you", description: "Someone, or an agent, assigns you an issue" },
   { id: "finding", label: "Agent findings", description: "A run you asked for finds things to look at" },
   { id: "decided", label: "Your requests decided", description: "Someone approves or rejects changes you asked an agent for, and why" },
+  { id: "watching", label: "Issues you watch", description: "An issue you watch changes or gets a comment" },
 ];
 
 const ALWAYS = [

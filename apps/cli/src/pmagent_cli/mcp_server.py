@@ -293,6 +293,23 @@ def build_server(config: ProjectConfig, assignee: str, *, client: PlatformClient
         return T.complete_task(config, task_id, author=assignee, note=summary,
                                to_review=True).to_dict()
 
+    # -- project graph (linked only: the platform keeps it) -----------------------------
+    if state is not None and client is not None:
+        graph = f"/workspaces/{state.workspace_id}/projects/{state.project_id}/graph"
+
+        @server.tool(annotations=READ_ONLY)
+        def related(ref: str) -> dict:
+            """How something connects: the requirements an issue implements, its epic and
+            dependencies, the decisions (ADRs) it follows, documents that name it. `ref` is a
+            doc path ("requirements/auth.md"), a task key ("KUN-12"), or "module:auth"."""
+            return client.get(f"{graph}/neighbors", params={"ref": ref})
+
+        @server.tool(annotations=READ_ONLY)
+        def impact(ref: str, depth: int = 2) -> dict:
+            """What a change to something affects (what implements, depends on, follows, or
+            names it), before changing code that a requirement or decision covers."""
+            return client.get(f"{graph}/impact", params={"ref": ref, "depth": max(1, min(depth, 3))})
+
     def _require_mine(task_id: str) -> None:
         t = T.get_task(config, task_id)
         if t.assignee != assignee:

@@ -65,6 +65,7 @@ class NotificationSettings(BaseModel):
     assigned: bool = Field(default=True, description="Someone (or an agent) assigns you an issue")
     finding: bool = Field(default=True, description="A run you asked for finds things to look at")
     decided: bool = Field(default=True, description="Someone approves or rejects changes you asked an agent for")
+    watching: bool = Field(default=True, description="An issue you watch changes or gets a comment")
     email: Literal["immediately", "daily", "off"] = Field(
         default="immediately",
         description="Emails: as things happen (batched, one per run), a daily digest at 08:00 UTC, or none",

@@ -29,6 +29,7 @@ import { Suspense, useMemo, useState, type FormEvent } from "react";
 
 import { Field, SubmitButton } from "@/components/form";
 import { timeAgo } from "@/components/issues/issue-activity";
+import { Related, StaleList, StaleNotice } from "@/components/graph/related";
 import { FileHistory } from "@/components/knowledge/file-history";
 import { FileTree } from "@/components/knowledge/file-tree";
 import { Markdown } from "@/components/markdown";
@@ -110,12 +111,16 @@ function FilePane({
   entry,
   names,
   canEdit,
+  canLink,
+  projectBase,
   onDeleted,
 }: {
   scope: Scope;
   entry: FileEntry;
   names: Map<string, string>;
   canEdit: boolean;
+  canLink: boolean;
+  projectBase: string;
   onDeleted: () => void;
 }) {
   const path = entry.path;
@@ -143,6 +148,8 @@ function FilePane({
           </span>
         )}
       </div>
+
+      {!rules && !entry.deleted && <StaleNotice scope={scope} path={path} />}
 
       {rules && (
         <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
@@ -268,6 +275,10 @@ function FilePane({
           </pre>
         )
       ) : null}
+
+      {!rules && !entry.deleted && !editing && (
+        <Related key={entry.version} scope={scope} refName={path} projectBase={projectBase} canEdit={canLink} />
+      )}
     </div>
   );
 }
@@ -333,7 +344,7 @@ function NewFileDialog({
 }
 
 function KnowledgePage() {
-  const { workspace, scope } = useProjectScope();
+  const { workspace, project, scope } = useProjectScope();
   const manifest = useManifest(scope);
   const members = useMembers(workspace?.id);
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
@@ -407,6 +418,7 @@ function KnowledgePage() {
               </a>
             )}
           </div>
+          {scope && <StaleList scope={scope} onOpen={open} />}
           {manifest.data && (
             <p className="text-muted-foreground text-xs">
               {files.length - deletedCount} files · revision {manifest.data.revision}
@@ -422,6 +434,8 @@ function KnowledgePage() {
               entry={entry}
               names={names}
               canEdit={canEditKnowledge && (!isAgentRules(entry.path) || isAdmin)}
+              canLink={canEditKnowledge}
+              projectBase={workspace && project ? `/w/${workspace.slug}/p/${project.key}` : ""}
               onDeleted={() => setShowDeleted(true)}
             />
           ) : (

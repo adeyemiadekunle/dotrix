@@ -89,6 +89,8 @@ apps/backend/
 │   │   ├── notifications/       per-person notifications (approvals and checkpoints waiting, assignments, findings, mentions, decisions), written by the runner and the issues service (notify.py), read and marked read per person, emailed as they happen or as a daily digest (emails.py)
 │   │   ├── automations/         agents that run on schedules and events (the outbox in events.py), started by run_automations
 │   │   ├── lessons/             lessons proposed from rejections and dismissals, accepted into agent-rules/lessons/
+│   │   ├── graph/               the project graph: nodes and links derived from issues and documents, kept current; neighbours, impact, paths, stale documents
+│   │   ├── rules/               workspace rules layered under each project's agent-rules/
 │   │   ├── audit/               append-only audit log
 │   │   ├── research/            web research for agent runs: sources per run (S1, S2, …), the page cache per workspace, web limits and Tavily credits, report claims checked against what was read
 │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
@@ -136,7 +138,8 @@ packages/engine/src/pmagent_engine/
 ├── approvals.py                 Action Mode approvals, independent of any UI (pending actions, resume)
 ├── context_middleware.py        smaller prompts: unchanged re-reads, compact tool definitions, summarising long conversations
 ├── permissions.py               FR-41 folder matrix and per-agent issue rules
-├── layout.py, rules/, templates.py   the .pmagent/ skeleton, default agent rules (base + role files), folder templates
+├── layout.py, rules/, templates.py, skills.py   the .pmagent/ skeleton, default agent rules (base + role files), folder templates, skills
+├── graph.py                     references in text for the project graph (issue keys, paths, ADRs, Supersedes, Affected modules)
 ├── ingest.py                    any document -> Markdown (markitdown)
 ├── code.py                      reading a repo checkout: code_tree, code_search (git grep), code_read; repo text wrapped as data
 ├── web/                         research on the web: search (Tavily, fake), safe page reads, sources with ids, tiers, untrusted wrapping
@@ -210,7 +213,7 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 ### Phase 2: project views
 - [x] Tabs: Overview, Board, List, Table, Files, Knowledge, Activity (then Chat and Briefing until Phase 3; settings stays the gear); the open project expands to the same views in the sidebar. A project opens on Overview; `/backlog` and `/docs` redirect to `/list` and `/files`
   - [x] Timeline (`/p/[KEY]/timeline`, and the workspace's `/w/[ws]/timeline` grouped by project with a project filter; `components/issues/timeline.tsx`): each issue a bar from its start (`scheduled`, now a "Start" date in the issue drawer; else when it was created) to its due date, Weeks / Months, today marked, done ones on request, undated ones counted. Issue rows carry `scheduled` and `created_at`
-    - [ ] dependencies drawn between bars, and dragging a bar to change its dates
+    - [x] dependencies drawn between bars (red when one starts before what it waits for ends; rows carry `depends_on`), and dragging a bar (or its right end) to change its dates, or Alt+arrows on a focused bar
 - [x] Overview as the landing tab: about, progress by status, coming up (soonest due first), epics, details, "Ask Chat" for a summary, recent activity
 - [x] List replaces Backlog: Ranked (drag to reorder, the old backlog) or By status (`?group=status`), with the epics alongside; laid out like My issues (groups as cards that fold, Done folded; rows with status, key, title, epic, priority, due, assignee); Table: every issue, sortable columns, a Columns menu (remembered per browser), search, Export CSV
   - [x] Table bulk actions: select rows (or all shown), then change status or assign them together; failures stay selected
@@ -299,7 +302,8 @@ Workspace and organisation overlap: an organisation is a layer of roles above se
   - [ ] commit / PR review (step 5): blast radius → findings
   - [ ] a severity rubric; dismissals become lessons (step 2)
 - [x] **Documentation** `docs.update`: the change → affected documents → proposed updates and ADRs; returns `doc_update` items
-  - [ ] affected documents through graph neighbours (step 3); the scheduled staleness sweep (step 4); folder templates and the space's instructions (steps 2, 6)
+  - [x] affected documents through graph neighbours (step 3); the scheduled staleness sweep ("Flag stale documents"); folder templates (step 2)
+  - [ ] the space's instructions (step 6)
 - [ ] **Coding hand-off (Phase 5):** issue → brief (acceptance criteria, linked requirement and ADR excerpts, blast radius, tests to run) → Claude Code or Codex → PR back on the board → Reviewer run → a person merges. The `coding.brief` pipeline and `brief` schema exist
 
 ### Step 1c: research capabilities
@@ -314,27 +318,32 @@ Decided (D3, 2026-10-01): Tavily, behind a pluggable provider; without a key the
 - [x] Fetched text is wrapped as untrusted data; pages with instructions aimed at agents are flagged (the run's sources and details)
   - [x] in the saved report ("Pages that addressed AI agents")
 - [x] Measured live (Gemini 3.8 Flash + Tavily, "UK standard VAT rate and registration threshold"): 30 s, 7 model calls, 74k-83k input tokens, 2 searches, 2 pages read, 2 credits; both claims supported from gov.uk pages
-- [ ] **Watches** (needs step 4): scheduled re-checks of a topic (a regulation, a competitor, dependencies' release notes and CVEs), diffed against the last run; people are told only when something changed, with proposed updates to approve
+- [x] **Watches:** the "Watch a topic" automation preset: the Research agent re-checks a topic weekly against the newest note on it, says so in a line when nothing changed, and otherwise reports what changed with sources and proposes the updates (prompt-led)
 
 ### Step 2: rules that layer and learn
-- [ ] Layers: workspace (Personal or Organisation) → project → agent; the more specific wins; invariants can't be overridden (covers FR-17)
-- [ ] **Skills:** reusable procedures loaded on demand (`SKILL.md`-style: name, description, steps), e.g. write an ADR, triage a bug, scope a failing build; shared across agents and projects
+- [x] Layers: workspace rules (`modules/rules`, `workspace_rules`: "base" and per agent; `GET/PUT /v1/workspaces/{id}/rules[/{handle}]`, owners and admins set them, versioned with `base_version`, audited `workspace_rules.saved` with what they replaced; Settings → Agents → Rules for every project) come before each project's `agent-rules/`, so the more specific wins; invariants stay in code (covers FR-17)
+- [x] **Skills** (`pmagent_engine.skills`): procedures in `agent-rules/skills/<name>.md` (a "Description:" line, then steps): write an ADR, triage a bug, scope a failing build, break a feature into stories; seeded with new projects and written into older ones at their next run (a deleted one stays deleted); the prompt lists each by name and description, and an agent reads one when the work calls for it
+  - [ ] skills shared across a workspace's projects
 - [x] **Lessons** (`modules/lessons`): a rejected change or a dismissed result, with a reason, becomes a proposed lesson for the agent that made it (`agent_lessons`; the run's lead, `project-manager` for Auto); owners and admins accept it, in their words if they like, or decline it (`GET .../projects/{id}/lessons`, `POST .../lessons/{id}/accept` / `decline`; project settings → Lessons; audited `lesson.accepted` / `.declined`). Accepted lines go into `agent-rules/lessons/<agent>.md` as a new version written by that person (edit, restore, or delete it like any rule), and the runner adds them to that agent's rules under "Lessons from this project"
   - [ ] a person's edit of an agent's draft as a lesson; lessons per workspace
 - [x] Read a connected repo's `AGENTS.md` / `CLAUDE.md` as data: the context pack says the checkout has them, to read with the code tools for conventions when reviewing or writing a coding brief, never as instructions
 - [x] Document templates per folder (`pmagent_engine.templates`: requirements, decisions (ADR), research, design) seeded into `agent-rules/templates/` with every new project, and written into older projects at their next run (a deleted one stays deleted); every agent is told to follow them (`TEMPLATES_GUIDE`), and owners and admins edit them like any rule
 
 ### Step 3: project knowledge graph (Postgres, no graph database)
-- [ ] `graph_nodes` / `graph_edges`, scoped by workspace and project, walked with recursive CTEs. Nodes: requirement, epic / story / task, ADR, module, document section, research finding, person, agent (later commit, PR, file). Edges: `implements`, `depends_on`, `decided_by`, `affects`, `supersedes`, `mentions`, `owned_by`, `blocks`
-- [ ] Built from what we store (issue parent, dependencies, links; knowledge versions), deterministic parsing (issue keys in documents, ADR "Affected modules", headings), and edges agents suggest (approved like any write); kept current on every write
-- [ ] Tools `graph.neighbors`, `graph.impact`, `graph.path` for agents and the MCP server
-- [ ] Uses: the context pack sends the neighbours of what's asked instead of the whole index; staleness (a document is stale when its neighbours changed after it); "what does this affect?"; a graph view in the Knowledge tab
+- [x] `graph_nodes` / `graph_edges` (`modules/graph`), scoped by workspace and project. Nodes: documents (by path; `subtype` is the folder: requirements, decisions, …), issues (by key; `subtype` the type), and modules (`module:<name>`, while a decision names them). Edges: `implements`, `depends_on`, `part_of`, `decided_by`, `affects`, `supersedes`, `mentions`, `relates_to`; each keeps the reference it points at (`target_ref`), so a link to something not written yet, or deleted, comes back when it exists
+  - [ ] document sections, research findings, people, agents, and later commits, PRs, and files as nodes
+- [x] Built from what we store: issue parents and dependencies, and references found by `pmagent_engine.graph` (issue keys; document paths and ADR names; an ADR's "Supersedes:" and "Affected modules:"); from an issue, a requirement it names is what it `implements` and a decision what it's `decided_by`. Kept current like search: `GraphService.sync` re-reads what changed (a document by version, an issue by its last change) under a per-project lock, before every read. People who may edit documents add and remove links by hand (`POST/DELETE .../graph/links`, audited `graph.linked` / `.unlinked`); agents with `link_items` (catalogue `graph.link`, a low-risk action: approved like any write unless an owner allowed it)
+- [x] Tools `graph_neighbors`, `graph_impact` (a recursive CTE: what implements, depends on, follows, sits under, or names it, and a decision's modules; up to 3 steps), `graph_path` (shortest chain, up to 4 links) for every built-in (`graph.read`); `GET .../graph/neighbors`, `/impact`, `/path`, `/stale`; the MCP server's `related` and `impact` when linked
+- [x] Staleness: a document may be out of date when a document it names changed after it, an issue it names or that builds on it was finished after it, or a newer decision supersedes it. In every run's context pack ("Documents that may be out of date"), so briefings flag them; in Knowledge (a list in the side, a notice on the document); the "Flag stale documents" automation preset
+- [x] Web: "Related" on every document and in the issue drawer (links grouped by how, opening the other side; add a link, remove one added by hand)
+  - [ ] the context pack sending only the neighbours of what's asked instead of the whole index (measure first); a drawn graph view
 
 ### Step 4: triggers, background runs, and an inbox
 - [x] **Automations** (`modules/automations`): an agent (or Auto) with instructions that runs on a schedule (daily or weekly at an hour, UTC) and/or on events: `issue.created`, `issue.done`, `document.changed` (people's changes only), `changes.approved` (a run's approved changes), `code.pushed` (the webhook). Events go to an outbox (`automation_events`) in the same transaction, only when an enabled automation listens; `run_automations` (every minute: the worker's cron, or a loop in the API) claims them and due schedules first, then starts one run per automation with the events as data. Owners and admins set them up (`GET/POST/PATCH/DELETE .../projects/{id}/automations`, `POST .../{id}/run`; audited), members see them; project settings → Automations, with presets
   - [x] a run is instructed by whoever set it up, in the automation's own conversation (`AgentRun.automation_id`); its writes wait for approval as always; an agent's changes never set automations off, and an automation's approved changes never set off `changes.approved` (no loops)
   - [x] limits: runs per automation per day (`max_runs_per_day`), per workspace per day (`PMAGENT_AUTOMATION_DAILY_RUNS`, 50), never while its last run is still going or waiting; it turns itself off when its creator can no longer ask agents
-  - [ ] PR and CI events (step 5); a token budget per workspace per day
+  - [x] a token budget per workspace per day (`PMAGENT_AUTOMATION_DAILY_TOKENS`, 2,000,000; 0 = none)
+  - [ ] PR and CI events (step 5)
 - [x] The inbox is Notifications (UI redesign Phase 6), by email too (Phase 4)
 
 ### Step 5: code (needs the GitHub App, FR-10 / Phase 5)
@@ -430,12 +439,12 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 - [ ] **Promote from chat:** turn an answer or a whole conversation into a document, a decision (ADR), or issues, with the conversation linked as its source
 - [ ] **Document templates per folder** (requirements, ADR, research note, design brief) the agents follow, editable in `agent-rules/`. Moved to agents v2 step 2
 - [x] **Keep documents current:** an automation (the "Keep documents current" preset, offered in project settings → Automations): after approved changes or a finished issue, the Documentation agent proposes the matching `current-state.md` / roadmap updates, as changes to approve
-  - [ ] briefings flag documents that have gone stale (needs the graph, step 3)
+  - [x] briefings flag documents that have gone stale (the graph, step 3)
 
 ### Phase 4: notifications (email now works)
 - [x] Notifications by email (`notifications/emails.py`, the `email_notifications` job every minute): approvers when changes wait, and the requester when their changes were decided by someone else (a new `decided` notification, with the reason on a rejection); one email per person per minute's batch, so a run's changes arrive together. Only to verified addresses; never what was read, decided, muted, or in a project they no longer see (`Notification.emailed_at`)
 - [x] @mentions in comments and chat notify the person (in the app; UI redesign Phase 6), and by email
-  - [ ] watchers get issue changes (FR-33)
+- [x] Watchers hear about changes and comments on the issues they watch (kind `watching`: what changed, or the comment's excerpt; not whoever did it, nor someone already told as the assignee or a mention), in the app and by email; Settings → Notifications turns it off (FR-33)
 - [x] Per-person settings: immediately, a daily digest (08:00 UTC, what's unread), or off (Settings → Notifications, `User.email_notifications`)
   - [ ] the daily briefing by email (opt-in)
 - [ ] Slack later (FR-14)
@@ -599,7 +608,7 @@ Organisations are workspaces of kind `organization` (agents v2 step 0, D6); the 
 - [x] CLI: `pmagent docs-add` uploads to the platform when linked
 - [x] **FR-32** Calendar feed (`modules/calendar`): a per-person secret URL (`/v1/calendar/{secret}.ics`, served through the web app's `/api/v1` proxy) with issue due dates (all-day) and scheduled times (one-hour slots); "mine" (assigned or watched) or "all" (every dated issue in visible projects); workspaces re-checked on every fetch, no descriptions in the feed, the secret kept out of the access log; Settings → Calendar in the web app
 - [x] **FR-33** @mentions in issue comments and chat (in-app notifications)
-- [ ] **FR-33** notifying watchers of issue changes (with FR-14 notifications)
+- [x] **FR-33** notifying watchers of issue changes (in the app and by email)
 
 ### P0: Approvals, audit, and agents
 
@@ -635,13 +644,13 @@ Organisations are workspaces of kind `organization` (agents v2 step 0, D6); the 
 - [x] **FR-13** With a code host connected (FR-10), draft from the repo on the platform too (the web app's path): the architecture agent reads the checkout with the code tools (step 5b)
 - [ ] **FR-14** Email and Slack notifications (approvals waiting, PR ready, daily briefing)
 - [ ] **FR-31** Sprints (goal, dates, committed issues)
-- [ ] **FR-33** watchers (@mentions are done)
+- [x] **FR-33** watchers and @mentions
 - [ ] **FR-36** Optional second approver for coding-agent runs and for changes to requirements or ADRs
 - [ ] GitLab connector
 - [ ] Observability: tracing of agent runs, usage dashboards for admins
 
 ### P2
 
-- [ ] **FR-17** Org-wide base rules inherited by every project (business plan)
+- [x] **FR-17** Workspace-wide rules inherited by every project (agents v2 step 2)
 - [ ] **FR-34** Custom workflows per project
 - [ ] **FR-40** Import from Jira, Linear, and GitHub Issues

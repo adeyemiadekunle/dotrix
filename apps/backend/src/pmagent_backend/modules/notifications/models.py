@@ -18,11 +18,13 @@ class NotificationKind(enum.StrEnum):
     FINDING = "finding"  # a run you asked for finished with findings to look at
     MENTION = "mention"  # someone @mentioned you in an issue comment or a chat message
     DECIDED = "decided"  # changes you asked an agent for were approved or rejected (by someone else)
+    WATCHING = "watching"  # an issue you watch changed, or someone commented on it
 
 
 # What people may turn off. Approvals and checkpoints always come through: agents wait on them.
 OPTIONAL_KINDS = (
     NotificationKind.MENTION, NotificationKind.ASSIGNED, NotificationKind.FINDING, NotificationKind.DECIDED,
+    NotificationKind.WATCHING,
 )
 
 

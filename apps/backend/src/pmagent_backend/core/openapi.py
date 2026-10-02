@@ -108,6 +108,11 @@ TAGS: list[dict[str, str]] = [
         "and its changes wait for approval like anyone's.",
     },
     {
+        "name": "graph",
+        "description": "The project graph: how requirements, issues, decisions (ADRs), documents, and modules "
+        "relate, derived from what they say and kept current; impact, paths, and documents that may be stale.",
+    },
+    {
         "name": "lessons",
         "description": "What people's decisions teach the agents: rejected changes and dismissed results, with "
         "their reasons, proposed as lessons that owners and admins accept into an agent's rules or decline.",

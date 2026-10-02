@@ -3,7 +3,7 @@
 import type { Schemas } from "@pmagent/api-client";
 import { cn } from "@pmagent/ui/lib/utils";
 import Link from "next/link";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 
 import { StatusIcon, STATUS_META } from "@/components/issues/meta";
 import { today } from "@/components/issues/workspace-issue-row";
@@ -13,7 +13,10 @@ import { ProjectTile } from "@/components/project-tile";
 export type TimelineIssue = Pick<
   Schemas["IssueSummary"],
   "key" | "title" | "status" | "type" | "due" | "scheduled" | "created_at"
-> & { project_key?: string; project_name?: string };
+> & { project_key?: string; project_name?: string; depends_on?: string[] };
+
+/** New dates for an issue dragged on the timeline, as the API takes them. */
+export type Reschedule = { scheduled?: string | null; due?: string | null };
 
 export type TimelineZoom = "weeks" | "months";
 
@@ -44,6 +47,21 @@ function fromDayNumber(day: number): Date {
   return new Date(day * DAY_MS);
 }
 
+const isoDay = (day: number) => fromDayNumber(day).toISOString().slice(0, 10);
+/** The start of that day where you are, as the issue drawer saves it. */
+const startOfDay = (day: number) => new Date(`${isoDay(day)}T00:00:00`).toISOString();
+
+/** The dates after moving a bar by `move` days or stretching its end by `resize`. */
+function rescheduled(p: Placed, move: number, resize: number): Reschedule {
+  const { issue, start, end } = p;
+  if (move) {
+    if (!issue.due) return { scheduled: startOfDay(start + move) };
+    if (!issue.scheduled && p.milestone) return { due: isoDay(end + move) };
+    return { scheduled: startOfDay(start + move), due: isoDay(end + move) };
+  }
+  return { due: isoDay(Math.max(start, end + resize)) };
+}
+
 interface Placed {
   issue: TimelineIssue;
   start: number;
@@ -72,11 +90,14 @@ export function IssueTimeline({
   href,
   zoom,
   groupByProject = false,
+  onReschedule,
 }: {
   issues: TimelineIssue[];
   href: (issue: TimelineIssue) => string;
   zoom: TimelineZoom;
   groupByProject?: boolean;
+  /** Given: bars can be dragged (or moved with Alt+arrows) to change an issue's dates. */
+  onReschedule?: (issue: TimelineIssue, dates: Reschedule) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const dayWidth = DAY_WIDTH[zoom];
@@ -135,6 +156,32 @@ export function IssueTimeline({
   const width = days * dayWidth;
   const todayLeft = (now - first) * dayWidth;
 
+  // Dependency arrows: from the end of what an issue waits for to its start.
+  const arrows = useMemo(() => {
+    const at = new Map<string, { index: number; placed: Placed }>();
+    rows.forEach((row, index) => {
+      if (row.kind === "issue") at.set(row.placed.issue.key, { index, placed: row.placed });
+    });
+    const found: { id: string; d: string; late: boolean }[] = [];
+    for (const { index, placed } of at.values()) {
+      for (const key of placed.issue.depends_on ?? []) {
+        const from = at.get(key);
+        if (!from) continue;
+        const x1 = (from.placed.end - first + 1) * dayWidth;
+        const y1 = from.index * ROW + ROW / 2;
+        const x2 = (placed.start - first) * dayWidth;
+        const y2 = index * ROW + ROW / 2;
+        const turn = y2 > y1 ? y2 - ROW / 2 + 4 : y2 + ROW / 2 - 4;
+        const d =
+          x2 - x1 >= 14
+            ? `M${x1} ${y1} H${x1 + 6} V${y2} H${x2 - 2}`
+            : `M${x1} ${y1} H${x1 + 6} V${turn} H${x2 - 8} V${y2} H${x2 - 2}`;
+        found.push({ id: `${key}-${placed.issue.key}`, d, late: from.placed.end >= placed.start });
+      }
+    }
+    return found;
+  }, [rows, first, dayWidth]);
+
   return (
     <div className="grid gap-2">
       <div className="bg-card overflow-hidden rounded-xl border">
@@ -169,6 +216,32 @@ export function IssueTimeline({
             </div>
             {/* Rows */}
             <div className="relative">
+              {arrows.length > 0 && (
+                <svg
+                  aria-hidden
+                  className="pointer-events-none absolute top-0"
+                  style={{ left: 260, width, height: rows.length * ROW }}
+                >
+                  <defs>
+                    <marker id="timeline-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="6" markerHeight="6" orient="auto">
+                      <path d="M0,0 L6,3 L0,6 z" className="fill-muted-foreground" />
+                    </marker>
+                    <marker id="timeline-arrow-late" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="6" markerHeight="6" orient="auto">
+                      <path d="M0,0 L6,3 L0,6 z" className="fill-destructive" />
+                    </marker>
+                  </defs>
+                  {arrows.map((a) => (
+                    <path
+                      key={a.id}
+                      d={a.d}
+                      fill="none"
+                      strokeWidth={1.25}
+                      className={a.late ? "stroke-destructive" : "stroke-muted-foreground/70"}
+                      markerEnd={`url(#${a.late ? "timeline-arrow-late" : "timeline-arrow"})`}
+                    />
+                  ))}
+                </svg>
+              )}
               <div
                 aria-hidden
                 className="bg-primary pointer-events-none absolute top-0 bottom-0 z-10 w-px"
@@ -191,6 +264,7 @@ export function IssueTimeline({
                     weeks={zoom === "weeks" ? weeks : []}
                     href={href(row.placed.issue)}
                     overdue={row.placed.issue.status !== "done" && row.placed.issue.due !== null && row.placed.end < now}
+                    onReschedule={onReschedule ? (dates) => onReschedule(row.placed.issue, dates) : undefined}
                   />
                 ),
               )}
@@ -203,6 +277,12 @@ export function IssueTimeline({
           </div>
         </div>
       </div>
+      {onReschedule && rows.length > 0 && (
+        <p className="text-muted-foreground text-xs">
+          Drag a bar to move it, or its right end to change the due date (Alt+arrows on a focused bar; add Shift for the
+          end). Arrows run from what an issue waits for; red ones start before it ends.
+        </p>
+      )}
       {undated > 0 && (
         <p className="text-muted-foreground text-xs">
           {undated} {undated === 1 ? "issue has" : "issues have"} no dates and {undated === 1 ? "isn't" : "aren't"} shown.
@@ -219,6 +299,7 @@ function TimelineRow({
   weeks,
   href,
   overdue,
+  onReschedule,
 }: {
   placed: Placed;
   first: number;
@@ -226,10 +307,44 @@ function TimelineRow({
   weeks: { left: number }[];
   href: string;
   overdue: boolean;
+  onReschedule?: (dates: Reschedule) => void;
 }) {
-  const { issue, start, end, milestone } = placed;
+  const { issue, milestone } = placed;
+  const [shift, setShift] = useState({ move: 0, resize: 0 });
+  const drag = useRef<{ x: number; mode: "move" | "resize" } | null>(null);
+  const dragged = useRef(false);
+  const start = placed.start + shift.move;
+  const end = Math.max(start, placed.end + shift.move + shift.resize);
   const left = (start - first) * dayWidth;
   const barWidth = Math.max(dayWidth, (end - start + 1) * dayWidth);
+
+  function down(event: PointerEvent<HTMLElement>, mode: "move" | "resize") {
+    if (!onReschedule || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = { x: event.clientX, mode };
+    dragged.current = false;
+  }
+  function moved(event: PointerEvent<HTMLElement>) {
+    const d = drag.current;
+    if (!d) return;
+    if (Math.abs(event.clientX - d.x) > 3) dragged.current = true;
+    const days = Math.round((event.clientX - d.x) / dayWidth);
+    setShift(d.mode === "move" ? { move: days, resize: 0 } : { move: 0, resize: days });
+  }
+  function up() {
+    if (!drag.current) return;
+    drag.current = null;
+    if (onReschedule && (shift.move || shift.resize)) onReschedule(rescheduled(placed, shift.move, shift.resize));
+    setShift({ move: 0, resize: 0 });
+  }
+  function key(event: KeyboardEvent<HTMLElement>) {
+    if (!onReschedule || !event.altKey || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+    event.preventDefault();
+    const days = event.key === "ArrowLeft" ? -1 : 1;
+    onReschedule(event.shiftKey ? rescheduled(placed, 0, days) : rescheduled(placed, days, 0));
+  }
   const range = `${fromDayNumber(start).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })}${
     end !== start ? ` – ${fromDayNumber(end).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })}` : ""
   }`;
@@ -256,9 +371,34 @@ function TimelineRow({
             milestone ? "w-3! rotate-45 rounded-sm" : "",
             BAR[issue.status],
             overdue && "ring-destructive ring-2",
+            onReschedule && "cursor-grab touch-none active:cursor-grabbing",
           )}
           style={{ left: milestone ? left + dayWidth / 2 - 6 : left, width: barWidth }}
-        />
+          onPointerDown={(e) => down(e, "move")}
+          onPointerMove={moved}
+          onPointerUp={up}
+          onPointerCancel={() => {
+            drag.current = null;
+            setShift({ move: 0, resize: 0 });
+          }}
+          onKeyDown={key}
+          onClick={(e) => {
+            if (dragged.current) {
+              e.preventDefault();
+              dragged.current = false;
+            }
+          }}
+        >
+          {onReschedule && !milestone && (
+            <span
+              aria-hidden
+              className="absolute top-0 right-0 bottom-0 w-2 cursor-ew-resize"
+              onPointerDown={(e) => down(e, "resize")}
+              onPointerMove={moved}
+              onPointerUp={up}
+            />
+          )}
+        </Link>
       </div>
     </div>
   );

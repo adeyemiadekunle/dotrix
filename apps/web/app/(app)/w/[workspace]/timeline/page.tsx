@@ -11,7 +11,7 @@ import { PageHeader } from "@/components/app-shell";
 import { IssueTimeline, ZoomToggle, type TimelineZoom } from "@/components/issues/timeline";
 import { issueHref } from "@/components/issues/workspace-issue-views";
 import { EmptyState, NotFound } from "@/components/states";
-import { useWorkspaceIssues, type WorkspaceIssue } from "@/lib/issues";
+import { useUpdateAnyIssue, useWorkspaceIssues, type WorkspaceIssue } from "@/lib/issues";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
 import { useSearchParam, useSetSearchParams } from "@/lib/url-state";
 
@@ -20,6 +20,7 @@ function WorkspaceTimeline() {
   const { workspace, notFound } = useCurrentWorkspace();
   const canSee = Boolean(workspace && workspace.role !== "guest");
   const issues = useWorkspaceIssues(canSee ? workspace?.id : undefined, {});
+  const update = useUpdateAnyIssue(workspace?.id);
   const projects = useProjects(workspace?.id);
   const [project] = useSearchParam("project");
   const [zoomParam] = useSearchParam("zoom");
@@ -71,6 +72,9 @@ function WorkspaceTimeline() {
             zoom={zoom}
             groupByProject={!project}
             href={(issue) => issueHref(workspace.slug, issue as WorkspaceIssue)}
+            onReschedule={(issue, changes) =>
+              update.mutate({ projectId: (issue as WorkspaceIssue).project_id, key: issue.key, changes })
+            }
           />
         )}
       </div>

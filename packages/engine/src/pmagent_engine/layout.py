@@ -10,6 +10,7 @@ import re
 from importlib import resources
 from pathlib import PurePosixPath
 
+from .skills import default_skills
 from .templates import default_templates
 
 AGENTS = (
@@ -95,7 +96,7 @@ def skeleton(name: str, description: str = "", readme: str | None = None) -> dic
         "decisions/README.md": _folder_readme(
             "Decisions (ADRs)",
             "Documentation",
-            "One file per decision: `ADR-001.md`, `ADR-002.md`, ... Never edited away; "
+            "One file per decision: `ADR-NNN.md`, numbered in order. Never edited away; "
             "a changed decision gets a new ADR that supersedes the old one.",
         ),
         "research/README.md": _folder_readme(
@@ -115,4 +116,5 @@ def skeleton(name: str, description: str = "", readme: str | None = None) -> dic
     }
     files.update(default_rules(name))
     files.update(default_templates())
+    files.update(default_skills())
     return files

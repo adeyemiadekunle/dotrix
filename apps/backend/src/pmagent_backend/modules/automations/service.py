@@ -76,10 +76,13 @@ def schedule_label(hour: int | None, weekday: int | None) -> str:
 
 
 class AutomationService:
-    def __init__(self, session: AsyncSession, runner: Any, *, workspace_daily_runs: int = 50) -> None:
+    def __init__(
+        self, session: AsyncSession, runner: Any, *, workspace_daily_runs: int = 50, workspace_daily_tokens: int = 0
+    ) -> None:
         self.session = session
         self.runner = runner
         self.workspace_daily_runs = workspace_daily_runs
+        self.workspace_daily_tokens = workspace_daily_tokens  # 0: no limit
 
     # -- setting up ----------------------------------------------------------------------
 
@@ -205,14 +208,22 @@ class AutomationService:
         if runs_today >= automation.max_runs_per_day:
             automation.last_error = f"Skipped: it reached its limit of {automation.max_runs_per_day} runs today"
             return False
-        workspace_runs = await self.session.scalar(
-            select(func.count()).select_from(AgentRun).where(
+        workspace_runs, workspace_tokens = (await self.session.execute(
+            select(
+                func.count(),
+                func.coalesce(func.sum(func.coalesce(AgentRun.input_tokens, 0) + func.coalesce(AgentRun.output_tokens, 0)), 0),
+            ).where(
                 AgentRun.workspace_id == automation.workspace_id, AgentRun.automation_id.is_not(None),
                 AgentRun.created_at >= today,
             )
-        ) or 0
+        )).one()
         if workspace_runs >= self.workspace_daily_runs:
             automation.last_error = f"Skipped: the workspace reached its {self.workspace_daily_runs} automation runs today"
+            return False
+        if self.workspace_daily_tokens and workspace_tokens >= self.workspace_daily_tokens:
+            automation.last_error = (
+                f"Skipped: the workspace's automations used their {self.workspace_daily_tokens:,} tokens today"
+            )
             return False
         member = (
             await MembershipRepository(self.session).get(automation.workspace_id, automation.created_by_id)

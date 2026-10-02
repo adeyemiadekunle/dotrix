@@ -22,6 +22,7 @@ from pmagent_backend.modules.connectors.router import project_router as project_
 from pmagent_backend.modules.connectors.router import webhook_router as github_webhook
 from pmagent_backend.modules.connectors.router import workspace_router as workspace_github
 from pmagent_backend.modules.documents.router import router as documents
+from pmagent_backend.modules.graph.router import router as graph
 from pmagent_backend.modules.invites.router import router as invites
 from pmagent_backend.modules.invites.router import workspace_router as workspace_invites
 from pmagent_backend.modules.issues.router import router as issues
@@ -31,6 +32,7 @@ from pmagent_backend.modules.lessons.router import router as lessons
 from pmagent_backend.modules.notifications.router import router as notifications
 from pmagent_backend.modules.notifications.router import settings_router as notification_settings
 from pmagent_backend.modules.projects.router import router as projects
+from pmagent_backend.modules.rules.router import router as rules
 from pmagent_backend.modules.search.router import router as search
 from pmagent_backend.modules.search.router import workspace_router as workspace_search
 from pmagent_backend.modules.workspaces.router import router as workspaces
@@ -58,6 +60,8 @@ for module_router in (
     workspace_agent_usage,
     automations,
     lessons,
+    graph,
+    rules,
     audit,
     issues,
     workspace_issues,

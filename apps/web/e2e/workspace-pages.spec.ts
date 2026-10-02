@@ -101,7 +101,14 @@ test("stars, a project's status, My issues as a board and table, and the timelin
   // The project's Timeline: the issue as a bar from start to due.
   await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Timeline" }).click();
   await expect(page).toHaveURL(/\/timeline$/);
-  await expect(page.getByRole("link", { name: new RegExp(`^${key}-1: `) })).toBeVisible();
+  const bar = page.getByRole("link", { name: new RegExp(`^${key}-1: `) });
+  await expect(bar).toBeVisible();
+  // Alt+Shift+Right stretches its end a day (dragging does the same with the mouse).
+  await bar.focus();
+  await page.keyboard.press("Alt+Shift+ArrowRight");
+  await bar.click();
+  await expect(page.getByLabel("Due date")).toHaveValue(day(6));
+  await page.keyboard.press("Escape");
   // ... and across the workspace, under its project.
   await sidebar.getByRole("link", { name: "Timeline", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();

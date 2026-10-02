@@ -80,6 +80,10 @@ def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
             current = str(args.get("current") or "")
             # Only the fixed stage names (pmagent_engine.pipelines), never model text.
             return f"Now: {current.replace('_', ' ')}" if current in _STAGES else None
+        case "graph_neighbors" | "graph_impact" | "graph_path":
+            return "Following how things connect"
+        case "link_items":
+            return "Drafting a link"
         case "submit_result":
             return "Recording the result"
         case "checkpoint":

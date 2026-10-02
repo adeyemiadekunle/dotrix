@@ -15,6 +15,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useChat } from "@/components/agent/chat-context";
+import { Related } from "@/components/graph/related";
 import { Markdown } from "@/components/markdown";
 import { useMentionable } from "@/components/mentions";
 import { useReviewIssue } from "@/lib/agent";
@@ -206,6 +207,7 @@ function IssueDetails({
   const comment = useComment(scope);
   const mentionable = useMentionable(scope.workspaceId, scope.projectId);
   const epics = useEpics(scope);
+  const { workspace, project } = useProjectScope();
   const save = (changes: Schemas["IssueUpdate"]) => update.mutateAsync({ key: issue.key, changes });
   const assignee = issue.assignee_agent ?? issue.assignee_user_id ?? NONE;
   const reporter = issue.reporter_agent
@@ -437,6 +439,16 @@ function IssueDetails({
       <div className="grid content-start gap-6 px-4 pt-4 pb-8 [grid-area:body] md:px-6 md:pt-0">
 
         <Description key={issue.updated_at} issue={issue} canEdit={canEdit} onSave={(description) => save({ description })} />
+
+        {workspace && project && (
+          <Related
+            key={issue.updated_at}
+            scope={scope}
+            refName={issue.key}
+            projectBase={`/w/${workspace.slug}/p/${project.key}`}
+            canEdit={can(workspace, "knowledge:write")}
+          />
+        )}
 
         <Separator />
 

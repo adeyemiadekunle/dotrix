@@ -85,6 +85,10 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
         ]})
         lessons = (await db_client.get(f"{base}/lessons", headers=h)).json()
         assert len(lessons) == 1, lessons
+        link = await db_client.post(f"{base}/graph/links", headers=h,
+                                    json={"source": issue.json()["key"], "target": "project.md"})
+        assert link.status_code == 201, link.text
+        params["link_id"] = next(lk["id"] for lk in link.json()["links"] if lk["origin"] == "person")
         params |= {"lesson_id": lessons[0]["id"], "rejected_run_id": other["id"]}  # (not a path parameter)
         return World(
             headers=h, params=params, colleague_headers=colleague.headers, restricted_id=restricted.json()["id"]
@@ -141,7 +145,7 @@ async def _call(client: AsyncClient, method: str, url: str, body: bool, headers:
 async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
     known = {"workspace_id", "project_id", "key", "path", "version", "document_id", "invite_id",
              "user_id", "run_id", "thread_id", "handle", "output_id", "index", "installation_ref", "automation_id",
-             "lesson_id"}
+             "lesson_id", "link_id"}
     routes = _scoped_routes(db_client)
     assert len(routes) > 60  # sanity: the whole API is being walked
     for _, template, _ in routes:

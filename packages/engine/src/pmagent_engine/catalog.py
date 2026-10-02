@@ -64,6 +64,17 @@ CATALOG: tuple[ToolGroup, ...] = (
         ("issues.comment",),
     ),
     ToolGroup(
+        "graph.read", "Follow the project graph",
+        "See how requirements, issues, decisions, and modules connect, and what a change affects.",
+        ("graph_neighbors", "graph_impact", "graph_path"),
+    ),
+    ToolGroup(
+        "graph.link", "Link things",
+        "Link two things the text doesn't (a requirement and a decision, say).",
+        ("link_items",),
+        ("graph.link",),
+    ),
+    ToolGroup(
         "web.search", "Search and read the web",
         "Search the web and read pages in full, citing each as a source.",
         ("web_search", "fetch_page"),
@@ -82,7 +93,7 @@ _ID_BY_NAME = {name: group.id for group in CATALOG for name in group.names}
 # Every action an autonomy rule can name, and the ones that may be allowed without asking
 # (low-risk; decided D1). Everything else is `ask` at most.
 ACTIONS: tuple[str, ...] = tuple(action for group in CATALOG for action in group.actions)
-LOW_RISK_ACTIONS = frozenset({"issues.comment"})
+LOW_RISK_ACTIONS = frozenset({"issues.comment", "graph.link"})
 
 
 def group(tool_id: str) -> ToolGroup:

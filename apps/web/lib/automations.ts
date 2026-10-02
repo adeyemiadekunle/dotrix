@@ -92,6 +92,36 @@ export const PRESETS: { id: string; label: string; body: AutomationCreate }[] = 
       enabled: true,
     },
   },
+  {
+    id: "watch",
+    label: "Watch a topic",
+    body: {
+      name: "Watch: <topic>",
+      agent: "research",
+      events: [],
+      schedule_hour: 6,
+      schedule_weekday: 0,
+      instructions:
+        "Re-check <the topic: a regulation, a competitor, a dependency's releases and security advisories> on the web. Compare with the newest note on it in /pmagent/research/. If nothing material changed, say so in one line and propose nothing. If something did, report only what changed, with sources, and propose updating the note (and any requirement or decision it affects).",
+      max_runs_per_day: 1,
+      enabled: true,
+    },
+  },
+  {
+    id: "stale",
+    label: "Flag stale documents",
+    body: {
+      name: "Flag stale documents",
+      agent: "documentation",
+      events: [],
+      schedule_hour: 7,
+      schedule_weekday: 4,
+      instructions:
+        "Go through the documents the project context lists as possibly out of date. For each, check with graph_neighbors what changed, and propose the edits that bring it up to date; leave alone what's still right.",
+      max_runs_per_day: 1,
+      enabled: true,
+    },
+  },
 ];
 
 export function useAutomations(scope: Scope | undefined) {

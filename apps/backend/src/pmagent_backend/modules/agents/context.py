@@ -11,6 +11,7 @@ unchanging part of the prompt can be cached.
 """
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 
@@ -18,6 +19,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pmagent_backend.modules.auth.models import User
+from pmagent_backend.modules.graph.service import GraphService
 from pmagent_backend.modules.issues.models import Issue, IssueEvent, IssueStatus, Priority
 from pmagent_backend.modules.knowledge.models import KnowledgeFile, KnowledgeVersion
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
@@ -32,7 +34,10 @@ MAX_LISTED = 10
 DUE_SOON = timedelta(days=7)
 FIRST_BRIEFING_LOOKBACK = timedelta(days=7)  # a first briefing covers the last week
 # Already in every agent's instructions (agent-rules/) or not documents (issues are listed below).
+STALE_SHOWN = 8
 _NOT_INDEXED = ("agent-rules/",)
+
+logger = logging.getLogger(__name__)
 
 
 def _day(value: datetime | date | None) -> str:
@@ -74,9 +79,27 @@ async def build_context_pack(session: AsyncSession, project: Project, run: Agent
     # Most stable first, most changeable last: providers cache the longest identical opening
     # of a prompt, so the documents index (changes only when documents do) comes before the
     # board, and what changed since last time comes at the very end.
-    parts += [_index(files), _decisions(files), await _board(session, project), changes]
+    parts += [_index(files), _decisions(files), await _board(session, project), await _stale(session, project), changes]
     pack = "\n\n".join(p for p in parts if p)
     return pack
+
+
+async def _stale(session: AsyncSession, project: Project) -> str:
+    """Documents the project graph says may be out of date, with why."""
+    try:
+        found = await GraphService(session).stale(project)
+    except Exception:  # the map is a bonus: a run never fails for it
+        logger.exception("couldn't work out stale documents for project %s", project.id)
+        await session.rollback()
+        return ""
+    if not found:
+        return ""
+    lines = ["## Documents that may be out of date"]
+    for item in found[:STALE_SHOWN]:
+        lines.append(f"- {item.node.ref}: {'; '.join(item.reasons)}")
+    if len(found) > STALE_SHOWN:
+        lines.append(f"- …and {len(found) - STALE_SHOWN} more (ask graph tools about any document)")
+    return "\n".join(lines)
 
 
 def _index(files: list[KnowledgeFile]) -> str:
