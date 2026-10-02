@@ -11092,6 +11092,737 @@
         ]
       }
     },
+    "/v1/workspaces/{workspace_id}/github": {
+      "get": {
+        "tags": [
+          "github"
+        ],
+        "summary": "Get Github Status",
+        "description": "Whether the GitHub App is set up here, where to install it, and the GitHub accounts it's\ninstalled on that this workspace uses. Owners and admins.",
+        "operationId": "get_github_status",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/github/installations": {
+      "post": {
+        "tags": [
+          "github"
+        ],
+        "summary": "Add Github Installation",
+        "description": "Add the app's installation on a GitHub account to this workspace: after installing it\n(GitHub's setup redirect gives `installation_id`), a GitHub sign-in's `code` proves you can\nmanage it (403 if GitHub says you can't). Owners and admins.",
+        "operationId": "add_github_installation",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationAdd"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/github/installations/{installation_ref}": {
+      "delete": {
+        "tags": [
+          "github"
+        ],
+        "summary": "Remove Github Installation",
+        "description": "Forget a GitHub account here; its projects' repos are disconnected. The app stays\ninstalled on GitHub until uninstalled there. Owners and admins.",
+        "operationId": "remove_github_installation",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "installation_ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Installation Ref"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/github/repos": {
+      "get": {
+        "tags": [
+          "github"
+        ],
+        "summary": "List Github Repos",
+        "description": "Every repo the workspace's installations can see, private ones included, and which\nproject uses each. Owners and admins.",
+        "operationId": "list_github_repos",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RepoOption"
+                  },
+                  "title": "Response List Github Repos"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository": {
+      "get": {
+        "tags": [
+          "github"
+        ],
+        "summary": "Get Project Repository",
+        "description": "The repo the project's code lives in, connected through the GitHub App (null if none).",
+        "operationId": "get_project_repository",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConnectedRepoRead"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Project Repository"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "github"
+        ],
+        "summary": "Connect Project Repository",
+        "description": "Connect the project to a repo one of the workspace's installations can see (replacing\nany it had); its repo address follows. 409 if another project here uses it. Owners and admins.",
+        "operationId": "connect_project_repository",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoConnect"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedRepoRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "github"
+        ],
+        "summary": "Disconnect Project Repository",
+        "description": "Stop reaching the project's repo through the app (its address stays). Owners and admins.",
+        "operationId": "disconnect_project_repository",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/github/webhook": {
+      "post": {
+        "tags": [
+          "github"
+        ],
+        "summary": "Github Webhook",
+        "description": "GitHub's deliveries for the app (pushes, installs and uninstalls, repos added or\nremoved), signed with the webhook secret. Not for people: GitHub calls it.",
+        "operationId": "github_webhook",
+        "parameters": [
+          {
+            "name": "x-github-event",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Github-Event"
+            }
+          },
+          {
+            "name": "x-hub-signature-256",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Hub-Signature-256"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Github Webhook"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
       "get": {
         "tags": [
@@ -13098,6 +13829,86 @@
         ],
         "title": "CommentCreate"
       },
+      "ConnectedRepoRead": {
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "html_url": {
+            "type": "string",
+            "title": "Html Url"
+          },
+          "private": {
+            "type": "boolean",
+            "title": "Private"
+          },
+          "default_branch": {
+            "type": "string",
+            "title": "Default Branch"
+          },
+          "account_login": {
+            "type": "string",
+            "title": "Account Login",
+            "description": "The GitHub account whose installation reaches it"
+          },
+          "connected_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Connected At"
+          },
+          "connected_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected By Id"
+          },
+          "last_push_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Push Sha",
+            "description": "The default branch's latest commit we heard of"
+          },
+          "last_push_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Push At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "full_name",
+          "html_url",
+          "private",
+          "default_branch",
+          "account_login",
+          "connected_at",
+          "connected_by_id",
+          "last_push_sha",
+          "last_push_at"
+        ],
+        "title": "ConnectedRepoRead",
+        "description": "The repository a project's code lives in, connected through the GitHub App."
+      },
       "Decision": {
         "properties": {
           "approval_id": {
@@ -13625,6 +14436,41 @@
         ],
         "title": "GitHubStart"
       },
+      "GitHubStatus": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured",
+            "description": "The GitHub App is set up on this server"
+          },
+          "install_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Install Url",
+            "description": "GitHub's page to install the app (add `?state=`)"
+          },
+          "installations": {
+            "items": {
+              "$ref": "#/components/schemas/InstallationRead"
+            },
+            "type": "array",
+            "title": "Installations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured",
+          "install_url",
+          "installations"
+        ],
+        "title": "GitHubStatus"
+      },
       "Health": {
         "properties": {
           "status": {
@@ -13657,6 +14503,73 @@
           "version"
         ],
         "title": "Health"
+      },
+      "InstallationAdd": {
+        "properties": {
+          "installation_id": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Installation Id"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "installation_id",
+          "code"
+        ],
+        "title": "InstallationAdd",
+        "description": "Add an installation the person just made (or can manage): GitHub's `installation_id`, and\nthe `code` from a GitHub sign-in right after, which proves they can manage it."
+      },
+      "InstallationRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "This workspace's reference to it (not GitHub's id)"
+          },
+          "installation_id": {
+            "type": "integer",
+            "title": "Installation Id",
+            "description": "GitHub's id for the installation"
+          },
+          "account_login": {
+            "type": "string",
+            "title": "Account Login",
+            "description": "The GitHub user or organisation it's installed on"
+          },
+          "account_type": {
+            "type": "string",
+            "title": "Account Type",
+            "description": "`User` or `Organization`"
+          },
+          "suspended": {
+            "type": "boolean",
+            "title": "Suspended"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "installation_id",
+          "account_login",
+          "account_type",
+          "suspended",
+          "created_at"
+        ],
+        "title": "InstallationRead",
+        "description": "The GitHub App installed on a GitHub account, added to this workspace."
       },
       "InviteKind": {
         "type": "string",
@@ -15909,6 +16822,80 @@
         ],
         "title": "RefreshRequest"
       },
+      "RepoConnect": {
+        "properties": {
+          "installation_ref": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Installation Ref",
+            "description": "Which of the workspace's installations reaches it"
+          },
+          "github_repo_id": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Github Repo Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "installation_ref",
+          "github_repo_id"
+        ],
+        "title": "RepoConnect"
+      },
+      "RepoOption": {
+        "properties": {
+          "installation_ref": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Installation Ref"
+          },
+          "github_repo_id": {
+            "type": "integer",
+            "title": "Github Repo Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "private": {
+            "type": "boolean",
+            "title": "Private"
+          },
+          "default_branch": {
+            "type": "string",
+            "title": "Default Branch"
+          },
+          "html_url": {
+            "type": "string",
+            "title": "Html Url"
+          },
+          "project_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Key",
+            "description": "The project here it's connected to, if any"
+          }
+        },
+        "type": "object",
+        "required": [
+          "installation_ref",
+          "github_repo_id",
+          "full_name",
+          "private",
+          "default_branch",
+          "html_url",
+          "project_key"
+        ],
+        "title": "RepoOption",
+        "description": "A repo one of the workspace's installations can see, and which project uses it, if any."
+      },
       "RestoreRequest": {
         "properties": {
           "version": {
@@ -17716,6 +18703,10 @@
     {
       "name": "activity",
       "description": "What people and agents did in a project, for everyone who can see it: issue changes, document versions, agent runs, and approval decisions."
+    },
+    {
+      "name": "github",
+      "description": "Connecting GitHub through the pmagent GitHub App: the GitHub accounts it's installed on in a workspace, each project's repo (private ones included), and GitHub's webhook deliveries."
     },
     {
       "name": "notifications",

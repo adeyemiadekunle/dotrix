@@ -12,9 +12,12 @@ import { ArrowRightLeftIcon, BotIcon, DownloadIcon, FileTextIcon, LockIcon, User
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
 
 import { useConfirm } from "@/components/confirm-dialog";
 import { Field, SaveBar } from "@/components/form";
+import { GitHubMark } from "@/components/github-sign-in";
+import { RepoPicker } from "@/components/github-repos";
 import { RepoPreview } from "@/components/repo-preview";
 import {
   SettingsContent,
@@ -23,6 +26,8 @@ import {
   SettingsSection,
   SettingsTitle,
 } from "@/components/settings-section";
+import { errorMessage } from "@/lib/api";
+import { useConnectRepository, useProjectRepository } from "@/lib/github";
 import { useMoveProject, useProjectMember, useProjectMembers, useUpdateProject } from "@/lib/admin";
 import { useMembers } from "@/lib/issues";
 import { exportUrl, useManifest } from "@/lib/knowledge";
@@ -96,24 +101,64 @@ function General({ project, workspace, canEdit }: { project: Project; workspace:
   );
 }
 
-/** The project's repo, which owners and admins can link, change, or unlink. */
+/** The project's repo: connected through the GitHub App (private repos too), or linked by address
+ * (any host). Owners and admins change it. */
 function Repository({ project, workspace, canEdit }: { project: Project; workspace: Workspace; canEdit: boolean }) {
   const update = useUpdateProject(workspace.id, project.id);
-  const [editing, setEditing] = useState(false);
+  const connected = useProjectRepository(workspace.id, project.id);
+  const connect = useConnectRepository(workspace.id, project.id);
+  const [mode, setMode] = useState<"view" | "pick" | "address">("view");
   const [url, setUrl] = useState("");
-  const save = (repo_url: string | null) => update.mutate({ repo_url }, { onSuccess: () => setEditing(false) });
+  const [ask, confirmDialog] = useConfirm();
+  const save = (repo_url: string | null) => update.mutate({ repo_url }, { onSuccess: () => setMode("view") });
+  const repo = connected.data;
+  const settingsHref = `/w/${workspace.slug}/settings/github`;
 
   return (
     <SettingsSection id="repository">
       <SettingsHeader>
         <SettingsTitle>Repository</SettingsTitle>
         <SettingsDescription>
-          The code repo this project plans for. Teammates link their own checkouts with{" "}
-          <code className="font-mono">pmagent connect</code>.
+          The code repo this project plans for. Connected through the GitHub App, agents can read its code, private
+          repos included. Teammates link their own checkouts with <code className="font-mono">pmagent connect</code>.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent>
-        {editing ? (
+        {mode === "pick" ? (
+          <div className="grid gap-3">
+            <RepoPicker
+              workspaceId={workspace.id}
+              projectKey={project.key}
+              value={null}
+              settingsHref={settingsHref}
+              onPick={(picked) =>
+                connect.mutate(picked, {
+                  onSuccess: () => {
+                    setMode("view");
+                    toast.success(`Connected to ${picked.full_name}`);
+                  },
+                  onError: (e) => toast.error(errorMessage(e)),
+                })
+              }
+            />
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => setMode("view")}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setUrl(project.repo_url ?? "");
+                  setMode("address");
+                }}
+              >
+                Use an address instead
+              </Button>
+            </div>
+          </div>
+        ) : mode === "address" ? (
           <form
             className="grid gap-2"
             onSubmit={(e: FormEvent) => {
@@ -134,42 +179,100 @@ function Repository({ project, workspace, canEdit }: { project: Project; workspa
               <Button type="submit" size="sm" disabled={update.isPending}>
                 Link repository
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => setEditing(false)}>
+              <Button type="button" size="sm" variant="outline" onClick={() => setMode("view")}>
                 Cancel
               </Button>
             </div>
           </form>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            {project.repo_url?.startsWith("https://") ? (
-              <a href={project.repo_url} target="_blank" rel="noreferrer" className="break-all underline underline-offset-4">
-                {project.repo_url}
-              </a>
-            ) : (
-              <span className="text-muted-foreground">{project.repo_url ?? "Not linked"}</span>
-            )}
+        ) : repo ? (
+          <div className="flex flex-wrap items-start gap-3 text-sm">
+            <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-md">
+              <GitHubMark />
+            </span>
+            <div className="grid min-w-0 flex-1 gap-0.5">
+              <p className="flex flex-wrap items-center gap-2">
+                <a href={repo.html_url} target="_blank" rel="noreferrer" className="font-medium break-all underline underline-offset-4">
+                  {repo.full_name}
+                </a>
+                {repo.private && (
+                  <Badge variant="outline" className="gap-1">
+                    <LockIcon className="size-3" />
+                    Private
+                  </Badge>
+                )}
+                <Badge variant="secondary">Connected</Badge>
+              </p>
+              <p className="text-muted-foreground text-xs">
+                Through the GitHub App on {repo.account_login} · {repo.default_branch}
+                {repo.last_push_at
+                  ? ` · last push ${new Date(repo.last_push_at).toLocaleString()} (${repo.last_push_sha?.slice(0, 7)})`
+                  : ""}
+              </p>
+            </div>
             {canEdit && (
-              <>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="h-7" onClick={() => setMode("pick")}>
+                  Change
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7"
+                  onClick={() =>
+                    ask({
+                      title: `Disconnect ${repo.full_name}?`,
+                      description:
+                        "Agents stop reading its code through the GitHub App. The project keeps the repo's address, so teammates' checkouts stay linked.",
+                      confirm: "Disconnect",
+                      destructive: true,
+                      action: () => connect.mutateAsync(null),
+                    })
+                  }
+                >
+                  Disconnect
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid gap-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              {project.repo_url?.startsWith("https://") ? (
+                <a href={project.repo_url} target="_blank" rel="noreferrer" className="break-all underline underline-offset-4">
+                  {project.repo_url}
+                </a>
+              ) : (
+                <span className="text-muted-foreground">{project.repo_url ?? "Not linked"}</span>
+              )}
+              {project.repo_url && <Badge variant="outline">Address only</Badge>}
+            </div>
+            {canEdit && (
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" className="h-7" onClick={() => setMode("pick")}>
+                  <GitHubMark />
+                  Connect from GitHub
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
                   className="h-7"
                   onClick={() => {
                     setUrl(project.repo_url ?? "");
-                    setEditing(true);
+                    setMode("address");
                   }}
                 >
-                  {project.repo_url ? "Change" : "Link repository"}
+                  {project.repo_url ? "Change address" : "Link by address"}
                 </Button>
                 {project.repo_url && (
                   <Button size="sm" variant="ghost" className="h-7" disabled={update.isPending} onClick={() => save(null)}>
                     Unlink
                   </Button>
                 )}
-              </>
+              </div>
             )}
           </div>
         )}
+        {confirmDialog}
       </SettingsContent>
     </SettingsSection>
   );

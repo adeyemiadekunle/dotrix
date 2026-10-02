@@ -18,14 +18,17 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { toast } from "sonner";
 
 import { PageHeader } from "@/components/app-shell";
 import { Dropzone, QueuedFiles, UploadProgress } from "@/components/documents/dropzone";
+import { RepoPicker } from "@/components/github-repos";
 import { RepoPreview } from "@/components/repo-preview";
 import { Field, FormError, SubmitButton } from "@/components/form";
 import { NotFound } from "@/components/states";
 import { api, errorMessage, unwrap } from "@/lib/api";
 import { useUploads } from "@/lib/documents";
+import { type RepoOption, useGitHubStatus } from "@/lib/github";
 import { canManageProjects, suggestKey } from "@/lib/labels";
 import { useCurrentWorkspace } from "@/lib/queries";
 import { usePublicGithubRepo } from "@/lib/repo";
@@ -36,7 +39,7 @@ const SOURCES: { value: Source | "new_repo"; label: string; description: string;
   {
     value: "existing_repo",
     label: "Existing repository",
-    description: "Link the project's code repo. Its README and layout inform the architecture overview.",
+    description: "Connect the project's code repo, so agents understand the codebase.",
     icon: FolderGit2Icon,
   },
   {
@@ -62,6 +65,8 @@ export default function NewProjectPage() {
 
   const [source, setSource] = useState<Source>("existing_repo");
   const [repoUrl, setRepoUrl] = useState("");
+  // Picked from the GitHub App's repos: connected as soon as the project exists.
+  const [picked, setPicked] = useState<RepoOption | null>(null);
   const [name, setName] = useState("");
   const [key, setKey] = useState("");
   const [keyEdited, setKeyEdited] = useState(false);
@@ -70,7 +75,8 @@ export default function NewProjectPage() {
   const [phase, setPhase] = useState<"form" | "creating" | "uploading" | "done">("form");
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<Schemas["ProjectRead"] | null>(null);
-  const publicRepo = usePublicGithubRepo(source === "existing_repo" ? repoUrl : "");
+  const publicRepo = usePublicGithubRepo(source === "existing_repo" && !picked ? repoUrl : "");
+  const github = useGitHubStatus(workspace?.id, !!workspace && canManageProjects(workspace.role));
 
   // Prefill the name and description from a public repo, once per repo, only into empty fields.
   const prefilled = useRef<string | null>(null);
@@ -105,6 +111,12 @@ export default function NewProjectPage() {
     if (!keyEdited) setKey(suggestKey(next));
   }
 
+  function pick(repo: RepoOption) {
+    setPicked(repo);
+    setRepoUrl(repo.html_url);
+    const repoName = repo.full_name.split("/")[1] ?? "";
+    if (!name) setNameAndKey(repoName);
+  }
 
   const busy = phase === "creating" || phase === "uploading";
   const projectHref = created && workspace ? `/w/${workspace.slug}/p/${created.key}` : "";
@@ -131,6 +143,15 @@ export default function NewProjectPage() {
           }),
         ));
       setCreated(project);
+      if (!created && source === "existing_repo" && picked) {
+        // The address is the repo's already, so this only adds the app's access to it.
+        await unwrap(
+          api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/repository", {
+            params: { path: { workspace_id: workspace.id, project_id: project.id } },
+            body: { installation_ref: picked.installation_ref, github_repo_id: picked.github_repo_id },
+          }),
+        ).catch((e: unknown) => toast.error(`The project was created, but connecting the repo didn't work: ${errorMessage(e)}`));
+      }
       await queryClient.invalidateQueries({ queryKey: ["projects", workspace.id] });
       if (files.length === 0) {
         router.push(`/w/${workspace.slug}/p/${project.key}`);
@@ -186,17 +207,37 @@ export default function NewProjectPage() {
             </RadioGroup>
 
             {source === "existing_repo" && (
-              <div className="grid gap-2">
-                <Field
-                  label="Repository"
-                  value={repoUrl}
-                  onChange={(e) => setRepoUrl(e.target.value)}
-                  placeholder="https://github.com/acme/app"
-                  required
-                  disabled={busy || Boolean(created)}
-                  hint="Paste the address you'd clone. One project per repo in a workspace; teammates link their own checkouts with pmagent connect."
-                />
-                <RepoPreview url={repoUrl} />
+              <div className="grid gap-4">
+                {github.data?.configured && workspace && (
+                  <div className="grid gap-2">
+                    <Label>From GitHub</Label>
+                    {created ? (
+                      <p className="text-sm">{picked?.full_name ?? repoUrl}</p>
+                    ) : (
+                      <RepoPicker
+                        workspaceId={workspace.id}
+                        value={picked}
+                        onPick={pick}
+                        settingsHref={`/w/${workspace.slug}/settings/github`}
+                      />
+                    )}
+                  </div>
+                )}
+                <div className="grid gap-2">
+                  <Field
+                    label={github.data?.configured ? "Or paste its address" : "Repository"}
+                    value={repoUrl}
+                    onChange={(e) => {
+                      setRepoUrl(e.target.value);
+                      setPicked(null);
+                    }}
+                    placeholder="https://github.com/acme/app"
+                    required
+                    disabled={busy || Boolean(created)}
+                    hint="Any host works by address; teammates link their own checkouts with pmagent connect. One project per repo in a workspace."
+                  />
+                  {!picked && <RepoPreview url={repoUrl} />}
+                </div>
               </div>
             )}
           </CardContent>

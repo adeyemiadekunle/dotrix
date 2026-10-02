@@ -97,3 +97,26 @@ test("change your password in Settings, and choose which notifications you get",
   await expect(page.getByRole("list", { name: "Notifications you get" }).getByRole("checkbox", { name: /Mentions/ })).not.toBeChecked();
   await expect(page.getByRole("list", { name: "Notifications you get" }).getByRole("checkbox", { name: /Assigned to you/ })).toBeChecked();
 });
+
+test("GitHub in Settings, and a project's repository by address while the app isn't set up", async ({ page }) => {
+  const { key } = await signUpWithProject(page, "Kurepo", "KUR");
+  const workspaceUrl = page.url().replace(/\/p\/.*$/, "");
+
+  await page.goto(`${workspaceUrl}/settings/github`);
+  await expect(page.getByText("The GitHub App isn't set up on this server")).toBeVisible();
+  // A setup redirect that this browser didn't start comes back with an error, not an installation.
+  const forged = await page.request.get("/api/github/setup?installation_id=1&setup_action=install&state=forged", {
+    maxRedirects: 0,
+  });
+  expect(forged.status()).toBe(307);
+  expect(forged.headers()["location"]).toContain("github_error=");
+
+  await page.goto(`${workspaceUrl}/p/${key}/settings`);
+  await page.getByRole("button", { name: "Connect from GitHub" }).click();
+  await expect(page.getByText("needs the GitHub App, which isn't set up on this server yet", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Use an address instead" }).click();
+  await page.getByLabel("Repository address").fill("https://gitlab.com/acme/kurepo");
+  await page.getByRole("button", { name: "Link repository" }).click();
+  await expect(page.getByText("Address only")).toBeVisible();
+  await expect(page.getByRole("link", { name: "https://gitlab.com/acme/kurepo" })).toBeVisible();
+});
