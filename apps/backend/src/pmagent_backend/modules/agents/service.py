@@ -38,6 +38,7 @@ from .models import (
     RunStatus,
 )
 from .runner import BRIEFING_PROMPT, AgentRunner
+from .runner import CHECKPOINT_TOOL as CHECKPOINT
 from .schemas import (
     AgentRunCount,
     AgentRunRead,
@@ -116,7 +117,6 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-CHECKPOINT = "checkpoint"  # the engine's checkpoint tool (pmagent_engine.pipelines)
 CHECKPOINT_ACTIONS = {"approve": "checkpoint.continued", "steer": "checkpoint.steered", "reject": "checkpoint.stopped"}
 STEER_MESSAGE = (
     "The person wants changes to your plan: {reason}\nAdjust the plan and carry on; don't stop at "

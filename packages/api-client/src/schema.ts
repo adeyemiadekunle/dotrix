@@ -2157,6 +2157,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notifications
+         * @description Your notifications in this workspace, newest first, about projects you can still see.
+         *     Approvals and checkpoints say whether they've been decided since (`resolved`).
+         */
+        get: operations["list_notifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/notifications/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Notification Counts
+         * @description How many notifications still need you, in total and by kind: approvals and checkpoints
+         *     until they're decided (read or not), the others until you've read them.
+         */
+        get: operations["get_notification_counts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Notifications Read
+         * @description Mark notifications read: the ones in `ids`, or `all` (of one `kind`, if given). Ids that
+         *     aren't yours are ignored. Returns the new counts.
+         */
+        post: operations["mark_notifications_read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
         parameters: {
             query?: never;
@@ -3597,6 +3660,20 @@ export interface components {
             /** Files */
             files: components["schemas"]["FileEntry"][];
         };
+        /**
+         * MarkRead
+         * @description Mark some of your notifications read (`ids`), or all of them (of one `kind`, if given).
+         */
+        MarkRead: {
+            /** Ids */
+            ids?: string[];
+            /**
+             * All
+             * @default false
+             */
+            all: boolean;
+            kind?: components["schemas"]["NotificationKind"] | null;
+        };
         /** MemberRead */
         MemberRead: {
             /**
@@ -3653,6 +3730,88 @@ export interface components {
              * @description The model's name without the provider
              */
             name: string;
+        };
+        /**
+         * NotificationCounts
+         * @description What still needs you, in total and by kind (for badges): approvals and checkpoints until
+         *     they're decided, the others until you've read them.
+         */
+        NotificationCounts: {
+            /** Unread */
+            unread: number;
+            /** By Kind */
+            by_kind: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * NotificationKind
+         * @enum {string}
+         */
+        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding";
+        /**
+         * NotificationRead
+         * @description Something that waits for you or happened to you. `kind` says which: changes waiting for
+         *     a decision (`approval`), a plan waiting at a checkpoint (`checkpoint`), an issue assigned to you
+         *     (`assigned`), or findings from a run you asked for (`finding`).
+         */
+        NotificationRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["NotificationKind"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Read */
+            read: boolean;
+            /**
+             * Resolved
+             * @description Approvals and checkpoints: decided since (nothing left to do). Always false for the others
+             */
+            resolved: boolean;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Key */
+            project_key: string;
+            /** Project Name */
+            project_name: string;
+            /**
+             * Actor User Id
+             * @description The person who did it, if a person did
+             */
+            actor_user_id: string | null;
+            /**
+             * Actor Agent
+             * @description The agent who did it, if an agent did
+             */
+            actor_agent: string | null;
+            /**
+             * Title
+             * @description What was asked (runs) or the issue's title, when it happened
+             */
+            title: string;
+            /**
+             * Count
+             * @description Changes waiting, or findings to look at; 1 for the others
+             */
+            count: number;
+            /** Run Id */
+            run_id?: string | null;
+            /**
+             * Thread Id
+             * @description The conversation the run belongs to
+             */
+            thread_id?: string | null;
+            /** Issue Key */
+            issue_key?: string | null;
         };
         /** OrganizationConversion */
         OrganizationConversion: {
@@ -11337,6 +11496,192 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityItem"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_notifications: {
+        parameters: {
+            query?: {
+                /** @description Only this kind */
+                kind?: components["schemas"]["NotificationKind"] | null;
+                /** @description Only ones you haven't marked read */
+                unread?: boolean;
+                /** @description Only older than this (the last `created_at` you have) */
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_notification_counts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationCounts"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    mark_notifications_read: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkRead"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationCounts"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */

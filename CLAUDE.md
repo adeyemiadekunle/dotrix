@@ -86,6 +86,7 @@ apps/backend/
 │   │   ├── agent_definitions/   agent contracts per workspace with project overrides, versions, resolution for runs (agents v2 step 1)
 │   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals, checkpoints and decisions, triage and issue review, findings dedup, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis)
 │   │   ├── activity/            a project's activity feed for everyone who sees it, read from issue logs, document versions, runs, and decisions
+│   │   ├── notifications/       per-person notifications (approvals and checkpoints waiting, assignments, findings), written by the runner and the issues service (notify.py), read and marked read per person
 │   │   ├── audit/               append-only audit log
 │   │   ├── research/            web research for agent runs: sources per run (S1, S2, …), the page cache per workspace, web limits and Tavily credits, report claims checked against what was read
 │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
@@ -240,8 +241,9 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
   - [ ] linking GitHub from Settings (today: sign in with GitHub once); changing the password in place (today: an emailed link)
 
 ### Phase 6: Notifications (with agents v2 step 4)
-- [ ] Backend: notification records (approvals and checkpoints waiting, mentions, assignments, agent findings), read state per person
-- [ ] Notifications page: list and detail, tabs All / Approvals / Mentions / Assigned / Findings, approve or reject in the detail with the diff; replaces the Approvals page; the badge and the bell count it
+- [x] Backend: notification records (`modules/notifications`, `GET /v1/workspaces/{id}/notifications`, `/counts`, `POST .../read`): changes waiting go to everyone who may approve them and sees the project; a checkpoint and a run's open findings to whoever asked; an issue assigned to you (not by yourself). Read state per person; approvals and checkpoints are `resolved` once decided and count until then, the rest until read; only projects you can still see
+  - [ ] mentions (needs @mentions, FR-33)
+- [x] Notifications page (`/w/[ws]/approvals`, `?tab=` and `?n=`): list and detail, tabs All / Approvals / Mentions (*later*) / Assigned / Findings, approve or reject in the detail with the diff (the approvals card); opening one marks it read; Mark all read; replaces the Approvals page; the sidebar badge and the bell count what still needs you
 
 ## Plan: agents v2 (review, 2026-09-29)
 

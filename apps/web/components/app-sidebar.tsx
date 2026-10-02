@@ -45,8 +45,8 @@ import { ProjectTile } from "@/components/project-tile";
 import { usePalette, useShortcutLabel } from "@/components/command-palette";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { canManageProjects } from "@/lib/labels";
-import { useWorkspaceApprovals } from "@/lib/agent";
 import { useWorkspaceIssues } from "@/lib/issues";
+import { useNotificationCounts } from "@/lib/notifications";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
 
 // The open project's views, the same as its tabs. Timeline is shown but not built yet.
@@ -89,8 +89,8 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { shown: workspace } = useCurrentWorkspace();
   const projects = useProjects(workspace?.id);
-  const approvals = useWorkspaceApprovals(workspace?.id, Boolean(workspace && workspace.role !== "guest"));
-  const waiting = approvals.data?.length ?? 0;
+  const counts = useNotificationCounts(workspace?.id);
+  const waiting = counts.data?.unread ?? 0;
   const { setOpenMobile } = useSidebar();
   const palette = usePalette();
   const shortcut = useShortcutLabel();

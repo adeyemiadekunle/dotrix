@@ -23,6 +23,8 @@ from pmagent_backend.modules.agent_definitions.repository import AgentDefinition
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
+from pmagent_backend.modules.notifications.notify import Notifier
+from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.research.service import RunWeb, WebResearch, check_report
 from pmagent_engine import approvals as hitl
@@ -41,6 +43,8 @@ from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
 from .usage import TokenBudgetExceeded, TokenUsage, merge_breakdown
+
+CHECKPOINT_TOOL = "checkpoint"  # the engine's checkpoint tool (pmagent_engine.pipelines)
 
 logger = logging.getLogger(__name__)
 
@@ -455,6 +459,7 @@ class AgentRunner:
                 run.status, run.finished_at = RunStatus.COMPLETED, now
                 action_name = "agent_run.completed"
             run.updated_at = now
+            await _notify(session, run, pending, speaker, now)
             AuditLog(session).record(
                 workspace_id=run.workspace_id,
                 project_id=run.project_id,
@@ -516,6 +521,31 @@ class AgentRunner:
         files = await KnowledgeRepository(session).list_files(project_id)
         wanted = {f"agent-rules/{name}.md": name for name in ("base", *AGENTS, *(handles or []))}
         return {wanted[f.path]: f.content for f in files if f.path in wanted}
+
+
+async def _notify(session: Any, run: AgentRun, pending: list[dict], speaker: str, now: datetime) -> None:
+    """Who should hear about this step: approvers when changes wait, whoever asked when a plan
+    waits at a checkpoint or the run ended with findings to look at."""
+    if run.kind is RunKind.BRIEFING:
+        return
+    project = await session.get(Project, run.project_id)
+    if project is None:
+        return
+    notifier = Notifier(session)
+    title = run.title or run.message
+    checkpoints = [a for a in pending if a["tool"] == CHECKPOINT_TOOL]
+    changes = len(pending) - len(checkpoints)
+    if changes:
+        await notifier.approvals_waiting(project, run.id, title, changes, now, speaker)
+    if checkpoints and run.requested_by_id is not None:
+        notifier.checkpoint(project, run.requested_by_id, run.id, title, now, speaker)
+    if not pending and run.requested_by_id is not None:
+        outputs = await session.scalars(
+            select(AgentRunOutput).where(AgentRunOutput.run_id == run.id, AgentRunOutput.schema_name == "finding")
+        )
+        open_findings = sum(1 for output in outputs for item in output.items if item.get("state") == "open")
+        if open_findings:
+            notifier.findings(project, run.requested_by_id, run.id, title, open_findings, now, speaker)
 
 
 async def mark_interrupted_runs(session_factory: SessionFactory) -> None:

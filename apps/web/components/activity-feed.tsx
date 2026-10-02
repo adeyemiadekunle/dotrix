@@ -13,10 +13,10 @@ import { initials } from "@/lib/labels";
 import { useMemberAvatarSrc, type Member } from "@/lib/profile";
 
 /** The agent's name as people say it: "Claude Code", "Product agent". */
-function agentName(handle: string): string {
+export function agentName(handle: string): string {
   const coding = AGENT_LABELS[handle as keyof typeof AGENT_LABELS];
   if (coding) return coding;
-  if (handle === "pm") return "Project manager";
+  if (handle === "pm" || handle === "project-manager") return "Project manager";
   return `${handle.charAt(0).toUpperCase()}${handle.slice(1)} agent`;
 }
 

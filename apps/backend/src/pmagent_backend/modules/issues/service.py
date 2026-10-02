@@ -22,6 +22,7 @@ from uuid_utils.compat import uuid7
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.knowledge.models import AuthorType
+from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository, visible_to
 from pmagent_backend.modules.workspaces.models import Membership
@@ -199,6 +200,8 @@ class IssueService:
             await self._set_dependencies(project, issue, data.depends_on)
         if actor.agent_name is None:
             self.session.add(IssueWatcher(issue_id=issue.id, user_id=actor.user_id))
+        if issue.assignee_user_id is not None:
+            self._notify_assignee(project, issue, actor)
         self._event(issue, actor, IssueEventKind.CREATED)
         self._audit(project, actor, "issue.create", issue)
         await self.session.commit()
@@ -465,6 +468,8 @@ class IssueService:
                 await self._set_dependencies(project, issue, new_keys, replace=True)
                 changes["depends_on"] = [old_keys, new_keys]
 
+        if changes.get("assignee_user_id") and issue.assignee_user_id is not None:
+            self._notify_assignee(project, issue, actor)
         if changes or note:
             issue.updated_at = _now()
             self._event(issue, actor, IssueEventKind.UPDATED, changes=changes, body=note)
@@ -730,6 +735,13 @@ class IssueService:
         for position, issue in enumerate(issues, start=1):
             issue.rank = position * RANK_STEP
         await self.session.flush()
+
+    def _notify_assignee(self, project: Project, issue: Issue, actor: IssueActor) -> None:
+        assert issue.assignee_user_id is not None
+        Notifier(self.session).assigned(
+            project, issue.assignee_user_id, issue.id, issue.title, _now(),
+            actor_user_id=actor.user_id, actor_agent=actor.agent_name,
+        )
 
     def _event(
         self,

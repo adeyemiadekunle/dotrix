@@ -13,8 +13,8 @@ import { toast } from "sonner";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { PaletteProvider, usePalette, useShortcutLabel } from "@/components/command-palette";
-import { useWorkspaceApprovals } from "@/lib/agent";
 import { api, errorMessage, unwrap } from "@/lib/api";
+import { useNotificationCounts } from "@/lib/notifications";
 import { useCurrentWorkspace, useMe, useWorkspaces } from "@/lib/queries";
 
 const DISMISSED = "pmagent:verify-banner-dismissed";
@@ -123,8 +123,8 @@ function TopBarTools() {
   const palette = usePalette();
   const shortcut = useShortcutLabel();
   const { workspace } = useCurrentWorkspace();
-  const approvals = useWorkspaceApprovals(workspace?.id, Boolean(workspace && workspace.role !== "guest"));
-  const waiting = new Set((approvals.data ?? []).map((a) => a.run_id)).size;
+  const counts = useNotificationCounts(workspace?.id);
+  const waiting = counts.data?.unread ?? 0;
   return (
     <div className="flex items-center gap-1.5">
       <Button

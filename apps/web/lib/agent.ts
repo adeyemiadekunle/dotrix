@@ -167,6 +167,7 @@ function useAgentMutation<Vars>(scope: Scope | undefined, fn: (scope: Scope, var
       if (!scope) return;
       await queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
       await queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
+      await queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
       await queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
       // Approved actions may have changed issues or files.
       await queryClient.invalidateQueries({ queryKey: ["issues", scope.projectId] });
@@ -285,6 +286,7 @@ export function useRunStream(scope: Scope | undefined, runId: string, active: bo
       setActivity(null);
       void queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
       void queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
       void queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
     });
     source.onerror = () => source.close();
