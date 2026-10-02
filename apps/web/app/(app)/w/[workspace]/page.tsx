@@ -6,14 +6,16 @@ import { BotIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 
+import { ActivityFeed } from "@/components/activity-feed";
 import { PageHeader } from "@/components/app-shell";
 import { timeAgo } from "@/components/issues/issue-activity";
 import { today, WorkspaceIssueRow } from "@/components/issues/workspace-issue-row";
 import { ProjectTile } from "@/components/project-tile";
 import { NotFound } from "@/components/states";
+import { useWorkspaceActivity } from "@/lib/activity";
 import { runTitle, useWorkspaceApprovals } from "@/lib/agent";
-import { useWorkspaceIssues } from "@/lib/issues";
-import { canManageProjects } from "@/lib/labels";
+import { useMembers, useWorkspaceIssues } from "@/lib/issues";
+import { can, canManageProjects } from "@/lib/labels";
 import { useCurrentWorkspace, useMe, useProjects } from "@/lib/queries";
 
 function greeting(): string {
@@ -59,6 +61,10 @@ export default function HomePage() {
   const approvals = useWorkspaceApprovals(workspace?.id, canSee);
   const mine = useWorkspaceIssues(canSee ? workspace?.id : undefined, { assignee: "me" });
   const all = useWorkspaceIssues(canSee ? workspace?.id : undefined, {});
+  const canChat = can(workspace, "agents:chat");
+  const agentActivity = useWorkspaceActivity(canChat ? workspace?.id : undefined, 6, { agents: true });
+  const members = useMembers(canChat ? workspace?.id : undefined);
+  const memberMap = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m])), [members.data]);
 
   const stats = useMemo(() => {
     const issues = mine.data ?? [];
@@ -89,6 +95,7 @@ export default function HomePage() {
   const base = workspace ? `/w/${workspace.slug}` : "";
   const waiting = approvals.data ?? [];
   const runs = [...new Map(waiting.map((a) => [a.run_id, a])).values()];
+  const recentAgentWork = agentActivity.data?.pages[0] ?? [];
   const firstName = me.data?.display_name.split(" ")[0];
 
   return (
@@ -195,39 +202,68 @@ export default function HomePage() {
               </Section>
             </div>
 
-            <Section
-              title="Projects"
-              action={
-                <Link href={`${base}/projects`} className="text-primary text-xs font-medium hover:underline">
-                  All projects
-                </Link>
-              }
-            >
-              {projects.isLoading && <Skeleton className="m-4 h-24" />}
-              {projects.data?.length === 0 && <p className="text-muted-foreground px-4 py-6 text-sm">No projects yet.</p>}
-              {projects.data?.map((project) => {
-                const counts = progress.get(project.id) ?? { done: 0, total: 0 };
-                const percent = counts.total ? Math.round((counts.done / counts.total) * 100) : 0;
-                return (
-                  <Link
-                    key={project.id}
-                    href={`${base}/p/${project.key}`}
-                    className="hover:bg-muted/60 flex flex-col gap-2 border-b px-4 py-3 text-sm last:border-b-0"
-                  >
-                    <span className="flex items-center gap-2">
-                      <ProjectTile projectKey={project.key} className="size-4 text-[8px]" />
-                      <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
-                      <span className="text-muted-foreground font-mono text-xs">
-                        {counts.done}/{counts.total}
-                      </span>
-                    </span>
-                    <span className="bg-muted h-1.5 overflow-hidden rounded-full" aria-label={`${percent}% done`}>
-                      <span className="bg-primary block h-full rounded-full" style={{ width: `${percent}%` }} />
-                    </span>
+            <div className="flex flex-col gap-6">
+              <Section
+                title="Projects"
+                action={
+                  <Link href={`${base}/projects`} className="text-primary text-xs font-medium hover:underline">
+                    All projects
                   </Link>
-                );
-              })}
-            </Section>
+                }
+              >
+                {projects.isLoading && <Skeleton className="m-4 h-24" />}
+                {projects.data?.length === 0 && <p className="text-muted-foreground px-4 py-6 text-sm">No projects yet.</p>}
+                {projects.data?.map((project) => {
+                  const counts = progress.get(project.id) ?? { done: 0, total: 0 };
+                  const percent = counts.total ? Math.round((counts.done / counts.total) * 100) : 0;
+                  return (
+                    <Link
+                      key={project.id}
+                      href={`${base}/p/${project.key}`}
+                      className="hover:bg-muted/60 flex flex-col gap-2 border-b px-4 py-3 text-sm last:border-b-0"
+                    >
+                      <span className="flex items-center gap-2">
+                        <ProjectTile projectKey={project.key} className="size-4 text-[8px]" />
+                        <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
+                        <span className="text-muted-foreground font-mono text-xs">
+                          {counts.done}/{counts.total}
+                        </span>
+                      </span>
+                      <span className="bg-muted h-1.5 overflow-hidden rounded-full" aria-label={`${percent}% done`}>
+                        <span className="bg-primary block h-full rounded-full" style={{ width: `${percent}%` }} />
+                      </span>
+                    </Link>
+                  );
+                })}
+              </Section>
+
+              {canChat && (
+                <Section
+                  title="Agent activity"
+                  action={
+                    <Link href={`${base}/activity?show=agents`} className="text-primary text-xs font-medium hover:underline">
+                      All activity
+                    </Link>
+                  }
+                >
+                  {agentActivity.isLoading && <Skeleton className="m-4 h-24" />}
+                  {agentActivity.data && recentAgentWork.length === 0 && (
+                    <p className="text-muted-foreground px-4 py-6 text-sm">The agents haven't done anything yet.</p>
+                  )}
+                  {workspace && recentAgentWork.length > 0 && (
+                    <div className="px-4">
+                      <ActivityFeed
+                        items={recentAgentWork}
+                        members={memberMap}
+                        workspaceSlug={workspace.slug}
+                        compact
+                        showProject
+                      />
+                    </div>
+                  )}
+                </Section>
+              )}
+            </div>
           </div>
         )}
       </div>

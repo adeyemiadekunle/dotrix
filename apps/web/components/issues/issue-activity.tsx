@@ -1,7 +1,7 @@
 "use client";
 
 import type { Schemas } from "@pmagent/api-client";
-import { Avatar, AvatarFallback } from "@pmagent/ui/components/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@pmagent/ui/components/avatar";
 import { Textarea } from "@pmagent/ui/components/textarea";
 import { BotIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
@@ -9,6 +9,7 @@ import { useState, type FormEvent } from "react";
 import { SubmitButton } from "@/components/form";
 import { Markdown } from "@/components/markdown";
 import { initials } from "@/lib/labels";
+import { useMemberAvatarSrc, type Member } from "@/lib/profile";
 
 import { AGENT_LABELS, PRIORITY_META, STATUS_META, TYPE_META, type MemberMap } from "./meta";
 
@@ -38,12 +39,15 @@ export function timeAgo(iso: string): string {
   return "just now";
 }
 
-function authorOf(event: Event, members: MemberMap): { name: string; agent: boolean } {
+function authorOf(event: Event, members: MemberMap): { name: string; agent: boolean; member?: Member } {
   if (event.author_agent) {
     const label = AGENT_LABELS[event.author_agent as keyof typeof AGENT_LABELS];
     return { name: label ?? event.author_agent, agent: true };
   }
-  if (event.author_user_id) return { name: members.get(event.author_user_id)?.display_name ?? "Former member", agent: false };
+  if (event.author_user_id) {
+    const member = members.get(event.author_user_id);
+    return { name: member?.display_name ?? "Former member", agent: false, member };
+  }
   return { name: "Someone", agent: false };
 }
 
@@ -75,9 +79,11 @@ function describe(event: Event, members: MemberMap): string[] {
 function EventRow({ event, members }: { event: Event; members: MemberMap }) {
   const author = authorOf(event, members);
   const lines = describe(event, members);
+  const photo = useMemberAvatarSrc(author.member);
   return (
     <li className="flex gap-3">
       <Avatar className="mt-0.5 size-6">
+        {photo && <AvatarImage src={photo} alt="" className="object-cover" />}
         <AvatarFallback className={author.agent ? "bg-brand text-brand-foreground" : "text-[10px]"}>
           {author.agent ? <BotIcon className="size-3.5" /> : initials(author.name)}
         </AvatarFallback>

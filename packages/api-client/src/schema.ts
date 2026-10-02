@@ -11263,6 +11263,8 @@ export interface operations {
                 /** @description Only items older than this (the last `at` you have) */
                 before?: string | null;
                 limit?: number;
+                /** @description Only what agents did: their runs, decisions on their changes, and their edits */
+                agents?: boolean;
             };
             header?: never;
             path: {
@@ -11317,6 +11319,8 @@ export interface operations {
                 /** @description Only items older than this (the last `at` you have) */
                 before?: string | null;
                 limit?: number;
+                /** @description Only what agents did: their runs, decisions on their changes, and their edits */
+                agents?: boolean;
             };
             header?: never;
             path: {
