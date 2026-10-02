@@ -77,3 +77,37 @@ async def test_only_your_own_sessions(signup, db_client: AsyncClient) -> None:
     assert not adas["current"]
     assert (await db_client.delete(f"/v1/me/sessions/{adas['id']}", headers=cli)).status_code == 403
     assert (await db_client.post("/v1/me/sessions/sign-out-others", headers=cli)).status_code == 403
+
+
+async def test_change_password_signs_out_the_others(signup, db_client: AsyncClient) -> None:
+    ada = await signup()
+    browser = await _login(db_client, ada.email, ada.password, CHROME_MAC)
+
+    wrong = await db_client.put(
+        "/v1/me/password", json={"current_password": "not it", "new_password": "a brand new secret"},
+        headers=_auth(browser),
+    )
+    assert wrong.status_code == 422 and wrong.json()["type"].endswith("/wrong_password")
+    res = await db_client.put(
+        "/v1/me/password", json={"current_password": ada.password, "new_password": "a brand new secret"},
+        headers=_auth(browser),
+    )
+    assert res.json() == {"signed_out": 1}  # the sign-up's session; this browser stays
+    assert (await db_client.get("/v1/me", headers=ada.headers)).status_code == 401
+    assert (await db_client.get("/v1/me", headers=_auth(browser))).status_code == 200
+    old = await db_client.post("/v1/auth/login", json={"email": ada.email, "password": ada.password})
+    assert old.status_code == 401
+    await _login(db_client, ada.email, "a brand new secret", CHROME_MAC)
+
+
+async def test_set_a_first_password(db_client: AsyncClient, signup, db_session) -> None:
+    from pmagent_backend.modules.auth.models import User
+
+    ada = await signup()
+    user = await db_session.get(User, __import__("uuid").UUID(ada.id))
+    user.password_hash = None  # as if she'd signed up with GitHub or an email link
+    await db_session.flush()
+    res = await db_client.put("/v1/me/password", json={"new_password": "my first password"}, headers=ada.headers)
+    assert res.status_code == 200, res.text
+    methods = (await db_client.get("/v1/me/sign-in-methods", headers=ada.headers)).json()
+    assert methods["password"] is True

@@ -568,6 +568,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/sign-in-methods/github": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Link Github
+         * @description Link a GitHub account to yours, so you can sign in with it: the `code` GitHub sent back
+         *     after a sign-in started in link mode (check `state` first). 409 if it signs in to another
+         *     account, or you've linked a different one. Not with an API token.
+         */
+        put: operations["link_github"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change Password
+         * @description Change your password, or set one if you sign in only with GitHub or email links. The
+         *     current password is required when you have one (422 `wrong_password`). Signs out your other
+         *     browsers and apps (`signed_out`). Rate-limited like sign-in. Not with an API token.
+         */
+        put: operations["change_password"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/sign-in-methods/{provider}": {
         parameters: {
             query?: never;
@@ -2282,6 +2326,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/notification-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Notification Settings
+         * @description Which notifications you get, in every workspace you're in.
+         */
+        get: operations["get_notification_settings"];
+        /**
+         * Update Notification Settings
+         * @description Turn mentions, assignments, or findings off or on. Turned-off kinds stop showing and
+         *     counting at once, earlier ones included. Approvals and checkpoints always come through.
+         */
+        put: operations["update_notification_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
         parameters: {
             query?: never;
@@ -3886,6 +3955,31 @@ export interface components {
             /** Issue Key */
             issue_key?: string | null;
         };
+        /**
+         * NotificationSettings
+         * @description Which notifications you get, in every workspace. Changes waiting for your decision and
+         *     plans waiting at a checkpoint always come through: agents wait on them.
+         */
+        NotificationSettings: {
+            /**
+             * Mention
+             * @description Someone @mentions you in a comment or a chat message
+             * @default true
+             */
+            mention: boolean;
+            /**
+             * Assigned
+             * @description Someone (or an agent) assigns you an issue
+             * @default true
+             */
+            assigned: boolean;
+            /**
+             * Finding
+             * @description A run you asked for finds things to look at
+             * @default true
+             */
+            finding: boolean;
+        };
         /** OrganizationConversion */
         OrganizationConversion: {
             /**
@@ -3919,6 +4013,19 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+        };
+        /**
+         * PasswordChange
+         * @description Change your password, or set one if you sign in only with GitHub or email links.
+         */
+        PasswordChange: {
+            /**
+             * Current Password
+             * @description Required when you already have a password
+             */
+            current_password?: string | null;
+            /** New Password */
+            new_password: string;
         };
         /** PasswordResetConfirm */
         PasswordResetConfirm: {
@@ -6160,6 +6267,135 @@ export interface operations {
             };
             /** @description Missing, invalid, or expired credentials */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    link_github: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitHubFinish"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInMethods"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    change_password: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignedOut"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Too many attempts; the Retry-After header says how many seconds to wait */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11958,6 +12194,77 @@ export interface operations {
             };
             /** @description Not found, or not visible to you */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_notification_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationSettings"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    update_notification_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationSettings"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

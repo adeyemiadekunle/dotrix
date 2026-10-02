@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, UniqueConstraint, Uuid, true
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pmagent_backend.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum
@@ -24,6 +25,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str | None] = mapped_column(String(100))
     # When their photo last changed (null: no photo); clients add it to the photo's address.
     avatar_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Notification kinds they turned off (Settings → Notifications); approvals can't be.
+    muted_notifications: Mapped[list[str]] = mapped_column(ARRAY(String(16)), default=list, server_default="{}")
 
     @property
     def email_verified(self) -> bool:

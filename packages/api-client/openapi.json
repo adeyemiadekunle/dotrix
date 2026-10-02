@@ -1398,6 +1398,170 @@
         ]
       }
     },
+    "/v1/me/sign-in-methods/github": {
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Link Github",
+        "description": "Link a GitHub account to yours, so you can sign in with it: the `code` GitHub sent back\nafter a sign-in started in link mode (check `state` first). 409 if it signs in to another\naccount, or you've linked a different one. Not with an API token.",
+        "operationId": "link_github",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubFinish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInMethods"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/password": {
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Change Password",
+        "description": "Change your password, or set one if you sign in only with GitHub or email links. The\ncurrent password is required when you have one (422 `wrong_password`). Signs out your other\nbrowsers and apps (`signed_out`). Rate-limited like sign-in. Not with an API token.",
+        "operationId": "change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/me/sign-in-methods/{provider}": {
       "delete": {
         "tags": [
@@ -10836,6 +11000,98 @@
         }
       }
     },
+    "/v1/me/notification-settings": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Get Notification Settings",
+        "description": "Which notifications you get, in every workspace you're in.",
+        "operationId": "get_notification_settings",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Update Notification Settings",
+        "description": "Turn mentions, assignments, or findings off or on. Turned-off kinds stop showing and\ncounting at once, earlier ones included. Approvals and checkpoints always come through.",
+        "operationId": "update_notification_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
       "get": {
         "tags": [
@@ -14890,6 +15146,31 @@
         "title": "NotificationRead",
         "description": "Something that waits for you or happened to you. `kind` says which: changes waiting for\na decision (`approval`), a plan waiting at a checkpoint (`checkpoint`), an issue assigned to you\n(`assigned`), findings from a run you asked for (`finding`), or an @mention of you in an issue\ncomment or a chat message (`mention`)."
       },
+      "NotificationSettings": {
+        "properties": {
+          "mention": {
+            "type": "boolean",
+            "title": "Mention",
+            "description": "Someone @mentions you in a comment or a chat message",
+            "default": true
+          },
+          "assigned": {
+            "type": "boolean",
+            "title": "Assigned",
+            "description": "Someone (or an agent) assigns you an issue",
+            "default": true
+          },
+          "finding": {
+            "type": "boolean",
+            "title": "Finding",
+            "description": "A run you asked for finds things to look at",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "NotificationSettings",
+        "description": "Which notifications you get, in every workspace. Changes waiting for your decision and\nplans waiting at a checkpoint always come through: agents wait on them."
+      },
       "OrganizationConversion": {
         "properties": {
           "name": {
@@ -14967,6 +15248,35 @@
           "user_id"
         ],
         "title": "OwnershipTransfer"
+      },
+      "PasswordChange": {
+        "properties": {
+          "current_password": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Password",
+            "description": "Required when you already have a password"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 10,
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "new_password"
+        ],
+        "title": "PasswordChange",
+        "description": "Change your password, or set one if you sign in only with GitHub or email links."
       },
       "PasswordResetConfirm": {
         "properties": {

@@ -36,7 +36,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
       items: [
         { label: "Profile", path: "profile" },
         { label: "Appearance", path: "appearance" },
-        { label: "Notifications", path: null },
+        { label: "Notifications", path: "notifications" },
         { label: "Devices and tokens", path: "devices" },
         { label: "Calendar", path: "calendar" },
       ],

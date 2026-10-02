@@ -54,3 +54,12 @@ class MarkRead(BaseModel):
         if not self.ids and not self.all:
             raise ValueError("Send `ids`, or `all: true`")
         return self
+
+
+class NotificationSettings(BaseModel):
+    """Which notifications you get, in every workspace. Changes waiting for your decision and
+    plans waiting at a checkpoint always come through: agents wait on them."""
+
+    mention: bool = Field(default=True, description="Someone @mentions you in a comment or a chat message")
+    assigned: bool = Field(default=True, description="Someone (or an agent) assigns you an issue")
+    finding: bool = Field(default=True, description="A run you asked for finds things to look at")

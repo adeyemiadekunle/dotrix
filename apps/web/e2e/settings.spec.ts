@@ -69,3 +69,31 @@ test("where you're signed in: see each browser, and sign another one out", async
   await expect(laptop).toHaveURL(/\/login/);
   await other.close();
 });
+
+test("change your password in Settings, and choose which notifications you get", async ({ page }) => {
+  const user = await signUp(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  const settingsNav = page.getByRole("navigation", { name: "Settings" });
+  await settingsNav.getByRole("link", { name: "Profile" }).click();
+
+  await page.getByRole("button", { name: "Change password" }).click();
+  const dialog = page.getByRole("dialog", { name: "Change your password" });
+  await dialog.getByLabel("Current password").fill("not my password");
+  await dialog.getByLabel("New password", { exact: true }).fill("a brand new secret");
+  await dialog.getByLabel("Confirm new password").fill("a brand new secret");
+  await dialog.getByRole("button", { name: "Change password" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("Your current password isn't right");
+  await dialog.getByLabel("Current password").fill(user.password);
+  await dialog.getByRole("button", { name: "Change password" }).click();
+  await expect(page.getByText("Password changed")).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+
+  // Notifications: mentions off, remembered; approvals can't be turned off.
+  await settingsNav.getByRole("link", { name: "Notifications" }).click();
+  const kinds = page.getByRole("list", { name: "Notifications you get" });
+  await kinds.getByRole("checkbox", { name: /Mentions/ }).click();
+  await expect(kinds.getByRole("checkbox", { name: /Changes waiting for your decision/ })).toBeDisabled();
+  await page.reload();
+  await expect(page.getByRole("list", { name: "Notifications you get" }).getByRole("checkbox", { name: /Mentions/ })).not.toBeChecked();
+  await expect(page.getByRole("list", { name: "Notifications you get" }).getByRole("checkbox", { name: /Assigned to you/ })).toBeChecked();
+});

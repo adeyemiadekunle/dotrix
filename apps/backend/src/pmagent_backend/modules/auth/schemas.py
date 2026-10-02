@@ -56,6 +56,15 @@ class PasswordResetConfirm(BaseModel):
     new_password: Password
 
 
+class PasswordChange(BaseModel):
+    """Change your password, or set one if you sign in only with GitHub or email links."""
+
+    current_password: str | None = Field(
+        default=None, max_length=128, description="Required when you already have a password"
+    )
+    new_password: Password
+
+
 class SessionRead(BaseModel):
     """A browser or the desktop app you're signed in on (the CLI and tools use API tokens)."""
 

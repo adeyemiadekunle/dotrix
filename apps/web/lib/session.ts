@@ -109,6 +109,13 @@ export function loginWithError(request: Request, message: string, next: string):
   return NextResponse.redirect(login);
 }
 
+/** Back to a page of the app with a message for it in the query (`?github=linked`). */
+export function backWith(request: Request, next: string, params: Record<string, string>): NextResponse {
+  const url = new URL(next, request.url);
+  for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
+  return NextResponse.redirect(url);
+}
+
 /** Which other ways to sign in the backend has set up (none if it can't be reached). */
 export async function authProviders(): Promise<{ github: boolean }> {
   try {

@@ -177,3 +177,24 @@ async def test_mentions_in_comments_and_chat(world, db_client: AsyncClient, agen
     latest = (await _notifications(db_client, ws, bob, kind="mention"))[0]
     assert latest["run_id"] == run["id"] and latest["thread_id"] == run["thread_id"]
     assert latest["title"] == run["title"] and latest["actor_user_id"] == cat.id
+
+
+async def test_turning_kinds_off(world, db_client: AsyncClient, agent_script) -> None:
+    ada, bob, _, _, ws, base = await world()
+    defaults = (await db_client.get("/v1/me/notification-settings", headers=bob.headers)).json()
+    assert defaults == {"mention": True, "assigned": True, "finding": True}
+    await db_client.post(f"{base}/issues", json={"title": "Ship it", "assignee_user_id": bob.id}, headers=ada.headers)
+    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
+    await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=ada.headers)
+    assert {n["kind"] for n in await _notifications(db_client, ws, bob)} == {"assigned", "approval"}
+
+    # Assignments off: they stop showing and counting, earlier ones too; approvals can't be turned off.
+    res = await db_client.put(
+        "/v1/me/notification-settings", json={"mention": True, "assigned": False, "finding": True}, headers=bob.headers
+    )
+    assert res.json() == {"mention": True, "assigned": False, "finding": True}
+    assert [n["kind"] for n in await _notifications(db_client, ws, bob)] == ["approval"]
+    counts = await _counts(db_client, ws, bob)
+    assert counts["by_kind"]["assigned"] == 0 and counts["unread"] == 1
+    # Only Bob's choice: Ada still sees hers.
+    assert (await db_client.get("/v1/me/notification-settings", headers=ada.headers)).json()["assigned"] is True

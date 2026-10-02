@@ -31,6 +31,7 @@ from .schemas import (
     GitHubStart,
     LoginRequest,
     MagicLinkRequest,
+    PasswordChange,
     PasswordResetConfirm,
     PasswordResetRequest,
     ProfileUpdate,
@@ -254,6 +255,25 @@ async def update_profile(data: ProfileUpdate, user: CurrentUser, profile: Profil
 async def sign_in_methods(user: CurrentUser, profile: Profile) -> SignInMethods:
     """How you can sign in: a password, an email link (always), and linked accounts (GitHub)."""
     return await profile.sign_in_methods(user)
+
+
+@me_router.put("/me/sign-in-methods/github", responses=errors(401, 403, 409, 422, 503))
+async def link_github(data: GitHubFinish, user: SessionUser, profile: Profile, github: GitHubDep) -> SignInMethods:
+    """Link a GitHub account to yours, so you can sign in with it: the `code` GitHub sent back
+    after a sign-in started in link mode (check `state` first). 409 if it signs in to another
+    account, or you've linked a different one. Not with an API token."""
+    return await profile.link_github(user, await github.profile(data.code))
+
+
+@me_router.put("/me/password", responses=errors(401, 403, 422, 429))
+async def change_password(
+    data: PasswordChange, request: Request, user: SessionUser, profile: Profile, throttle: ThrottleDep
+) -> SignedOut:
+    """Change your password, or set one if you sign in only with GitHub or email links. The
+    current password is required when you have one (422 `wrong_password`). Signs out your other
+    browsers and apps (`signed_out`). Rate-limited like sign-in. Not with an API token."""
+    await throttle(LOGIN, user.email)
+    return SignedOut(signed_out=await profile.change_password(user, data, _current_session(request)))
 
 
 @me_router.delete(

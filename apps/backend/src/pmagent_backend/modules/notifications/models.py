@@ -19,6 +19,10 @@ class NotificationKind(enum.StrEnum):
     MENTION = "mention"  # someone @mentioned you in an issue comment or a chat message
 
 
+# What people may turn off. Approvals and checkpoints always come through: agents wait on them.
+OPTIONAL_KINDS = (NotificationKind.MENTION, NotificationKind.ASSIGNED, NotificationKind.FINDING)
+
+
 class Notification(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     """One per recipient. Rows hold ids and a short snapshot (a title); what is shown is checked
     against what the reader can see when it's read."""

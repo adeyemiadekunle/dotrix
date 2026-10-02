@@ -140,3 +140,34 @@ async def test_the_api_callback_forwards_to_the_web_app(db_client: AsyncClient) 
     res = await db_client.get("/v1/auth/oauth/github/callback?code=abc&state=xyz&other=1")
     assert res.status_code == 303
     assert res.headers["location"] == "http://app.test/api/auth/github/callback?code=abc&state=xyz"
+
+
+async def test_link_github_from_settings(db_client: AsyncClient, signup, github: FakeGitHub) -> None:
+    # Signed in, so GitHub's email needn't match: Bob links Ada-the-GitHub-login's account.
+    bob = await signup(email="bob@example.com", name="Bob")
+    github.codes |= {"link-code", "again-code", "other-code"}
+    res = await db_client.put("/v1/me/sign-in-methods/github", json={"code": "link-code"}, headers=bob.headers)
+    assert res.status_code == 200, res.text
+    assert [a["login"] for a in res.json()["accounts"]] == ["ada-l"]
+    # From now on, that GitHub account signs in as Bob.
+    assert (await me(db_client, await finish(db_client)))["email"] == "bob@example.com"
+    # Linking it again is fine; a second GitHub account isn't.
+    assert (await db_client.put("/v1/me/sign-in-methods/github", json={"code": "again-code"}, headers=bob.headers)).status_code == 200
+    github.user = {"id": 777, "login": "bob-gh", "name": "Bob"}
+    second = await db_client.put("/v1/me/sign-in-methods/github", json={"code": "other-code"}, headers=bob.headers)
+    assert second.status_code == 409 and "Unlink @ada-l first" in second.json()["detail"]
+
+
+async def test_a_github_account_links_to_one_person(db_client: AsyncClient, signup, github: FakeGitHub) -> None:
+    ada = await signup()
+    bob = await signup(email="bob@example.com", name="Bob")
+    github.codes |= {"ada-code", "bob-code"}
+    assert (await db_client.put("/v1/me/sign-in-methods/github", json={"code": "ada-code"}, headers=ada.headers)).status_code == 200
+    taken = await db_client.put("/v1/me/sign-in-methods/github", json={"code": "bob-code"}, headers=bob.headers)
+    assert taken.status_code == 409 and "another pmagent account" in taken.json()["detail"]
+    # Not with an API token.
+    token = (await db_client.post("/v1/me/tokens", json={"name": "cli"}, headers=bob.headers)).json()["token"]
+    cli = await db_client.put(
+        "/v1/me/sign-in-methods/github", json={"code": "x"}, headers={"Authorization": f"Bearer {token}"}
+    )
+    assert cli.status_code == 403
