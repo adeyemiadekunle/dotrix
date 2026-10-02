@@ -136,7 +136,9 @@ class IssueSummary(BaseModel):
     labels: list[str]
     estimate: float | None
     due: date | None
+    scheduled: datetime | None = Field(default=None, description="When work on it is planned to start")
     rank: float
+    created_at: datetime
     updated_at: datetime
 
 

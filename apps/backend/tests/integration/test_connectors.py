@@ -113,3 +113,28 @@ async def test_moving_a_project_drops_its_connection(db_client: AsyncClient, git
     assert (await db_client.get(f"{there}/repository", headers=ada.headers)).json() is None
     assert (await db_client.get(there, headers=ada.headers)).json()["repo_url"] == "https://github.com/kunemi/api"
     assert [r["project_key"] for r in (await db_client.get(f"{ws}/github/repos", headers=ada.headers)).json()] == [None, None]
+
+
+async def test_create_a_repo_in_an_organisation(db_client: AsyncClient, github_world, github) -> None:
+    ada, cat, ws, kun, _ = await github_world()
+    org = (await db_client.post(f"{ws}/github/installations", json={"installation_id": 111, "code": "code-1"},
+                                 headers=ada.headers)).json()
+    personal = (await db_client.post(f"{ws}/github/installations", json={"installation_id": 333, "code": "code-2"},
+                                      headers=ada.headers)).json()
+    body = {"installation_ref": org["id"], "name": "kun-app", "private": True, "description": "Kunemi"}
+    assert (await db_client.post(f"{ws}/github/repos", json=body, headers=cat.headers)).status_code == 403
+    res = await db_client.post(f"{ws}/github/repos", json=body, headers=ada.headers)
+    assert res.status_code == 201, res.text
+    repo = res.json()
+    assert (repo["full_name"], repo["private"], repo["project_key"]) == ("kunemi/kun-app", True, None)
+    # Ready to connect like any other.
+    connect = {"installation_ref": org["id"], "github_repo_id": repo["github_repo_id"]}
+    assert (await db_client.put(f"{ws}/projects/{kun['id']}/repository", json=connect, headers=ada.headers)).status_code == 200
+
+    assert (await db_client.post(f"{ws}/github/repos", json=body, headers=ada.headers)).status_code == 409
+    # GitHub doesn't let apps create repos in a person's own account.
+    mine = await db_client.post(f"{ws}/github/repos", json={**body, "installation_ref": personal["id"]}, headers=ada.headers)
+    assert mine.status_code == 403 and "only in organisations" in mine.json()["detail"]
+    assert (await db_client.post(f"{ws}/github/repos", json={**body, "name": "bad name!"}, headers=ada.headers)).status_code == 422
+    audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
+    assert "github.repo_created" in {e["action"] for e in (audit["items"] if isinstance(audit, dict) else audit)}

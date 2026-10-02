@@ -3,6 +3,7 @@
 import type { Schemas } from "@pmagent/api-client";
 import { Button } from "@pmagent/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
+import { Checkbox } from "@pmagent/ui/components/checkbox";
 import { Label } from "@pmagent/ui/components/label";
 import { RadioGroup, RadioGroupItem } from "@pmagent/ui/components/radio-group";
 import { Textarea } from "@pmagent/ui/components/textarea";
@@ -33,9 +34,9 @@ import { canManageProjects, suggestKey } from "@/lib/labels";
 import { useCurrentWorkspace } from "@/lib/queries";
 import { usePublicGithubRepo } from "@/lib/repo";
 
-type Source = "existing_repo" | "docs_only";
+type Source = "existing_repo" | "docs_only" | "new_repo";
 
-const SOURCES: { value: Source | "new_repo"; label: string; description: string; icon: LucideIcon; soon?: boolean }[] = [
+const SOURCES: { value: Source; label: string; description: string; icon: LucideIcon }[] = [
   {
     value: "existing_repo",
     label: "Existing repository",
@@ -51,9 +52,8 @@ const SOURCES: { value: Source | "new_repo"; label: string; description: string;
   {
     value: "new_repo",
     label: "New repository",
-    description: "Create the repo on GitHub for you. Needs the GitHub connection.",
+    description: "Create the repo on GitHub, in an organisation the GitHub App is installed on.",
     icon: GitBranchPlusIcon,
-    soon: true,
   },
 ];
 
@@ -77,6 +77,13 @@ export default function NewProjectPage() {
   const [created, setCreated] = useState<Schemas["ProjectRead"] | null>(null);
   const publicRepo = usePublicGithubRepo(source === "existing_repo" && !picked ? repoUrl : "");
   const github = useGitHubStatus(workspace?.id, !!workspace && canManageProjects(workspace.role));
+  // A new repo: in which organisation (its installation here), called what, and private or not.
+  const orgs = (github.data?.installations ?? []).filter((i) => i.account_type === "Organization" && !i.suspended);
+  const [orgRef, setOrgRef] = useState("");
+  const [repoName, setRepoName] = useState("");
+  const [repoNameEdited, setRepoNameEdited] = useState(false);
+  const [repoPrivate, setRepoPrivate] = useState(true);
+  const org = orgs.find((i) => i.id === orgRef) ?? orgs[0];
 
   // Prefill the name and description from a public repo, once per repo, only into empty fields.
   const prefilled = useRef<string | null>(null);
@@ -109,6 +116,7 @@ export default function NewProjectPage() {
   function setNameAndKey(next: string) {
     setName(next);
     if (!keyEdited) setKey(suggestKey(next));
+    if (!repoNameEdited) setRepoName(slugify(next));
   }
 
   function pick(repo: RepoOption) {
@@ -143,6 +151,26 @@ export default function NewProjectPage() {
           }),
         ));
       setCreated(project);
+      if (!created && source === "new_repo" && org) {
+        // The project exists first: if GitHub refuses the repo, it can connect one later.
+        try {
+          const repo = await unwrap(
+            api.POST("/v1/workspaces/{workspace_id}/github/repos", {
+              params: { path: { workspace_id: workspace.id } },
+              body: { installation_ref: org.id, name: repoName, private: repoPrivate, description },
+            }),
+          );
+          await unwrap(
+            api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/repository", {
+              params: { path: { workspace_id: workspace.id, project_id: project.id } },
+              body: { installation_ref: repo.installation_ref, github_repo_id: repo.github_repo_id },
+            }),
+          );
+          toast.success(`Created ${repo.full_name} on GitHub`);
+        } catch (e) {
+          toast.error(`The project was created, but its repository wasn't: ${errorMessage(e)}. Connect one in its settings.`);
+        }
+      }
       if (!created && source === "existing_repo" && picked) {
         // The address is the repo's already, so this only adds the app's access to it.
         await unwrap(
@@ -187,24 +215,40 @@ export default function NewProjectPage() {
               className="grid gap-2 sm:grid-cols-3"
               disabled={busy || Boolean(created)}
             >
-              {SOURCES.map(({ value, label, description: text, icon: Icon, soon }) => (
+              {SOURCES.map(({ value, label, description: text, icon: Icon }) => (
                 <Label
                   key={value}
-                  className={cn(
-                    "has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:ring-primary/20 flex cursor-pointer flex-col items-start gap-2 rounded-lg border p-3 font-normal has-[[data-state=checked]]:ring-2",
-                    soon && "cursor-not-allowed opacity-60",
-                  )}
+                  className="has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:ring-primary/20 flex cursor-pointer flex-col items-start gap-2 rounded-lg border p-3 font-normal has-[[data-state=checked]]:ring-2"
                 >
-                  <RadioGroupItem value={value} disabled={soon} className="sr-only" />
+                  <RadioGroupItem value={value} className="sr-only" />
                   <span className="flex w-full items-center gap-2 font-medium">
                     <Icon className="size-4" />
                     {label}
-                    {soon && <span className="text-muted-foreground ml-auto text-[10px] font-normal">Soon</span>}
                   </span>
                   <span className="text-muted-foreground text-xs leading-snug">{text}</span>
                 </Label>
               ))}
             </RadioGroup>
+
+            {source === "new_repo" && workspace && (
+              <NewRepoFields
+                workspaceId={workspace.id}
+                settingsHref={`/w/${workspace.slug}/settings/github`}
+                configured={!!github.data?.configured}
+                loading={!github.data}
+                orgs={orgs}
+                org={org}
+                onOrg={setOrgRef}
+                name={repoName}
+                onName={(next) => {
+                  setRepoName(next);
+                  setRepoNameEdited(true);
+                }}
+                isPrivate={repoPrivate}
+                onPrivate={setRepoPrivate}
+                disabled={busy || Boolean(created)}
+              />
+            )}
 
             {source === "existing_repo" && (
               <div className="grid gap-4">
@@ -323,7 +367,7 @@ export default function NewProjectPage() {
               <Button type="button" variant="outline" asChild disabled={busy}>
                 <Link href={workspace ? `/w/${workspace.slug}` : "/"}>Cancel</Link>
               </Button>
-              <SubmitButton pending={busy}>
+              <SubmitButton pending={busy} disabled={busy || (source === "new_repo" && !org)}>
                 {phase === "creating"
                   ? "Creating project…"
                   : phase === "uploading"
@@ -337,5 +381,93 @@ export default function NewProjectPage() {
         </div>
       </form>
     </>
+  );
+}
+
+
+/** A repo name from a project name: "Kunemi web app" → "kunemi-web-app". */
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 100);
+}
+
+type Installation = Schemas["InstallationRead"];
+
+/** Where the new repo goes and what it's called; or what to do first when that isn't possible. */
+function NewRepoFields(props: {
+  workspaceId: string;
+  settingsHref: string;
+  configured: boolean;
+  loading: boolean;
+  orgs: Installation[];
+  org: Installation | undefined;
+  onOrg: (ref: string) => void;
+  name: string;
+  onName: (name: string) => void;
+  isPrivate: boolean;
+  onPrivate: (value: boolean) => void;
+  disabled: boolean;
+}) {
+  const { orgs, org } = props;
+  if (props.loading) return null;
+  if (!props.configured || orgs.length === 0) {
+    return (
+      <p className="text-muted-foreground rounded-lg border border-dashed p-3 text-sm" role="note">
+        {props.configured
+          ? "GitHub lets the app create repositories only in organisations. "
+          : "Creating repositories needs the GitHub App, which isn't set up on this server yet. "}
+        {props.configured && (
+          <>
+            Install it on an organisation in{" "}
+            <Link href={props.settingsHref} className="underline underline-offset-4">
+              Settings → GitHub
+            </Link>
+            , or create the repo on GitHub and pick it under Existing repository.
+          </>
+        )}
+      </p>
+    );
+  }
+  return (
+    <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
+      <div className="grid gap-2">
+        <Label htmlFor="repo-org">Organisation</Label>
+        <select
+          id="repo-org"
+          value={org?.id}
+          onChange={(e) => props.onOrg(e.target.value)}
+          disabled={props.disabled}
+          className="bg-background h-9 rounded-md border px-2 text-sm"
+        >
+          {orgs.map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.account_login}
+            </option>
+          ))}
+        </select>
+      </div>
+      <Field
+        label="Repository name"
+        value={props.name}
+        onChange={(e) => props.onName(e.target.value)}
+        placeholder="kunemi-app"
+        required
+        pattern="[A-Za-z0-9._-]+"
+        maxLength={100}
+        disabled={props.disabled}
+        hint={org ? `github.com/${org.account_login}/${props.name || "…"} · created with a README` : undefined}
+      />
+      <Label className="flex items-center gap-2 font-normal sm:col-span-2">
+        <Checkbox
+          checked={props.isPrivate}
+          onCheckedChange={(checked) => props.onPrivate(checked === true)}
+          disabled={props.disabled}
+        />
+        Private repository
+      </Label>
+    </div>
   );
 }

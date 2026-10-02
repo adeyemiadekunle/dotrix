@@ -1,10 +1,11 @@
 "use client";
 
 import type { Schemas } from "@pmagent/api-client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
+import { toast } from "sonner";
 
-import { ApiError, api, unwrap } from "./api";
+import { ApiError, api, errorMessage, unwrap } from "./api";
 
 export type Document = Schemas["DocumentRead"];
 
@@ -106,4 +107,22 @@ export function useUploads() {
   );
 
   return { uploads, upload, reset: () => setUploads([]) };
+}
+
+/** Convert a failed document again from its stored original (owners and admins). */
+export function useRetryConversion(scope: { workspaceId: string; projectId: string } | null | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (documentId: string) =>
+      unwrap(
+        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}/retry", {
+          params: { path: { workspace_id: scope!.workspaceId, project_id: scope!.projectId, document_id: documentId } },
+        }),
+      ),
+    onSuccess: (doc) => {
+      if (doc.status === "failed") toast.error(`Still couldn't convert it: ${doc.error}`);
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ["documents", scope?.projectId] }),
+  });
 }

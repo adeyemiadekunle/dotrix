@@ -7,7 +7,9 @@ import { Suspense, useMemo, useState, type ComponentType } from "react";
 
 import { AfterHydration } from "@/components/after-hydration";
 import { PageHeader } from "@/components/app-shell";
+import { IssueTimeline, ZoomToggle, type TimelineZoom } from "@/components/issues/timeline";
 import { today, WorkspaceIssueRow } from "@/components/issues/workspace-issue-row";
+import { issueHref, WorkspaceIssueBoard, WorkspaceIssueTable } from "@/components/issues/workspace-issue-views";
 import { EmptyState, NotFound } from "@/components/states";
 import { useWorkspaceIssues, type WorkspaceIssue, type WorkspaceIssueFilters } from "@/lib/issues";
 import { useCurrentWorkspace } from "@/lib/queries";
@@ -54,12 +56,26 @@ function groupIssues(issues: WorkspaceIssue[]): Group[] {
   ];
 }
 
+const VIEWS = [
+  ["list", "List"],
+  ["board", "Board"],
+  ["table", "Table"],
+  ["timeline", "Timeline"],
+] as const;
+type View = (typeof VIEWS)[number][0];
+
 function MyIssues() {
   const { workspace, notFound } = useCurrentWorkspace();
+  const [viewParam, setView] = useSearchParam("view");
+  const view: View = VIEWS.some(([id]) => id === viewParam) ? (viewParam as View) : "list";
+  const [zoomParam, setZoom] = useSearchParam("zoom");
+  const zoom: TimelineZoom = zoomParam === "months" ? "months" : "weeks";
   const [whoParam, setWho] = useSearchParam("who");
   const who = whoParam && whoParam in WHO ? whoParam : "assigned";
   const issues = useWorkspaceIssues(workspace && workspace.role !== "guest" ? workspace.id : undefined, WHO[who].filters);
   const groups = useMemo(() => groupIssues(issues.data ?? []), [issues.data]);
+  // The other views show the same issues as the list: open ones, and what was done this week.
+  const current = useMemo(() => groups.flatMap((g) => g.issues), [groups]);
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
 
   if (notFound) return <NotFound what="workspace" />;
@@ -74,6 +90,24 @@ function MyIssues() {
               ? `${counts.overdue} overdue · ${counts.today} due today · ${counts.upcoming} upcoming, across every project you can see.`
               : "Your issues from every project you can see."}
           </p>
+          <div role="group" aria-label="View" className="bg-muted flex gap-0.5 rounded-lg p-0.5 text-xs font-medium">
+            {VIEWS.map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={view === id}
+                onClick={() => setView(id === "list" ? null : id)}
+                className={
+                  view === id
+                    ? "bg-background text-foreground rounded-md px-2.5 py-1 shadow-sm"
+                    : "text-muted-foreground hover:text-foreground rounded-md px-2.5 py-1"
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {view === "timeline" && <ZoomToggle zoom={zoom} onZoom={(z) => setZoom(z === "weeks" ? null : z)} />}
           <Tabs value={who} onValueChange={(value) => setWho(value === "assigned" ? null : value)}>
             <TabsList>
               {Object.entries(WHO).map(([id, { label }]) => (
@@ -99,9 +133,19 @@ function MyIssues() {
             }
           />
         )}
+        {workspace && issues.data && issues.data.length > 0 && view === "board" && (
+          <WorkspaceIssueBoard issues={current} workspaceSlug={workspace.slug} />
+        )}
+        {workspace && issues.data && issues.data.length > 0 && view === "table" && (
+          <WorkspaceIssueTable issues={current} workspaceSlug={workspace.slug} />
+        )}
+        {workspace && issues.data && issues.data.length > 0 && view === "timeline" && (
+          <IssueTimeline issues={current} href={(i) => issueHref(workspace.slug, i as WorkspaceIssue)} zoom={zoom} groupByProject />
+        )}
         {workspace &&
           issues.data &&
           issues.data.length > 0 &&
+          view === "list" &&
           groups.map((group) => {
             if (group.issues.length === 0 && group.id !== "today") return null;
             const collapsed = toggled[group.id] ?? Boolean(group.collapsed);

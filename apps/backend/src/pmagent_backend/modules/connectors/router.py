@@ -24,6 +24,7 @@ from .schemas import (
     InstallationAdd,
     InstallationRead,
     RepoConnect,
+    RepoCreate,
     RepoOption,
 )
 from .service import ConnectorService
@@ -68,6 +69,17 @@ async def list_github_repos(member: Manager, session: SessionDep, app: GitHubApp
     """Every repo the workspace's installations can see, private ones included, and which
     project uses each. Owners and admins."""
     return await ConnectorService(session, app).repos(member)
+
+
+@workspace_router.post("/repos", status_code=status.HTTP_201_CREATED, responses=errors(409, 422, 503))
+async def create_github_repo(
+    data: RepoCreate, member: Manager, session: SessionDep, app: GitHubAppDep
+) -> RepoOption:
+    """Create a repo on GitHub in an organisation the app is installed on (with a README), ready
+    to connect to a project. 403 for a personal account (GitHub doesn't let apps create repos
+    there) or when the app lacks the Administration (write) permission; 409 if the name is taken.
+    Owners and admins."""
+    return await ConnectorService(session, app).create_repo(member, data)
 
 
 project_router = APIRouter(

@@ -46,6 +46,25 @@ async def list_projects(
     return await ProjectService(session).list(member, repo_url=wanted)
 
 
+@router.get("/starred")
+async def list_starred_projects(member: Viewer, session: SessionDep) -> list[uuid.UUID]:
+    """The projects you starred here (they come first in your sidebar and on Projects), in the
+    order you starred them; only ones you can still see."""
+    return await ProjectService(session).starred(member)
+
+
+@router.put("/{project_id}/star", status_code=status.HTTP_204_NO_CONTENT)
+async def star_project(access: ProjectViewer, session: SessionDep) -> None:
+    """Star a project for yourself (nobody else sees your stars)."""
+    await ProjectService(session).star(access.project, access.member, True)
+
+
+@router.delete("/{project_id}/star", status_code=status.HTTP_204_NO_CONTENT)
+async def unstar_project(access: ProjectViewer, session: SessionDep) -> None:
+    """Take your star off a project (no error if it had none)."""
+    await ProjectService(session).star(access.project, access.member, False)
+
+
 @router.post("", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422))
 async def create_project(
     data: ProjectCreate,

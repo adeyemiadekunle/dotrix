@@ -5,6 +5,7 @@ import { cn } from "@pmagent/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIcon,
+  ChartGanttIcon,
   BellIcon,
   BotIcon,
   CircleCheckIcon,
@@ -72,6 +73,7 @@ const PAGES: { label: string; path: string; icon: LucideIcon }[] = [
   { label: "Overview", path: "/overview", icon: LayoutGridIcon },
   { label: "Projects", path: "/projects", icon: FolderKanbanIcon },
   { label: "Tasks", path: "/tasks", icon: ListTodoIcon },
+  { label: "Timeline", path: "/timeline", icon: ChartGanttIcon },
   { label: "Activity", path: "/activity", icon: ActivityIcon },
   { label: "Settings", path: "/settings", icon: SettingsIcon },
   { label: "Profile", path: "/settings/profile", icon: UserIcon },

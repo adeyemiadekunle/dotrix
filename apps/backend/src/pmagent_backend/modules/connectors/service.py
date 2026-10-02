@@ -24,6 +24,7 @@ from .schemas import (
     InstallationAdd,
     InstallationRead,
     RepoConnect,
+    RepoCreate,
     RepoOption,
 )
 
@@ -123,6 +124,28 @@ class ConnectorService:
                 for r in found
             ]
         return sorted(options, key=lambda o: o.full_name.lower())
+
+    async def create_repo(self, member: Membership, data: RepoCreate) -> RepoOption:
+        """A new repo on GitHub, in an organisation the app is installed on (GitHub doesn't let
+        an app create repos in a person's own account); then connect it like any other."""
+        row = await self._installation_row(member.workspace_id, data.installation_ref)
+        if row.account_type != "Organization":
+            raise Forbidden(
+                f"GitHub lets the app create repositories only in organisations; create it on GitHub under "
+                f"{row.account_login}, give the app access to it, then pick it"
+            )
+        repo = await self.app.create_repository(
+            row.installation_id, row.account_login, data.name, private=data.private, description=data.description
+        )
+        AuditLog(self.session).record(
+            workspace_id=member.workspace_id, action="github.repo_created", target=repo.full_name,
+            actor_type=AuthorType.USER, actor_user_id=member.user_id, details={"private": repo.private},
+        )
+        await self.session.commit()
+        return RepoOption(
+            installation_ref=row.id, github_repo_id=repo.id, full_name=repo.full_name, private=repo.private,
+            default_branch=repo.default_branch, html_url=repo.html_url, project_key=None,
+        )
 
     # -- a project's repo --------------------------------------------------------------
 

@@ -22,7 +22,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid_utils.compat import uuid7
 
-from pmagent_backend.core.errors import DomainError, NotFound, Unprocessable
+from pmagent_backend.core.errors import Conflict, DomainError, NotFound, Unprocessable
 from pmagent_backend.core.jobs import Jobs
 from pmagent_backend.core.storage import BlobStorage
 from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
@@ -176,6 +176,18 @@ class DocumentService:
         if document is not None:
             document.status, document.error = DocumentStatus.FAILED, error[:2000]
             await self.session.commit()
+
+    async def retry(self, project_id: uuid.UUID, document_id: uuid.UUID) -> DocumentRead:
+        """Convert a failed document again from its stored original (409 unless it failed)."""
+        document = await self.get(project_id, document_id)
+        if document.status is not DocumentStatus.FAILED:
+            raise Conflict(f"Only a failed conversion can be retried; this one is {document.status.value}")
+        document.status, document.error = DocumentStatus.CONVERTING, None
+        await self.session.commit()
+        assert self.jobs is not None
+        await self.jobs.enqueue("convert_document", document_id=str(document.id))
+        await self.session.refresh(document)  # (an inline job may have finished already)
+        return DocumentRead.model_validate(document)
 
     async def list(self, project_id: uuid.UUID) -> list[DocumentRead]:
         result = await self.session.scalars(

@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmag
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@pmagent/ui/components/sheet";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
-import { CircleAlertIcon, DownloadIcon, EyeIcon, FileTextIcon, FilesIcon, LayersIcon, Loader2Icon } from "lucide-react";
+import { CircleAlertIcon, DownloadIcon, RotateCwIcon, EyeIcon, FileTextIcon, FilesIcon, LayersIcon, Loader2Icon } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -17,7 +17,7 @@ import { Markdown } from "@/components/markdown";
 import { EmptyState } from "@/components/states";
 import { useArchitectureDraft } from "@/lib/agent";
 import { ApiError } from "@/lib/api";
-import { formatBytes, originalUrl, useDocuments, useUploads, type Document } from "@/lib/documents";
+import { formatBytes, originalUrl, useDocuments, useRetryConversion, useUploads, type Document } from "@/lib/documents";
 import { useMembers } from "@/lib/issues";
 import { canManageProjects } from "@/lib/labels";
 import { useProjectScope } from "@/lib/queries";
@@ -95,6 +95,7 @@ function ConvertedView({
 export default function FilesPage() {
   const { workspace, project, scope } = useProjectScope();
   const documents = useDocuments(scope);
+  const retry = useRetryConversion(scope);
   const members = useMembers(workspace?.id);
   const { uploads, upload, reset } = useUploads();
   const [viewing, setViewing] = useState<Document | null>(null);
@@ -239,6 +240,12 @@ export default function FilesPage() {
                   )}
                 </div>
                 <div className="flex gap-1">
+                  {doc.status === "failed" && canManageProjects(workspace?.role) && (
+                    <Button size="sm" variant="outline" disabled={retry.isPending} onClick={() => retry.mutate(doc.id)}>
+                      <RotateCwIcon />
+                      Retry
+                    </Button>
+                  )}
                   {doc.status === "ready" && (
                     <Button size="sm" variant="outline" onClick={() => setViewing(doc)}>
                       <EyeIcon />

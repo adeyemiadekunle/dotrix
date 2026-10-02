@@ -4,18 +4,22 @@ import { Button } from "@pmagent/ui/components/button";
 import { Input } from "@pmagent/ui/components/input";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
-import { FolderPlusIcon, LockIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { CalendarIcon, FolderPlusIcon, LockIcon, PlusIcon, SearchIcon, StarIcon } from "lucide-react";
 import Link from "next/link";
 import { Suspense, useMemo, useState } from "react";
 
 import { AfterHydration } from "@/components/after-hydration";
 import { PageHeader } from "@/components/app-shell";
 import { today } from "@/components/issues/workspace-issue-row";
+import { HealthBadge, formatDay } from "@/components/project-health";
 import { ProjectTile } from "@/components/project-tile";
+import { UserAvatar } from "@/components/user-avatar";
 import { EmptyState, NotFound } from "@/components/states";
-import { useWorkspaceIssues } from "@/lib/issues";
+import { useMembers, useWorkspaceIssues } from "@/lib/issues";
 import { PROJECT_SOURCE_LABELS, ROLE_LABELS, canManageProjects, withArticle } from "@/lib/labels";
+import { memberAvatarSrc } from "@/lib/profile";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
+import { starredFirst, useStarredProjects, useToggleStar } from "@/lib/stars";
 import { useSearchParam } from "@/lib/url-state";
 
 type Sort = "active" | "name" | "progress";
@@ -23,6 +27,9 @@ type Sort = "active" | "name" | "progress";
 function ProjectsPage() {
   const { workspace, notFound } = useCurrentWorkspace();
   const projects = useProjects(workspace?.id);
+  const starred = useStarredProjects(workspace?.id);
+  const toggleStar = useToggleStar(workspace?.id);
+  const members = useMembers(workspace && workspace.role !== "guest" ? workspace.id : undefined);
   const issues = useWorkspaceIssues(workspace && workspace.role !== "guest" ? workspace.id : undefined, {});
   const [query, setQuery] = useState("");
   const [sortParam, setSort] = useSearchParam("sort");
@@ -30,11 +37,15 @@ function ProjectsPage() {
   const sort: Sort = sortParam === "name" || sortParam === "progress" ? sortParam : "active";
 
   const stats = useMemo(() => {
-    const byProject = new Map<string, { total: number; done: number; overdue: number; lastActive: string }>();
+    const byProject = new Map<
+      string,
+      { total: number; done: number; overdue: number; lastActive: string; people: Set<string> }
+    >();
     for (const issue of issues.data ?? []) {
       if (issue.type === "epic") continue;
-      const s = byProject.get(issue.project_id) ?? { total: 0, done: 0, overdue: 0, lastActive: "" };
+      const s = byProject.get(issue.project_id) ?? { total: 0, done: 0, overdue: 0, lastActive: "", people: new Set() };
       s.total += 1;
+      if (issue.status !== "done" && issue.assignee_user_id) s.people.add(issue.assignee_user_id);
       if (issue.status === "done") s.done += 1;
       else if (issue.due && issue.due < today()) s.overdue += 1;
       if (issue.updated_at > s.lastActive) s.lastActive = issue.updated_at;
@@ -53,10 +64,14 @@ function ProjectsPage() {
       return s?.total ? s.done / s.total : 0;
     };
     const active = (p: (typeof list)[number]) => [stats.get(p.id)?.lastActive ?? "", p.updated_at].sort().at(-1)!;
-    if (sort === "name") return [...list].sort((a, b) => a.name.localeCompare(b.name));
-    if (sort === "progress") return [...list].sort((a, b) => percent(b.id) - percent(a.id));
-    return [...list].sort((a, b) => active(b).localeCompare(active(a)));
-  }, [projects.data, query, sort, stats]);
+    const sorted =
+      sort === "name"
+        ? [...list].sort((a, b) => a.name.localeCompare(b.name))
+        : sort === "progress"
+          ? [...list].sort((a, b) => percent(b.id) - percent(a.id))
+          : [...list].sort((a, b) => active(b).localeCompare(active(a)));
+    return starredFirst(sorted, starred.data); // your starred ones first, each group sorted
+  }, [projects.data, query, sort, stats, starred.data]);
 
   if (notFound) return <NotFound what="workspace" />;
   const canCreate = canManageProjects(workspace?.role);
@@ -163,23 +178,44 @@ function ProjectsPage() {
         {workspace && shown.length > 0 && (
           <div className={asList ? "bg-card flex flex-col rounded-xl border" : "grid gap-4 sm:grid-cols-2 xl:grid-cols-3"}>
             {shown.map((project) => {
-              const s = stats.get(project.id) ?? { total: 0, done: 0, overdue: 0, lastActive: "" };
+              const s = stats.get(project.id) ?? { total: 0, done: 0, overdue: 0, lastActive: "", people: new Set<string>() };
               const percent = s.total ? Math.round((s.done / s.total) * 100) : 0;
               const restricted = project.access === "restricted";
+              const isStarred = starred.data?.includes(project.id) ?? false;
+              const late = project.target_date && project.target_date < today() && percent < 100;
+              const people = [...s.people]
+                .map((id) => members.data?.find((m) => m.user_id === id))
+                .filter((m) => m !== undefined);
               return (
-                <Link
+                // The whole card opens the project (a stretched link), with the star button above it.
+                <div
                   key={project.id}
-                  href={`/w/${workspace.slug}/p/${project.key}`}
                   className={cn(
-                    "hover:border-foreground/20 flex flex-col gap-3 transition-colors",
+                    "hover:border-foreground/20 relative flex flex-col gap-3 transition-colors",
                     asList ? "border-b px-4 py-3 last:border-b-0 hover:bg-muted/40" : "bg-card rounded-xl border p-4",
                   )}
                 >
                   <span className="flex items-center gap-2">
                     <ProjectTile projectKey={project.key} />
-                    <span className="min-w-0 truncate font-semibold">{project.name}</span>
+                    <Link
+                      href={`/w/${workspace.slug}/p/${project.key}`}
+                      className="min-w-0 truncate font-semibold after:absolute after:inset-0"
+                    >
+                      {project.name}
+                    </Link>
                     {restricted && <LockIcon className="text-muted-foreground size-3.5 shrink-0" aria-label="Only people added" />}
+                    {project.health && <HealthBadge health={project.health} />}
                     <span className="text-muted-foreground ml-auto font-mono text-xs">{project.key}</span>
+                    <button
+                      type="button"
+                      onClick={() => toggleStar.mutate({ projectId: project.id, starred: !isStarred })}
+                      aria-pressed={isStarred}
+                      aria-label={isStarred ? `Unstar ${project.name}` : `Star ${project.name}`}
+                      title={isStarred ? "Unstar" : "Star: show it first"}
+                      className="text-muted-foreground hover:text-foreground relative z-10 -m-1 rounded p-1"
+                    >
+                      <StarIcon className={cn("size-4", isStarred && "fill-warning text-warning")} />
+                    </button>
                   </span>
                   {!asList && (
                     <span className="text-muted-foreground line-clamp-2 text-sm">
@@ -192,14 +228,40 @@ function ProjectsPage() {
                     </span>
                     <span className="text-muted-foreground font-mono text-xs">{percent}%</span>
                   </span>
-                  <span className="text-muted-foreground flex flex-wrap gap-x-3 text-xs">
+                  <span className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                     <span>
                       {s.done}/{s.total} done
                     </span>
-                    {s.overdue > 0 && <span className="font-medium text-red-600 dark:text-red-400">{s.overdue} overdue</span>}
+                    {s.overdue > 0 && <span className="text-destructive font-medium">{s.overdue} overdue</span>}
+                    {project.target_date && (
+                      <span className={cn("flex items-center gap-1", late && "text-destructive font-medium")}>
+                        <CalendarIcon className="size-3" />
+                        Due {formatDay(project.target_date)}
+                      </span>
+                    )}
                     {restricted && <span>Only people added</span>}
+                    {people.length > 0 && (
+                      <span
+                        className="ml-auto flex -space-x-1.5"
+                        aria-label={`Working on it: ${people.map((m) => m.display_name).join(", ")}`}
+                      >
+                        {people.slice(0, 4).map((m) => (
+                          <UserAvatar
+                            key={m.user_id}
+                            name={m.display_name}
+                            src={memberAvatarSrc(workspace.id, m)}
+                            className="ring-card size-5 text-[9px] ring-2"
+                          />
+                        ))}
+                        {people.length > 4 && (
+                          <span className="bg-muted ring-card flex size-5 items-center justify-center rounded-full text-[9px] ring-2">
+                            +{people.length - 4}
+                          </span>
+                        )}
+                      </span>
+                    )}
                   </span>
-                </Link>
+                </div>
               );
             })}
           </div>

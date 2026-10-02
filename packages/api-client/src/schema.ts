@@ -1058,6 +1058,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/starred": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Starred Projects
+         * @description The projects you starred here (they come first in your sidebar and on Projects), in the
+         *     order you starred them; only ones you can still see.
+         */
+        get: operations["list_starred_projects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/star": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Star Project
+         * @description Star a project for yourself (nobody else sees your stars).
+         */
+        put: operations["star_project"];
+        post?: never;
+        /**
+         * Unstar Project
+         * @description Take your star off a project (no error if it had none).
+         */
+        delete: operations["unstar_project"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -1330,6 +1375,28 @@ export interface paths {
          *     project's external docs is setup work: owners and admins.
          */
         post: operations["upload_document"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Document Conversion
+         * @description Convert a document that failed again, from its stored original: it's `converting`
+         *     until the job finishes, then `ready` or `failed` with a new `error`. 409 unless it failed.
+         *     Owners and admins (the people who add documents).
+         */
+        post: operations["retry_document_conversion"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2429,7 +2496,14 @@ export interface paths {
          */
         get: operations["list_github_repos"];
         put?: never;
-        post?: never;
+        /**
+         * Create Github Repo
+         * @description Create a repo on GitHub in an organisation the app is installed on (with a README), ready
+         *     to connect to a project. 403 for a personal account (GitHub doesn't let apps create repos
+         *     there) or when the app lacks the Administration (write) permission; 409 if the name is taken.
+         *     Owners and admins.
+         */
+        post: operations["create_github_repo"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3817,8 +3891,15 @@ export interface components {
             estimate: number | null;
             /** Due */
             due: string | null;
+            /** Scheduled */
+            scheduled: string | null;
             /** Rank */
             rank: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /**
              * Updated At
              * Format: date-time
@@ -3835,19 +3916,12 @@ export interface components {
             reporter_user_id: string | null;
             /** Reporter Agent */
             reporter_agent: string | null;
-            /** Scheduled */
-            scheduled: string | null;
             /** Components */
             components: string[];
             /** Links */
             links: {
                 [key: string]: unknown;
             }[];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
             /** Resolved At */
             resolved_at: string | null;
             /**
@@ -3901,8 +3975,18 @@ export interface components {
             estimate: number | null;
             /** Due */
             due: string | null;
+            /**
+             * Scheduled
+             * @description When work on it is planned to start
+             */
+            scheduled?: string | null;
             /** Rank */
             rank: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /**
              * Updated At
              * Format: date-time
@@ -4405,6 +4489,12 @@ export interface components {
              */
             access: components["schemas"]["ProjectAccessLevel"];
         };
+        /**
+         * ProjectHealth
+         * @description How the project is going, as its owners and admins say (shown on its card).
+         * @enum {string}
+         */
+        ProjectHealth: "on_track" | "at_risk" | "off_track";
         /** ProjectMemberRead */
         ProjectMemberRead: {
             /**
@@ -4474,6 +4564,13 @@ export interface components {
              * @description Per-run token budget; null means the server's default
              */
             token_budget: number | null;
+            /** @description How it's going, as its owners and admins say; null: not said */
+            health: components["schemas"]["ProjectHealth"] | null;
+            /**
+             * Target Date
+             * @description When it should be done; null: no date
+             */
+            target_date: string | null;
             /** Knowledge Revision */
             knowledge_revision: number;
             /**
@@ -4517,6 +4614,13 @@ export interface components {
              * @description Link the project to its repo (any remote form; stored canonical). Send null to unlink; leave it out to keep the current link.
              */
             repo_url?: string | null;
+            /** @description on_track, at_risk, or off_track; send null to clear, leave it out to keep it */
+            health?: components["schemas"]["ProjectHealth"] | null;
+            /**
+             * Target Date
+             * @description When it should be done; send null to clear, leave it out to keep it
+             */
+            target_date?: string | null;
         };
         /** QuoteCheck */
         QuoteCheck: {
@@ -4583,6 +4687,27 @@ export interface components {
             installation_ref: string;
             /** Github Repo Id */
             github_repo_id: number;
+        };
+        /** RepoCreate */
+        RepoCreate: {
+            /**
+             * Installation Ref
+             * Format: uuid
+             * @description The organisation's installation to create it in
+             */
+            installation_ref: string;
+            /** Name */
+            name: string;
+            /**
+             * Private
+             * @default true
+             */
+            private: boolean;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
         };
         /**
          * RepoOption
@@ -5277,8 +5402,18 @@ export interface components {
             estimate: number | null;
             /** Due */
             due: string | null;
+            /**
+             * Scheduled
+             * @description When work on it is planned to start
+             */
+            scheduled?: string | null;
             /** Rank */
             rank: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /**
              * Updated At
              * Format: date-time
@@ -8252,6 +8387,151 @@ export interface operations {
             };
         };
     };
+    list_starred_projects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    star_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    unstar_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     get_project: {
         parameters: {
             query?: never;
@@ -9268,6 +9548,84 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    retry_document_conversion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -12826,6 +13184,86 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    create_github_repo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoOption"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;

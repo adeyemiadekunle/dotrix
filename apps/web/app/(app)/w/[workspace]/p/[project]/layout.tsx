@@ -2,7 +2,7 @@
 
 import { Button } from "@pmagent/ui/components/button";
 import { cn } from "@pmagent/ui/lib/utils";
-import { InboxIcon, MessageSquareIcon, PlusIcon, SettingsIcon } from "lucide-react";
+import { InboxIcon, MessageSquareIcon, PlusIcon, SettingsIcon, StarIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState, type ReactNode } from "react";
@@ -16,6 +16,7 @@ import { IssueDrawer } from "@/components/issues/issue-drawer";
 import { NewIssueDialog } from "@/components/issues/new-issue-dialog";
 import { NotFound } from "@/components/states";
 import { useProjectScope } from "@/lib/queries";
+import { useStarredProjects, useToggleStar } from "@/lib/stars";
 
 // Every project has the same views. Chat is the workspace's (about this project via "Ask in
 // Chat"); a summary is something you ask it for.
@@ -24,6 +25,7 @@ const TABS = [
   { href: "board", label: "Board" },
   { href: "list", label: "List" },
   { href: "table", label: "Table" },
+  { href: "timeline", label: "Timeline" },
   { href: "files", label: "Files" },
   { href: "knowledge", label: "Knowledge" },
   { href: "activity", label: "Activity" },
@@ -35,6 +37,9 @@ function ProjectFrame({ children }: { children: ReactNode }) {
   const chat = useChat();
   const [creating, setCreating] = useState(false);
   const [triaging, setTriaging] = useState(false);
+  const starred = useStarredProjects(workspace?.id);
+  const toggleStar = useToggleStar(workspace?.id);
+  const isStarred = Boolean(project && starred.data?.includes(project.id));
 
   const base = workspace && project ? `/w/${workspace.slug}/p/${project.key}` : "";
   return (
@@ -47,6 +52,16 @@ function ProjectFrame({ children }: { children: ReactNode }) {
           actions={
             project && (
               <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => toggleStar.mutate({ projectId: project.id, starred: !isStarred })}
+                  aria-pressed={isStarred}
+                  aria-label={isStarred ? "Unstar project" : "Star project"}
+                  title={isStarred ? "Unstar" : "Star: show it first in the sidebar and on Projects"}
+                >
+                  <StarIcon className={cn(isStarred && "fill-warning text-warning")} />
+                </Button>
                 <Button size="sm" variant="outline" asChild>
                   <Link href={chat.href} aria-label="Ask in Chat" title="Ask the agents about this project">
                     <MessageSquareIcon />

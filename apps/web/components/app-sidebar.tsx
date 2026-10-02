@@ -30,6 +30,7 @@ import {
   CircleCheckIcon,
   FolderKanbanIcon,
   LockIcon,
+  StarIcon,
   ChartGanttIcon,
   HomeIcon,
   LayoutGridIcon,
@@ -51,14 +52,15 @@ import { canManageProjects } from "@/lib/labels";
 import { useWorkspaceIssues } from "@/lib/issues";
 import { useNotificationCounts } from "@/lib/notifications";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
+import { starredFirst, useStarredProjects } from "@/lib/stars";
 
-// The open project's views, the same as its tabs. Timeline is shown but not built yet.
-const PROJECT_VIEWS: { href: string; label: string; later?: boolean }[] = [
+// The open project's views, the same as its tabs.
+const PROJECT_VIEWS: { href: string; label: string }[] = [
   { href: "overview", label: "Overview" },
   { href: "board", label: "Board" },
   { href: "list", label: "List" },
   { href: "table", label: "Table" },
-  { href: "", label: "Timeline", later: true },
+  { href: "timeline", label: "Timeline" },
   { href: "files", label: "Files" },
   { href: "knowledge", label: "Knowledge" },
   { href: "activity", label: "Activity" },
@@ -93,15 +95,6 @@ function useExpandedProjects(): [Record<string, boolean>, (projectId: string, op
   return [expanded, set];
 }
 
-/** A "Later" tag on what's planned but not built (Timeline). */
-function Later() {
-  return (
-    <span className="ml-auto rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800 group-data-[collapsible=icon]:hidden dark:bg-amber-950 dark:text-amber-300">
-      Later
-    </span>
-  );
-}
-
 /**
  * Placeholder rows while the workspace loads: links without it would point outside it. Fixed
  * widths, since these render on the server too (SidebarMenuSkeleton's random width wouldn't match).
@@ -121,6 +114,7 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { shown: workspace } = useCurrentWorkspace();
   const projects = useProjects(workspace?.id);
+  const starred = useStarredProjects(workspace?.id);
   const counts = useNotificationCounts(workspace?.id);
   const waiting = counts.data?.unread ?? 0;
   const { setOpenMobile } = useSidebar();
@@ -233,10 +227,11 @@ export function AppSidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton aria-disabled tooltip="Timeline (later)" className="text-muted-foreground cursor-default hover:bg-transparent">
-                      <ChartGanttIcon />
-                      <span>Timeline</span>
-                      <Later />
+                    <SidebarMenuButton asChild isActive={pathname === `${base}/timeline`} tooltip="Timeline">
+                      <Link href={`${base}/timeline`}>
+                        <ChartGanttIcon />
+                        <span>Timeline</span>
+                      </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
@@ -273,7 +268,7 @@ export function AppSidebar() {
                     <SidebarMenuSkeleton />
                   </SidebarMenuItem>
                 ))}
-              {projects.data?.map((project) => {
+              {starredFirst(projects.data ?? [], starred.data).map((project) => {
                 const href = `${base}/p/${project.key}`; // opens its Overview
                 const open = pathname === href || pathname.startsWith(`${href}/`);
                 const showViews = expanded[project.id] ?? open;
@@ -283,6 +278,12 @@ export function AppSidebar() {
                       <Link href={href}>
                         <ProjectTile projectKey={project.key} className="-ml-0.5 group-data-[collapsible=icon]:ml-0 group-data-[collapsible=icon]:size-4 group-data-[collapsible=icon]:text-[9px]" />
                         <span className="flex-1 truncate">{project.name}</span>
+                        {starred.data?.includes(project.id) && (
+                          <StarIcon
+                            className="size-3.5! fill-warning text-warning group-data-[collapsible=icon]:hidden"
+                            aria-label="Starred"
+                          />
+                        )}
                         {project.access === "restricted" && (
                           <LockIcon className="text-muted-foreground size-3.5! group-data-[collapsible=icon]:hidden" aria-label="Only people added" />
                         )}
@@ -300,16 +301,9 @@ export function AppSidebar() {
                       <SidebarMenuSub aria-label={`${project.name} views`}>
                         {PROJECT_VIEWS.map((view) => (
                           <SidebarMenuSubItem key={view.label}>
-                            {view.later ? (
-                              <SidebarMenuSubButton aria-disabled className="text-muted-foreground cursor-default hover:bg-transparent">
-                                <span>{view.label}</span>
-                                <Later />
-                              </SidebarMenuSubButton>
-                            ) : (
-                              <SidebarMenuSubButton asChild isActive={pathname === `${href}/${view.href}`}>
-                                <Link href={`${href}/${view.href}`}>{view.label}</Link>
-                              </SidebarMenuSubButton>
-                            )}
+                            <SidebarMenuSubButton asChild isActive={pathname === `${href}/${view.href}`}>
+                              <Link href={`${href}/${view.href}`}>{view.label}</Link>
+                            </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
                         ))}
                       </SidebarMenuSub>
