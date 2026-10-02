@@ -23,7 +23,9 @@ test("a project's views: overview, list, table, activity, and My issues", async 
   await expect(page.getByText("Write the onboarding docs")).toBeVisible();
   await page.getByRole("button", { name: "By status" }).click();
   await expect(page).toHaveURL(/group=status/);
-  await expect(page.getByRole("heading", { name: /To do/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /To do/ })).toBeVisible();
+  // Groups fold, as on My issues; Done starts folded.
+  await expect(page.getByRole("button", { name: /Done/ })).toHaveAttribute("aria-expanded", "false");
 
   // Table: every issue with its columns; a column can be hidden.
   await tabs.getByRole("link", { name: "Table", exact: true }).click();

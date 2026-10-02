@@ -191,7 +191,7 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 
 ### Phase 1: shell and My issues
 - [x] Board columns fit their cards (`@2xl:items-start` on the columns row; they stretched to the tallest)
-- [x] Sidebar in three groups: you (Home, Notifications, My issues with its open count, Search with ⌘K on a Mac and Ctrl K elsewhere), Workspace (Chat, Overview, Projects, Tasks, Timeline, Activity; for owners and admins Agents and Audit log until Phase 5), Projects (a lock on restricted ones, the open project expanding to its views), and Settings at the bottom above you. Notifications is the Approvals page renamed (`/approvals`) until Phase 6
+- [x] Sidebar in three groups: you (Home, Notifications, My issues with its open count, Search with ⌘K on a Mac and Ctrl K elsewhere), Workspace (Overview, Chat, Projects, Tasks, Timeline, Activity; for owners and admins Agents and Audit log until Phase 5), Projects (a lock on restricted ones; each project's views fold away with its chevron, the one you're in starting open, remembered per browser), and Settings at the bottom above you. Notifications is the Approvals page renamed (`/approvals`) until Phase 6
   - [x] Timeline shown as *Later* (disabled) in the Workspace group and under each project
   - [ ] starred projects first (needs favourites)
 - [x] Top bar on every page: breadcrumb, the page's actions, Search (Ctrl/⌘ K), and the notifications bell (a dot while something waits for a decision)
@@ -207,7 +207,7 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 - [x] Tabs: Overview, Board, List, Table, Files, Knowledge, Activity (then Chat and Briefing until Phase 3; settings stays the gear); the open project expands to the same views in the sidebar. A project opens on Overview; `/backlog` and `/docs` redirect to `/list` and `/files`
   - [ ] Timeline *later* (needs start dates and the project graph)
 - [x] Overview as the landing tab: about, progress by status, coming up (soonest due first), epics, details, "Ask Chat" for a summary, recent activity
-- [x] List replaces Backlog: Ranked (drag to reorder, the old backlog) or By status (`?group=status`), with the epics alongside; Table: every issue, sortable columns, a Columns menu (remembered per browser), search, Export CSV
+- [x] List replaces Backlog: Ranked (drag to reorder, the old backlog) or By status (`?group=status`), with the epics alongside; laid out like My issues (groups as cards that fold, Done folded; rows with status, key, title, epic, priority, due, assignee); Table: every issue, sortable columns, a Columns menu (remembered per browser), search, Export CSV
   - [x] Table bulk actions: select rows (or all shown), then change status or assign them together; failures stay selected
 - [x] Files replaces Docs: drop zone, type filter, sort (newest, name, largest), conversion status
   - [ ] retry a failed conversion (needs an endpoint)

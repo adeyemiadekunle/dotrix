@@ -12,6 +12,15 @@ test("the workspace's pages: overview, tasks, activity, projects, and search", a
 
   const sidebar = page.locator("[data-sidebar=sidebar]").first();
 
+  // The workspace's pages start with Overview; a project's views fold away.
+  const workspaceLinks = sidebar.locator("[data-sidebar=group]").filter({ hasText: "Workspace" }).getByRole("link");
+  await expect(workspaceLinks.first()).toHaveText("Overview");
+  await expect(sidebar.getByRole("list", { name: "Kumove views" })).toBeVisible();
+  await sidebar.getByRole("button", { name: "Hide Kumove views" }).click();
+  await expect(sidebar.getByRole("list", { name: "Kumove views" })).toHaveCount(0);
+  await sidebar.getByRole("button", { name: "Show Kumove views" }).click();
+  await expect(sidebar.getByRole("list", { name: "Kumove views" })).toBeVisible();
+
   // Overview: the project in the portfolio with its open issue.
   await sidebar.getByRole("link", { name: "Overview", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();

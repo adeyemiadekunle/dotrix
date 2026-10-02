@@ -10,6 +10,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -21,9 +22,11 @@ import {
   useSidebar,
 } from "@pmagent/ui/components/sidebar";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { cn } from "@pmagent/ui/lib/utils";
 import {
   ActivityIcon,
   BellIcon,
+  ChevronRightIcon,
   CircleCheckIcon,
   FolderKanbanIcon,
   LockIcon,
@@ -38,7 +41,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { NavUser } from "@/components/nav-user";
 import { ProjectTile } from "@/components/project-tile";
@@ -60,6 +63,35 @@ const PROJECT_VIEWS: { href: string; label: string; later?: boolean }[] = [
   { href: "knowledge", label: "Knowledge" },
   { href: "activity", label: "Activity" },
 ];
+
+const EXPANDED_KEY = "pmagent:sidebar-projects";
+
+/**
+ * Which projects show their views in the sidebar: the one you're in until you fold it, and any
+ * other you open. Remembered in this browser (a convenience: it falls back to the defaults).
+ */
+function useExpandedProjects(): [Record<string, boolean>, (projectId: string, open: boolean) => void] {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    try {
+      setExpanded(JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? "{}"));
+    } catch {
+      // storage blocked or garbled: the defaults
+    }
+  }, []);
+  function set(projectId: string, open: boolean) {
+    setExpanded((current) => {
+      const next = { ...current, [projectId]: open };
+      try {
+        localStorage.setItem(EXPANDED_KEY, JSON.stringify(next));
+      } catch {
+        // only a convenience
+      }
+      return next;
+    });
+  }
+  return [expanded, set];
+}
 
 /** A "Later" tag on what's planned but not built (Timeline). */
 function Later() {
@@ -92,6 +124,7 @@ export function AppSidebar() {
   const counts = useNotificationCounts(workspace?.id);
   const waiting = counts.data?.unread ?? 0;
   const { setOpenMobile } = useSidebar();
+  const [expanded, setExpanded] = useExpandedProjects();
   const palette = usePalette();
   const shortcut = useShortcutLabel();
   const canSee = Boolean(workspace && workspace.role !== "guest");
@@ -168,18 +201,18 @@ export function AppSidebar() {
               {workspace ? (
                 <>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={pathname === `${base}/chat`} tooltip="Chat">
-                      <Link href={`${base}/chat${projectKey ? `?project=${projectKey}` : ""}`}>
-                        <MessageSquareIcon />
-                        <span>Chat</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={pathname === `${base}/overview`} tooltip="Overview">
                       <Link href={`${base}/overview`}>
                         <LayoutGridIcon />
                         <span>Overview</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={pathname === `${base}/chat`} tooltip="Chat">
+                      <Link href={`${base}/chat${projectKey ? `?project=${projectKey}` : ""}`}>
+                        <MessageSquareIcon />
+                        <span>Chat</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -243,6 +276,7 @@ export function AppSidebar() {
               {projects.data?.map((project) => {
                 const href = `${base}/p/${project.key}`; // opens its Overview
                 const open = pathname === href || pathname.startsWith(`${href}/`);
+                const showViews = expanded[project.id] ?? open;
                 return (
                   <SidebarMenuItem key={project.id}>
                     <SidebarMenuButton asChild isActive={open} tooltip={project.name}>
@@ -254,7 +288,15 @@ export function AppSidebar() {
                         )}
                       </Link>
                     </SidebarMenuButton>
-                    {open && (
+                    <SidebarMenuAction
+                      onClick={() => setExpanded(project.id, !showViews)}
+                      aria-expanded={showViews}
+                      aria-label={`${showViews ? "Hide" : "Show"} ${project.name} views`}
+                      title={showViews ? "Hide views" : "Show views"}
+                    >
+                      <ChevronRightIcon className={cn("transition-transform", showViews && "rotate-90")} />
+                    </SidebarMenuAction>
+                    {showViews && (
                       <SidebarMenuSub aria-label={`${project.name} views`}>
                         {PROJECT_VIEWS.map((view) => (
                           <SidebarMenuSubItem key={view.label}>
