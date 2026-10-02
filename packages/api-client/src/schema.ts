@@ -2351,6 +2351,141 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/github": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Github Status
+         * @description Whether the GitHub App is set up here, where to install it, and the GitHub accounts it's
+         *     installed on that this workspace uses. Owners and admins.
+         */
+        get: operations["get_github_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/github/installations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Github Installation
+         * @description Add the app's installation on a GitHub account to this workspace: after installing it
+         *     (GitHub's setup redirect gives `installation_id`), a GitHub sign-in's `code` proves you can
+         *     manage it (403 if GitHub says you can't). Owners and admins.
+         */
+        post: operations["add_github_installation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/github/installations/{installation_ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Github Installation
+         * @description Forget a GitHub account here; its projects' repos are disconnected. The app stays
+         *     installed on GitHub until uninstalled there. Owners and admins.
+         */
+        delete: operations["remove_github_installation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/github/repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Github Repos
+         * @description Every repo the workspace's installations can see, private ones included, and which
+         *     project uses each. Owners and admins.
+         */
+        get: operations["list_github_repos"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project Repository
+         * @description The repo the project's code lives in, connected through the GitHub App (null if none).
+         */
+        get: operations["get_project_repository"];
+        /**
+         * Connect Project Repository
+         * @description Connect the project to a repo one of the workspace's installations can see (replacing
+         *     any it had); its repo address follows. 409 if another project here uses it. Owners and admins.
+         */
+        put: operations["connect_project_repository"];
+        post?: never;
+        /**
+         * Disconnect Project Repository
+         * @description Stop reaching the project's repo through the app (its address stays). Owners and admins.
+         */
+        delete: operations["disconnect_project_repository"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/github/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Github Webhook
+         * @description GitHub's deliveries for the app (pushes, installs and uninstalls, repos added or
+         *     removed), signed with the webhook secret. Not for people: GitHub calls it.
+         */
+        post: operations["github_webhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
         parameters: {
             query?: never;
@@ -3132,6 +3267,39 @@ export interface components {
              */
             mentions?: string[];
         };
+        /**
+         * ConnectedRepoRead
+         * @description The repository a project's code lives in, connected through the GitHub App.
+         */
+        ConnectedRepoRead: {
+            /** Full Name */
+            full_name: string;
+            /** Html Url */
+            html_url: string;
+            /** Private */
+            private: boolean;
+            /** Default Branch */
+            default_branch: string;
+            /**
+             * Account Login
+             * @description The GitHub account whose installation reaches it
+             */
+            account_login: string;
+            /**
+             * Connected At
+             * Format: date-time
+             */
+            connected_at: string;
+            /** Connected By Id */
+            connected_by_id: string | null;
+            /**
+             * Last Push Sha
+             * @description The default branch's latest commit we heard of
+             */
+            last_push_sha: string | null;
+            /** Last Push At */
+            last_push_at: string | null;
+        };
         /** Decision */
         Decision: {
             /**
@@ -3396,6 +3564,21 @@ export interface components {
              */
             state: string;
         };
+        /** GitHubStatus */
+        GitHubStatus: {
+            /**
+             * Configured
+             * @description The GitHub App is set up on this server
+             */
+            configured: boolean;
+            /**
+             * Install Url
+             * @description GitHub's page to install the app (add `?state=`)
+             */
+            install_url: string | null;
+            /** Installations */
+            installations: components["schemas"]["InstallationRead"][];
+        };
         /** Health */
         Health: {
             /**
@@ -3419,6 +3602,51 @@ export interface components {
              * @description The API version
              */
             version: string;
+        };
+        /**
+         * InstallationAdd
+         * @description Add an installation the person just made (or can manage): GitHub's `installation_id`, and
+         *     the `code` from a GitHub sign-in right after, which proves they can manage it.
+         */
+        InstallationAdd: {
+            /** Installation Id */
+            installation_id: number;
+            /** Code */
+            code: string;
+        };
+        /**
+         * InstallationRead
+         * @description The GitHub App installed on a GitHub account, added to this workspace.
+         */
+        InstallationRead: {
+            /**
+             * Id
+             * Format: uuid
+             * @description This workspace's reference to it (not GitHub's id)
+             */
+            id: string;
+            /**
+             * Installation Id
+             * @description GitHub's id for the installation
+             */
+            installation_id: number;
+            /**
+             * Account Login
+             * @description The GitHub user or organisation it's installed on
+             */
+            account_login: string;
+            /**
+             * Account Type
+             * @description `User` or `Organization`
+             */
+            account_type: string;
+            /** Suspended */
+            suspended: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * InviteKind
@@ -4309,6 +4537,43 @@ export interface components {
         RefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /** RepoConnect */
+        RepoConnect: {
+            /**
+             * Installation Ref
+             * Format: uuid
+             * @description Which of the workspace's installations reaches it
+             */
+            installation_ref: string;
+            /** Github Repo Id */
+            github_repo_id: number;
+        };
+        /**
+         * RepoOption
+         * @description A repo one of the workspace's installations can see, and which project uses it, if any.
+         */
+        RepoOption: {
+            /**
+             * Installation Ref
+             * Format: uuid
+             */
+            installation_ref: string;
+            /** Github Repo Id */
+            github_repo_id: number;
+            /** Full Name */
+            full_name: string;
+            /** Private */
+            private: boolean;
+            /** Default Branch */
+            default_branch: string;
+            /** Html Url */
+            html_url: string;
+            /**
+             * Project Key
+             * @description The project here it's connected to, if any
+             */
+            project_key: string | null;
         };
         /** RestoreRequest */
         RestoreRequest: {
@@ -12274,6 +12539,508 @@ export interface operations {
             };
             /** @description Request body or parameters failed validation */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_github_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubStatus"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    add_github_installation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallationAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    remove_github_installation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                installation_ref: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_github_repos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoOption"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_project_repository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedRepoRead"] | null;
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    connect_project_repository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoConnect"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedRepoRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    disconnect_project_repository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    github_webhook: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-github-event"?: string;
+                "x-hub-signature-256"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

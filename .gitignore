@@ -35,3 +35,6 @@ docs/files.zip
 playwright-report/
 test-results/
 .next-e2e/
+
+# The GitHub App private key (PMAGENT_GITHUB_APP_PRIVATE_KEY_PATH)
+*.pem

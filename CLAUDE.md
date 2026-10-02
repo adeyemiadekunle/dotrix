@@ -90,7 +90,7 @@ apps/backend/
 │   │   ├── audit/               append-only audit log
 │   │   ├── research/            web research for agent runs: sources per run (S1, S2, …), the page cache per workspace, web limits and Tavily credits, report claims checked against what was read
 │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
-│   │   └── connectors/          (planned, FR-10/12) GitHub, GitLab, doc sources (OAuth)
+│   │   └── connectors/          the GitHub App (github_app.py: app JWT, installation tokens), installations per workspace, each project's connected repo, the webhook (FR-10); GitLab and doc sources planned (FR-12)
 │   ├── jobs.py                  background jobs by name (send_email, send_password_reset, index_knowledge, ...); where they run: core/jobs.py
 │   └── worker.py                arq worker (`pnpm dev:worker`): agent runs and jobs when PMAGENT_JOBS=worker
 └── tests/
@@ -330,8 +330,12 @@ Decided (D3, 2026-10-01): Tavily, behind a pluggable provider; without a key the
 - [ ] An in-app inbox: approvals waiting, findings, research watch changes, run results; email for approvals and high-severity findings (from Phase 4), batched per run
 
 ### Step 5: code (needs the GitHub App, FR-10 / Phase 5)
-- [ ] **(you)** register the GitHub App (contents and pull requests read, webhooks; write later for PRs)
-- [ ] Connect a project's repository; a shallow checkout per commit in the worker
+Decided (2026-10-02): a project's code is connected through the **pmagent GitHub App** (each repo picked for its project, from the web, private repos included). Agents read code on the platform; **coding** happens in two places: on the web, in a **container** that edits a checkout and raises a PR; from the **CLI or desktop**, in the person's own **local folder** (their checkout), changes they commit. Built in that order, so the coding agent arrives with everything it needs.
+- [ ] **(you)** register the GitHub App, extending the sign-in app: Repository permissions Contents (read and write), Metadata (read), Pull requests (read and write), Checks and Commit statuses (read); Account permissions Email addresses (read). Events: push, pull_request, installation, installation_repositories. Setup URL `{web}/api/github/setup` (redirect on update); webhook URL `{api}/v1/github/webhook` with a secret. Put `PMAGENT_GITHUB_APP_ID`, `PMAGENT_GITHUB_APP_SLUG`, `PMAGENT_GITHUB_APP_PRIVATE_KEY` (or `_PATH`), `PMAGENT_GITHUB_WEBHOOK_SECRET` in `.env`
+- [x] **5a Connect repos (GitHub App)** (`modules/connectors`): a workspace adds the app's installations on GitHub accounts (owners and admins; `POST /v1/workspaces/{id}/github/installations` with a GitHub sign-in's code, checked against `GET /user/installations`, so nobody adopts someone else's installation; the sign-in app must be the GitHub App itself). Each project connects one repo from them (`GET .../github/repos`, `PUT/DELETE .../projects/{id}/repository`; 409 `repo_taken`), private repos included; the project's `repo_url` follows, so `pmagent connect` finds it. Webhooks (`POST /v1/github/webhook`, HMAC-checked) record default-branch pushes, forget uninstalled installations, and disconnect repos taken from the app. Moving a project drops its connection (installations belong to a workspace). Audited `github.installation_added` / `_removed`, `project.repo_connected` / `_disconnected`. Web: Settings → GitHub (`/api/github/install` → GitHub → `/api/github/setup` → a GitHub sign-in in install mode → back), the repo picker on project creation and in project settings → Repository (an address still works for other hosts). Read-only so far: no token is stored, each request gets an installation token
+- [ ] **5b Code for agents:** the worker keeps a shallow checkout of each connected repo's default branch (installation token, refreshed on push); read-only tools `code.tree`, `code.read`, `code.search` with the repo's `AGENTS.md` / `CLAUDE.md` as data (step 2); the architecture draft and Reviewer read the code (FR-13)
+- [ ] **5c Coding on the web (container):** "Start coding" on an issue runs a coding agent (Claude Code or Codex, headless) in a sandboxed container with a checkout on a new branch: the brief (issue, acceptance criteria, linked requirements and ADRs), tests run, the branch pushed with the installation token, a PR opened and linked to the issue (moves to `review`). Guardrails (FR-26): never the default branch, never merge or deploy, no `.pmagent/` in the PR; every run approved and audited. Updates to the repo's `AGENTS.md` / `CLAUDE.md` (a TODO done) go the same way, as a PR
+- [ ] **5d Coding locally (CLI and desktop):** the CLI (`pmagent connect`) and the desktop app (a folder picker) link a local checkout; "Code this" hands the brief to Claude Code or Codex there (the MCP route), which edits the files on the person's machine; they review and commit. The platform sees the branch and PR through the app
 - [ ] **Code graph:** Tree-sitter parse into files, symbols, imports, calls, and tests; re-parse only files changed by each commit; modules linked to the project graph (`architecture/`, requirements). Tools `code.search`, `code.blast_radius`
 - [ ] **Commit review in the background:** push → code graph update → blast radius → Reviewer (read-only) → `finding[]` (severity, what may break, affected files and modules, related issues and requirements, suggested fix) → inbox and notifications → per finding: Create issue, Fix now (coding hand-off), Dismiss with a reason (a lesson). Default branch and PR branches only; trivial commits (docs, lockfiles) skipped; a daily token budget per repo
 - [ ] The same pipeline for failing CI: logs + blast radius → a scoped finding
@@ -427,7 +431,7 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 
 ### Phase 5: coding with Claude Code and Codex (don't build our own coding agent)
 - [ ] **(you)** Register the GitHub App (repo contents and pull requests read/write, issues read, webhooks); see "GitHub login" below, one app does both
-- [ ] Connect a project's repository; list and link repos
+- [x] Connect a project's repository; list and link repos (agents v2 step 5a)
 - [ ] **"Start coding" on an issue:** a hand-off brief (the issue, acceptance criteria, linked requirements and architecture excerpts) sent to Claude Code (its GitHub integration) or Codex (cloud tasks), plus the existing MCP route for people running them locally
 - [ ] **PRs back on the board:** webhooks link PRs to issues (by key in the branch or title), move issues to `review`, and show checks; only a person moves an issue to `done`
 - [ ] **Guardrails** (FR-26): never push to the default branch, merge, or deploy; reject PRs that contain `.pmagent/`
@@ -452,7 +456,8 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 - [x] Chat: the PM's reply streams as it's written (SSE `GET .../agent/runs/{id}/stream` through the proxy; the page refreshes the moment it ends), Stop for a working run (`POST .../stop`: whoever asked, or owners/admins; audited; the conversation continues), rename a conversation (`PATCH .../agent/threads/{id}`)
 - [x] Chat UI on our own reusable components (`packages/ui` chat kit); live activity while the PM works ("Reading roadmap.md", "Asking the research agent": the stream's `activity` events from `agents/activity.py`, built from tool names and safe arguments only); fenced code in Markdown gets a CodeBlock
 - [x] Project setup on the web (`/w/[ws]/projects/new`, owners and admins): start from an existing repo (pasted address; public GitHub repos are looked up to confirm and prefill) or documents only, with documents uploaded as part of creating it; Docs tab (upload, list, view the converted Markdown, download originals); link, change, or unlink the repo later from Overview
-- [ ] "Connect GitHub" (needs FR-10's GitHub App): pick a repo from your account, private repos, "new repository"
+- [x] "Connect GitHub": Settings → GitHub installs the app; pick a repo (private ones too) on project creation or in project settings (agents v2 step 5a)
+  - [ ] "New repository" (create it on GitHub)
 - [x] Knowledge tab: `.pmagent/` tree with search (deleted files on request), Markdown or source view, edit with a change note (`base_version` guards against overwriting), delete, history with who wrote / asked / approved each version, diffs, restore (including deleted files), zip export for owners and admins; `agent-rules/` editable by owners and admins only
 - [x] Workspace "Members and settings" (`/w/[ws]/settings`): rename; members with role changes, remove, leave, transfer ownership (personal workspaces: just the owner); invites by email or link, pending list, revoke (only in an organisation; a personal workspace's section offers to turn it into one or create one). Audit log (`/w/[ws]/audit`, owners and admins) with project and action filters and paging. Project Settings tab (was Overview): name, description, repo, agent model, agent-rules links into Knowledge, zip export
 - [x] Backend: membership and invite changes are audited (rename, role changes, removals and leaving, ownership transfer, invites sent / links created / revoked, joining, org placements in the workspace's own log)
@@ -605,7 +610,7 @@ Organisations are workspaces of kind `organization` (agents v2 step 0, D6); the 
 
 ### P0: Code hosts and coding agent
 
-- [ ] **FR-10** GitHub connector: OAuth app / GitHub App, encrypted token storage, repo list/connect/create, read code
+- [ ] **FR-10** GitHub connector: GitHub App installations and each project's repo, list and connect (done, step 5a; no tokens stored); create a repo, read code (step 5b)
 - [ ] **FR-24/25** Coding-agent runs: sandboxed checkout, new branch, run tests, open a PR linked to the issue, move the issue to `review`
 - [ ] **FR-26** Guardrails: never push to the default branch, merge, or deploy; reject PRs that contain `.pmagent/`
 - [ ] **FR-22** Reviewer run on every agent PR; save the report to `reviews/` and comment on the PR

@@ -102,6 +102,11 @@ TAGS: list[dict[str, str]] = [
         "changes, document versions, agent runs, and approval decisions.",
     },
     {
+        "name": "github",
+        "description": "Connecting GitHub through the pmagent GitHub App: the GitHub accounts it's installed "
+        "on in a workspace, each project's repo (private ones included), and GitHub's webhook deliveries.",
+    },
+    {
         "name": "notifications",
         "description": "Your notifications in a workspace: agents' changes waiting for your decision, "
         "plans waiting at a checkpoint, issues assigned to you, and findings from runs you asked for.",

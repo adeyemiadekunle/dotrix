@@ -5,6 +5,7 @@ from pmagent_backend.modules.api_tokens import models as _api_tokens  # noqa: F4
 from pmagent_backend.modules.audit import models as _audit  # noqa: F401
 from pmagent_backend.modules.auth import models as _auth  # noqa: F401
 from pmagent_backend.modules.calendar import models as _calendar  # noqa: F401
+from pmagent_backend.modules.connectors import models as _connectors  # noqa: F401
 from pmagent_backend.modules.documents import models as _documents  # noqa: F401
 from pmagent_backend.modules.invites import models as _invites  # noqa: F401
 from pmagent_backend.modules.issues import models as _issues  # noqa: F401

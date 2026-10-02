@@ -52,6 +52,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
         ...(admin
           ? [
               { label: "Agents", path: "agents" },
+              { label: "GitHub", path: "github" },
               { label: "Audit log", path: "audit" },
             ]
           : []),

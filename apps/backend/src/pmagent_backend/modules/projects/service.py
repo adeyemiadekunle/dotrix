@@ -17,6 +17,7 @@ from pmagent_backend.modules.agents.models import (
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.auth.repository import UserRepository
+from pmagent_backend.modules.connectors.models import ConnectedRepo
 from pmagent_backend.modules.documents.models import Document
 from pmagent_backend.modules.issues.models import Issue, IssueEvent, IssueEventKind, IssueWatcher
 from pmagent_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
@@ -143,6 +144,8 @@ class ProjectService:
         if active is not None:
             raise Conflict("An agent run is still working or waiting for approval; stop it or decide it first")
 
+        # Its repo was reached through this workspace's GitHub installation: connect it again there.
+        await self.session.execute(delete(ConnectedRepo).where(ConnectedRepo.project_id == project.id))
         for model in _PROJECT_ROWS:
             await self.session.execute(
                 update(model).where(model.project_id == project.id).values(workspace_id=target_id)

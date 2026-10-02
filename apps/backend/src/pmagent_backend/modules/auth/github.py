@@ -45,6 +45,7 @@ class GitHubClient(Protocol):
     def configured(self) -> bool: ...
     def authorize_url(self, state: str) -> str: ...
     async def profile(self, code: str) -> GitHubProfile: ...
+    async def installation_ids(self, code: str) -> set[int]: ...
 
 
 class GitHubOAuth:
@@ -98,6 +99,31 @@ class GitHubOAuth:
             name=user.get("name") or None,
             verified_email=_verified_email(emails_res.json()),
         )
+
+    async def installation_ids(self, code: str) -> set[int]:
+        """Trade the code for a token, then list the app installations this person can manage
+        (GitHub's answer, so nobody adds someone else's installation to their workspace)."""
+        self._require_config()
+        ids: set[int] = set()
+        async with httpx.AsyncClient(transport=self.transport, timeout=15) as http:
+            try:
+                token = await self._exchange(http, code)
+                headers = {
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                }
+                for page in range(1, 11):
+                    res = await http.get(f"{API_URL}/user/installations?per_page=100&page={page}", headers=headers)
+                    if res.status_code != 200:
+                        raise GitHubUnavailable("GitHub didn't list your app installations; try again shortly")
+                    batch = res.json().get("installations") or []
+                    ids |= {int(i["id"]) for i in batch}
+                    if len(batch) < 100:
+                        break
+            except httpx.HTTPError as exc:
+                raise GitHubUnavailable("GitHub couldn't be reached; try again shortly") from exc
+        return ids
 
     async def _exchange(self, http: httpx.AsyncClient, code: str) -> str:
         assert self.client_secret is not None

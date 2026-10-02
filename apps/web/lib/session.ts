@@ -95,6 +95,8 @@ export function clientHeaders(request: Request): Record<string, string> {
 
 /** The state and destination of a GitHub sign-in in progress (see app/api/auth/github). */
 export const GITHUB_STATE_COOKIE = "pm_github_state";
+/** Installing the GitHub App: which workspace it's for, and where to come back to. */
+export const GITHUB_INSTALL_COOKIE = "pm_github_install";
 
 /** A same-site path to go to after signing in, or "/" (never another site). */
 export function safeNextPath(next: string | null | undefined): string {

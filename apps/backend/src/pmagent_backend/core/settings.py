@@ -78,6 +78,26 @@ class Settings(DatabaseSettings):
     # /v1/auth/oauth/github/callback (which forwards there).
     github_redirect_uri: str | None = None
 
+    # The GitHub App's repository access (connecting projects' repos; agents v2 step 5). The same
+    # app as sign-in. Unset: connecting repos isn't offered (pasting a repo address still works).
+    github_app_id: str | None = Field(default=None, validation_alias=AliasChoices("PMAGENT_GITHUB_APP_ID", "GITHUB_APP_ID"))
+    # The app's public name in its URL (github.com/apps/<slug>), for the install page.
+    github_app_slug: str | None = Field(
+        default=None, validation_alias=AliasChoices("PMAGENT_GITHUB_APP_SLUG", "GITHUB_APP_SLUG")
+    )
+    # The app's private key (PEM), inline or from a file; it signs the app's tokens to GitHub.
+    github_app_private_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("PMAGENT_GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_PRIVATE_KEY")
+    )
+    github_app_private_key_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PMAGENT_GITHUB_APP_PRIVATE_KEY_PATH", "GITHUB_APP_PRIVATE_KEY_PATH"),
+    )
+    # Checks that webhook deliveries come from GitHub (X-Hub-Signature-256).
+    github_webhook_secret: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("PMAGENT_GITHUB_WEBHOOK_SECRET", "GITHUB_WEBHOOK_SECRET")
+    )
+
     # Object storage for document originals: any S3-compatible store (MinIO locally).
     # Leave the endpoint and keys unset to run without uploads (they answer 503).
     s3_endpoint_url: str | None = None
