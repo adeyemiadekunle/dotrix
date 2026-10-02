@@ -4,10 +4,11 @@ import type { Schemas } from "@pmagent/api-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@pmagent/ui/components/avatar";
 import { Textarea } from "@pmagent/ui/components/textarea";
 import { BotIcon } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
 import { SubmitButton } from "@/components/form";
 import { Markdown } from "@/components/markdown";
+import { useMentions } from "@/components/mentions";
 import { initials } from "@/lib/labels";
 import { useMemberAvatarSrc, type Member } from "@/lib/profile";
 
@@ -113,23 +114,30 @@ function EventRow({ event, members }: { event: Event; members: MemberMap }) {
 export function IssueActivity({
   log,
   members,
+  mentionable = [],
   canComment,
   onComment,
   commenting,
 }: {
   log: Event[];
   members: MemberMap;
+  /** Whom a comment may @mention: the people who can see the project. */
+  mentionable?: Member[];
   canComment: boolean;
-  onComment: (body: string) => Promise<unknown>;
+  onComment: (body: string, mentions: string[]) => Promise<unknown>;
   commenting: boolean;
 }) {
   const [draft, setDraft] = useState("");
+  const input = useRef<HTMLTextAreaElement>(null);
+  const mentions = useMentions({ people: mentionable, value: draft, onValueChange: setDraft, inputRef: input });
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!draft.trim()) return;
-    await onComment(draft.trim());
+    const body = draft.trim();
+    if (!body) return;
+    await onComment(body, mentions.mentioned(body));
     setDraft("");
+    mentions.reset();
   }
 
   return (
@@ -143,15 +151,23 @@ export function IssueActivity({
       {canComment && (
         <form
           onSubmit={submit}
-          className="focus-within:ring-ring/50 bg-background grid gap-1 rounded-xl border p-2 shadow-xs focus-within:ring-2"
+          className="focus-within:ring-ring/50 bg-background relative grid gap-1 rounded-xl border p-2 shadow-xs focus-within:ring-2"
         >
+          {mentions.list}
           <Textarea
+            ref={input}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              mentions.track(e.target.value, e.target.selectionStart);
+            }}
             onKeyDown={(e) => {
+              if (mentions.onKeyDown(e)) return;
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit(e);
             }}
-            placeholder="Add a comment (Markdown supported)"
+            onBlur={() => mentions.track(draft, null)}
+            aria-label="Comment"
+            placeholder="Add a comment; @ to mention someone (Markdown supported)"
             rows={2}
             maxLength={20_000}
             className="min-h-14 resize-none border-0 bg-transparent px-1.5 py-1 shadow-none focus-visible:ring-0 dark:bg-transparent"

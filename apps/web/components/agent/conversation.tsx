@@ -7,9 +7,10 @@ import { PromptInput, type PromptStatus } from "@pmagent/ui/components/prompt-in
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
 import { CpuIcon, LayersIcon, NewspaperIcon, SparklesIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { timeAgo } from "@/components/issues/issue-activity";
+import { useMentionable, useMentions } from "@/components/mentions";
 import {
   agentLabel,
   isActive,
@@ -125,6 +126,9 @@ export function Conversation({
     return { draft: mention ? mention[1] : (initialDraft ?? ""), agent: mention?.[0] };
   });
   const [draft, setDraft] = useState(start.draft);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const mentionable = useMentionable(scope.workspaceId, scope.projectId);
+  const people = useMentions({ people: mentionable, value: draft, onValueChange: setDraft, inputRef: input });
   // Picks made here, for this conversation (a new one has no thread yet).
   const [pick, setPick] = useState<{ thread: string | null; agent?: AgentId; model?: string | null }>({
     thread: threadId,
@@ -174,10 +178,12 @@ export function Conversation({
         threadId,
         agent: who,
         model: threadId ? null : (picked.model ?? null),
+        mentions: people.mentioned(text),
       })
       .catch(() => null);
     if (run) {
       setDraft("");
+      people.reset();
       if (run.thread_id !== threadId) {
         setPick({ thread: run.thread_id, agent: who });
         onThread(run.thread_id);
@@ -246,14 +252,19 @@ export function Conversation({
           <PromptInput
             className="mx-auto w-full max-w-3xl"
             value={draft}
+            inputRef={input}
+            onKeyDown={people.onKeyDown}
+            above={people.list}
             onValueChange={(value) => {
-              // "@research " at the start picks that agent.
+              // "@research " at the start picks that agent; "@" elsewhere offers people to mention.
               const mention = mentionedAgent(value, agentOptions);
               if (mention) {
                 setAgent(mention[0]);
                 setDraft(mention[1]);
+                people.track(mention[1], null);
               } else {
                 setDraft(value);
+                people.track(value, input.current?.selectionStart ?? value.length);
               }
             }}
             onSubmit={(text) => void submit(text)}

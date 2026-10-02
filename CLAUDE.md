@@ -242,8 +242,8 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 
 ### Phase 6: Notifications (with agents v2 step 4)
 - [x] Backend: notification records (`modules/notifications`, `GET /v1/workspaces/{id}/notifications`, `/counts`, `POST .../read`): changes waiting go to everyone who may approve them and sees the project; a checkpoint and a run's open findings to whoever asked; an issue assigned to you (not by yourself). Read state per person; approvals and checkpoints are `resolved` once decided and count until then, the rest until read; only projects you can still see
-  - [ ] mentions (needs @mentions, FR-33)
-- [x] Notifications page (`/w/[ws]/approvals`, `?tab=` and `?n=`): list and detail, tabs All / Approvals / Mentions (*later*) / Assigned / Findings, approve or reject in the detail with the diff (the approvals card); opening one marks it read; Mark all read; replaces the Approvals page; the sidebar badge and the bell count what still needs you
+  - [x] mentions: typing "@" in an issue comment or a chat message offers the people who can see the project (`components/mentions.tsx`); the text stays plain ("@Ada Lovelace") and the request lists who was picked (`mentions`); each is told only if "@Their Name" is in the text and they can see the project (`Notifier.mentioned`, kind `mention` with an excerpt). The Mentions tab shows them
+- [x] Notifications page (`/w/[ws]/approvals`, `?tab=` and `?n=`): list and detail, tabs All / Approvals / Mentions / Assigned / Findings, approve or reject in the detail with the diff (the approvals card); opening one marks it read; Mark all read; replaces the Approvals page; the sidebar badge and the bell count what still needs you
 
 ## Plan: agents v2 (review, 2026-09-29)
 
@@ -417,7 +417,8 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 
 ### Phase 4: notifications (email now works)
 - [ ] Email approvers when changes wait for them, and the requester when their request was decided (with the reason on a rejection); batch per run, not per change
-- [ ] @mentions in comments and chat notify the person; watchers get issue changes (FR-33)
+- [x] @mentions in comments and chat notify the person (in the app; UI redesign Phase 6)
+  - [ ] by email; watchers get issue changes (FR-33)
 - [ ] Per-person settings (immediately, daily digest, or off); the daily briefing by email (opt-in)
 - [ ] Slack later (FR-14)
 
@@ -578,7 +579,8 @@ Organisations are workspaces of kind `organization` (agents v2 step 0, D6); the 
 - [x] CLI: `pmagent run` on the platform when linked (streams and settles approvals inline; `--background` runs it on the server), `pmagent jobs` (the project's recent runs), `jobs-approve <id>` (approve or `--reject -m`; `--foreground` follows), `jobs-stop <id>`; `--local` keeps the local engine
 - [x] CLI: `pmagent docs-add` uploads to the platform when linked
 - [x] **FR-32** Calendar feed (`modules/calendar`): a per-person secret URL (`/v1/calendar/{secret}.ics`, served through the web app's `/api/v1` proxy) with issue due dates (all-day) and scheduled times (one-hour slots); "mine" (assigned or watched) or "all" (every dated issue in visible projects); workspaces re-checked on every fetch, no descriptions in the feed, the secret kept out of the access log; Settings → Calendar in the web app
-- [ ] **FR-33** @mentions and notifying watchers (with FR-14 notifications)
+- [x] **FR-33** @mentions in issue comments and chat (in-app notifications)
+- [ ] **FR-33** notifying watchers of issue changes (with FR-14 notifications)
 
 ### P0: Approvals, audit, and agents
 
@@ -614,7 +616,7 @@ Organisations are workspaces of kind `organization` (agents v2 step 0, D6); the 
 - [ ] **FR-13** With a code host connected (FR-10), draft from the repo on the platform too (the web app's path)
 - [ ] **FR-14** Email and Slack notifications (approvals waiting, PR ready, daily briefing)
 - [ ] **FR-31** Sprints (goal, dates, committed issues)
-- [ ] **FR-33** @mentions and watchers
+- [ ] **FR-33** watchers (@mentions are done)
 - [ ] **FR-36** Optional second approver for coding-agent runs and for changes to requirements or ADRs
 - [ ] GitLab connector
 - [ ] Observability: tracing of agent runs, usage dashboards for admins

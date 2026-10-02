@@ -17,6 +17,7 @@ from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.issues.service import IssueService
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
+from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import visible_to
@@ -198,6 +199,11 @@ class AgentService:
             updated_at=now,
         )
         self.session.add(run)
+        if data.mentions:
+            await Notifier(self.session).mentioned(
+                project, data.mentions, data.message, now, title=run.title or title_from_message(data.message),
+                actor_user_id=member.user_id, run_id=run.id,
+            )
         AuditLog(self.session).record(
             workspace_id=project.workspace_id,
             project_id=project.id,

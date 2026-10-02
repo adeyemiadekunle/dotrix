@@ -2995,6 +2995,11 @@ export interface components {
             body: string;
             /** @description Set when a coding tool (Claude Code, Codex, the coding agent) is acting. It can only work on issues assigned to it: comment, add sub-tasks, and move its issue up to `review`. */
             as_agent?: components["schemas"]["AgentAssignee"] | null;
+            /**
+             * Mentions
+             * @description People @mentioned (user ids). Each is told if "@Their Name" is in the text and they can see the project; others are ignored
+             */
+            mentions?: string[];
         };
         /** Decision */
         Decision: {
@@ -3748,12 +3753,13 @@ export interface components {
          * NotificationKind
          * @enum {string}
          */
-        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding";
+        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention";
         /**
          * NotificationRead
          * @description Something that waits for you or happened to you. `kind` says which: changes waiting for
          *     a decision (`approval`), a plan waiting at a checkpoint (`checkpoint`), an issue assigned to you
-         *     (`assigned`), or findings from a run you asked for (`finding`).
+         *     (`assigned`), findings from a run you asked for (`finding`), or an @mention of you in an issue
+         *     comment or a chat message (`mention`).
          */
         NotificationRead: {
             /**
@@ -3803,6 +3809,11 @@ export interface components {
              * @description Changes waiting, or findings to look at; 1 for the others
              */
             count: number;
+            /**
+             * Excerpt
+             * @description Mentions: the start of what was said
+             */
+            excerpt?: string | null;
             /** Run Id */
             run_id?: string | null;
             /**
@@ -4195,6 +4206,11 @@ export interface components {
              * @description For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model.
              */
             model?: string | null;
+            /**
+             * Mentions
+             * @description People @mentioned (user ids). Each is told if "@Their Name" is in the text and they can see the project; others are ignored
+             */
+            mentions?: string[];
         };
         /** RunFileRead */
         RunFileRead: {

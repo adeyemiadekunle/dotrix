@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback } from "@pmagent/ui/components/avatar";
 import { Button } from "@pmagent/ui/components/button";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
-import { ArrowLeftIcon, BellIcon, BotIcon, CheckCheckIcon, CircleUserIcon, ListChecksIcon } from "lucide-react";
+import { ArrowLeftIcon, AtSignIcon, BellIcon, BotIcon, CheckCheckIcon, CircleUserIcon, ListChecksIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo } from "react";
 
@@ -28,10 +28,10 @@ import {
 import { useCurrentWorkspace } from "@/lib/queries";
 import { useSearchParam, useSetSearchParams } from "@/lib/url-state";
 
-const TABS: { id: string; label: string; kinds?: NotificationKind[]; later?: boolean }[] = [
+const TABS: { id: string; label: string; kinds?: NotificationKind[] }[] = [
   { id: "all", label: "All" },
   { id: "approvals", label: "Approvals", kinds: ["approval", "checkpoint"] },
-  { id: "mentions", label: "Mentions", later: true },
+  { id: "mentions", label: "Mentions", kinds: ["mention"] },
   { id: "assigned", label: "Assigned", kinds: ["assigned"] },
   { id: "findings", label: "Findings", kinds: ["finding"] },
 ];
@@ -59,6 +59,8 @@ function headline(n: Notification, members: MemberMap): string {
       return `${who} assigned you ${n.issue_key ?? "an issue"}`;
     case "finding":
       return n.count === 1 ? `${who} found something to look at` : `${who} found ${n.count} things to look at`;
+    case "mention":
+      return n.issue_key ? `${who} mentioned you on ${n.issue_key}` : `${who} mentioned you in Chat`;
   }
 }
 
@@ -67,7 +69,8 @@ function conversationHref(slug: string, n: Notification): string {
 }
 
 function NotificationIcon({ n }: { n: Notification }) {
-  const Icon = n.kind === "assigned" ? CircleUserIcon : n.kind === "finding" ? ListChecksIcon : BotIcon;
+  const Icon =
+    n.kind === "assigned" ? CircleUserIcon : n.kind === "finding" ? ListChecksIcon : n.kind === "mention" ? AtSignIcon : BotIcon;
   return (
     <Avatar className="size-7 rounded-lg">
       <AvatarFallback className="bg-brand-muted text-brand-muted-foreground rounded-lg">
@@ -102,7 +105,7 @@ function Row({
       <NotificationIcon n={n} />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className={cn("truncate", unread && "font-semibold")}>{headline(n, members)}</span>
-        <span className="text-muted-foreground truncate text-xs">{n.title}</span>
+        <span className="text-muted-foreground truncate text-xs">{n.kind === "mention" && n.excerpt ? n.excerpt : n.title}</span>
         <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
           <ProjectTile projectKey={n.project_key} className="size-3.5 text-[7px]" />
           {n.project_name} · {timeAgo(n.created_at)}
@@ -139,9 +142,13 @@ function Detail({
         </span>
         <h2 className="text-lg font-semibold">{headline(n, members)}</h2>
         <p className="text-muted-foreground text-sm">
-          {n.kind === "assigned" ? n.title : <>&ldquo;{n.title}&rdquo;</>}
+          {n.kind === "assigned" || (n.kind === "mention" && n.issue_key) ? n.title : <>&ldquo;{n.title}&rdquo;</>}
         </p>
       </header>
+
+      {n.kind === "mention" && n.excerpt && (
+        <blockquote className="bg-muted/60 rounded-lg border-l-2 px-3 py-2 text-sm whitespace-pre-wrap">{n.excerpt}</blockquote>
+      )}
 
       {decision && n.resolved && (
         <p className="bg-muted rounded-lg px-3 py-2 text-sm">Decided. Nothing is waiting from this request now.</p>
@@ -157,7 +164,7 @@ function Detail({
       )}
 
       <div className="flex flex-wrap gap-2">
-        {n.kind === "assigned" && n.issue_key && (
+        {(n.kind === "assigned" || n.kind === "mention") && n.issue_key && (
           <Button size="sm" asChild>
             <Link href={`${projectBase}/board?issue=${n.issue_key}`}>Open {n.issue_key}</Link>
           </Button>
@@ -178,7 +185,7 @@ export default function NotificationsPage() {
   const [tabParam] = useSearchParam("tab");
   const [selectedId] = useSearchParam("n");
   const setParams = useSetSearchParams();
-  const tab = TABS.find((t) => t.id === tabParam && !t.later) ?? TABS[0]!;
+  const tab = TABS.find((t) => t.id === tabParam) ?? TABS[0]!;
   const notifications = useNotifications(workspace?.id);
   const counts = useNotificationCounts(workspace?.id);
   const markRead = useMarkRead(workspace?.id);
@@ -233,16 +240,13 @@ export default function NotificationsPage() {
                 type="button"
                 role="tab"
                 aria-selected={tab.id === t.id}
-                disabled={t.later}
                 onClick={() => setParams({ tab: t.id === "all" ? null : t.id, n: null })}
                 className={cn(
                   "flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1",
                   tab.id === t.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  t.later && "cursor-not-allowed opacity-60 hover:text-muted-foreground",
                 )}
               >
                 {t.label}
-                {t.later && <span className="text-[10px] font-normal">Later</span>}
                 {count > 0 && <span className="text-primary tabular-nums">{count}</span>}
               </button>
             );
@@ -254,7 +258,7 @@ export default function NotificationsPage() {
           <EmptyState
             icon={BellIcon}
             title="Nothing here"
-            description="Changes the agents want to make, plans waiting for you, issues assigned to you, and agents' findings show up here."
+            description="Changes the agents want to make, plans waiting for you, mentions, issues assigned to you, and agents' findings show up here."
           />
         )}
         {workspace && shown.length > 0 && (

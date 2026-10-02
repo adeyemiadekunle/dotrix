@@ -11,7 +11,8 @@ from .models import NotificationKind
 class NotificationRead(BaseModel):
     """Something that waits for you or happened to you. `kind` says which: changes waiting for
     a decision (`approval`), a plan waiting at a checkpoint (`checkpoint`), an issue assigned to you
-    (`assigned`), or findings from a run you asked for (`finding`)."""
+    (`assigned`), findings from a run you asked for (`finding`), or an @mention of you in an issue
+    comment or a chat message (`mention`)."""
 
     id: uuid.UUID
     kind: NotificationKind
@@ -27,6 +28,7 @@ class NotificationRead(BaseModel):
     actor_agent: str | None = Field(description="The agent who did it, if an agent did")
     title: str = Field(description="What was asked (runs) or the issue's title, when it happened")
     count: int = Field(description="Changes waiting, or findings to look at; 1 for the others")
+    excerpt: str | None = Field(default=None, description="Mentions: the start of what was said")
     run_id: uuid.UUID | None = None
     thread_id: uuid.UUID | None = Field(default=None, description="The conversation the run belongs to")
     issue_key: str | None = None
