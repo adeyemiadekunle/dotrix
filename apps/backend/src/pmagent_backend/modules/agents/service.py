@@ -73,8 +73,9 @@ PROTECTED_PREFIXES = ("/pmagent/architecture/",)
 ARCHITECTURE_DRAFT_PROMPT = """Project setup: draft the architecture overview.
 
 Have architecture-agent read what we know: /pmagent/project.md, /pmagent/requirements/,
-the ingested docs under /pmagent/docs/normalized/, and the repository summary below if
-there is one. Then write /pmagent/architecture/overview.md: the stack, the main
+the ingested docs under /pmagent/docs/normalized/, the repository's code when it's connected
+(code_tree, code_search, code_read: the layout, manifests, entry points, and how the parts
+call each other), and the repository summary below if there is one. Then write /pmagent/architecture/overview.md: the stack, the main
 components and how they relate, the core data model, external integrations, and open
 questions. If an overview already exists, update it: keep what is still right and say
 what changed. This is an explicit instruction to make that change (Action Mode); the

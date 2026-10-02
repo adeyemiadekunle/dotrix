@@ -2451,7 +2451,8 @@ export interface paths {
         /**
          * Connect Project Repository
          * @description Connect the project to a repo one of the workspace's installations can see (replacing
-         *     any it had); its repo address follows. 409 if another project here uses it. Owners and admins.
+         *     any it had); its repo address follows, and its code is checked out for agents to read. 409
+         *     if another project here uses it. Owners and admins.
          */
         put: operations["connect_project_repository"];
         post?: never;
@@ -2460,6 +2461,28 @@ export interface paths {
          * @description Stop reaching the project's repo through the app (its address stays). Owners and admins.
          */
         delete: operations["disconnect_project_repository"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Project Repository
+         * @description Check the project's code out afresh for agents (it also happens after each push, and
+         *     when a run finds it stale); the result shows in `checkout_sha` / `checkout_error`. 404
+         *     without a connected repo. Owners and admins.
+         */
+        post: operations["sync_project_repository"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3299,6 +3322,18 @@ export interface components {
             last_push_sha: string | null;
             /** Last Push At */
             last_push_at: string | null;
+            /**
+             * Checkout Sha
+             * @description The commit agents read (null until the first sync)
+             */
+            checkout_sha: string | null;
+            /** Checked Out At */
+            checked_out_at: string | null;
+            /**
+             * Checkout Error
+             * @description Why the last sync didn't work (null when it did)
+             */
+            checkout_error: string | null;
         };
         /** Decision */
         Decision: {
@@ -12959,6 +12994,65 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    sync_project_repository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedRepoRead"];
+                };
             };
             /** @description Missing, invalid, or expired credentials */
             401: {

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -31,23 +32,24 @@ def verify_signature(settings: Settings, body: bytes, signature: str | None) -> 
         raise Unauthorized("The delivery isn't signed with the webhook secret")
 
 
-async def handle(session: AsyncSession, event: str, payload: dict[str, Any]) -> str:
-    """Apply one delivery; returns what was done (for the log and the response)."""
+async def handle(session: AsyncSession, event: str, payload: dict[str, Any]) -> tuple[str, list[uuid.UUID]]:
+    """Apply one delivery; returns what was done (for the log and the response), and the
+    projects whose default branch moved (their checkouts need a sync)."""
     if event == "push":
         return await _push(session, payload)
     if event == "installation":
-        return await _installation(session, payload)
+        return await _installation(session, payload), []
     if event == "installation_repositories":
-        return await _repositories(session, payload)
-    return "ignored"
+        return await _repositories(session, payload), []
+    return "ignored", []
 
 
-async def _push(session: AsyncSession, payload: dict[str, Any]) -> str:
+async def _push(session: AsyncSession, payload: dict[str, Any]) -> tuple[str, list[uuid.UUID]]:
     """The default branch moved: remember its latest commit (and the repo's current name)."""
     repo = payload.get("repository") or {}
     repo_id, ref, after = repo.get("id"), payload.get("ref"), payload.get("after")
     if not repo_id or not after or ref != f"refs/heads/{repo.get('default_branch')}":
-        return "ignored"
+        return "ignored", []
     values: dict[str, Any] = {
         "last_push_sha": str(after)[:40], "last_push_at": datetime.now(UTC), "default_branch": str(repo["default_branch"]),
     }
@@ -55,9 +57,11 @@ async def _push(session: AsyncSession, payload: dict[str, Any]) -> str:
         values["full_name"] = str(repo["full_name"])
     result = await session.execute(
         update(ConnectedRepo).where(ConnectedRepo.github_repo_id == int(repo_id)).values(**values)
+        .returning(ConnectedRepo.project_id)
     )
+    projects = list(result.scalars())
     await session.commit()
-    return f"push: {result.rowcount} connected"
+    return f"push: {len(projects)} connected", projects
 
 
 async def _installation(session: AsyncSession, payload: dict[str, Any]) -> str:

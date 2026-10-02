@@ -98,6 +98,11 @@ class Settings(DatabaseSettings):
         default=None, validation_alias=AliasChoices("PMAGENT_GITHUB_WEBHOOK_SECRET", "GITHUB_WEBHOOK_SECRET")
     )
 
+    # Checkouts of connected repos for agents to read (agents v2 step 5b): a folder on the machine
+    # that runs agents (the worker, or the API in local mode), and the largest repo it keeps.
+    code_dir: str = "~/.cache/pmagent/code"
+    code_max_mb: int = Field(default=500, ge=1)
+
     # Object storage for document originals: any S3-compatible store (MinIO locally).
     # Leave the endpoint and keys unset to run without uploads (they answer 503).
     s3_endpoint_url: str | None = None

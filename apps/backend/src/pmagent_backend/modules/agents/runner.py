@@ -21,6 +21,8 @@ from sqlalchemy import select
 
 from pmagent_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from pmagent_backend.modules.audit.service import AuditLog
+from pmagent_backend.modules.code.checkouts import CodeCheckouts
+from pmagent_backend.modules.code.service import CodeService
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.notifications.notify import Notifier
@@ -29,6 +31,7 @@ from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.research.service import RunWeb, WebResearch, check_report
 from pmagent_engine import approvals as hitl
 from pmagent_engine.agent import PM_ROLE, briefing_system_prompt, build_team, role_for_agent_name
+from pmagent_engine.code import build_code_tools
 from pmagent_engine.contracts import AgentPolicy
 from pmagent_engine.layout import AGENTS
 
@@ -151,8 +154,11 @@ class AgentRunner:
         summarize_after_tokens: int | None = None,
         embedder: Any = None,
         web: WebResearch | None = None,
+        checkouts: CodeCheckouts | None = None,
     ) -> None:
         self.session_factory = session_factory
+        # Connected repos' checkouts, for the agents' code tools (None: agents don't read code).
+        self.checkouts = checkouts
         # Agents' web tools (search, reading pages, sources); None: only the model's own search.
         self.web = web
         # Defaults for every project (a project may set its own budget); None: no limit / the
@@ -173,6 +179,27 @@ class AgentRunner:
         # Local mode: background tasks by run, so a person can stop one; and why it was stopped.
         self._running: dict[uuid.UUID, asyncio.Task[None]] = {}
         self._stopped: dict[uuid.UUID, str] = {}
+
+    async def _code(
+        self, workspace_id: uuid.UUID, project_id: uuid.UUID, context: str
+    ) -> tuple[list | None, str]:
+        """The code tools over the project's checkout (synced first if missing or stale), and the
+        context pack saying what's checked out; no tools without a connected repo that works."""
+        if self.checkouts is None:
+            return None, context
+        try:
+            async with self.session_factory() as session:
+                checkout = await CodeService(session, self.checkouts).ensure(workspace_id, project_id)
+        except Exception:  # reading code is a bonus: a run never fails for it
+            logger.exception("couldn't prepare the code checkout for project %s", project_id)
+            return None, context
+        if checkout is None:
+            return None, context
+        note = (
+            f"\n\n## Code\nThe repository {checkout.full_name} ({checkout.default_branch} at "
+            f"{checkout.sha[:7]}) is checked out: read it with code_tree, code_search, and code_read."
+        )
+        return build_code_tools(lambda: checkout.root, repo=checkout.full_name, revision=checkout.sha), context + note
 
     # -- dispatching -----------------------------------------------------------------
 
@@ -287,6 +314,11 @@ class AgentRunner:
                 versions = {handle: agent.version for handle, agent in resolved.items()}
                 prior_web = (run.usage or {}).get("web")
 
+            # A briefing is one call with no tools: it doesn't read code.
+            code_tools, context = (
+                (None, context) if kind is RunKind.BRIEFING else await self._code(workspace_id, project_id, context)
+            )
+
             backend = CompositeBackend(
                 default=StateBackend(),
                 routes={
@@ -340,6 +372,7 @@ class AgentRunner:
                     project_id=project_id,
                     embedder=self.embedder,
                 ),
+                code_tools=code_tools,
                 specialist_model=choice.specialist_model,
                 summarize_after_tokens=self.summarize_after_tokens,
                 lead=lead,

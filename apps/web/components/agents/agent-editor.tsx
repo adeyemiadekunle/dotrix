@@ -53,7 +53,7 @@ const BLANK: Form = {
   instructions: "",
   model: null,
   budget_tokens: null,
-  tools: ["knowledge.read", "knowledge.search", "board.read"],
+  tools: ["knowledge.read", "knowledge.search", "code.read", "board.read"],
   access: {},
   issue_types: [],
   can_call: [],

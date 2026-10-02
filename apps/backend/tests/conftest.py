@@ -39,6 +39,7 @@ from pmagent_backend.jobs import JOBS
 from pmagent_backend.main import create_app
 from pmagent_backend.modules.agents.llm import ModelChoice, ModelUnavailable
 from pmagent_backend.modules.agents.runner import AgentRunner
+from pmagent_backend.modules.code.checkouts import CodeCheckouts
 from pmagent_backend.modules.workspaces.models import Membership, Role
 from pmagent_engine.testing import ScriptedChatModel
 
@@ -193,12 +194,19 @@ def agent_script() -> AgentScript:
 
 
 @pytest.fixture
+def checkouts(tmp_path: Path) -> CodeCheckouts:
+    """Connected repos' checkouts, in a folder of the test's own; set `.remote` to fetch."""
+    return CodeCheckouts(tmp_path / "code", None, max_bytes=50_000_000)
+
+
+@pytest.fixture
 async def db_client(
     migrated_database: str,
     db_session: AsyncSession,
     outbox: OutboxEmailSender,
     storage: MemoryBlobStorage,
     agent_script: AgentScript,
+    checkouts: CodeCheckouts,
 ) -> AsyncIterator[AsyncClient]:
     """HTTP client whose requests share the test's rolled-back session."""
     app = create_app(make_settings(migrated_database))
@@ -220,12 +228,16 @@ async def db_client(
             await session.close()
 
     # Inline: jobs and runs finish (or pause) before the request that started them returns.
-    app.state.jobs = InlineJobs(JobContext(shared_session, app.state.settings, outbox, storage), JOBS)
+    app.state.checkouts = checkouts
+    app.state.jobs = InlineJobs(
+        JobContext(shared_session, app.state.settings, outbox, storage, checkouts=checkouts), JOBS
+    )
     app.state.runner = AgentRunner(
         session_factory=shared_session,
         checkpointer=InMemorySaver(),
         model_factory=agent_script.factory,
         inline=True,
+        checkouts=checkouts,
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c

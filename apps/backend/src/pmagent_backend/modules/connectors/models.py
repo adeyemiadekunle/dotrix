@@ -46,3 +46,7 @@ class ConnectedRepo(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_push_sha: Mapped[str | None] = mapped_column(String(40))  # the default branch's latest commit
     last_push_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The checkout agents read (modules/code): the commit, when, and why the last sync failed.
+    checkout_sha: Mapped[str | None] = mapped_column(String(40))
+    checked_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checkout_error: Mapped[str | None] = mapped_column(String(500))

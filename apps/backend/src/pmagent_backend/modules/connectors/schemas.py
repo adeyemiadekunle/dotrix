@@ -60,3 +60,6 @@ class ConnectedRepoRead(BaseModel):
     connected_by_id: uuid.UUID | None
     last_push_sha: str | None = Field(description="The default branch's latest commit we heard of")
     last_push_at: datetime | None
+    checkout_sha: str | None = Field(description="The commit agents read (null until the first sync)")
+    checked_out_at: datetime | None
+    checkout_error: str | None = Field(description="Why the last sync didn't work (null when it did)")

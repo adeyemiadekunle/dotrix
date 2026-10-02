@@ -11546,7 +11546,7 @@
           "github"
         ],
         "summary": "Connect Project Repository",
-        "description": "Connect the project to a repo one of the workspace's installations can see (replacing\nany it had); its repo address follows. 409 if another project here uses it. Owners and admins.",
+        "description": "Connect the project to a repo one of the workspace's installations can see (replacing\nany it had); its repo address follows, and its code is checked out for agents to read. 409\nif another project here uses it. Owners and admins.",
         "operationId": "connect_project_repository",
         "security": [
           {
@@ -11695,6 +11695,95 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/sync": {
+      "post": {
+        "tags": [
+          "github"
+        ],
+        "summary": "Sync Project Repository",
+        "description": "Check the project's code out afresh for agents (it also happens after each push, and\nwhen a run finds it stale); the result shows in `checkout_sha` / `checkout_error`. 404\nwithout a connected repo. Owners and admins.",
+        "operationId": "sync_project_repository",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedRepoRead"
+                }
+              }
+            }
           },
           "401": {
             "description": "Missing, invalid, or expired credentials",
@@ -13892,6 +13981,42 @@
               }
             ],
             "title": "Last Push At"
+          },
+          "checkout_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkout Sha",
+            "description": "The commit agents read (null until the first sync)"
+          },
+          "checked_out_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked Out At"
+          },
+          "checkout_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkout Error",
+            "description": "Why the last sync didn't work (null when it did)"
           }
         },
         "type": "object",
@@ -13904,7 +14029,10 @@
           "connected_at",
           "connected_by_id",
           "last_push_sha",
-          "last_push_at"
+          "last_push_at",
+          "checkout_sha",
+          "checked_out_at",
+          "checkout_error"
         ],
         "title": "ConnectedRepoRead",
         "description": "The repository a project's code lives in, connected through the GitHub App."

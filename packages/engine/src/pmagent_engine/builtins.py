@@ -83,7 +83,7 @@ _SPECIALIST_TEXT: dict[str, tuple[str, str, str]] = {
 }
 
 # The tools each built-in has always had.
-_READ = ["knowledge.read", "knowledge.search"]
+_READ = ["knowledge.read", "knowledge.search", "code.read"]
 _TOOLS: dict[str, list[str]] = {
     PM: [*_READ, "knowledge.write", "board.read", "issues.create", "issues.update", "issues.comment",
          "web.search", "delegate"],
