@@ -93,6 +93,11 @@ class IssueUpdate(_AssigneeFields):
 class CommentCreate(BaseModel):
     body: str = Field(min_length=1, max_length=20_000)
     as_agent: AgentAssignee | None = AS_AGENT
+    mentions: list[uuid.UUID] = Field(
+        default_factory=list, max_length=20,
+        description="People @mentioned (user ids). Each is told if \"@Their Name\" is in the text and they "
+        "can see the project; others are ignored",
+    )
 
 
 class RankRequest(BaseModel):

@@ -101,12 +101,15 @@ export function IssueFilters({
   labels,
   scope,
   showEpic = true,
+  trailing,
 }: {
   filters: ReturnType<typeof useFilters>;
   members: Schemas["MemberRead"][];
   labels: string[];
   scope: Scope | undefined;
   showEpic?: boolean;
+  /** Controls at the far end of the row (the board's Sort). */
+  trailing?: ReactNode;
 }) {
   const epics = useEpics(scope);
   const hasEpics = showEpic && (epics.data?.length ?? 0) > 0;
@@ -243,6 +246,7 @@ export function IssueFilters({
           Clear
         </Button>
       )}
+      {trailing && <div className="ml-auto flex items-center gap-2">{trailing}</div>}
     </div>
   );
 }

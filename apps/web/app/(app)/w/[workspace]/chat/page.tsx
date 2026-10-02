@@ -31,6 +31,8 @@ function WorkspaceChat() {
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
   const [projectKey] = useSearchParam("project");
   const [threadId] = useSearchParam("thread");
+  // A message to start a new conversation with (from search): "@research …" picks the agent.
+  const [startWith] = useSearchParam("q");
   const setParams = useSetSearchParams();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -47,7 +49,9 @@ function WorkspaceChat() {
   }, [threads.data]);
 
   if (notFound) return <NotFound what="workspace" />;
-  const open = (key: string | null, thread: string | null) => setParams({ project: key, thread });
+  // Opening a conversation drops the starting message; picking a project keeps it for the new chat.
+  const open = (key: string | null, thread: string | null) =>
+    setParams({ project: key, thread, ...(thread ? { q: null } : {}) });
 
   return (
     <>
@@ -169,13 +173,15 @@ function WorkspaceChat() {
           </div>
           {scope ? (
             <Conversation
-              key={`${scope.projectId}:${threadId ?? "new"}`}
+              // A new starting message (from search) starts the new chat afresh.
+              key={`${scope.projectId}:${threadId ?? `new:${startWith ?? ""}`}`}
               scope={scope}
               threadId={threadId}
               onThread={(id) => open(project!.key, id)}
               names={names}
               canChat={canChat}
               canDecide={can(workspace, "agents:approve")}
+              initialDraft={threadId ? undefined : (startWith ?? undefined)}
             />
           ) : (
             <div className="grid flex-1 content-center justify-items-center gap-4 p-6 text-center">

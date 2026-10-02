@@ -12664,6 +12664,16 @@
               }
             ],
             "description": "Set when a coding tool (Claude Code, Codex, the coding agent) is acting. It can only work on issues assigned to it: comment, add sub-tasks, and move its issue up to `review`."
+          },
+          "mentions": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Mentions",
+            "description": "People @mentioned (user ids). Each is told if \"@Their Name\" is in the text and they can see the project; others are ignored"
           }
         },
         "type": "object",
@@ -14576,7 +14586,8 @@
           "approval",
           "checkpoint",
           "assigned",
-          "finding"
+          "finding",
+          "mention"
         ],
         "title": "NotificationKind"
       },
@@ -14652,6 +14663,18 @@
             "title": "Count",
             "description": "Changes waiting, or findings to look at; 1 for the others"
           },
+          "excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excerpt",
+            "description": "Mentions: the start of what was said"
+          },
           "run_id": {
             "anyOf": [
               {
@@ -14705,7 +14728,7 @@
           "count"
         ],
         "title": "NotificationRead",
-        "description": "Something that waits for you or happened to you. `kind` says which: changes waiting for\na decision (`approval`), a plan waiting at a checkpoint (`checkpoint`), an issue assigned to you\n(`assigned`), or findings from a run you asked for (`finding`)."
+        "description": "Something that waits for you or happened to you. `kind` says which: changes waiting for\na decision (`approval`), a plan waiting at a checkpoint (`checkpoint`), an issue assigned to you\n(`assigned`), findings from a run you asked for (`finding`), or an @mention of you in an issue\ncomment or a chat message (`mention`)."
       },
       "OrganizationConversion": {
         "properties": {
@@ -15559,6 +15582,16 @@
             ],
             "title": "Model",
             "description": "For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model."
+          },
+          "mentions": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Mentions",
+            "description": "People @mentioned (user ids). Each is told if \"@Their Name\" is in the text and they can see the project; others are ignored"
           }
         },
         "type": "object",

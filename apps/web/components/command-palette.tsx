@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIcon,
   BellIcon,
+  BotIcon,
   CircleCheckIcon,
   FileTextIcon,
   FolderKanbanIcon,
@@ -19,13 +20,17 @@ import {
   UsersIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { StatusIcon } from "@/components/issues/meta";
 import { ProjectTile } from "@/components/project-tile";
+import { UserAvatar } from "@/components/user-avatar";
+import { AGENTS } from "@/lib/agent";
 import { api, unwrap } from "@/lib/api";
-import { useWorkspaceIssues } from "@/lib/issues";
+import { useMembers, useWorkspaceIssues } from "@/lib/issues";
+import { can } from "@/lib/labels";
+import { useMemberAvatarSrc, type Member } from "@/lib/profile";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
 
 interface PaletteState {
@@ -73,6 +78,10 @@ const PAGES: { label: string; path: string; icon: LucideIcon }[] = [
   { label: "Members", path: "/settings/members", icon: UsersIcon },
 ];
 
+function MemberPhoto({ member }: { member: Member }) {
+  return <UserAvatar name={member.display_name} src={useMemberAvatarSrc(member)} className="size-5 text-[9px]" />;
+}
+
 /** Waits for typing to pause before searching documents on the server. */
 function useDebounced(value: string, ms: number): string {
   const [debounced, setDebounced] = useState(value);
@@ -85,9 +94,14 @@ function useDebounced(value: string, ms: number): string {
 
 function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { workspace } = useCurrentWorkspace();
   const canSee = Boolean(workspace && workspace.role !== "guest");
+  const canChat = can(workspace, "agents:chat");
   const projects = useProjects(workspace?.id);
+  const members = useMembers(open && canSee ? workspace?.id : undefined);
+  // Chat started from inside a project is about that project.
+  const projectKey = /\/p\/([^/]+)/.exec(pathname)?.[1];
   const issues = useWorkspaceIssues(open && canSee ? workspace?.id : undefined, {});
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -109,6 +123,8 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: b
     const out: Result[] = [];
     if (!workspace) return out;
     const matches = (text: string) => !q || text.toLowerCase().includes(q);
+    const chatWith = (text: string) =>
+      `${base}/chat?${new URLSearchParams({ ...(projectKey ? { project: projectKey } : {}), q: text })}`;
     for (const issue of (issues.data ?? []).filter((i) => q && (matches(i.title) || matches(i.key))).slice(0, 6)) {
       out.push({
         id: `issue:${issue.key}`,
@@ -152,6 +168,33 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: b
         href: `${base}/p/${project.key}`,
       });
     }
+    if (q && canChat) {
+      for (const agent of AGENTS.filter((a) => a.id !== "auto" && (matches(a.name) || matches(a.id))).slice(0, 5)) {
+        out.push({
+          id: `agent:${agent.id}`,
+          group: "Agents",
+          label: <span className="truncate">{agent.name}</span>,
+          hint: "Ask in Chat",
+          icon: <BotIcon className="text-muted-foreground size-4" />,
+          href: chatWith(`@${agent.id} `),
+        });
+      }
+    }
+    if (q) {
+      const people = (members.data ?? []).filter(
+        (m) => matches(m.display_name) || matches(m.email) || (m.title ? matches(m.title) : false),
+      );
+      for (const member of people.slice(0, 5)) {
+        out.push({
+          id: `person:${member.user_id}`,
+          group: "People",
+          label: <span className="truncate">{member.display_name}</span>,
+          hint: member.title || "Their open issues",
+          icon: <MemberPhoto member={member} />,
+          href: `${base}/tasks?assignee=${member.user_id}`,
+        });
+      }
+    }
     for (const page of PAGES.filter((p) => matches(p.label))) {
       out.push({
         id: `page:${page.path}`,
@@ -161,17 +204,17 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: b
         href: `${base}${page.path}`,
       });
     }
-    if (q) {
+    if (q && canChat) {
       out.push({
         id: "chat",
         group: "Actions",
-        label: <span className="truncate">Ask the agents in Chat about “{query.trim()}”</span>,
+        label: <span className="truncate">Ask the agents in Chat: “{query.trim()}”</span>,
         icon: <MessageSquareIcon className="text-muted-foreground size-4" />,
-        href: `${base}/chat`,
+        href: chatWith(query.trim()),
       });
     }
     return out;
-  }, [workspace, issues.data, documents.data, projects.data, q, query, base]);
+  }, [workspace, issues.data, documents.data, projects.data, members.data, canChat, q, query, base, projectKey]);
 
   useEffect(() => setActive(0), [q]);
   useEffect(() => {
@@ -189,7 +232,7 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: b
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="top-[15%] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl" showCloseButton={false}>
         <DialogTitle className="sr-only">Search</DialogTitle>
-        <DialogDescription className="sr-only">Find issues, documents, projects, and pages.</DialogDescription>
+        <DialogDescription className="sr-only">Find issues, documents, projects, agents, people, and pages.</DialogDescription>
         <div className="flex items-center gap-2 border-b px-3">
           <SearchIcon className="text-muted-foreground size-4 shrink-0" />
           <input
@@ -208,7 +251,7 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: b
                 go(results[active]);
               }
             }}
-            placeholder="Search issues, documents, projects…"
+            placeholder="Search issues, documents, people, agents…"
             aria-label="Search"
             role="combobox"
             aria-expanded="true"

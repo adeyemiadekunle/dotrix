@@ -84,6 +84,7 @@ class NotificationService:
                 actor_agent=n.actor_agent,
                 title=n.title,
                 count=n.count,
+                excerpt=n.excerpt,
                 run_id=n.run_id,
                 thread_id=thread_id,
                 issue_key=issue_key,

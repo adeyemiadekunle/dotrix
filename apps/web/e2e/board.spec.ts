@@ -18,7 +18,7 @@ test("create an issue, move it, and comment on it", async ({ page }) => {
   await page.getByRole("option", { name: "In progress" }).click();
   await expect(drawer.getByText("changed status from To do to In progress")).toBeVisible();
 
-  await drawer.getByPlaceholder("Add a comment (Markdown supported)").fill("Starting with the **CLI** guide.");
+  await drawer.getByLabel("Comment", { exact: true }).fill("Starting with the **CLI** guide.");
   await drawer.getByRole("button", { name: "Comment" }).click();
   await expect(drawer.getByText("Starting with the")).toBeVisible();
   await page.keyboard.press("Escape");

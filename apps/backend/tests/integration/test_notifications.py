@@ -73,7 +73,7 @@ async def test_changes_waiting_notify_whoever_may_approve(world, db_client: Asyn
     [note] = await _notifications(db_client, ws, ada)
     assert note["resolved"] and not note["read"]
     assert await _counts(db_client, ws, bob) == {
-        "unread": 0, "by_kind": {"approval": 0, "checkpoint": 0, "assigned": 0, "finding": 0}
+        "unread": 0, "by_kind": {"approval": 0, "checkpoint": 0, "assigned": 0, "finding": 0, "mention": 0}
     }
 
 
@@ -136,3 +136,44 @@ async def test_assignments_and_marking_read(world, db_client: AsyncClient) -> No
     # Once Cat can't see the project, its notifications are gone for her.
     await db_client.patch(base, json={"access": "restricted"}, headers=ada.headers)
     assert await _notifications(db_client, ws, cat) == []
+
+
+async def test_mentions_in_comments_and_chat(world, db_client: AsyncClient, agent_script) -> None:
+    ada, bob, cat, dan, ws, base = await world()
+    # Only owners, admins, and Cat see the project; Dan doesn't.
+    await db_client.patch(base, json={"access": "restricted"}, headers=ada.headers)
+    assert (await db_client.put(f"{base}/members/{cat.id}", headers=ada.headers)).status_code in (200, 201)
+    me = (await db_client.get("/v1/me", headers=ada.headers)).json()
+    await db_client.post(f"{base}/issues", json={"title": "Retry uploads"}, headers=ada.headers)
+
+    # Named and able to see it: told. Not named (Cat), can't see it (Dan), or yourself: not.
+    body = "Thanks @bob, and @Dan when you're back. @Ada too."
+    res = await db_client.post(
+        f"{base}/issues/KUN-1/comments",
+        json={"body": body, "mentions": [bob.id, cat.id, dan.id, me["id"]]},
+        headers=ada.headers,
+    )
+    assert res.status_code == 201, res.text
+    [note] = await _notifications(db_client, ws, bob)
+    assert note["kind"] == "mention" and note["issue_key"] == "KUN-1" and note["title"] == "Retry uploads"
+    assert note["excerpt"] == body and note["actor_user_id"] == me["id"]
+    assert (await _counts(db_client, ws, bob))["by_kind"]["mention"] == 1
+    for nobody in (ada, cat, dan):
+        assert await _notifications(db_client, ws, nobody) == []
+
+    # "@Bobby" isn't "@Bob".
+    await db_client.post(
+        f"{base}/issues/KUN-1/comments", json={"body": "Ask @Bobby", "mentions": [bob.id]}, headers=ada.headers
+    )
+    assert len(await _notifications(db_client, ws, bob)) == 1
+
+    # In chat: the conversation is linked.
+    agent_script.say("On it.")
+    run = (await db_client.post(
+        f"{base}/agent/runs", json={"message": "@Bob can you check the roadmap?", "mentions": [bob.id]},
+        headers=cat.headers,
+    )).json()
+    assert run["message"] == "@Bob can you check the roadmap?"
+    latest = (await _notifications(db_client, ws, bob, kind="mention"))[0]
+    assert latest["run_id"] == run["id"] and latest["thread_id"] == run["thread_id"]
+    assert latest["title"] == run["title"] and latest["actor_user_id"] == cat.id

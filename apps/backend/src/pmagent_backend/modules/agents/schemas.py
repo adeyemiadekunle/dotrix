@@ -31,6 +31,11 @@ class RunCreate(BaseModel):
         "needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use "
         "the project's model.",
     )
+    mentions: list[uuid.UUID] = Field(
+        default_factory=list, max_length=20,
+        description="People @mentioned (user ids). Each is told if \"@Their Name\" is in the text and they "
+        "can see the project; others are ignored",
+    )
 
 
 class ModelOption(BaseModel):

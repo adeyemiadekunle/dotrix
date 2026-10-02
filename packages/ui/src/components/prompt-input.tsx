@@ -32,6 +32,9 @@ function PromptInput({
   start,
   footer,
   className,
+  inputRef,
+  onKeyDown,
+  above,
 }: {
   value: string
   onValueChange: (value: string) => void
@@ -47,6 +50,11 @@ function PromptInput({
   /** A row under the box, e.g. the + menu, its chips, and the model. */
   footer?: React.ReactNode
   className?: string
+  inputRef?: React.Ref<HTMLTextAreaElement>
+  /** Runs first; return true when it handled the key (e.g. a suggestion list), so Enter doesn't send. */
+  onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean | void
+  /** Shown just above the box, e.g. suggestions for what's being typed. */
+  above?: React.ReactNode
 }) {
   const ready = status === "ready"
   const stoppable = (status === "working" || status === "stopping") && onStop !== undefined
@@ -65,12 +73,15 @@ function PromptInput({
         submit()
       }}
     >
-      <div className="bg-background focus-within:ring-ring/50 flex items-end gap-2 rounded-xl border p-1.5 pl-2 shadow-xs focus-within:ring-2">
+      <div className="bg-background focus-within:ring-ring/50 relative flex items-end gap-2 rounded-xl border p-1.5 pl-2 shadow-xs focus-within:ring-2">
+        {above}
         {start && <div className="flex shrink-0 items-center gap-1 self-end pb-0.5">{start}</div>}
         <Textarea
+          ref={inputRef}
           value={value}
           onChange={(event) => onValueChange(event.target.value)}
           onKeyDown={(event) => {
+            if (onKeyDown?.(event)) return
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault()
               submit()

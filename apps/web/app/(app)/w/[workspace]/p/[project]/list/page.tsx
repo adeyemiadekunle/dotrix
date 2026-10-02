@@ -21,39 +21,44 @@ import { CSS } from "@dnd-kit/utilities";
 import { Progress } from "@pmagent/ui/components/progress";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
-import { GripVerticalIcon, ListTodoIcon } from "lucide-react";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDownIcon, ChevronRightIcon, GripVerticalIcon, ListOrderedIcon, ListTodoIcon } from "lucide-react";
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { EpicTag, type EpicMap } from "@/components/issues/issue-card";
-import { AssigneeAvatar, PriorityIcon, STATUS_META, StatusBadge, StatusIcon, TypeIcon, type MemberMap } from "@/components/issues/meta";
+import { AssigneeAvatar, PriorityIcon, STATUS_META, StatusIcon, TypeIcon, type MemberMap } from "@/components/issues/meta";
+import { formatDue, today } from "@/components/issues/workspace-issue-row";
 import { EmptyState } from "@/components/states";
 import { useBacklog, useBoard, useEpics, useMembers, useMoveIssue, type IssueSummary } from "@/lib/issues";
 import { useProjectScope } from "@/lib/queries";
 import { useSearchParam } from "@/lib/url-state";
 
+/** One issue, laid out like a row on My issues: status, key, title, epic, priority, due, assignee. */
 function Row({
   issue,
   members,
   epics,
   onOpen,
   draggable,
+  showStatus,
 }: {
   issue: IssueSummary;
   members: MemberMap;
   epics: EpicMap;
   onOpen: (key: string) => void;
   draggable: boolean;
+  showStatus: boolean;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: issue.key,
     disabled: !draggable,
   });
+  const overdue = issue.due !== null && issue.status !== "done" && issue.due < today();
   return (
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "bg-card hover:bg-muted/50 flex items-center gap-3 px-3 py-2 text-sm",
+        "bg-card hover:bg-muted/60 flex min-h-11 items-center gap-3 border-b px-4 py-2 text-sm last:border-b-0",
         isDragging && "relative z-10 shadow-lg",
       )}
     >
@@ -62,7 +67,7 @@ function Row({
           ref={setActivatorNodeRef}
           type="button"
           aria-label={`Reorder ${issue.key}`}
-          className="text-muted-foreground hover:text-foreground cursor-grab touch-none active:cursor-grabbing"
+          className="text-muted-foreground hover:text-foreground -ml-1 cursor-grab touch-none active:cursor-grabbing"
           {...attributes}
           {...listeners}
         >
@@ -70,8 +75,9 @@ function Row({
         </button>
       )}
       <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => onOpen(issue.key)}>
-        <TypeIcon type={issue.type} />
+        <StatusIcon status={issue.status} />
         <span className="text-muted-foreground w-16 shrink-0 font-mono text-xs">{issue.key}</span>
+        <TypeIcon type={issue.type} className="hidden sm:block" />
         <span className="min-w-0 flex-1 truncate">{issue.title}</span>
         {issue.parent_key && (
           <EpicTag
@@ -80,14 +86,55 @@ function Row({
             className="text-muted-foreground hidden max-w-40 text-xs md:flex"
           />
         )}
-        <StatusBadge status={issue.status} className="text-muted-foreground hidden w-24 sm:inline-flex" />
-        {issue.estimate != null && (
-          <span className="bg-muted hidden rounded px-1.5 text-xs tabular-nums sm:inline">{issue.estimate}</span>
+        {showStatus && (
+          <span className="text-muted-foreground hidden w-24 text-xs md:inline">{STATUS_META[issue.status].label}</span>
         )}
+        <PriorityIcon priority={issue.priority} className="hidden sm:block" />
+        <span
+          className={cn(
+            "w-14 shrink-0 text-right text-xs",
+            overdue ? "font-medium text-red-600 dark:text-red-400" : "text-muted-foreground",
+          )}
+        >
+          {issue.due ? formatDue(issue.due) : ""}
+        </span>
       </button>
-      <PriorityIcon priority={issue.priority} />
       <AssigneeAvatar issue={issue} members={members} showUnassigned />
     </li>
+  );
+}
+
+/** A card of issues with a header that folds it away, as on My issues. */
+function Group({
+  icon,
+  label,
+  count,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  icon: ReactNode;
+  label: string;
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="bg-card overflow-hidden rounded-xl border">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+        className="flex h-11 w-full items-center gap-2 px-4 text-sm font-semibold"
+      >
+        {collapsed ? <ChevronRightIcon className="size-4" /> : <ChevronDownIcon className="size-4" />}
+        {icon}
+        {label}
+        <span className="text-muted-foreground font-normal">{count}</span>
+      </button>
+      {!collapsed && count > 0 && <ul className="border-t">{children}</ul>}
+    </section>
   );
 }
 
@@ -104,6 +151,10 @@ function ListPage() {
   const board = useBoard(byStatus ? scope : undefined, epic ? { epic } : {});
   const memberMap: MemberMap = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m])), [members.data]);
   const epicMap: EpicMap = useMemo(() => new Map(epics.data?.map((e) => [e.key, e])), [epics.data]);
+  // Folded groups; Done starts folded, as on My issues.
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  const isCollapsed = (id: string) => toggled[id] ?? id === "done";
+  const toggle = (id: string) => setToggled((t) => ({ ...t, [id]: !isCollapsed(id) }));
 
   // Local order so a drop shows at once; replaced when the refetch arrives.
   const [items, setItems] = useState<IssueSummary[]>([]);
@@ -174,25 +225,31 @@ function ListPage() {
             <Skeleton className="h-64" />
           ) : (
             board.data?.columns.map((column) => (
-              <div key={column.status} className="grid gap-1.5">
-                <h3 className="flex items-center gap-2 pt-2 text-sm font-medium">
-                  <StatusIcon status={column.status} />
-                  {STATUS_META[column.status].label}
-                  <span className="text-muted-foreground font-normal">{column.issues.length}</span>
-                </h3>
-                {column.issues.length > 0 && (
-                  // Rows are sortable items; grouped by status they don't move, so the context is inert.
-                  <DndContext>
-                    <SortableContext items={column.issues.map((i) => i.key)} strategy={verticalListSortingStrategy}>
-                      <ul className="divide-y overflow-hidden rounded-lg border">
-                        {column.issues.map((issue) => (
-                          <Row key={issue.key} issue={issue} members={memberMap} epics={epicMap} onOpen={openIssue} draggable={false} />
-                        ))}
-                      </ul>
-                    </SortableContext>
-                  </DndContext>
-                )}
-              </div>
+              <Group
+                key={column.status}
+                icon={<StatusIcon status={column.status} />}
+                label={STATUS_META[column.status].label}
+                count={column.issues.length}
+                collapsed={isCollapsed(column.status)}
+                onToggle={() => toggle(column.status)}
+              >
+                {/* Rows are sortable items; grouped by status they don't move, so the context is inert. */}
+                <DndContext>
+                  <SortableContext items={column.issues.map((i) => i.key)} strategy={verticalListSortingStrategy}>
+                    {column.issues.map((issue) => (
+                      <Row
+                        key={issue.key}
+                        issue={issue}
+                        members={memberMap}
+                        epics={epicMap}
+                        onOpen={openIssue}
+                        draggable={false}
+                        showStatus={false}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              </Group>
             ))
           )
         ) : backlog.isLoading ? (
@@ -213,7 +270,13 @@ function ListPage() {
             onDragEnd={onDragEnd}
           >
             <SortableContext items={visible.map((i) => i.key)} strategy={verticalListSortingStrategy}>
-              <ul className="divide-y overflow-hidden rounded-lg border">
+              <Group
+                icon={<ListOrderedIcon className="text-muted-foreground size-4" />}
+                label={epic ? `Open in ${epic}` : "Open"}
+                count={visible.length}
+                collapsed={isCollapsed("ranked")}
+                onToggle={() => toggle("ranked")}
+              >
                 {visible.map((issue) => (
                   <Row
                     key={issue.key}
@@ -222,9 +285,10 @@ function ListPage() {
                     epics={epicMap}
                     onOpen={openIssue}
                     draggable={canEdit}
+                    showStatus
                   />
                 ))}
-              </ul>
+              </Group>
             </SortableContext>
           </DndContext>
         )}

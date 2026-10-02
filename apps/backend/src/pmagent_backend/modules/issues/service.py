@@ -483,6 +483,11 @@ class IssueService:
             self._check_agent_owns(actor, issue)
         issue.updated_at = _now()
         self._event(issue, actor, IssueEventKind.COMMENTED, body=data.body)
+        if data.mentions:
+            await Notifier(self.session).mentioned(
+                project, data.mentions, data.body, issue.updated_at, title=issue.title,
+                actor_user_id=actor.user_id, issue_id=issue.id,
+            )
         await self.session.commit()
         return await self.get(project, issue.key)
 

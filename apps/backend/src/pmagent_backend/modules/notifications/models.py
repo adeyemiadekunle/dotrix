@@ -16,6 +16,7 @@ class NotificationKind(enum.StrEnum):
     CHECKPOINT = "checkpoint"  # an agent you asked wants you to confirm or change its plan
     ASSIGNED = "assigned"  # someone (or an agent) assigned an issue to you
     FINDING = "finding"  # a run you asked for finished with findings to look at
+    MENTION = "mention"  # someone @mentioned you in an issue comment or a chat message
 
 
 class Notification(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
@@ -33,6 +34,7 @@ class Notification(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     actor_agent: Mapped[str | None] = mapped_column(String(32))
     title: Mapped[str] = mapped_column(String(300))
+    excerpt: Mapped[str | None] = mapped_column(String(300))  # mentions: what was said
     count: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

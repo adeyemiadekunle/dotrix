@@ -180,13 +180,19 @@ export function useSendMessage(scope: Scope | undefined) {
     scope,
     (
       s,
-      { message, threadId, agent = "auto", model }: { message: string; threadId: string | null; agent?: AgentId; model?: string | null },
+      {
+        message,
+        threadId,
+        agent = "auto",
+        model,
+        mentions = [],
+      }: { message: string; threadId: string | null; agent?: AgentId; model?: string | null; mentions?: string[] },
     ) =>
       unwrap(
         api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs", {
           params: { path: path(s) },
           // The model only for a new conversation: an existing one keeps its own.
-          body: { message, thread_id: threadId, agent, model: threadId ? null : (model ?? null) },
+          body: { message, thread_id: threadId, agent, model: threadId ? null : (model ?? null), mentions },
         }),
       ),
   );

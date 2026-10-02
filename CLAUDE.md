@@ -191,7 +191,7 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 
 ### Phase 1: shell and My issues
 - [x] Board columns fit their cards (`@2xl:items-start` on the columns row; they stretched to the tallest)
-- [x] Sidebar in three groups: you (Home, Notifications, My issues with its open count, Search with ⌘K on a Mac and Ctrl K elsewhere), Workspace (Chat, Overview, Projects, Tasks, Timeline, Activity; for owners and admins Agents and Audit log until Phase 5), Projects (a lock on restricted ones, the open project expanding to its views), and Settings at the bottom above you. Notifications is the Approvals page renamed (`/approvals`) until Phase 6
+- [x] Sidebar in three groups: you (Home, Notifications, My issues with its open count, Search with ⌘K on a Mac and Ctrl K elsewhere), Workspace (Overview, Chat, Projects, Tasks, Timeline, Activity; for owners and admins Agents and Audit log until Phase 5), Projects (a lock on restricted ones; each project's views fold away with its chevron, the one you're in starting open, remembered per browser), and Settings at the bottom above you. Notifications is the Approvals page renamed (`/approvals`) until Phase 6
   - [x] Timeline shown as *Later* (disabled) in the Workspace group and under each project
   - [ ] starred projects first (needs favourites)
 - [x] Top bar on every page: breadcrumb, the page's actions, Search (Ctrl/⌘ K), and the notifications bell (a dot while something waits for a decision)
@@ -201,18 +201,18 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 - [x] My issues (`/w/[ws]/my-issues`): Overdue / Today / Upcoming / No due date / Done this week; Assigned to me, Watching, Reported by me (`?who=`); rows open the issue in its project's board
   - [ ] views Board, Table, Timeline *later* (with Phase 2's views)
 - [x] Profile menu: Light / Dark / System
-  - [ ] switch workspace, keyboard shortcuts, connect the CLI (with Phase 5's Profile page)
+  - [x] switch workspace, keyboard shortcuts (a dialog listing every shortcut), connect the CLI (install, sign in, link a checkout) (`components/user-menu-dialogs.tsx`)
 
 ### Phase 2: project views
 - [x] Tabs: Overview, Board, List, Table, Files, Knowledge, Activity (then Chat and Briefing until Phase 3; settings stays the gear); the open project expands to the same views in the sidebar. A project opens on Overview; `/backlog` and `/docs` redirect to `/list` and `/files`
   - [ ] Timeline *later* (needs start dates and the project graph)
 - [x] Overview as the landing tab: about, progress by status, coming up (soonest due first), epics, details, "Ask Chat" for a summary, recent activity
-- [x] List replaces Backlog: Ranked (drag to reorder, the old backlog) or By status (`?group=status`), with the epics alongside; Table: every issue, sortable columns, a Columns menu (remembered per browser), search, Export CSV
-  - [ ] Table bulk actions (change status, assign)
+- [x] List replaces Backlog: Ranked (drag to reorder, the old backlog) or By status (`?group=status`), with the epics alongside; laid out like My issues (groups as cards that fold, Done folded; rows with status, key, title, epic, priority, due, assignee); Table: every issue, sortable columns, a Columns menu (remembered per browser), search, Export CSV
+  - [x] Table bulk actions: select rows (or all shown), then change status or assign them together; failures stay selected
 - [x] Files replaces Docs: drop zone, type filter, sort (newest, name, largest), conversion status
   - [ ] retry a failed conversion (needs an endpoint)
 - [x] Board: label chips, due dates, and + per column were already there; columns fit their cards (Phase 1)
-  - [ ] Sort control
+  - [x] Sort control (`?sort=`: Ranked, Priority, Due date, Recently updated, Newest); cards drag only in Ranked order
 - [x] Backend + web: project Activity (`GET .../projects/{id}/activity`, module `activity`): issue events, document versions (not the skeleton), and for people who can chat agent runs and approval decisions; newest first, paged with `before`. The Activity tab filters Everything / Issues / Documents / Agents / Approvals; Overview shows the latest
 
 ### Phase 3: workspace Chat
@@ -230,7 +230,7 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 - [x] Projects page: progress, done/total, overdue, restricted lock, search, sort (recently active, name, most done), Grid / List
   - [ ] a project status (On track / At risk), due date, and people on the card (needs those fields)
 - [x] ⌘K / Ctrl+K palette (`components/command-palette.tsx`): issues (matched in the browser), documents by section (`GET /v1/workspaces/{id}/search`: each visible project searched, up to 30, hits merged by score), projects, pages, and "Ask the agents in Chat"; arrows and Enter
-  - [ ] agents and people in the palette; Chat started with the query
+  - [x] agents (Chat opens with that agent picked) and people (their issues on Tasks) in the palette; "Ask the agents" starts Chat with the query (`/chat?q=`, about the project you're in)
 
 ### Phase 5: one Settings
 - [x] Settings at `/w/[ws]/settings/…` with a left nav (a scrolling row on phones): Account (Profile, Appearance, Notifications *later*, Devices and tokens, Calendar) and the workspace (General, Members, Invites for owners and admins, What members can do in organisations, Agents and Audit log for owners and admins). `/settings` opens your profile in the workspace you were last in; the user menu has Profile and Settings; sections stack when narrow (`SettingsSection` is a container query, `stacked` for full-width lists)
@@ -242,8 +242,8 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 
 ### Phase 6: Notifications (with agents v2 step 4)
 - [x] Backend: notification records (`modules/notifications`, `GET /v1/workspaces/{id}/notifications`, `/counts`, `POST .../read`): changes waiting go to everyone who may approve them and sees the project; a checkpoint and a run's open findings to whoever asked; an issue assigned to you (not by yourself). Read state per person; approvals and checkpoints are `resolved` once decided and count until then, the rest until read; only projects you can still see
-  - [ ] mentions (needs @mentions, FR-33)
-- [x] Notifications page (`/w/[ws]/approvals`, `?tab=` and `?n=`): list and detail, tabs All / Approvals / Mentions (*later*) / Assigned / Findings, approve or reject in the detail with the diff (the approvals card); opening one marks it read; Mark all read; replaces the Approvals page; the sidebar badge and the bell count what still needs you
+  - [x] mentions: typing "@" in an issue comment or a chat message offers the people who can see the project (`components/mentions.tsx`); the text stays plain ("@Ada Lovelace") and the request lists who was picked (`mentions`); each is told only if "@Their Name" is in the text and they can see the project (`Notifier.mentioned`, kind `mention` with an excerpt). The Mentions tab shows them
+- [x] Notifications page (`/w/[ws]/approvals`, `?tab=` and `?n=`): list and detail, tabs All / Approvals / Mentions / Assigned / Findings, approve or reject in the detail with the diff (the approvals card); opening one marks it read; Mark all read; replaces the Approvals page; the sidebar badge and the bell count what still needs you
 
 ## Plan: agents v2 (review, 2026-09-29)
 
@@ -417,7 +417,8 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 
 ### Phase 4: notifications (email now works)
 - [ ] Email approvers when changes wait for them, and the requester when their request was decided (with the reason on a rejection); batch per run, not per change
-- [ ] @mentions in comments and chat notify the person; watchers get issue changes (FR-33)
+- [x] @mentions in comments and chat notify the person (in the app; UI redesign Phase 6)
+  - [ ] by email; watchers get issue changes (FR-33)
 - [ ] Per-person settings (immediately, daily digest, or off); the daily briefing by email (opt-in)
 - [ ] Slack later (FR-14)
 
@@ -578,7 +579,8 @@ Organisations are workspaces of kind `organization` (agents v2 step 0, D6); the 
 - [x] CLI: `pmagent run` on the platform when linked (streams and settles approvals inline; `--background` runs it on the server), `pmagent jobs` (the project's recent runs), `jobs-approve <id>` (approve or `--reject -m`; `--foreground` follows), `jobs-stop <id>`; `--local` keeps the local engine
 - [x] CLI: `pmagent docs-add` uploads to the platform when linked
 - [x] **FR-32** Calendar feed (`modules/calendar`): a per-person secret URL (`/v1/calendar/{secret}.ics`, served through the web app's `/api/v1` proxy) with issue due dates (all-day) and scheduled times (one-hour slots); "mine" (assigned or watched) or "all" (every dated issue in visible projects); workspaces re-checked on every fetch, no descriptions in the feed, the secret kept out of the access log; Settings → Calendar in the web app
-- [ ] **FR-33** @mentions and notifying watchers (with FR-14 notifications)
+- [x] **FR-33** @mentions in issue comments and chat (in-app notifications)
+- [ ] **FR-33** notifying watchers of issue changes (with FR-14 notifications)
 
 ### P0: Approvals, audit, and agents
 
@@ -614,7 +616,7 @@ Organisations are workspaces of kind `organization` (agents v2 step 0, D6); the 
 - [ ] **FR-13** With a code host connected (FR-10), draft from the repo on the platform too (the web app's path)
 - [ ] **FR-14** Email and Slack notifications (approvals waiting, PR ready, daily briefing)
 - [ ] **FR-31** Sprints (goal, dates, committed issues)
-- [ ] **FR-33** @mentions and watchers
+- [ ] **FR-33** watchers (@mentions are done)
 - [ ] **FR-36** Optional second approver for coding-agent runs and for changes to requirements or ADRs
 - [ ] GitLab connector
 - [ ] Observability: tracing of agent runs, usage dashboards for admins

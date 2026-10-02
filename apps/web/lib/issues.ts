@@ -216,11 +216,11 @@ export function useCreateIssue(scope: Scope | undefined) {
 }
 
 export function useComment(scope: Scope | undefined) {
-  return useIssueMutation(scope, (s, { key, body }: { key: string; body: string }) =>
+  return useIssueMutation(scope, (s, { key, body, mentions = [] }: { key: string; body: string; mentions?: string[] }) =>
     unwrap(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments", {
         params: { path: { ...path(s), key } },
-        body: { body },
+        body: { body, mentions },
       }),
     ),
   );

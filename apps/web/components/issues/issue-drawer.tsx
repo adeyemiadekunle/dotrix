@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 import { useChat } from "@/components/agent/chat-context";
 import { Markdown } from "@/components/markdown";
+import { useMentionable } from "@/components/mentions";
 import { useReviewIssue } from "@/lib/agent";
 import {
   useComment,
@@ -197,6 +198,7 @@ function IssueDetails({
 }) {
   const update = useUpdateIssue(scope);
   const comment = useComment(scope);
+  const mentionable = useMentionable(scope.workspaceId, scope.projectId);
   const epics = useEpics(scope);
   const save = (changes: Schemas["IssueUpdate"]) => update.mutateAsync({ key: issue.key, changes });
   const assignee = issue.assignee_agent ?? issue.assignee_user_id ?? NONE;
@@ -425,7 +427,8 @@ function IssueDetails({
           members={members}
           canComment={canEdit}
           commenting={comment.isPending}
-          onComment={(body) => comment.mutateAsync({ key: issue.key, body })}
+          mentionable={mentionable}
+          onComment={(body, mentions) => comment.mutateAsync({ key: issue.key, body, mentions })}
         />
       </div>
     </div>
