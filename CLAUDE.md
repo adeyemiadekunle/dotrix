@@ -74,7 +74,7 @@ apps/backend/
 │   │   ├── health.py            /health (liveness), /health/ready (database)
 │   │   └── v1.py                mounts every module router under /v1
 │   ├── modules/
-│   │   ├── auth/                users, sign-up/login, refresh tokens, email verification, password reset, GitHub sign-in (github.py), your profile (profile.py: name, what you do, photo, sign-in methods)
+│   │   ├── auth/                users, sign-up/login, refresh tokens, email verification, password reset, GitHub sign-in (github.py), your profile (profile.py: name, what you do, photo, sign-in methods), where you're signed in (sessions.py: browsers and the desktop app)
 │   │   ├── api_tokens/          personal access tokens (pmat_…) and CLI device login
 │   │   ├── calendar/            per-person iCalendar feed of issue dates at a secret URL (FR-32)
 │   │   ├── workspaces/          workspaces (personal or organisation), members, roles, the permission matrix (permissions.py), turn into an organisation
@@ -238,6 +238,7 @@ Why: the ideas in `docs/UI ideas/` (30 screens) give a calmer, better organised 
 - [x] Members: search (name, email, what they do), role chips with counts, role dropdown per row, photo, "Projects they see" (`MemberRead.sees_all_projects`, `project_ids`: among the projects the viewer sees, so a restricted one never leaks)
 - [x] Profile: photo (cropped to a 256 px square in the browser; `PUT/DELETE/GET /v1/me/avatar`, PNG/JPEG/WebP checked by their first bytes, ≤ 500 KB, kept in `user_avatars`; colleagues' at `GET /v1/workspaces/{id}/members/{user_id}/avatar`), name and what you do (`PATCH /v1/me`, `User.title`), email (verified), sign-in methods (`GET /v1/me/sign-in-methods`: password, email link, GitHub; `DELETE /v1/me/sign-in-methods/github`, 409 without a password)
   - [x] photos next to assignees, comments, and activity (`useMemberAvatarSrc`)
+- [x] Devices and tokens lists browsers and the desktop app too, not only the CLI: each sign-in is a session (`auth_sessions`, one per refresh-token family: web / desktop from the User-Agent, "Chrome on macOS", the address, last used at each refresh), its id in the access token (`sid`) so signing it out stops its access at once. `GET /v1/me/sessions`, `DELETE /v1/me/sessions/{id}`, `POST /v1/me/sessions/sign-out-others` (not with API tokens). The web app passes on the browser's User-Agent and address when signing in and refreshing (`clientHeaders`)
   - [ ] linking GitHub from Settings (today: sign in with GitHub once); changing the password in place (today: an emailed link)
 
 ### Phase 6: Notifications (with agents v2 step 4)

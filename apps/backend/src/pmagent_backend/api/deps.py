@@ -28,7 +28,7 @@ from pmagent_backend.db.session import get_session
 from pmagent_backend.modules.api_tokens.models import Scope
 from pmagent_backend.modules.api_tokens.service import ApiTokenService, is_api_token
 from pmagent_backend.modules.auth.models import User
-from pmagent_backend.modules.auth.repository import UserRepository
+from pmagent_backend.modules.auth.repository import AuthSessionRepository, UserRepository
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
@@ -67,10 +67,15 @@ async def get_current_user(
             raise Forbidden("This API token is read-only")
         user_id, method = token.user_id, "api_token"
     else:
-        user_id = security.decode_access_token(
+        claims = security.decode_access_claims(
             bearer, secret=settings.jwt_secret.get_secret_value(), issuer=settings.jwt_issuer
         )
-        method = "session"
+        user_id, method = claims.user_id, "session"
+        if claims.session_id is not None:
+            # A signed-out browser or app loses access at once, not when its token expires.
+            if await AuthSessionRepository(session).signed_out(claims.session_id):
+                raise Unauthorized("This session was signed out")
+            request.state.session_id = claims.session_id
     user = await UserRepository(session).get(user_id)
     if user is None or not user.is_active:
         raise Unauthorized("Invalid or expired credentials")

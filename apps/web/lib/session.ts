@@ -52,12 +52,13 @@ const refreshes = new Map<string, Promise<TokenPair | null>>();
 const REMEMBER_MS = 30_000;
 
 /** Trade a refresh token for a new pair (the backend rotates it), or null if it's no longer valid. */
-export function refreshTokens(refreshToken: string): Promise<TokenPair | null> {
+export function refreshTokens(refreshToken: string, client: Record<string, string> = {}): Promise<TokenPair | null> {
   let pending = refreshes.get(refreshToken);
   if (!pending) {
     pending = fetch(`${API_URL}/v1/auth/refresh`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // Who's refreshing (`clientHeaders`), so the session keeps the browser's address, not ours.
+      headers: { "Content-Type": "application/json", ...client },
       body: JSON.stringify({ refresh_token: refreshToken }),
       cache: "no-store",
     })
@@ -77,14 +78,19 @@ export function passError(upstream: Response): Response {
   return new Response(upstream.body, { status: upstream.status, headers });
 }
 
-/** Who's calling, for the backend's per-IP rate limits: every request reaches it from this
- * server, so it believes X-Forwarded-For only from here (its PMAGENT_TRUSTED_PROXIES).
- * Next fills the header from the socket only when it's missing, so in production put a proxy
- * in front that appends the real address (nginx, the host's load balancer); per-email limits
- * don't depend on it. */
+/** Who's calling, for the backend's per-IP rate limits and for its list of signed-in browsers
+ * and apps (Settings → Devices): every request reaches it from this server, so it believes
+ * X-Forwarded-For only from here (its PMAGENT_TRUSTED_PROXIES). Next fills the header from the
+ * socket only when it's missing, so in production put a proxy in front that appends the real
+ * address (nginx, the host's load balancer); per-email limits don't depend on it. The browser's
+ * (or the desktop app's) User-Agent says what signed in: "Chrome on macOS", "Desktop app". */
 export function clientHeaders(request: Request): Record<string, string> {
+  const headers: Record<string, string> = {};
   const forwarded = request.headers.get("x-forwarded-for");
-  return forwarded ? { "X-Forwarded-For": forwarded } : {};
+  if (forwarded) headers["X-Forwarded-For"] = forwarded;
+  const userAgent = request.headers.get("user-agent");
+  if (userAgent) headers["User-Agent"] = userAgent;
+  return headers;
 }
 
 /** The state and destination of a GitHub sign-in in progress (see app/api/auth/github). */

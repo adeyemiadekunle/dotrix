@@ -6,6 +6,8 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 
+from .models import SessionClient
+
 # Lowercased so lookups and the unique index are case-insensitive.
 Email = Annotated[EmailStr, AfterValidator(str.lower)]
 # NIST 800-63B: length over composition rules; cap length to bound hashing cost.
@@ -52,6 +54,22 @@ class EmailSignupAddress(BaseModel):
 class PasswordResetConfirm(BaseModel):
     token: str = Field(max_length=256)
     new_password: Password
+
+
+class SessionRead(BaseModel):
+    """A browser or the desktop app you're signed in on (the CLI and tools use API tokens)."""
+
+    id: uuid.UUID
+    client: SessionClient = Field(description="`web` (a browser), `desktop` (the desktop app), or `other`")
+    device: str = Field(description='What it runs on, from its User-Agent: "Chrome on macOS"')
+    ip: str | None = Field(description="The address it last signed in or refreshed from")
+    created_at: datetime = Field(description="When it signed in")
+    last_used_at: datetime = Field(description="When it last refreshed its access (within minutes of last use)")
+    current: bool = Field(description="The one making this request")
+
+
+class SignedOut(BaseModel):
+    signed_out: int = Field(description="How many sessions were signed out")
 
 
 class TokenPair(BaseModel):

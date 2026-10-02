@@ -486,6 +486,68 @@ export interface paths {
         patch: operations["update_profile"];
         trace?: never;
     };
+    "/v1/me/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sessions
+         * @description The browsers and desktop apps you're signed in on, the one you're using first (`current`).
+         *     The CLI and tools are your API tokens (`GET /v1/me/tokens`).
+         */
+        get: operations["list_sessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Sign Out Session
+         * @description Sign a browser or the desktop app out: it can't refresh, and its access stops at once.
+         *     Signing out the one you're using signs you out here too. Not with an API token.
+         */
+        delete: operations["sign_out_session"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/sessions/sign-out-others": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign Out Other Sessions
+         * @description Sign out every browser and desktop app but the one you're using. Not with an API token.
+         */
+        post: operations["sign_out_other_sessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/sign-in-methods": {
         parameters: {
             query?: never;
@@ -4331,6 +4393,51 @@ export interface components {
              */
             score: number;
         };
+        /**
+         * SessionClient
+         * @enum {string}
+         */
+        SessionClient: "web" | "desktop" | "other";
+        /**
+         * SessionRead
+         * @description A browser or the desktop app you're signed in on (the CLI and tools use API tokens).
+         */
+        SessionRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description `web` (a browser), `desktop` (the desktop app), or `other` */
+            client: components["schemas"]["SessionClient"];
+            /**
+             * Device
+             * @description What it runs on, from its User-Agent: "Chrome on macOS"
+             */
+            device: string;
+            /**
+             * Ip
+             * @description The address it last signed in or refreshed from
+             */
+            ip: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description When it signed in
+             */
+            created_at: string;
+            /**
+             * Last Used At
+             * Format: date-time
+             * @description When it last refreshed its access (within minutes of last use)
+             */
+            last_used_at: string;
+            /**
+             * Current
+             * @description The one making this request
+             */
+            current: boolean;
+        };
         /** SignInMethods */
         SignInMethods: {
             /**
@@ -4345,6 +4452,14 @@ export interface components {
             email_link: boolean;
             /** Accounts */
             accounts: components["schemas"]["LinkedAccount"][];
+        };
+        /** SignedOut */
+        SignedOut: {
+            /**
+             * Signed Out
+             * @description How many sessions were signed out
+             */
+            signed_out: number;
         };
         /** SignupRequest */
         SignupRequest: {
@@ -5893,6 +6008,129 @@ export interface operations {
             };
             /** @description Request body or parameters failed validation */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    sign_out_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    sign_out_other_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignedOut"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

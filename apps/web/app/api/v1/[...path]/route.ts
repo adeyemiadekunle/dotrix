@@ -41,7 +41,7 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
   try {
     upstream = await send(jar.get(ACCESS_COOKIE)?.value);
     if (upstream.status === 401 && refreshToken) {
-      refreshed = await refreshTokens(refreshToken);
+      refreshed = await refreshTokens(refreshToken, clientHeaders(request));
       if (refreshed) upstream = await send(refreshed.access_token);
     }
   } catch {

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { signUpWithProject } from "./helpers";
+import { signUp, signUpWithProject } from "./helpers";
 
 // A 1×1 PNG, as a picked file.
 const PIXEL = Buffer.from(
@@ -43,4 +43,29 @@ test("your profile in Settings: a photo and what you do, shown to the team in Me
   await expect(page.getByText("@research")).toBeVisible();
   await settings.getByRole("link", { name: "Audit log" }).click();
   await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();
+});
+
+test("where you're signed in: see each browser, and sign another one out", async ({ page, browser }) => {
+  const user = await signUp(page);
+  const other = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  const laptop = await other.newPage();
+  await laptop.goto("/login");
+  await laptop.getByLabel("Email").fill(user.email);
+  await laptop.getByLabel("Password").fill(user.password);
+  await laptop.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(laptop).toHaveURL(/\/w\//);
+
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Devices and tokens" }).click();
+  const sessions = page.getByRole("list", { name: "Signed-in browsers and apps" });
+  await expect(sessions.getByRole("listitem")).toHaveCount(2);
+  await expect(sessions.getByRole("listitem").first()).toContainText("This device");
+  await expect(sessions.getByRole("listitem").first()).toContainText(/Chrome on/);
+
+  // Sign the other browser out: its next request sends it back to sign in.
+  await sessions.getByRole("button", { name: /^Sign out Chrome on \w+$/ }).click();
+  await expect(sessions.getByRole("listitem")).toHaveCount(1);
+  await laptop.reload();
+  await expect(laptop).toHaveURL(/\/login/);
+  await other.close();
 });

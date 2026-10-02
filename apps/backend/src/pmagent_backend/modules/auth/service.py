@@ -16,7 +16,16 @@ from pmagent_backend.core.settings import Settings
 from pmagent_backend.modules.workspaces.service import WorkspaceService
 
 from .github import GitHubProfile
-from .models import ActionToken, ActionTokenPurpose, EmailSignup, OAuthAccount, RefreshToken, User
+from .models import (
+    ActionToken,
+    ActionTokenPurpose,
+    AuthSession,
+    EmailSignup,
+    OAuthAccount,
+    RefreshToken,
+    SessionClient,
+    User,
+)
 from .repository import (
     ActionTokenRepository,
     EmailSignupRepository,
@@ -32,6 +41,7 @@ from .schemas import (
     TokenPair,
     UserRead,
 )
+from .sessions import ClientInfo, describe
 
 
 def _now() -> datetime:
@@ -51,6 +61,8 @@ class AuthService:
         self.action_tokens = ActionTokenRepository(session)
         self.signups = EmailSignupRepository(session)
         self.oauth_accounts = OAuthAccountRepository(session)
+        # Who's signing in (set by the router from the request), for the session's description.
+        self.client: ClientInfo | None = None
 
     # -- sign-up and login -------------------------------------------------------
 
@@ -102,6 +114,7 @@ class AuthService:
         if user is None or not user.is_active:
             raise Unauthorized("Invalid refresh token")
         row.revoked_at = now
+        await self._touch_session(row.family_id, user, now)
         tokens = self._issue_tokens(user, family_id=row.family_id)
         await self.session.commit()
         return tokens
@@ -276,14 +289,36 @@ class AuthService:
 
     # -- helpers -----------------------------------------------------------------
 
+    async def _touch_session(self, family_id: uuid.UUID, user: User, now: datetime) -> None:
+        """A refresh: the session was just used (from where). One that signed in before sessions
+        were recorded gets a row now."""
+        session = await self.session.get(AuthSession, family_id)
+        if session is None:
+            self.session.add(self._new_session(family_id, user, now))
+            return
+        session.last_used_at = now
+        if self.client and self.client.ip:
+            session.ip = self.client.ip
+
+    def _new_session(self, family_id: uuid.UUID, user: User, now: datetime) -> AuthSession:
+        client, device = describe(self.client.user_agent) if self.client else (SessionClient.OTHER, "Unknown app")
+        return AuthSession(
+            id=family_id, user_id=user.id, client=client, device=device[:100],
+            ip=self.client.ip if self.client else None, created_at=now, last_used_at=now,
+        )
+
     def _issue_tokens(self, user: User, family_id: uuid.UUID | None = None) -> TokenPair:
+        """A new pair. Without `family_id`, a new sign-in: a new session for this browser or app."""
         now = _now()
         access_ttl = timedelta(minutes=self.settings.access_token_ttl_minutes)
         refresh = security.generate_token()
+        if family_id is None:
+            family_id = uuid7()
+            self.session.add(self._new_session(family_id, user, now))
         self.refresh_tokens.add(
             RefreshToken(
                 user_id=user.id,
-                family_id=family_id or uuid7(),
+                family_id=family_id,
                 token_hash=security.hash_token(refresh),
                 created_at=now,
                 expires_at=now + timedelta(days=self.settings.refresh_token_ttl_days),
@@ -294,6 +329,7 @@ class AuthService:
             secret=self.settings.jwt_secret.get_secret_value(),
             issuer=self.settings.jwt_issuer,
             ttl=access_ttl,
+            session_id=family_id,
         )
         return TokenPair(
             access_token=access,

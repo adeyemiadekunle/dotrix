@@ -47,6 +47,29 @@ class RefreshToken(UUIDPrimaryKeyMixin, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class SessionClient(enum.StrEnum):
+    WEB = "web"  # a browser, through the web app
+    DESKTOP = "desktop"  # the desktop app (Electron)
+    OTHER = "other"  # anything else that signed in with a password, link, or GitHub
+
+
+class AuthSession(Base):
+    """One signed-in browser or app: a refresh-token family (its id is the family's), with what
+    it runs on and when it was last used, so people can see where they're signed in and sign
+    any of them out. The CLI and tools sign in with API tokens instead (`api_tokens`)."""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    client: Mapped[SessionClient] = mapped_column(str_enum(SessionClient, 16))
+    device: Mapped[str] = mapped_column(String(100))  # "Chrome on macOS"
+    ip: Mapped[str | None] = mapped_column(String(64))  # where it last signed in or refreshed from
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ActionTokenPurpose(enum.StrEnum):
     VERIFY_EMAIL = "verify_email"
     RESET_PASSWORD = "reset_password"

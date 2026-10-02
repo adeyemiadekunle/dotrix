@@ -1,15 +1,24 @@
 """Sign-up, login, tokens, email verification, password reset (FR-1)."""
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile, status
 from fastapi.responses import RedirectResponse
 
-from pmagent_backend.api.deps import CurrentUser, EmailDep, JobsDep, SessionDep, SettingsDep
+from pmagent_backend.api.deps import (
+    CurrentUser,
+    EmailDep,
+    JobsDep,
+    SessionDep,
+    SessionUser,
+    SettingsDep,
+)
 from pmagent_backend.core import security
 from pmagent_backend.core.openapi import errors
+from pmagent_backend.core.ratelimit import client_ip
 
 from .github import GitHubDep
 from .limits import LOGIN, MAGIC_LINK, PASSWORD_RESET, SIGNUP, VERIFY_RESEND, ThrottleDep
@@ -26,6 +35,8 @@ from .schemas import (
     PasswordResetRequest,
     ProfileUpdate,
     RefreshRequest,
+    SessionRead,
+    SignedOut,
     SignInMethods,
     SignupRequest,
     SignupResponse,
@@ -34,13 +45,21 @@ from .schemas import (
     UserRead,
 )
 from .service import AuthService
+from .sessions import ClientInfo, SessionService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 me_router = APIRouter(tags=["auth"])
 
 
-def get_auth_service(session: SessionDep, settings: SettingsDep, email: EmailDep, jobs: JobsDep) -> AuthService:
-    return AuthService(session, settings, email, jobs)
+def get_auth_service(
+    request: Request, session: SessionDep, settings: SettingsDep, email: EmailDep, jobs: JobsDep
+) -> AuthService:
+    auth = AuthService(session, settings, email, jobs)
+    # The web app passes on the browser's User-Agent and address (see apps/web lib/session.ts).
+    auth.client = ClientInfo(
+        user_agent=request.headers.get("user-agent", "")[:500], ip=client_ip(request, settings.trusted_proxies)
+    )
+    return auth
 
 
 Auth = Annotated[AuthService, Depends(get_auth_service)]
@@ -174,6 +193,37 @@ async def confirm_password_reset(data: PasswordResetConfirm, auth: Auth) -> None
 async def me(user: CurrentUser) -> UserRead:
     """The signed-in user."""
     return UserRead.model_validate(user)
+
+
+def get_session_service(session: SessionDep, settings: SettingsDep) -> SessionService:
+    return SessionService(session, settings)
+
+
+Sessions = Annotated[SessionService, Depends(get_session_service)]
+
+
+def _current_session(request: Request) -> uuid.UUID | None:
+    return getattr(request.state, "session_id", None)
+
+
+@me_router.get("/me/sessions", responses=errors(401))
+async def list_sessions(request: Request, user: CurrentUser, sessions: Sessions) -> list[SessionRead]:
+    """The browsers and desktop apps you're signed in on, the one you're using first (`current`).
+    The CLI and tools are your API tokens (`GET /v1/me/tokens`)."""
+    return await sessions.list(user, _current_session(request))
+
+
+@me_router.delete("/me/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(401, 403, 404))
+async def sign_out_session(session_id: uuid.UUID, user: SessionUser, sessions: Sessions) -> None:
+    """Sign a browser or the desktop app out: it can't refresh, and its access stops at once.
+    Signing out the one you're using signs you out here too. Not with an API token."""
+    await sessions.sign_out(user, session_id)
+
+
+@me_router.post("/me/sessions/sign-out-others", responses=errors(401, 403))
+async def sign_out_other_sessions(request: Request, user: SessionUser, sessions: Sessions) -> SignedOut:
+    """Sign out every browser and desktop app but the one you're using. Not with an API token."""
+    return SignedOut(signed_out=await sessions.sign_out_others(user, _current_session(request)))
 
 
 def get_profile_service(session: SessionDep) -> ProfileService:

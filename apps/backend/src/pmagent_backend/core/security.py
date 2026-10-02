@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -42,7 +43,7 @@ def password_needs_rehash(password_hash: str) -> bool:
 
 
 def create_access_token(
-    user_id: uuid.UUID, *, secret: str, issuer: str, ttl: timedelta
+    user_id: uuid.UUID, *, secret: str, issuer: str, ttl: timedelta, session_id: uuid.UUID | None = None
 ) -> str:
     now = datetime.now(UTC)
     claims = {
@@ -52,10 +53,18 @@ def create_access_token(
         "iat": now,
         "exp": now + ttl,
     }
+    if session_id is not None:
+        claims["sid"] = str(session_id)  # the signed-in browser or app, so signing it out takes effect at once
     return jwt.encode(claims, secret, algorithm="HS256")
 
 
-def decode_access_token(token: str, *, secret: str, issuer: str) -> uuid.UUID:
+@dataclass(frozen=True)
+class AccessClaims:
+    user_id: uuid.UUID
+    session_id: uuid.UUID | None
+
+
+def decode_access_claims(token: str, *, secret: str, issuer: str) -> AccessClaims:
     try:
         claims = jwt.decode(
             token,
@@ -66,9 +75,14 @@ def decode_access_token(token: str, *, secret: str, issuer: str) -> uuid.UUID:
         )
         if claims.get("type") != ACCESS_TOKEN_TYPE:
             raise Unauthorized("Invalid access token")
-        return uuid.UUID(claims["sub"])
+        sid = claims.get("sid")
+        return AccessClaims(uuid.UUID(claims["sub"]), uuid.UUID(sid) if sid else None)
     except (jwt.PyJWTError, ValueError) as exc:
         raise Unauthorized("Invalid or expired access token") from exc
+
+
+def decode_access_token(token: str, *, secret: str, issuer: str) -> uuid.UUID:
+    return decode_access_claims(token, secret=secret, issuer=issuer).user_id
 
 
 def generate_token() -> str:

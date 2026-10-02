@@ -1201,6 +1201,166 @@
         ]
       }
     },
+    "/v1/me/sessions": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List Sessions",
+        "description": "The browsers and desktop apps you're signed in on, the one you're using first (`current`).\nThe CLI and tools are your API tokens (`GET /v1/me/tokens`).",
+        "operationId": "list_sessions",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Sessions"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/sessions/{session_id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign Out Session",
+        "description": "Sign a browser or the desktop app out: it can't refresh, and its access stops at once.\nSigning out the one you're using signs you out here too. Not with an API token.",
+        "operationId": "sign_out_session",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/sessions/sign-out-others": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign Out Other Sessions",
+        "description": "Sign out every browser and desktop app but the one you're using. Not with an API token.",
+        "operationId": "sign_out_other_sessions",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/me/sign-in-methods": {
       "get": {
         "tags": [
@@ -15844,6 +16004,74 @@
         ],
         "title": "SearchHit"
       },
+      "SessionClient": {
+        "type": "string",
+        "enum": [
+          "web",
+          "desktop",
+          "other"
+        ],
+        "title": "SessionClient"
+      },
+      "SessionRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "client": {
+            "$ref": "#/components/schemas/SessionClient",
+            "description": "`web` (a browser), `desktop` (the desktop app), or `other`"
+          },
+          "device": {
+            "type": "string",
+            "title": "Device",
+            "description": "What it runs on, from its User-Agent: \"Chrome on macOS\""
+          },
+          "ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip",
+            "description": "The address it last signed in or refreshed from"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When it signed in"
+          },
+          "last_used_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Used At",
+            "description": "When it last refreshed its access (within minutes of last use)"
+          },
+          "current": {
+            "type": "boolean",
+            "title": "Current",
+            "description": "The one making this request"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "client",
+          "device",
+          "ip",
+          "created_at",
+          "last_used_at",
+          "current"
+        ],
+        "title": "SessionRead",
+        "description": "A browser or the desktop app you're signed in on (the CLI and tools use API tokens)."
+      },
       "SignInMethods": {
         "properties": {
           "password": {
@@ -15871,6 +16099,20 @@
           "accounts"
         ],
         "title": "SignInMethods"
+      },
+      "SignedOut": {
+        "properties": {
+          "signed_out": {
+            "type": "integer",
+            "title": "Signed Out",
+            "description": "How many sessions were signed out"
+          }
+        },
+        "type": "object",
+        "required": [
+          "signed_out"
+        ],
+        "title": "SignedOut"
       },
       "SignupRequest": {
         "properties": {

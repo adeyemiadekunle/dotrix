@@ -6,7 +6,15 @@ from datetime import datetime
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import ActionToken, ActionTokenPurpose, EmailSignup, OAuthAccount, RefreshToken, User
+from .models import (
+    ActionToken,
+    ActionTokenPurpose,
+    AuthSession,
+    EmailSignup,
+    OAuthAccount,
+    RefreshToken,
+    User,
+)
 
 
 class UserRepository:
@@ -52,23 +60,51 @@ class RefreshTokenRepository:
         )
 
     async def revoke_family(self, family_id: uuid.UUID, now: datetime) -> None:
+        """Sign one browser or app out: its refresh tokens and its session."""
         await self.session.execute(
             update(RefreshToken)
             .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
             .values(revoked_at=now)
         )
+        await self.session.execute(
+            update(AuthSession).where(AuthSession.id == family_id, AuthSession.revoked_at.is_(None)).values(revoked_at=now)
+        )
 
     async def revoke_all_for_user(self, user_id: uuid.UUID, now: datetime) -> None:
+        """Sign out everywhere (browsers and apps; API tokens are separate)."""
         await self.session.execute(
             update(RefreshToken)
             .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
             .values(revoked_at=now)
+        )
+        await self.session.execute(
+            update(AuthSession).where(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None)).values(revoked_at=now)
         )
 
     async def delete_stale(self, before: datetime) -> int:
         """Cleanup: tokens that expired before `before`. (Revoked tokens are kept until then,
         so presenting one still revokes its whole family.)"""
         result = await self.session.execute(delete(RefreshToken).where(RefreshToken.expires_at < before))
+        return result.rowcount
+
+
+class AuthSessionRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def signed_out(self, session_id: uuid.UUID) -> bool:
+        """Whether this browser or app was signed out (a session from before they were recorded isn't)."""
+        revoked = await self.session.scalar(select(AuthSession.revoked_at).where(AuthSession.id == session_id))
+        return revoked is not None
+
+    async def delete_stale(self, revoked_before: datetime, idle_before: datetime) -> int:
+        """Cleanup: sessions signed out before `revoked_before`, or unused since `idle_before`
+        (their refresh tokens have expired by then)."""
+        result = await self.session.execute(
+            delete(AuthSession).where(
+                or_(AuthSession.revoked_at < revoked_before, AuthSession.last_used_at < idle_before)
+            )
+        )
         return result.rowcount
 
 

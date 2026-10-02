@@ -10,6 +10,7 @@ from .core.jobs import JobContext, JobFunction
 from .modules.api_tokens.repository import DeviceAuthorizationRepository
 from .modules.auth.repository import (
     ActionTokenRepository,
+    AuthSessionRepository,
     EmailSignupRepository,
     RefreshTokenRepository,
 )
@@ -47,7 +48,7 @@ async def send_password_reset(ctx: JobContext, *, email: str) -> None:
 
 
 async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[str, int]:
-    """Delete rows nothing will use again: expired refresh tokens, used or expired email-link
+    """Delete rows nothing will use again: expired refresh tokens and sessions, used or expired email-link
     tokens, finished device logins, old invites, and web pages read over a month ago. Runs hourly (the worker's cron, or a loop
     in the API process in local mode); safe to run any time, from any number of processes."""
     at = datetime.fromisoformat(now) if now else datetime.now(UTC)
@@ -55,6 +56,9 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
     async with ctx.session_factory() as session:
         deleted = {
             "refresh_tokens": await RefreshTokenRepository(session).delete_stale(token_cutoff),
+            "auth_sessions": await AuthSessionRepository(session).delete_stale(
+                token_cutoff, token_cutoff - timedelta(days=ctx.settings.refresh_token_ttl_days)
+            ),
             "action_tokens": await ActionTokenRepository(session).delete_stale(token_cutoff),
             "email_signups": await EmailSignupRepository(session).delete_stale(token_cutoff),
             "device_authorizations": await DeviceAuthorizationRepository(session).delete_stale(token_cutoff),
