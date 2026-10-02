@@ -487,6 +487,14 @@ class AgentService:
                 details={"tool": approval.tool, "run_id": str(run.id), "reason": decision.reason},
             )
         run.status, run.updated_at = RunStatus.QUEUED, now
+        decided = [a for a in changes if a.status in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED)]
+        if decided and run.requested_by_id is not None:
+            rejected = [a for a in decided if a.status is ApprovalStatus.REJECTED]
+            Notifier(self.session).decided(
+                access.project, run.requested_by_id, run.id, run.title or run.message, now,
+                approved=len(decided) - len(rejected), rejected=len(rejected),
+                reason=next((a.reason for a in rejected if a.reason), None), actor_user_id=member.user_id,
+            )
         await self.session.commit()
 
         await self.runner.resume(

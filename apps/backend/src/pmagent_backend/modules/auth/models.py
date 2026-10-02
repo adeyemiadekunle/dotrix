@@ -27,6 +27,10 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     avatar_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Notification kinds they turned off (Settings → Notifications); approvals can't be.
     muted_notifications: Mapped[list[str]] = mapped_column(ARRAY(String(16)), default=list, server_default="{}")
+    # How notifications reach their inbox: "immediately" (batched each minute), "daily" (a
+    # digest at 08:00 UTC), or "off". Only to a verified address.
+    email_notifications: Mapped[str] = mapped_column(String(16), default="immediately", server_default="immediately")
+    digest_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
     def email_verified(self) -> bool:

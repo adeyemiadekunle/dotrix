@@ -4439,7 +4439,7 @@ export interface components {
          * NotificationKind
          * @enum {string}
          */
-        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention";
+        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention" | "decided";
         /**
          * NotificationRead
          * @description Something that waits for you or happened to you. `kind` says which: changes waiting for
@@ -4534,6 +4534,19 @@ export interface components {
              * @default true
              */
             finding: boolean;
+            /**
+             * Decided
+             * @description Someone approves or rejects changes you asked an agent for
+             * @default true
+             */
+            decided: boolean;
+            /**
+             * Email
+             * @description Emails: as things happen (batched, one per run), a daily digest at 08:00 UTC, or none
+             * @default immediately
+             * @enum {string}
+             */
+            email: "immediately" | "daily" | "off";
         };
         /** OrganizationConversion */
         OrganizationConversion: {

@@ -2,6 +2,7 @@
 counts as unread; and only projects you can still see."""
 import pytest
 from httpx import AsyncClient
+from langchain_core.messages import AIMessage
 
 from pmagent_backend.modules.workspaces.models import Role
 from pmagent_engine.testing import tool_call
@@ -73,7 +74,8 @@ async def test_changes_waiting_notify_whoever_may_approve(world, db_client: Asyn
     [note] = await _notifications(db_client, ws, ada)
     assert note["resolved"] and not note["read"]
     assert await _counts(db_client, ws, bob) == {
-        "unread": 0, "by_kind": {"approval": 0, "checkpoint": 0, "assigned": 0, "finding": 0, "mention": 0}
+        "unread": 0,
+        "by_kind": {"approval": 0, "checkpoint": 0, "assigned": 0, "finding": 0, "mention": 0, "decided": 0},
     }
 
 
@@ -182,7 +184,7 @@ async def test_mentions_in_comments_and_chat(world, db_client: AsyncClient, agen
 async def test_turning_kinds_off(world, db_client: AsyncClient, agent_script) -> None:
     ada, bob, _, _, ws, base = await world()
     defaults = (await db_client.get("/v1/me/notification-settings", headers=bob.headers)).json()
-    assert defaults == {"mention": True, "assigned": True, "finding": True}
+    assert defaults == {"mention": True, "assigned": True, "finding": True, "decided": True, "email": "immediately"}
     await db_client.post(f"{base}/issues", json={"title": "Ship it", "assignee_user_id": bob.id}, headers=ada.headers)
     agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
     await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=ada.headers)
@@ -192,9 +194,120 @@ async def test_turning_kinds_off(world, db_client: AsyncClient, agent_script) ->
     res = await db_client.put(
         "/v1/me/notification-settings", json={"mention": True, "assigned": False, "finding": True}, headers=bob.headers
     )
-    assert res.json() == {"mention": True, "assigned": False, "finding": True}
+    assert res.json() == {"mention": True, "assigned": False, "finding": True, "decided": True, "email": "immediately"}
     assert [n["kind"] for n in await _notifications(db_client, ws, bob)] == ["approval"]
     counts = await _counts(db_client, ws, bob)
     assert counts["by_kind"]["assigned"] == 0 and counts["unread"] == 1
     # Only Bob's choice: Ada still sees hers.
     assert (await db_client.get("/v1/me/notification-settings", headers=ada.headers)).json()["assigned"] is True
+
+
+async def _verify(db_session, *people) -> None:
+    from datetime import UTC, datetime
+
+    from sqlalchemy import update
+
+    from pmagent_backend.modules.auth.models import User
+
+    await db_session.execute(update(User).where(User.id.in_([p.id for p in people])).values(email_verified_at=datetime.now(UTC)))
+    await db_session.commit()
+
+
+async def _a_minute_later(db_client: AsyncClient, db_session) -> None:
+    """The email job's next tick, once the batching minute has passed."""
+    from datetime import timedelta
+
+    from sqlalchemy import update
+
+    from pmagent_backend.modules.notifications.models import Notification
+
+    await db_session.execute(update(Notification).values(created_at=Notification.created_at - timedelta(minutes=2)))
+    await db_session.commit()
+    await db_client._transport.app.state.jobs.enqueue("email_notifications")  # type: ignore[attr-defined]
+
+
+async def test_emails_as_it_happens_and_the_decision_back(
+    world, db_client: AsyncClient, agent_script, db_session, outbox
+) -> None:
+    ada, bob, cat, _, ws, base = await world()
+    await _verify(db_session, ada, cat)  # Bob's address isn't verified: no email for him
+    # Two changes in one turn: they wait together, as one batch.
+    agent_script.say(
+        AIMessage(content="", tool_calls=[
+            {"name": "write_file", "args": {"file_path": "/pmagent/roadmap.md", "content": "# Roadmap\n"},
+             "id": "w1", "type": "tool_call"},
+            {"name": "write_file", "args": {"file_path": "/pmagent/vision.md", "content": "# Vision\n"},
+             "id": "w2", "type": "tool_call"},
+        ]),
+        "Done.",
+    )
+    run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan phase 1"}, headers=cat.headers)).json()
+    sent = len(outbox.messages)
+    await _a_minute_later(db_client, db_session)
+    mine = [m for m in outbox.messages[sent:] if m.to == ada.email]
+    assert [m.to for m in outbox.messages[sent:]] == [ada.email]  # one email for the run, to the verified approver
+    assert "2 changes wait for your decision: Plan phase 1" in mine[0].subject
+    assert "/w/" in mine[0].body and "/approvals?n=" in mine[0].body and "KUN · " in mine[0].body
+    await _a_minute_later(db_client, db_session)
+    assert len(outbox.messages) == sent + 1  # handled once
+
+    # Ada rejects one with a reason: Cat, who asked, hears what happened and why.
+    pending = [a for a in run["approvals"] if a["status"] == "pending"]
+    await db_client.post(f"{base}/agent/runs/{run['id']}/decisions", headers=ada.headers, json={"decisions": [
+        {"approval_id": pending[0]["id"], "decision": "approve"},
+        {"approval_id": pending[1]["id"], "decision": "reject", "reason": "The vision is still being written"},
+    ]})
+    [decided] = [n for n in await _notifications(db_client, ws, cat) if n["kind"] == "decided"]
+    assert decided["title"] == "1 approved, 1 rejected: Plan phase 1" and decided["excerpt"] == "The vision is still being written"
+    await _a_minute_later(db_client, db_session)
+    [email] = outbox.messages[sent + 1:]
+    assert email.to == cat.email and 'Why: "The vision is still being written"' in email.body
+
+
+async def test_daily_digest_off_and_read(world, db_client: AsyncClient, agent_script, db_session, outbox) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import update
+
+    from pmagent_backend.modules.auth.models import User
+    from pmagent_backend.modules.notifications.emails import NotificationEmails
+    from pmagent_backend.modules.notifications.models import Notification
+
+    ada, _, cat, _, ws, base = await world()
+    await _verify(db_session, ada, cat)
+    settings = (await db_client.get("/v1/me/notification-settings", headers=ada.headers)).json()
+    assert settings["email"] == "immediately" and settings["decided"] is True
+    await db_client.put("/v1/me/notification-settings", json={**settings, "email": "daily"}, headers=ada.headers)
+    yesterday = datetime.now(UTC) - timedelta(days=1)
+    await db_session.execute(update(User).where(User.id == ada.id).values(digest_sent_at=yesterday))
+    await db_session.commit()
+    # The email service directly, at times of the test's choosing (the job also sends digests).
+    emails = NotificationEmails(db_session, outbox, "https://pm.example")
+
+    async def minute_passes() -> None:
+        await db_session.execute(update(Notification).values(created_at=Notification.created_at - timedelta(minutes=2)))
+        await db_session.commit()
+        await emails.send_due()
+
+    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
+    await db_client.post(f"{base}/agent/runs", json={"message": "Plan phase 2"}, headers=cat.headers)
+    sent = len(outbox.messages)
+    await minute_passes()
+    assert len(outbox.messages) == sent  # daily: nothing as it happens
+
+    morning = datetime.now(UTC).replace(hour=8, minute=5) + timedelta(days=1)
+    assert await emails.send_digests(morning - timedelta(hours=2)) == 0  # not before 08:00 UTC
+    assert await emails.send_digests(morning) == 1
+    digest = outbox.messages[-1]
+    assert digest.to == ada.email and digest.subject.startswith("Your day in pmagent") and "Plan phase 2" in digest.body
+    assert "https://pm.example/w/" in digest.body
+    assert await emails.send_digests(morning + timedelta(hours=1)) == 0  # once a day
+
+    # Off: nothing; and what was read before the minute passed isn't sent.
+    await db_client.put("/v1/me/notification-settings", json={**settings, "email": "off"}, headers=ada.headers)
+    await db_client.post(f"{base}/issues", json={"type": "task", "title": "Ship", "assignee_user_id": cat.id}, headers=ada.headers)
+    [note] = [n for n in await _notifications(db_client, ws, cat) if n["kind"] == "assigned"]
+    await db_client.post(f"{ws}/notifications/read", json={"ids": [note["id"]]}, headers=cat.headers)
+    sent = len(outbox.messages)
+    await minute_passes()
+    assert len(outbox.messages) == sent

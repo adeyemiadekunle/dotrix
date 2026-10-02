@@ -5,7 +5,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pmagent_backend.db.base import Base, UUIDPrimaryKeyMixin, WorkspaceScopedMixin, str_enum
@@ -17,10 +17,13 @@ class NotificationKind(enum.StrEnum):
     ASSIGNED = "assigned"  # someone (or an agent) assigned an issue to you
     FINDING = "finding"  # a run you asked for finished with findings to look at
     MENTION = "mention"  # someone @mentioned you in an issue comment or a chat message
+    DECIDED = "decided"  # changes you asked an agent for were approved or rejected (by someone else)
 
 
 # What people may turn off. Approvals and checkpoints always come through: agents wait on them.
-OPTIONAL_KINDS = (NotificationKind.MENTION, NotificationKind.ASSIGNED, NotificationKind.FINDING)
+OPTIONAL_KINDS = (
+    NotificationKind.MENTION, NotificationKind.ASSIGNED, NotificationKind.FINDING, NotificationKind.DECIDED,
+)
 
 
 class Notification(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
@@ -28,7 +31,11 @@ class Notification(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     against what the reader can see when it's read."""
 
     __tablename__ = "notifications"
-    __table_args__ = (Index("ix_notifications_recipient", "user_id", "workspace_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_notifications_recipient", "user_id", "workspace_id", "created_at"),
+        # What the email job still has to look at (rows leave it once handled).
+        Index("ix_notifications_unemailed", "created_at", postgresql_where=text("emailed_at IS NULL")),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -42,3 +49,5 @@ class Notification(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     count: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # When it was handled for email (sent, or not needed: read, off, the daily digest's instead).
+    emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

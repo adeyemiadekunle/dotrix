@@ -18,10 +18,11 @@ import { api, errorMessage, unwrap } from "@/lib/api";
 
 type Settings = Schemas["NotificationSettings"];
 
-const KINDS: { id: keyof Settings; label: string; description: string }[] = [
+const KINDS: { id: Exclude<keyof Settings, "email">; label: string; description: string }[] = [
   { id: "mention", label: "Mentions", description: "Someone @mentions you in an issue comment or a chat message" },
   { id: "assigned", label: "Assigned to you", description: "Someone, or an agent, assigns you an issue" },
   { id: "finding", label: "Agent findings", description: "A run you asked for finds things to look at" },
+  { id: "decided", label: "Your requests decided", description: "Someone approves or rejects changes you asked an agent for, and why" },
 ];
 
 const ALWAYS = [
@@ -55,7 +56,8 @@ export function NotificationSettings() {
       <SettingsHeader>
         <SettingsTitle>Notifications</SettingsTitle>
         <SettingsDescription>
-          What shows in Notifications and on the bell, in every workspace. Turning one off hides earlier ones too.
+          What shows in Notifications and on the bell, in every workspace, and how it reaches your inbox. Turning one off
+          hides earlier ones too.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="p-0">
@@ -89,6 +91,26 @@ export function NotificationSettings() {
               </li>
             ))}
           </ul>
+        )}
+        {settings.data && (
+          <div className="grid gap-2 border-t p-4">
+            <Label htmlFor="notify-email" className="font-medium">
+              Email me
+            </Label>
+            <select
+              id="notify-email"
+              value={settings.data.email}
+              onChange={(e) => update.mutate({ ...settings.data!, email: e.target.value as Settings["email"] })}
+              className="bg-background h-9 w-full max-w-72 rounded-md border px-2 text-sm"
+            >
+              <option value="immediately">As things happen (one email per batch)</option>
+              <option value="daily">A daily digest (08:00 UTC)</option>
+              <option value="off">Never</option>
+            </select>
+            <p className="text-muted-foreground text-xs">
+              Only what you haven&apos;t read or decided yet, and only to a verified address.
+            </p>
+          </div>
         )}
       </SettingsContent>
     </SettingsSection>

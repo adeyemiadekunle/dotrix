@@ -17369,7 +17369,8 @@
           "checkpoint",
           "assigned",
           "finding",
-          "mention"
+          "mention",
+          "decided"
         ],
         "title": "NotificationKind"
       },
@@ -17531,6 +17532,23 @@
             "title": "Finding",
             "description": "A run you asked for finds things to look at",
             "default": true
+          },
+          "decided": {
+            "type": "boolean",
+            "title": "Decided",
+            "description": "Someone approves or rejects changes you asked an agent for",
+            "default": true
+          },
+          "email": {
+            "type": "string",
+            "enum": [
+              "immediately",
+              "daily",
+              "off"
+            ],
+            "title": "Email",
+            "description": "Emails: as things happen (batched, one per run), a daily digest at 08:00 UTC, or none",
+            "default": "immediately"
           }
         },
         "type": "object",

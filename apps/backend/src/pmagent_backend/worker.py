@@ -25,7 +25,7 @@ from .core.logging import configure_logging
 from .core.settings import get_settings
 from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
-from .jobs import JOBS, cleanup_expired, index_knowledge, run_automations
+from .jobs import JOBS, cleanup_expired, email_notifications, index_knowledge, run_automations
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
@@ -115,6 +115,10 @@ async def automations(ctx: dict[str, Any]) -> None:
     await run_automations(ctx["jobs"])
 
 
+async def emails(ctx: dict[str, Any]) -> None:
+    await email_notifications(ctx["jobs"])
+
+
 class WorkerSettings:
     functions = [
         func(run_agent, timeout=RUN_TIMEOUT_SECONDS, max_tries=RUN_MAX_TRIES),
@@ -126,6 +130,7 @@ class WorkerSettings:
         cron(cleanup, minute={17}, run_at_startup=True),
         cron(index, run_at_startup=True, timeout=10 * 60),
         cron(automations, timeout=2 * 60),
+        cron(emails, timeout=2 * 60),
     ]
     queue_name = QUEUE_NAME
     on_startup = startup
