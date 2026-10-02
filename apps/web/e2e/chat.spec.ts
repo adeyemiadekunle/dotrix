@@ -31,15 +31,19 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await page.goto(page.url().replace(/\/chat\?.*$/, `/p/${key}/board`));
   await expect(page.getByText("Add dark mode")).toHaveCount(0);
 
-  // It's in the workspace queue too; approve it there.
+  // It's in Notifications too (the bell has a dot until it's decided); approve it there.
+  await expect(page.getByRole("link", { name: "Open notifications (1 waiting)" })).toBeVisible();
   await page.getByRole("link", { name: "Notifications", exact: true }).click();
+  const list = page.getByRole("navigation", { name: "Notifications" });
+  await list.getByRole("button", { name: /Project manager wants to make a change/ }).click();
   await expect(page.getByText("“Create issue: Add dark mode”")).toBeVisible();
   await page.getByRole("button", { name: "Approve" }).click();
   await page.getByRole("button", { name: "Send decision" }).click();
-  await expect(page.getByText("Nothing waiting")).toBeVisible();
+  await expect(page.getByText("Decided. Nothing is waiting from this request now.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open notifications", exact: true })).toBeVisible();
 
   // The run resumes in the background and creates the issue; the board shows it once it exists.
-  await page.goto(page.url().replace("/approvals", `/p/${key}/board`));
+  await page.goto(page.url().replace(/\/approvals.*$/, `/p/${key}/board`));
   await expect(async () => {
     await page.reload();
     await expect(page.getByText("Add dark mode")).toBeVisible({ timeout: 2_000 });

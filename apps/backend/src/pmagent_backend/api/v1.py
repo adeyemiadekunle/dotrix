@@ -23,6 +23,7 @@ from pmagent_backend.modules.invites.router import workspace_router as workspace
 from pmagent_backend.modules.issues.router import router as issues
 from pmagent_backend.modules.issues.router import workspace_router as workspace_issues
 from pmagent_backend.modules.knowledge.router import router as knowledge
+from pmagent_backend.modules.notifications.router import router as notifications
 from pmagent_backend.modules.projects.router import router as projects
 from pmagent_backend.modules.search.router import router as search
 from pmagent_backend.modules.search.router import workspace_router as workspace_search
@@ -54,6 +55,7 @@ for module_router in (
     workspace_issues,
     activity,
     workspace_activity,
+    notifications,
     search,
     workspace_search,
 ):

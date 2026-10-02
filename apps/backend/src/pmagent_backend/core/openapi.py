@@ -101,6 +101,11 @@ TAGS: list[dict[str, str]] = [
         "description": "What people and agents did in a project, for everyone who can see it: issue "
         "changes, document versions, agent runs, and approval decisions.",
     },
+    {
+        "name": "notifications",
+        "description": "Your notifications in a workspace: agents' changes waiting for your decision, "
+        "plans waiting at a checkpoint, issues assigned to you, and findings from runs you asked for.",
+    },
     {"name": "audit", "description": "Append-only log of knowledge changes, approvals, and agent runs."},
     {"name": "health", "description": "Liveness and readiness probes."},
 ]
