@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -21,7 +22,12 @@ from .core.ratelimit import build_rate_limiter
 from .core.settings import Settings, get_settings
 from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
-from .jobs import CLEANUP_INTERVAL_SECONDS, INDEX_INTERVAL_SECONDS, JOBS
+from .jobs import (
+    AUTOMATIONS_INTERVAL_SECONDS,
+    CLEANUP_INTERVAL_SECONDS,
+    INDEX_INTERVAL_SECONDS,
+    JOBS,
+)
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
@@ -102,6 +108,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 queue=queue,
                 streams=streams,
             )
+            if isinstance(app.state.jobs, InlineJobs | LocalJobs):
+                # Jobs that start agent runs (automations) need the runner, made just above.
+                app.state.jobs.ctx = dataclasses.replace(job_context, runner=runner)
             loops: list[asyncio.Task[None]] = []
             if local_jobs is not None:
                 # No worker (and so no cron) in local mode: clean up hourly and keep the search
@@ -109,6 +118,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 loops = [
                     asyncio.create_task(_every(local_jobs, "cleanup_expired", CLEANUP_INTERVAL_SECONDS)),
                     asyncio.create_task(_every(local_jobs, "index_knowledge", INDEX_INTERVAL_SECONDS)),
+                    asyncio.create_task(_every(local_jobs, "run_automations", AUTOMATIONS_INTERVAL_SECONDS)),
                 ]
             yield
             for loop in loops:

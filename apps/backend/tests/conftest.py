@@ -229,15 +229,15 @@ async def db_client(
 
     # Inline: jobs and runs finish (or pause) before the request that started them returns.
     app.state.checkouts = checkouts
-    app.state.jobs = InlineJobs(
-        JobContext(shared_session, app.state.settings, outbox, storage, checkouts=checkouts), JOBS
-    )
-    app.state.runner = AgentRunner(
+    app.state.runner = runner = AgentRunner(
         session_factory=shared_session,
         checkpointer=InMemorySaver(),
         model_factory=agent_script.factory,
         inline=True,
         checkouts=checkouts,
+    )
+    app.state.jobs = InlineJobs(
+        JobContext(shared_session, app.state.settings, outbox, storage, checkouts=checkouts, runner=runner), JOBS
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c

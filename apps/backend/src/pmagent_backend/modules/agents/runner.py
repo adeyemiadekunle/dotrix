@@ -21,6 +21,8 @@ from sqlalchemy import select
 
 from pmagent_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from pmagent_backend.modules.audit.service import AuditLog
+from pmagent_backend.modules.automations.events import record_event
+from pmagent_backend.modules.automations.models import AutomationEvent
 from pmagent_backend.modules.code.checkouts import CodeCheckouts
 from pmagent_backend.modules.code.service import CodeService
 from pmagent_backend.modules.knowledge.models import AuthorType
@@ -491,6 +493,7 @@ class AgentRunner:
                 run.reply = _reply(result)
                 run.status, run.finished_at = RunStatus.COMPLETED, now
                 action_name = "agent_run.completed"
+                await _changes_approved(session, run)
             run.updated_at = now
             await _notify(session, run, pending, speaker, now)
             AuditLog(session).record(
@@ -554,6 +557,27 @@ class AgentRunner:
         files = await KnowledgeRepository(session).list_files(project_id)
         wanted = {f"agent-rules/{name}.md": name for name in ("base", *AGENTS, *(handles or []))}
         return {wanted[f.path]: f.content for f in files if f.path in wanted}
+
+
+async def _changes_approved(session: Any, run: AgentRun) -> None:
+    """A run that made approved changes sets off automations that keep documents current, unless
+    an automation started it (automations never set each other off)."""
+    if run.automation_id is not None:
+        return
+    targets = list(await session.scalars(
+        select(AgentApproval.target).where(
+            AgentApproval.run_id == run.id, AgentApproval.status == ApprovalStatus.APPROVED,
+            AgentApproval.tool != CHECKPOINT_TOOL,
+        ).order_by(AgentApproval.position)
+    ))
+    if not targets:
+        return
+    shown = ", ".join(t or "the board" for t in targets[:5]) + (f" and {len(targets) - 5} more" if len(targets) > 5 else "")
+    await record_event(
+        session, workspace_id=run.workspace_id, project_id=run.project_id, event=AutomationEvent.CHANGES_APPROVED,
+        summary=f'"{run.title or "A conversation"}": {len(targets)} approved change{"s" * (len(targets) != 1)} ({shown})',
+        details={"run_id": str(run.id), "targets": [t for t in targets if t][:20]},
+    )
 
 
 async def _notify(session: Any, run: AgentRun, pending: list[dict], speaker: str, now: datetime) -> None:

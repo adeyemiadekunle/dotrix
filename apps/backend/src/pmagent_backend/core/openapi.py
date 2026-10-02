@@ -102,6 +102,12 @@ TAGS: list[dict[str, str]] = [
         "changes, document versions, agent runs, and approval decisions.",
     },
     {
+        "name": "automations",
+        "description": "Agents that run on their own in a project: on a schedule, or when people change "
+        "issues or documents, approve agent changes, or push code. Each run is instructed by whoever set it up, "
+        "and its changes wait for approval like anyone's.",
+    },
+    {
         "name": "github",
         "description": "Connecting GitHub through the pmagent GitHub App: the GitHub accounts it's installed "
         "on in a workspace, each project's repo (private ones included), and GitHub's webhook deliveries.",

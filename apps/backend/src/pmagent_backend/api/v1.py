@@ -15,6 +15,7 @@ from pmagent_backend.modules.api_tokens.router import device_router, tokens_rout
 from pmagent_backend.modules.audit.router import router as audit
 from pmagent_backend.modules.auth.router import me_router
 from pmagent_backend.modules.auth.router import router as auth
+from pmagent_backend.modules.automations.router import router as automations
 from pmagent_backend.modules.calendar.router import feed_router as calendar_feed
 from pmagent_backend.modules.calendar.router import me_router as calendar_settings
 from pmagent_backend.modules.connectors.router import project_router as project_repository
@@ -54,6 +55,7 @@ for module_router in (
     workspace_approvals,
     workspace_threads,
     workspace_agent_usage,
+    automations,
     audit,
     issues,
     workspace_issues,

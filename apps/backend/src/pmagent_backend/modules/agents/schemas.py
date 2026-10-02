@@ -244,6 +244,7 @@ class AgentRunRead(BaseModel):
     )
     reply: str | None
     error: str | None
+    automation_id: uuid.UUID | None = Field(default=None, description="The automation that started it, if one did")
     requested_by_id: uuid.UUID | None
     agent: Annotated[str, BeforeValidator(lambda v: v or "auto")] = Field(
         default="auto", description="Who answered: `auto` (the Project Manager) or the leading agent's handle"

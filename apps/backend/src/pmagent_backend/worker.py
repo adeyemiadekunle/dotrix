@@ -25,7 +25,7 @@ from .core.logging import configure_logging
 from .core.settings import get_settings
 from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
-from .jobs import JOBS, cleanup_expired, index_knowledge
+from .jobs import JOBS, cleanup_expired, index_knowledge, run_automations
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
@@ -52,12 +52,20 @@ async def startup(ctx: dict[str, Any]) -> None:
     sessionmaker = create_sessionmaker(engine)
     embedder = build_embedder(settings)
     checkouts = build_checkouts(settings)
+    checkpointer = await open_checkpointer(settings.database_url, stack)
+    # Jobs that start runs (automations) queue them, as the API does, rather than running them
+    # inside a job that has to finish within a minute.
+    dispatcher = AgentRunner(
+        session_factory=sessionmaker, checkpointer=checkpointer, model_factory=settings_model_factory(settings),
+        queue=RunQueue(redis),
+    )
     ctx["jobs"] = JobContext(
-        sessionmaker, settings, build_email_sender(settings), build_storage(settings), embedder, checkouts
+        sessionmaker, settings, build_email_sender(settings), build_storage(settings), embedder, checkouts,
+        runner=dispatcher,
     )
     ctx["runner"] = AgentRunner(
         session_factory=sessionmaker,
-        checkpointer=await open_checkpointer(settings.database_url, stack),
+        checkpointer=checkpointer,
         model_factory=settings_model_factory(settings),
         token_budget=settings.run_token_budget,
         embedder=embedder,
@@ -103,6 +111,10 @@ async def index(ctx: dict[str, Any]) -> None:
     await index_knowledge(ctx["jobs"])
 
 
+async def automations(ctx: dict[str, Any]) -> None:
+    await run_automations(ctx["jobs"])
+
+
 class WorkerSettings:
     functions = [
         func(run_agent, timeout=RUN_TIMEOUT_SECONDS, max_tries=RUN_MAX_TRIES),
@@ -113,6 +125,7 @@ class WorkerSettings:
     cron_jobs = [
         cron(cleanup, minute={17}, run_at_startup=True),
         cron(index, run_at_startup=True, timeout=10 * 60),
+        cron(automations, timeout=2 * 60),
     ]
     queue_name = QUEUE_NAME
     on_startup = startup

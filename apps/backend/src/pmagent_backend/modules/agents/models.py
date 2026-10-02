@@ -70,6 +70,11 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # A pipeline the leading agent follows for this run instead of its own
     # (pmagent_engine.pipelines.MODES: triaging a report, reviewing an issue); null: its own.
     mode: Mapped[str | None] = mapped_column(String(32))
+    # Started by an automation (modules/automations), not a person at the time; still instructed
+    # by the person who set the automation up (requested_by_id).
+    automation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("automations.id", ondelete="SET NULL"), index=True
+    )
     # The conversation's model, fixed when it starts (every run of a thread has the same one).
     # Null only on conversations from before models were chosen: they use the project's.
     conversation_model: Mapped[str | None] = mapped_column(String(100))

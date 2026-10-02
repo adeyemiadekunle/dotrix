@@ -41,6 +41,7 @@ class JobContext:
     storage: BlobStorage | None = None  # document originals (None when storage isn't configured)
     embedder: Any = None  # the search index's embedding model (None: keyword search only)
     checkouts: Any = None  # connected repos' checkouts for agents (modules/code; None: not kept here)
+    runner: Any = None  # the agent runner, for jobs that start runs (automations)
 
 
 JobFunction = Callable[..., Awaitable[Any]]
