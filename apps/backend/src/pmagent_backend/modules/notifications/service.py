@@ -8,13 +8,14 @@ from sqlalchemy import and_, exists, func, not_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pmagent_backend.modules.agents.models import AgentApproval, AgentRun, ApprovalStatus
+from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.issues.models import Issue
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import visible_to
 from pmagent_backend.modules.workspaces.models import Membership
 
-from .models import Notification, NotificationKind
-from .schemas import MarkRead, NotificationCounts, NotificationRead
+from .models import OPTIONAL_KINDS, Notification, NotificationKind
+from .schemas import MarkRead, NotificationCounts, NotificationRead, NotificationSettings
 
 DECISIONS = (NotificationKind.APPROVAL, NotificationKind.CHECKPOINT)
 
@@ -33,10 +34,22 @@ class NotificationService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def settings(self, user: User) -> NotificationSettings:
+        muted = set(user.muted_notifications or [])
+        return NotificationSettings(**{kind.value: kind.value not in muted for kind in OPTIONAL_KINDS})
+
+    async def update_settings(self, user: User, data: NotificationSettings) -> NotificationSettings:
+        user.muted_notifications = [kind.value for kind in OPTIONAL_KINDS if not getattr(data, kind.value)]
+        await self.session.commit()
+        return await self.settings(user)
+
     def _mine(self, member: Membership) -> Any:
+        # Kinds you turned off don't show (and don't count), here or anywhere you're a member.
+        muted = select(func.unnest(User.muted_notifications)).where(User.id == member.user_id).scalar_subquery()
         return and_(
             Notification.workspace_id == member.workspace_id,
             Notification.user_id == member.user_id,
+            Notification.kind.not_in(muted),
             Notification.project_id.in_(
                 select(Project.id)
                 .where(Project.workspace_id == member.workspace_id, visible_to(member.user_id, member.role))

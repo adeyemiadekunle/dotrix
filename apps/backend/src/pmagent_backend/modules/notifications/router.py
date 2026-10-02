@@ -6,13 +6,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from pmagent_backend.api.deps import SessionDep, require_permission
+from pmagent_backend.api.deps import CurrentUser, SessionDep, require_permission
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
 from .models import NotificationKind
-from .schemas import MarkRead, NotificationCounts, NotificationRead
+from .schemas import MarkRead, NotificationCounts, NotificationRead, NotificationSettings
 from .service import NotificationService
 
 router = APIRouter(
@@ -48,3 +48,21 @@ async def mark_notifications_read(member: Member, session: SessionDep, data: Mar
     """Mark notifications read: the ones in `ids`, or `all` (of one `kind`, if given). Ids that
     aren't yours are ignored. Returns the new counts."""
     return await NotificationService(session).mark_read(member, data)
+
+
+settings_router = APIRouter(prefix="/me/notification-settings", tags=["notifications"], responses=errors(401))
+
+
+@settings_router.get("")
+async def get_notification_settings(user: CurrentUser, session: SessionDep) -> NotificationSettings:
+    """Which notifications you get, in every workspace you're in."""
+    return await NotificationService(session).settings(user)
+
+
+@settings_router.put("", responses=errors(422))
+async def update_notification_settings(
+    data: NotificationSettings, user: CurrentUser, session: SessionDep
+) -> NotificationSettings:
+    """Turn mentions, assignments, or findings off or on. Turned-off kinds stop showing and
+    counting at once, earlier ones included. Approvals and checkpoints always come through."""
+    return await NotificationService(session).update_settings(user, data)

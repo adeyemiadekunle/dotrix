@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, UniqueConstraint, Uuid, true
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pmagent_backend.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum
@@ -24,6 +25,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str | None] = mapped_column(String(100))
     # When their photo last changed (null: no photo); clients add it to the photo's address.
     avatar_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Notification kinds they turned off (Settings → Notifications); approvals can't be.
+    muted_notifications: Mapped[list[str]] = mapped_column(ARRAY(String(16)), default=list, server_default="{}")
 
     @property
     def email_verified(self) -> bool:
@@ -44,6 +47,29 @@ class RefreshToken(UUIDPrimaryKeyMixin, Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SessionClient(enum.StrEnum):
+    WEB = "web"  # a browser, through the web app
+    DESKTOP = "desktop"  # the desktop app (Electron)
+    OTHER = "other"  # anything else that signed in with a password, link, or GitHub
+
+
+class AuthSession(Base):
+    """One signed-in browser or app: a refresh-token family (its id is the family's), with what
+    it runs on and when it was last used, so people can see where they're signed in and sign
+    any of them out. The CLI and tools sign in with API tokens instead (`api_tokens`)."""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    client: Mapped[SessionClient] = mapped_column(str_enum(SessionClient, 16))
+    device: Mapped[str] = mapped_column(String(100))  # "Chrome on macOS"
+    ip: Mapped[str | None] = mapped_column(String(64))  # where it last signed in or refreshed from
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

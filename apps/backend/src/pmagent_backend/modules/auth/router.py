@@ -1,15 +1,24 @@
 """Sign-up, login, tokens, email verification, password reset (FR-1)."""
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile, status
 from fastapi.responses import RedirectResponse
 
-from pmagent_backend.api.deps import CurrentUser, EmailDep, JobsDep, SessionDep, SettingsDep
+from pmagent_backend.api.deps import (
+    CurrentUser,
+    EmailDep,
+    JobsDep,
+    SessionDep,
+    SessionUser,
+    SettingsDep,
+)
 from pmagent_backend.core import security
 from pmagent_backend.core.openapi import errors
+from pmagent_backend.core.ratelimit import client_ip
 
 from .github import GitHubDep
 from .limits import LOGIN, MAGIC_LINK, PASSWORD_RESET, SIGNUP, VERIFY_RESEND, ThrottleDep
@@ -22,10 +31,13 @@ from .schemas import (
     GitHubStart,
     LoginRequest,
     MagicLinkRequest,
+    PasswordChange,
     PasswordResetConfirm,
     PasswordResetRequest,
     ProfileUpdate,
     RefreshRequest,
+    SessionRead,
+    SignedOut,
     SignInMethods,
     SignupRequest,
     SignupResponse,
@@ -34,13 +46,21 @@ from .schemas import (
     UserRead,
 )
 from .service import AuthService
+from .sessions import ClientInfo, SessionService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 me_router = APIRouter(tags=["auth"])
 
 
-def get_auth_service(session: SessionDep, settings: SettingsDep, email: EmailDep, jobs: JobsDep) -> AuthService:
-    return AuthService(session, settings, email, jobs)
+def get_auth_service(
+    request: Request, session: SessionDep, settings: SettingsDep, email: EmailDep, jobs: JobsDep
+) -> AuthService:
+    auth = AuthService(session, settings, email, jobs)
+    # The web app passes on the browser's User-Agent and address (see apps/web lib/session.ts).
+    auth.client = ClientInfo(
+        user_agent=request.headers.get("user-agent", "")[:500], ip=client_ip(request, settings.trusted_proxies)
+    )
+    return auth
 
 
 Auth = Annotated[AuthService, Depends(get_auth_service)]
@@ -176,6 +196,37 @@ async def me(user: CurrentUser) -> UserRead:
     return UserRead.model_validate(user)
 
 
+def get_session_service(session: SessionDep, settings: SettingsDep) -> SessionService:
+    return SessionService(session, settings)
+
+
+Sessions = Annotated[SessionService, Depends(get_session_service)]
+
+
+def _current_session(request: Request) -> uuid.UUID | None:
+    return getattr(request.state, "session_id", None)
+
+
+@me_router.get("/me/sessions", responses=errors(401))
+async def list_sessions(request: Request, user: CurrentUser, sessions: Sessions) -> list[SessionRead]:
+    """The browsers and desktop apps you're signed in on, the one you're using first (`current`).
+    The CLI and tools are your API tokens (`GET /v1/me/tokens`)."""
+    return await sessions.list(user, _current_session(request))
+
+
+@me_router.delete("/me/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(401, 403, 404))
+async def sign_out_session(session_id: uuid.UUID, user: SessionUser, sessions: Sessions) -> None:
+    """Sign a browser or the desktop app out: it can't refresh, and its access stops at once.
+    Signing out the one you're using signs you out here too. Not with an API token."""
+    await sessions.sign_out(user, session_id)
+
+
+@me_router.post("/me/sessions/sign-out-others", responses=errors(401, 403))
+async def sign_out_other_sessions(request: Request, user: SessionUser, sessions: Sessions) -> SignedOut:
+    """Sign out every browser and desktop app but the one you're using. Not with an API token."""
+    return SignedOut(signed_out=await sessions.sign_out_others(user, _current_session(request)))
+
+
 def get_profile_service(session: SessionDep) -> ProfileService:
     return ProfileService(session)
 
@@ -204,6 +255,25 @@ async def update_profile(data: ProfileUpdate, user: CurrentUser, profile: Profil
 async def sign_in_methods(user: CurrentUser, profile: Profile) -> SignInMethods:
     """How you can sign in: a password, an email link (always), and linked accounts (GitHub)."""
     return await profile.sign_in_methods(user)
+
+
+@me_router.put("/me/sign-in-methods/github", responses=errors(401, 403, 409, 422, 503))
+async def link_github(data: GitHubFinish, user: SessionUser, profile: Profile, github: GitHubDep) -> SignInMethods:
+    """Link a GitHub account to yours, so you can sign in with it: the `code` GitHub sent back
+    after a sign-in started in link mode (check `state` first). 409 if it signs in to another
+    account, or you've linked a different one. Not with an API token."""
+    return await profile.link_github(user, await github.profile(data.code))
+
+
+@me_router.put("/me/password", responses=errors(401, 403, 422, 429))
+async def change_password(
+    data: PasswordChange, request: Request, user: SessionUser, profile: Profile, throttle: ThrottleDep
+) -> SignedOut:
+    """Change your password, or set one if you sign in only with GitHub or email links. The
+    current password is required when you have one (422 `wrong_password`). Signs out your other
+    browsers and apps (`signed_out`). Rate-limited like sign-in. Not with an API token."""
+    await throttle(LOGIN, user.email)
+    return SignedOut(signed_out=await profile.change_password(user, data, _current_session(request)))
 
 
 @me_router.delete(

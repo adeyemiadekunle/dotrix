@@ -5,12 +5,20 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pmagent_backend.core import security
 from pmagent_backend.core.errors import Conflict, NotFound, Unprocessable
 
-from .models import OAuthAccount, User, UserAvatar
-from .schemas import LinkedAccount, ProfileUpdate, SignInMethods, UserRead
+from .github import GitHubProfile
+from .models import AuthSession, OAuthAccount, User, UserAvatar
+from .repository import RefreshTokenRepository
+from .schemas import LinkedAccount, PasswordChange, ProfileUpdate, SignInMethods, UserRead
+
+
+class WrongPassword(Unprocessable):
+    code = "wrong_password"
 
 # The web app sends a 256 px square; this leaves room for other clients without storing photos.
 MAX_AVATAR_BYTES = 512_000
@@ -48,6 +56,53 @@ class ProfileService:
                 if a.provider == "github"
             ],
         )
+
+    async def link_github(self, user: User, profile: GitHubProfile) -> SignInMethods:
+        """Sign in with this GitHub account from now on (you're signed in, so its email doesn't
+        need to match yours). 409 if it signs in to another account, or you've linked another."""
+        linked = await self.session.scalar(
+            select(OAuthAccount).where(OAuthAccount.provider == "github", OAuthAccount.provider_user_id == profile.id)
+        )
+        if linked is not None and linked.user_id != user.id:
+            raise Conflict(f"GitHub account @{profile.login} already signs in to another pmagent account")
+        if linked is None:
+            mine = await self.session.scalar(
+                select(OAuthAccount).where(OAuthAccount.user_id == user.id, OAuthAccount.provider == "github")
+            )
+            if mine is not None:
+                raise Conflict(f"Unlink @{mine.login} first: an account links one GitHub account")
+            self.session.add(OAuthAccount(
+                user_id=user.id, provider="github", provider_user_id=profile.id, login=profile.login,
+                created_at=datetime.now(UTC),
+            ))
+            try:
+                await self.session.flush()
+            except IntegrityError as exc:  # linked at the same moment elsewhere
+                raise Conflict("That GitHub account was just linked; try again") from exc
+        else:
+            linked.login = profile.login
+        await self.session.commit()
+        return await self.sign_in_methods(user)
+
+    async def change_password(self, user: User, data: PasswordChange, current_session: uuid.UUID | None) -> int:
+        """A new password (or a first one). The current one must be right if you have one. Every
+        other browser and app is signed out, in case someone else knew the old one; returns how many."""
+        if user.password_hash is not None and not security.verify_password(
+            user.password_hash, data.current_password or ""
+        ):
+            raise WrongPassword("Your current password isn't right")
+        user.password_hash = security.hash_password(data.new_password)
+        now = datetime.now(UTC)
+        others = list(await self.session.scalars(
+            select(AuthSession.id).where(
+                AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None), AuthSession.id != current_session
+            )
+        ))
+        tokens = RefreshTokenRepository(self.session)
+        for session_id in others:
+            await tokens.revoke_family(session_id, now)
+        await self.session.commit()
+        return len(others)
 
     async def unlink(self, user: User, provider: str) -> None:
         """Stop signing in with `provider`. Refused while it's your only way in besides email
