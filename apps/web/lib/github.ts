@@ -67,6 +67,20 @@ export function useConnectRepository(workspaceId: string, projectId: string) {
   });
 }
 
+/** Check the project's code out afresh for agents ("Sync now"); the result comes back on the repo. */
+export function useSyncRepository(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      unwrap(
+        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/repository/sync", {
+          params: { path: { workspace_id: workspaceId, project_id: projectId } },
+        }),
+      ),
+    onSuccess: (repo) => queryClient.setQueryData(["project-repository", workspaceId, projectId], repo),
+  });
+}
+
 /** Where to install the app: our route remembers the workspace, then GitHub's install page. */
 export function installHref(status: GitHubStatus, workspaceId: string, next: string): string | null {
   if (!status.install_url) return null;

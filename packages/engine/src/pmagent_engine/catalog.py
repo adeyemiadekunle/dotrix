@@ -36,6 +36,11 @@ CATALOG: tuple[ToolGroup, ...] = (
         ("knowledge.write",),
     ),
     ToolGroup(
+        "code.read", "Read the code",
+        "List, read, and search the project's connected repository (read-only; nothing is run).",
+        ("code_tree", "code_read", "code_search"),
+    ),
+    ToolGroup(
         "board.read", "Read the board",
         "List issues and read them in full.",
         ("list_issues", "get_issue", "list_tasks", "get_task"),

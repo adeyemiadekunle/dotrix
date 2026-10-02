@@ -58,6 +58,7 @@ class GitHubApp(Protocol):
     async def installation(self, installation_id: int) -> Installation: ...
     async def repositories(self, installation_id: int) -> list[Repo]: ...
     async def repository(self, installation_id: int, repo_id: int) -> Repo: ...
+    async def access_token(self, installation_id: int) -> str: ...
 
 
 class GitHubAppClient:
@@ -100,6 +101,10 @@ class GitHubAppClient:
     async def repository(self, installation_id: int, repo_id: int) -> Repo:
         """One repo, if this installation can see it (else NotFound)."""
         return _repo(await self._get(f"/repositories/{repo_id}", await self._installation_token(installation_id)))
+
+    async def access_token(self, installation_id: int) -> str:
+        """An installation token (an hour long) to fetch its repos with git; never stored."""
+        return await self._installation_token(installation_id)
 
     # -- tokens and requests -----------------------------------------------------------
 

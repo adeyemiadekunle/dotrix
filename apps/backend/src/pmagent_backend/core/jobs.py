@@ -40,6 +40,7 @@ class JobContext:
     email: EmailSender  # the real provider (a job must not enqueue its own email again)
     storage: BlobStorage | None = None  # document originals (None when storage isn't configured)
     embedder: Any = None  # the search index's embedding model (None: keyword search only)
+    checkouts: Any = None  # connected repos' checkouts for agents (modules/code; None: not kept here)
 
 
 JobFunction = Callable[..., Awaitable[Any]]

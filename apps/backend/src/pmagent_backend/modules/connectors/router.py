@@ -8,8 +8,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request, status
 
-from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
-from pmagent_backend.core.errors import Unprocessable
+from pmagent_backend.api.deps import JobsDep, SessionDep, SettingsDep, require_permission
+from pmagent_backend.core.errors import NotFound, Unprocessable
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.auth.github import GitHubDep
 from pmagent_backend.modules.projects.deps import ProjectManager, ProjectViewer
@@ -83,11 +83,28 @@ async def get_project_repository(access: ProjectViewer, session: SessionDep, app
 
 @project_router.put("", responses=errors(403, 409, 422, 503))
 async def connect_project_repository(
-    data: RepoConnect, access: ProjectManager, session: SessionDep, app: GitHubAppDep
+    data: RepoConnect, access: ProjectManager, session: SessionDep, app: GitHubAppDep, jobs: JobsDep
 ) -> ConnectedRepoRead:
     """Connect the project to a repo one of the workspace's installations can see (replacing
-    any it had); its repo address follows. 409 if another project here uses it. Owners and admins."""
-    return await ConnectorService(session, app).connect(access, data)
+    any it had); its repo address follows, and its code is checked out for agents to read. 409
+    if another project here uses it. Owners and admins."""
+    connected = await ConnectorService(session, app).connect(access, data)
+    await jobs.enqueue("sync_repository", project_id=str(access.project.id))
+    return await ConnectorService(session, app).connected(access) or connected
+
+
+@project_router.post("/sync", status_code=status.HTTP_202_ACCEPTED, responses=errors(403))
+async def sync_project_repository(
+    access: ProjectManager, session: SessionDep, app: GitHubAppDep, jobs: JobsDep
+) -> ConnectedRepoRead:
+    """Check the project's code out afresh for agents (it also happens after each push, and
+    when a run finds it stale); the result shows in `checkout_sha` / `checkout_error`. 404
+    without a connected repo. Owners and admins."""
+    connected = await ConnectorService(session, app).connected(access)
+    if connected is None:
+        raise NotFound("This project has no connected repo")
+    await jobs.enqueue("sync_repository", project_id=str(access.project.id))
+    return await ConnectorService(session, app).connected(access) or connected
 
 
 @project_router.delete("", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403))
@@ -104,6 +121,7 @@ async def github_webhook(
     request: Request,
     session: SessionDep,
     settings: SettingsDep,
+    jobs: JobsDep,
     x_github_event: Annotated[str, Header()] = "",
     x_hub_signature_256: Annotated[str | None, Header()] = None,
 ) -> dict[str, str]:
@@ -115,6 +133,8 @@ async def github_webhook(
         payload = json.loads(body)
     except ValueError as exc:
         raise Unprocessable("The delivery isn't JSON") from exc
-    done = await webhook.handle(session, x_github_event, payload)
+    done, pushed = await webhook.handle(session, x_github_event, payload)
     logger.info("github webhook %s: %s", x_github_event, done)
+    for project_id in pushed:  # their checkouts are behind now
+        await jobs.enqueue("sync_repository", project_id=str(project_id))
     return {"result": done}

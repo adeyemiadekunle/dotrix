@@ -131,6 +131,8 @@ class ConnectorService:
             select(ConnectedRepo, GitHubInstallation.account_login)
             .join(GitHubInstallation, GitHubInstallation.id == ConnectedRepo.installation_ref)
             .where(ConnectedRepo.project_id == access.project.id, ConnectedRepo.workspace_id == access.project.workspace_id)
+            # A sync records its result in another session (a job): read the row afresh.
+            .execution_options(populate_existing=True)
         )
         found = row.first()
         if found is None:
@@ -140,6 +142,7 @@ class ConnectorService:
             full_name=repo.full_name, html_url=repo.html_url, private=repo.private, default_branch=repo.default_branch,
             account_login=account, connected_at=repo.connected_at, connected_by_id=repo.connected_by_id,
             last_push_sha=repo.last_push_sha, last_push_at=repo.last_push_at,
+            checkout_sha=repo.checkout_sha, checked_out_at=repo.checked_out_at, checkout_error=repo.checkout_error,
         )
 
     async def connect(self, access: ProjectAccess, data: RepoConnect) -> ConnectedRepoRead:

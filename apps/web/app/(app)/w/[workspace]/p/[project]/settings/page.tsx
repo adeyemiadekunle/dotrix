@@ -27,7 +27,7 @@ import {
   SettingsTitle,
 } from "@/components/settings-section";
 import { errorMessage } from "@/lib/api";
-import { useConnectRepository, useProjectRepository } from "@/lib/github";
+import { useConnectRepository, useProjectRepository, useSyncRepository } from "@/lib/github";
 import { useMoveProject, useProjectMember, useProjectMembers, useUpdateProject } from "@/lib/admin";
 import { useMembers } from "@/lib/issues";
 import { exportUrl, useManifest } from "@/lib/knowledge";
@@ -107,6 +107,7 @@ function Repository({ project, workspace, canEdit }: { project: Project; workspa
   const update = useUpdateProject(workspace.id, project.id);
   const connected = useProjectRepository(workspace.id, project.id);
   const connect = useConnectRepository(workspace.id, project.id);
+  const sync = useSyncRepository(workspace.id, project.id);
   const [mode, setMode] = useState<"view" | "pick" | "address">("view");
   const [url, setUrl] = useState("");
   const [ask, confirmDialog] = useConfirm();
@@ -119,8 +120,8 @@ function Repository({ project, workspace, canEdit }: { project: Project; workspa
       <SettingsHeader>
         <SettingsTitle>Repository</SettingsTitle>
         <SettingsDescription>
-          The code repo this project plans for. Connected through the GitHub App, agents can read its code, private
-          repos included. Teammates link their own checkouts with <code className="font-mono">pmagent connect</code>.
+          The code repo this project plans for. Connected through the GitHub App, agents read its code (a copy of the
+          default branch, refreshed on every push), private repos included. Teammates link their own checkouts with <code className="font-mono">pmagent connect</code>.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent>
@@ -208,9 +209,37 @@ function Repository({ project, workspace, canEdit }: { project: Project; workspa
                   ? ` · last push ${new Date(repo.last_push_at).toLocaleString()} (${repo.last_push_sha?.slice(0, 7)})`
                   : ""}
               </p>
+              <p className="text-muted-foreground text-xs" data-testid="checkout-status">
+                {repo.checkout_error ? (
+                  <span className="text-destructive">Agents can&apos;t read the code: {repo.checkout_error}</span>
+                ) : repo.checkout_sha ? (
+                  `Agents read the code at ${repo.checkout_sha.slice(0, 7)}${
+                    repo.checked_out_at ? `, checked out ${new Date(repo.checked_out_at).toLocaleString()}` : ""
+                  }`
+                ) : (
+                  "Checking the code out for agents…"
+                )}
+              </p>
             </div>
             {canEdit && (
               <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  disabled={sync.isPending}
+                  onClick={() =>
+                    sync.mutate(undefined, {
+                      onSuccess: (synced) =>
+                        synced.checkout_error
+                          ? toast.error(`Couldn't check the code out: ${synced.checkout_error}`)
+                          : toast.success("Code checked out for agents"),
+                      onError: (e) => toast.error(errorMessage(e)),
+                    })
+                  }
+                >
+                  {sync.isPending ? "Syncing…" : "Sync now"}
+                </Button>
                 <Button size="sm" variant="outline" className="h-7" onClick={() => setMode("pick")}>
                   Change
                 </Button>

@@ -31,6 +31,7 @@ from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner
 from .modules.agents.streams import RedisRunStreams
+from .modules.code.checkouts import build_checkouts
 from .modules.research.service import build_web_research
 from .modules.search.embeddings import build_embedder
 
@@ -50,7 +51,10 @@ async def startup(ctx: dict[str, Any]) -> None:
     redis = ctx["redis"]
     sessionmaker = create_sessionmaker(engine)
     embedder = build_embedder(settings)
-    ctx["jobs"] = JobContext(sessionmaker, settings, build_email_sender(settings), build_storage(settings), embedder)
+    checkouts = build_checkouts(settings)
+    ctx["jobs"] = JobContext(
+        sessionmaker, settings, build_email_sender(settings), build_storage(settings), embedder, checkouts
+    )
     ctx["runner"] = AgentRunner(
         session_factory=sessionmaker,
         checkpointer=await open_checkpointer(settings.database_url, stack),
@@ -58,6 +62,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         token_budget=settings.run_token_budget,
         embedder=embedder,
         web=build_web_research(settings),
+        checkouts=checkouts,
         summarize_after_tokens=settings.summarize_after_tokens,
         inline=True,  # this process executes the runs
         stop_reasons=RunQueue(redis),

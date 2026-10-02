@@ -27,6 +27,7 @@ from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner, mark_interrupted_runs
 from .modules.agents.streams import RedisRunStreams
+from .modules.code.checkouts import build_checkouts
 from .modules.documents.service import mark_interrupted_conversions
 from .modules.research.service import build_web_research
 from .modules.search.embeddings import build_embedder
@@ -71,7 +72,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 stack.push_async_callback(redis.aclose)
             app.state.rate_limiter = build_rate_limiter(settings, redis)
             job_context = JobContext(
-                sessionmaker, settings, build_email_sender(settings), app.state.storage, app.state.embedder
+                sessionmaker, settings, build_email_sender(settings), app.state.storage, app.state.embedder,
+                app.state.checkouts,
             )
             queue, streams, local_jobs = None, None, None
             if settings.jobs == "worker":
@@ -94,6 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 token_budget=settings.run_token_budget,
                 embedder=app.state.embedder,
                 web=build_web_research(settings),
+                checkouts=app.state.checkouts,
                 summarize_after_tokens=settings.summarize_after_tokens,
                 inline=settings.jobs == "inline",
                 queue=queue,
@@ -134,6 +137,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.rate_limiter = build_rate_limiter(settings, None)
     app.state.storage = build_storage(settings)
     app.state.embedder = build_embedder(settings)
+    # Checkouts of connected repos: kept where agents run (here in local mode, else the worker).
+    app.state.checkouts = build_checkouts(settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

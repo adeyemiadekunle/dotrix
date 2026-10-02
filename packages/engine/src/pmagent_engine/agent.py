@@ -28,6 +28,7 @@ from .backend import LockingFilesystemBackend
 from .builtins import BUILTIN_HANDLES, SPECIALISTS, builtin_specs
 from .catalog import group as catalog_group
 from .catalog import tool_id, tool_name
+from .code import CODE_GUIDE
 from .config import ProjectConfig
 from .context_middleware import CompactTools, UnchangedReads, summarization
 from .contracts import PM_HANDLE, AgentSpec
@@ -332,6 +333,7 @@ def build_team(
     subagent_task_tools: list | None = None,
     context: str | None = None,
     knowledge_tools: list | None = None,
+    code_tools: list | None = None,
     specialist_model: Any = None,
     summarize_after_tokens: int | None = None,
     lead: str | None = None,
@@ -356,7 +358,8 @@ def build_team(
     (the platform passes them all and checks each agent's contract on every change; the CLI
     passes none, so its specialists only read the board). `context` is the run's project
     context pack: the PM and every specialist get it. `knowledge_tools` are extra read-only
-    tools (outline, sections, search). `web_tools` are our web tools (`pmagent_engine.web`:
+    tools (outline, sections, search). `code_tools` read the project's checked-out repository
+    (`pmagent_engine.code`), given to agents granted `code.read`. `web_tools` are our web tools (`pmagent_engine.web`:
     `web_search`, `fetch_page`), given to agents granted `web.search` with how to cite what they
     find; our `web_search` replaces `web_search` (the model's built-in search) when both are
     given. `specialist_model` runs the specialists and summaries
@@ -389,8 +392,14 @@ def build_team(
     # Our web tools come first, so our `web_search` wins over the model's built-in one (a
     # provider-native dict) when both are given; without our search, the built-in one stays.
     web = [*(web_tools or []), *([web_search] if web_search else [])]
-    pm_box = _toolbox([*read_task_tools, *write_task_tools, *(knowledge_tools or []), *web])
-    specialist_box = _toolbox([*read_task_tools, *(subagent_task_tools or []), *(knowledge_tools or []), *web])
+    reading = [*(knowledge_tools or []), *(code_tools or [])]
+    pm_box = _toolbox([*read_task_tools, *write_task_tools, *reading, *web])
+    specialist_box = _toolbox([*read_task_tools, *(subagent_task_tools or []), *reading, *web])
+
+    def guides(spec: AgentSpec) -> str:
+        """How to use the code and web tools it was given."""
+        text = CODE_GUIDE if code_tools and spec.can("code.read") else ""
+        return text + (WEB_GUIDE if web_tools and spec.can("web.search") else "")
 
     if board_instructions is not None:
         board = board_instructions
@@ -485,9 +494,7 @@ blockers, and documentation status. A briefing never writes.
             text = f"You are the {spec.name} for {project_name}.\n{spec.instructions}\n{board}\n{_LEAD_GUIDE}"
         else:
             text = f"You are the {spec.name} for {project_name}.\n{spec.instructions}\n{_FINDINGS_GUIDE}"
-        text += extras(spec)[1]
-        if web_tools and spec.can("web.search"):
-            text += WEB_GUIDE
+        text += extras(spec)[1] + guides(spec)
         return _with_context(_with_rules(rules, spec.handle, text), context)
 
     def subagent(spec: AgentSpec) -> dict:
@@ -525,8 +532,7 @@ blockers, and documentation status. A briefing never writes.
     return create_deep_agent(
         model=model,
         tools=[*_tools_for(pm, pm_box), *extras(pm)[0]],
-        system_prompt=_with_context(_with_rules(rules, PM_HANDLE, pm_instructions + extras(pm)[1] + (
-            WEB_GUIDE if web_tools and pm.can("web.search") else "")), context),
+        system_prompt=_with_context(_with_rules(rules, PM_HANDLE, pm_instructions + extras(pm)[1] + guides(pm)), context),
         subagents=[subagent(spec) for spec in team],
         middleware=middleware(),
         permissions=_permissions(pm),

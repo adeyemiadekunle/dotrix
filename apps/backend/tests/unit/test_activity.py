@@ -16,6 +16,9 @@ def test_labels_say_what_the_pm_is_doing() -> None:
     assert activity_label("read_file", None) == "Reading the project files"
     assert activity_label("fetch_page", {"url": "https://www.gov.uk/guidance/vat"}) == "Reading gov.uk"
     assert activity_label("fetch_page", {"url": "not a url"}) == "Reading a web page"
+    assert activity_label("code_search", {"pattern": "secret sauce"}) == "Searching the code"  # not the pattern
+    assert activity_label("code_read", {"path": "/src/api/routes.py"}) == "Reading src/api/routes.py in the code"
+    assert activity_label("code_tree", {"path": "."}) == "Looking through the code"
     assert activity_label("some_new_tool", {"x": 1}) is None  # unknown tools show nothing
 
 

@@ -15,6 +15,7 @@ from .modules.auth.repository import (
     RefreshTokenRepository,
 )
 from .modules.auth.service import AuthService
+from .modules.code.service import CodeService
 from .modules.documents.service import DocumentService
 from .modules.invites.repository import InviteRepository
 from .modules.projects.models import Project
@@ -49,7 +50,8 @@ async def send_password_reset(ctx: JobContext, *, email: str) -> None:
 
 async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[str, int]:
     """Delete rows nothing will use again: expired refresh tokens and sessions, used or expired email-link
-    tokens, finished device logins, old invites, and web pages read over a month ago. Runs hourly (the worker's cron, or a loop
+    tokens, finished device logins, old invites, web pages read over a month ago, and checkouts of repos
+    no longer connected (on this machine). Runs hourly (the worker's cron, or a loop
     in the API process in local mode); safe to run any time, from any number of processes."""
     at = datetime.fromisoformat(now) if now else datetime.now(UTC)
     token_cutoff, invite_cutoff = at - TOKEN_RETENTION, at - INVITE_RETENTION
@@ -66,9 +68,21 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
             "web_pages": await delete_stale_pages(session, at - KEEP_PAGES_FOR),
         }
         await session.commit()
+        if ctx.checkouts is not None:
+            deleted["checkouts"] = await CodeService(session, ctx.checkouts).prune()
     if any(deleted.values()):
         logger.info("cleanup deleted %s", ", ".join(f"{n} {name}" for name, n in deleted.items() if n))
     return deleted
+
+
+async def sync_repository(ctx: JobContext, *, project_id: str) -> None:
+    """Check out a connected repo's default branch afresh for agents to read (after it's
+    connected, and after each push). A failure is recorded on the repo, not retried: the next
+    push or agent run tries again."""
+    if ctx.checkouts is None:
+        return
+    async with ctx.session_factory() as session:
+        await CodeService(session, ctx.checkouts).sync(uuid.UUID(project_id))
 
 
 async def convert_document(ctx: JobContext, *, document_id: str) -> None:
@@ -110,4 +124,5 @@ JOBS: dict[str, JobFunction] = {
     "cleanup_expired": cleanup_expired,
     "convert_document": convert_document,
     "index_knowledge": index_knowledge,
+    "sync_repository": sync_repository,
 }

@@ -55,6 +55,13 @@ def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
             return "Searching the project's documents and issues"
         case "ls" | "glob" | "grep":
             return "Looking through the project files"
+        case "code_tree":
+            return "Looking through the code"
+        case "code_search":
+            return "Searching the code"
+        case "code_read":
+            path = str(args.get("path") or "").strip().strip("/")[:80]
+            return f"Reading {path} in the code" if path else "Reading the code"
         case "write_file" | "edit_file":
             return f"Drafting a change to {_path(args)}"
         case "write_todos":
