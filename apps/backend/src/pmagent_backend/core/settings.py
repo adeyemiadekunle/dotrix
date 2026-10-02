@@ -135,6 +135,8 @@ class Settings(DatabaseSettings):
     # The most tokens (input + output, over all its steps) one agent run may use before it
     # stops; a project can set its own. 0 turns the limit off.
     run_token_budget: int = Field(default=500_000, ge=0)
+    # Automation runs a workspace may start per day (UTC), across all its projects.
+    automation_daily_runs: int = Field(default=50, ge=0)
     # A conversation's older turns are summarised once its prompt passes this many tokens
     # (the most recent turns are kept word for word).
     summarize_after_tokens: int = Field(default=40_000, ge=5_000)

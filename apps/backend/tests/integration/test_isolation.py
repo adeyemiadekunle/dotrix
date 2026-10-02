@@ -51,6 +51,10 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
         )
         assert restricted.status_code == 201, restricted.text
         token = (await db_client.post("/v1/me/tokens", json={"name": "script"}, headers=h)).json()
+        automation = await db_client.post(
+            f"{base}/automations", json={"name": "Daily", "instructions": "Summarise.", "schedule_hour": 6}, headers=h
+        )
+        assert automation.status_code == 201, automation.text
         params = {
             "workspace_id": team["id"],
             "project_id": project["id"],
@@ -66,12 +70,22 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             "output_id": "01a0e000-0000-7000-8000-000000000000",
             "index": "0",
             "installation_ref": "01a0e000-0000-7000-8000-000000000000",
+            "automation_id": automation.json()["id"],
         }
         # A run paused on an approval: it has a run, a thread, and a pending action.
         agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
         run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=h)).json()
         assert run["status"] == "awaiting_approval", run
         params |= {"run_id": run["id"], "thread_id": run["thread_id"]}
+        # A rejected change with a reason: a proposed lesson.
+        agent_script.say(tool_call("write_file", file_path="/pmagent/vision.md", content="# V\n"), "Fine.")
+        other = (await db_client.post(f"{base}/agent/runs", json={"message": "Vision"}, headers=h)).json()
+        await db_client.post(f"{base}/agent/runs/{other['id']}/decisions", headers=h, json={"decisions": [
+            {"approval_id": a["id"], "decision": "reject", "reason": "Too vague"} for a in other["approvals"]
+        ]})
+        lessons = (await db_client.get(f"{base}/lessons", headers=h)).json()
+        assert len(lessons) == 1, lessons
+        params |= {"lesson_id": lessons[0]["id"], "rejected_run_id": other["id"]}  # (not a path parameter)
         return World(
             headers=h, params=params, colleague_headers=colleague.headers, restricted_id=restricted.json()["id"]
         )
@@ -126,7 +140,8 @@ async def _call(client: AsyncClient, method: str, url: str, body: bool, headers:
 
 async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
     known = {"workspace_id", "project_id", "key", "path", "version", "document_id", "invite_id",
-             "user_id", "run_id", "thread_id", "handle", "output_id", "index", "installation_ref"}
+             "user_id", "run_id", "thread_id", "handle", "output_id", "index", "installation_ref", "automation_id",
+             "lesson_id"}
     routes = _scoped_routes(db_client)
     assert len(routes) > 60  # sanity: the whole API is being walked
     for _, template, _ in routes:
@@ -185,7 +200,7 @@ async def test_lists_show_only_your_own(db_client: AsyncClient, build_world) -> 
     assert [p["id"] for p in projects] == [mallory.params["project_id"], mallory.restricted_id]
     base = f"{ws}/projects/{mallory.params['project_id']}"
     runs = (await db_client.get(f"{base}/agent/runs", headers=h)).json()
-    assert [r["id"] for r in runs] == [mallory.params["run_id"]]
+    assert {r["id"] for r in runs} == {mallory.params["run_id"], mallory.params["rejected_run_id"]}
     assert [d["id"] for d in (await db_client.get(f"{base}/documents", headers=h)).json()] == [
         mallory.params["document_id"]
     ]

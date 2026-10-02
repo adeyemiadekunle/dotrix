@@ -17,6 +17,8 @@ from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.issues.service import IssueService
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
+from pmagent_backend.modules.lessons.models import LessonSource
+from pmagent_backend.modules.lessons.service import propose as propose_lesson
 from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
@@ -155,6 +157,7 @@ class AgentService:
         title: str | None = None,
         available: list[str] | None = None,
         mode: str | None = None,
+        automation_id: uuid.UUID | None = None,
     ) -> AgentRunRead:
         """Start a run. A new thread gets a title: `title` if given (built-in requests), else one
         made from the message (`titles.py`; no model call), and its model, fixed from then on.
@@ -194,6 +197,7 @@ class AgentService:
             title=(title or title_from_message(data.message)) if data.thread_id is None else None,
             agent=None if data.agent in ("auto", PM_ROLE) else data.agent,
             mode=mode,
+            automation_id=automation_id,
             conversation_model=model,
             requested_by_id=member.user_id,
             created_at=now,
@@ -214,7 +218,8 @@ class AgentService:
             actor_user_id=member.user_id,
             instructed_by_id=member.user_id,
             details={"kind": kind.value, "thread_id": str(thread_id), "agent": data.agent, "model": model,
-                     **({"mode": mode} if mode else {})},
+                     **({"mode": mode} if mode else {}),
+                     **({"automation_id": str(automation_id)} if automation_id else {})},
         )
         await self.session.commit()
         await self.runner.start(run.id, data.message)
@@ -484,6 +489,22 @@ class AgentService:
                 details={"tool": approval.tool, "run_id": str(run.id), "reason": decision.reason},
             )
         run.status, run.updated_at = RunStatus.QUEUED, now
+        decided = [a for a in changes if a.status in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED)]
+        if decided and run.requested_by_id is not None:
+            rejected = [a for a in decided if a.status is ApprovalStatus.REJECTED]
+            Notifier(self.session).decided(
+                access.project, run.requested_by_id, run.id, run.title or run.message, now,
+                approved=len(decided) - len(rejected), rejected=len(rejected),
+                reason=next((a.reason for a in rejected if a.reason), None), actor_user_id=member.user_id,
+            )
+        for approval in changes:
+            if approval.status is ApprovalStatus.REJECTED:
+                # A reason is something the agent could learn (owners and admins decide).
+                propose_lesson(
+                    self.session, access.project, agent=run.agent, source=LessonSource.REJECTION,
+                    subject=f"A change to {approval.target or approval.tool}", reason=approval.reason,
+                    run_id=run.id, by=member.user_id,
+                )
         await self.session.commit()
 
         await self.runner.resume(
@@ -545,6 +566,14 @@ class AgentService:
         if row is None or not 0 <= index < len(row.items):
             raise NotFound("No such result item in this run")
         items = [dict(item) for item in row.items]
+        if data.state == "dismissed" and items[index].get("state") != "dismissed":
+            data_ = items[index].get("data") or {}
+            title = str(data_.get("title") or data_.get("claim") or data_.get("step") or data_.get("path") or "")[:120]
+            propose_lesson(
+                self.session, access.project, agent=row.agent, source=LessonSource.DISMISSAL,
+                subject=f'The {row.schema_name} "{title}"' if title else f"A {row.schema_name}",
+                reason=data.reason, run_id=run_id, by=access.member.user_id,
+            )
         items[index] |= {
             "state": data.state,
             "reason": data.reason if data.state == "dismissed" else None,

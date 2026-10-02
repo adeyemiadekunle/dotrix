@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pmagent_backend.core.errors import Unauthorized
 from pmagent_backend.core.settings import Settings
 from pmagent_backend.modules.auth.github import GitHubUnavailable
+from pmagent_backend.modules.automations.events import record_event
+from pmagent_backend.modules.automations.models import AutomationEvent
 
 from .models import ConnectedRepo, GitHubInstallation
 
@@ -57,11 +59,19 @@ async def _push(session: AsyncSession, payload: dict[str, Any]) -> tuple[str, li
         values["full_name"] = str(repo["full_name"])
     result = await session.execute(
         update(ConnectedRepo).where(ConnectedRepo.github_repo_id == int(repo_id)).values(**values)
-        .returning(ConnectedRepo.project_id)
+        .returning(ConnectedRepo.project_id, ConnectedRepo.workspace_id)
     )
-    projects = list(result.scalars())
+    rows = list(result.all())
+    head = payload.get("head_commit") or {}
+    message = str(head.get("message") or "").strip().splitlines()[0][:150] if head.get("message") else ""
+    for project_id, workspace_id in rows:
+        await record_event(
+            session, workspace_id=workspace_id, project_id=project_id, event=AutomationEvent.CODE_PUSHED,
+            summary=f"Pushed to {repo['default_branch']} at {str(after)[:7]}" + (f": {message}" if message else ""),
+            details={"sha": str(after)[:40], "branch": str(repo["default_branch"])},
+        )
     await session.commit()
-    return f"push: {len(projects)} connected", projects
+    return f"push: {len(rows)} connected", [project_id for project_id, _ in rows]
 
 
 async def _installation(session: AsyncSession, payload: dict[str, Any]) -> str:

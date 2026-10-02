@@ -10,6 +10,8 @@ import re
 from importlib import resources
 from pathlib import PurePosixPath
 
+from .templates import default_templates
+
 AGENTS = (
     "project-manager",
     "product",
@@ -112,4 +114,5 @@ def skeleton(name: str, description: str = "", readme: str | None = None) -> dic
         ),
     }
     files.update(default_rules(name))
+    files.update(default_templates())
     return files

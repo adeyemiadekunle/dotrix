@@ -2024,6 +2024,141 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/automations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Automations
+         * @description The project's automations: what each does, when it runs, and how its last run went.
+         *     Anyone who sees the project.
+         */
+        get: operations["list_automations"];
+        put?: never;
+        /**
+         * Create Automation
+         * @description Set an agent to run on its own: on `events` (people's issue and document changes,
+         *     approved agent changes, pushes; never an agent's own) and/or a schedule (`schedule_hour`
+         *     UTC, every day or on `schedule_weekday`). Its runs are instructed by you and see what you
+         *     see; their changes wait for approval. At most `max_runs_per_day`. Owners and admins.
+         */
+        post: operations["create_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/automations/{automation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Automation
+         * @description Delete an automation; its past runs stay in Chat. Owners and admins.
+         */
+        delete: operations["delete_automation"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Automation
+         * @description Change an automation, or turn it off and on (`enabled`). Owners and admins.
+         */
+        patch: operations["update_automation"];
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/automations/{automation_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Automation
+         * @description Run it once now. If it can't (its daily limit, its last run still going), `last_error`
+         *     says why. Owners and admins.
+         */
+        post: operations["run_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/lessons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Lessons
+         * @description Lessons proposed from rejected changes and dismissed results (with their reasons), and what
+         *     became of them; newest first. Owners and admins.
+         */
+        get: operations["list_lessons"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/lessons/{lesson_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Lesson
+         * @description Add it to the agent's rules (`agent-rules/lessons/<agent>.md`, a new version you can
+         *     edit or restore like any file), in your words if you give `text`. Owners and admins.
+         */
+        post: operations["accept_lesson"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/lessons/{lesson_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline Lesson
+         * @description Don't teach it; it stays listed as declined. Owners and admins.
+         */
+        post: operations["decline_lesson"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/audit": {
         parameters: {
             query?: never;
@@ -2956,6 +3091,11 @@ export interface components {
             reply: string | null;
             /** Error */
             error: string | null;
+            /**
+             * Automation Id
+             * @description The automation that started it, if one did
+             */
+            automation_id?: string | null;
             /** Requested By Id */
             requested_by_id: string | null;
             /**
@@ -3252,6 +3392,136 @@ export interface components {
          * @enum {string}
          */
         AuthorType: "user" | "agent" | "system";
+        /** AutomationCreate */
+        AutomationCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Agent
+             * @description `auto` (the Project Manager) or an agent's handle
+             * @default auto
+             */
+            agent: string;
+            /**
+             * Instructions
+             * @description What the agent should do each time, as you'd ask it in Chat
+             */
+            instructions: string;
+            /**
+             * Events
+             * @description What sets it off
+             */
+            events?: components["schemas"]["AutomationEvent"][];
+            /**
+             * Schedule Hour
+             * @description Run every day (or `schedule_weekday`) at this hour, UTC
+             */
+            schedule_hour?: number | null;
+            /** Schedule Weekday */
+            schedule_weekday?: number | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Max Runs Per Day
+             * @default 5
+             */
+            max_runs_per_day: number;
+        };
+        /**
+         * AutomationEvent
+         * @description What can set an automation off. Only what people (and pushes) do: an agent's own changes
+         *     never trigger automations, so they can't set each other off in a loop.
+         * @enum {string}
+         */
+        AutomationEvent: "issue.created" | "issue.done" | "document.changed" | "changes.approved" | "code.pushed";
+        /** AutomationRead */
+        AutomationRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Agent
+             * @description `auto` or an agent's handle
+             */
+            agent: string;
+            /** Instructions */
+            instructions: string;
+            /** Events */
+            events: components["schemas"]["AutomationEvent"][];
+            /** Schedule Hour */
+            schedule_hour: number | null;
+            /** Schedule Weekday */
+            schedule_weekday: number | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Max Runs Per Day */
+            max_runs_per_day: number;
+            /**
+             * Created By Id
+             * @description Whose instruction its runs carry
+             */
+            created_by_id: string | null;
+            /**
+             * Thread Id
+             * @description Its conversation in Chat (null until it first runs)
+             */
+            thread_id: string | null;
+            /** Next Run At */
+            next_run_at: string | null;
+            /** Last Run At */
+            last_run_at: string | null;
+            /** Last Run Id */
+            last_run_id: string | null;
+            /**
+             * Last Error
+             * @description Why it last didn't run (null when it did)
+             */
+            last_error: string | null;
+            /**
+             * Runs Today
+             * @default 0
+             */
+            runs_today: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * AutomationUpdate
+         * @description Fields left out stay as they are; send null to clear the schedule.
+         */
+        AutomationUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Agent */
+            agent?: string | null;
+            /** Instructions */
+            instructions?: string | null;
+            /** Events */
+            events?: components["schemas"]["AutomationEvent"][] | null;
+            /** Schedule Hour */
+            schedule_hour?: number | null;
+            /** Schedule Weekday */
+            schedule_weekday?: number | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Max Runs Per Day */
+            max_runs_per_day?: number | null;
+        };
         /** Board */
         Board: {
             /** Columns */
@@ -4037,6 +4307,65 @@ export interface components {
             /** @description Set when a coding tool (Claude Code, Codex, the coding agent) is acting. It can only work on issues assigned to it: comment, add sub-tasks, and move its issue up to `review`. */
             as_agent?: components["schemas"]["AgentAssignee"] | null;
         };
+        /** LessonAccept */
+        LessonAccept: {
+            /**
+             * Text
+             * @description The lesson in your words (default: as proposed)
+             */
+            text?: string | null;
+        };
+        /** LessonRead */
+        LessonRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Agent
+             * @description The agent it's for (its handle; project-manager is Auto)
+             */
+            agent: string;
+            /**
+             * Text
+             * @description The lesson as the agent will read it
+             */
+            text: string;
+            source: components["schemas"]["LessonSource"];
+            /**
+             * Reason
+             * @description What the person said when rejecting or dismissing
+             */
+            reason: string;
+            /** Run Id */
+            run_id: string | null;
+            status: components["schemas"]["LessonStatus"];
+            /**
+             * Proposed By Id
+             * @description Whose rejection or dismissal it came from
+             */
+            proposed_by_id: string | null;
+            /** Decided By Id */
+            decided_by_id: string | null;
+            /** Decided At */
+            decided_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * LessonSource
+         * @enum {string}
+         */
+        LessonSource: "rejection" | "dismissal";
+        /**
+         * LessonStatus
+         * @enum {string}
+         */
+        LessonStatus: "proposed" | "accepted" | "declined";
         /** Link */
         Link: {
             /**
@@ -4231,7 +4560,7 @@ export interface components {
          * NotificationKind
          * @enum {string}
          */
-        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention";
+        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention" | "decided";
         /**
          * NotificationRead
          * @description Something that waits for you or happened to you. `kind` says which: changes waiting for
@@ -4326,6 +4655,19 @@ export interface components {
              * @default true
              */
             finding: boolean;
+            /**
+             * Decided
+             * @description Someone approves or rejects changes you asked an agent for
+             * @default true
+             */
+            decided: boolean;
+            /**
+             * Email
+             * @description Emails: as things happen (batched, one per run), a daily digest at 08:00 UTC, or none
+             * @default immediately
+             * @enum {string}
+             */
+            email: "immediately" | "daily" | "off";
         };
         /** OrganizationConversion */
         OrganizationConversion: {
@@ -11669,6 +12011,504 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_automations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    create_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    delete_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    update_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    run_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_lessons: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["LessonStatus"] | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    accept_lesson: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LessonAccept"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    decline_lesson: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

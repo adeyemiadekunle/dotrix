@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -63,3 +64,8 @@ class NotificationSettings(BaseModel):
     mention: bool = Field(default=True, description="Someone @mentions you in a comment or a chat message")
     assigned: bool = Field(default=True, description="Someone (or an agent) assigns you an issue")
     finding: bool = Field(default=True, description="A run you asked for finds things to look at")
+    decided: bool = Field(default=True, description="Someone approves or rejects changes you asked an agent for")
+    email: Literal["immediately", "daily", "off"] = Field(
+        default="immediately",
+        description="Emails: as things happen (batched, one per run), a daily digest at 08:00 UTC, or none",
+    )

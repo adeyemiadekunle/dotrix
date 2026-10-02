@@ -138,3 +138,24 @@ async def test_a_disconnected_repo_s_checkout_is_cleaned_up(
     app = db_client._transport.app  # type: ignore[attr-defined]
     await app.state.jobs.enqueue("cleanup_expired")
     assert not root.exists()
+
+
+async def test_a_push_sets_off_automations(
+    db_client: AsyncClient, github_world, deliver, github, origin: Path, agent_script
+) -> None:
+    ada, _, ws, kun, _ = await github_world()
+    await _connect(db_client, ws, kun, ada.headers)
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.post(f"{base}/automations", json={
+        "name": "Review pushes", "agent": "reviewer", "events": ["code.pushed"],
+        "instructions": "Check what was pushed against the requirements.",
+    }, headers=ada.headers)
+    sha = _commit(origin, "src/refunds.py", "def refund():\n    pass\n")
+    push = {"ref": "refs/heads/main", "after": sha, "head_commit": {"message": "Add refunds\n\nLonger text"},
+            "repository": {"id": 9001, "full_name": "kunemi/api", "default_branch": "main"}}
+    await deliver("push", push)
+    model = agent_script.say("Looks consistent with the requirements.")
+    await db_client._transport.app.state.jobs.enqueue("run_automations")  # type: ignore[attr-defined]
+    runs = (await db_client.get(f"{base}/agent/runs", headers=ada.headers)).json()
+    assert len(runs) == 1 and runs[0]["title"] == "Automation: Review pushes"
+    assert f"Pushed to main at {sha[:7]}: Add refunds" in model.received[0][-1].content

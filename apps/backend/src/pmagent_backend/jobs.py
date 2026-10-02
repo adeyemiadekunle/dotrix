@@ -15,9 +15,11 @@ from .modules.auth.repository import (
     RefreshTokenRepository,
 )
 from .modules.auth.service import AuthService
+from .modules.automations.service import AutomationService
 from .modules.code.service import CodeService
 from .modules.documents.service import DocumentService
 from .modules.invites.repository import InviteRepository
+from .modules.notifications.emails import NotificationEmails
 from .modules.projects.models import Project
 from .modules.research.service import KEEP_PAGES_FOR, delete_stale_pages
 from .modules.search.service import KnowledgeIndex
@@ -29,6 +31,8 @@ TOKEN_RETENTION = timedelta(days=7)  # refresh tokens after expiry; email links 
 INVITE_RETENTION = timedelta(days=30)  # after expiry, revocation, or acceptance
 CLEANUP_INTERVAL_SECONDS = 3600
 INDEX_INTERVAL_SECONDS = 60
+AUTOMATIONS_INTERVAL_SECONDS = 60
+EMAIL_INTERVAL_SECONDS = 60
 
 
 async def send_email(ctx: JobContext, *, to: str, subject: str, body: str, html: str | None = None) -> None:
@@ -85,6 +89,32 @@ async def sync_repository(ctx: JobContext, *, project_id: str) -> None:
         await CodeService(session, ctx.checkouts).sync(uuid.UUID(project_id))
 
 
+async def run_automations(ctx: JobContext) -> dict[str, int]:
+    """Start the automations whose events happened or whose schedule came round. Every minute
+    (the worker's cron, or a loop in the API in local mode)."""
+    if ctx.runner is None:
+        return {}
+    async with ctx.session_factory() as session:
+        done = await AutomationService(
+            session, ctx.runner, workspace_daily_runs=ctx.settings.automation_daily_runs
+        ).run_due()
+    if done.get("fired") or done.get("skipped"):
+        logger.info("automations: %s", done)
+    return done
+
+
+async def email_notifications(ctx: JobContext) -> dict[str, int]:
+    """Email new notifications to people who want them as they happen, and the daily digests
+    from 08:00 UTC. Every minute (the worker's cron, or a loop in the API in local mode)."""
+    async with ctx.session_factory() as session:
+        emails = NotificationEmails(session, ctx.email, ctx.settings.app_url)
+        done = await emails.send_due()
+        done["digests"] = await emails.send_digests()
+    if done["emails"] or done["digests"]:
+        logger.info("notification emails: %s", done)
+    return done
+
+
 async def convert_document(ctx: JobContext, *, document_id: str) -> None:
     """An uploaded document's markdown, made outside the request (big PDFs take a while)."""
     if ctx.storage is None:
@@ -125,4 +155,6 @@ JOBS: dict[str, JobFunction] = {
     "convert_document": convert_document,
     "index_knowledge": index_knowledge,
     "sync_repository": sync_repository,
+    "run_automations": run_automations,
+    "email_notifications": email_notifications,
 }

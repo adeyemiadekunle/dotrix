@@ -21,6 +21,8 @@ from uuid_utils.compat import uuid7
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from pmagent_backend.modules.audit.service import AuditLog
+from pmagent_backend.modules.automations.events import record_event
+from pmagent_backend.modules.automations.models import AutomationEvent
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.models import Project
@@ -204,6 +206,12 @@ class IssueService:
             self._notify_assignee(project, issue, actor)
         self._event(issue, actor, IssueEventKind.CREATED)
         self._audit(project, actor, "issue.create", issue)
+        if actor.agent_name is None:  # people's changes set automations off; an agent's never do
+            await record_event(
+                self.session, workspace_id=project.workspace_id, project_id=project.id,
+                event=AutomationEvent.ISSUE_CREATED, summary=f"{issue.key} created: {issue.title}",
+                details={"key": issue.key, "type": issue.type.value},
+            )
         await self.session.commit()
         return await self.get(project, issue.key)
 
@@ -474,6 +482,12 @@ class IssueService:
             issue.updated_at = _now()
             self._event(issue, actor, IssueEventKind.UPDATED, changes=changes, body=note)
             self._audit(project, actor, "issue.update", issue, {"fields": sorted(changes)})
+            if "status" in changes and issue.status is IssueStatus.DONE and actor.agent_name is None:
+                await record_event(
+                    self.session, workspace_id=project.workspace_id, project_id=project.id,
+                    event=AutomationEvent.ISSUE_DONE, summary=f"{issue.key} done: {issue.title}",
+                    details={"key": issue.key, "type": issue.type.value},
+                )
             await self.session.commit()
         return await self.get(project, issue.key)
 

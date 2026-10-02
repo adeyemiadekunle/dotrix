@@ -36,10 +36,13 @@ class NotificationService:
 
     async def settings(self, user: User) -> NotificationSettings:
         muted = set(user.muted_notifications or [])
-        return NotificationSettings(**{kind.value: kind.value not in muted for kind in OPTIONAL_KINDS})
+        return NotificationSettings(
+            **{kind.value: kind.value not in muted for kind in OPTIONAL_KINDS}, email=user.email_notifications
+        )
 
     async def update_settings(self, user: User, data: NotificationSettings) -> NotificationSettings:
         user.muted_notifications = [kind.value for kind in OPTIONAL_KINDS if not getattr(data, kind.value)]
+        user.email_notifications = data.email
         await self.session.commit()
         return await self.settings(user)
 

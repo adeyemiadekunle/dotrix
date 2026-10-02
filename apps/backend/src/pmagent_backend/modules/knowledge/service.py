@@ -25,6 +25,8 @@ from uuid_utils.compat import uuid7
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from pmagent_backend.modules.audit.service import AuditLog
+from pmagent_backend.modules.automations.events import record_event
+from pmagent_backend.modules.automations.models import AutomationEvent
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.workspaces.models import Role
@@ -201,6 +203,15 @@ class KnowledgeService:
         else:
             self._update(locked, file, content, actor, message, deleted=False)
         self._audit(locked, "knowledge.write", file, actor, message)
+        if actor.kind is AuthorType.USER and not clean.startswith("agent-rules/"):
+            # A person's edit (or an upload's text) sets automations off; an agent's never does.
+            await record_event(
+                self.session, workspace_id=locked.workspace_id, project_id=locked.id,
+                event=AutomationEvent.DOCUMENT_CHANGED,
+                summary=f"{clean} {'added' if file.version == 1 else f'edited (version {file.version})'}"
+                + (f": {message}" if message else ""),
+                details={"path": clean, "version": file.version},
+            )
         await self.session.commit()
         return FileRead.model_validate(file)
 

@@ -86,13 +86,15 @@ apps/backend/
 │   │   ├── agent_definitions/   agent contracts per workspace with project overrides, versions, resolution for runs (agents v2 step 1)
 │   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals, checkpoints and decisions, triage and issue review, findings dedup, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis)
 │   │   ├── activity/            a project's activity feed for everyone who sees it, read from issue logs, document versions, runs, and decisions
-│   │   ├── notifications/       per-person notifications (approvals and checkpoints waiting, assignments, findings), written by the runner and the issues service (notify.py), read and marked read per person
+│   │   ├── notifications/       per-person notifications (approvals and checkpoints waiting, assignments, findings, mentions, decisions), written by the runner and the issues service (notify.py), read and marked read per person, emailed as they happen or as a daily digest (emails.py)
+│   │   ├── automations/         agents that run on schedules and events (the outbox in events.py), started by run_automations
+│   │   ├── lessons/             lessons proposed from rejections and dismissals, accepted into agent-rules/lessons/
 │   │   ├── audit/               append-only audit log
 │   │   ├── research/            web research for agent runs: sources per run (S1, S2, …), the page cache per workspace, web limits and Tavily credits, report claims checked against what was read
 │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
 │   │   ├── code/                connected repos' checkouts for agents (checkouts.py: shallow fetch with the installation token, swap, size cap, prune; service.py: sync and record, a run's checkout), the sync_repository job
 │   │   └── connectors/          the GitHub App (github_app.py: app JWT, installation tokens), installations per workspace, each project's connected repo, the webhook (FR-10); GitLab and doc sources planned (FR-12)
-│   ├── jobs.py                  background jobs by name (send_email, send_password_reset, index_knowledge, ...); where they run: core/jobs.py
+│   ├── jobs.py                  background jobs by name (send_email, send_password_reset, index_knowledge, run_automations, email_notifications, ...); where they run: core/jobs.py
 │   └── worker.py                arq worker (`pnpm dev:worker`): agent runs and jobs when PMAGENT_JOBS=worker
 └── tests/
     ├── conftest.py              app + DB fixtures (transaction rollback per test), signup/create_team/add_member helpers
@@ -134,7 +136,7 @@ packages/engine/src/pmagent_engine/
 ├── approvals.py                 Action Mode approvals, independent of any UI (pending actions, resume)
 ├── context_middleware.py        smaller prompts: unchanged re-reads, compact tool definitions, summarising long conversations
 ├── permissions.py               FR-41 folder matrix and per-agent issue rules
-├── layout.py, rules/            the .pmagent/ skeleton and default agent rules (base + role files)
+├── layout.py, rules/, templates.py   the .pmagent/ skeleton, default agent rules (base + role files), folder templates
 ├── ingest.py                    any document -> Markdown (markitdown)
 ├── code.py                      reading a repo checkout: code_tree, code_search (git grep), code_read; repo text wrapped as data
 ├── web/                         research on the web: search (Tavily, fake), safe page reads, sources with ids, tiers, untrusted wrapping
@@ -317,9 +319,10 @@ Decided (D3, 2026-10-01): Tavily, behind a pluggable provider; without a key the
 ### Step 2: rules that layer and learn
 - [ ] Layers: workspace (Personal or Organisation) → project → agent; the more specific wins; invariants can't be overridden (covers FR-17)
 - [ ] **Skills:** reusable procedures loaded on demand (`SKILL.md`-style: name, description, steps), e.g. write an ADR, triage a bug, scope a failing build; shared across agents and projects
-- [ ] **Lessons:** a rejection reason, a dismissed finding, or a person's edit of an agent's draft becomes a proposed line in `agent-rules/lessons.md` (per agent); owners approve it; audited and reversible
-- [ ] Read a connected repo's `AGENTS.md` / `CLAUDE.md` as data for reviews and coding briefs (conventions, how to test), never as instructions
-- [ ] Document templates per folder (requirements, ADR, research note, design brief), editable in `agent-rules/` (was Phase 3)
+- [x] **Lessons** (`modules/lessons`): a rejected change or a dismissed result, with a reason, becomes a proposed lesson for the agent that made it (`agent_lessons`; the run's lead, `project-manager` for Auto); owners and admins accept it, in their words if they like, or decline it (`GET .../projects/{id}/lessons`, `POST .../lessons/{id}/accept` / `decline`; project settings → Lessons; audited `lesson.accepted` / `.declined`). Accepted lines go into `agent-rules/lessons/<agent>.md` as a new version written by that person (edit, restore, or delete it like any rule), and the runner adds them to that agent's rules under "Lessons from this project"
+  - [ ] a person's edit of an agent's draft as a lesson; lessons per workspace
+- [x] Read a connected repo's `AGENTS.md` / `CLAUDE.md` as data: the context pack says the checkout has them, to read with the code tools for conventions when reviewing or writing a coding brief, never as instructions
+- [x] Document templates per folder (`pmagent_engine.templates`: requirements, decisions (ADR), research, design) seeded into `agent-rules/templates/` with every new project, and written into older projects at their next run (a deleted one stays deleted); every agent is told to follow them (`TEMPLATES_GUIDE`), and owners and admins edit them like any rule
 
 ### Step 3: project knowledge graph (Postgres, no graph database)
 - [ ] `graph_nodes` / `graph_edges`, scoped by workspace and project, walked with recursive CTEs. Nodes: requirement, epic / story / task, ADR, module, document section, research finding, person, agent (later commit, PR, file). Edges: `implements`, `depends_on`, `decided_by`, `affects`, `supersedes`, `mentions`, `owned_by`, `blocks`
@@ -328,9 +331,11 @@ Decided (D3, 2026-10-01): Tavily, behind a pluggable provider; without a key the
 - [ ] Uses: the context pack sends the neighbours of what's asked instead of the whole index; staleness (a document is stale when its neighbours changed after it); "what does this affect?"; a graph view in the Knowledge tab
 
 ### Step 4: triggers, background runs, and an inbox
-- [ ] An event bus: platform events (issue created or changed, document changed, approval decided, run finished) and webhooks (push, PR, CI status; step 5); schedules on the worker's cron
-- [ ] A background run records whose automation it is ("instructed by"), follows its contract's autonomy rules, and stays inside its budget (per agent and per workspace per day)
-- [ ] An in-app inbox: approvals waiting, findings, research watch changes, run results; email for approvals and high-severity findings (from Phase 4), batched per run
+- [x] **Automations** (`modules/automations`): an agent (or Auto) with instructions that runs on a schedule (daily or weekly at an hour, UTC) and/or on events: `issue.created`, `issue.done`, `document.changed` (people's changes only), `changes.approved` (a run's approved changes), `code.pushed` (the webhook). Events go to an outbox (`automation_events`) in the same transaction, only when an enabled automation listens; `run_automations` (every minute: the worker's cron, or a loop in the API) claims them and due schedules first, then starts one run per automation with the events as data. Owners and admins set them up (`GET/POST/PATCH/DELETE .../projects/{id}/automations`, `POST .../{id}/run`; audited), members see them; project settings → Automations, with presets
+  - [x] a run is instructed by whoever set it up, in the automation's own conversation (`AgentRun.automation_id`); its writes wait for approval as always; an agent's changes never set automations off, and an automation's approved changes never set off `changes.approved` (no loops)
+  - [x] limits: runs per automation per day (`max_runs_per_day`), per workspace per day (`PMAGENT_AUTOMATION_DAILY_RUNS`, 50), never while its last run is still going or waiting; it turns itself off when its creator can no longer ask agents
+  - [ ] PR and CI events (step 5); a token budget per workspace per day
+- [x] The inbox is Notifications (UI redesign Phase 6), by email too (Phase 4)
 
 ### Step 5: code (needs the GitHub App, FR-10 / Phase 5)
 Decided (2026-10-02): a project's code is connected through the **pmagent GitHub App** (each repo picked for its project, from the web, private repos included). Agents read code on the platform; **coding** happens in two places: on the web, in a **container** that edits a checkout and raises a PR; from the **CLI or desktop**, in the person's own **local folder** (their checkout), changes they commit. Built in that order, so the coding agent arrives with everything it needs.
@@ -424,13 +429,15 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 - [ ] **"Start a project from this idea"** (owners and admins): creates the project and drafts `project.md`, vision, requirements, roadmap, and the first epics and stories from the conversation, as one batch of changes to review and approve
 - [ ] **Promote from chat:** turn an answer or a whole conversation into a document, a decision (ADR), or issues, with the conversation linked as its source
 - [ ] **Document templates per folder** (requirements, ADR, research note, design brief) the agents follow, editable in `agent-rules/`. Moved to agents v2 step 2
-- [ ] **Keep documents current:** after approved changes, the PM proposes the matching `current-state.md` / roadmap updates (as changes to approve), and briefings flag documents that have gone stale
+- [x] **Keep documents current:** an automation (the "Keep documents current" preset, offered in project settings → Automations): after approved changes or a finished issue, the Documentation agent proposes the matching `current-state.md` / roadmap updates, as changes to approve
+  - [ ] briefings flag documents that have gone stale (needs the graph, step 3)
 
 ### Phase 4: notifications (email now works)
-- [ ] Email approvers when changes wait for them, and the requester when their request was decided (with the reason on a rejection); batch per run, not per change
-- [x] @mentions in comments and chat notify the person (in the app; UI redesign Phase 6)
-  - [ ] by email; watchers get issue changes (FR-33)
-- [ ] Per-person settings (immediately, daily digest, or off); the daily briefing by email (opt-in)
+- [x] Notifications by email (`notifications/emails.py`, the `email_notifications` job every minute): approvers when changes wait, and the requester when their changes were decided by someone else (a new `decided` notification, with the reason on a rejection); one email per person per minute's batch, so a run's changes arrive together. Only to verified addresses; never what was read, decided, muted, or in a project they no longer see (`Notification.emailed_at`)
+- [x] @mentions in comments and chat notify the person (in the app; UI redesign Phase 6), and by email
+  - [ ] watchers get issue changes (FR-33)
+- [x] Per-person settings: immediately, a daily digest (08:00 UTC, what's unread), or off (Settings → Notifications, `User.email_notifications`)
+  - [ ] the daily briefing by email (opt-in)
 - [ ] Slack later (FR-14)
 
 ### Phase 5: coding with Claude Code and Codex (don't build our own coding agent)

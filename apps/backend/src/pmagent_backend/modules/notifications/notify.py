@@ -60,6 +60,19 @@ class Notifier:
         self._add(project, requester_id, NotificationKind.FINDING, at, run_id=run_id, title=title, count=count,
                   actor_agent=agent)
 
+    def decided(
+        self, project: Project, requester_id: uuid.UUID, run_id: uuid.UUID, title: str, at: datetime, *,
+        approved: int, rejected: int, reason: str | None, actor_user_id: uuid.UUID,
+    ) -> None:
+        """Changes someone asked an agent for were decided by someone else: what, and why not."""
+        if requester_id == actor_user_id:
+            return
+        outcome = ", ".join(
+            part for part in (f"{approved} approved" if approved else "", f"{rejected} rejected" if rejected else "") if part
+        )
+        self._add(project, requester_id, NotificationKind.DECIDED, at, run_id=run_id, title=f"{outcome}: {title}",
+                  count=approved + rejected, actor_user_id=actor_user_id, excerpt=_excerpt(reason) if reason else None)
+
     def assigned(
         self, project: Project, assignee_id: uuid.UUID, issue_id: uuid.UUID, title: str, at: datetime, *,
         actor_user_id: uuid.UUID | None, actor_agent: str | None,
