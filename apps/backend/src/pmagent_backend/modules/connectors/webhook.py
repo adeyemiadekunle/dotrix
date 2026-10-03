@@ -43,6 +43,8 @@ async def handle(session: AsyncSession, event: str, payload: dict[str, Any]) -> 
         return await _installation(session, payload), []
     if event == "installation_repositories":
         return await _repositories(session, payload), []
+    if event == "pull_request":
+        return await _pull_request(session, payload), []
     return "ignored", []
 
 
@@ -103,3 +105,33 @@ async def _repositories(session: AsyncSession, payload: dict[str, Any]) -> str:
     )
     await session.commit()
     return f"repositories removed: {result.rowcount} disconnected"
+
+
+async def _pull_request(session: AsyncSession, payload: dict[str, Any]) -> str:
+    """A coding session's PR was merged, closed, or reopened: record it on the session's turns and
+    in its issue's log. The issue itself stays where it is: only a person closes it."""
+    from pmagent_backend.modules.coding.models import CodingRun, PrState
+    from pmagent_backend.modules.issues.models import IssueEvent, IssueEventKind
+
+    action, pr = payload.get("action"), payload.get("pull_request") or {}
+    repo_id, number = (payload.get("repository") or {}).get("id"), pr.get("number")
+    if action not in ("closed", "reopened") or not repo_id or not number:
+        return "ignored"
+    state = PrState.OPEN if action == "reopened" else PrState.MERGED if pr.get("merged") else PrState.CLOSED
+    projects = select(ConnectedRepo.project_id).where(ConnectedRepo.github_repo_id == int(repo_id))
+    runs = list(await session.scalars(
+        select(CodingRun).where(CodingRun.project_id.in_(projects), CodingRun.pr_number == int(number))
+    ))
+    if not runs:
+        return "ignored"
+    for run in runs:
+        run.pr_state = state
+    latest = max(runs, key=lambda r: r.turn)
+    now = datetime.now(UTC)
+    said = {PrState.MERGED: "merged", PrState.CLOSED: "closed without merging", PrState.OPEN: "reopened"}[state]
+    session.add(IssueEvent(
+        workspace_id=latest.workspace_id, issue_id=latest.issue_id, kind=IssueEventKind.UPDATED,
+        author_agent=latest.agent.value, body=f"PR #{number} was {said} on GitHub", changes={}, created_at=now,
+    ))
+    await session.commit()
+    return f"pull_request {action}: {len(runs)} coding runs"

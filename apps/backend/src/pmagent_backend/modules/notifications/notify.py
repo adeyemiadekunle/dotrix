@@ -47,6 +47,16 @@ class Notifier:
             self._add(project, user_id, NotificationKind.APPROVAL, at, run_id=run_id, title=title,
                       count=count, actor_agent=agent)
 
+    async def coding_waiting(
+        self, project: Project, coding_run_id: uuid.UUID, issue_id: uuid.UUID, title: str, at: datetime,
+        agent: str, *, requester_id: uuid.UUID | None,
+    ) -> None:
+        """A coding run waits for approval: everyone who may approve agent changes and sees the project
+        (whoever asked too, when they may approve it themselves)."""
+        for user_id in await self._approvers(project):
+            self._add(project, user_id, NotificationKind.APPROVAL, at, coding_run_id=coding_run_id, issue_id=issue_id,
+                      title=title, actor_agent=agent, actor_user_id=requester_id)
+
     def checkpoint(
         self, project: Project, requester_id: uuid.UUID, run_id: uuid.UUID, title: str, at: datetime, agent: str | None
     ) -> None:
@@ -62,8 +72,9 @@ class Notifier:
                   actor_agent=agent)
 
     def decided(
-        self, project: Project, requester_id: uuid.UUID, run_id: uuid.UUID, title: str, at: datetime, *,
+        self, project: Project, requester_id: uuid.UUID, run_id: uuid.UUID | None, title: str, at: datetime, *,
         approved: int, rejected: int, reason: str | None, actor_user_id: uuid.UUID,
+        coding_run_id: uuid.UUID | None = None,
     ) -> None:
         """Changes someone asked an agent for were decided by someone else: what, and why not."""
         if requester_id == actor_user_id:
@@ -72,7 +83,8 @@ class Notifier:
             part for part in (f"{approved} approved" if approved else "", f"{rejected} rejected" if rejected else "") if part
         )
         self._add(project, requester_id, NotificationKind.DECIDED, at, run_id=run_id, title=f"{outcome}: {title}",
-                  count=approved + rejected, actor_user_id=actor_user_id, excerpt=_excerpt(reason) if reason else None)
+                  count=approved + rejected, actor_user_id=actor_user_id, excerpt=_excerpt(reason) if reason else None,
+                  coding_run_id=coding_run_id)
 
     def assigned(
         self, project: Project, assignee_id: uuid.UUID, issue_id: uuid.UUID, title: str, at: datetime, *,
@@ -162,6 +174,7 @@ class Notifier:
         self, project: Project, user_id: uuid.UUID, kind: NotificationKind, at: datetime, *, title: str,
         count: int = 1, run_id: uuid.UUID | None = None, issue_id: uuid.UUID | None = None,
         actor_user_id: uuid.UUID | None = None, actor_agent: str | None = None, excerpt: str | None = None,
+        coding_run_id: uuid.UUID | None = None,
     ) -> None:
         self.session.add(
             Notification(
@@ -171,6 +184,7 @@ class Notifier:
                 kind=kind,
                 run_id=run_id,
                 issue_id=issue_id,
+                coding_run_id=coding_run_id,
                 actor_user_id=actor_user_id,
                 actor_agent=actor_agent,
                 title=title[:TITLE_CHARS],

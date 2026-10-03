@@ -293,3 +293,111 @@ async def test_a_running_agent_is_stopped_and_nothing_is_pushed(
     await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["status"] == "stopped" and run["error"] == "Stopped by a person" and github.pulls == []
+
+
+async def _approve(db_client: AsyncClient, base: str, run: dict, headers: dict) -> dict:
+    res = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=headers)
+    assert res.status_code == 200, res.text
+    return (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=headers)).json()
+
+
+async def test_a_session_continues_on_its_branch_and_pr(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    agent_script.say("Fine.", "Fine again.")
+    first = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    assert first["session_id"] == first["id"] and first["turn"] == 1 and first["origin"] == "start"
+    first = await _approve(db_client, base, first, ada.headers)
+    assert first["status"] == "pr_opened" and first["pr_state"] == "open"
+
+    # A follow-up: the same agent, told what was done so far, on the same branch and PR.
+    claude.result = "Refunds over £500 now need a manager."
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    if amount > 500:\n        raise PermissionError\n    return amount\n"}
+    turns = f"{base}/coding/sessions/{first['session_id']}/turns"
+    assert (await db_client.post(turns, json={"message": "Large refunds"}, headers=cat.headers)).status_code == 403
+    second = await db_client.post(turns, json={"message": "Refunds over £500 need a manager"}, headers=ada.headers)
+    assert second.status_code == 201, second.text
+    second = second.json()
+    assert (second["turn"], second["origin"], second["session_id"]) == (2, "follow_up", first["session_id"])
+    assert second["branch"] == first["branch"] and second["pr_number"] == first["pr_number"]
+    assert "## Earlier in this session" in second["brief"] and "Added refunds" in second["brief"]
+    assert "## What to do in this turn" in second["brief"] and "over £500 need a manager" in second["brief"]
+    assert (await db_client.post(turns, json={"message": "more"}, headers=ada.headers)).status_code == 409  # one waits
+
+    second = await _approve(db_client, base, second, ada.headers)
+    assert second["status"] == "pr_opened" and second["pr_number"] == first["pr_number"]
+    assert len(github.pulls) == 1  # no second PR: the branch moved on
+    assert _git(origin, "rev-parse", f"{first['branch']}~1") == first["commit_sha"]
+    assert "PermissionError" in _git(origin, "show", f"{first['branch']}:src/refunds.py")
+    assert second["base_sha"] == first["commit_sha"]  # it started from the branch, not main
+    issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=ada.headers)).json()
+    assert [link["url"] for link in issue["links"]].count(first["pr_url"]) == 1
+    assert any("Pushed turn 2 to PR #1" in (e.get("body") or "") for e in issue["log"])
+
+    # The session's turns, and the workspace's sessions (Chat's Coding tab).
+    listed = (await db_client.get(f"{base}/coding/sessions/{first['session_id']}", headers=cat.headers)).json()
+    assert [t["turn"] for t in listed] == [1, 2]
+    [session] = (await db_client.get(f"{ws}/coding/sessions", headers=cat.headers)).json()
+    assert session["session_id"] == first["session_id"] and session["turns"] == 2 and session["project_key"] == "KUN"
+    assert session["issue_title"] == "Refunds" and session["status"] == "pr_opened" and session["pr_number"] == 1
+
+
+async def test_assigning_to_a_coding_tool_starts_a_session_and_approvers_are_told(
+    db_client: AsyncClient, coding
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Export"}, headers=ada.headers)).json()
+
+    # Cat may assign Claude Code, but may not instruct the coding agent: no session.
+    await db_client.patch(f"{base}/issues/{task['key']}", json={"assignee_agent": "claude-code"}, headers=cat.headers)
+    assert (await db_client.get(f"{base}/coding/runs", headers=ada.headers)).json() == []
+
+    # Once the workspace lets members code, assigning starts one in the background.
+    await db_client.patch(f"{base}/issues/{task['key']}", json={"assignee_agent": None}, headers=ada.headers)
+    await db_client.patch(ws, json={"member_permissions": ["agents:code"]}, headers=ada.headers)
+    await db_client.patch(f"{base}/issues/{task['key']}", json={"assignee_agent": "claude-code"}, headers=cat.headers)
+    [run] = (await db_client.get(f"{base}/coding/runs", headers=ada.headers)).json()
+    assert run["origin"] == "assigned" and run["status"] == "awaiting_approval"
+    # Creating an issue assigned to a coding tool does the same.
+    other = (await db_client.post(f"{base}/issues", headers=cat.headers,
+                                  json={"type": "task", "title": "Import", "assignee_agent": "codex"})).json()
+    assert [r["origin"] for r in (await db_client.get(f"{base}/coding/runs", params={"issue": other["key"]},
+                                                       headers=ada.headers)).json()] == ["assigned"]
+
+    # Ada (who may approve) is told; it counts until decided, and Cat hears the decision.
+    notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
+    waiting = next(n for n in notes if n["coding_run_id"] == run["id"])
+    assert waiting["title"] == f"Coding {task['key']}: Export" and not waiting["resolved"]
+    assert waiting["coding_session_id"] == run["session_id"] and waiting["issue_key"] == task["key"]
+    assert (await db_client.get(f"{ws}/notifications/counts", headers=ada.headers)).json()["by_kind"]["approval"] == 2
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "reject", "reason": "Later"},
+                         headers=ada.headers)
+    notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
+    assert next(n for n in notes if n["coding_run_id"] == run["id"])["resolved"]
+    [decided] = (await db_client.get(f"{ws}/notifications", params={"kind": "decided"}, headers=cat.headers)).json()
+    assert decided["title"] == f"1 rejected: Coding {task['key']}: Export" and decided["excerpt"] == "Later"
+
+
+async def test_a_merged_pr_is_recorded_on_the_session_and_the_issue(
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script, deliver
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Ship"}, headers=ada.headers)).json()
+    claude.edits = {"src/ship.py": "SHIP = True\n"}
+    agent_script.say("Fine.")
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    run = await _approve(db_client, base, run, ada.headers)
+    payload = {"action": "closed", "pull_request": {"number": run["pr_number"], "merged": True},
+               "repository": {"id": 9001, "full_name": "kunemi/api"}}
+    assert (await deliver("pull_request", payload)).status_code == 202
+    run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert run["pr_state"] == "merged"
+    issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=ada.headers)).json()
+    assert issue["status"] == "review"  # a person closes it
+    assert any(e.get("body") == f"PR #{run['pr_number']} was merged on GitHub" for e in issue["log"])

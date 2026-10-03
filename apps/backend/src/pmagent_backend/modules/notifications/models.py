@@ -44,6 +44,10 @@ class Notification(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     kind: Mapped[NotificationKind] = mapped_column(str_enum(NotificationKind, 16))
     run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
     issue_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
+    # A coding run waiting for approval (kind `approval`), or decided (`decided`).
+    coding_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("coding_runs.id", ondelete="CASCADE"), index=True
+    )
     actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     actor_agent: Mapped[str | None] = mapped_column(String(32))
     title: Mapped[str] = mapped_column(String(300))

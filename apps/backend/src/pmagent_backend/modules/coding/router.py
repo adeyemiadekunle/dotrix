@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
-from pmagent_backend.api.deps import SessionDep, SettingsDep
+from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.jobs import Jobs, get_jobs
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.projects.deps import (
@@ -14,9 +14,17 @@ from pmagent_backend.modules.projects.deps import (
     ProjectViewer,
     require_project_permission,
 )
+from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
-from .schemas import CodingAvailability, CodingDecision, CodingRunCreate, CodingRunRead
+from .schemas import (
+    CodingAvailability,
+    CodingDecision,
+    CodingFollowUp,
+    CodingRunCreate,
+    CodingRunRead,
+    CodingSessionRead,
+)
 from .service import CodingService
 
 router = APIRouter(
@@ -83,3 +91,31 @@ async def decide_coding_run(
 async def stop_coding_run(coding_run_id: uuid.UUID, access: ProjectViewer, coding: Coding) -> CodingRunRead:
     """Stop a coding run that waits or works; nothing is pushed. Whoever asked for it, or owners and admins."""
     return await coding.stop(access, coding_run_id)
+
+
+@router.get("/sessions/{session_id}")
+async def get_coding_session(session_id: uuid.UUID, access: ProjectViewer, coding: Coding) -> list[CodingRunRead]:
+    """A coding session's turns, first to latest: each a run with what the agent did. Anyone who sees the project."""
+    return await coding.session_turns(access, session_id)
+
+
+@router.post("/sessions/{session_id}/turns", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422))
+async def follow_up_coding_session(
+    session_id: uuid.UUID, data: CodingFollowUp, access: CodingInstructor, coding: Coding
+) -> CodingRunRead:
+    """Continue a session: another turn for the same agent on the session's branch, pushing to its PR
+    (or opening one, if no turn has yet). It waits for approval like the first. People who may
+    instruct the coding agent. 409 `coding_busy` while a turn waits or works."""
+    return await coding.follow_up(access, session_id, data)
+
+
+workspace_router = APIRouter(prefix="/workspaces/{workspace_id}/coding", tags=["coding"], responses=errors(401, 404))
+
+
+@workspace_router.get("/sessions")
+async def list_coding_sessions(
+    member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], coding: Coding
+) -> list[CodingSessionRead]:
+    """The workspace's coding sessions across the projects you can see, latest activity first (Chat's
+    Coding tab). Guests see none: they see no projects."""
+    return await coding.sessions(member)

@@ -6,9 +6,11 @@ from typing import Any
 
 from sqlalchemy import and_, exists, func, not_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from pmagent_backend.modules.agents.models import AgentApproval, AgentRun, ApprovalStatus
 from pmagent_backend.modules.auth.models import User
+from pmagent_backend.modules.coding.models import CodingRun, CodingRunStatus
 from pmagent_backend.modules.issues.models import Issue
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import visible_to
@@ -21,13 +23,18 @@ DECISIONS = (NotificationKind.APPROVAL, NotificationKind.CHECKPOINT)
 
 
 def _resolved() -> Any:
-    """An approval or checkpoint is resolved once nothing from that pause waits any more."""
+    """An approval or checkpoint is resolved once nothing from that pause waits any more (an
+    agent run's changes, or a coding run waiting to start)."""
     still_waiting = exists().where(
         AgentApproval.run_id == Notification.run_id,
         AgentApproval.status == ApprovalStatus.PENDING,
         AgentApproval.created_at >= Notification.created_at,
     )
-    return and_(Notification.kind.in_(DECISIONS), not_(still_waiting))
+    waiting_run = aliased(CodingRun)  # (the list joins coding_runs itself)
+    coding_waiting = exists().where(
+        waiting_run.id == Notification.coding_run_id, waiting_run.status == CodingRunStatus.AWAITING_APPROVAL
+    )
+    return and_(Notification.kind.in_(DECISIONS), not_(still_waiting), not_(coding_waiting))
 
 
 class NotificationService:
@@ -71,10 +78,12 @@ class NotificationService:
     ) -> list[NotificationRead]:
         resolved = _resolved().label("resolved")
         stmt = (
-            select(Notification, Project.key, Project.name, Issue.key, AgentRun.thread_id, resolved)
+            select(Notification, Project.key, Project.name, Issue.key, AgentRun.thread_id, resolved,
+                   CodingRun.session_id)
             .join(Project, Project.id == Notification.project_id)
             .outerjoin(Issue, Issue.id == Notification.issue_id)
             .outerjoin(AgentRun, AgentRun.id == Notification.run_id)
+            .outerjoin(CodingRun, CodingRun.id == Notification.coding_run_id)
             .where(self._mine(member))
         )
         if kind is not None:
@@ -104,8 +113,10 @@ class NotificationService:
                 run_id=n.run_id,
                 thread_id=thread_id,
                 issue_key=issue_key,
+                coding_run_id=n.coding_run_id,
+                coding_session_id=coding_session_id,
             )
-            for n, project_key, project_name, issue_key, thread_id, is_resolved in rows
+            for n, project_key, project_name, issue_key, thread_id, is_resolved, coding_session_id in rows
         ]
 
     async def counts(self, member: Membership) -> NotificationCounts:

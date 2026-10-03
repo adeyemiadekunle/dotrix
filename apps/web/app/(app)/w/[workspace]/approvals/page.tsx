@@ -21,11 +21,13 @@ import { useEffect, useMemo } from "react";
 import { agentName } from "@/components/activity-feed";
 import { RunApprovals } from "@/components/agent/approvals";
 import { PageHeader } from "@/components/app-shell";
+import { RunCard } from "@/components/coding/coding-run";
 import { timeAgo } from "@/components/issues/issue-activity";
 import type { MemberMap } from "@/components/issues/meta";
 import { ProjectTile } from "@/components/project-tile";
 import { EmptyState, NotFound } from "@/components/states";
 import { useWorkspaceApprovals, type Run } from "@/lib/agent";
+import { sessionHref, useCodingRun } from "@/lib/coding";
 import { useMembers } from "@/lib/issues";
 import { can } from "@/lib/labels";
 import {
@@ -60,6 +62,13 @@ function actorName(n: Notification, members: MemberMap): string {
 /** One line on what it is: "Project manager wants to make 2 changes". */
 function headline(n: Notification, members: MemberMap): string {
   const who = actorName(n, members);
+  if (n.coding_run_id) {
+    // A coding run: the person asked a coding tool to code an issue.
+    const person = n.actor_user_id ? (members.get(n.actor_user_id)?.display_name ?? "Someone") : "Someone";
+    const tool = n.actor_agent ? agentName(n.actor_agent) : "the coding agent";
+    if (n.kind === "approval") return `${person} asked ${tool} to code ${n.issue_key ?? "an issue"}`;
+    if (n.kind === "decided") return `${who} decided the coding run you asked for`;
+  }
   switch (n.kind) {
     case "approval":
       return n.count === 1 ? `${who} wants to make a change` : `${who} wants to make ${n.count} changes`;
@@ -168,7 +177,10 @@ function Detail({
         <blockquote className="bg-muted/60 rounded-lg border-l-2 px-3 py-2 text-sm whitespace-pre-wrap">{n.excerpt}</blockquote>
       )}
 
-      {decision && n.resolved && (
+      {n.coding_run_id && n.kind === "approval" && (
+        <CodingApproval runId={n.coding_run_id} scope={{ workspaceId: workspace.id, projectId: n.project_id }} />
+      )}
+      {decision && n.resolved && !n.coding_run_id && (
         <p className="bg-muted rounded-lg px-3 py-2 text-sm">Decided. Nothing is waiting from this request now.</p>
       )}
       {decision && !n.resolved && approvals.isLoading && <Skeleton className="h-32" />}
@@ -187,6 +199,16 @@ function Detail({
             <Link href={`${projectBase}/board?issue=${n.issue_key}`}>Open {n.issue_key}</Link>
           </Button>
         )}
+        {n.coding_session_id && (
+          <Button size="sm" variant={n.kind === "approval" ? "outline" : "default"} asChild>
+            <Link href={sessionHref(workspace.slug, n.project_key, n.coding_session_id)}>Open the coding session</Link>
+          </Button>
+        )}
+        {n.issue_key && n.coding_run_id && (
+          <Button size="sm" variant="outline" asChild>
+            <Link href={`${projectBase}/board?issue=${n.issue_key}`}>Open {n.issue_key}</Link>
+          </Button>
+        )}
         {n.run_id && (
           <Button size="sm" variant={n.kind === "finding" ? "default" : "outline"} asChild>
             <Link href={conversationHref(workspace.slug, n)}>Open the conversation</Link>
@@ -195,6 +217,14 @@ function Detail({
       </div>
     </article>
   );
+}
+
+/** A coding run waiting for approval: the run itself, with the brief, approve and reject. */
+function CodingApproval({ runId, scope }: { runId: string; scope: { workspaceId: string; projectId: string } }) {
+  const run = useCodingRun(scope, runId);
+  if (run.isLoading) return <Skeleton className="h-32" />;
+  if (!run.data) return null;
+  return <RunCard run={run.data} issueKey={run.data.issue_key} scope={scope} />;
 }
 
 /** Notifications: what waits for you and what happened to you, with approvals decided in place. */
