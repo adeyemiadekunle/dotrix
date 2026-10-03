@@ -22,7 +22,7 @@ CATALOG: tuple[ToolGroup, ...] = (
     ToolGroup(
         "knowledge.read", "Read documents",
         "List, read, and search inside the project's documents; outlines and sections.",
-        ("ls", "read_file", "glob", "grep", "document_outline", "read_section"),
+        ("ls", "read_file", "glob", "grep", "document_outline", "read_section", "read_skill"),
     ),
     ToolGroup(
         "knowledge.search", "Search the project",

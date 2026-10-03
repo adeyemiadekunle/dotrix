@@ -1,5 +1,6 @@
 """The context pack every agent run starts with: the project, its documents (with what each is
 about), the board, recent decisions, and what changed since the conversation last ran."""
+import uuid
 from datetime import date, timedelta
 
 import pytest
@@ -7,7 +8,9 @@ from httpx import AsyncClient
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pmagent_backend.modules.agents.context import _index
 from pmagent_backend.modules.knowledge.models import KnowledgeFile
+from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_engine.testing import tool_call
 
 
@@ -118,7 +121,7 @@ async def test_older_documents_are_described_when_first_needed(
     assert rows and all(r["described_version"] == r["version"] and r["title"] for r in rows)
 
 
-async def test_the_pack_stays_small(project, db_client: AsyncClient, agent_script) -> None:
+async def test_the_pack_stays_small(project, db_client: AsyncClient, agent_script, db_session: AsyncSession) -> None:
     ada, base = await project()
     for n in range(300):
         await db_client.put(
@@ -129,10 +132,14 @@ async def test_the_pack_stays_small(project, db_client: AsyncClient, agent_scrip
     model = agent_script.say("ok")
     await db_client.post(f"{base}/agent/runs", json={"message": "Hi"}, headers=ada.headers)
     pack = system_prompt(model).split("# Project context", 1)[1]
-    index = pack.split("## Documents", 1)[1].split("\n## ", 1)[0]
-    assert len(index) <= 14_200  # the documents list is capped...
-    assert "more documents left out of this list; use ls or glob to see them." in index
-    assert "## Board" in pack  # ...so what comes after it always fits
+    # A big project's run gets the documents near its question, and every folder's count...
+    index = pack.split("## Documents near this question", 1)[1].split("\n## ", 1)[0]
+    assert len(index) <= 6_500 and "research/ 301" in index
+    assert "## Board" in pack
+    # ...and the whole list, where it's still used (no question), is capped so what follows fits.
+    project_id = uuid.UUID(base.rsplit("/", 1)[1])
+    full = _index([f for f in await KnowledgeRepository(db_session).list_files(project_id) if not f.deleted])
+    assert len(full) <= 14_200 and "more documents left out of this list; use ls or glob to see them." in full
 
 
 async def test_a_briefing_hears_what_happened_since_the_last_one(project, db_client: AsyncClient, agent_script) -> None:

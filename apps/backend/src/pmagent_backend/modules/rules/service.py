@@ -12,9 +12,10 @@ from pmagent_backend.modules.agent_definitions.repository import AgentDefinition
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.workspaces.models import Membership
+from pmagent_engine.skills import describe_skill
 
-from .models import WorkspaceRule
-from .schemas import WorkspaceRuleRead, WorkspaceRuleSave
+from .models import WorkspaceRule, WorkspaceSkill
+from .schemas import WorkspaceRuleRead, WorkspaceRuleSave, WorkspaceSkillRead
 
 BASE = "base"
 
@@ -81,3 +82,63 @@ def layered(workspace: dict[str, str], project: dict[str, str]) -> dict[str, str
     for handle, text in workspace.items():
         merged[handle] = f"## Rules for every project in this workspace\n{text}\n\n{project.get(handle, '')}".strip()
     return merged
+
+
+class SkillChanged(Conflict):
+    code = "skill_changed"
+
+
+def skill_read(row: WorkspaceSkill) -> WorkspaceSkillRead:
+    return WorkspaceSkillRead(
+        name=row.name, description=describe_skill(row.content), content=row.content, version=row.version,
+        updated_by_id=row.updated_by_id, updated_at=row.updated_at,
+    )
+
+
+class WorkspaceSkills:
+    """Skills shared by every project in the workspace."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def list(self, workspace_id: uuid.UUID) -> list[WorkspaceSkillRead]:
+        rows = await self.session.scalars(
+            select(WorkspaceSkill).where(WorkspaceSkill.workspace_id == workspace_id, WorkspaceSkill.content != "")
+            .order_by(WorkspaceSkill.name)
+        )
+        return [skill_read(r) for r in rows]
+
+    async def texts(self, workspace_id: uuid.UUID) -> dict[str, str]:
+        return {s.name: s.content for s in await self.list(workspace_id)}
+
+    async def get(self, workspace_id: uuid.UUID, name: str) -> str | None:
+        return await self.session.scalar(
+            select(WorkspaceSkill.content).where(
+                WorkspaceSkill.workspace_id == workspace_id, WorkspaceSkill.name == name, WorkspaceSkill.content != ""
+            )
+        )
+
+    async def save(self, member: Membership, name: str, data: WorkspaceRuleSave) -> WorkspaceSkillRead:
+        row = await self.session.scalar(
+            select(WorkspaceSkill).where(WorkspaceSkill.workspace_id == member.workspace_id, WorkspaceSkill.name == name)
+            .with_for_update()
+        )
+        current = row.version if row is not None else 0
+        if data.base_version != current:
+            raise SkillChanged(f"This skill changed since (version {current}); reload and apply your change again")
+        content = data.content.strip()
+        before = row.content if row is not None else ""
+        if row is None:
+            row = WorkspaceSkill(workspace_id=member.workspace_id, name=name, content="", version=0,
+                                 updated_at=datetime.now(UTC))
+            self.session.add(row)
+        if content != before:
+            row.content, row.version = content, current + 1
+            row.updated_by_id, row.updated_at = member.user_id, datetime.now(UTC)
+            AuditLog(self.session).record(
+                workspace_id=member.workspace_id, action="workspace_skill.saved", target=name,
+                actor_type=AuthorType.USER, actor_user_id=member.user_id,
+                details={"version": row.version, "before": before[:AUDIT_CHARS], "removed": not content},
+            )
+            await self.session.commit()
+        return skill_read(row)

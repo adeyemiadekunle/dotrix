@@ -23,3 +23,17 @@ class WorkspaceRule(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     version: Mapped[int]
     updated_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WorkspaceSkill(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """A skill every project's agents can use (agents v2 step 2): a procedure, "Description:"
+    line first. A project's own skill of the same name (agent-rules/skills/) wins."""
+
+    __tablename__ = "workspace_skills"
+    __table_args__ = (UniqueConstraint("workspace_id", "name"),)
+
+    name: Mapped[str] = mapped_column(String(40))
+    content: Mapped[str] = mapped_column(Text)
+    version: Mapped[int]
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

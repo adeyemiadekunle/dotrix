@@ -74,12 +74,17 @@ def describe_skill(content: str) -> str:
     return ""
 
 
+def skill_name(path: str) -> str:
+    return path.removeprefix(SKILLS_FOLDER).removesuffix(".md")
+
+
 def skills_guide(skills: dict[str, str]) -> str:
-    """The prompt's list of skills (path -> content): names and descriptions only."""
+    """The prompt's list of skills (name -> content): names and descriptions only. The
+    project's and the workspace's together; a project's skill wins over the workspace's of the
+    same name, so the caller merges them first."""
     if not skills:
         return ""
-    lines = ["## Skills", "Before doing one of these, read its file and follow its steps:"]
-    for path, content in sorted(skills.items()):
-        name = path.removeprefix(SKILLS_FOLDER).removesuffix(".md")
-        lines.append(f"- {name} (/pmagent/{path}): {describe_skill(content)}")
+    lines = ["## Skills", "Before doing one of these, read it with read_skill(skill) and follow its steps:"]
+    for name, content in sorted(skills.items()):
+        lines.append(f"- {name}: {describe_skill(content)}")
     return "\n".join(lines)

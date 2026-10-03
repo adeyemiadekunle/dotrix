@@ -62,6 +62,25 @@ class PathRead(BaseModel):
     steps: list[PathStep]
 
 
+class ViewNode(NodeRead):
+    depth: int = Field(description="Links away from the centre (0: the centre)")
+    parent: str | None = Field(description="The node it was reached from, for laying it out near it")
+
+
+class ViewEdge(BaseModel):
+    source: str
+    target: str
+    kind: EdgeKind
+
+
+class SubgraphRead(BaseModel):
+    """What's near something, to draw: the closest first, up to a limit."""
+
+    nodes: list[ViewNode]
+    edges: list[ViewEdge]
+    truncated: bool = Field(description="More was near it than is shown")
+
+
 class StaleRead(BaseModel):
     node: NodeRead
     reasons: list[str]

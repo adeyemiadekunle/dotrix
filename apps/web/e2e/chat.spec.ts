@@ -121,3 +121,28 @@ test("an owner creates an agent, and it answers in the chat when picked", async 
   await expect(page.getByText("Test model reply: Any leaks?")).toBeVisible();
   await expect(page.getByText("Security reviewer", { exact: true }).first()).toBeVisible();
 });
+
+test("ask across projects: the agents read every project picked, and the conversation is listed apart", async ({
+  page,
+}) => {
+  await signUpWithProject(page, "Kumove", "KUM");
+  await page.getByRole("link", { name: "New project" }).first().click();
+  await page.getByText("Documents only", { exact: true }).click();
+  await page.getByLabel("Name").fill("Alpha");
+  await page.getByLabel("Key").fill("ALP");
+  await page.getByRole("button", { name: "Create project", exact: true }).click();
+  await expect(page).toHaveURL(/\/p\/ALP\/overview/);
+
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await page.getByRole("button", { name: "New chat across projects" }).click();
+  await expect(page).toHaveURL(/across=1/);
+  const about = page.getByRole("group", { name: "About" });
+  await expect(about.getByRole("checkbox")).toHaveCount(2);
+  const box = page.getByLabel("Message the agents");
+  await box.fill("How are both projects doing?");
+  await box.press("Enter");
+  await expect(page.getByText("Test model reply: How are both projects doing?")).toBeVisible();
+  await expect(page.getByText(/Read-only: changes are made in a project's own conversation/)).toBeVisible();
+  const conversations = page.getByRole("navigation", { name: "Conversations" });
+  await expect(conversations.getByRole("button", { name: /How are both projects doing/ })).toContainText(/ALP|KUM/);
+});

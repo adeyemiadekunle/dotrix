@@ -24,11 +24,13 @@ import {
   PencilIcon,
   SearchIcon,
   Trash2Icon,
+  WaypointsIcon,
 } from "lucide-react";
 import { Suspense, useMemo, useState, type FormEvent } from "react";
 
 import { Field, SubmitButton } from "@/components/form";
 import { timeAgo } from "@/components/issues/issue-activity";
+import { GraphView } from "@/components/graph/graph-view";
 import { Related, StaleList, StaleNotice } from "@/components/graph/related";
 import { FileHistory } from "@/components/knowledge/file-history";
 import { FileTree } from "@/components/knowledge/file-tree";
@@ -127,6 +129,7 @@ function FilePane({
   const file = useFile(scope, entry.deleted ? null : path);
   const remove = useDeleteFile(scope);
   const [version, setVersion] = useSearchParam("v");
+  const setGraphParams = useSetSearchParams();
   const [editing, setEditing] = useState(false);
   const [source, setSource] = useState(false);
   const [showHistory, setShowHistory] = useState(entry.deleted);
@@ -170,6 +173,12 @@ function FilePane({
             <Button size="sm" variant="ghost" onClick={() => setSource((s) => !s)} aria-pressed={source}>
               {source ? <BookOpenIcon /> : <CodeIcon />}
               {source ? "Rendered" : "Source"}
+            </Button>
+          )}
+          {!entry.deleted && !rules && (
+            <Button size="sm" variant="ghost" onClick={() => setGraphParams({ graph: path })}>
+              <WaypointsIcon />
+              Graph
             </Button>
           )}
           <Button
@@ -349,6 +358,7 @@ function KnowledgePage() {
   const members = useMembers(workspace?.id);
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
   const [picked] = useSearchParam("file");
+  const [graphRef] = useSearchParam("graph");
   const setParams = useSetSearchParams();
   const [query, setQuery] = useState("");
   const [showDeleted, setShowDeleted] = useState(false);
@@ -368,7 +378,7 @@ function KnowledgePage() {
   const deletedCount = files.filter((f) => f.deleted).length;
 
   function open(path: string) {
-    setParams({ file: path, v: null });
+    setParams({ file: path, v: null, graph: null });
   }
 
   return (
@@ -427,7 +437,22 @@ function KnowledgePage() {
         </aside>
 
         <div className={cn("min-w-0", !entry && "self-stretch")}>
-          {scope && entry ? (
+          {scope && graphRef && workspace && project ? (
+            <div className="grid gap-3">
+              <div className="flex items-center gap-2">
+                <h2 className="flex-1 text-sm font-medium">How things connect</h2>
+                <Button size="sm" variant="ghost" onClick={() => setParams({ graph: null })}>
+                  Close
+                </Button>
+              </div>
+              <GraphView
+                key={graphRef}
+                scope={scope}
+                initialRef={graphRef}
+                projectBase={`/w/${workspace.slug}/p/${project.key}`}
+              />
+            </div>
+          ) : scope && entry ? (
             <FilePane
               key={entry.path}
               scope={scope}

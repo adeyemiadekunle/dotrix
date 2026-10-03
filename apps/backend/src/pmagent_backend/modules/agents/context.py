@@ -14,10 +14,12 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pmagent_backend.core.errors import NotFound
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.graph.service import GraphService
 from pmagent_backend.modules.issues.models import Issue, IssueEvent, IssueStatus, Priority
@@ -25,6 +27,9 @@ from pmagent_backend.modules.knowledge.models import KnowledgeFile, KnowledgeVer
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.knowledge.service import describe_file
 from pmagent_backend.modules.projects.models import Project
+from pmagent_backend.modules.search.models import ChunkSource
+from pmagent_backend.modules.search.service import KnowledgeIndex
+from pmagent_engine.graph import find_references
 
 from .models import AgentApproval, AgentRun, ApprovalStatus, RunKind, RunStatus
 
@@ -35,6 +40,13 @@ DUE_SOON = timedelta(days=7)
 FIRST_BRIEFING_LOOKBACK = timedelta(days=7)  # a first briefing covers the last week
 # Already in every agent's instructions (agent-rules/) or not documents (issues are listed below).
 STALE_SHOWN = 8
+# Past this many characters of the full documents index (~1,500 tokens, ~30 documents), a
+# run's pack lists the documents near its question instead.
+FOCUS_ABOVE = 6_000
+FOCUS_CHARS = 6_000
+FOCUS_SEARCH = 16
+FOCUS_SEEDS = 10
+FOCUS_RECENT = 5
 _NOT_INDEXED = ("agent-rules/",)
 
 logger = logging.getLogger(__name__)
@@ -51,8 +63,14 @@ def _excerpt(content: str, limit: int = EXCERPT_CHARS) -> str:
     return text[:limit].rsplit("\n", 1)[0] + "\n…(trimmed; read the file for the rest)"
 
 
-async def build_context_pack(session: AsyncSession, project: Project, run: AgentRun | None = None) -> str:
-    """The pack as Markdown. Describes documents that aren't yet (older rows), in passing."""
+async def build_context_pack(
+    session: AsyncSession, project: Project, run: AgentRun | None = None, embedder: Any = None
+) -> str:
+    """The pack as Markdown. Describes documents that aren't yet (older rows), in passing.
+
+    The documents index is most of the pack (measured: 85-94%) and is cut off past ~70
+    documents. So in a project whose full index passes FOCUS_ABOVE, a run with a question gets
+    the documents near it instead (`_focused_index`), after the stable parts."""
     files = [f for f in await KnowledgeRepository(session).list_files(project.id) if not f.deleted]
     stale = [f for f in files if f.described_version != f.version]
     for f in stale:
@@ -78,8 +96,16 @@ async def build_context_pack(session: AsyncSession, project: Project, run: Agent
     )
     # Most stable first, most changeable last: providers cache the longest identical opening
     # of a prompt, so the documents index (changes only when documents do) comes before the
-    # board, and what changed since last time comes at the very end.
-    parts += [_index(files), _decisions(files), await _board(session, project), await _stale(session, project), changes]
+    # board, and what changed since last time comes at the very end. A focused index changes
+    # with every question, so it goes after the board.
+    index = _index(files)
+    focused = ""
+    if run is not None and run.message and len(index) > FOCUS_ABOVE:
+        focused = await _focused_index(session, project, files, run.message, embedder)
+    parts += [
+        "" if focused else index, _decisions(files), await _board(session, project), focused,
+        await _stale(session, project), changes,
+    ]
     pack = "\n\n".join(p for p in parts if p)
     return pack
 
@@ -99,6 +125,51 @@ async def _stale(session: AsyncSession, project: Project) -> str:
         lines.append(f"- {item.node.ref}: {'; '.join(item.reasons)}")
     if len(found) > STALE_SHOWN:
         lines.append(f"- …and {len(found) - STALE_SHOWN} more (ask graph tools about any document)")
+    return "\n".join(lines)
+
+
+async def _focused_index(
+    session: AsyncSession, project: Project, files: list[KnowledgeFile], question: str, embedder: Any
+) -> str:
+    """The documents near the question: those it names and search finds for it, the documents
+    linked to those in the project graph, the top-level ones, and the latest changed; then every
+    folder with how many documents it has, for ls / glob / search_knowledge."""
+    listed = {f.path: f for f in files if not f.path.startswith(_NOT_INDEXED)}
+    try:
+        seeds = [r.target for r in find_references(question, source="", project_key=project.key, paths=list(listed))]
+        hits = await KnowledgeIndex(session, embedder).search(project, question, limit=FOCUS_SEARCH, source=ChunkSource.DOCUMENT)
+        seeds += [h.ref for h in hits if h.ref not in seeds]
+        near: list[str] = [s for s in seeds if s in listed]
+        graph = GraphService(session)
+        for seed in seeds[:FOCUS_SEEDS]:
+            try:
+                found = await graph.neighbors(project, seed)
+            except NotFound:
+                continue
+            near += [link.node.ref for link in found.links if link.node.kind.value == "document"]
+    except Exception:  # the map is a bonus: fall back to the whole index
+        logger.exception("couldn't focus the documents index for project %s", project.id)
+        await session.rollback()
+        return ""
+    top = [p for p in listed if "/" not in p]
+    recent = [f.path for f in sorted(listed.values(), key=lambda f: f.updated_at, reverse=True)[:FOCUS_RECENT]]
+    chosen = list(dict.fromkeys([*near, *top, *recent]))
+    lines = [f"## Documents near this question ({len(chosen)} of {len(listed)})"]
+    used = len(lines[0])
+    for path in chosen:
+        f = listed[path]
+        line = f"- {f.path}: **{f.title}**: {f.summary} (v{f.version}, {_day(f.updated_at)})"
+        if used + len(line) > FOCUS_CHARS:
+            break
+        lines.append(line)
+        used += len(line) + 1
+    folders: dict[str, int] = defaultdict(int)
+    for path in listed:
+        folders[path.split("/", 1)[0] + "/" if "/" in path else "(top level)"] += 1
+    lines.append(
+        "All documents by folder: " + ", ".join(f"{folder} {count}" for folder, count in sorted(folders.items()))
+        + ". Find others with search_knowledge, glob, or ls."
+    )
     return "\n".join(lines)
 
 

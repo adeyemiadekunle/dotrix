@@ -39,6 +39,9 @@ from .schemas import (
     PathRead,
     PathStep,
     StaleRead,
+    SubgraphRead,
+    ViewEdge,
+    ViewNode,
 )
 
 NOT_IN_GRAPH = ("agent-rules/",)  # instructions for the agents, not the project
@@ -46,6 +49,8 @@ MAX_IMPACT_DEPTH = 3
 MAX_PATH_HOPS = 4
 MAX_RESULTS = 200
 MAX_REASONS = 5
+MAX_VIEW_DEPTH = 2
+MAX_VIEW_NODES = 60
 _KEY = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 
 
@@ -299,6 +304,46 @@ class GraphService:
                      direction=None if edge is None else ("out" if edge.target_id == node_id else "in"))
             for node_id, edge in chain
         ])
+
+    async def subgraph(self, project: Project, ref: str, depth: int = 2) -> SubgraphRead:
+        """Everything up to `depth` links from `ref`, either way, nearest first (at most
+        MAX_VIEW_NODES), with the links among them: for drawing."""
+        await self.sync(project)
+        center = await self._get(project, ref)
+        depth = max(1, min(depth, MAX_VIEW_DEPTH))
+        reached: dict[uuid.UUID, tuple[int, uuid.UUID | None]] = {center.id: (0, None)}
+        frontier, truncated = [center.id], False
+        for level in range(1, depth + 1):
+            if not frontier:
+                break
+            edges = await self.session.scalars(select(GraphEdge).where(
+                GraphEdge.project_id == project.id, GraphEdge.target_id.is_not(None),
+                or_(GraphEdge.source_id.in_(frontier), GraphEdge.target_id.in_(frontier)),
+            ).order_by(GraphEdge.kind, GraphEdge.created_at))
+            here = set(frontier)
+            frontier = []
+            for edge in edges:
+                for a, b in ((edge.source_id, edge.target_id), (edge.target_id, edge.source_id)):
+                    if a in here and b is not None and b not in reached:
+                        if len(reached) >= MAX_VIEW_NODES:
+                            truncated = True
+                            continue
+                        reached[b] = (level, a)
+                        frontier.append(b)
+        nodes = {n.id: n for n in await self.session.scalars(select(GraphNode).where(GraphNode.id.in_(reached)))}
+        edges = await self.session.scalars(select(GraphEdge).where(
+            GraphEdge.project_id == project.id, GraphEdge.source_id.in_(reached), GraphEdge.target_id.in_(reached),
+        ))
+        return SubgraphRead(
+            nodes=[
+                ViewNode(**node_read(nodes[i]).model_dump(), depth=d,
+                         parent=nodes[p].ref if p is not None and p in nodes else None)
+                for i, (d, p) in sorted(reached.items(), key=lambda item: item[1][0]) if i in nodes
+            ],
+            edges=[ViewEdge(source=nodes[e.source_id].ref, target=nodes[e.target_id].ref, kind=e.kind)  # type: ignore[index]
+                   for e in edges],
+            truncated=truncated,
+        )
 
     async def stale(self, project: Project) -> list[StaleRead]:
         """Documents that may be out of date: a document they build on changed after them, an

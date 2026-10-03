@@ -14,6 +14,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from deepagents.backends import CompositeBackend, StateBackend
@@ -32,15 +33,16 @@ from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
 from pmagent_backend.modules.lessons.service import lessons_path
 from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.models import Project
-from pmagent_backend.modules.projects.repository import ProjectRepository
+from pmagent_backend.modules.projects.repository import ProjectRepository, visible_to
 from pmagent_backend.modules.research.service import RunWeb, WebResearch, check_report
-from pmagent_backend.modules.rules.service import WorkspaceRules, layered
+from pmagent_backend.modules.rules.service import WorkspaceRules, WorkspaceSkills, layered
+from pmagent_backend.modules.workspaces.repository import MembershipRepository
 from pmagent_engine import approvals as hitl
 from pmagent_engine.agent import PM_ROLE, briefing_system_prompt, build_team, role_for_agent_name
 from pmagent_engine.code import build_code_tools
 from pmagent_engine.contracts import AgentPolicy
 from pmagent_engine.layout import AGENTS
-from pmagent_engine.skills import SKILLS_FOLDER, default_skills, skills_guide
+from pmagent_engine.skills import SKILLS_FOLDER, default_skills, skill_name, skills_guide
 from pmagent_engine.templates import TEMPLATES_GUIDE, default_templates
 
 from .activity import activity_label
@@ -55,6 +57,7 @@ from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
 from .usage import TokenBudgetExceeded, TokenUsage, merge_breakdown
+from .workspace_runs import WORKSPACE_GUIDE, build_workspace_pack, build_workspace_tools, read_only
 
 CHECKPOINT_TOOL = "checkpoint"  # the engine's checkpoint tool (pmagent_engine.pipelines)
 
@@ -281,6 +284,12 @@ class AgentRunner:
         """Run one step of a run to its outcome: a reply, actions waiting for approval, or a
         failure. Safe to call again for a step that was cut off (a retried queue job): it
         continues from the last checkpoint instead of starting over."""
+        async with self.session_factory() as session:
+            about_projects = await session.scalar(select(AgentRun.project_id).where(AgentRun.id == run_id))
+            across = about_projects is None and await session.scalar(select(AgentRun.id).where(AgentRun.id == run_id))
+        if across:
+            await self._execute_across(run_id, payload)
+            return
         resuming = payload["kind"] == "resume"
         approved_by_id = uuid.UUID(payload["approved_by_id"]) if resuming and payload.get("approved_by_id") else None
         # Every model call of this step, subagents' included; recorded on the run when the step
@@ -322,7 +331,7 @@ class AgentRunner:
                 )
                 await session.commit()
                 rules = await self._rules(session, project.id, list(resolved), workspace_id=project.workspace_id)
-                context = await build_context_pack(session, project, run)
+                context = await build_context_pack(session, project, run, self.embedder)
                 kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
                 name, description, project_key = project.name, project.description, project.key
@@ -467,6 +476,122 @@ class AgentRunner:
                 await run_web.aclose()
             await self.streams.close(run_id)
 
+    async def _execute_across(self, run_id: uuid.UUID, payload: dict[str, Any]) -> None:
+        """A conversation across projects (workspace_runs.py): read-only, over every project in
+        it, so nothing waits for approval; anything that tries to write is refused."""
+        usage = TokenUsage()
+        try:
+            async with self.session_factory() as session:
+                run = await session.get(AgentRun, run_id)
+                if run is None or run.status not in (RunStatus.QUEUED, RunStatus.RUNNING):
+                    return
+                retry = run.status is RunStatus.RUNNING
+                member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
+                    if run.requested_by_id else None
+                if member is None:
+                    await session.rollback()
+                    await self._fail(run_id, "Whoever asked is no longer in this workspace", usage)
+                    return
+                visible = list(await session.scalars(
+                    select(Project).where(Project.workspace_id == run.workspace_id,
+                                          visible_to(member.user_id, member.role)).order_by(Project.key)
+                ))
+                by_id = {p.id: p for p in visible}
+                wanted = list(run.project_ids or [])
+                if any(i not in by_id for i in wanted):
+                    await session.rollback()
+                    await self._fail(run_id, "You can no longer see every project in this conversation", usage)
+                    return
+                projects = [by_id[i] for i in wanted]
+                resolved = {a.spec.handle: a for a in await AgentDefinitionRepository(session).resolve(run.workspace_id)}
+                lead_agent = resolved.get(run.agent or PM_ROLE)
+                if lead_agent is None:
+                    await session.rollback()
+                    await self._fail(run_id, f"The @{run.agent} agent no longer exists; pick another agent", usage)
+                    return
+                specs = [read_only(a.spec) for a in resolved.values()]
+                run.status, run.updated_at = RunStatus.RUNNING, _now()
+                run.model = run.conversation_model
+                run.agent_version = lead_agent.version
+                run.token_budget = lead_agent.spec.budget_tokens or self.token_budget
+                usage = TokenUsage(budget=run.token_budget, used=(run.input_tokens or 0) + (run.output_tokens or 0))
+                await session.commit()
+                workspace_rules = await WorkspaceRules(session).texts(run.workspace_id)
+                rules = layered({h: t for h, t in workspace_rules.items() if h in ("base", *resolved)}, {})
+                context = await build_workspace_pack(session, projects, visible)
+                workspace_id, thread_id, instructed_by = run.workspace_id, run.thread_id, member.user_id
+                lead = run.agent
+                stand_in = SimpleNamespace(model=run.conversation_model, specialist_model=None)
+                choice = self.model_factory(stand_in, run.conversation_model)  # type: ignore[arg-type]
+                names = ", ".join(p.key for p in projects) or "no particular project"
+
+            backend = CompositeBackend(default=StateBackend(), routes={
+                f"/pmagent/{p.key}/": PlatformKnowledgeBackend(
+                    self.session_factory, workspace_id=workspace_id, project_id=p.id, instructed_by_id=instructed_by,
+                )
+                for p in projects
+            })
+            read_tools, search_tools = build_workspace_tools(
+                self.session_factory, workspace_id=workspace_id, projects=projects, instructed_by_id=instructed_by,
+                embedder=self.embedder,
+            )
+            agent = build_team(
+                "this workspace", f"A conversation about {names}", choice.model, backend,
+                checkpointer=self.checkpointer, web_search=choice.web_search, rules=rules,
+                task_tools=(read_tools if projects else [], []), subagent_task_tools=[], agents=specs,
+                models=lambda name: self.model_factory(stand_in, name).model,  # type: ignore[arg-type]
+                board_instructions=WORKSPACE_GUIDE, context=context,
+                knowledge_tools=search_tools if projects else [], lead=lead,
+            )
+            config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": RECURSION_LIMIT,
+                      "callbacks": [usage]}
+            graph_input: Any = {"messages": [{"role": "user", "content": payload["message"]}]}
+            stream = await self.streams.open(run_id)
+            result = None
+            if retry:
+                graph_input, result = await _continue_from_checkpoint(agent, config, payload, graph_input)
+            speaker = lead or PM_ROLE
+            if result is None:
+                result = await _run_graph(agent, graph_input, config, stream, speaker)
+            result = await self._settle(agent, RunKind.BRIEFING, config, stream, result)  # refuse any write
+            if not _reply(result):
+                result = await _run_graph(agent, _follow_up(result), config, stream, speaker)
+                result = await self._settle(agent, RunKind.BRIEFING, config, stream, result)
+            if not _reply(result):
+                await self._fail(run_id, NO_REPLY_ERROR, usage)
+                return
+            async with self.session_factory() as session:
+                run = await session.get(AgentRun, run_id)
+                assert run is not None
+                tokens = _add_tokens(run, usage)
+                run.reply, run.status = _reply(result), RunStatus.COMPLETED
+                run.updated_at = run.finished_at = _now()
+                AuditLog(session).record(
+                    workspace_id=run.workspace_id, action="agent_run.completed", target=str(run.id),
+                    actor_type=AuthorType.AGENT, agent=speaker, instructed_by_id=run.requested_by_id, details=tokens,
+                )
+                await session.commit()
+        except asyncio.CancelledError:
+            reason = self._stopped.pop(run_id, None)
+            if reason is None and self.stop_reasons is not None:
+                reason = await self.stop_reasons.stop_reason(run_id)
+            if reason is not None:
+                await self._fail(run_id, reason, usage)
+                return
+            if self.stop_reasons is None:
+                await self._fail(run_id, "Stopped because the server shut down; send the message again", usage)
+            raise
+        except TokenBudgetExceeded as exc:
+            await self._fail(run_id, BUDGET_ERROR.format(used=exc.used, budget=exc.budget), usage)
+        except Exception as exc:
+            if (budget := _budget_error(exc)) is not None:
+                await self._fail(run_id, BUDGET_ERROR.format(used=budget.used, budget=budget.budget), usage)
+                return
+            logger.exception("agent run %s (across projects) failed", run_id)
+            await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}", usage)
+        finally:
+            await self.streams.close(run_id)
+
     async def _settle(self, agent: Any, kind: RunKind, config: dict, stream: Stream, result: dict) -> dict:
         """A briefing is read-only: any write it attempts is rejected so it can carry on."""
         if kind is RunKind.BRIEFING:
@@ -597,10 +722,14 @@ class AgentRunner:
                 # Owners accepted these; the file's own heading is replaced by ours.
                 body = "\n".join(line for line in lessons.splitlines() if not line.startswith("# "))
                 rules[name] = f"{rules.get(name, '').rstrip()}\n\n## Lessons from this project\n{body.strip()}".strip()
+        skills: dict[str, str] = {}
         if workspace_id is not None:
             workspace_rules = await WorkspaceRules(session).texts(workspace_id)
             rules = layered({h: t for h, t in workspace_rules.items() if h in names}, rules)
-        skills = skills_guide({p: c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")})
+            skills = await WorkspaceSkills(session).texts(workspace_id)
+        # The project's own skills win over the workspace's of the same name.
+        skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")}
+        skills = skills_guide(skills)
         rules["base"] = "\n\n".join(part for part in (rules.get("base", "").rstrip(), TEMPLATES_GUIDE, skills) if part)
         return rules
 

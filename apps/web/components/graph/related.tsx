@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@pmagent/ui/components/input";
 import { Label } from "@pmagent/ui/components/label";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { BoxIcon, FileTextIcon, LinkIcon, PlusIcon, SparklesIcon, TicketIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import { BoxIcon, FileTextIcon, LinkIcon, PlusIcon, SparklesIcon, TicketIcon, TriangleAlertIcon, WaypointsIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
@@ -80,12 +80,22 @@ export function Related({
     <section className="grid gap-2" aria-label="Related">
       <div className="flex items-center gap-2">
         <h3 className={compact ? "text-muted-foreground text-xs font-medium" : "text-sm font-medium"}>Related</h3>
-        {canEdit && neighbors.data && (
-          <Button size="sm" variant="ghost" className="ml-auto h-7" onClick={() => setAdding(true)}>
-            <PlusIcon />
-            Link
-          </Button>
-        )}
+        <div className="ml-auto flex gap-1">
+          {neighbors.data && neighbors.data.links.length > 0 && (
+            <Button size="sm" variant="ghost" className="h-7" asChild>
+              <Link href={`${projectBase}/knowledge?graph=${encodeURIComponent(refName)}`}>
+                <WaypointsIcon />
+                Graph
+              </Link>
+            </Button>
+          )}
+          {canEdit && neighbors.data && (
+            <Button size="sm" variant="ghost" className="h-7" onClick={() => setAdding(true)}>
+              <PlusIcon />
+              Link
+            </Button>
+          )}
+        </div>
       </div>
       {neighbors.isLoading ? (
         <Skeleton className="h-12" />

@@ -4,6 +4,7 @@ import { Skeleton } from "@pmagent/ui/components/skeleton";
 
 import { AgentList } from "@/components/agents/agent-list";
 import { WorkspaceRules } from "@/components/agents/workspace-rules";
+import { WorkspaceSkills } from "@/components/agents/workspace-skills";
 import { canManageProjects } from "@/lib/labels";
 import { useCurrentWorkspace } from "@/lib/queries";
 
@@ -21,6 +22,9 @@ export default function AgentsPage() {
         <AgentList scope={{ workspaceId: workspace.id }} base={`/w/${workspace.slug}/settings/agents`} canEdit />
       </section>
       <WorkspaceRules workspaceId={workspace.id} />
+      <div className="@container">
+        <WorkspaceSkills workspaceId={workspace.id} />
+      </div>
     </div>
   );
 }
