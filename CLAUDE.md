@@ -369,6 +369,13 @@ Decided (2026-10-02): a project's code is connected through the **pmagent GitHub
       not the key;
     - no completed model call: the check had no model key or internet egress)
   - [ ] updates to the repo's `AGENTS.md` / `CLAUDE.md` (a TODO done) as a coding run
+- [ ] **Coding sessions in Chat** (asked for 2026-10-03): coding runs as sessions you can find, follow, and continue, like conversations
+  - [ ] a **Coding** tab in the workspace Chat (`/w/[ws]/chat?tab=coding`, next to the conversations), listing coding sessions grouped by project, newest first, each with its issue, tool, status, and PR
+  - [ ] every "Start coding" on an issue creates a new session that appears there; opening one shows the run as it happens (what the agent said and did, the brief, branch, PR, Reviewer), with approve / reject / stop
+  - [ ] continue a session: send a follow-up to the same agent on the same branch (e.g. "also handle refunds over £500", or the Reviewer's findings), which runs again in a sandbox from the branch and pushes to the same PR (Claude Code resumes its session by id; Codex `exec resume`), each turn approved like the first
+  - [ ] assigning an issue to the coding agent (`coding-agent`, `claude-code`, or `codex`) starts a session in the background, without opening it, under the same approval
+  - [ ] the issue shows its sessions under it (status, PR), and "Implemented in PR #n" once its PR is open; the session links back to the issue
+  - [ ] later, inside a session: a browser (the app running in the sandbox, Playwright MCP), a terminal on the sandbox (the CLI), and a file view with the code diff (changed files, side by side)
 - [ ] **5d Coding locally (CLI and desktop):** the CLI (`pmagent connect`) and the desktop app (a folder picker) link a local checkout; "Code this" hands the brief to Claude Code or Codex there (the MCP route), which edits the files on the person's machine; they review and commit. The platform sees the branch and PR through the app
 - [ ] **Code graph:** Tree-sitter parse into files, symbols, imports, calls, and tests; re-parse only files changed by each commit; modules linked to the project graph (`architecture/`, requirements). Tools `code.search`, `code.blast_radius`
 - [ ] **Commit review in the background:** push → code graph update → blast radius → Reviewer (read-only) → `finding[]` (severity, what may break, affected files and modules, related issues and requirements, suggested fix) → inbox and notifications → per finding: Create issue, Fix now (coding hand-off), Dismiss with a reason (a lesson). Default branch and PR branches only; trivial commits (docs, lockfiles) skipped; a daily token budget per repo
