@@ -209,6 +209,25 @@ export function useUpdateIssue(scope: Scope | undefined) {
   );
 }
 
+/** Change an issue in any project of the workspace (lists across projects, the workspace Timeline). */
+export function useUpdateAnyIssue(workspaceId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, key, changes }: { projectId: string; key: string; changes: Schemas["IssueUpdate"] }) =>
+      unwrap(
+        api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", {
+          params: { path: { workspace_id: workspaceId!, project_id: projectId, key } },
+          body: changes,
+        }),
+      ),
+    onError: (e) => toast.error(errorMessage(e)),
+    onSettled: async (_data, _error, { projectId }) => {
+      await queryClient.invalidateQueries({ queryKey: ["issues", "workspace", workspaceId] });
+      await queryClient.invalidateQueries({ queryKey: ["issues", projectId] });
+    },
+  });
+}
+
 export function useCreateIssue(scope: Scope | undefined) {
   return useIssueMutation(scope, (s, body: Schemas["IssueCreate"]) =>
     unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", { params: { path: path(s) }, body })),

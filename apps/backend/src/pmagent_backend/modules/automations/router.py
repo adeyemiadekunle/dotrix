@@ -23,7 +23,8 @@ router = APIRouter(
 
 
 def _service(session: SessionDep, settings: SettingsDep, runner: AgentRunner) -> AutomationService:
-    return AutomationService(session, runner, workspace_daily_runs=settings.automation_daily_runs)
+    return AutomationService(session, runner, workspace_daily_runs=settings.automation_daily_runs,
+                             workspace_daily_tokens=settings.automation_daily_tokens)
 
 
 def get_automation_service(

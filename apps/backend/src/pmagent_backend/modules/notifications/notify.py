@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from pmagent_backend.modules.auth.models import User
+from pmagent_backend.modules.issues.models import IssueWatcher
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import visible_to
 from pmagent_backend.modules.workspaces.models import Membership
@@ -109,6 +110,37 @@ class Notifier:
                       run_id=run_id, actor_user_id=actor_user_id, excerpt=_excerpt(text))
             notified.append(member.user_id)
         return notified
+
+    async def watched(
+        self, project: Project, issue_id: uuid.UUID, title: str, what: str, at: datetime, *,
+        actor_user_id: uuid.UUID | None, actor_agent: str | None, excerpt: str | None = None,
+        skip: Iterable[uuid.UUID] = (),
+    ) -> None:
+        """An issue changed or got a comment: everyone watching it who can still see the project,
+        except whoever did it and people already told (assigned, mentioned)."""
+        left_out = {*skip, *([actor_user_id] if actor_user_id and actor_agent is None else [])}
+        watchers = [
+            u for u in await self.session.scalars(select(IssueWatcher.user_id).where(IssueWatcher.issue_id == issue_id))
+            if u not in left_out
+        ]
+        for user_id in await self._can_see(project, watchers):
+            self._add(project, user_id, NotificationKind.WATCHING, at, issue_id=issue_id, title=f"{title}: {what}",
+                      actor_user_id=actor_user_id, actor_agent=actor_agent,
+                      excerpt=_excerpt(excerpt) if excerpt else None)
+
+    async def _can_see(self, project: Project, user_ids: list[uuid.UUID]) -> list[uuid.UUID]:
+        if not user_ids:
+            return []
+        members = await self.session.scalars(
+            select(Membership).where(Membership.workspace_id == project.workspace_id, Membership.user_id.in_(user_ids))
+        )
+        seen = []
+        for member in members:
+            if await self.session.scalar(
+                select(Project.id).where(Project.id == project.id, visible_to(member.user_id, member.role))
+            ) is not None:
+                seen.append(member.user_id)
+        return seen
 
     async def _approvers(self, project: Project) -> list[uuid.UUID]:
         members = await self.session.scalars(

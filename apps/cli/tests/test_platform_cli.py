@@ -177,6 +177,8 @@ async def test_mcp_task_tools_use_the_platform_board(platform: FakePlatform, sta
     claimed = result(await server.call_tool("claim_task", {"task_id": "KUN-7"}))
     assert "in_progress" in str(claimed)
     assert platform.bodies("/claim")[0] == {"key": "KUN-7", "as_agent": "codex"}
+    related = result(await server.call_tool("related", {"ref": "KUN-7"}))
+    assert "implements" in str(related) and "requirements/lookup.md" in str(related)
     doc = result(await server.call_tool("read_doc", {"path": "project.md"}))
     assert "Logistics." in str(doc)
     from pmagent_cli.mcp_server import ToolError

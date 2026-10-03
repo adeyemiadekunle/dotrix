@@ -54,6 +54,28 @@ test("knowledge: edit a file, see its history, and restore the first version", a
   await expect(page.getByText("Restored version 1")).toBeVisible();
 });
 
+test("the project graph: a document names an issue, and each shows the other as related", async ({ page }) => {
+  const { key } = await signUpWithProject(page, "Kugraph", "KUG");
+  await page.getByRole("button", { name: "New issue" }).click();
+  await page.getByLabel("Title").fill("Ship sign-in");
+  await page.getByRole("button", { name: "Create issue" }).click();
+  await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Knowledge", exact: true }).click();
+  await page.getByRole("button", { name: "vision.md" }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
+  await page.getByLabel("Edit vision.md").fill(`# Vision\n\nIt starts with ${key}-1.\n`);
+  await page.getByRole("button", { name: "Save" }).click();
+  const related = page.getByRole("region", { name: "Related" });
+  await expect(related.getByText("Mentions")).toBeVisible();
+  await related.getByRole("link", { name: `${key}-1` }).click();
+  await expect(page).toHaveURL(new RegExp(`/board\\?issue=${key}-1`));
+  const drawerRelated = page.getByRole("dialog").getByRole("region", { name: "Related" });
+  await expect(drawerRelated.getByText("Mentioned in")).toBeVisible();
+  await expect(drawerRelated.getByRole("link", { name: "vision.md" })).toBeVisible();
+});
+
 test("turn the personal workspace into an organisation, then restrict a project", async ({ page }) => {
   await signUpWithProject(page, "Kuturn", "KUT");
   const projectSettings = page.url().replace(/\/board.*$/, "/settings");

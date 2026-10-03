@@ -34,17 +34,20 @@ from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.research.service import RunWeb, WebResearch, check_report
+from pmagent_backend.modules.rules.service import WorkspaceRules, layered
 from pmagent_engine import approvals as hitl
 from pmagent_engine.agent import PM_ROLE, briefing_system_prompt, build_team, role_for_agent_name
 from pmagent_engine.code import build_code_tools
 from pmagent_engine.contracts import AgentPolicy
 from pmagent_engine.layout import AGENTS
+from pmagent_engine.skills import SKILLS_FOLDER, default_skills, skills_guide
 from pmagent_engine.templates import TEMPLATES_GUIDE, default_templates
 
 from .activity import activity_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
 from .context import build_context_pack
 from .findings import dedupe_findings
+from .graph_tools import GRAPH_TOOLS_GUIDE, build_graph_tools
 from .knowledge_tools import KNOWLEDGE_TOOLS_GUIDE, build_knowledge_tools
 from .llm import ModelFactory
 from .models import AgentApproval, AgentRun, AgentRunOutput, ApprovalStatus, RunKind, RunStatus
@@ -318,7 +321,7 @@ class AgentRunner:
                     stages=(run.usage or {}).get("stages"),
                 )
                 await session.commit()
-                rules = await self._rules(session, project.id, list(resolved))
+                rules = await self._rules(session, project.id, list(resolved), workspace_id=project.workspace_id)
                 context = await build_context_pack(session, project, run)
                 kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
@@ -348,17 +351,16 @@ class AgentRunner:
                     )
                 },
             )
-            read_tools, pm_write_tools, _ = build_board_tools(
-                BoardContext(
-                    session_factory=self.session_factory,
-                    workspace_id=workspace_id,
-                    project_id=project_id,
-                    instructed_by_id=instructed_by,
-                    approved_by_id=approved_by_id,
-                    policy=policy,
-                    versions=versions,
-                )
+            board_context = BoardContext(
+                session_factory=self.session_factory,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                instructed_by_id=instructed_by,
+                approved_by_id=approved_by_id,
+                policy=policy,
+                versions=versions,
             )
+            read_tools, pm_write_tools, _ = build_board_tools(board_context)
             if self.web is not None:
                 run_web = await self.web.for_run(
                     self.session_factory, workspace_id=workspace_id, project_id=project_id, run_id=run_id,
@@ -380,14 +382,17 @@ class AgentRunner:
                 subagent_task_tools=pm_write_tools,
                 agents=specs,
                 models=lambda name: self.model_factory(project, name).model,
-                board_instructions=board_instructions(project_key) + KNOWLEDGE_TOOLS_GUIDE,
+                board_instructions=board_instructions(project_key) + KNOWLEDGE_TOOLS_GUIDE + GRAPH_TOOLS_GUIDE,
                 context=context,
-                knowledge_tools=build_knowledge_tools(
-                    self.session_factory,
-                    workspace_id=workspace_id,
-                    project_id=project_id,
-                    embedder=self.embedder,
-                ),
+                knowledge_tools=[
+                    *build_knowledge_tools(
+                        self.session_factory,
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        embedder=self.embedder,
+                    ),
+                    *build_graph_tools(board_context),
+                ],
                 code_tools=code_tools,
                 specialist_model=choice.specialist_model,
                 summarize_after_tokens=self.summarize_after_tokens,
@@ -566,20 +571,25 @@ class AgentRunner:
                 ))
             await session.commit()
 
-    async def _rules(self, session: Any, project_id: uuid.UUID, handles: list[str] | None = None) -> dict[str, str]:
-        """The project's agent-rules/*.md, keyed by handle ("base", "product", a custom agent's),
-        each followed by the lessons owners accepted for it, and the base telling every agent
-        about the folder templates (seeded into projects made before there were any)."""
+    async def _rules(
+        self, session: Any, project_id: uuid.UUID, handles: list[str] | None = None,
+        workspace_id: uuid.UUID | None = None,
+    ) -> dict[str, str]:
+        """Each agent's rules, keyed by handle ("base", "product", a custom agent's): the
+        workspace's rules, then the project's agent-rules/*.md and the lessons owners accepted
+        (the more specific last); the base also lists the skills and points at the folder
+        templates. Default templates and skills are written into projects made before them."""
         files = await KnowledgeRepository(session).list_files(project_id)
         names = ("base", *AGENTS, *(handles or []))
         live = {f.path: f.content for f in files if not f.deleted}
-        missing = {path: text for path, text in default_templates().items() if path not in live
-                   and not any(f.path == path for f in files)}  # a deleted template stays deleted
+        ever = {f.path for f in files}  # a deleted template or skill stays deleted
+        missing = {path: text for path, text in {**default_templates(), **default_skills()}.items() if path not in ever}
         if missing:
             project = await session.get(Project, project_id)
             knowledge = KnowledgeService(session)
             for path, text in missing.items():
-                await knowledge.write(project, path, text, Actor.system(), message="Default template")
+                await knowledge.write(project, path, text, Actor.system(), message="Default template or skill")
+                live[path] = text
         rules = {name: live[f"agent-rules/{name}.md"] for name in names if f"agent-rules/{name}.md" in live}
         for name in names:
             lessons = live.get(lessons_path(name), "").strip()
@@ -587,8 +597,11 @@ class AgentRunner:
                 # Owners accepted these; the file's own heading is replaced by ours.
                 body = "\n".join(line for line in lessons.splitlines() if not line.startswith("# "))
                 rules[name] = f"{rules.get(name, '').rstrip()}\n\n## Lessons from this project\n{body.strip()}".strip()
-        if rules:
-            rules["base"] = f"{rules.get('base', '').rstrip()}\n\n{TEMPLATES_GUIDE}".strip()
+        if workspace_id is not None:
+            workspace_rules = await WorkspaceRules(session).texts(workspace_id)
+            rules = layered({h: t for h, t in workspace_rules.items() if h in names}, rules)
+        skills = skills_guide({p: c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")})
+        rules["base"] = "\n\n".join(part for part in (rules.get("base", "").rstrip(), TEMPLATES_GUIDE, skills) if part)
         return rules
 
 
@@ -681,6 +694,9 @@ def _preview(action: dict, files: dict[str, str]) -> tuple[str | None, str | Non
         return f"new {args.get('type', 'issue')}: {args.get('title', '')}".strip(), None
     if isinstance(args, dict) and action.get("tool") in ("update_issue", "comment_issue"):
         return str(args.get("key") or "") or None, None
+    if isinstance(args, dict) and action.get("tool") == "link_items":
+        kind = str(args.get("kind") or "relates_to").replace("_", " ")
+        return f"link: {args.get('source', '')} {kind} {args.get('target', '')}"[:300], None
     path = args.get("file_path") if isinstance(args, dict) else None
     if action.get("tool") not in ("write_file", "edit_file") or not isinstance(path, str):
         return None, None

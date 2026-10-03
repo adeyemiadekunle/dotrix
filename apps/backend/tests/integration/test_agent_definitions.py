@@ -49,7 +49,7 @@ async def test_the_builtins_are_listed_until_someone_changes_them(world, db_clie
     research = next(a for a in agents if a["handle"] == "research")
     assert "spike" in research["issue_types"] and "web.search" in research["tools"]
     catalog = (await db_client.get(f"{ws}/agents/catalog", headers=cat.headers)).json()
-    assert "knowledge.write" in {t["id"] for t in catalog["tools"]} and catalog["low_risk_actions"] == ["issues.comment"]
+    assert "knowledge.write" in {t["id"] for t in catalog["tools"]} and catalog["low_risk_actions"] == ["graph.link", "issues.comment"]
 
 
 async def test_customise_a_builtin_then_reset_it(world, db_client: AsyncClient, agent_script) -> None:

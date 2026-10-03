@@ -49,6 +49,7 @@ def _line(n: Notification, project_key: str, actor: str | None) -> str:
         NotificationKind.MENTION: f"{who} mentioned you: {n.excerpt or n.title}",
         NotificationKind.DECIDED: f"{who} decided your agent's changes ({n.title})"
         + (f'. Why: "{n.excerpt}"' if n.excerpt else ""),
+        NotificationKind.WATCHING: f"{who} on {n.title}" + (f': "{n.excerpt}"' if n.excerpt else ""),
     }[n.kind]
     return f"{project_key} · {text}"
 

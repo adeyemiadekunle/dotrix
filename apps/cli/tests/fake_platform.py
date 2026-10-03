@@ -102,6 +102,15 @@ class FakePlatform:
             return self.problem(400, answer)
         if path == "/v1/me":
             return httpx.Response(200, json=self.me)
+        if path == f"/v1/workspaces/{WS}/projects/{PID}/graph/neighbors":
+            ref = request.url.params["ref"]
+            node = {"ref": ref, "kind": "issue", "subtype": "task", "title": "Postcode lookup", "status": "todo"}
+            linked = {"ref": "requirements/lookup.md", "kind": "document", "subtype": "requirements",
+                      "title": "Lookup", "status": None}
+            return httpx.Response(200, json={"node": node, "links": [
+                {"id": "l-1", "direction": "out", "kind": "implements", "origin": "derived", "agent": None,
+                 "reason": None, "node": linked},
+            ]})
         if path == f"/v1/workspaces/{WS}/projects/{PID}/agents" and method == "GET":
             return httpx.Response(200, json=[
                 {"handle": "project-manager", "name": "Project Manager", "source": "built_in", "scope": "default",

@@ -75,7 +75,7 @@ async def test_changes_waiting_notify_whoever_may_approve(world, db_client: Asyn
     assert note["resolved"] and not note["read"]
     assert await _counts(db_client, ws, bob) == {
         "unread": 0,
-        "by_kind": {"approval": 0, "checkpoint": 0, "assigned": 0, "finding": 0, "mention": 0, "decided": 0},
+        "by_kind": {"approval": 0, "checkpoint": 0, "assigned": 0, "finding": 0, "mention": 0, "decided": 0, "watching": 0},
     }
 
 
@@ -184,7 +184,8 @@ async def test_mentions_in_comments_and_chat(world, db_client: AsyncClient, agen
 async def test_turning_kinds_off(world, db_client: AsyncClient, agent_script) -> None:
     ada, bob, _, _, ws, base = await world()
     defaults = (await db_client.get("/v1/me/notification-settings", headers=bob.headers)).json()
-    assert defaults == {"mention": True, "assigned": True, "finding": True, "decided": True, "email": "immediately"}
+    assert defaults == {"mention": True, "assigned": True, "finding": True, "decided": True, "watching": True,
+                        "email": "immediately"}
     await db_client.post(f"{base}/issues", json={"title": "Ship it", "assignee_user_id": bob.id}, headers=ada.headers)
     agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
     await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=ada.headers)
@@ -194,7 +195,8 @@ async def test_turning_kinds_off(world, db_client: AsyncClient, agent_script) ->
     res = await db_client.put(
         "/v1/me/notification-settings", json={"mention": True, "assigned": False, "finding": True}, headers=bob.headers
     )
-    assert res.json() == {"mention": True, "assigned": False, "finding": True, "decided": True, "email": "immediately"}
+    assert res.json() == {"mention": True, "assigned": False, "finding": True, "decided": True, "watching": True,
+                          "email": "immediately"}
     assert [n["kind"] for n in await _notifications(db_client, ws, bob)] == ["approval"]
     counts = await _counts(db_client, ws, bob)
     assert counts["by_kind"]["assigned"] == 0 and counts["unread"] == 1
@@ -311,3 +313,32 @@ async def test_daily_digest_off_and_read(world, db_client: AsyncClient, agent_sc
     sent = len(outbox.messages)
     await minute_passes()
     assert len(outbox.messages) == sent
+
+
+async def test_watchers_hear_about_changes_and_comments(world, db_client: AsyncClient) -> None:
+    ada, _, cat, dan, ws, base = await world()
+    key = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Export"}, headers=ada.headers)).json()["key"]
+    for who in (cat, dan):
+        assert (await db_client.put(f"{base}/issues/{key}/watch", headers=who.headers)).status_code == 200
+
+    await db_client.patch(f"{base}/issues/{key}", json={"status": "in_progress", "due": "2026-11-01"}, headers=ada.headers)
+    [changed] = await _notifications(db_client, ws, cat)
+    assert changed["kind"] == "watching" and changed["issue_key"] == key
+    assert changed["title"] == f"{key} Export: moved to in progress; changed the due date"
+
+    # A comment: the excerpt; whoever commented isn't told about their own; someone mentioned
+    # hears it as a mention instead.
+    await db_client.post(f"{base}/issues/{key}/comments", headers=cat.headers,
+                         json={"body": "Blocked on the API, @Dan", "mentions": [dan.id]})
+    assert len(await _notifications(db_client, ws, cat)) == 1
+    kinds = sorted(n["kind"] for n in await _notifications(db_client, ws, dan))
+    assert kinds == ["mention", "watching"]
+    # Ada reported it, so she watches it: she hears about the comment, not her own change.
+    [comment] = await _notifications(db_client, ws, ada)
+    assert comment["title"] == f"{key} Export: a new comment" and comment["excerpt"] == "Blocked on the API, @Dan"
+
+    # Turned off: none shown, and none made into email either.
+    await db_client.put("/v1/me/notification-settings", headers=cat.headers, json={
+        "mention": True, "assigned": True, "finding": True, "decided": True, "watching": False, "email": "immediately",
+    })
+    assert await _notifications(db_client, ws, cat) == []

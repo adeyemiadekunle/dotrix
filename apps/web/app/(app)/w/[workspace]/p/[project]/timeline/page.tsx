@@ -6,14 +6,15 @@ import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { Suspense, useMemo } from "react";
 
 import { IssueTimeline, ZoomToggle, type TimelineZoom } from "@/components/issues/timeline";
-import { useAllIssues } from "@/lib/issues";
+import { useAllIssues, useUpdateIssue } from "@/lib/issues";
 import { useProjectScope } from "@/lib/queries";
 import { useSearchParam, useSetSearchParams } from "@/lib/url-state";
 
 /** The project's issues on a calendar, from each one's start to its due date. */
 function ProjectTimeline() {
-  const { workspace, project, scope } = useProjectScope();
+  const { workspace, project, scope, canEdit } = useProjectScope();
   const issues = useAllIssues(scope);
+  const update = useUpdateIssue(scope);
   const [zoomParam] = useSearchParam("zoom");
   const [doneParam] = useSearchParam("done");
   const setParams = useSetSearchParams();
@@ -44,6 +45,7 @@ function ProjectTimeline() {
         issues={shown}
         zoom={zoom}
         href={(issue) => `${base}?${new URLSearchParams([...keep, ["issue", issue.key]])}`}
+        onReschedule={canEdit ? (issue, changes) => update.mutate({ key: issue.key, changes }) : undefined}
       />
     </div>
   );

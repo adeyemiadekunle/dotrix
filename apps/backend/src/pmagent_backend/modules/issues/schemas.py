@@ -137,6 +137,7 @@ class IssueSummary(BaseModel):
     estimate: float | None
     due: date | None
     scheduled: datetime | None = Field(default=None, description="When work on it is planned to start")
+    depends_on: list[str] = Field(default_factory=list, description="Keys of the issues it waits for")
     rank: float
     created_at: datetime
     updated_at: datetime

@@ -45,6 +45,7 @@ A decision is never edited away: a changed decision is a new ADR that supersedes
 - Date: YYYY-MM-DD
 - Status: Proposed | Accepted | Superseded by ADR-…
 - Affected modules: …
+- Supersedes: ADR-… (if it replaces one)
 
 ## Context
 What forces the decision: requirements, constraints, what's true today.

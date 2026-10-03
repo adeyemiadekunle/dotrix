@@ -2159,6 +2159,177 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/neighbors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Graph Neighbors
+         * @description What something links to and what links to it: requirements an issue implements, its
+         *     epic and dependencies, the decisions it follows, documents that name it, and links people
+         *     and agents added.
+         */
+        get: operations["graph_neighbors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Graph Impact
+         * @description What a change to something affects: what implements it, depends on it, follows it, sits
+         *     under it, or names it, up to `depth` steps away; and the modules a decision affects.
+         */
+        get: operations["graph_impact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/path": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Graph Path
+         * @description How two things connect: the shortest chain of links between them, either way, up to
+         *     four links.
+         */
+        get: operations["graph_path"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/stale": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Graph Stale
+         * @description Documents that may be out of date, with why: a document they build on changed after
+         *     them, an issue they name or that builds on them was finished since, or a newer decision
+         *     supersedes them.
+         */
+        get: operations["graph_stale"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Graph Link
+         * @description Link two things the text doesn't link (people who may edit documents; audited
+         *     `graph.linked`). Returns the source's links.
+         */
+        post: operations["create_graph_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Graph Link
+         * @description Remove a link a person or an agent added (one derived from a document or an issue goes
+         *     when its text changes: 409). Audited `graph.unlinked`.
+         */
+        delete: operations["delete_graph_link"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspace Rules
+         * @description The rules every project's agents follow: "base" for all of them, and per agent. A
+         *     project's own agent-rules/ come after them, so the project's win where they differ.
+         */
+        get: operations["list_workspace_rules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/rules/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Workspace Rule
+         * @description Set the rules for every agent ("base") or one agent, in every project (owners and admins;
+         *     audited `workspace_rules.saved` with what it replaced). Empty content removes them. 409
+         *     `rules_changed` if they changed since `base_version`.
+         */
+        put: operations["save_workspace_rule"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/audit": {
         parameters: {
             query?: never;
@@ -3802,6 +3973,16 @@ export interface components {
          * @enum {string}
          */
         DocumentStatus: "converting" | "ready" | "failed";
+        /**
+         * EdgeKind
+         * @enum {string}
+         */
+        EdgeKind: "implements" | "depends_on" | "part_of" | "decided_by" | "affects" | "supersedes" | "mentions" | "relates_to";
+        /**
+         * EdgeOrigin
+         * @enum {string}
+         */
+        EdgeOrigin: "derived" | "person" | "agent";
         /** EmailInviteCreate */
         EmailInviteCreate: {
             /**
@@ -3981,6 +4162,23 @@ export interface components {
              * @description The API version
              */
             version: string;
+        };
+        /** ImpactItem */
+        ImpactItem: {
+            node: components["schemas"]["NodeRead"];
+            /**
+             * Depth
+             * @description Steps away (1: directly)
+             */
+            depth: number;
+            /** @description How it's reached on its shortest way */
+            via: components["schemas"]["EdgeKind"];
+        };
+        /** ImpactRead */
+        ImpactRead: {
+            node: components["schemas"]["NodeRead"];
+            /** Affected */
+            affected: components["schemas"]["ImpactItem"][];
         };
         /**
          * InstallationAdd
@@ -4163,6 +4361,11 @@ export interface components {
             due: string | null;
             /** Scheduled */
             scheduled: string | null;
+            /**
+             * Depends On
+             * @description Keys this issue is blocked by
+             */
+            depends_on?: string[];
             /** Rank */
             rank: number;
             /**
@@ -4194,11 +4397,6 @@ export interface components {
             }[];
             /** Resolved At */
             resolved_at: string | null;
-            /**
-             * Depends On
-             * @description Keys this issue is blocked by
-             */
-            depends_on?: string[];
             /**
              * Blocks
              * @description Keys blocked by this issue
@@ -4250,6 +4448,11 @@ export interface components {
              * @description When work on it is planned to start
              */
             scheduled?: string | null;
+            /**
+             * Depends On
+             * @description Keys of the issues it waits for
+             */
+            depends_on?: string[];
             /** Rank */
             rank: number;
             /**
@@ -4379,6 +4582,17 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** LinkCreate */
+        LinkCreate: {
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /** @default relates_to */
+            kind: components["schemas"]["EdgeKind"];
+            /** Reason */
+            reason?: string | null;
+        };
         /** LinkInviteCreate */
         LinkInviteCreate: {
             /**
@@ -4425,6 +4639,27 @@ export interface components {
             use_count: number;
             /** Url */
             url: string;
+        };
+        /** LinkRead */
+        LinkRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Direction
+             * @description out: this node points at the other; in: the other at this
+             * @enum {string}
+             */
+            direction: "out" | "in";
+            kind: components["schemas"]["EdgeKind"];
+            origin: components["schemas"]["EdgeOrigin"];
+            /** Agent */
+            agent: string | null;
+            /** Reason */
+            reason: string | null;
+            node: components["schemas"]["NodeRead"];
         };
         /** LinkedAccount */
         LinkedAccount: {
@@ -4543,6 +4778,38 @@ export interface components {
              */
             name: string;
         };
+        /** NeighborsRead */
+        NeighborsRead: {
+            node: components["schemas"]["NodeRead"];
+            /** Links */
+            links: components["schemas"]["LinkRead"][];
+        };
+        /**
+         * NodeKind
+         * @enum {string}
+         */
+        NodeKind: "document" | "issue" | "module";
+        /** NodeRead */
+        NodeRead: {
+            /**
+             * Ref
+             * @description A document's path, an issue's key, or "module:<name>"
+             */
+            ref: string;
+            kind: components["schemas"]["NodeKind"];
+            /**
+             * Subtype
+             * @description A document's folder or an issue's type
+             */
+            subtype: string | null;
+            /** Title */
+            title: string;
+            /**
+             * Status
+             * @description An issue's status
+             */
+            status: string | null;
+        };
         /**
          * NotificationCounts
          * @description What still needs you, in total and by kind (for badges): approvals and checkpoints until
@@ -4560,7 +4827,7 @@ export interface components {
          * NotificationKind
          * @enum {string}
          */
-        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention" | "decided";
+        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention" | "decided" | "watching";
         /**
          * NotificationRead
          * @description Something that waits for you or happened to you. `kind` says which: changes waiting for
@@ -4662,6 +4929,12 @@ export interface components {
              */
             decided: boolean;
             /**
+             * Watching
+             * @description An issue you watch changes or gets a comment
+             * @default true
+             */
+            watching: boolean;
+            /**
              * Email
              * @description Emails: as things happen (batched, one per run), a daily digest at 08:00 UTC, or none
              * @default immediately
@@ -4730,6 +5003,21 @@ export interface components {
              * Format: email
              */
             email: string;
+        };
+        /** PathRead */
+        PathRead: {
+            /** Found */
+            found: boolean;
+            /** Steps */
+            steps: components["schemas"]["PathStep"][];
+        };
+        /** PathStep */
+        PathStep: {
+            node: components["schemas"]["NodeRead"];
+            /** @description The link from the previous step (none on the first) */
+            kind: components["schemas"]["EdgeKind"] | null;
+            /** Direction */
+            direction: ("out" | "in") | null;
         };
         /**
          * Permission
@@ -5415,6 +5703,12 @@ export interface components {
             /** Model Calls */
             model_calls: number;
         };
+        /** StaleRead */
+        StaleRead: {
+            node: components["schemas"]["NodeRead"];
+            /** Reasons */
+            reasons: string[];
+        };
         /** ThreadRead */
         ThreadRead: {
             /**
@@ -5749,6 +6043,11 @@ export interface components {
              * @description When work on it is planned to start
              */
             scheduled?: string | null;
+            /**
+             * Depends On
+             * @description Keys of the issues it waits for
+             */
+            depends_on?: string[];
             /** Rank */
             rank: number;
             /**
@@ -5776,6 +6075,38 @@ export interface components {
          * @enum {string}
          */
         WorkspaceKind: "personal" | "organization";
+        /** WorkspaceRuleRead */
+        WorkspaceRuleRead: {
+            /**
+             * Handle
+             * @description "base" (every agent) or an agent's handle
+             */
+            handle: string;
+            /** Content */
+            content: string;
+            /** Version */
+            version: number;
+            /** Updated By Id */
+            updated_by_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** WorkspaceRuleSave */
+        WorkspaceRuleSave: {
+            /**
+             * Content
+             * @description Markdown; empty removes the rule
+             */
+            content: string;
+            /**
+             * Base Version
+             * @description The version you edited (0 for a new one); 409 if it changed since
+             */
+            base_version: number;
+        };
         /**
          * WorkspaceSearchHit
          * @description A hit from any project you can see, with the project it's in.
@@ -12509,6 +12840,513 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    graph_neighbors: {
+        parameters: {
+            query: {
+                /** @description A document's path, an issue's key, or module:<name> */
+                ref: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NeighborsRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    graph_impact: {
+        parameters: {
+            query: {
+                /** @description A document's path, an issue's key, or module:<name> */
+                ref: string;
+                depth?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpactRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    graph_path: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PathRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    graph_stale: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaleRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    create_graph_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NeighborsRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    delete_graph_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_workspace_rules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceRuleRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    save_workspace_rule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description "base" or an agent's handle */
+                handle: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceRuleSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceRuleRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;

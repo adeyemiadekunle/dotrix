@@ -9784,6 +9784,821 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/neighbors": {
+      "get": {
+        "tags": [
+          "graph"
+        ],
+        "summary": "Graph Neighbors",
+        "description": "What something links to and what links to it: requirements an issue implements, its\nepic and dependencies, the decisions it follows, documents that name it, and links people\nand agents added.",
+        "operationId": "graph_neighbors",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "description": "A document's path, an issue's key, or module:<name>",
+              "title": "Ref"
+            },
+            "description": "A document's path, an issue's key, or module:<name>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NeighborsRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/impact": {
+      "get": {
+        "tags": [
+          "graph"
+        ],
+        "summary": "Graph Impact",
+        "description": "What a change to something affects: what implements it, depends on it, follows it, sits\nunder it, or names it, up to `depth` steps away; and the modules a decision affects.",
+        "operationId": "graph_impact",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "description": "A document's path, an issue's key, or module:<name>",
+              "title": "Ref"
+            },
+            "description": "A document's path, an issue's key, or module:<name>"
+          },
+          {
+            "name": "depth",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 3,
+              "minimum": 1,
+              "default": 2,
+              "title": "Depth"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpactRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/path": {
+      "get": {
+        "tags": [
+          "graph"
+        ],
+        "summary": "Graph Path",
+        "description": "How two things connect: the shortest chain of links between them, either way, up to\nfour links.",
+        "operationId": "graph_path",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PathRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/stale": {
+      "get": {
+        "tags": [
+          "graph"
+        ],
+        "summary": "Graph Stale",
+        "description": "Documents that may be out of date, with why: a document they build on changed after\nthem, an issue they name or that builds on them was finished since, or a newer decision\nsupersedes them.",
+        "operationId": "graph_stale",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaleRead"
+                  },
+                  "title": "Response Graph Stale"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/links": {
+      "post": {
+        "tags": [
+          "graph"
+        ],
+        "summary": "Create Graph Link",
+        "description": "Link two things the text doesn't link (people who may edit documents; audited\n`graph.linked`). Returns the source's links.",
+        "operationId": "create_graph_link",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NeighborsRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/links/{link_id}": {
+      "delete": {
+        "tags": [
+          "graph"
+        ],
+        "summary": "Delete Graph Link",
+        "description": "Remove a link a person or an agent added (one derived from a document or an issue goes\nwhen its text changes: 409). Audited `graph.unlinked`.",
+        "operationId": "delete_graph_link",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "link_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Link Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/rules": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Workspace Rules",
+        "description": "The rules every project's agents follow: \"base\" for all of them, and per agent. A\nproject's own agent-rules/ come after them, so the project's win where they differ.",
+        "operationId": "list_workspace_rules",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceRuleRead"
+                  },
+                  "title": "Response List Workspace Rules"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/rules/{handle}": {
+      "put": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Save Workspace Rule",
+        "description": "Set the rules for every agent (\"base\") or one agent, in every project (owners and admins;\naudited `workspace_rules.saved` with what it replaced). Empty content removes them. 409\n`rules_changed` if they changed since `base_version`.",
+        "operationId": "save_workspace_rule",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "handle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,30}$",
+              "description": "\"base\" or an agent's handle",
+              "title": "Handle"
+            },
+            "description": "\"base\" or an agent's handle"
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceRuleSave"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceRuleRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/audit": {
       "get": {
         "tags": [
@@ -15932,6 +16747,29 @@
         ],
         "title": "DocumentStatus"
       },
+      "EdgeKind": {
+        "type": "string",
+        "enum": [
+          "implements",
+          "depends_on",
+          "part_of",
+          "decided_by",
+          "affects",
+          "supersedes",
+          "mentions",
+          "relates_to"
+        ],
+        "title": "EdgeKind"
+      },
+      "EdgeOrigin": {
+        "type": "string",
+        "enum": [
+          "derived",
+          "person",
+          "agent"
+        ],
+        "title": "EdgeOrigin"
+      },
       "EmailInviteCreate": {
         "properties": {
           "email": {
@@ -16274,6 +17112,49 @@
           "version"
         ],
         "title": "Health"
+      },
+      "ImpactItem": {
+        "properties": {
+          "node": {
+            "$ref": "#/components/schemas/NodeRead"
+          },
+          "depth": {
+            "type": "integer",
+            "title": "Depth",
+            "description": "Steps away (1: directly)"
+          },
+          "via": {
+            "$ref": "#/components/schemas/EdgeKind",
+            "description": "How it's reached on its shortest way"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node",
+          "depth",
+          "via"
+        ],
+        "title": "ImpactItem"
+      },
+      "ImpactRead": {
+        "properties": {
+          "node": {
+            "$ref": "#/components/schemas/NodeRead"
+          },
+          "affected": {
+            "items": {
+              "$ref": "#/components/schemas/ImpactItem"
+            },
+            "type": "array",
+            "title": "Affected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node",
+          "affected"
+        ],
+        "title": "ImpactRead"
       },
       "InstallationAdd": {
         "properties": {
@@ -16781,6 +17662,14 @@
             ],
             "title": "Scheduled"
           },
+          "depends_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Depends On",
+            "description": "Keys this issue is blocked by"
+          },
           "rank": {
             "type": "number",
             "title": "Rank"
@@ -16853,14 +17742,6 @@
               }
             ],
             "title": "Resolved At"
-          },
-          "depends_on": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Depends On",
-            "description": "Keys this issue is blocked by"
           },
           "blocks": {
             "items": {
@@ -17030,6 +17911,14 @@
             ],
             "title": "Scheduled",
             "description": "When work on it is planned to start"
+          },
+          "depends_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Depends On",
+            "description": "Keys of the issues it waits for"
           },
           "rank": {
             "type": "number",
@@ -17472,6 +18361,44 @@
         ],
         "title": "Link"
       },
+      "LinkCreate": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Source"
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Target"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EdgeKind",
+            "default": "relates_to"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "target"
+        ],
+        "title": "LinkCreate"
+      },
       "LinkInviteCreate": {
         "properties": {
           "role": {
@@ -17575,6 +18502,66 @@
         ],
         "title": "LinkInviteCreated",
         "description": "Returned once, at creation: the only time the link's token is visible."
+      },
+      "LinkRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "out",
+              "in"
+            ],
+            "title": "Direction",
+            "description": "out: this node points at the other; in: the other at this"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EdgeKind"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/EdgeOrigin"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "node": {
+            "$ref": "#/components/schemas/NodeRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "direction",
+          "kind",
+          "origin",
+          "agent",
+          "reason",
+          "node"
+        ],
+        "title": "LinkRead"
       },
       "LinkedAccount": {
         "properties": {
@@ -17810,6 +18797,84 @@
         ],
         "title": "ModelOption"
       },
+      "NeighborsRead": {
+        "properties": {
+          "node": {
+            "$ref": "#/components/schemas/NodeRead"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/LinkRead"
+            },
+            "type": "array",
+            "title": "Links"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node",
+          "links"
+        ],
+        "title": "NeighborsRead"
+      },
+      "NodeKind": {
+        "type": "string",
+        "enum": [
+          "document",
+          "issue",
+          "module"
+        ],
+        "title": "NodeKind"
+      },
+      "NodeRead": {
+        "properties": {
+          "ref": {
+            "type": "string",
+            "title": "Ref",
+            "description": "A document's path, an issue's key, or \"module:<name>\""
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NodeKind"
+          },
+          "subtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtype",
+            "description": "A document's folder or an issue's type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "An issue's status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ref",
+          "kind",
+          "subtype",
+          "title",
+          "status"
+        ],
+        "title": "NodeRead"
+      },
       "NotificationCounts": {
         "properties": {
           "unread": {
@@ -17843,7 +18908,8 @@
           "assigned",
           "finding",
           "mention",
-          "decided"
+          "decided",
+          "watching"
         ],
         "title": "NotificationKind"
       },
@@ -18012,6 +19078,12 @@
             "description": "Someone approves or rejects changes you asked an agent for",
             "default": true
           },
+          "watching": {
+            "type": "boolean",
+            "title": "Watching",
+            "description": "An issue you watch changes or gets a comment",
+            "default": true
+          },
           "email": {
             "type": "string",
             "enum": [
@@ -18169,6 +19241,67 @@
           "email"
         ],
         "title": "PasswordResetRequest"
+      },
+      "PathRead": {
+        "properties": {
+          "found": {
+            "type": "boolean",
+            "title": "Found"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/PathStep"
+            },
+            "type": "array",
+            "title": "Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "found",
+          "steps"
+        ],
+        "title": "PathRead"
+      },
+      "PathStep": {
+        "properties": {
+          "node": {
+            "$ref": "#/components/schemas/NodeRead"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EdgeKind"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The link from the previous step (none on the first)"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "out",
+                  "in"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node",
+          "kind",
+          "direction"
+        ],
+        "title": "PathStep"
       },
       "Permission": {
         "type": "string",
@@ -19615,6 +20748,26 @@
         ],
         "title": "StageUsage"
       },
+      "StaleRead": {
+        "properties": {
+          "node": {
+            "$ref": "#/components/schemas/NodeRead"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node",
+          "reasons"
+        ],
+        "title": "StaleRead"
+      },
       "ThreadRead": {
         "properties": {
           "thread_id": {
@@ -20430,6 +21583,14 @@
             "title": "Scheduled",
             "description": "When work on it is planned to start"
           },
+          "depends_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Depends On",
+            "description": "Keys of the issues it waits for"
+          },
           "rank": {
             "type": "number",
             "title": "Rank"
@@ -20487,6 +21648,71 @@
           "organization"
         ],
         "title": "WorkspaceKind"
+      },
+      "WorkspaceRuleRead": {
+        "properties": {
+          "handle": {
+            "type": "string",
+            "title": "Handle",
+            "description": "\"base\" (every agent) or an agent's handle"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "handle",
+          "content",
+          "version",
+          "updated_by_id",
+          "updated_at"
+        ],
+        "title": "WorkspaceRuleRead"
+      },
+      "WorkspaceRuleSave": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 20000,
+            "title": "Content",
+            "description": "Markdown; empty removes the rule"
+          },
+          "base_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Version",
+            "description": "The version you edited (0 for a new one); 409 if it changed since"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content",
+          "base_version"
+        ],
+        "title": "WorkspaceRuleSave"
       },
       "WorkspaceSearchHit": {
         "properties": {
@@ -20764,6 +21990,10 @@
     {
       "name": "automations",
       "description": "Agents that run on their own in a project: on a schedule, or when people change issues or documents, approve agent changes, or push code. Each run is instructed by whoever set it up, and its changes wait for approval like anyone's."
+    },
+    {
+      "name": "graph",
+      "description": "The project graph: how requirements, issues, decisions (ADRs), documents, and modules relate, derived from what they say and kept current; impact, paths, and documents that may be stale."
     },
     {
       "name": "lessons",

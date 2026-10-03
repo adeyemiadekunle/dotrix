@@ -96,7 +96,8 @@ async def run_automations(ctx: JobContext) -> dict[str, int]:
         return {}
     async with ctx.session_factory() as session:
         done = await AutomationService(
-            session, ctx.runner, workspace_daily_runs=ctx.settings.automation_daily_runs
+            session, ctx.runner, workspace_daily_runs=ctx.settings.automation_daily_runs,
+            workspace_daily_tokens=ctx.settings.automation_daily_tokens
         ).run_due()
     if done.get("fired") or done.get("skipped"):
         logger.info("automations: %s", done)

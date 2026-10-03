@@ -267,7 +267,7 @@ def briefing_system_prompt(
     return f"{prompt}\n\n{context.strip()}" if context else prompt
 
 
-_WRITE_TOOL_GROUPS = ("issues.create", "issues.update", "issues.comment")
+_WRITE_TOOL_GROUPS = ("issues.create", "issues.update", "issues.comment", "graph.link")
 _DENY_FILE_WRITES = [FilesystemPermission(operations=["write"], paths=["/**"], mode="deny")]
 
 
@@ -357,7 +357,7 @@ def build_team(
     `task_tools` (read, write); the specialists' board changes come from `subagent_task_tools`
     (the platform passes them all and checks each agent's contract on every change; the CLI
     passes none, so its specialists only read the board). `context` is the run's project
-    context pack: the PM and every specialist get it. `knowledge_tools` are extra read-only
+    context pack: the PM and every specialist get it. `knowledge_tools` are extra (read-only, or gated like board changes)
     tools (outline, sections, search). `code_tools` read the project's checked-out repository
     (`pmagent_engine.code`), given to agents granted `code.read`. `web_tools` are our web tools (`pmagent_engine.web`:
     `web_search`, `fetch_page`), given to agents granted `web.search` with how to cite what they

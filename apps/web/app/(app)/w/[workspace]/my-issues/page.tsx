@@ -11,7 +11,7 @@ import { IssueTimeline, ZoomToggle, type TimelineZoom } from "@/components/issue
 import { today, WorkspaceIssueRow } from "@/components/issues/workspace-issue-row";
 import { issueHref, WorkspaceIssueBoard, WorkspaceIssueTable } from "@/components/issues/workspace-issue-views";
 import { EmptyState, NotFound } from "@/components/states";
-import { useWorkspaceIssues, type WorkspaceIssue, type WorkspaceIssueFilters } from "@/lib/issues";
+import { useUpdateAnyIssue, useWorkspaceIssues, type WorkspaceIssue, type WorkspaceIssueFilters } from "@/lib/issues";
 import { useCurrentWorkspace } from "@/lib/queries";
 import { useSearchParam } from "@/lib/url-state";
 
@@ -73,6 +73,7 @@ function MyIssues() {
   const [whoParam, setWho] = useSearchParam("who");
   const who = whoParam && whoParam in WHO ? whoParam : "assigned";
   const issues = useWorkspaceIssues(workspace && workspace.role !== "guest" ? workspace.id : undefined, WHO[who].filters);
+  const update = useUpdateAnyIssue(workspace?.id);
   const groups = useMemo(() => groupIssues(issues.data ?? []), [issues.data]);
   // The other views show the same issues as the list: open ones, and what was done this week.
   const current = useMemo(() => groups.flatMap((g) => g.issues), [groups]);
@@ -140,7 +141,15 @@ function MyIssues() {
           <WorkspaceIssueTable issues={current} workspaceSlug={workspace.slug} />
         )}
         {workspace && issues.data && issues.data.length > 0 && view === "timeline" && (
-          <IssueTimeline issues={current} href={(i) => issueHref(workspace.slug, i as WorkspaceIssue)} zoom={zoom} groupByProject />
+          <IssueTimeline
+            issues={current}
+            href={(i) => issueHref(workspace.slug, i as WorkspaceIssue)}
+            zoom={zoom}
+            groupByProject
+            onReschedule={(i, changes) =>
+              update.mutate({ projectId: (i as WorkspaceIssue).project_id, key: i.key, changes })
+            }
+          />
         )}
         {workspace &&
           issues.data &&
