@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pmagent_backend.db.base import Base, UUIDPrimaryKeyMixin, WorkspaceScopedMixin, str_enum
@@ -48,9 +48,12 @@ class ApprovalStatus(enum.StrEnum):
 class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     __tablename__ = "agent_runs"
 
-    project_id: Mapped[uuid.UUID] = mapped_column(
+    # The project it's about; null for a conversation across projects (or about none), which
+    # lists its projects in `project_ids` and is read-only (workspace_runs.py).
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), index=True
     )
+    project_ids: Mapped[list[uuid.UUID] | None] = mapped_column(ARRAY(Uuid))
     thread_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     kind: Mapped[RunKind] = mapped_column(str_enum(RunKind, 16))
     status: Mapped[RunStatus] = mapped_column(str_enum(RunStatus, 24))

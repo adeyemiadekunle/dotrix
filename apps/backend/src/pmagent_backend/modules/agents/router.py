@@ -34,9 +34,12 @@ from .schemas import (
     TriageRequest,
     WorkspaceAgentUsage,
     WorkspaceApprovalRead,
+    WorkspaceConversation,
+    WorkspaceRunCreate,
     WorkspaceThread,
 )
 from .service import AgentService
+from .workspace_runs import WorkspaceRunService
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/projects/{project_id}/agent",
@@ -266,3 +269,77 @@ async def save_research_note(
     for), what it affects, and every source with its tier and dates. Written as you; saving
     again updates the same note. Needs permission to edit documents."""
     return await agents.save_research_note(access, run_id, output_id)
+
+
+# -- conversations across projects (workspace_runs.py) -------------------------------------
+
+conversations_router = APIRouter(
+    prefix="/workspaces/{workspace_id}/conversations", tags=["agents"], responses=errors(401, 403, 404)
+)
+WorkspaceChatter = Annotated[Membership, Depends(require_permission(Permission.CHAT))]
+
+
+def get_workspace_runs(session: SessionDep, runner: Annotated[AgentRunner, Depends(get_runner)]) -> WorkspaceRunService:
+    return WorkspaceRunService(session, runner)
+
+
+WorkspaceRuns = Annotated[WorkspaceRunService, Depends(get_workspace_runs)]
+
+
+@conversations_router.get("")
+async def list_conversations(member: WorkspaceChatter, runs: WorkspaceRuns) -> list[WorkspaceConversation]:
+    """Your conversations across projects (or about none), most recently active first. Each is
+    yours alone, and only while you can still see every project in it."""
+    return await runs.conversations(member)
+
+
+@conversations_router.post("/runs", status_code=status.HTTP_202_ACCEPTED, responses=errors(409, 422, 503))
+async def create_workspace_run(
+    data: WorkspaceRunCreate, member: WorkspaceChatter, runs: WorkspaceRuns, settings: SettingsDep
+) -> AgentRunRead:
+    """Ask about several projects at once (`project_ids`, fixed when the conversation starts),
+    or none. Read-only: agents read each project's documents and board but change nothing; they
+    say which project's conversation to make a change in. Poll the run, or follow its stream,
+    as for a project's runs. 404 for a project you can't see; 409 `scope_locked` for other
+    projects or another model on an existing conversation, `thread_busy` while it's answering."""
+    available = available_models(settings, settings.default_model)
+    return await runs.create(member, data, default_model=settings.default_model, available=available)
+
+
+@conversations_router.get("/runs")
+async def list_workspace_runs(thread_id: uuid.UUID, member: WorkspaceChatter, runs: WorkspaceRuns) -> list[AgentRunRead]:
+    """A conversation's runs, newest first."""
+    return await runs.list_runs(member, thread_id)
+
+
+@conversations_router.get("/runs/{run_id}")
+async def get_workspace_run(run_id: uuid.UUID, member: WorkspaceChatter, runs: WorkspaceRuns) -> AgentRunRead:
+    """One run of a conversation across projects."""
+    return await runs.get(member, run_id)
+
+
+@conversations_router.post("/runs/{run_id}/stop", responses=errors(409))
+async def stop_workspace_run(run_id: uuid.UUID, member: WorkspaceChatter, runs: WorkspaceRuns) -> AgentRunRead:
+    """Stop a run that's still working; the conversation can continue."""
+    return await runs.stop(member, run_id)
+
+
+@conversations_router.get(
+    "/runs/{run_id}/stream",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}, "description": "Server-sent events"}},
+)
+async def stream_workspace_run(run_id: uuid.UUID, member: WorkspaceChatter, runs: WorkspaceRuns) -> StreamingResponse:
+    """The reply as it's written, as server-sent events (the same events as a project's runs)."""
+    await runs.check_run(member, run_id)
+
+    async def events():
+        async for event, data in runs.runner.streams.follow(run_id):
+            if event == "ping":
+                yield ": ping\n\n"
+                continue
+            yield f"event: {event}\ndata: {json.dumps({'text': data})}\n\n"
+
+    return StreamingResponse(
+        events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )

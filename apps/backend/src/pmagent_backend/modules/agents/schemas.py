@@ -231,11 +231,36 @@ class SourceRead(BaseModel):
     flagged: list[str] = Field(description="Why it looks like it addresses AI agents (its text was ignored)")
 
 
+class WorkspaceRunCreate(BaseModel):
+    message: str = Field(min_length=1, max_length=20_000)
+    thread_id: uuid.UUID | None = Field(default=None, description="Continue a conversation. Omit to start one.")
+    project_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=10,
+        description="For a new conversation: the projects it's about (none: about the workspace in general). "
+        "Fixed from then on; 409 `scope_locked` if a continuation sends others",
+    )
+    agent: AgentChoice = Field(default="auto", description="`auto` or one of the workspace's agents")
+    model: str | None = Field(default=None, max_length=100, description="For a new conversation only")
+
+
+class WorkspaceConversation(BaseModel):
+    thread_id: uuid.UUID
+    title: str
+    project_ids: list[uuid.UUID]
+    project_keys: list[str]
+    model: str | None
+    updated_at: datetime
+    working: bool = Field(description="A run in it is still answering")
+
+
 class AgentRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     thread_id: uuid.UUID
+    project_ids: Annotated[list[uuid.UUID], BeforeValidator(lambda v: v or [])] = Field(
+        default_factory=list, description="A conversation across projects: the projects it's about (empty otherwise)"
+    )
     kind: RunKind
     status: RunStatus
     message: str

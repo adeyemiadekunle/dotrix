@@ -69,6 +69,13 @@ async def test_the_graph_follows_issues_and_documents(
     ]
     assert (await db_client.get(f"{graph}/neighbors", params={"ref": "KUN-99"}, headers=cat.headers)).status_code == 404
 
+    # What's near the story, to draw: itself, then one link away, then two.
+    view = (await db_client.get(f"{graph}/view", params={"ref": story}, headers=cat.headers)).json()
+    depths = {n["ref"]: (n["depth"], n["parent"]) for n in view["nodes"]}
+    assert depths[story] == (0, None) and depths[epic] == (1, story) and depths["requirements/auth.md"][0] == 1
+    assert depths["module:auth"] == (2, "decisions/ADR-001.md") and not view["truncated"]
+    assert {"source": story, "target": epic, "kind": "part_of"} in view["edges"]
+
     # Kept current: the description changes, the links follow; a link to a document that
     # doesn't exist yet appears when it does.
     await db_client.patch(f"{base}/issues/{story}", json={"description": "Per requirements/sso.md now."}, headers=ada.headers)
@@ -145,3 +152,39 @@ async def test_agents_read_the_graph_and_link_with_approval(
     links = (await db_client.get(f"{base}/graph/neighbors", params={"ref": "project.md"}, headers=ada.headers)).json()
     added = next(link for link in links["links"] if link["kind"] == "relates_to")
     assert added["origin"] == "agent" and added["agent"] == "project-manager" and added["reason"] == "The goals come from it"
+
+
+async def test_a_big_project_s_pack_lists_the_documents_near_the_question(
+    db_client: AsyncClient, signup, create_team, add_member, db_session
+) -> None:
+    import uuid
+    from datetime import UTC, datetime
+
+    from pmagent_backend.modules.agents.context import build_context_pack
+    from pmagent_backend.modules.agents.models import AgentRun, RunKind
+    from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
+    from pmagent_backend.modules.projects.models import Project
+
+    ada, _, _, base = await _world(db_client, signup, create_team, add_member)
+    project = await db_session.get(Project, uuid.UUID(base.rsplit("/", 1)[1]))
+    knowledge = KnowledgeService(db_session)
+    for i in range(60):
+        await knowledge.write(project, f"research/topic-{i}.md", f"# Topic {i}\n\nNotes on warehouse topic {i}: "
+                              "where stock sits, how it moves between sites, and who counts it.\n", Actor.system())
+    await knowledge.write(project, "requirements/refunds.md", "# Refunds\n\nCustomers get refunds within a week.\n",
+                          Actor.system())
+    await knowledge.write(project, "decisions/ADR-001.md", "# ADR-001: Refunds by card\n\nFor requirements/refunds.md.\n",
+                          Actor.system())
+
+    def run(message: str) -> AgentRun:
+        return AgentRun(workspace_id=project.workspace_id, project_id=project.id, thread_id=uuid.uuid4(),
+                        message=message, kind=RunKind.CHAT, created_at=datetime.now(UTC))
+
+    full = await build_context_pack(db_session, project)
+    focused = await build_context_pack(db_session, project, run("How do refunds work?"))
+    assert "## Documents (" in full and "## Documents near this question" not in full
+    assert "## Documents near this question" in focused and "## Documents (" not in focused
+    # Found by search, and linked to it in the graph; folders counted for the rest.
+    assert "- requirements/refunds.md:" in focused and "- decisions/ADR-001.md:" in focused
+    assert "research/ 6" in focused  # 60 topics plus the skeleton's README
+    assert len(focused) < len(full) * 0.6

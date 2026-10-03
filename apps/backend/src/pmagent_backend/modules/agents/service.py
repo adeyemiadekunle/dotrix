@@ -701,9 +701,13 @@ def _sources(run: AgentRun) -> list[SourceRead]:
 
 
 def _read(access: ProjectAccess, run: AgentRun) -> AgentRunRead:
+    return read_run(access.member, run)
+
+
+def read_run(member: Membership, run: AgentRun) -> AgentRunRead:
     """A run as its viewer may see it: token usage and the model only with usage:view."""
     read = AgentRunRead.model_validate(run).model_copy(update={"outputs": _outputs(run), "sources": _sources(run)})
-    if not can(access.member, Permission.VIEW_USAGE):
+    if not can(member, Permission.VIEW_USAGE):
         return read.model_copy(
             update={
                 "model": None,

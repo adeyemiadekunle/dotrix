@@ -6,6 +6,7 @@ from pmagent_backend.modules.agent_definitions.router import (
     project_router as project_agent_definitions,
 )
 from pmagent_backend.modules.agent_definitions.router import router as agent_definitions
+from pmagent_backend.modules.agents.router import conversations_router as conversations
 from pmagent_backend.modules.agents.router import models_router as models
 from pmagent_backend.modules.agents.router import router as agents
 from pmagent_backend.modules.agents.router import threads_router as workspace_threads
@@ -54,6 +55,7 @@ for module_router in (
     agent_definitions,
     project_agent_definitions,
     agents,
+    conversations,
     models,
     workspace_approvals,
     workspace_threads,

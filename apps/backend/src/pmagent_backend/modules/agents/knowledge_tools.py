@@ -11,10 +11,12 @@ from collections.abc import Callable
 
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.projects.repository import ProjectRepository
+from pmagent_backend.modules.rules.service import WorkspaceSkills
 from pmagent_backend.modules.search.embeddings import Embedder
 from pmagent_backend.modules.search.models import ChunkSource
 from pmagent_backend.modules.search.service import KnowledgeIndex
 from pmagent_engine.knowledge_index import describe, find_section, sections
+from pmagent_engine.skills import SKILLS_FOLDER
 
 from .storage_backend import SessionFactory
 
@@ -135,4 +137,21 @@ def build_knowledge_tools(
             lines.append(f"{number}. {where}\n   {snippet}")
         return "\n".join(lines)
 
-    return [search_knowledge, document_outline, read_section]
+    async def read_skill(skill: str) -> str:
+        """Read one of the skills listed under "Skills" in your instructions: the steps to
+        follow for that kind of work. The project's own skill wins over the workspace's.
+
+        Args:
+            skill: The skill's name as listed, e.g. "write-an-adr".
+        """
+        clean = skill.strip().removesuffix(".md").rsplit("/", 1)[-1]
+        async with session_factory() as session:
+            file = await KnowledgeRepository(session).get_file(project_id, f"{SKILLS_FOLDER}{clean}.md")
+            if file is not None and not file.deleted:
+                return f"Skill {clean} (this project's):\n\n{file.content}"
+            shared = await WorkspaceSkills(session).get(workspace_id, clean)
+        if shared:
+            return f"Skill {clean} (the workspace's):\n\n{shared}"
+        return f"No skill called {clean!r}; the skills you have are listed in your instructions."
+
+    return [search_knowledge, document_outline, read_section, read_skill]

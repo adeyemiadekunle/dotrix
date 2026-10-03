@@ -21,3 +21,14 @@ class WorkspaceRuleRead(BaseModel):
 class WorkspaceRuleSave(BaseModel):
     content: str = Field(max_length=MAX_RULE_CHARS, description="Markdown; empty removes the rule")
     base_version: int = Field(ge=0, description="The version you edited (0 for a new one); 409 if it changed since")
+
+
+class WorkspaceSkillRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    description: str = Field(description='Its "Description:" line, as agents see it in their list')
+    content: str
+    version: int
+    updated_by_id: uuid.UUID | None
+    updated_at: datetime

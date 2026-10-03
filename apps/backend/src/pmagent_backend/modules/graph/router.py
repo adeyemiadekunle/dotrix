@@ -10,8 +10,8 @@ from pmagent_backend.api.deps import SessionDep
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.projects.deps import KnowledgeEditor, ProjectViewer
 
-from .schemas import ImpactRead, LinkCreate, NeighborsRead, PathRead, StaleRead
-from .service import MAX_IMPACT_DEPTH, GraphService, Linker
+from .schemas import ImpactRead, LinkCreate, NeighborsRead, PathRead, StaleRead, SubgraphRead
+from .service import MAX_IMPACT_DEPTH, MAX_VIEW_DEPTH, GraphService, Linker
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/projects/{project_id}/graph", tags=["graph"], responses=errors(401, 403, 404)
@@ -47,6 +47,16 @@ async def graph_path(
     """How two things connect: the shortest chain of links between them, either way, up to
     four links."""
     return await GraphService(session).path(access.project, source, target)
+
+
+@router.get("/view")
+async def graph_view(
+    ref: RefQuery, access: ProjectViewer, session: SessionDep,
+    depth: Annotated[int, Query(ge=1, le=MAX_VIEW_DEPTH)] = 2,
+) -> SubgraphRead:
+    """What's near something, to draw: nodes up to `depth` links away either way (nearest first,
+    at most 60), each with the node it was reached from, and the links among them."""
+    return await GraphService(session).subgraph(access.project, ref, depth)
 
 
 @router.get("/stale")

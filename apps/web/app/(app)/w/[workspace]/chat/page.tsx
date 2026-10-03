@@ -2,10 +2,19 @@
 
 import { Button } from "@pmagent/ui/components/button";
 import { cn } from "@pmagent/ui/lib/utils";
-import { ChevronDownIcon, ChevronRightIcon, MessageSquarePlusIcon, PlusIcon, ShieldAlertIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  LayersIcon,
+  LoaderCircleIcon,
+  MessageSquarePlusIcon,
+  PlusIcon,
+  ShieldAlertIcon,
+} from "lucide-react";
 import { Suspense, useMemo, useState } from "react";
 
 import { Conversation } from "@/components/agent/conversation";
+import { CrossConversation } from "@/components/agent/cross-conversation";
 import { ThreadTitle } from "@/components/agent/thread-title";
 import { AfterHydration } from "@/components/after-hydration";
 import { PageHeader } from "@/components/app-shell";
@@ -13,14 +22,16 @@ import { timeAgo } from "@/components/issues/issue-activity";
 import { ProjectTile } from "@/components/project-tile";
 import { NotFound } from "@/components/states";
 import { useWorkspaceThreads } from "@/lib/agent";
+import { useCrossConversations } from "@/lib/conversations";
 import { useMembers } from "@/lib/issues";
 import { can } from "@/lib/labels";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
 import { useSearchParam, useSetSearchParams } from "@/lib/url-state";
 
 /**
- * One Chat for the workspace. Conversations are listed by project; a conversation is about one
- * project for now (`?project=KEY&thread=ID`), so the agents read that project.
+ * One Chat for the workspace. Conversations are listed by project (`?project=KEY&thread=ID`):
+ * the agents read that project and may propose changes to it. Conversations across projects
+ * (`?across=1&thread=ID`) read several projects, or none, and change nothing.
  */
 function WorkspaceChat() {
   const { workspace, notFound } = useCurrentWorkspace();
@@ -31,6 +42,10 @@ function WorkspaceChat() {
   const names = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m.display_name])), [members.data]);
   const [projectKey] = useSearchParam("project");
   const [threadId] = useSearchParam("thread");
+  const [acrossParam] = useSearchParam("across");
+  const across = acrossParam === "1";
+  const crossThreads = useCrossConversations(workspace?.id, canChat);
+  const crossThread = across && threadId ? crossThreads.data?.find((c) => c.thread_id === threadId) : undefined;
   // A message to start a new conversation with (from search): "@research …" picks the agent.
   const [startWith] = useSearchParam("q");
   const setParams = useSetSearchParams();
@@ -51,7 +66,9 @@ function WorkspaceChat() {
   if (notFound) return <NotFound what="workspace" />;
   // Opening a conversation drops the starting message; picking a project keeps it for the new chat.
   const open = (key: string | null, thread: string | null) =>
-    setParams({ project: key, thread, ...(thread ? { q: null } : {}) });
+    setParams({ project: key, thread, across: null, ...(thread ? { q: null } : {}) });
+  const openAcross = (thread: string | null) =>
+    setParams({ project: null, thread, across: "1", ...(thread ? { q: null } : {}) });
 
   return (
     <>
@@ -66,6 +83,45 @@ function WorkspaceChat() {
             </Button>
           </div>
           <nav className="flex-1 overflow-y-auto px-2 pb-3" aria-label="Conversations">
+            {canChat && list.length > 1 && (
+              <div className="grid gap-0.5 pb-2">
+                <div className="flex items-center gap-1 pr-1">
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1.5 text-sm font-medium">
+                    <LayersIcon className="size-4 shrink-0" />
+                    Across projects
+                  </span>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label="New chat across projects"
+                    title="New chat across projects"
+                    onClick={() => openAcross(null)}
+                  >
+                    <PlusIcon />
+                  </Button>
+                </div>
+                {(crossThreads.data ?? []).map((c) => (
+                  <button
+                    key={c.thread_id}
+                    type="button"
+                    onClick={() => openAcross(c.thread_id)}
+                    aria-current={across && c.thread_id === threadId ? "true" : undefined}
+                    className={cn(
+                      "hover:bg-muted grid w-full gap-0.5 rounded-md py-1.5 pr-2 pl-7 text-left text-sm",
+                      across && c.thread_id === threadId && "bg-muted",
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {c.working && <LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />}
+                      <span className="truncate">{c.title}</span>
+                    </span>
+                    <span className="text-muted-foreground truncate text-xs">
+                      {c.project_keys.join(", ") || "No project"} · {timeAgo(c.updated_at)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
             {list.map((p) => {
               const conversations = byProject.get(p.id) ?? [];
               const isCollapsed = collapsed[p.id] ?? false;
@@ -130,13 +186,15 @@ function WorkspaceChat() {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
-            {scope ? (
+            {across ? (
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{crossThread?.title ?? "New chat across projects"}</span>
+            ) : scope ? (
               <ThreadTitle scope={scope} threadId={threadId} fallback="New chat" className="min-w-0 flex-1" />
             ) : (
               <span className="flex-1 text-sm font-medium">New chat</span>
             )}
             {/* Which project the conversation is about: fixed once it has started. */}
-            <label className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            <label className={cn("text-muted-foreground flex items-center gap-1.5 text-xs", across && "hidden")}>
               About
               <select
                 aria-label="Project"
@@ -156,14 +214,24 @@ function WorkspaceChat() {
             {/* Phones: the conversation list is a menu. */}
             <select
               aria-label="Conversation"
-              value={threadId ?? ""}
+              value={threadId ? `${across ? "x:" : ""}${threadId}` : ""}
               onChange={(e) => {
+                if (e.target.value.startsWith("x:")) {
+                  openAcross(e.target.value.slice(2) || null);
+                  return;
+                }
                 const t = threads.data?.find((x) => x.thread_id === e.target.value);
                 open(t?.project_key ?? project?.key ?? null, t?.thread_id ?? null);
               }}
               className="bg-background h-7 max-w-36 rounded-md border px-1.5 text-xs md:hidden"
             >
               <option value="">New chat</option>
+              {list.length > 1 && <option value="x:">New chat across projects</option>}
+              {crossThreads.data?.map((c) => (
+                <option key={c.thread_id} value={`x:${c.thread_id}`}>
+                  Across · {c.title}
+                </option>
+              ))}
               {threads.data?.map((t) => (
                 <option key={t.thread_id} value={t.thread_id}>
                   {t.project_key} · {t.title}
@@ -171,7 +239,19 @@ function WorkspaceChat() {
               ))}
             </select>
           </div>
-          {scope ? (
+          {across && workspace ? (
+            <CrossConversation
+              key={threadId ?? `new:${startWith ?? ""}`}
+              workspaceId={workspace.id}
+              threadId={threadId}
+              projects={list.map((p) => ({ id: p.id, key: p.key, name: p.name }))}
+              fixedProjects={crossThread?.project_ids ?? null}
+              onThread={(id) => openAcross(id)}
+              names={names}
+              canChat={canChat}
+              initialDraft={threadId ? undefined : (startWith ?? undefined)}
+            />
+          ) : scope ? (
             <Conversation
               // A new starting message (from search) starts the new chat afresh.
               key={`${scope.projectId}:${threadId ?? `new:${startWith ?? ""}`}`}
@@ -189,6 +269,12 @@ function WorkspaceChat() {
                 <p className="font-medium">Which project is it about?</p>
                 <p className="text-muted-foreground text-sm">The agents read that project&apos;s documents and board.</p>
               </div>
+              {canChat && list.length > 1 && (
+                <Button variant="ghost" size="sm" onClick={() => openAcross(null)}>
+                  <LayersIcon />
+                  Ask across projects
+                </Button>
+              )}
               <div className="flex max-w-xl flex-wrap justify-center gap-2">
                 {list.map((p) => (
                   <Button key={p.id} variant="outline" size="sm" onClick={() => open(p.key, null)}>

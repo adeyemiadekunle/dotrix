@@ -74,6 +74,13 @@ test("the project graph: a document names an issue, and each shows the other as 
   const drawerRelated = page.getByRole("dialog").getByRole("region", { name: "Related" });
   await expect(drawerRelated.getByText("Mentioned in")).toBeVisible();
   await expect(drawerRelated.getByRole("link", { name: "vision.md" })).toBeVisible();
+
+  // Drawn: the issue in the middle, the document beside it; click it to centre on it.
+  await drawerRelated.getByRole("link", { name: "Graph" }).click();
+  await expect(page).toHaveURL(new RegExp(`/knowledge\\?graph=${key}-1`));
+  await expect(page.getByRole("img", { name: `The project graph around ${key}-1` })).toBeVisible();
+  await page.getByRole("button", { name: /^vision\.md: / }).click();
+  await expect(page.getByRole("img", { name: "The project graph around vision.md" })).toBeVisible();
 });
 
 test("turn the personal workspace into an organisation, then restrict a project", async ({ page }) => {
