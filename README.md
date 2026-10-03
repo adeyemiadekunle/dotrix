@@ -1,34 +1,101 @@
 # pmagent
 
-The AI project team for any project: a Project Manager agent, five thinking agents
-(Product, Architecture, Research, Reviewer, Documentation), and a coding agent, working
-around one structured source of truth (`.pmagent/`) and a Jira-style board.
-See [docs/prd.md](docs/prd.md).
+An AI project team for software projects. Agents write and maintain a project's documents and
+board, people approve every change, and Claude Code or Codex do the coding.
+
+- **A team of agents you configure:**
+  - The Project Manager and five specialists: Product, Architecture, Research, Reviewer, and
+    Documentation.
+  - Owners and admins can edit any of them, or create their own: instructions, model, tools,
+    folder access, autonomy rules, budgets.
+- **One source of truth per project:** a versioned `.pmagent/` knowledge store (requirements,
+  architecture, decisions, research), a Jira-style board, and a project graph that links them.
+- **Approvals, always:** no agent changes anything without an approval. Either a person
+  approves it at the time, or an owner has allowed one low-risk action (a comment or a link).
+  Every change is in the audit log.
+- **Agents that work in the background:** automations run on a schedule or when people change
+  things. Examples: "Keep documents current" after approved changes, a weekly status, triage of
+  new issues, a watch on a topic.
+- **Agents that learn:**
+  - Rules set for the whole workspace, layered under each project's own.
+  - Skills (procedures agents follow) and folder templates.
+  - Lessons proposed from rejected changes and dismissed results, which owners accept or
+    decline.
+
+Product spec: [docs/prd.md](docs/prd.md). The agents' design: [docs/agents-v2.md](docs/agents-v2.md).
+The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
+
+## What you can do today
+
+- **Chat** with the project's agents, in one Chat for the workspace:
+  - Pick who answers (Auto brings in the specialists it needs) and the model.
+  - Follow what each agent is doing as it works.
+  - Approve or reject each change, with diffs.
+  - Ask across several projects at once; those conversations are read-only.
+- **Plan and track:**
+  - Board, List, Table, and Timeline (dependencies, drag to reschedule) for each project.
+  - My issues, Tasks, an Overview, and Activity across the workspace.
+  - ⌘K search over issues, documents, projects, people, and agents.
+- **Keep knowledge current:**
+  - Documents with full history, restore, and export.
+  - Uploads converted to Markdown.
+  - Hybrid search (keywords and meaning, with pgvector).
+  - The project graph, which shows what relates to what, what a change affects, and which
+    documents may be out of date. It's drawn in Knowledge.
+- **Research** on the web (Tavily): every claim is checked against the page it cites, and
+  reports can be saved as research notes.
+- **Code awareness:** connect a repo through the pmagent GitHub App and agents read its code
+  (read-only) when reviewing or planning.
+- **Notifications:**
+  - What happens: approvals waiting, decisions, mentions, assignments, findings, and changes to
+    issues you watch.
+  - Where: in the app and by email, as it happens, as a daily digest, or off.
+- **Teams:**
+  - Personal workspaces and organisations, with roles and invites.
+  - Restricted projects.
+  - Sign-in with a password, an email link, or GitHub.
+  - Sessions per device.
+- **CLI and MCP:** `pmagent` chats, briefs, triages, reviews, and works the board from a
+  terminal. Its MCP server gives Claude Code and Codex the board, the documents, and the graph.
+
+## What's next
+
+- **Coding:** "Start coding" on an issue. A brief goes to Claude Code or Codex in a sandboxed
+  container, which opens a PR on a new branch; on the CLI or desktop it works in your own
+  checkout instead.
+  - Guardrails: never the default branch, never a merge or deploy, and no `.pmagent/` in a PR.
+  - PRs come back on the board, the Reviewer runs on every agent PR, and a person merges.
+- **Background commit review:** a code graph and the blast radius of each push.
+- **Space:** workspace-level knowledge, and ideas before a project exists.
+- **To do for whoever runs it:**
+  - Register the GitHub App.
+  - Verify a sending domain for email.
+  - Production: a domain, HTTPS, and a secrets store.
 
 ## Monorepo layout
 
 ```
 apps/
-  backend/      FastAPI platform API: accounts, workspaces, projects, issues, approvals, sync (Python)
+  backend/      FastAPI platform API: accounts, workspaces, projects, knowledge, issues, agents,
+                approvals, automations, notifications, the graph, connectors (Python)
   cli/          `pmagent` terminal client + MCP server for Claude Code / Codex (Python)
-  web/          Web app: board, backlog, chat, briefings, approvals (Next.js)
+  web/          Web app (Next.js)
   desktop/      Desktop shell around the web app (Electron)
 packages/
-  engine/       UI-agnostic agent engine: agents, issues, approvals, jobs, ingestion (Python)
-  shared/       Domain types shared by the TS apps (issue types, statuses, roles)
-  api-client/   Typed client for the backend API
-  ui/           Shared React components for web and desktop
-infra/          Local services (Postgres, Redis)
-docs/           PRD and engine notes
+  engine/       UI-agnostic agent engine: agent contracts, pipelines, approvals, tools (Python)
+  api-client/   Typed client for the backend API, generated from its OpenAPI schema
+  ui/           shadcn/ui components, the chat kit, and the theme
+infra/          Local services: Postgres with pgvector, Redis, MinIO
+docs/           The PRD, the engine, and the agents v2 spec
 ```
 
 Python is a [uv](https://docs.astral.sh/uv/) workspace; TypeScript is a
-[pnpm](https://pnpm.io/) workspace orchestrated by [Turborepo](https://turbo.build/).
-Web, desktop, and CLI are all clients of one API; the engine never depends on a UI.
+[pnpm](https://pnpm.io/) workspace run by [Turborepo](https://turbo.build/). The web app, the
+desktop app, and the CLI are all clients of one API. The engine never depends on a UI.
 
 ## Getting started
 
-Requirements: Python 3.11+, uv, Node 24+, pnpm 11, Docker (for Postgres/Redis).
+You need Python 3.11+, uv, Node 22+, pnpm 11, and Docker (for Postgres, Redis, and MinIO).
 
 ```bash
 uv sync                  # Python: engine, CLI, backend + dev tools
@@ -36,15 +103,28 @@ pnpm install             # TypeScript apps and packages
 cp .env.example .env     # then replace every change-me and set a model API key
 ```
 
-Run things:
+Run it:
 
 ```bash
-pnpm db:up && pnpm db:migrate   # Postgres, Redis, MinIO (localhost only), apply migrations
+pnpm db:up && pnpm db:migrate   # Postgres, Redis, MinIO (localhost only), then the migrations
 pnpm dev:backend         # API on http://localhost:8000 (agents need a model key in .env)
+pnpm dev:worker          # only with PMAGENT_JOBS=worker: agent runs and jobs survive API restarts
 pnpm dev:web             # web on http://localhost:3000
-pnpm dev:desktop         # Electron window pointed at the web app
+pnpm dev:desktop         # Electron window on the web app
 uv run pmagent --help    # CLI
 ```
+
+**Configuration** (all in `.env`, explained in [.env.example](.env.example)):
+- **Required:** a model key (Anthropic, OpenAI, or Google) and `PMAGENT_DEFAULT_MODEL`.
+- **Optional:**
+  - `PMAGENT_EMBEDDING_MODEL`: search by meaning; without it, search uses keywords only.
+  - `PMAGENT_TAVILY_API_KEY`: web research through Tavily.
+  - `PMAGENT_SENDLY_API_KEY`: real email delivery.
+  - The GitHub sign-in and GitHub App settings: sign-in with GitHub and connected repos.
+- **Limits:**
+  - `PMAGENT_RUN_TOKEN_BUDGET`: tokens per agent run.
+  - `PMAGENT_AUTOMATION_DAILY_RUNS` and `PMAGENT_AUTOMATION_DAILY_TOKENS`: automation runs and
+    tokens per workspace per day.
 
 ## Install the CLI
 
@@ -56,55 +136,59 @@ uv tool install "git+https://github.com/adeyemiadekunle/multi-agent-pm#subdirect
 
 - On Windows, run `uv tool update-shell` once (then open a new terminal) so `pmagent` is on your PATH.
 - Without uv: `pipx install "git+https://github.com/adeyemiadekunle/multi-agent-pm#subdirectory=apps/cli"`.
-- Point it at your server with `PMAGENT_API_URL` (or `--api-url` on `login`); the default is
-  `http://127.0.0.1:8000` until the hosted platform exists.
+- Point it at your server with `PMAGENT_API_URL` (or `--api-url` on `login`). The default is
+  `http://127.0.0.1:8000` until a hosted platform exists.
 - Upgrade with `uv tool upgrade pmagent`; remove with `uv tool uninstall pmagent`.
-
-It includes the local agent engine, so commands also work offline on unlinked repos. Then:
-`pmagent login`, `pmagent link . --workspace <slug> --project <KEY>` (see below).
 
 ## The CLI with the platform
 
 ```bash
-pmagent login                                   # device login; token goes to your OS keychain
+pmagent login                                   # device login; the token goes to your OS keychain
 cd ~/code/kunemi && pmagent connect             # link this checkout to its project (found by the git remote)
-pmagent pull                                    # refresh the mirror (only what changed; --force takes platform versions)
-pmagent brief                                   # the platform team's daily briefing (read-only)
-pmagent chat                                    # talk to the team; approve or reject each change inline (diffs shown)
+pmagent pull                                    # refresh the .pmagent/ mirror (only what changed)
+pmagent chat --agent research                   # talk to the team; approve or reject each change inline
+pmagent brief                                   # a summary of what changed (read-only)
+pmagent triage "Drivers see the wrong zone"     # the PM triages a report into an issue (waits for approval)
+pmagent review KUN-12                           # the Reviewer checks an issue against its acceptance criteria
 pmagent issue list --mine                       # your issues (or --as claude-code for an agent's)
 pmagent issue claim KUN-42 --as claude-code     # coding tools act as themselves and stop at review
-pmagent issue review KUN-42 "What changed" --pr <url> --as claude-code
 pmagent issue done KUN-42                       # only a person closes
-pmagent handoff install --register              # Claude Code / Codex via MCP; linked repos use the platform board
+pmagent handoff install --register              # Claude Code / Codex via MCP: board, documents, graph
 pmagent logout
 ```
 
-**Project setup vs. working copies.** Setting a project up is for workspace owners and admins,
-once: `pmagent connect` (or `pmagent init` for a new repo) in their checkout creates the project,
-then `pmagent docs-add <files>` adds its external docs and `pmagent architecture draft` has the
-Architecture agent draft `architecture/overview.md` (a repo summary of file layout, manifests, and
-README is shown for approval first; never source code). Everyone else just runs `pmagent connect`
-in their own checkout: it links to that project by the git remote and changes nothing on it.
-Changes to `architecture/` always need an owner or admin to approve.
+**Setting a project up, and working in it.** Owners and admins set a project up once, on the
+web or with the CLI:
+- Create it (`pmagent connect`, or `pmagent init` for a new repo).
+- Add its documents (`pmagent docs-add <files>`).
+- Have the Architecture agent draft its overview (`pmagent architecture draft`).
 
-`PMAGENT_API_URL` points the CLI at a server (default `http://127.0.0.1:8000`); `PMAGENT_TOKEN`
-overrides the keychain for CI. Unlinked repos keep working with local files (`pmagent task …`).
+Everyone else just runs `pmagent connect` in their own checkout: it links to the project by the
+git remote and changes nothing.
+
+`PMAGENT_TOKEN` overrides the keychain for CI. Unlinked repos keep working with local files
+(`--local`, `pmagent task …`).
 
 ## API documentation
 
 With the backend running (`pnpm dev:backend`):
 
-- **Swagger UI**: http://localhost:8000/docs (click **Authorize** and paste an `access_token` from `/v1/auth/login` to try authenticated routes)
+- **Swagger UI**: http://localhost:8000/docs. Click **Authorize** and paste an `access_token`
+  from `/v1/auth/login` to try routes that need you to be signed in.
 - **ReDoc**: http://localhost:8000/redoc
-- **OpenAPI schema**: http://localhost:8000/openapi.json, also committed at [packages/api-client/openapi.json](packages/api-client/openapi.json)
+- **OpenAPI schema**: http://localhost:8000/openapi.json, also committed at
+  [packages/api-client/openapi.json](packages/api-client/openapi.json)
 
 The TypeScript client in `packages/api-client` is generated from that schema. After changing
 any route or schema, run `pnpm openapi` and commit the result; CI fails if they're out of date.
 Set `PMAGENT_DOCS_ENABLED=false` to turn the docs off.
 
-Checks:
+## Checks
+
+CI runs all of these:
 
 ```bash
-uv run pytest && uv run ruff check apps packages
+uv run ruff check apps packages && uv run pytest   # lint; unit and integration tests (need Postgres)
 pnpm build && pnpm typecheck
+pnpm --filter @pmagent/web e2e                     # browser tests on a rule-based model
 ```
