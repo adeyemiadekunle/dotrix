@@ -17,6 +17,7 @@ from pmagent_backend.core.email import EmailSender
 from pmagent_backend.core.email_templates import EmailContent, render
 from pmagent_backend.modules.agents.models import AgentApproval, ApprovalStatus
 from pmagent_backend.modules.auth.models import User
+from pmagent_backend.modules.coding.models import CodingRun, CodingRunStatus
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import visible_to
 from pmagent_backend.modules.workspaces.models import Membership, Workspace
@@ -167,6 +168,10 @@ class NotificationEmails:
         return out
 
     async def _still_waiting(self, n: Notification) -> bool:
+        if n.coding_run_id is not None:
+            return await self.session.scalar(
+                select(CodingRun.status).where(CodingRun.id == n.coding_run_id)
+            ) is CodingRunStatus.AWAITING_APPROVAL
         return bool(await self.session.scalar(select(exists().where(and_(
             AgentApproval.run_id == n.run_id, AgentApproval.status == ApprovalStatus.PENDING,
             AgentApproval.created_at >= n.created_at,

@@ -146,3 +146,15 @@ test("ask across projects: the agents read every project picked, and the convers
   const conversations = page.getByRole("navigation", { name: "Conversations" });
   await expect(conversations.getByRole("button", { name: /How are both projects doing/ })).toContainText(/ALP|KUM/);
 });
+
+test("Chat's Coding tab lists coding sessions, and switching back keeps the conversations", async ({ page }) => {
+  await signUpWithProject(page);
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await page.getByRole("tab", { name: "Coding" }).click();
+  await expect(page).toHaveURL(/tab=coding/);
+  await expect(page.getByText("No coding sessions yet.")).toBeVisible();
+  await expect(page.getByText("Coding sessions", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Conversations" }).click();
+  await expect(page).not.toHaveURL(/tab=coding/);
+  await expect(page.getByLabel("Message the agents")).toBeVisible();
+});

@@ -2544,7 +2544,8 @@ export interface paths {
          * @description Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance
          *     criteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,
          *     or bug; other types may sit under an epic. Assigning the built-in coding agent needs the
-         *     instruct-coding-agent permission.
+         *     instruct-coding-agent permission. Assigning a coding tool (`coding-agent`, `claude-code`,
+         *     `codex`) also starts a coding session, waiting for approval, where coding is set up.
          */
         post: operations["create_issue"];
         delete?: never;
@@ -2676,7 +2677,8 @@ export interface paths {
          * Update Issue
          * @description Change fields; only what you send changes, and every change is logged (old → new).
          *     `depends_on` replaces the list and can't create a cycle. Only a person moves an issue to
-         *     `done`; coding tools (`as_agent`) stop at `review`.
+         *     `done`; coding tools (`as_agent`) stop at `review`. Assigning it to a coding tool starts a
+         *     coding session, waiting for approval, where coding is set up.
          */
         patch: operations["update_issue"];
         trace?: never;
@@ -3161,6 +3163,69 @@ export interface paths {
          * @description Stop a coding run that waits or works; nothing is pushed. Whoever asked for it, or owners and admins.
          */
         post: operations["stop_coding_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coding Session
+         * @description A coding session's turns, first to latest: each a run with what the agent did. Anyone who sees the project.
+         */
+        get: operations["get_coding_session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Follow Up Coding Session
+         * @description Continue a session: another turn for the same agent on the session's branch, pushing to its PR
+         *     (or opening one, if no turn has yet). It waits for approval like the first. People who may
+         *     instruct the coding agent. 409 `coding_busy` while a turn waits or works.
+         */
+        post: operations["follow_up_coding_session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/coding/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Coding Sessions
+         * @description The workspace's coding sessions across the projects you can see, latest activity first (Chat's
+         *     Coding tab). Guests see none: they see no projects.
+         */
+        get: operations["list_coding_sessions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4145,6 +4210,19 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** CodingFollowUp */
+        CodingFollowUp: {
+            /**
+             * Message
+             * @description What to do in this turn
+             */
+            message: string;
+        };
+        /**
+         * CodingOrigin
+         * @enum {string}
+         */
+        CodingOrigin: "start" | "assigned" | "follow_up";
         /** CodingRunCreate */
         CodingRunCreate: {
             /**
@@ -4170,6 +4248,16 @@ export interface components {
             agent: components["schemas"]["CodingAgent"];
             /** Model */
             model: string | null;
+            /**
+             * Session Id
+             * Format: uuid
+             * @description The session this run is a turn of (its first turn's id)
+             */
+            session_id: string;
+            /** Turn */
+            turn: number;
+            /** @description `start`, `assigned` (the issue was assigned to a coding tool), or `follow_up` */
+            origin: components["schemas"]["CodingOrigin"];
             status: components["schemas"]["CodingRunStatus"];
             /**
              * Brief
@@ -4192,6 +4280,8 @@ export interface components {
             pr_number: number | null;
             /** Pr Url */
             pr_url: string | null;
+            /** @description `open`, `merged`, or `closed`, from GitHub */
+            pr_state: components["schemas"]["PrState"] | null;
             /** Files Changed */
             files_changed: {
                 [key: string]: unknown;
@@ -4257,6 +4347,51 @@ export interface components {
          * @enum {string}
          */
         CodingRunStatus: "awaiting_approval" | "rejected" | "queued" | "running" | "pr_opened" | "no_changes" | "failed" | "stopped";
+        /**
+         * CodingSessionRead
+         * @description A coding session: a run and its follow-ups, on one branch and one PR. Its status is its latest turn's.
+         */
+        CodingSessionRead: {
+            /**
+             * Session Id
+             * Format: uuid
+             */
+            session_id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Key */
+            project_key: string;
+            /** Project Name */
+            project_name: string;
+            /** Issue Key */
+            issue_key: string;
+            /** Issue Title */
+            issue_title: string;
+            agent: components["schemas"]["CodingAgent"];
+            status: components["schemas"]["CodingRunStatus"];
+            /** Turns */
+            turns: number;
+            /** Branch */
+            branch: string | null;
+            /** Pr Number */
+            pr_number: number | null;
+            /** Pr Url */
+            pr_url: string | null;
+            pr_state: components["schemas"]["PrState"] | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** CommentCreate */
         CommentCreate: {
             /** Body */
@@ -5361,6 +5496,16 @@ export interface components {
             thread_id?: string | null;
             /** Issue Key */
             issue_key?: string | null;
+            /**
+             * Coding Run Id
+             * @description A coding run waiting for approval, or decided
+             */
+            coding_run_id?: string | null;
+            /**
+             * Coding Session Id
+             * @description Its session, to open in Chat's Coding tab
+             */
+            coding_session_id?: string | null;
         };
         /**
          * NotificationSettings
@@ -5488,6 +5633,11 @@ export interface components {
          * @enum {string}
          */
         Permission: "workspace:view" | "agents:chat" | "issues:write" | "knowledge:write" | "agents:approve" | "agents:code" | "projects:manage" | "workspace:manage" | "members:manage" | "workspace:billing" | "usage:view" | "agents:choose_model";
+        /**
+         * PrState
+         * @enum {string}
+         */
+        PrState: "open" | "merged" | "closed";
         /**
          * Priority
          * @enum {string}
@@ -16718,6 +16868,179 @@ export interface operations {
             };
             /** @description Conflicts with the current state */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_coding_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    follow_up_coding_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodingFollowUp"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_coding_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingSessionRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

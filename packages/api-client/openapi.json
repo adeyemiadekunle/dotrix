@@ -11608,7 +11608,7 @@
           "issues"
         ],
         "summary": "Create Issue",
-        "description": "Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance\ncriteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,\nor bug; other types may sit under an epic. Assigning the built-in coding agent needs the\ninstruct-coding-agent permission.",
+        "description": "Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance\ncriteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,\nor bug; other types may sit under an epic. Assigning the built-in coding agent needs the\ninstruct-coding-agent permission. Assigning a coding tool (`coding-agent`, `claude-code`,\n`codex`) also starts a coding session, waiting for approval, where coding is set up.",
         "operationId": "create_issue",
         "security": [
           {
@@ -12542,7 +12542,7 @@
           "issues"
         ],
         "summary": "Update Issue",
-        "description": "Change fields; only what you send changes, and every change is logged (old \u2192 new).\n`depends_on` replaces the list and can't create a cycle. Only a person moves an issue to\n`done`; coding tools (`as_agent`) stop at `review`.",
+        "description": "Change fields; only what you send changes, and every change is logged (old \u2192 new).\n`depends_on` replaces the list and can't create a cycle. Only a person moves an issue to\n`done`; coding tools (`as_agent`) stop at `review`. Assigning it to a coding tool starts a\ncoding session, waiting for approval, where coding is set up.",
         "operationId": "update_issue",
         "security": [
           {
@@ -15368,6 +15368,291 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Get Coding Session",
+        "description": "A coding session's turns, first to latest: each a run with what the agent did. Anyone who sees the project.",
+        "operationId": "get_coding_session",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CodingRunRead"
+                  },
+                  "title": "Response Get Coding Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns": {
+      "post": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Follow Up Coding Session",
+        "description": "Continue a session: another turn for the same agent on the session's branch, pushing to its PR\n(or opening one, if no turn has yet). It waits for approval like the first. People who may\ninstruct the coding agent. 409 `coding_busy` while a turn waits or works.",
+        "operationId": "follow_up_coding_session",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodingFollowUp"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingRunRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/coding/sessions": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "List Coding Sessions",
+        "description": "The workspace's coding sessions across the projects you can see, latest activity first (Chat's\nCoding tab). Guests see none: they see no projects.",
+        "operationId": "list_coding_sessions",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CodingSessionRead"
+                  },
+                  "title": "Response List Coding Sessions"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/github/webhook": {
       "post": {
         "tags": [
@@ -17931,6 +18216,31 @@
         ],
         "title": "CodingEvent"
       },
+      "CodingFollowUp": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Message",
+            "description": "What to do in this turn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "CodingFollowUp"
+      },
+      "CodingOrigin": {
+        "type": "string",
+        "enum": [
+          "start",
+          "assigned",
+          "follow_up"
+        ],
+        "title": "CodingOrigin"
+      },
       "CodingRunCreate": {
         "properties": {
           "note": {
@@ -17979,6 +18289,20 @@
               }
             ],
             "title": "Model"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id",
+            "description": "The session this run is a turn of (its first turn's id)"
+          },
+          "turn": {
+            "type": "integer",
+            "title": "Turn"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/CodingOrigin",
+            "description": "`start`, `assigned` (the issue was assigned to a coding tool), or `follow_up`"
           },
           "status": {
             "$ref": "#/components/schemas/CodingRunStatus"
@@ -18061,6 +18385,17 @@
               }
             ],
             "title": "Pr Url"
+          },
+          "pr_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`open`, `merged`, or `closed`, from GitHub"
           },
           "files_changed": {
             "items": {
@@ -18254,6 +18589,9 @@
           "issue_key",
           "agent",
           "model",
+          "session_id",
+          "turn",
+          "origin",
           "status",
           "brief",
           "note",
@@ -18264,6 +18602,7 @@
           "commit_sha",
           "pr_number",
           "pr_url",
+          "pr_state",
           "files_changed",
           "events",
           "summary",
@@ -18298,6 +18637,119 @@
           "stopped"
         ],
         "title": "CodingRunStatus"
+      },
+      "CodingSessionRead": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_key": {
+            "type": "string",
+            "title": "Project Key"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "issue_key": {
+            "type": "string",
+            "title": "Issue Key"
+          },
+          "issue_title": {
+            "type": "string",
+            "title": "Issue Title"
+          },
+          "agent": {
+            "$ref": "#/components/schemas/CodingAgent"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CodingRunStatus"
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "pr_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Number"
+          },
+          "pr_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Url"
+          },
+          "pr_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "project_id",
+          "project_key",
+          "project_name",
+          "issue_key",
+          "issue_title",
+          "agent",
+          "status",
+          "turns",
+          "branch",
+          "pr_number",
+          "pr_url",
+          "pr_state",
+          "started_at",
+          "updated_at"
+        ],
+        "title": "CodingSessionRead",
+        "description": "A coding session: a run and its follow-ups, on one branch and one PR. Its status is its latest turn's."
       },
       "CommentCreate": {
         "properties": {
@@ -20991,6 +21443,32 @@
               }
             ],
             "title": "Issue Key"
+          },
+          "coding_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coding Run Id",
+            "description": "A coding run waiting for approval, or decided"
+          },
+          "coding_session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coding Session Id",
+            "description": "Its session, to open in Chat's Coding tab"
           }
         },
         "type": "object",
@@ -21279,6 +21757,15 @@
           "agents:choose_model"
         ],
         "title": "Permission"
+      },
+      "PrState": {
+        "type": "string",
+        "enum": [
+          "open",
+          "merged",
+          "closed"
+        ],
+        "title": "PrState"
       },
       "Priority": {
         "type": "string",

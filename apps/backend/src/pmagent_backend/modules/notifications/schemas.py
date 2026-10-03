@@ -33,6 +33,8 @@ class NotificationRead(BaseModel):
     run_id: uuid.UUID | None = None
     thread_id: uuid.UUID | None = Field(default=None, description="The conversation the run belongs to")
     issue_key: str | None = None
+    coding_run_id: uuid.UUID | None = Field(default=None, description="A coding run waiting for approval, or decided")
+    coding_session_id: uuid.UUID | None = Field(default=None, description="Its session, to open in Chat's Coding tab")
 
 
 class NotificationCounts(BaseModel):

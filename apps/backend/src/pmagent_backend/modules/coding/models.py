@@ -38,6 +38,18 @@ class CodingRunStatus(enum.StrEnum):
     STOPPED = "stopped"
 
 
+class CodingOrigin(enum.StrEnum):
+    START = "start"  # someone pressed "Start coding"
+    ASSIGNED = "assigned"  # someone assigned the issue to a coding tool
+    FOLLOW_UP = "follow_up"  # a follow-up in an existing session
+
+
+class PrState(enum.StrEnum):
+    OPEN = "open"
+    MERGED = "merged"
+    CLOSED = "closed"
+
+
 ACTIVE = frozenset({CodingRunStatus.AWAITING_APPROVAL, CodingRunStatus.QUEUED, CodingRunStatus.RUNNING})
 
 
@@ -47,6 +59,12 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     issue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
     issue_key: Mapped[str] = mapped_column(String(24))
+    # A session is a run and its follow-ups (turns), on one branch and one PR: the first turn's id.
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    turn: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    origin: Mapped[CodingOrigin] = mapped_column(
+        str_enum(CodingOrigin, 16), default=CodingOrigin.START, server_default=CodingOrigin.START.value
+    )
     agent: Mapped[CodingAgent] = mapped_column(str_enum(CodingAgent, 16))
     model: Mapped[str | None] = mapped_column(String(100))  # the tool's own default when null
     status: Mapped[CodingRunStatus] = mapped_column(str_enum(CodingRunStatus, 24), index=True)
@@ -62,6 +80,7 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     commit_sha: Mapped[str | None] = mapped_column(String(40))
     pr_number: Mapped[int | None] = mapped_column(Integer)
     pr_url: Mapped[str | None] = mapped_column(String(300))
+    pr_state: Mapped[PrState | None] = mapped_column(str_enum(PrState, 16))  # kept current by the webhook
     files_changed: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, server_default="[]")
     # What the agent did, as it happened: [{"at", "kind": "text"|"tool"|"step"|"error", "text"}].
     events: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, server_default="[]")

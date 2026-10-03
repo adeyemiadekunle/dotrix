@@ -8,14 +8,15 @@ import { Label } from "@pmagent/ui/components/label";
 import { Textarea } from "@pmagent/ui/components/textarea";
 import { cn } from "@pmagent/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
-import { CodeIcon, ExternalLinkIcon, GitBranchIcon, Loader2Icon, MessageSquareIcon, SquareIcon } from "lucide-react";
+import { CodeIcon, ExternalLinkIcon, GitBranchIcon, GitPullRequestIcon, Loader2Icon, MessageSquareIcon, SquareIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { useChat } from "@/components/agent/chat-context";
 import { Markdown } from "@/components/markdown";
 import {
   AGENT_NAMES,
+  PR_LABELS,
   STATUS_LABELS,
   isActive,
   useCodingAvailability,
@@ -26,6 +27,7 @@ import {
   type CodingRun,
 } from "@/lib/coding";
 import type { Issue, Scope } from "@/lib/issues";
+import { useCurrentWorkspace, useProjects } from "@/lib/queries";
 
 const STATUS_TONE: Partial<Record<CodingRun["status"], string>> = {
   awaiting_approval: "bg-warning-muted",
@@ -111,8 +113,32 @@ export function StartCoding({ issue, scope }: { issue: Issue; scope: Scope }) {
   );
 }
 
-/** The issue's coding runs: the latest in full, earlier ones as a line each. */
-export function CodingRuns({ issue, scope }: { issue: Issue; scope: Scope }) {
+/** "Implemented in PR #7" (or merged) once a coding session opened a PR for the issue. */
+export function ImplementedIn({ issue, scope }: { issue: Issue; scope: Scope }) {
+  const runs = useCodingRuns(scope, issue.key);
+  const withPr = runs.data?.find((run) => run.pr_url);
+  if (!withPr) return null;
+  const merged = withPr.pr_state === "merged";
+  return (
+    <Badge variant="secondary" className={cn(merged ? "bg-brand-muted" : "bg-muted")} asChild>
+      <a href={withPr.pr_url!} target="_blank" rel="noreferrer" title={withPr.branch ?? undefined}>
+        <GitPullRequestIcon />
+        {merged ? "Merged" : withPr.pr_state === "closed" ? "Closed" : "Implemented"} in PR #{withPr.pr_number}
+      </a>
+    </Badge>
+  );
+}
+
+/** The issue's coding sessions: the latest turn in full, earlier sessions as a line each. */
+export function CodingRuns({
+  issue,
+  scope,
+  sessionLink,
+}: {
+  issue: Issue;
+  scope: Scope;
+  sessionLink?: (sessionId: string) => string;
+}) {
   const runs = useCodingRuns(scope, issue.key);
   const queryClient = useQueryClient();
   const latest = runs.data?.[0];
@@ -126,15 +152,35 @@ export function CodingRuns({ issue, scope }: { issue: Issue; scope: Scope }) {
   }, [latest, queryClient, scope.projectId]);
 
   if (!latest) return null;
+  // Earlier sessions: the latest turn of each, newest first.
+  const earlier = (runs.data ?? []).filter(
+    (run, i, all) => run.session_id !== latest.session_id && all.findIndex((r) => r.session_id === run.session_id) === i,
+  );
   return (
     <section className="grid gap-3" aria-label="Coding">
-      <h3 className="text-sm font-medium">Coding</h3>
-      <RunCard run={latest} issueKey={issue.key} scope={scope} />
-      {runs.data!.length > 1 && (
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-medium">Coding</h3>
+        {sessionLink && (
+          <Button size="sm" variant="ghost" className="ml-auto h-7" asChild>
+            <Link href={sessionLink(latest.session_id)}>
+              <MessageSquareIcon />
+              Open the session
+            </Link>
+          </Button>
+        )}
+      </div>
+      <RunCard run={latest} issueKey={issue.key} scope={scope} label={latest.turn > 1 ? `Turn ${latest.turn}` : undefined} />
+      {earlier.length > 0 && (
         <ul className="text-muted-foreground grid gap-1 text-xs">
-          {runs.data!.slice(1).map((run) => (
+          {earlier.map((run) => (
             <li key={run.id} className="flex items-center gap-2">
-              <span>{new Date(run.created_at).toLocaleString()}</span>
+              {sessionLink ? (
+                <Link href={sessionLink(run.session_id)} className="hover:underline">
+                  {new Date(run.created_at).toLocaleString()}
+                </Link>
+              ) : (
+                <span>{new Date(run.created_at).toLocaleString()}</span>
+              )}
               <span>{STATUS_LABELS[run.status]}</span>
               {run.pr_url && (
                 <a href={run.pr_url} target="_blank" rel="noreferrer" className="hover:underline">
@@ -150,10 +196,12 @@ export function CodingRuns({ issue, scope }: { issue: Issue; scope: Scope }) {
   );
 }
 
-function RunCard({ run, issueKey, scope }: { run: CodingRun; issueKey: string; scope: Scope }) {
+export function RunCard({ run, issueKey, scope, label }: { run: CodingRun; issueKey: string; scope: Scope; label?: string }) {
   const decide = useDecideCoding(scope, issueKey);
   const stop = useStopCoding(scope, issueKey);
-  const chat = useChat();
+  // The Reviewer's conversation, in the workspace's Chat (RunCard also shows outside a project's pages).
+  const { workspace } = useCurrentWorkspace();
+  const projectKey = useProjects(workspace?.id).data?.find((p) => p.id === scope.projectId)?.key;
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const working = run.status === "running" || run.status === "queued";
@@ -162,6 +210,7 @@ function RunCard({ run, issueKey, scope }: { run: CodingRun; issueKey: string; s
   return (
     <div className="grid gap-3 rounded-lg border p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
+        {label && <span className="text-xs font-medium">{label}</span>}
         <Badge variant="secondary" className={cn(STATUS_TONE[run.status])}>
           {working && <Loader2Icon className="animate-spin" />}
           {STATUS_LABELS[run.status]}
@@ -176,13 +225,16 @@ function RunCard({ run, issueKey, scope }: { run: CodingRun; issueKey: string; s
               <a href={run.pr_url} target="_blank" rel="noreferrer">
                 <ExternalLinkIcon />
                 PR #{run.pr_number}
+                {run.pr_state && run.pr_state !== "open" && ` · ${PR_LABELS[run.pr_state]}`}
               </a>
             </Button>
           )}
-          {run.review_thread_id && (
-            <Button size="sm" variant="ghost" onClick={() => chat.show(run.review_thread_id!)}>
-              <MessageSquareIcon />
-              Reviewer
+          {run.review_thread_id && workspace && projectKey && (
+            <Button size="sm" variant="ghost" asChild>
+              <Link href={`/w/${workspace.slug}/chat?project=${projectKey}&thread=${run.review_thread_id}`}>
+                <MessageSquareIcon />
+                Reviewer
+              </Link>
             </Button>
           )}
           {run.can_stop && (

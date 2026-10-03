@@ -15,11 +15,12 @@ import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useChat } from "@/components/agent/chat-context";
-import { CodingRuns, StartCoding } from "@/components/coding/coding-run";
+import { CodingRuns, ImplementedIn, StartCoding } from "@/components/coding/coding-run";
 import { Related } from "@/components/graph/related";
 import { Markdown } from "@/components/markdown";
 import { useMentionable } from "@/components/mentions";
 import { useReviewIssue } from "@/lib/agent";
+import { sessionHref } from "@/lib/coding";
 import {
   useComment,
   useEpics,
@@ -451,7 +452,11 @@ function IssueDetails({
           />
         )}
 
-        <CodingRuns issue={issue} scope={scope} />
+        <CodingRuns
+          issue={issue}
+          scope={scope}
+          sessionLink={workspace && project ? (id) => sessionHref(workspace.slug, project.key, id) : undefined}
+        />
 
         <Separator />
 
@@ -538,6 +543,7 @@ export function IssueDrawer() {
                 Waiting on dependencies
               </Badge>
             )}
+            {issue.data && scope && <ImplementedIn issue={issue.data} scope={scope} />}
           </SheetTitle>
           {issue.data && scope && (
             <IssueActions issue={issue.data} scope={scope} canCode={can(workspace, "agents:code")} />

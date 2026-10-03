@@ -36,7 +36,7 @@ from pmagent_backend.modules.audit.models import AuthorType
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.github import GitHubUnavailable
 from pmagent_backend.modules.code.checkouts import CheckoutError, RepoRef, auth_env, run_git
-from pmagent_backend.modules.connectors.github_app import GitHubApp
+from pmagent_backend.modules.connectors.github_app import GitHubApp, PullRequest
 from pmagent_backend.modules.connectors.models import ConnectedRepo, GitHubInstallation
 from pmagent_backend.modules.issues.models import AgentAssignee, IssueStatus
 from pmagent_backend.modules.issues.schemas import IssueUpdate, Link
@@ -46,7 +46,7 @@ from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
 
 from . import guard
-from .models import CodingRun, CodingRunStatus
+from .models import CodingRun, CodingRunStatus, PrState
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
 from .tools import TOOLS, Usage, model_for, model_key
 
@@ -143,6 +143,8 @@ class CodingWorker:
             ref = RepoRef(run.workspace_id, run.project_id, installation.installation_id, repo.full_name,
                           repo.default_branch)
             github_repo_id, agent, brief = repo.github_repo_id, run.agent, run.brief
+            # A follow-up builds on its session's branch and PR (carried over when it was asked for).
+            session_branch, session_pr = run.branch, (run.pr_number, run.pr_url) if run.pr_number else None
             key = model_key(self.settings, agent)
             if key is None:
                 raise RunFailed(f"The server has no key for {NAMES[agent.value]} any more")
@@ -153,8 +155,14 @@ class CodingWorker:
         env = auth_env(url, token)
         host = work / "host"
         await run_git(work, "init", "-q", str(host))
-        await run_git(host, "fetch", "-q", "--depth", "1", "--no-tags", url, f"refs/heads/{ref.default_branch}",
-                      env=env, timeout=FETCH_TIMEOUT)
+        try:
+            await run_git(host, "fetch", "-q", "--depth", "1", "--no-tags", url,
+                          f"refs/heads/{session_branch or ref.default_branch}", env=env, timeout=FETCH_TIMEOUT)
+        except CheckoutError as exc:
+            if session_branch is None:
+                raise
+            raise RunFailed(f"The session's branch {session_branch} is gone (merged or deleted?): "
+                            "start a new session from the issue") from exc
         await run_git(host, "checkout", "-q", "--detach", "FETCH_HEAD")
         base_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
 
@@ -162,7 +170,8 @@ class CodingWorker:
         copy = work / "upload" / "repo"
         await _export(host, copy)
         baseline = await _baseline(copy)
-        await self._update(run_id, base_sha=base_sha, step="Checked out the repository")
+        await self._update(run_id, base_sha=base_sha, step=f"Checked out {session_branch}" if session_branch
+                           else "Checked out the repository")
 
         tool = TOOLS[agent]
         session_box: SandboxSession = await self.sandbox.open(run_id, copy, tool, key)
@@ -203,28 +212,35 @@ class CodingWorker:
             assert run is not None
             if run.stop_requested:
                 raise _Stopped("Stopped before pushing")
-            issue_key, run_short = run.issue_key, run.id.hex[:6]
+            issue_key, run_short, turn = run.issue_key, run.id.hex[:6], run.turn
             title = await _issue_title(session, run)
-        branch = f"pmagent/{issue_key.lower()}-{_slug(title)}-{run_short}"
+        branch = session_branch or f"pmagent/{issue_key.lower()}-{_slug(title)}-{run_short}"
         if branch == ref.default_branch:
             raise RunFailed("Refusing to push to the default branch")
-        message = f"{issue_key}: {title}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({NAMES[agent.value]})"
+        heading = f"{issue_key}: {title}" + (f" (turn {turn})" if turn > 1 else "")
+        message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({NAMES[agent.value]})"
         await run_git(host, "-c", f"user.name={NAMES[agent.value]} via pmagent", "-c", f"user.email={BOT_EMAIL}",
                       "commit", "-q", "--no-verify", "-m", message)
         commit_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
         await self._update(run_id, step=f"Pushing {branch}")
+        # Never forced: on the session's branch, this commit sits on top of what's there.
         await run_git(host, "push", "-q", url, f"HEAD:refs/heads/{branch}", env=env, timeout=FETCH_TIMEOUT)
-        pr = await self.app.create_pull_request(
-            ref.installation_id, ref.full_name, head=branch, base=ref.default_branch,
-            title=f"{issue_key}: {title}", body=_pr_body(summary, issue_key, run_id, agent.value, files), token=token,
-        )
+        if session_pr is not None:
+            pr = PullRequest(*session_pr)  # the session's PR shows the new commit
+        else:
+            pr = await self.app.create_pull_request(
+                ref.installation_id, ref.full_name, head=branch, base=ref.default_branch,
+                title=f"{issue_key}: {title}", body=_pr_body(summary, issue_key, run_id, agent.value, files),
+                token=token,
+            )
         async with self.session_factory() as session:
             run = await session.get(CodingRun, run_id)
             assert run is not None
             run.branch, run.commit_sha, run.files_changed = branch, commit_sha, files
             run.pr_number, run.pr_url = pr.number, pr.html_url
+            run.pr_state = run.pr_state or PrState.OPEN
             await self._finish(session, run, CodingRunStatus.PR_OPENED, summary=summary)
-            await self._issue_to_review(session, run, title)
+            await self._issue_to_review(session, run, title, opened=session_pr is None)
         await self._review(run_id, title, files, changes.stdout)
 
     async def _code(self, run_id: uuid.UUID, box: SandboxSession, tool: Any, brief: str) -> str | None:
@@ -331,7 +347,7 @@ class CodingWorker:
         )
         await session.commit()
 
-    async def _issue_to_review(self, session: AsyncSession, run: CodingRun, title: str) -> None:
+    async def _issue_to_review(self, session: AsyncSession, run: CodingRun, title: str, *, opened: bool) -> None:
         """Link the PR on the issue and move it to review, as the coding tool acting for whoever asked."""
         project = await session.get(Project, run.project_id)
         member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
@@ -342,11 +358,13 @@ class CodingWorker:
         try:
             issue = await issues.get(project, run.issue_key)
             links = [Link.model_validate(link) for link in issue.links]
-            links.append(Link(kind="pr", url=run.pr_url or "", title=f"PR #{run.pr_number}: {title}"[:200]))
+            if not any(link.url == run.pr_url for link in links):
+                links.append(Link(kind="pr", url=run.pr_url or "", title=f"PR #{run.pr_number}: {title}"[:200]))
+            said = f"Opened PR #{run.pr_number} for review" if opened else f"Pushed turn {run.turn} to PR #{run.pr_number}"
             await issues.update(project, run.issue_key, IssueActor(member, agent=AgentAssignee(run.agent.value),
                                                                    approved_by_id=run.decided_by_id),
                                 IssueUpdate(status=IssueStatus.REVIEW, links=links,
-                                            note=f"Opened PR #{run.pr_number} for review: {run.pr_url}"))
+                                            note=f"{said}: {run.pr_url}"))
         except DomainError as exc:  # reassigned or closed meanwhile: the PR still stands
             logger.info("coding run %s: issue %s not moved to review: %s", run.id, run.issue_key, exc.detail)
 
@@ -373,7 +391,8 @@ class CodingWorker:
                                                     url=run.pr_url, files=listed, diff=clipped)
                 review = await AgentService(session, self.reviewer).create_run(
                     ProjectAccess(project, member), RunCreate(message=message[:20_000], agent=REVIEWER),
-                    title=f"Review PR #{run.pr_number} ({run.issue_key})", mode="reviewer.issue",
+                    title=f"Review PR #{run.pr_number} ({run.issue_key})" + (f", turn {run.turn}" if run.turn > 1 else ""),
+                    mode="reviewer.issue",
                 )
                 run.review_run_id, run.review_thread_id = review.id, review.thread_id
                 await session.commit()

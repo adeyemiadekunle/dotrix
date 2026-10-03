@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .models import CodingAgent, CodingRunStatus
+from .models import CodingAgent, CodingOrigin, CodingRunStatus, PrState
 
 
 class CodingAvailability(BaseModel):
@@ -18,6 +18,10 @@ class CodingAvailability(BaseModel):
 
 class CodingRunCreate(BaseModel):
     note: str | None = Field(default=None, max_length=5_000, description="Anything to add to the issue for the agent")
+
+
+class CodingFollowUp(BaseModel):
+    message: str = Field(min_length=1, max_length=5_000, description="What to do in this turn")
 
 
 class CodingDecision(BaseModel):
@@ -37,6 +41,9 @@ class CodingRunRead(BaseModel):
     issue_key: str
     agent: CodingAgent
     model: str | None
+    session_id: uuid.UUID = Field(description="The session this run is a turn of (its first turn's id)")
+    turn: int
+    origin: CodingOrigin = Field(description="`start`, `assigned` (the issue was assigned to a coding tool), or `follow_up`")
     status: CodingRunStatus
     brief: str = Field(description="Exactly what the agent is told")
     note: str | None
@@ -47,6 +54,7 @@ class CodingRunRead(BaseModel):
     commit_sha: str | None
     pr_number: int | None
     pr_url: str | None
+    pr_state: PrState | None = Field(description="`open`, `merged`, or `closed`, from GitHub")
     files_changed: list[dict[str, Any]]
     events: list[CodingEvent]
     summary: str | None = Field(description="The agent's last message")
@@ -65,3 +73,23 @@ class CodingRunRead(BaseModel):
     finished_at: datetime | None
     can_decide: bool = Field(description="Whether you may approve or reject it now")
     can_stop: bool = Field(description="Whether you may stop it now")
+
+
+class CodingSessionRead(BaseModel):
+    """A coding session: a run and its follow-ups, on one branch and one PR. Its status is its latest turn's."""
+
+    session_id: uuid.UUID
+    project_id: uuid.UUID
+    project_key: str
+    project_name: str
+    issue_key: str
+    issue_title: str
+    agent: CodingAgent
+    status: CodingRunStatus
+    turns: int
+    branch: str | None
+    pr_number: int | None
+    pr_url: str | None
+    pr_state: PrState | None
+    started_at: datetime
+    updated_at: datetime

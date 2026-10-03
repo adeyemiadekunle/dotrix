@@ -11,6 +11,8 @@ from fastapi import APIRouter, Depends, Query, status
 
 from pmagent_backend.api.deps import SessionDep, require_permission
 from pmagent_backend.core.openapi import errors
+from pmagent_backend.modules.coding.router import Coding
+from pmagent_backend.modules.coding.service import CODING_AGENTS
 from pmagent_backend.modules.projects.deps import (
     ProjectAccess,
     ProjectViewer,
@@ -52,12 +54,16 @@ def _actor(access: ProjectAccess, agent: AgentAssignee | None = None) -> IssueAc
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, responses=errors(403, 422))
-async def create_issue(data: IssueCreate, access: Editor, session: SessionDep) -> IssueRead:
+async def create_issue(data: IssueCreate, access: Editor, session: SessionDep, coding: Coding) -> IssueRead:
     """Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance
     criteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,
     or bug; other types may sit under an epic. Assigning the built-in coding agent needs the
-    instruct-coding-agent permission."""
-    return await IssueService(session).create(access.project, _actor(access, data.as_agent), data)
+    instruct-coding-agent permission. Assigning a coding tool (`coding-agent`, `claude-code`,
+    `codex`) also starts a coding session, waiting for approval, where coding is set up."""
+    issue = await IssueService(session).create(access.project, _actor(access, data.as_agent), data)
+    if data.as_agent is None and data.assignee_agent in CODING_AGENTS:
+        await coding.start_for_assignment(access, issue.key)
+    return issue
 
 
 @router.get("", responses=errors(422))
@@ -142,11 +148,18 @@ async def get_issue(key: str, access: ProjectViewer, session: SessionDep) -> Iss
 
 
 @router.patch("/{key}", responses=errors(403, 422))
-async def update_issue(key: str, data: IssueUpdate, access: Editor, session: SessionDep) -> IssueRead:
+async def update_issue(key: str, data: IssueUpdate, access: Editor, session: SessionDep, coding: Coding) -> IssueRead:
     """Change fields; only what you send changes, and every change is logged (old → new).
     `depends_on` replaces the list and can't create a cycle. Only a person moves an issue to
-    `done`; coding tools (`as_agent`) stop at `review`."""
-    return await IssueService(session).update(access.project, key, _actor(access, data.as_agent), data)
+    `done`; coding tools (`as_agent`) stop at `review`. Assigning it to a coding tool starts a
+    coding session, waiting for approval, where coding is set up."""
+    issues = IssueService(session)
+    to_coding = data.as_agent is None and data.assignee_agent in CODING_AGENTS
+    before = (await issues.get(access.project, key)).assignee_agent if to_coding else None
+    issue = await issues.update(access.project, key, _actor(access, data.as_agent), data)
+    if to_coding and before != data.assignee_agent:
+        await coding.start_for_assignment(access, issue.key)
+    return issue
 
 
 @router.post("/{key}/comments", status_code=status.HTTP_201_CREATED, responses=errors(403, 422))

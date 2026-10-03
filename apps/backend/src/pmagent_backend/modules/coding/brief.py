@@ -14,6 +14,7 @@ from pmagent_backend.modules.projects.models import Project
 
 MAX_DOCUMENTS = 4
 DOCUMENT_CHARS = 6_000
+SUMMARY_CHARS = 3_000  # of each earlier turn's summary, in a follow-up's brief
 # Links from the issue that say what it builds on.
 DOCUMENT_LINKS = frozenset({"implements", "decided_by", "mentions", "relates_to"})
 
@@ -32,7 +33,12 @@ RULES = """\
 """
 
 
-async def build_brief(session: AsyncSession, project: Project, issue: IssueRead, note: str | None) -> str:
+async def build_brief(
+    session: AsyncSession, project: Project, issue: IssueRead, note: str | None,
+    earlier: list[tuple[int, str]] | None = None,
+) -> str:
+    """The brief for a run. A follow-up (`earlier`: the session's previous turns and what each
+    did) works on the session's branch, and `note` is what to do in this turn."""
     parts = [
         f"# Coding task: {issue.key} {issue.title}",
         f"Project: {project.name} ({project.key}). Issue type: {issue.type.value}, priority: {issue.priority.value}.",
@@ -44,8 +50,15 @@ async def build_brief(session: AsyncSession, project: Project, issue: IssueRead,
         parts.append(f"\nIt's part of {issue.parent_key}.")
     if issue.depends_on:
         parts.append(f"It builds on {', '.join(issue.depends_on)}.")
+    if earlier:
+        parts += ["", "## Earlier in this session",
+                  "You're continuing on the branch these turns produced; their changes are already in the code."]
+        for turn, summary in earlier:
+            clipped = summary if len(summary) <= SUMMARY_CHARS else summary[:SUMMARY_CHARS] + "…"
+            parts.append(f'<data source="turn {turn}">\n{clipped.strip()}\n</data>')
     if note and note.strip():
-        parts += ["", "## From the person who asked", f'<data source="request">\n{note.strip()}\n</data>']
+        heading = "## What to do in this turn" if earlier else "## From the person who asked"
+        parts += ["", heading, f'<data source="request">\n{note.strip()}\n</data>']
     documents = await _documents(session, project, issue.key)
     if documents:
         parts += ["", "## Related documents (from the project's knowledge)"]
