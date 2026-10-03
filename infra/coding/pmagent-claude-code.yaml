@@ -1,0 +1,31 @@
+# OpenShell provider profile for pmagent's coding runs with Claude Code. Import it once per gateway:
+#   openshell provider profile import -f infra/coding/pmagent-claude-code.yaml --global
+# Coding runs attach a provider of this type to each sandbox (PMAGENT_CODING_SANDBOX=openshell),
+# made from the server's ANTHROPIC_API_KEY: the sandbox sees a placeholder, and OpenShell's proxy
+# puts the key on requests to api.anthropic.com from Claude Code's binaries only.
+#
+# `binaries` must match the image (infra/coding/Dockerfile installs Claude Code with npm).
+# Unlike OpenShell's example profile, it leaves out Claude Code's telemetry endpoints.
+id: pmagent-claude-code
+display_name: Claude Code (pmagent)
+description: Claude Code CLI for pmagent coding runs
+category: agent
+inference_capable: true
+credentials:
+  - name: api_key
+    description: Anthropic API key used by Claude Code
+    env_vars: [ANTHROPIC_API_KEY]
+    required: true
+    auth_style: header
+    header_name: x-api-key
+discovery:
+  credentials: [api_key]
+endpoints:
+  - host: api.anthropic.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/claude
+  - /usr/local/lib/node_modules/@anthropic-ai/claude-code/**

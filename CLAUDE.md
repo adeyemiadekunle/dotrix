@@ -95,6 +95,7 @@ apps/backend/
 │   │   ├── research/            web research for agent runs: sources per run (S1, S2, …), the page cache per workspace, web limits and Tavily credits, report claims checked against what was read
 │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
 │   │   ├── code/                connected repos' checkouts for agents (checkouts.py: shallow fetch with the installation token, swap, size cap, prune; service.py: sync and record, a run's checkout), the sync_repository job
+│   │   ├── coding/              coding runs: "Start coding" (service.py: ask, approve, stop), the brief (brief.py), Claude Code and Codex headless (tools.py: commands, JSON events), the sandbox (sandbox.py: OpenShell or local, the policy), the worker (runner.py: clone, run, patch, guard.py, push, PR, Reviewer), the run_coding job
 │   │   └── connectors/          the GitHub App (github_app.py: app JWT, installation tokens), installations per workspace, each project's connected repo, the webhook (FR-10); GitLab and doc sources planned (FR-12)
 │   ├── jobs.py                  background jobs by name (send_email, send_password_reset, index_knowledge, run_automations, email_notifications, ...); where they run: core/jobs.py
 │   └── worker.py                arq worker (`pnpm dev:worker`): agent runs and jobs when PMAGENT_JOBS=worker
@@ -167,9 +168,10 @@ apps/web/
 │   ├── documents/               dropzone, queued files, upload progress
 │   ├── agent/                   chat context (opens conversations in the workspace Chat), conversation, approvals (diff view, decisions, plan checkpoints), run results, triage dialog
 │   ├── agents/                  Settings → Agents: the list and the contract editor (workspace and project scope)
+│   ├── coding/                  "Start coding" and a run in the issue drawer (status, what the agent did, PR, approve / reject / stop)
 │   ├── knowledge/               file tree, file history (authorship, diffs, restore)
 │   ├── settings/                Settings' pages: profile, appearance, devices, calendar, the workspace (general, what members can do), members (search, roles, projects they see), invites and "turn into an organisation"
-└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, agents.ts (agent contracts, the chat's agent list), knowledge.ts, admin.ts, documents.ts, repo.ts, url-state.ts, labels.ts
+└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, agents.ts (agent contracts, the chat's agent list), knowledge.ts, admin.ts, documents.ts, repo.ts, coding.ts, url-state.ts, labels.ts
 packages/ui/src/                 consumed as source (no build step), by path: `@pmagent/ui/components/*`, `/lib/*`, `/hooks/*`, `/globals.css`
 ├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
 │                                plus our own chat kit: chat-scroller (follows new content unless you scroll up), chat-message (message, bubble, meta, notice), prompt-input (send / stop), code-block (copy, lazy Shiki highlighting)
@@ -304,7 +306,8 @@ Workspace and organisation overlap: an organisation is a layer of roles above se
 - [x] **Documentation** `docs.update`: the change → affected documents → proposed updates and ADRs; returns `doc_update` items
   - [x] affected documents through graph neighbours (step 3); the scheduled staleness sweep ("Flag stale documents"); folder templates (step 2)
   - [ ] the space's instructions (step 6)
-- [ ] **Coding hand-off (Phase 5):** issue → brief (acceptance criteria, linked requirement and ADR excerpts, blast radius, tests to run) → Claude Code or Codex → PR back on the board → Reviewer run → a person merges. The `coding.brief` pipeline and `brief` schema exist
+- [x] **Coding hand-off (Phase 5):** issue → brief (the issue and its acceptance criteria, its epic and dependencies, the requirements and decisions it links to in the graph) → Claude Code or Codex in a sandbox → PR back on the board → Reviewer run → a person merges (step 5c)
+  - [ ] blast radius and the tests to run in the brief (the code graph); the `coding.brief` pipeline writing the brief instead of the platform
 
 ### Step 1c: research capabilities
 Decided (D3, 2026-10-01): Tavily, behind a pluggable provider; without a key the model's built-in search stays. Spec §6.
@@ -353,7 +356,26 @@ Decided (2026-10-02): a project's code is connected through the **pmagent GitHub
 - [x] **5a Connect repos (GitHub App)** (`modules/connectors`): a workspace adds the app's installations on GitHub accounts (owners and admins; `POST /v1/workspaces/{id}/github/installations` with a GitHub sign-in's code, checked against `GET /user/installations`, so nobody adopts someone else's installation; the sign-in app must be the GitHub App itself). Each project connects one repo from them (`GET .../github/repos`, `PUT/DELETE .../projects/{id}/repository`; 409 `repo_taken`), private repos included; the project's `repo_url` follows, so `pmagent connect` finds it. Webhooks (`POST /v1/github/webhook`, HMAC-checked) record default-branch pushes, forget uninstalled installations, and disconnect repos taken from the app. Moving a project drops its connection (installations belong to a workspace). Audited `github.installation_added` / `_removed`, `project.repo_connected` / `_disconnected`. Web: Settings → GitHub (`/api/github/install` → GitHub → `/api/github/setup` → a GitHub sign-in in install mode → back), the repo picker on project creation and in project settings → Repository (an address still works for other hosts). Read-only so far: no token is stored, each request gets an installation token
 - [x] **5b Code for agents** (`modules/code`, `pmagent_engine.code`): each connected repo is a shallow checkout of its default branch where agents run (`PMAGENT_CODE_DIR`, a size cap `PMAGENT_CODE_MAX_MB`): fetched into a new folder and swapped in, with the installation token passed to git through its environment (never the URL, the command line, or `.git/config`). Synced on connect, after each push (the webhook), with "Sync now" (`POST .../projects/{id}/repository/sync`, owners and admins), and at a run's start when this machine has none or a push made it stale; the result (`checkout_sha`, `checkout_error`) shows in project settings → Repository; the hourly cleanup deletes checkouts of repos no longer connected. Read-only tools `code_tree`, `code_search` (`git grep`), `code_read` (catalogue `code.read`, every built-in and new custom agents) over tracked files only, refusing paths and symlinks outside the checkout; repo text reaches the model inside `<repo_content>` as data; the context pack says what's checked out. The architecture draft reads the code. Nothing in a checkout is run
   - [ ] the Reviewer's coverage mode checking requirements against the code as a matter of course (prompt work, measured on a real model); `AGENTS.md` / `CLAUDE.md` as conventions in coding briefs (step 2)
-- [ ] **5c Coding on the web (container):** "Start coding" on an issue runs a coding agent (Claude Code or Codex, headless) in a sandboxed container with a checkout on a new branch: the brief (issue, acceptance criteria, linked requirements and ADRs), tests run, the branch pushed with the installation token, a PR opened and linked to the issue (moves to `review`). Guardrails (FR-26): never the default branch, never merge or deploy, no `.pmagent/` in the PR; every run approved and audited. Updates to the repo's `AGENTS.md` / `CLAUDE.md` (a TODO done) go the same way, as a PR
+- [x] **5c Coding on the web (sandbox)** (`modules/coding`, `infra/coding/`): "Start coding" on an issue (people who may instruct the coding agent; `POST .../coding/issues/{key}/runs`, with a note) makes a coding run that waits for someone who may approve agent changes (`.../runs/{id}/decision`, approve or reject with a reason); approving assigns the issue to the tool and moves it to in progress, and queues the `run_coding` job (the worker, never retried, its own long timeout). Which tool follows the server's key (`tools.choose_agent`: Anthropic → Claude Code, else OpenAI → Codex; `PMAGENT_CODING_AGENT` to name one). The worker fetches the default branch with an installation token scoped to the one repo (contents and pull requests: write; in git's environment only), gives the agent the tracked files with a fresh git history of their own and **no token**, in a sandbox (`PMAGENT_CODING_SANDBOX`: `openshell`, a sandbox per run from `PMAGENT_CODING_IMAGE` under `sandbox_policy()`: the workdir and /tmp writable, the system read-only (Landlock), no network rule of its own; the model key a per-run provider (`infra/coding/pmagent-*.yaml`) that only the tool's binaries can use, for the model API only; or `local`, a temporary folder with no isolation, refused in production), and runs `claude -p --bare --output-format stream-json` (`--permission-mode dontAsk` with the tools pre-allowed) or `codex exec --json` with the brief on stdin. Its events stream into the run (`events`: what it said and did; tokens and cost; polled by the drawer); it stops at `PMAGENT_CODING_TIMEOUT_MINUTES`, `PMAGENT_CODING_TOKEN_BUDGET`, Stop, or a refused key (no waiting out retries). The worker reads the changes back as a patch, applies them to its own checkout, and refuses anything touching `.pmagent/`, `.github/workflows/`, or `.git` (`guard.py`) before committing; then pushes `pmagent/<key>-<title>-<id>` (never the default branch, never forced), opens the PR, links it on the issue and moves it to `review` (as the tool, so it can't close it), and starts the Reviewer (`reviewer.issue`) on the diff in a conversation of its own. Statuses `awaiting_approval`, `rejected`, `queued`, `running`, `pr_opened`, `no_changes`, `failed`, `stopped`; audited `coding.*`; runs cut off by a restart end as failed (at startup in local mode, hourly cleanup otherwise). Web: "Start coding" in the issue drawer (hidden when the server has coding off; disabled with why, e.g. no connected repo) and the run under the description: status, what the agent did as it happens, its summary, the brief it got, branch, PR, Reviewer, tokens for owners and admins; approve / reject / stop
+  - [ ] coding approvals in Notifications (they wait in the issue drawer for now)
+  - [ ] the pmagent MCP server inside the sandbox (board, documents, graph) and Playwright MCP, with a run-scoped token; network rules for package registries so the agent can install dependencies
+  - [ ] PR events back on the board (merged, closed, checks) and a PR check rejecting `.pmagent/`; the Reviewer's findings as a PR comment and in `reviews/`
+  - [ ] a full run on a real model (checked so far:
+    - the whole flow with a scripted agent;
+    - Claude Code's CLI and its events, and the image;
+    - the OpenShell backend on a local gateway: the policy and provider, uploading, running,
+      the patch, and cleanup;
+    - the sandbox reached only the model API, and only from Claude Code; it held a placeholder,
+      not the key;
+    - no completed model call: the check had no model key or internet egress)
+  - [ ] updates to the repo's `AGENTS.md` / `CLAUDE.md` (a TODO done) as a coding run
+- [ ] **Coding sessions in Chat** (asked for 2026-10-03): coding runs as sessions you can find, follow, and continue, like conversations
+  - [ ] a **Coding** tab in the workspace Chat (`/w/[ws]/chat?tab=coding`, next to the conversations), listing coding sessions grouped by project, newest first, each with its issue, tool, status, and PR
+  - [ ] every "Start coding" on an issue creates a new session that appears there; opening one shows the run as it happens (what the agent said and did, the brief, branch, PR, Reviewer), with approve / reject / stop
+  - [ ] continue a session: send a follow-up to the same agent on the same branch (e.g. "also handle refunds over £500", or the Reviewer's findings), which runs again in a sandbox from the branch and pushes to the same PR (Claude Code resumes its session by id; Codex `exec resume`), each turn approved like the first
+  - [ ] assigning an issue to the coding agent (`coding-agent`, `claude-code`, or `codex`) starts a session in the background, without opening it, under the same approval
+  - [ ] the issue shows its sessions under it (status, PR), and "Implemented in PR #n" once its PR is open; the session links back to the issue
+  - [ ] later, inside a session: a browser (the app running in the sandbox, Playwright MCP), a terminal on the sandbox (the CLI), and a file view with the code diff (changed files, side by side)
 - [ ] **5d Coding locally (CLI and desktop):** the CLI (`pmagent connect`) and the desktop app (a folder picker) link a local checkout; "Code this" hands the brief to Claude Code or Codex there (the MCP route), which edits the files on the person's machine; they review and commit. The platform sees the branch and PR through the app
 - [ ] **Code graph:** Tree-sitter parse into files, symbols, imports, calls, and tests; re-parse only files changed by each commit; modules linked to the project graph (`architecture/`, requirements). Tools `code.search`, `code.blast_radius`
 - [ ] **Commit review in the background:** push → code graph update → blast radius → Reviewer (read-only) → `finding[]` (severity, what may break, affected files and modules, related issues and requirements, suggested fix) → inbox and notifications → per finding: Create issue, Fix now (coding hand-off), Dismiss with a reason (a lesson). Default branch and PR branches only; trivial commits (docs, lockfiles) skipped; a daily token budget per repo
@@ -453,10 +475,12 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
 ### Phase 5: coding with Claude Code and Codex (don't build our own coding agent)
 - [ ] **(you)** Register the GitHub App (repo contents and pull requests read/write, issues read, webhooks); see "GitHub login" below, one app does both
 - [x] Connect a project's repository; list and link repos (agents v2 step 5a)
-- [ ] **"Start coding" on an issue:** a hand-off brief (the issue, acceptance criteria, linked requirements and architecture excerpts) sent to Claude Code (its GitHub integration) or Codex (cloud tasks), plus the existing MCP route for people running them locally
+- [x] **"Start coding" on an issue:** a hand-off brief (the issue, acceptance criteria, linked requirements and decisions) for Claude Code or Codex, run headless in a sandbox by the platform (agents v2 step 5c), plus the existing MCP route for people running them locally
 - [ ] **PRs back on the board:** webhooks link PRs to issues (by key in the branch or title), move issues to `review`, and show checks; only a person moves an issue to `done`
-- [ ] **Guardrails** (FR-26): never push to the default branch, merge, or deploy; reject PRs that contain `.pmagent/`
+- [x] **Guardrails** (FR-26): never push to the default branch, merge, or deploy; reject PRs that contain `.pmagent/` (the worker checks the agent's changes before pushing; step 5c)
+  - [ ] a PR check doing the same for PRs from elsewhere
 - [ ] **Reviewer agent** on every agent PR (FR-22): the report to `reviews/`, a PR comment, and bugs proposed for critical findings
+  - [x] the Reviewer reads every coding run's PR (its diff) in a conversation of its own
 
 ### Phase 6: design (UI/UX designers)
 - [ ] A `design/` folder in the project layout (design briefs, decisions, links to Figma files and frames) with a design brief template; designers stay members (chat, propose; owners and admins approve)
@@ -632,8 +656,8 @@ Organisations are workspaces of kind `organization` (agents v2 step 0, D6); the 
 ### P0: Code hosts and coding agent
 
 - [ ] **FR-10** GitHub connector: GitHub App installations and each project's repo, list and connect (done, step 5a; no tokens stored); read code (done, step 5b); create a repo
-- [ ] **FR-24/25** Coding-agent runs: sandboxed checkout, new branch, run tests, open a PR linked to the issue, move the issue to `review`
-- [ ] **FR-26** Guardrails: never push to the default branch, merge, or deploy; reject PRs that contain `.pmagent/`
+- [x] **FR-24/25** Coding-agent runs: sandboxed checkout, new branch, run tests, open a PR linked to the issue, move the issue to `review` (agents v2 step 5c)
+- [x] **FR-26** Guardrails: never push to the default branch, merge, or deploy; reject PRs that contain `.pmagent/`
 - [ ] **FR-22** Reviewer run on every agent PR; save the report to `reviews/` and comment on the PR
 
 ### P1

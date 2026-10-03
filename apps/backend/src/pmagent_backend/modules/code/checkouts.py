@@ -60,7 +60,7 @@ class CodeCheckouts:
         if not (root / ".git").exists():
             return None
         try:
-            return (await _git(root, "rev-parse", "HEAD")).strip() or None
+            return (await run_git(root, "rev-parse", "HEAD")).strip() or None
         except CheckoutError:
             return None
 
@@ -74,21 +74,21 @@ class CodeCheckouts:
             target = self.path(ref.workspace_id, ref.project_id)
             target.parent.mkdir(parents=True, exist_ok=True)
             fresh = target.parent / f".{ref.project_id}.{uuid.uuid4().hex[:8]}"
-            env = _auth_env(url, token)
+            env = auth_env(url, token)
             try:
-                await _git(fresh.parent, "init", "-q", str(fresh))
-                await _git(
+                await run_git(fresh.parent, "init", "-q", str(fresh))
+                await run_git(
                     fresh, "fetch", "-q", "--depth", "1", "--no-tags", url,
                     f"refs/heads/{ref.default_branch}", env=env, timeout=FETCH_TIMEOUT,
                 )
-                await _git(fresh, "checkout", "-q", "--detach", "FETCH_HEAD")
+                await run_git(fresh, "checkout", "-q", "--detach", "FETCH_HEAD")
                 size = await asyncio.to_thread(_size, fresh)
                 if size > self.max_bytes:
                     raise CheckoutError(
                         f"{ref.full_name} is {size // 1_000_000:,} MB, more than the "
                         f"{self.max_bytes // 1_000_000:,} MB limit (PMAGENT_CODE_MAX_MB)"
                     )
-                sha = (await _git(fresh, "rev-parse", "HEAD")).strip()
+                sha = (await run_git(fresh, "rev-parse", "HEAD")).strip()
                 await asyncio.to_thread(_swap, fresh, target)
             except BaseException:
                 await asyncio.to_thread(shutil.rmtree, fresh, True)
@@ -119,7 +119,7 @@ class CodeCheckouts:
         return removed
 
 
-def _auth_env(url: str, token: str | None) -> dict[str, str]:
+def auth_env(url: str, token: str | None) -> dict[str, str]:
     """The token as an HTTP header for this one URL, through git's environment config."""
     if token is None:
         return {}
@@ -131,7 +131,7 @@ def _auth_env(url: str, token: str | None) -> dict[str, str]:
     }
 
 
-async def _git(cwd: Path, *args: str, env: dict[str, str] | None = None, timeout: float = 60) -> str:
+async def run_git(cwd: Path, *args: str, env: dict[str, str] | None = None, timeout: float = 60) -> str:
     process = await asyncio.create_subprocess_exec(
         "git", "-c", "credential.helper=", "-c", "core.hooksPath=/dev/null", *args,
         cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,

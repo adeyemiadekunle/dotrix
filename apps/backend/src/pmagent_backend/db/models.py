@@ -6,6 +6,7 @@ from pmagent_backend.modules.audit import models as _audit  # noqa: F401
 from pmagent_backend.modules.auth import models as _auth  # noqa: F401
 from pmagent_backend.modules.automations import models as _automations  # noqa: F401
 from pmagent_backend.modules.calendar import models as _calendar  # noqa: F401
+from pmagent_backend.modules.coding import models as _coding  # noqa: F401
 from pmagent_backend.modules.connectors import models as _connectors  # noqa: F401
 from pmagent_backend.modules.documents import models as _documents  # noqa: F401
 from pmagent_backend.modules.graph import models as _graph  # noqa: F401

@@ -33,6 +33,12 @@ class Installation:
 
 
 @dataclass(frozen=True)
+class PullRequest:
+    number: int
+    html_url: str
+
+
+@dataclass(frozen=True)
 class Repo:
     id: int
     full_name: str
@@ -58,7 +64,12 @@ class GitHubApp(Protocol):
     async def installation(self, installation_id: int) -> Installation: ...
     async def repositories(self, installation_id: int) -> list[Repo]: ...
     async def repository(self, installation_id: int, repo_id: int) -> Repo: ...
-    async def access_token(self, installation_id: int) -> str: ...
+    async def access_token(
+        self, installation_id: int, *, repository_id: int | None = None, write: bool = False
+    ) -> str: ...
+    async def create_pull_request(
+        self, installation_id: int, full_name: str, *, head: str, base: str, title: str, body: str, token: str
+    ) -> PullRequest: ...
     async def create_repository(
         self, installation_id: int, org: str, name: str, *, private: bool, description: str
     ) -> Repo: ...
@@ -131,9 +142,36 @@ class GitHubAppClient:
             )
         raise GitHubUnavailable(f"GitHub answered {res.status_code}; try again shortly")
 
-    async def access_token(self, installation_id: int) -> str:
-        """An installation token (an hour long) to fetch its repos with git; never stored."""
-        return await self._installation_token(installation_id)
+    async def access_token(
+        self, installation_id: int, *, repository_id: int | None = None, write: bool = False
+    ) -> str:
+        """An installation token (an hour long) for git; never stored. With `repository_id`, it
+        works on that one repo only; `write` adds pushing and opening pull requests there."""
+        body: dict | None = None
+        if repository_id is not None:
+            permissions = {"contents": "write", "pull_requests": "write"} if write else {"contents": "read"}
+            body = {"repository_ids": [repository_id], "permissions": {"metadata": "read", **permissions}}
+        return await self._installation_token(installation_id, body)
+
+    async def create_pull_request(
+        self, installation_id: int, full_name: str, *, head: str, base: str, title: str, body: str, token: str
+    ) -> PullRequest:
+        """Open a pull request from `head` into `base`, with a token from `access_token(write=True)`."""
+        async with httpx.AsyncClient(transport=self.transport, timeout=30) as http:
+            try:
+                res = await http.post(
+                    f"{API_URL}/repos/{full_name}/pulls",
+                    headers={**HEADERS, "Authorization": f"Bearer {token}"},
+                    json={"title": title, "head": head, "base": base, "body": body, "maintainer_can_modify": True},
+                )
+            except httpx.HTTPError as exc:
+                raise GitHubUnavailable("GitHub couldn't be reached; try again shortly") from exc
+        if res.status_code == 201:
+            data = res.json()
+            return PullRequest(number=int(data["number"]), html_url=str(data["html_url"]))
+        if res.status_code in (403, 404):
+            raise Forbidden("The GitHub App can't open pull requests there: it needs Pull requests (write)")
+        raise GitHubUnavailable(f"GitHub didn't open the pull request ({res.status_code})")
 
     # -- tokens and requests -----------------------------------------------------------
 
@@ -144,12 +182,13 @@ class GitHubAppClient:
         claims = {"iat": now - timedelta(seconds=60), "exp": now + timedelta(minutes=9), "iss": self.app_id}
         return jwt.encode(claims, self.private_key, algorithm="RS256")
 
-    async def _installation_token(self, installation_id: int) -> str:
+    async def _installation_token(self, installation_id: int, body: dict | None = None) -> str:
         async with httpx.AsyncClient(transport=self.transport, timeout=15) as http:
             try:
                 res = await http.post(
                     f"{API_URL}/app/installations/{installation_id}/access_tokens",
                     headers={**HEADERS, "Authorization": f"Bearer {self._app_token()}"},
+                    json=body,
                 )
             except httpx.HTTPError as exc:
                 raise GitHubUnavailable("GitHub couldn't be reached; try again shortly") from exc

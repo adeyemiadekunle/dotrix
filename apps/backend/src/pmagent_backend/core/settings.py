@@ -102,6 +102,22 @@ class Settings(DatabaseSettings):
     # that runs agents (the worker, or the API in local mode), and the largest repo it keeps.
     code_dir: str = "~/.cache/pmagent/code"
     code_max_mb: int = Field(default=500, ge=1)
+    # Coding runs (step 5c): Claude Code or Codex editing a checkout in a sandbox.
+    # - "openshell": an OpenShell sandbox per run (its gateway set up and selected with the
+    #   OpenShell CLI; see infra/coding/README.md), with a policy and the model key injected
+    # - "local": a temporary folder on this machine, no isolation (development only)
+    # - "off": "Start coding" is refused
+    coding_sandbox: Literal["off", "openshell", "local"] = "off"
+    openshell_bin: str = "openshell"
+    coding_image: str = "pmagent-coding:latest"  # the sandbox image (infra/coding/Dockerfile)
+    # Which tool codes: "auto" follows the key the server has (Anthropic: Claude Code, else
+    # OpenAI: Codex); naming one needs its key.
+    coding_agent: Literal["auto", "claude-code", "codex"] = "auto"
+    coding_claude_model: str | None = None  # Claude Code's default when unset
+    coding_codex_model: str | None = None  # Codex's default when unset
+    coding_timeout_minutes: int = Field(default=30, ge=1, le=240)
+    # Tokens (input + output) one coding run may use before it's stopped; 0: no limit.
+    coding_token_budget: int = Field(default=3_000_000, ge=0)
 
     # Object storage for document originals: any S3-compatible store (MinIO locally).
     # Leave the endpoint and keys unset to run without uploads (they answer 503).
@@ -192,6 +208,8 @@ class Settings(DatabaseSettings):
             raise ValueError("search_provider=tavily needs PMAGENT_TAVILY_API_KEY")
         if self.search_provider == "fake" and not self.e2e_models:
             raise ValueError("search_provider=fake is for end-to-end tests (needs PMAGENT_E2E_MODELS=true)")
+        if self.env == "production" and self.coding_sandbox == "local":
+            raise ValueError("coding_sandbox=local runs coding agents unisolated; not allowed in production")
         if self.env == "production" and self.e2e_models:
             raise ValueError("e2e_models is for end-to-end tests; not allowed in production")
         return self

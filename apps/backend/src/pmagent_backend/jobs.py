@@ -17,6 +17,7 @@ from .modules.auth.repository import (
 from .modules.auth.service import AuthService
 from .modules.automations.service import AutomationService
 from .modules.code.service import CodeService
+from .modules.coding.models import CodingRun, CodingRunStatus
 from .modules.documents.service import DocumentService
 from .modules.invites.repository import InviteRepository
 from .modules.notifications.emails import NotificationEmails
@@ -57,6 +58,9 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
     tokens, finished device logins, old invites, web pages read over a month ago, and checkouts of repos
     no longer connected (on this machine). Runs hourly (the worker's cron, or a loop
     in the API process in local mode); safe to run any time, from any number of processes."""
+    # Imported here: it imports the issues service, which needs every model loaded first.
+    from .modules.coding.runner import end_cut_off_runs
+
     at = datetime.fromisoformat(now) if now else datetime.now(UTC)
     token_cutoff, invite_cutoff = at - TOKEN_RETENTION, at - INVITE_RETENTION
     async with ctx.session_factory() as session:
@@ -70,6 +74,7 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
             "device_authorizations": await DeviceAuthorizationRepository(session).delete_stale(token_cutoff),
             "invites": await InviteRepository(session).delete_stale(invite_cutoff),
             "web_pages": await delete_stale_pages(session, at - KEEP_PAGES_FOR),
+            "cut_off_coding_runs": await end_cut_off_runs(session, ctx.settings),
         }
         await session.commit()
         if ctx.checkouts is not None:
@@ -87,6 +92,20 @@ async def sync_repository(ctx: JobContext, *, project_id: str) -> None:
         return
     async with ctx.session_factory() as session:
         await CodeService(session, ctx.checkouts).sync(uuid.UUID(project_id))
+
+
+async def run_coding(ctx: JobContext, *, run_id: str) -> None:
+    """An approved coding run: the agent in a sandbox, then the branch and the PR. Never retried
+    (it may have pushed); it records its own failure."""
+    if ctx.coding is None:
+        async with ctx.session_factory() as session:
+            run = await session.get(CodingRun, uuid.UUID(run_id))
+            if run is not None and run.status is CodingRunStatus.QUEUED:
+                run.status, run.error = CodingRunStatus.FAILED, "Coding runs aren't executed on this server"
+                run.finished_at = datetime.now(UTC)
+                await session.commit()
+        return
+    await ctx.coding.execute(uuid.UUID(run_id))
 
 
 async def run_automations(ctx: JobContext) -> dict[str, int]:
@@ -157,5 +176,6 @@ JOBS: dict[str, JobFunction] = {
     "index_knowledge": index_knowledge,
     "sync_repository": sync_repository,
     "run_automations": run_automations,
+    "run_coding": run_coding,
     "email_notifications": email_notifications,
 }

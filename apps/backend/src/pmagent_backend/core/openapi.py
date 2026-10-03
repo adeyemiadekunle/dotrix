@@ -108,6 +108,12 @@ TAGS: list[dict[str, str]] = [
         "and its changes wait for approval like anyone's.",
     },
     {
+        "name": "coding",
+        "description": "Coding runs: an issue handed to Claude Code (or Codex, by the server's model key) in a "
+        "sandbox, approved first; the platform pushes a new branch and opens a PR, the issue moves to review, "
+        "and the Reviewer reads the PR. Never the default branch, never `.pmagent/`, never merged by an agent.",
+    },
+    {
         "name": "graph",
         "description": "The project graph: how requirements, issues, decisions (ADRs), documents, and modules "
         "relate, derived from what they say and kept current; impact, paths, and documents that may be stale.",

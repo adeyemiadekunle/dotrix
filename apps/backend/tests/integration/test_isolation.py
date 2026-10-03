@@ -5,12 +5,15 @@ The route checks are generated from the app's own routes, so a new workspace or 
 is covered automatically. If a new route has a path parameter this file
 doesn't know, `test_every_scoped_route_is_covered` fails: add a value to `World.params`.
 """
+import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from httpx import AsyncClient
 
+from pmagent_backend.modules.coding.models import CodingAgent, CodingRun, CodingRunStatus
 from pmagent_engine.testing import tool_call
 
 SCOPES = ("{workspace_id}",)
@@ -27,7 +30,7 @@ class World:
 
 
 @pytest.fixture
-def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_script):
+def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_script, db_session):
     async def _build(email: str, name: str) -> World:
         owner = await signup(email=email, name=name)
         h = owner.headers
@@ -91,6 +94,16 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
         assert link.status_code == 201, link.text
         params["link_id"] = next(lk["id"] for lk in link.json()["links"] if lk["origin"] == "person")
         params |= {"lesson_id": lessons[0]["id"], "rejected_run_id": other["id"]}  # (not a path parameter)
+        # A coding run waiting for approval (made directly: starting one needs a connected repo).
+        coding_run = CodingRun(
+            workspace_id=uuid.UUID(team["id"]), project_id=uuid.UUID(project["id"]),
+            issue_id=uuid.UUID(issue.json()["id"]), issue_key=issue.json()["key"], agent=CodingAgent.CLAUDE_CODE,
+            status=CodingRunStatus.AWAITING_APPROVAL, brief="x", repo_full_name="o/r", base_branch="main",
+            requested_by_id=uuid.UUID(owner.id), created_at=datetime.now(UTC),
+        )
+        db_session.add(coding_run)
+        await db_session.flush()
+        params["coding_run_id"] = str(coding_run.id)
         return World(
             headers=h, params=params, colleague_headers=colleague.headers, restricted_id=restricted.json()["id"]
         )
@@ -127,6 +140,9 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}"): {
         "state": "dismissed"
     },
+    ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision"): {
+        "decision": "reject"
+    },
     ("POST", "/v1/workspaces/{workspace_id}/github/installations"): {"installation_id": 1, "code": "x"},
     ("PUT", "/v1/workspaces/{workspace_id}/projects/{project_id}/repository"): {
         "installation_ref": "01a0e000-0000-7000-8000-000000000000", "github_repo_id": 1
@@ -146,7 +162,7 @@ async def _call(client: AsyncClient, method: str, url: str, body: bool, headers:
 async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
     known = {"workspace_id", "project_id", "key", "path", "version", "document_id", "invite_id",
              "user_id", "run_id", "thread_id", "handle", "output_id", "index", "installation_ref", "automation_id",
-             "lesson_id", "link_id", "name"}
+             "lesson_id", "link_id", "name", "coding_run_id"}
     routes = _scoped_routes(db_client)
     assert len(routes) > 60  # sanity: the whole API is being walked
     for _, template, _ in routes:

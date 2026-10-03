@@ -42,6 +42,7 @@ class JobContext:
     embedder: Any = None  # the search index's embedding model (None: keyword search only)
     checkouts: Any = None  # connected repos' checkouts for agents (modules/code; None: not kept here)
     runner: Any = None  # the agent runner, for jobs that start runs (automations)
+    coding: Any = None  # the coding worker (modules/coding/runner.py; None: coding runs aren't executed here)
 
 
 JobFunction = Callable[..., Awaitable[Any]]

@@ -15,6 +15,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useChat } from "@/components/agent/chat-context";
+import { CodingRuns, StartCoding } from "@/components/coding/coding-run";
 import { Related } from "@/components/graph/related";
 import { Markdown } from "@/components/markdown";
 import { useMentionable } from "@/components/mentions";
@@ -450,6 +451,8 @@ function IssueDetails({
           />
         )}
 
+        <CodingRuns issue={issue} scope={scope} />
+
         <Separator />
 
         <IssueActivity
@@ -466,7 +469,7 @@ function IssueDetails({
 }
 
 /** Copy link and watch, in the drawer's header. */
-function IssueActions({ issue, scope }: { issue: Issue; scope: Scope }) {
+function IssueActions({ issue, scope, canCode }: { issue: Issue; scope: Scope; canCode: boolean }) {
   const watch = useWatch(scope);
   const me = useMe();
   const watching = Boolean(me.data && issue.watchers?.includes(me.data.id));
@@ -474,6 +477,7 @@ function IssueActions({ issue, scope }: { issue: Issue; scope: Scope }) {
   const chat = useChat();
   return (
     <div className="flex items-center gap-1">
+      {canCode && <StartCoding issue={issue} scope={scope} />}
       <Button
         size="sm"
         variant={issue.status === "review" ? "default" : "outline"}
@@ -535,7 +539,9 @@ export function IssueDrawer() {
               </Badge>
             )}
           </SheetTitle>
-          {issue.data && scope && <IssueActions issue={issue.data} scope={scope} />}
+          {issue.data && scope && (
+            <IssueActions issue={issue.data} scope={scope} canCode={can(workspace, "agents:code")} />
+          )}
           <SheetDescription className="sr-only">Issue details</SheetDescription>
         </SheetHeader>
         {issue.isLoading && (

@@ -35,6 +35,7 @@ from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner, mark_interrupted_runs
 from .modules.agents.streams import RedisRunStreams
 from .modules.code.checkouts import build_checkouts
+from .modules.coding.runner import build_coding_worker, end_cut_off_runs
 from .modules.documents.service import mark_interrupted_conversions
 from .modules.research.service import build_web_research
 from .modules.search.embeddings import build_embedder
@@ -91,6 +92,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # Runs execute in this process, so any cut off by the last shutdown are over.
                 await mark_interrupted_runs(sessionmaker)
                 await mark_interrupted_conversions(sessionmaker)
+                async with sessionmaker() as session:
+                    await end_cut_off_runs(session, settings, everything=True)
                 if settings.jobs == "inline":
                     app.state.jobs = InlineJobs(job_context, JOBS)
                 else:
@@ -110,8 +113,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 streams=streams,
             )
             if isinstance(app.state.jobs, InlineJobs | LocalJobs):
-                # Jobs that start agent runs (automations) need the runner, made just above.
-                app.state.jobs.ctx = dataclasses.replace(job_context, runner=runner)
+                # Jobs that start agent runs (automations, the Reviewer after a coding run) need the
+                # runner, made just above.
+                app.state.jobs.ctx = dataclasses.replace(
+                    job_context, runner=runner, coding=build_coding_worker(settings, sessionmaker, runner)
+                )
             loops: list[asyncio.Task[None]] = []
             if local_jobs is not None:
                 # No worker (and so no cron) in local mode: clean up hourly and keep the search
