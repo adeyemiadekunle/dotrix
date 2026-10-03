@@ -43,12 +43,12 @@ async def test_cleanup_deletes_only_what_is_finished(
     # the refresh token is still valid, and an expired invite is kept 30 days.
     deleted = await cleanup_expired(ctx, now=(now + timedelta(days=10)).isoformat())
     assert deleted == {"refresh_tokens": 0, "auth_sessions": 0, "action_tokens": 1, "email_signups": 0,
-                       "device_authorizations": 1, "invites": 0, "web_pages": 0}
+                       "device_authorizations": 1, "invites": 0, "web_pages": 0, "cut_off_coding_runs": 0}
 
     # In 40 days: the refresh token (and so its session) expired over a week ago, the invite over 30 days ago.
     deleted = await cleanup_expired(ctx, now=(now + timedelta(days=40)).isoformat())
     assert deleted == {"refresh_tokens": 1, "auth_sessions": 1, "action_tokens": 0, "email_signups": 0,
-                       "device_authorizations": 0, "invites": 1, "web_pages": 0}
+                       "device_authorizations": 0, "invites": 1, "web_pages": 0, "cut_off_coding_runs": 0}
     db_session.expire_all()
     assert set((await _counts(db_session)).values()) == {0}
 

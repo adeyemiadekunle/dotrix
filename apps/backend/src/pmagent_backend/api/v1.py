@@ -19,6 +19,7 @@ from pmagent_backend.modules.auth.router import router as auth
 from pmagent_backend.modules.automations.router import router as automations
 from pmagent_backend.modules.calendar.router import feed_router as calendar_feed
 from pmagent_backend.modules.calendar.router import me_router as calendar_settings
+from pmagent_backend.modules.coding.router import router as coding
 from pmagent_backend.modules.connectors.router import project_router as project_repository
 from pmagent_backend.modules.connectors.router import webhook_router as github_webhook
 from pmagent_backend.modules.connectors.router import workspace_router as workspace_github
@@ -73,6 +74,7 @@ for module_router in (
     notification_settings,
     workspace_github,
     project_repository,
+    coding,
     github_webhook,
     search,
     workspace_search,

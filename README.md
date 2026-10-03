@@ -46,6 +46,16 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
   reports can be saved as research notes.
 - **Code awareness:** connect a repo through the pmagent GitHub App and agents read its code
   (read-only) when reviewing or planning.
+- **Coding:** "Start coding" on an issue hands it to Claude Code (or Codex, when the server has
+  only an OpenAI key).
+  - It runs headless in a sandbox (OpenShell), from a brief: the issue, its acceptance
+    criteria, and the documents it links to.
+  - Each run waits for an approval. You can follow it as it works, and stop it.
+  - The platform pushes a new branch and opens the PR. The issue moves to review, and the
+    Reviewer reads the PR.
+  - Guardrails: the agent never holds a GitHub token, and nothing is pushed to the default
+    branch. Changes to `.pmagent/` or CI workflows are refused, and a person merges.
+  - Setup: [infra/coding/README.md](infra/coding/README.md).
 - **Notifications:**
   - What happens: approvals waiting, decisions, mentions, assignments, findings, and changes to
     issues you watch.
@@ -60,11 +70,10 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
 
 ## What's next
 
-- **Coding:** "Start coding" on an issue. A brief goes to Claude Code or Codex in a sandboxed
-  container, which opens a PR on a new branch; on the CLI or desktop it works in your own
-  checkout instead.
-  - Guardrails: never the default branch, never a merge or deploy, and no `.pmagent/` in a PR.
-  - PRs come back on the board, the Reviewer runs on every agent PR, and a person merges.
+- **Coding, next:**
+  - Coding from the CLI or desktop, in your own checkout.
+  - PR events back on the board.
+  - The board and documents available to the coding agent inside its sandbox.
 - **Background commit review:** a code graph and the blast radius of each push.
 - **Space:** workspace-level knowledge, and ideas before a project exists.
 - **To do for whoever runs it:**
@@ -121,6 +130,7 @@ uv run pmagent --help    # CLI
   - `PMAGENT_TAVILY_API_KEY`: web research through Tavily.
   - `PMAGENT_SENDLY_API_KEY`: real email delivery.
   - The GitHub sign-in and GitHub App settings: sign-in with GitHub and connected repos.
+  - `PMAGENT_CODING_SANDBOX`: coding runs (`openshell`, or `local` for development only).
 - **Limits:**
   - `PMAGENT_RUN_TOKEN_BUDGET`: tokens per agent run.
   - `PMAGENT_AUTOMATION_DAILY_RUNS` and `PMAGENT_AUTOMATION_DAILY_TOKENS`: automation runs and

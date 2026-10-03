@@ -41,6 +41,8 @@ class FakeGitHub:
             333: {"account": {"login": "ada-gh", "type": "User"}, "repos": []},
         }
         self.manages = {111, 333}
+        self.token_requests: list[dict[str, Any]] = []  # what each installation token was scoped to
+        self.pulls: list[dict[str, Any]] = []  # pull requests opened
         self.codes = {"code-1", "code-2", "code-3"}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -62,6 +64,7 @@ class FakeGitHub:
             if installation_id not in self.installations:
                 return httpx.Response(404)
             if path.endswith("/access_tokens"):
+                self.token_requests.append(json.loads(request.content) if request.content else {})
                 return httpx.Response(201, json={"token": f"ghs_{installation_id}"})
             return httpx.Response(200, json={"id": installation_id, **self.installations[installation_id]})
         installation = self.installations.get(int(auth.removeprefix("Bearer ghs_") or 0))
@@ -76,6 +79,11 @@ class FakeGitHub:
             repo = _repo(9500 + len(installation["repos"]), f"{org}/{body['name']}", private=body["private"])
             installation["repos"].append(repo)
             return httpx.Response(201, json=repo)
+        if path.startswith("/repos/") and path.endswith("/pulls") and request.method == "POST":
+            full_name = path.removeprefix("/repos/").removesuffix("/pulls")
+            self.pulls.append({"repo": full_name, **json.loads(request.content)})
+            number = len(self.pulls)
+            return httpx.Response(201, json={"number": number, "html_url": f"https://github.com/{full_name}/pull/{number}"})
         if path == "/installation/repositories":
             return httpx.Response(200, json={"repositories": installation["repos"]})
         if path.startswith("/repositories/"):

@@ -32,6 +32,7 @@ from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner
 from .modules.agents.streams import RedisRunStreams
 from .modules.code.checkouts import build_checkouts
+from .modules.coding.runner import build_coding_worker
 from .modules.research.service import build_web_research
 from .modules.search.embeddings import build_embedder
 
@@ -40,6 +41,7 @@ logger = logging.getLogger(__name__)
 RUN_TIMEOUT_SECONDS = 60 * 60  # an agent run can take a while (research, many approvals' worth of work)
 RUN_MAX_TRIES = 3  # a run cut off by a worker restart is retried from its last checkpoint
 JOB_TIMEOUT = 60
+CODING_TIMEOUT_SECONDS = 4 * 60 * 60 + 30 * 60  # the longest coding_timeout_minutes, plus setting up and pushing
 JOB_MAX_TRIES = 5  # e.g. the email provider is briefly down: retried after 10s, 20s, 30s, 40s
 
 
@@ -61,7 +63,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     )
     ctx["jobs"] = JobContext(
         sessionmaker, settings, build_email_sender(settings), build_storage(settings), embedder, checkouts,
-        runner=dispatcher,
+        runner=dispatcher, coding=build_coding_worker(settings, sessionmaker, dispatcher),
     )
     ctx["runner"] = AgentRunner(
         session_factory=sessionmaker,
@@ -103,6 +105,10 @@ def job_function(name: str, job: JobFunction, backoff_seconds: float = 10) -> Fu
     return func(run, name=name, timeout=JOB_TIMEOUT, max_tries=JOB_MAX_TRIES)
 
 
+async def coding_run(ctx: dict[str, Any], *, run_id: str) -> None:
+    await JOBS["run_coding"](ctx["jobs"], run_id=run_id)
+
+
 async def cleanup(ctx: dict[str, Any]) -> None:
     await cleanup_expired(ctx["jobs"])
 
@@ -122,7 +128,9 @@ async def emails(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     functions = [
         func(run_agent, timeout=RUN_TIMEOUT_SECONDS, max_tries=RUN_MAX_TRIES),
-        *(job_function(name, job) for name, job in JOBS.items()),
+        *(job_function(name, job) for name, job in JOBS.items() if name != "run_coding"),
+        # A coding run takes as long as the agent does, and is never retried (it may have pushed).
+        func(coding_run, name="run_coding", timeout=CODING_TIMEOUT_SECONDS, max_tries=1),
     ]
     # Hourly; arq gives each run a unique job ID, so with several workers only one does it.
     # The search index every minute (only what changed is re-chunked or embedded).

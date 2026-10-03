@@ -3042,6 +3042,131 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Coding Availability
+         * @description Whether this project's issues can be coded here, by which tool, and if not, why not.
+         *     Anyone who sees the project.
+         */
+        get: operations["coding_availability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/issues/{key}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Coding
+         * @description Ask for a coding run on an issue: Claude Code (or Codex) codes it in a sandbox on a new
+         *     branch, and the platform opens a PR. It waits for someone who may approve agent changes;
+         *     the brief it will get is in the run. People who may instruct the coding agent. 409
+         *     `coding_unavailable` (not set up, or no connected repo), `coding_busy` (one is already open).
+         */
+        post: operations["start_coding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Coding Runs
+         * @description The project's coding runs, newest first (one issue's with `issue=KEY`). Anyone who sees the project.
+         */
+        get: operations["list_coding_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coding Run
+         * @description A coding run with what the agent has done so far (poll it while it runs).
+         */
+        get: operations["get_coding_run"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Coding Run
+         * @description Approve a coding run (it starts, and the issue is assigned to the tool) or reject it,
+         *     with a reason. People who may approve agent changes.
+         */
+        post: operations["decide_coding_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop Coding Run
+         * @description Stop a coding run that waits or works; nothing is pushed. Whoever asked for it, or owners and admins.
+         */
+        post: operations["stop_coding_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/github/webhook": {
         parameters: {
             query?: never;
@@ -3972,6 +4097,166 @@ export interface components {
             /** @description Claim for this agent (e.g. claude-code) instead of yourself */
             as_agent?: components["schemas"]["AgentAssignee"] | null;
         };
+        /**
+         * CodingAgent
+         * @description The coding tools we wrap; which one runs follows the model key the server has.
+         * @enum {string}
+         */
+        CodingAgent: "claude-code" | "codex";
+        /** CodingAvailability */
+        CodingAvailability: {
+            /** Available */
+            available: boolean;
+            /** @description Who would code: Claude Code with an Anthropic key, else Codex */
+            agent: components["schemas"]["CodingAgent"] | null;
+            /**
+             * Sandbox
+             * @description `openshell`, or `local` (development, no isolation)
+             */
+            sandbox: string | null;
+            /**
+             * Reason
+             * @description Why not, when it isn't available
+             */
+            reason: string | null;
+        };
+        /** CodingDecision */
+        CodingDecision: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approve" | "reject";
+            /** Reason */
+            reason?: string | null;
+        };
+        /** CodingEvent */
+        CodingEvent: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Kind
+             * @description `step`, `text` (the agent's words), `tool` (what it did), `error`
+             */
+            kind: string;
+            /** Text */
+            text: string;
+        };
+        /** CodingRunCreate */
+        CodingRunCreate: {
+            /**
+             * Note
+             * @description Anything to add to the issue for the agent
+             */
+            note?: string | null;
+        };
+        /** CodingRunRead */
+        CodingRunRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Issue Key */
+            issue_key: string;
+            agent: components["schemas"]["CodingAgent"];
+            /** Model */
+            model: string | null;
+            status: components["schemas"]["CodingRunStatus"];
+            /**
+             * Brief
+             * @description Exactly what the agent is told
+             */
+            brief: string;
+            /** Note */
+            note: string | null;
+            /** Repo Full Name */
+            repo_full_name: string;
+            /** Base Branch */
+            base_branch: string;
+            /** Base Sha */
+            base_sha: string | null;
+            /** Branch */
+            branch: string | null;
+            /** Commit Sha */
+            commit_sha: string | null;
+            /** Pr Number */
+            pr_number: number | null;
+            /** Pr Url */
+            pr_url: string | null;
+            /** Files Changed */
+            files_changed: {
+                [key: string]: unknown;
+            }[];
+            /** Events */
+            events: components["schemas"]["CodingEvent"][];
+            /**
+             * Summary
+             * @description The agent's last message
+             */
+            summary: string | null;
+            /** Error */
+            error: string | null;
+            /**
+             * Input Tokens
+             * @description Owners and admins (usage:view) only
+             */
+            input_tokens: number | null;
+            /** Output Tokens */
+            output_tokens: number | null;
+            /** Cost Usd */
+            cost_usd: number | null;
+            /** Requested By Id */
+            requested_by_id: string | null;
+            /** Decided By Id */
+            decided_by_id: string | null;
+            /** Decision Reason */
+            decision_reason: string | null;
+            /**
+             * Review Run Id
+             * @description The Reviewer's run on the PR
+             */
+            review_run_id: string | null;
+            /**
+             * Review Thread Id
+             * @description Its conversation, to open in Chat
+             */
+            review_thread_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at: string | null;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Can Decide
+             * @description Whether you may approve or reject it now
+             */
+            can_decide: boolean;
+            /**
+             * Can Stop
+             * @description Whether you may stop it now
+             */
+            can_stop: boolean;
+        };
+        /**
+         * CodingRunStatus
+         * @enum {string}
+         */
+        CodingRunStatus: "awaiting_approval" | "rejected" | "queued" | "running" | "pr_opened" | "no_changes" | "failed" | "stopped";
         /** CommentCreate */
         CommentCreate: {
             /** Body */
@@ -16065,6 +16350,374 @@ export interface operations {
             };
             /** @description Not found, or not visible to you */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    coding_availability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingAvailability"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    start_coding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodingRunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_coding_runs: {
+        parameters: {
+            query?: {
+                issue?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_coding_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coding_run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    decide_coding_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coding_run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodingDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    stop_coding_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coding_run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
