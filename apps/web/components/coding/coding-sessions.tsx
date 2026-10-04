@@ -32,7 +32,7 @@ const ORIGIN_LABELS = {
   follow_up: "Follow-up",
 } as const;
 
-/** The workspace's coding sessions, grouped by project, for Chat's Coding tab. */
+/** The workspace's coding sessions, grouped by project, for Chat's Code tab. */
 export function CodingSessionList({
   sessions,
   projects,
@@ -240,7 +240,7 @@ export function CodingSessionView({
   );
 }
 
-/** Chat's Coding tab, right of the list: the open session, or what sessions are. */
+/** Chat's Code tab, right of the list: the open session, or what sessions are. */
 export function CodingPane({
   workspace,
   projects,
@@ -261,7 +261,7 @@ export function CodingPane({
   return (
     <>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
-        <span className="flex-1 text-sm font-medium">Coding</span>
+        <span className="flex-1 text-sm font-medium">Code</span>
         {/* Phones: the session list is a menu. */}
         <select
           aria-label="Coding session"
@@ -277,7 +277,7 @@ export function CodingPane({
           ))}
         </select>
         <Button size="sm" variant="ghost" className="md:hidden" onClick={onConversations}>
-          Conversations
+          Chat
         </Button>
       </div>
       {sessionId && project ? (

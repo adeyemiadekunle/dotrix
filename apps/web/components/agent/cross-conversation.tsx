@@ -99,7 +99,7 @@ export function CrossConversation({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ChatScroller followKey={threadId} contentClassName="mx-auto grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-6 p-4 md:p-6">
+      <ChatScroller followKey={threadId} follow={Boolean(threadId)} contentClassName="mx-auto grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-6 p-4 md:p-6">
         {threadId && thread.isLoading && <Skeleton className="h-24" />}
         {threadId && (
           <p className="text-muted-foreground flex items-center justify-center gap-1.5 text-xs">
