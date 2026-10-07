@@ -1,4 +1,9 @@
-# pmagent
+# pmagent 
+
+# Now dotrix
+Dotrix — The AI workspace for building software.
+
+"Dotrix is inspired by linear algebra — dots represent specialised components, while the matrix represents the relationships between them. Dotrix brings AI agents, knowledge, tasks and tools together into one coordinated workspace"
 
 An AI project team for software projects. Agents write and maintain a project's documents and
 board, people approve every change, and Claude Code or Codex do the coding.
