@@ -210,7 +210,7 @@ export function who(id: string | null | undefined): { id: string; name: string; 
   const m = mem(id);
   if (m) return { id, name: m.name, c: m.c, agent: false };
   const a = AGENTS.find((x) => x.handle === id);
-  if (a) return { id, name: `${a.name} agent`, c: a.c, agent: true };
+  if (a) return { id, name: /agent$/i.test(a.name) ? a.name : `${a.name} agent`, c: a.c, agent: true };
   const tool = CODING_TOOLS.find((x) => x.id === id);
   if (tool) return { id, name: tool.name, c: tool.c, agent: true };
   return null;

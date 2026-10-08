@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Ic } from "../core/icons";
 import { go } from "../core/nav";
 import { ago, uid } from "../core/utils";
+import { isLive, knowledgeSaved } from "../data/live";
 import { D, S, mutate, render, who } from "../data/store";
 import type { KnowledgeFile, Project } from "../data/types";
 import { Markdown } from "@/components/markdown";
@@ -39,6 +40,13 @@ export function Knowledge({ p }: { p: Project }) {
   };
   const save = () => {
     if (!cur) return;
+    if (isLive()) {
+      knowledgeSaved(cur, draft, note);
+      open.editing = false;
+      setNote("");
+      render();
+      return;
+    }
     mutate(() => {
       cur.content = draft;
       cur.version += 1;
@@ -92,7 +100,8 @@ export function Knowledge({ p }: { p: Project }) {
                     {cur.path}
                   </h2>
                   <div className="row faint" style={{ gap: 6, fontSize: 12, marginTop: 4 }}>
-                    <Av id={cur.by} cls="sm" tip={false} />v{cur.version} · {who(cur.by)?.name} · {ago(cur.at)}
+                    {cur.by && <Av id={cur.by} cls="sm" tip={false} />}v{cur.version}
+                  {cur.by && ` · ${who(cur.by)?.name}`} · {ago(cur.at)}
                   </div>
                 </div>
                 <div className="acts">

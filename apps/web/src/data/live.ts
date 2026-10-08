@@ -5,17 +5,20 @@
 // puts the item back as the API has it and says why.
 //
 // Wired: the workspace, members and roles, projects (create, edit, status, star), issues
-// (create, every field the API has, comments), notifications (read state), activity.
-// Not yet: chat and agents, Knowledge and files, coding, settings beyond roles; sub-task
-// checklists, attachments, repeats, and starring an issue stay in this browser.
-import { api, authPost, hasSession, unwrap, type Schemas } from "@/lib/api";
+// (create, every field the API has, comments), notifications (read state), activity, agents
+// (the list), Knowledge (read and save), files (upload, list), automations (list, on/off, add
+// a preset), the audit log.
+// Not yet: chat and coding (their own step); teams, sub-task checklists, attachments on issues,
+// repeats, starring an issue, renaming or duplicating files, and custom agents stay in this browser.
+import { api, apiFetch, authPost, hasSession, problemMessage, unwrap, type Schemas } from "@/lib/api";
 
 import { PCOLORS } from "../core/constants";
 import { uid } from "../core/utils";
+import { fileType, fsize } from "../ui/helpers";
 import { toast } from "../ui/toast";
 import { AGENTS } from "./seed-dotrix";
 import { D, S, persist, render } from "./store";
-import type { Activity, Comment, Data, Member, Notif, NotifType, Project, Task } from "./types";
+import type { Activity, Agent, AuditEvent, Automation, Comment, Data, FileItem, KnowledgeFile, Member, Notif, NotifType, Project, Task } from "./types";
 
 type W = Schemas["WorkspaceWithRole"];
 
@@ -199,10 +202,81 @@ function toActivity(a: Schemas["ActivityItem"]): Activity {
   };
 }
 
+const SCHEDULE_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const EVENT_LABEL: Record<string, string> = {
+  "issue.created": "When an issue is created",
+  "issue.done": "When an issue is done",
+  "document.changed": "When a document changes",
+  "changes.approved": "When changes are approved",
+  "code.pushed": "When code is pushed",
+};
+const hour = (h: number) => `${String(h).padStart(2, "0")}:00`;
+
+/** An automation's trigger as the screens say it ("Weekly, Monday 08:00 · When an issue is created"). */
+function triggerLabel(a: Schemas["AutomationRead"]): string {
+  const parts = a.events.map((e) => EVENT_LABEL[e] ?? e);
+  if (a.schedule_hour != null) parts.unshift(a.schedule_weekday != null ? `Weekly, ${SCHEDULE_DAYS[a.schedule_weekday]} ${hour(a.schedule_hour)}` : `Daily, ${hour(a.schedule_hour)}`);
+  return parts.join(" · ") || "Run by hand";
+}
+const toAutomation = (a: Schemas["AutomationRead"]): Automation => ({ id: a.id, project: a.project_id, name: a.name, agent: AGENT_IN[a.agent] ?? a.agent, trigger: triggerLabel(a), enabled: a.enabled });
+
+function toKnowledge(f: Schemas["FileRead"], pid: string): KnowledgeFile {
+  return { path: f.path, project: pid, content: f.content, version: f.version, by: "", at: ms(f.updated_at) };
+}
+function toFile(d: Schemas["DocumentRead"], pid: string): FileItem {
+  return {
+    id: d.id,
+    project: pid,
+    name: d.filename,
+    type: fileType(d.filename),
+    size: fsize(d.size),
+    by: d.uploaded_by_id ?? "",
+    at: ms(d.created_at),
+    converted: d.status === "ready" ? "ready" : d.status === "failed" ? "failed" : "converting",
+  };
+}
+const toAudit = (a: Schemas["AuditEventRead"]): AuditEvent => ({
+  id: a.id,
+  at: ms(a.created_at),
+  by: actor(a.actor_user_id, a.agent),
+  action: a.action,
+  target: a.target ?? "",
+  project: a.project_id ?? undefined,
+});
+/** An agent as the store has it: the API's definition, with the store's icon and colour for it. */
+function toAgent(a: Schemas["AgentRead"]): Agent {
+  const handle = AGENT_IN[a.handle] ?? a.handle;
+  const look = AGENTS.find((x) => x.handle === handle);
+  return {
+    handle,
+    name: a.name,
+    desc: a.description,
+    icon: look?.icon ?? "bot",
+    c: look?.c ?? "#57544E",
+    builtIn: a.source !== "custom",
+    customised: a.source === "customised",
+    tools: a.tools,
+    model: a.model ?? undefined,
+  };
+}
+
 /* ---------- loading ---------- */
 
 export async function myWorkspaces(): Promise<W[]> {
   return unwrap(api.GET("/v1/workspaces"));
+}
+
+/** A project's knowledge files with their content (the manifest lists paths and versions only). */
+async function loadKnowledge(wsId: string, pid: string): Promise<KnowledgeFile[]> {
+  const path = { workspace_id: wsId, project_id: pid };
+  const manifest = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/knowledge", { params: { path } }));
+  return Promise.all(
+    manifest.files
+      .filter((f) => !f.deleted)
+      .map((f) =>
+        unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/knowledge/files/{path}", { params: { path: { ...path, path: f.path } } })).then((r) => toKnowledge(r, pid)),
+      ),
+  );
 }
 
 /** Load workspace {slug} from the API into the store. False when it isn't one of yours. */
@@ -230,6 +304,23 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
     ]);
     const stars = new Set((starred as { id: string }[]).map((p) => p.id));
     const ps = projects.map((p) => toProject(p, members, stars));
+    // Per project: knowledge (every file's content), documents, automations. Agents and the audit
+    // log are the workspace's; the audit log is for owners and admins, so others get none.
+    const [perProject, agents, audit] = await Promise.all([
+      Promise.all(
+        projects.map(async (p) => {
+          const pp = { params: { path: { workspace_id: ws.id, project_id: p.id } } };
+          const [files, docs, autos] = await Promise.all([
+            loadKnowledge(ws.id, p.id).catch(() => []),
+            unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/documents", pp)).catch(() => []),
+            unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/automations", pp)).catch(() => []),
+          ]);
+          return { knowledge: files, files: docs.map((d) => toFile(d, p.id)), automations: autos.map(toAutomation) };
+        }),
+      ),
+      unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", path)).catch(() => []),
+      unwrap(api.GET("/v1/workspaces/{workspace_id}/audit", { params: { path: { workspace_id: ws.id }, query: { limit: 200 } } })).catch(() => []),
+    ]);
     const data: Data = {
       ws: { id: ws.id, name: ws.name, c: hashTint(ws.id), plan: ws.kind === "personal" ? "Personal" : "Team", kind: ws.kind, url: ws.slug },
       workspaces: wss.map((w) => ({ id: w.id, name: w.name, c: hashTint(w.id), plan: w.kind === "personal" ? "Personal" : "Organisation", kind: w.kind, slug: w.slug })),
@@ -240,7 +331,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       comments: [],
       activity: activity.map(toActivity),
       notifs: notifs.map(toNotif),
-      files: [],
+      files: perProject.flatMap((x) => x.files),
       events: [],
       projOrder: [...ps.filter((p) => p.fav), ...ps.filter((p) => !p.fav)].map((p) => p.id),
       savedViews: [],
@@ -250,12 +341,12 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       tfa: false,
       notifPrefs: {},
       teams: [],
-      agents: AGENTS,
+      agents: (agents as Schemas["AgentRead"][]).map(toAgent),
       threads: [],
-      knowledge: [],
+      knowledge: perProject.flatMap((x) => x.knowledge),
       coding: [],
-      audit: [],
-      automations: [],
+      audit: (audit as Schemas["AuditEventRead"][]).map(toAudit),
+      automations: perProject.flatMap((x) => x.automations),
     };
     if (live.demo === null) live.demo = S.data; // set aside the demo's data the first time only
     S.data = data;
@@ -521,4 +612,117 @@ export function roleChanged(m: Member) {
 export function notifsRead(ids: string[] | "all") {
   if (!isLive() || (ids !== "all" && !ids.length)) return;
   void unwrap(api.POST("/v1/workspaces/{workspace_id}/notifications/read", { params: { path: { workspace_id: wsId() } }, body: ids === "all" ? { all: true, ids: [] } : { ids, all: false } })).catch(() => undefined);
+}
+
+/* ---------- knowledge, files, automations ---------- */
+
+async function reloadKnowledge(pid: string) {
+  if (!isLive()) return;
+  try {
+    const files = await loadKnowledge(wsId(), pid);
+    D().knowledge = [...D().knowledge.filter((f) => f.project !== pid), ...files];
+    render();
+  } catch {
+    /* leave what's shown */
+  }
+}
+
+/** A knowledge file saved from Knowledge: the text shows at once; the API's version replaces the guess. */
+export function knowledgeSaved(f: KnowledgeFile, content: string, message: string) {
+  if (!isLive()) return;
+  const base = f.version;
+  f.content = content;
+  void unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/knowledge/files/{path}", {
+      params: { path: { ...projectPath(f.project), path: f.path } },
+      body: { content, base_version: base, message: message || null },
+    }),
+  )
+    .then((r) => {
+      f.version = r.version;
+      f.by = D().me;
+      f.at = ms(r.updated_at);
+      render();
+      toast(`Saved ${f.path} (v${r.version})`);
+    })
+    .catch((e) => {
+      failed(f.path, e);
+      void reloadKnowledge(f.project);
+    });
+}
+
+async function reloadAutomations(pid: string) {
+  if (!isLive()) return;
+  try {
+    const autos = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/automations", { params: { path: projectPath(pid) } }));
+    D().automations = [...D().automations.filter((a) => a.project !== pid), ...autos.map(toAutomation)];
+    render();
+  } catch {
+    /* leave what's shown */
+  }
+}
+
+/** An automation switched on or off in Settings (the store already shows it). */
+export function automationToggled(a: Automation) {
+  if (!isLive()) return;
+  void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/automations/{automation_id}", { params: { path: { ...projectPath(a.project), automation_id: a.id } }, body: { enabled: a.enabled } })).catch((e) => {
+    failed(a.name, e);
+    void reloadAutomations(a.project);
+  });
+}
+
+/** The presets in Settings → Automations, as the API takes them. */
+export const PRESETS: Record<string, { agent: string; events?: Schemas["AutomationEvent"][]; weekly?: boolean; instructions: string }> = {
+  "Keep documents current": {
+    agent: "documentation",
+    events: ["changes.approved", "issue.done"],
+    instructions: "After approved changes or a finished issue, propose the matching current-state and roadmap updates, as changes to approve.",
+  },
+  "Flag stale documents": { agent: "documentation", weekly: true, instructions: "List the documents that may be out of date, and why." },
+  "Triage new bugs": { agent: "auto", events: ["issue.created"], instructions: "For each new issue, check for duplicates and fill in missing fields, as changes to approve." },
+  "Watch a topic": { agent: "research", weekly: true, instructions: "Re-check the topic against the newest research note and report what changed, with sources." },
+};
+
+/** A preset added in Settings: created for the project, then shown. */
+export async function automationAdded(pid: string, preset: string) {
+  const spec = PRESETS[preset];
+  if (!spec || !isLive()) return;
+  try {
+    const made = await unwrap(
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/automations", {
+        params: { path: projectPath(pid) },
+        body: {
+          name: preset,
+          agent: spec.agent,
+          instructions: spec.instructions,
+          events: spec.events ?? [],
+          schedule_hour: spec.weekly ? 8 : null,
+          schedule_weekday: spec.weekly ? 0 : null,
+          enabled: true,
+          max_runs_per_day: 3,
+        },
+      }),
+    );
+    D().automations.push(toAutomation(made));
+    render();
+    toast(`Added “${preset}”`);
+  } catch (e) {
+    failed(`“${preset}”`, e);
+  }
+}
+
+/** A file uploaded to a project's files; the store shows it once the API has it (converted in the background). */
+export async function documentUploaded(file: File, pid: string, onProgress: (pct: number) => void): Promise<void> {
+  const body = new FormData();
+  body.append("file", file);
+  onProgress(15);
+  const res = await apiFetch(`/v1/workspaces/${wsId()}/projects/${pid}/documents`, { method: "POST", body });
+  if (!res.ok) {
+    const problem = (await res.json().catch(() => undefined)) as Parameters<typeof problemMessage>[0];
+    throw new Error(problemMessage(problem) ?? "The file didn't upload");
+  }
+  const doc = (await res.json()) as Schemas["DocumentRead"];
+  D().files.unshift(toFile(doc, pid));
+  render();
+  onProgress(100);
 }

@@ -426,6 +426,7 @@ export function previewFile(id: string) {
 }
 export function renameFile(id: string) {
   const f = D().files.find((x) => x.id === id)!;
+  if (notYet("Renaming files", "Upload the file again under its new name.")) return;
   S.ui.pop = null;
   promptDlg({
     title: "Rename file",
@@ -442,6 +443,7 @@ export function renameFile(id: string) {
 }
 export function dupFile(id: string) {
   const f = D().files.find((x) => x.id === id)!;
+  if (notYet("Duplicating files", "Upload it again instead.")) return;
   S.ui.pop = null;
   mutate(() => {
     const i = D().files.indexOf(f);
@@ -451,6 +453,7 @@ export function dupFile(id: string) {
 }
 export function delFile(id: string) {
   const f = D().files.find((x) => x.id === id)!;
+  if (notYet("Deleting files", "")) return;
   S.ui.pop = null;
   confirmDlg({
     title: "Delete file?",

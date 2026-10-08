@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 
 import { applyPatch, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
 import { agentsNotWired } from "../core/agents";
-import { commentPosted } from "../data/live";
+import { commentPosted, documentUploaded, isLive } from "../data/live";
 import { TY, TYPES } from "../core/constants";
 import { Ic } from "../core/icons";
 import { openModal, restore, snapshot } from "../core/more";
@@ -40,6 +40,20 @@ export function handleFiles(files: FileList | File[] | null, ctx: { project: str
     const up: Upload = { id: uid("u"), name: file.name, size: fsize(file.size), project: ctx.project, task: ctx.task, pct: 0 };
     uploads = [...uploads, up];
     render();
+    // A real workspace: the file goes to the API (a task's attachment stays in this browser for now).
+    if (isLive()) {
+      void documentUploaded(file, ctx.project, (pct) => {
+        up.pct = pct;
+        render();
+      })
+        .then(() => toast(`Uploaded ${up.name}`))
+        .catch((e) => toast(`${up.name} didn't upload${e instanceof Error ? `: ${e.message}` : ""}`, { kind: "err", ms: 6000 }))
+        .finally(() => {
+          uploads = uploads.filter((x) => x !== up);
+          render();
+        });
+      return;
+    }
     const iv = setInterval(() => {
       up.pct = Math.min(100, up.pct + 9 + Math.round(Math.random() * 22));
       render();
