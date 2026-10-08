@@ -453,7 +453,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
               </button>
             ))}
             <Sep />
-            <Mi icon="plus" label="Create workspace" onClick={() => (closePop(), go("home"))} />
+            <Mi icon="plus" label="Create workspace" onClick={() => (closePop(), window.location.assign("/onboarding"))} />
             <Mi icon="settings" label="Workspace settings" onClick={() => (closePop(), go("settings", { sec: "workspace" }))} />
             <Mi icon="user-plus" label="Invite members" onClick={invite} />
             <Sep />
