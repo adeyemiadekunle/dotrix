@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@pmagent/ui/components/button";
 import {
   DropdownMenu,

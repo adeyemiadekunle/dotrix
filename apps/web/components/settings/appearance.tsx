@@ -1,5 +1,3 @@
-"use client";
-
 import { Label } from "@pmagent/ui/components/label";
 import { RadioGroup, RadioGroupItem } from "@pmagent/ui/components/radio-group";
 import { Skeleton } from "@pmagent/ui/components/skeleton";

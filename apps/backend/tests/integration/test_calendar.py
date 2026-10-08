@@ -10,8 +10,8 @@ TODAY = date.today()
 
 
 def _feed_path(created: dict[str, Any]) -> str:
-    # The URL goes through the web app's proxy (http://app.test/api/v1/...); the API serves /v1/...
-    return created["url"].removeprefix("http://app.test/api")
+    # The URL is on the web app's address (http://app.test/v1/...), which forwards /v1 to the API.
+    return created["url"].removeprefix("http://app.test")
 
 
 async def _project(client: AsyncClient, headers: dict[str, str], ws: dict[str, Any], key: str = "KUN") -> str:
@@ -45,7 +45,7 @@ async def test_turning_the_feed_on_gives_a_secret_url(db_client: AsyncClient, si
 
     created = await db_client.post("/v1/me/calendar", json={}, headers=ada.headers)
     assert created.status_code == 201 and created.json()["scope"] == "mine"
-    assert created.json()["url"].startswith("http://app.test/api/v1/calendar/") and created.json()["url"].endswith(".ics")
+    assert created.json()["url"].startswith("http://app.test/v1/calendar/") and created.json()["url"].endswith(".ics")
     settings = (await db_client.get("/v1/me/calendar", headers=ada.headers)).json()
     assert "url" not in settings and settings["last_used_at"] is None
 
@@ -60,6 +60,9 @@ async def test_turning_the_feed_on_gives_a_secret_url(db_client: AsyncClient, si
     assert "No date" not in body
     assert f"URL:http://app.test/w/{team['slug']}/p/KUN/board?issue=KUN-1" in body
     assert (await db_client.get("/v1/me/calendar", headers=ada.headers)).json()["last_used_at"] is not None
+    # Calendar apps subscribed before the web app moved to Vite keep polling /api/v1/calendar/...
+    old = await db_client.get("/api" + _feed_path(created.json()))
+    assert old.status_code == 200 and old.text == body
 
 
 async def test_mine_is_assigned_or_watched_and_all_is_every_dated_issue(
@@ -99,6 +102,7 @@ async def test_a_new_url_replaces_the_old_and_off_means_off(db_client: AsyncClie
     assert (await db_client.delete("/v1/me/calendar", headers=ada.headers)).status_code == 204
     assert (await db_client.get(second)).status_code == 404
     assert (await db_client.get("/v1/calendar/not-a-feed.ics")).status_code == 404
+    assert (await db_client.get("/api/v1/calendar/not-a-feed.ics")).status_code == 404
     assert (await db_client.get("/v1/calendar/whatever")).status_code == 404
 
 

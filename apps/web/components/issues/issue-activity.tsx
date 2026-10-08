@@ -1,5 +1,3 @@
-"use client";
-
 import type { Schemas } from "@pmagent/api-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@pmagent/ui/components/avatar";
 import { Textarea } from "@pmagent/ui/components/textarea";

@@ -1,6 +1,4 @@
-"use client";
-
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "@/lib/navigation";
 import { useCallback } from "react";
 
 // Slashes and commas are left readable (?file=architecture/overview.md, ?type=story,bug).

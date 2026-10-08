@@ -9,7 +9,7 @@ Engine notes: [docs/engine.md](docs/engine.md). Agents v2 spec: [docs/agents-v2.
 | --- | --- | --- |
 | `apps/backend` | Platform API; every client talks to it | FastAPI (Python, uv) |
 | `apps/cli` | `pmagent` CLI + MCP server for Claude Code / Codex | Typer |
-| `apps/web` | Web app | Next.js |
+| `apps/web` | Web app (a single-page app on the API's origin) | Vite, React, TanStack Router |
 | `apps/desktop` | Desktop shell around the web app | Electron |
 | `packages/engine` | UI-agnostic agent engine (`pmagent_engine`) | deepagents / LangGraph |
 | `packages/ui`, `api-client` | shadcn/ui components and theme; the typed API client (generated from OpenAPI) | TypeScript |
@@ -22,7 +22,7 @@ uv sync                                   # install all Python packages
 uv run pytest                             # Python tests
 uv run ruff check apps packages --fix     # lint (rules pinned in root pyproject.toml)
 pnpm install && pnpm build && pnpm typecheck
-pnpm dev:web                              # web app on :3000 (talks to the API through its own /api/v1 proxy)
+pnpm dev:web                              # web app on :3000 (Vite; forwards /v1, /api, /health to the API, PMAGENT_API_URL in apps/web/.env.local)
 pnpm dev:backend                          # API on :8000, OpenAPI at /docs (python -m pmagent_backend.serve: selector loop on Windows)
 pnpm dev:worker                           # background worker (arq on Redis): agent runs, emails; needed when PMAGENT_JOBS=worker
 pnpm db:up && pnpm db:migrate             # Postgres, Redis, MinIO (console :9001) from infra/docker-compose.yml, then apply migrations
@@ -74,6 +74,7 @@ apps/backend/
 │   │   ├── health.py            /health (liveness), /health/ready (database)
 │   │   └── v1.py                mounts every module router under /v1
 │   ├── modules/
+│   │   ├── web/                 the web app's session under /api (not in the OpenAPI schema): sign in / up / out into httpOnly cookies, refresh (shared per token), CSRF header check, GitHub sign-in and app-install redirects, calendar feeds at their pre-Vite address
 │   │   ├── auth/                users, sign-up/login, refresh tokens, email verification, password reset, GitHub sign-in (github.py), your profile (profile.py: name, what you do, photo, sign-in methods), where you're signed in (sessions.py: browsers and the desktop app)
 │   │   ├── api_tokens/          personal access tokens (pmat_…) and CLI device login
 │   │   ├── calendar/            per-person iCalendar feed of issue dates at a secret URL (FR-32)
@@ -152,15 +153,16 @@ The CLI works in two modes: **linked** to a platform project (after `pmagent con
 
 ## Web app (`apps/web`)
 
-Next.js 16 (App Router, `proxy.ts` not middleware), Tailwind CSS 4, shadcn/ui, TanStack Query, and the typed `@pmagent/api-client`.
+Vite, React 19, TanStack Router (routes in code, `src/router.tsx`), Tailwind CSS 4, shadcn/ui, TanStack Query, and the typed `@pmagent/api-client`. A static single-page app served on the API's origin: Vite's server forwards `/v1`, `/api`, and `/health` to the API locally (`vite.config.ts`), a reverse proxy does the same in production, so the session cookies the API sets are first-party.
 
 ```
 apps/web/
-├── proxy.ts                     optimistic sign-in check: redirects to /login?next=… without a session cookie
-├── app/
-│   ├── layout.tsx, providers.tsx  theme (next-themes, default "system"), React Query, tooltips, toasts
-│   ├── api/auth/{login,signup,logout}/route.ts   set / clear the httpOnly session cookies
-│   ├── api/v1/[...path]/route.ts  proxy to the backend's /v1: adds the token, refreshes it on 401
+├── index.html, vite.config.ts
+├── src/
+│   ├── main.tsx, providers.tsx  fonts, theme (next-themes, default "system"), React Query, tooltips, toasts
+│   ├── router.tsx               every URL and its page (loaded on first visit), redirects for old links, the sign-in guards (optimistic, from the readable `pm_session` cookie)
+│   └── root.tsx                 the browser tab's title (a route's `staticData.title`), the not-found page
+├── pages/                       one module per page (default export), laid out like the URLs; layouts take `children`
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
 │   └── (app)/                   signed-in shell (sidebar): /w/[workspace] (Home), /w/[workspace]/{chat,overview,tasks,timeline,activity,approvals (Notifications),my-issues,projects,projects/new}, /w/[workspace]/settings/{profile,appearance,devices,calendar (your account), (General),members,invites,permissions,agents,audit} (/agents and /audit redirect there), /w/[workspace]/p/[KEY]/{overview,board,list,table,timeline,files,knowledge,activity,settings} (the project root redirects to overview; /backlog to list, /docs to files, /chat and /briefing to the workspace Chat), /settings (opens your profile in the workspace you were last in)
 ├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
@@ -171,7 +173,7 @@ apps/web/
 │   ├── coding/                  "Start coding" and a run in the issue drawer (status, what the agent did, PR, approve / reject / stop)
 │   ├── knowledge/               file tree, file history (authorship, diffs, restore)
 │   ├── settings/                Settings' pages: profile, appearance, devices, calendar, the workspace (general, what members can do), members (search, roles, projects they see), invites and "turn into an organisation"
-└── lib/                         api.ts (browser client + errors), session.ts (server-only cookies), queries.ts, issues.ts, agent.ts, agents.ts (agent contracts, the chat's agent list), knowledge.ts, admin.ts, documents.ts, repo.ts, coding.ts, url-state.ts, labels.ts
+└── lib/                         api.ts (browser client, `apiFetch`, errors), navigation.tsx (`Link`, `useRouter`, `usePathname`, `useSearchParams`, `useParams` over TanStack Router), queries.ts, issues.ts, agent.ts, agents.ts (agent contracts, the chat's agent list), knowledge.ts, admin.ts, documents.ts, repo.ts, coding.ts, url-state.ts, labels.ts
 packages/ui/src/                 consumed as source (no build step), by path: `@pmagent/ui/components/*`, `/lib/*`, `/hooks/*`, `/globals.css`
 ├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
 │                                plus our own chat kit: chat-scroller (follows new content unless you scroll up), chat-message (message, bubble, meta, notice), prompt-input (send / stop), code-block (copy, lazy Shiki highlighting)
@@ -180,7 +182,7 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 
 **Conventions**
 
-- **Tokens never reach the browser.** The access and refresh tokens are httpOnly cookies. Pages call the API only through `api` (`lib/api.ts`), which goes to `/api/v1/*`. Refreshes are shared per token (`lib/session.ts`), because the backend treats a reused refresh token as theft.
+- **Tokens never reach the browser.** The API keeps the session in httpOnly cookies (`modules/web`: `pm_access`, `pm_refresh` scoped to `/api/auth`, and a readable `pm_session` marker). Pages call the API only through `api` / `apiFetch` (`lib/api.ts`), on the same origin (`/v1/*`): they send `X-Requested-With`, which the API requires on cookie-authenticated changes (CSRF), and on a 401 refresh once (`/api/auth/refresh`, one at a time per browser with a Web Lock, because the backend treats a reused refresh token as theft) and retry. Sign in, sign up, and sign out go to `/api/auth/*` (`authPost`); GitHub sign-in and the app's install are top-level redirects through `/api/auth/github` and `/api/github/*`.
 - **Data:** TanStack Query with `unwrap(api.GET(...))`. Keys start with the resource (`["projects", workspaceId]`); invalidate those keys after mutations.
 - **URL state:** filters, the open issue, the open file are search params (`useSearchParam`); change several at once with `useSetSearchParams`, since separate updates in a row undo each other.
 - **URLs use slugs and keys, never UUIDs:** `/w/{workspace slug}/p/{PROJECT KEY}`. Resolve them from the cached lists (`useCurrentWorkspace`, `useCurrentProject`).
@@ -190,9 +192,21 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
   - Write copy in sentence case.
   - Show controls by role (`lib/labels.ts`), but the API is what enforces access.
 - **Theme:** Settings → Appearance (System / Light / Dark). It defaults to System and is stored in the browser.
-- **Hydration:** a project's tab content, chat panel, and issue drawer render only after hydration (`components/after-hydration.tsx`, in the project layout). Their data comes from browser-side queries, and a part that hydrates late (a Suspense boundary, a page the dev server is still compiling) would otherwise get data another component fetched meanwhile and no longer match the server's markup. Wrap new client-data areas that sit under a Suspense boundary the same way.
-- If the dev server starts 404ing routes that exist (typically after a `git switch` rewrote files under it), stop it and delete `apps/web/.next`.
+- **Navigation:** links and hooks come from `@/lib/navigation` (plain hrefs: `/w/acme/p/KUN/board?issue=KUN-4`). A new page is a module in `pages/` plus a line in `src/router.tsx`.
 - The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@pmagent/ui/lib/utils` and `@/hooks/…` → `@pmagent/ui/hooks/…`.
+
+## Plan: Gr8r Studio into Dotrix (review, 2026-10-08)
+
+Why: Gr8r Studio (a separate Vite prototype, plain JS and CSS, seeded data) is the product's intended look and feel; Dotrix keeps everything Gr8r lacks (Chat, Knowledge, agents, approvals, coding). Review and decisions: [docs/gr8r-to-dotrix-review.md](docs/gr8r-to-dotrix-review.md) (React on Vite, shadcn restyled with Gr8r's tokens; the API sets the session cookies on one origin; Backlog added beside Blocked; Inbox for people's items, Notifications for agents'; Teams now, billing as UI later). Gr8r's screens are rebuilt in React against the API, not copied. One PR per phase.
+
+- [x] **Phase 0, Next.js → Vite** (no visual change): Vite + TanStack Router (`src/router.tsx`, pages in `pages/`, `lib/navigation` keeps the pages' API); the session moved into the API (`modules/web`: cookies, refresh, CSRF via `X-Requested-With`, GitHub redirects); same-origin `/v1` (no proxy route); old links and calendar feed addresses keep working
+- [ ] Phase 1, design system and shell (Gr8r tokens in `packages/ui`, sidebar, top bar with New ▾, bottom nav on phones)
+- [ ] Phase 2, Home, My Tasks (with Calendar), Inbox / Notifications, Favorites
+- [ ] Phase 3, views: one toolbar and filter model, saved views, board composer, inline editing, bulk actions, context menus, Calendar
+- [ ] Phase 4, the task drawer: full page, Markdown editor, sub-task checklist, attachments, reactions, recurrence
+- [ ] Phase 5, people: Members page, member profiles, Teams
+- [ ] Phase 6, projects: header, milestones, Projects table, Archive
+- [ ] Phase 7, settings, sign-in screens, onboarding, search page, error states
 
 ## Plan: UI redesign (design review, 2026-10-01)
 

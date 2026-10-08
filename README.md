@@ -93,7 +93,7 @@ apps/
   backend/      FastAPI platform API: accounts, workspaces, projects, knowledge, issues, agents,
                 approvals, automations, notifications, the graph, connectors (Python)
   cli/          `pmagent` terminal client + MCP server for Claude Code / Codex (Python)
-  web/          Web app (Next.js)
+  web/          Web app (Vite + React)
   desktop/      Desktop shell around the web app (Electron)
 packages/
   engine/       UI-agnostic agent engine: agent contracts, pipelines, approvals, tools (Python)

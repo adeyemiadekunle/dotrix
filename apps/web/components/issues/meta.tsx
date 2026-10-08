@@ -1,5 +1,3 @@
-"use client";
-
 // How issue types, statuses, priorities, and assignees look everywhere they appear.
 import type { Schemas } from "@pmagent/api-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@pmagent/ui/components/avatar";

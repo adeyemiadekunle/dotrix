@@ -1,11 +1,9 @@
-"use client";
-
 // Your own profile: name, what you do, photo, and the ways you sign in.
 import type { Schemas } from "@pmagent/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { ApiError, api, errorMessage, unwrap } from "./api";
+import { ApiError, api, apiFetch, errorMessage, unwrap } from "./api";
 import { useCurrentWorkspace } from "./queries";
 
 export type Me = Schemas["UserRead"];
@@ -13,12 +11,12 @@ export type Member = Schemas["MemberRead"];
 
 /** Where a photo is served; the version in the address lets the browser keep it until it changes. */
 export function myAvatarSrc(me: Pick<Me, "avatar_updated_at"> | undefined): string | undefined {
-  return me?.avatar_updated_at ? `/api/v1/me/avatar?v=${Date.parse(me.avatar_updated_at)}` : undefined;
+  return me?.avatar_updated_at ? `/v1/me/avatar?v=${Date.parse(me.avatar_updated_at)}` : undefined;
 }
 
 export function memberAvatarSrc(workspaceId: string, member: Pick<Member, "user_id" | "avatar_updated_at">): string | undefined {
   return member.avatar_updated_at
-    ? `/api/v1/workspaces/${workspaceId}/members/${member.user_id}/avatar?v=${Date.parse(member.avatar_updated_at)}`
+    ? `/v1/workspaces/${workspaceId}/members/${member.user_id}/avatar?v=${Date.parse(member.avatar_updated_at)}`
     : undefined;
 }
 
@@ -72,8 +70,8 @@ export function useSetAvatar() {
       });
       const form = new FormData();
       form.append("file", photo, photo.type === "image/webp" ? "photo.webp" : "photo.png");
-      // Multipart goes through the proxy directly, like document uploads.
-      const response = await fetch("/api/v1/me/avatar", { method: "PUT", body: form });
+      // Multipart goes straight to the API (with the session handling), like document uploads.
+      const response = await apiFetch("/v1/me/avatar", { method: "PUT", body: form });
       if (!response.ok) throw new ApiError(response.status, await response.json().catch(() => undefined));
       return (await response.json()) as Me;
     },

@@ -1,8 +1,6 @@
-"use client";
-
 import { cn } from "@pmagent/ui/lib/utils";
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import { useMemo, useState } from "react";
 
 import { PriorityIcon, PRIORITIES, StatusIcon, STATUSES, STATUS_META } from "@/components/issues/meta";

@@ -1,5 +1,3 @@
-"use client";
-
 import { cn } from "@pmagent/ui/lib/utils";
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 

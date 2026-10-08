@@ -1,5 +1,3 @@
-"use client";
-
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@pmagent/ui/components/dialog";
 import { cn } from "@pmagent/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -21,7 +19,7 @@ import {
   UsersIcon,
   type LucideIcon,
 } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter } from "@/lib/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { StatusIcon } from "@/components/issues/meta";

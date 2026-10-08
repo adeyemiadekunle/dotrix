@@ -1,8 +1,6 @@
-"use client";
-
 import type { Schemas } from "@pmagent/api-client";
 import { cn } from "@pmagent/ui/lib/utils";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 
 import { StatusIcon, STATUS_META } from "@/components/issues/meta";

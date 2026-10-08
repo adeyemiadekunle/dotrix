@@ -2,7 +2,8 @@
 @import "tw-animate-css";
 
 /* Scan the shared components and every app that uses them. */
-@source "../../../../apps/web/app";
+@source "../../../../apps/web/pages";
+@source "../../../../apps/web/src";
 @source "../../../../apps/web/components";
 @source "../../../../apps/web/lib";
 @source "../**/*.{ts,tsx}";

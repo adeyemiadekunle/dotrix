@@ -1,5 +1,3 @@
-"use client";
-
 import type { Schemas } from "@pmagent/api-client";
 import { useInfiniteQuery } from "@tanstack/react-query";
 

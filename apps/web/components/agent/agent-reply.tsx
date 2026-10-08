@@ -1,5 +1,3 @@
-"use client";
-
 import { ChatMessage, ChatMessageMeta, ChatNotice } from "@pmagent/ui/components/chat-message";
 import { BotIcon, ChevronDownIcon, CircleAlertIcon, CircleStopIcon } from "lucide-react";
 import { useState } from "react";

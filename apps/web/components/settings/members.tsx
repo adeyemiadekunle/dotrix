@@ -1,5 +1,3 @@
-"use client";
-
 import type { Schemas } from "@pmagent/api-client";
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
@@ -14,7 +12,7 @@ import { Input } from "@pmagent/ui/components/input";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
 import { CrownIcon, LogOutIcon, MoreHorizontalIcon, SearchIcon, UserMinusIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/navigation";
 import { useMemo, useState } from "react";
 
 import { useConfirm } from "@/components/confirm-dialog";

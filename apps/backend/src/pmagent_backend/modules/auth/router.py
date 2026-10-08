@@ -56,7 +56,8 @@ def get_auth_service(
     request: Request, session: SessionDep, settings: SettingsDep, email: EmailDep, jobs: JobsDep
 ) -> AuthService:
     auth = AuthService(session, settings, email, jobs)
-    # The web app passes on the browser's User-Agent and address (see apps/web lib/session.ts).
+    # Which browser or app is signing in, for Settings → Devices. The web app's requests come
+    # straight from the browser (its address through PMAGENT_TRUSTED_PROXIES behind a proxy).
     auth.client = ClientInfo(
         user_agent=request.headers.get("user-agent", "")[:500], ip=client_ip(request, settings.trusted_proxies)
     )

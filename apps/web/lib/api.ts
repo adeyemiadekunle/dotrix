@@ -1,23 +1,76 @@
-"use client";
-
-// The browser's API client. Calls go to this app's /api/v1/* proxy, which adds the session's
-// token, so there is nothing secret here.
+// The browser's API client. The API is on this app's own origin (/v1/*, and the session routes
+// under /api/auth/*): the session lives in httpOnly cookies the API sets, so nothing here is
+// secret. Every request carries X-Requested-With, which the API requires on cookie-authenticated
+// changes (a page on another site can't send it). An expired session is refreshed once and the
+// request retried, so pages never handle token expiry.
 import { createClient, type ProblemDetail, type Schemas } from "@pmagent/api-client";
+import { useQuery } from "@tanstack/react-query";
 
 export type { Schemas };
 
-export const api = createClient({ baseUrl: "/api" });
+const WEB_HEADER = { "X-Requested-With": "pmagent-web" };
 
-// A session that can't be refreshed is over: send the user to sign in again.
-api.use({
-  onResponse({ response }) {
-    if (response.status === 401 && typeof window !== "undefined" && !location.pathname.startsWith("/login")) {
-      const next = `${location.pathname}${location.search}`;
-      location.assign(`/login?next=${encodeURIComponent(next)}`);
+/** Whether this browser has a session (a readable marker cookie; the API is what checks). */
+export function hasSession(): boolean {
+  return typeof document !== "undefined" && /(?:^|;\s*)pm_session=/.test(document.cookie);
+}
+
+const REFRESHED_AT = "pmagent.refreshedAt";
+
+/**
+ * Trade the refresh cookie for a new session. The API rotates refresh tokens and signs a session
+ * out if an old one comes back, so only one refresh runs at a time in this browser (a Web Lock
+ * shared by its tabs), and a request that started before another tab refreshed just retries.
+ */
+async function refreshSession(sentAt: number): Promise<boolean> {
+  const run = async () => {
+    const last = Number(localStorage.getItem(REFRESHED_AT) ?? 0);
+    if (last > sentAt) return true; // refreshed meanwhile: the cookies are already new
+    const response = await fetch("/api/auth/refresh", { method: "POST", headers: WEB_HEADER });
+    if (!response.ok) return false;
+    try {
+      localStorage.setItem(REFRESHED_AT, String(Date.now()));
+    } catch {
+      // only an optimisation
     }
+    return true;
+  };
+  return navigator.locks ? navigator.locks.request("pmagent-session-refresh", run) : run();
+}
+
+function toSignIn() {
+  if (location.pathname.startsWith("/login")) return;
+  const next = `${location.pathname}${location.search}`;
+  location.assign(`/login?next=${encodeURIComponent(next)}`);
+}
+
+/**
+ * fetch() for this app's API: adds the header, refreshes an expired session once and retries,
+ * and sends you to sign in when the session is over. Use it for requests the typed client can't
+ * make (uploads with progress aside: FormData bodies, file contents).
+ */
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const request = new Request(input, init);
+  for (const [name, value] of Object.entries(WEB_HEADER)) request.headers.set(name, value);
+  const retry = request.clone();
+  const sentAt = Date.now();
+  const response = await fetch(request);
+  if (response.status !== 401) return response;
+  if (!(await refreshSession(sentAt))) {
+    toSignIn();
     return response;
-  },
-});
+  }
+  const again = await fetch(retry);
+  if (again.status === 401) toSignIn();
+  return again;
+}
+
+/** Before opening an EventSource (it can't refresh on its own): make sure the session is current. */
+export async function ensureSession(): Promise<void> {
+  await apiFetch("/v1/me").catch(() => undefined);
+}
+
+export const api = createClient({ baseUrl: "", fetch: (request) => apiFetch(request) });
 
 /** Thrown by `unwrap` so TanStack Query sees failures; carries the problem+json body. */
 export class ApiError extends Error {
@@ -59,11 +112,11 @@ export function errorMessage(error: unknown): string {
   return "Something went wrong. Try again.";
 }
 
-/** POST JSON to one of this app's own auth routes (/api/auth/*). */
+/** POST JSON to one of the session routes (/api/auth/*: sign in, sign up, sign out). */
 export async function authPost(path: string, body?: unknown): Promise<Response> {
   const response = await fetch(`/api/auth/${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...WEB_HEADER },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
@@ -71,6 +124,16 @@ export async function authPost(path: string, body?: unknown): Promise<Response> 
     throw new ApiError(response.status, problem);
   }
   return response;
+}
+
+/** Which other ways to sign in the API has set up (none while it's loading or unreachable). */
+export function useAuthProviders(): { github: boolean } {
+  const providers = useQuery({
+    queryKey: ["auth-providers"],
+    queryFn: () => unwrap(api.GET("/v1/auth/providers")),
+    staleTime: 5 * 60_000,
+  });
+  return { github: providers.data?.github ?? false };
 }
 
 /** Only same-site paths are followed after sign-in, never another origin. */

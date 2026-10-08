@@ -1,5 +1,3 @@
-"use client";
-
 import {
   Sidebar,
   SidebarContent,
@@ -40,8 +38,7 @@ import {
   SearchIcon,
   SettingsIcon,
 } from "lucide-react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { Link, usePathname } from "@/lib/navigation";
 import { useEffect, useState } from "react";
 
 import { NavUser } from "@/components/nav-user";

@@ -1,5 +1,3 @@
-"use client";
-
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
 import { Checkbox } from "@pmagent/ui/components/checkbox";
@@ -9,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { Textarea } from "@pmagent/ui/components/textarea";
 import { HistoryIcon, PlusIcon, RotateCcwIcon, Trash2Icon, XIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";
 
 import { useConfirm } from "@/components/confirm-dialog";

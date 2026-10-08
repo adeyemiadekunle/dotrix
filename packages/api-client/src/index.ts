@@ -15,10 +15,12 @@ export interface ClientOptions {
   baseUrl: string;
   /** Returns the current access or API token; called on every request. */
   getToken?: () => string | undefined | Promise<string | undefined>;
+  /** Sends each request (the web app's adds its session handling); `globalThis.fetch` by default. */
+  fetch?: (request: Request) => Promise<Response>;
 }
 
-export function createClient({ baseUrl, getToken }: ClientOptions) {
-  const client = createFetchClient<paths>({ baseUrl });
+export function createClient({ baseUrl, getToken, fetch }: ClientOptions) {
+  const client = createFetchClient<paths>({ baseUrl, ...(fetch ? { fetch } : {}) });
   if (getToken) {
     const auth: Middleware = {
       async onRequest({ request }) {

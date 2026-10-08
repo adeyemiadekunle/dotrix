@@ -1,8 +1,6 @@
-"use client";
-
 import { CodeBlock } from "@pmagent/ui/components/code-block";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@pmagent/ui/components/dialog";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import { Fragment, useEffect, useState } from "react";
 
 /** "⌘" on a Mac, "Ctrl" elsewhere (decided after hydration, so the server's markup matches). */

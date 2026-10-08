@@ -2,7 +2,9 @@
 
 Callers authenticate with a bearer token: either a short-lived access token
 from login (a "session"), or an API token (`pmat_...`) from device login or
-/v1/me/tokens. API tokens act as the user, narrowed by scopes; a read-only
+/v1/me/tokens. The web app sends no header: its access token is an httpOnly
+cookie (`pm_access`, set by `modules/web`), and its changes carry
+`X-Requested-With` so another site can't forge them. API tokens act as the user, narrowed by scopes; a read-only
 token can't make changes, and API tokens can't mint more credentials.
 
 Workspace routes take `workspace_id` in the path and depend on
@@ -29,6 +31,7 @@ from pmagent_backend.modules.api_tokens.models import Scope
 from pmagent_backend.modules.api_tokens.service import ApiTokenService, is_api_token
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.auth.repository import AuthSessionRepository, UserRepository
+from pmagent_backend.modules.web.session import ACCESS_COOKIE, require_web_header
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
@@ -57,9 +60,15 @@ async def get_current_user(
     settings: SettingsDep,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> User:
-    if credentials is None:
-        raise Unauthorized("Not signed in")
-    bearer = credentials.credentials
+    if credentials is not None:
+        bearer = credentials.credentials
+    else:
+        # The web app: the access token in its httpOnly cookie (modules/web), and a header a page
+        # on another site couldn't send, on anything that changes something (CSRF).
+        bearer = request.cookies.get(ACCESS_COOKIE, "")
+        if not bearer or is_api_token(bearer):
+            raise Unauthorized("Not signed in")
+        require_web_header(request)
     method: AuthMethod
     if is_api_token(bearer):
         token = await ApiTokenService(session).authenticate(bearer)

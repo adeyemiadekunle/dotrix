@@ -1,10 +1,8 @@
-"use client";
-
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { BotIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 
 import { SOURCE_LABELS, displayName, useAgents, type AgentScope } from "@/lib/agents";
 

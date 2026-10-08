@@ -1,5 +1,3 @@
-"use client";
-
 // Talking to the project's agents. A conversation is a thread of runs: each run is one message
 // to the agent picked (Auto: the project manager with the specialists it needs) and its outcome
 // (a reply, a failure, or actions waiting for approval). A conversation runs on one model, fixed
@@ -9,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { api, errorMessage, unwrap } from "./api";
+import { api, ensureSession, errorMessage, unwrap } from "./api";
 import type { Scope } from "./issues";
 
 export type Run = Schemas["AgentRunRead"];
@@ -277,26 +275,34 @@ export function useRunStream(scope: Scope | undefined, runId: string, active: bo
   const [activity, setActivity] = useState<string | null>(null);
   useEffect(() => {
     if (!scope || !active) return;
-    const source = new EventSource(
-      `/api/v1/workspaces/${scope.workspaceId}/projects/${scope.projectId}/agent/runs/${runId}/stream`,
-    );
-    const read = (event: MessageEvent) => (JSON.parse(event.data) as { text: string }).text;
-    source.addEventListener("text", (e) => setText(read(e as MessageEvent)));
-    source.addEventListener("delta", (e) => setText((t) => t + read(e as MessageEvent)));
-    source.addEventListener("activity", (e) => setActivity(read(e as MessageEvent)));
-    // The stream ends when the run does (or wasn't running): don't let EventSource reconnect,
-    // and fetch the finished run right away rather than at the next poll (which also pauses
-    // while the tab is in the background).
-    source.addEventListener("end", () => {
-      source.close();
-      setActivity(null);
-      void queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
-      void queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
-      void queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
-      void queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
+    let source: EventSource | undefined;
+    let closed = false;
+    // An EventSource can't refresh an expired session itself: check it's current first.
+    void ensureSession().then(() => {
+      if (closed) return;
+      source = new EventSource(`/v1/workspaces/${scope.workspaceId}/projects/${scope.projectId}/agent/runs/${runId}/stream`);
+      const stream = source;
+      const read = (event: MessageEvent) => (JSON.parse(event.data) as { text: string }).text;
+      stream.addEventListener("text", (e) => setText(read(e as MessageEvent)));
+      stream.addEventListener("delta", (e) => setText((t) => t + read(e as MessageEvent)));
+      stream.addEventListener("activity", (e) => setActivity(read(e as MessageEvent)));
+      // The stream ends when the run does (or wasn't running): don't let EventSource reconnect,
+      // and fetch the finished run right away rather than at the next poll (which also pauses
+      // while the tab is in the background).
+      stream.addEventListener("end", () => {
+        stream.close();
+        setActivity(null);
+        void queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
+        void queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
+        void queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
+        void queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
+      });
+      stream.onerror = () => stream.close();
     });
-    source.onerror = () => source.close();
-    return () => source.close();
+    return () => {
+      closed = true;
+      source?.close();
+    };
   }, [scope, runId, active, queryClient]);
   return { text, activity };
 }

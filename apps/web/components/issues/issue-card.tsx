@@ -1,5 +1,3 @@
-"use client";
-
 import type { Schemas } from "@pmagent/api-client";
 import { cn } from "@pmagent/ui/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";

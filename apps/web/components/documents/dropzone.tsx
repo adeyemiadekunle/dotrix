@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@pmagent/ui/components/button";
 import { cn } from "@pmagent/ui/lib/utils";
 import { CircleAlertIcon, CircleCheckIcon, FileTextIcon, Loader2Icon, UploadIcon, XIcon } from "lucide-react";

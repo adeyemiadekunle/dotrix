@@ -1,6 +1,4 @@
-"use client";
-
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/navigation";
 import { createContext, useCallback, useContext, type ReactNode } from "react";
 
 interface ChatState {

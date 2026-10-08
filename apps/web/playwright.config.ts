@@ -29,13 +29,14 @@ export default defineConfig({
       stdout: "pipe",
     },
     {
-      // A production build: what users run, and it can sit beside a `next dev` on :3000.
-      command: "pnpm exec next build && pnpm exec next start --port 3100",
+      // A production build: what users run, served beside a `vite` dev server on :3000, and
+      // forwarding the API's paths to the test backend (vite.config.ts).
+      command: "pnpm exec vite build && pnpm exec vite preview --port 3100",
       url: `${WEB}/login`,
       timeout: 300_000,
       reuseExistingServer: !process.env.CI,
-      // Its own build folder, so a `next dev` on :3000 keeps working while the tests run.
-      env: { PMAGENT_API_URL: API, PMAGENT_NEXT_DIST_DIR: ".next-e2e" },
+      // Its own build folder, so a `vite build` for :3000 doesn't overwrite it mid-run.
+      env: { PMAGENT_API_URL: API, PMAGENT_WEB_OUT_DIR: "dist-e2e" },
     },
   ],
 });

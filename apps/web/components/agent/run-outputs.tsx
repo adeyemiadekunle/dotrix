@@ -1,5 +1,3 @@
-"use client";
-
 import type { Schemas } from "@pmagent/api-client";
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
@@ -16,7 +14,7 @@ import {
   UndoIcon,
   XIcon,
 } from "lucide-react";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 

@@ -1,9 +1,7 @@
-"use client";
-
 // Shared queries. Keys are arrays starting with the resource, so a mutation can invalidate
 // everything under it (e.g. ["projects", workspaceId]).
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "next/navigation";
+import { useParams } from "@/lib/navigation";
 import { useEffect } from "react";
 
 import { api, unwrap } from "./api";

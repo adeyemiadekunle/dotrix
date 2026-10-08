@@ -1,10 +1,8 @@
-"use client";
-
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { Textarea } from "@pmagent/ui/components/textarea";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import { useState } from "react";
 
 import { timeAgo } from "@/components/issues/issue-activity";

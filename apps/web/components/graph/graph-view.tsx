@@ -1,11 +1,9 @@
-"use client";
-
 import { Button } from "@pmagent/ui/components/button";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRightIcon } from "lucide-react";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import { useMemo, useState, type KeyboardEvent } from "react";
 
 import { nodeHref } from "@/components/graph/related";

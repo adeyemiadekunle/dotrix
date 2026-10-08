@@ -1,5 +1,3 @@
-"use client";
-
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +26,7 @@ import {
   TerminalIcon,
   UserIcon,
 } from "lucide-react";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import { useTheme } from "next-themes";
 import { useState } from "react";
 

@@ -70,8 +70,9 @@ class CalendarService:
         await self.session.commit()
 
     def feed_url(self, token: str) -> str:
-        # Through the web app's API proxy: the public entry point, whether or not the API is.
-        return f"{self.settings.app_url.rstrip('/')}/api/v1/calendar/{quote(token)}.ics"
+        # On the web app's address, which forwards /v1 to the API: the public entry point,
+        # whether or not the API is.
+        return f"{self.settings.app_url.rstrip('/')}/v1/calendar/{quote(token)}.ics"
 
     async def _feed(self, user: User) -> CalendarFeed:
         feed = await self.session.scalar(select(CalendarFeed).where(CalendarFeed.user_id == user.id))
