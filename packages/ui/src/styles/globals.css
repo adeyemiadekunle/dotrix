@@ -17,6 +17,8 @@
    Dark mode and accents are Gr8r's too: .dark on <html> (next-themes), data-accent (Settings →
    Appearance). */
 :root {
+  /* dotrix's Blocked status (Gr8r has none) */
+  --st-blocked: var(--red);
   --radius: 0.625rem;
   --background: var(--bg);
   --foreground: var(--text);
@@ -172,4 +174,18 @@
 }
 .dark .code-block-shiki span {
   color: var(--shiki-dark);
+}
+
+/* Gr8r set this inline (layout.js): the menu button shows only where the sidebar is a drawer. */
+.mnav-btn {
+  display: none;
+}
+@media (max-width: 900px) {
+  .mnav-btn {
+    display: inline-flex;
+  }
+}
+/* Gr8r's mini calendar hovered its days inline (popovers.js). */
+.cal-day:hover:not([style*="--acc"]) {
+  background: var(--surface-2);
 }

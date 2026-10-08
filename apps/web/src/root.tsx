@@ -18,8 +18,9 @@ export function RootLayout() {
       return project ? `${match.staticData.title} · ${project.toUpperCase()}` : match.staticData.title;
     },
   });
+  // Routes without a title (the workspace) set their own.
   useEffect(() => {
-    document.title = title ? `${title} · ${APP_NAME}` : APP_NAME;
+    if (title) document.title = `${title} · ${APP_NAME}`;
   }, [title]);
   return <Outlet />;
 }
