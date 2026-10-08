@@ -1,5 +1,3 @@
-"use client";
-
 import type { Schemas } from "@pmagent/api-client";
 import { Label } from "@pmagent/ui/components/label";
 import { Skeleton } from "@pmagent/ui/components/skeleton";

@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@pmagent/ui/components/button";
 import { Input } from "@pmagent/ui/components/input";
 import { cn } from "@pmagent/ui/lib/utils";

@@ -1,5 +1,3 @@
-"use client";
-
 // The project graph: how requirements, issues, decisions, documents, and modules connect.
 import type { Schemas } from "@pmagent/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

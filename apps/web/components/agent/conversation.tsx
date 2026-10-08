@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@pmagent/ui/components/button";
 import { ChatBubble, ChatMessage, ChatMessageMeta } from "@pmagent/ui/components/chat-message";
 import { ChatScroller } from "@pmagent/ui/components/chat-scroller";

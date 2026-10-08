@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@pmagent/ui/components/button";
 import {
   Dialog,
@@ -10,7 +8,7 @@ import {
   DialogTitle,
 } from "@pmagent/ui/components/dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";
 
 import { Field, FormError, SubmitButton } from "@/components/form";

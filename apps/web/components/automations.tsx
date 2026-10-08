@@ -1,5 +1,3 @@
-"use client";
-
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
 import { Checkbox } from "@pmagent/ui/components/checkbox";
@@ -10,7 +8,7 @@ import { Label } from "@pmagent/ui/components/label";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { Textarea } from "@pmagent/ui/components/textarea";
 import { PlayIcon, PlusIcon, ZapIcon } from "lucide-react";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 

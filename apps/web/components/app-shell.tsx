@@ -1,13 +1,10 @@
-"use client";
-
 import { Button } from "@pmagent/ui/components/button";
 import { Separator } from "@pmagent/ui/components/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@pmagent/ui/components/sidebar";
 import { cn } from "@pmagent/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { BellIcon, CloudOffIcon, MailWarningIcon, SearchIcon, XIcon } from "lucide-react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { Link, usePathname } from "@/lib/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 

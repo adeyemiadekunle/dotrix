@@ -24,7 +24,8 @@ access_logger = logging.getLogger("pmagent.access")
 logger = logging.getLogger(__name__)
 
 # Paths whose last segment is a secret (calendar feeds: a calendar app can only send a URL).
-_SECRET_PATHS = ("/v1/calendar/",)
+# /api/v1/calendar/ is the address feeds had before the web app moved to Vite (modules/web).
+_SECRET_PATHS = ("/v1/calendar/", "/api/v1/calendar/")
 
 
 def loggable_path(path: str) -> str:

@@ -1,5 +1,3 @@
-"use client";
-
 import type { Schemas } from "@pmagent/api-client";
 import {
   DropdownMenu,
@@ -13,7 +11,7 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@pmagent/ui/components/sidebar";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { CheckIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/navigation";
 import { useState } from "react";
 
 import { CreateOrganizationDialog } from "@/components/create-organization-dialog";

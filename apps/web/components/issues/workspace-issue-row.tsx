@@ -1,7 +1,5 @@
-"use client";
-
 import { cn } from "@pmagent/ui/lib/utils";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 
 import { ProjectTile } from "@/components/project-tile";
 import { PriorityIcon, StatusIcon, STATUS_META } from "@/components/issues/meta";

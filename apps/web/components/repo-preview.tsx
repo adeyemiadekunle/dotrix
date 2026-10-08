@@ -1,5 +1,3 @@
-"use client";
-
 import { CircleCheckIcon, Loader2Icon, LockIcon } from "lucide-react";
 
 import { looksLikeRepoUrl, parseGithub, usePublicGithubRepo } from "@/lib/repo";

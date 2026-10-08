@@ -1,5 +1,3 @@
-"use client";
-
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@pmagent/ui/components/dialog";
@@ -9,7 +7,7 @@ import { Textarea } from "@pmagent/ui/components/textarea";
 import { cn } from "@pmagent/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { CodeIcon, ExternalLinkIcon, GitBranchIcon, GitPullRequestIcon, Loader2Icon, MessageSquareIcon, SquareIcon } from "lucide-react";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 

@@ -1,5 +1,3 @@
-"use client";
-
 // Issue queries and mutations. Every key starts with ["issues", projectId] so one invalidation
 // refreshes the board, backlog, epics, and any open issue after a change.
 import type { Schemas } from "@pmagent/api-client";

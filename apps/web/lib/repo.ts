@@ -1,5 +1,3 @@
-"use client";
-
 import { useQuery } from "@tanstack/react-query";
 
 /** owner/name from a GitHub URL in any usual form (https, ssh, with or without .git). */

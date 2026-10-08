@@ -1,5 +1,3 @@
-"use client";
-
 import type { Schemas } from "@pmagent/api-client";
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";

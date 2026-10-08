@@ -1,5 +1,3 @@
-"use client";
-
 // Who the agents are: the six built-ins and a workspace's own agents, as contracts owners and
 // admins change (Settings → Agents), with per-project overrides. The chat's + menu and the
 // names shown on replies come from here.

@@ -1,8 +1,6 @@
-"use client";
-
 import { Avatar, AvatarFallback, AvatarImage } from "@pmagent/ui/components/avatar";
 import { BotIcon } from "lucide-react";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import type { ReactNode } from "react";
 
 import { FIELD_LABELS, show, timeAgo } from "@/components/issues/issue-activity";

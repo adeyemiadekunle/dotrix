@@ -1,0 +1,5 @@
+/* Geist, bundled with the app (@fontsource-variable); the theme reads these (packages/ui globals.css). */
+:root {
+  --font-geist-sans: "Geist Variable";
+  --font-geist-mono: "Geist Mono Variable";
+}

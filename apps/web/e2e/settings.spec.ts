@@ -19,7 +19,7 @@ test("your profile in Settings: a photo and what you do, shown to the team in Me
 
   await page.getByLabel("Profile photo").setInputFiles({ name: "me.png", mimeType: "image/png", buffer: PIXEL });
   await expect(page.getByRole("button", { name: "Change photo" })).toBeVisible();
-  await expect(page.getByRole("main").locator('img[src*="/api/v1/me/avatar"]')).toBeVisible();
+  await expect(page.getByRole("main").locator('img[src*="/v1/me/avatar"]')).toBeVisible();
 
   await page.getByLabel("What you do").fill("Product designer");
   await page.getByRole("button", { name: "Save changes" }).click();
@@ -108,7 +108,7 @@ test("GitHub in Settings, and a project's repository by address while the app is
   const forged = await page.request.get("/api/github/setup?installation_id=1&setup_action=install&state=forged", {
     maxRedirects: 0,
   });
-  expect(forged.status()).toBe(307);
+  expect(forged.status()).toBe(303);
   expect(forged.headers()["location"]).toContain("github_error=");
 
   await page.goto(`${workspaceUrl}/p/${key}/settings`);

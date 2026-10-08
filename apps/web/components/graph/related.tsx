@@ -1,5 +1,3 @@
-"use client";
-
 import { Badge } from "@pmagent/ui/components/badge";
 import { Button } from "@pmagent/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@pmagent/ui/components/dialog";
@@ -7,7 +5,7 @@ import { Input } from "@pmagent/ui/components/input";
 import { Label } from "@pmagent/ui/components/label";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { BoxIcon, FileTextIcon, LinkIcon, PlusIcon, SparklesIcon, TicketIcon, TriangleAlertIcon, WaypointsIcon, XIcon } from "lucide-react";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";
 
 import type { Scope } from "@/lib/issues";

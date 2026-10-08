@@ -1,5 +1,3 @@
-"use client";
-
 // The project's `.pmagent/` knowledge: files, their version history, edits, and restores.
 // Paths contain slashes (e.g. "architecture/overview.md"), so these calls build the URL
 // themselves rather than going through the typed client, which would encode them.
@@ -7,7 +5,7 @@ import type { Schemas } from "@pmagent/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { ApiError, errorMessage } from "./api";
+import { ApiError, apiFetch, errorMessage } from "./api";
 import type { Scope } from "./issues";
 
 export type FileEntry = Schemas["FileEntry"];
@@ -16,11 +14,11 @@ export type VersionEntry = Schemas["VersionEntry"];
 export type VersionRead = Schemas["VersionRead"];
 export type VersionDiff = Schemas["VersionDiff"];
 
-const base = (s: Scope) => `/api/v1/workspaces/${s.workspaceId}/projects/${s.projectId}/knowledge`;
+const base = (s: Scope) => `/v1/workspaces/${s.workspaceId}/projects/${s.projectId}/knowledge`;
 const filePath = (path: string) => path.split("/").map(encodeURIComponent).join("/");
 
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  const response = await apiFetch(url, init);
   if (!response.ok) throw new ApiError(response.status, await response.json().catch(() => undefined));
   return (response.status === 204 ? undefined : await response.json()) as T;
 }

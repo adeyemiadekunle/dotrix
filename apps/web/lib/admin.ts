@@ -1,5 +1,3 @@
-"use client";
-
 // Workspace administration: settings, members, invites, the audit log, and project settings.
 import type { Schemas } from "@pmagent/api-client";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

@@ -39,6 +39,7 @@ from .modules.coding.runner import build_coding_worker, end_cut_off_runs
 from .modules.documents.service import mark_interrupted_conversions
 from .modules.research.service import build_web_research
 from .modules.search.embeddings import build_embedder
+from .modules.web import router as web_session
 
 API_VERSION = "0.1.0"
 logger = logging.getLogger(__name__)
@@ -171,5 +172,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(v1.router)
+    app.include_router(web_session.router)
     return app
 

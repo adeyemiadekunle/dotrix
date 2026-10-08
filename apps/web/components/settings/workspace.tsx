@@ -1,5 +1,3 @@
-"use client";
-
 import type { Schemas } from "@pmagent/api-client";
 import { Checkbox } from "@pmagent/ui/components/checkbox";
 import { Label } from "@pmagent/ui/components/label";

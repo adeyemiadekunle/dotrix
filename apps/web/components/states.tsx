@@ -1,6 +1,6 @@
 import { Button } from "@pmagent/ui/components/button";
 import { SearchXIcon, type LucideIcon } from "lucide-react";
-import Link from "next/link";
+import { Link } from "@/lib/navigation";
 import type { ReactNode } from "react";
 
 import { PageHeader } from "@/components/app-shell";

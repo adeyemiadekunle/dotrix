@@ -1,11 +1,9 @@
-"use client";
-
 import type { Schemas } from "@pmagent/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
-import { ApiError, api, errorMessage, unwrap } from "./api";
+import { ApiError, api, apiFetch, errorMessage, unwrap } from "./api";
 
 export type Document = Schemas["DocumentRead"];
 
@@ -44,7 +42,7 @@ export function formatBytes(bytes: number): string {
 }
 
 const documentsPath = (workspaceId: string, projectId: string) =>
-  `/api/v1/workspaces/${workspaceId}/projects/${projectId}/documents`;
+  `/v1/workspaces/${workspaceId}/projects/${projectId}/documents`;
 
 export function originalUrl(workspaceId: string, projectId: string, documentId: string): string {
   return `${documentsPath(workspaceId, projectId)}/${documentId}/original`;
@@ -65,11 +63,11 @@ export function useDocuments(scope: { workspaceId: string; projectId: string } |
   });
 }
 
-/** One multipart upload through the API proxy; the backend stores the original and converts it. */
+/** One multipart upload to the API; the backend stores the original and converts it. */
 async function uploadOne(workspaceId: string, projectId: string, file: File): Promise<Document> {
   const form = new FormData();
   form.append("file", file, file.name);
-  const response = await fetch(documentsPath(workspaceId, projectId), { method: "POST", body: form });
+  const response = await apiFetch(documentsPath(workspaceId, projectId), { method: "POST", body: form });
   if (!response.ok) {
     throw new ApiError(response.status, await response.json().catch(() => undefined));
   }

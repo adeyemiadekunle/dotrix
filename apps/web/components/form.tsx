@@ -1,5 +1,3 @@
-"use client";
-
 import { Alert, AlertDescription } from "@pmagent/ui/components/alert";
 import { Button } from "@pmagent/ui/components/button";
 import { Input } from "@pmagent/ui/components/input";

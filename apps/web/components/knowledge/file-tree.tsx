@@ -1,5 +1,3 @@
-"use client";
-
 import { cn } from "@pmagent/ui/lib/utils";
 import { ChevronDownIcon, ChevronRightIcon, FileTextIcon, FolderIcon, FolderOpenIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
