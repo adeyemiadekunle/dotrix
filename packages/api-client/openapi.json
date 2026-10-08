@@ -21888,6 +21888,21 @@
         ],
         "title": "ProjectAccessLevel"
       },
+      "ProjectColor": {
+        "type": "string",
+        "enum": [
+          "indigo",
+          "blue",
+          "violet",
+          "teal",
+          "rose",
+          "amber",
+          "green",
+          "slate"
+        ],
+        "title": "ProjectColor",
+        "description": "The project's colour (its tile and dot); unset, the colour follows its key."
+      },
       "ProjectCreate": {
         "properties": {
           "key": {
@@ -21955,6 +21970,30 @@
             "$ref": "#/components/schemas/ProjectAccessLevel",
             "description": "workspace (every member sees it) or restricted (owners, admins, and the people added to it)",
             "default": "workspace"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "A Lucide icon name from the set the web app offers (globe, rocket, code, ...)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon",
+            "description": "Its icon; none shows its key's first letter"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectColor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its colour; none follows its key"
           }
         },
         "type": "object",
@@ -22129,6 +22168,33 @@
             "title": "Target Date",
             "description": "When it should be done; null: no date"
           },
+          "status": {
+            "$ref": "#/components/schemas/ProjectStatus",
+            "description": "planning, active, on_hold, or completed"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon",
+            "description": "A Lucide icon name; null: show its key's first letter"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectColor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its colour; null: the colour follows its key"
+          },
           "knowledge_revision": {
             "type": "integer",
             "title": "Knowledge Revision"
@@ -22159,6 +22225,9 @@
           "token_budget",
           "health",
           "target_date",
+          "status",
+          "icon",
+          "color",
           "knowledge_revision",
           "created_at",
           "updated_at"
@@ -22173,6 +22242,17 @@
           "docs_only"
         ],
         "title": "ProjectSource"
+      },
+      "ProjectStatus": {
+        "type": "string",
+        "enum": [
+          "planning",
+          "active",
+          "on_hold",
+          "completed"
+        ],
+        "title": "ProjectStatus",
+        "description": "Where the project is in its life (its pill in the header, its dot in the sidebar)."
       },
       "ProjectUpdate": {
         "properties": {
@@ -22290,6 +22370,41 @@
             ],
             "title": "Target Date",
             "description": "When it should be done; send null to clear, leave it out to keep it"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "planning, active, on_hold, or completed; leave it out to keep it"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "A Lucide icon name from the set the web app offers (globe, rocket, code, ...)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon",
+            "description": "Send null for its key's letter; leave it out to keep it"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectColor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Send null to follow its key; leave it out to keep it"
           }
         },
         "type": "object",

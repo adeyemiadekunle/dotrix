@@ -2,11 +2,11 @@ import { Button } from "@pmagent/ui/components/button";
 import { cn } from "@pmagent/ui/lib/utils";
 import { InboxIcon, MessageSquareIcon, PlusIcon, SettingsIcon, StarIcon } from "lucide-react";
 import { Link, usePathname } from "@/lib/navigation";
-import { Suspense, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 
 import { ChatProvider, useChat } from "@/components/agent/chat-context";
 import { TriageDialog } from "@/components/agent/triage-dialog";
-import { PageHeader } from "@/components/app-shell";
+import { NEW_ISSUE_EVENT, PageHeader } from "@/components/app-shell";
 import { ProjectTile } from "@/components/project-tile";
 import { IssueDrawer } from "@/components/issues/issue-drawer";
 import { NewIssueDialog } from "@/components/issues/new-issue-dialog";
@@ -33,6 +33,13 @@ function ProjectFrame({ children }: { children: ReactNode }) {
   const chat = useChat();
   const [creating, setCreating] = useState(false);
   const [triaging, setTriaging] = useState(false);
+  // The top bar's New ▾ → New issue.
+  useEffect(() => {
+    if (!canEdit) return;
+    const open = () => setCreating(true);
+    window.addEventListener(NEW_ISSUE_EVENT, open);
+    return () => window.removeEventListener(NEW_ISSUE_EVENT, open);
+  }, [canEdit]);
   const starred = useStarredProjects(workspace?.id);
   const toggleStar = useToggleStar(workspace?.id);
   const isStarred = Boolean(project && starred.data?.includes(project.id));

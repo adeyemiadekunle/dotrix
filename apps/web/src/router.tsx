@@ -79,6 +79,48 @@ const authRoutes = [
 
 // -- signed in: the app ---------------------------------------------------------------------
 
+// Browser tab titles; a project page adds the project's key ("Board · KUN · pmagent").
+const TITLES: Record<string, string> = {
+  "/w/$workspace": "Home",
+  "/w/$workspace/overview": "Overview",
+  "/w/$workspace/chat": "Chat",
+  "/w/$workspace/approvals": "Notifications",
+  "/w/$workspace/my-issues": "My issues",
+  "/w/$workspace/projects": "Projects",
+  "/w/$workspace/projects/new": "New project",
+  "/w/$workspace/tasks": "Tasks",
+  "/w/$workspace/timeline": "Timeline",
+  "/w/$workspace/activity": "Activity",
+};
+const SETTINGS_TITLES: Record<string, string> = {
+  "/": "Settings",
+  profile: "Profile",
+  appearance: "Appearance",
+  notifications: "Notification settings",
+  devices: "Devices and tokens",
+  calendar: "Calendar",
+  members: "Members",
+  invites: "Invites",
+  permissions: "What members can do",
+  agents: "Agents",
+  "agents/$handle": "Agent",
+  audit: "Audit log",
+  github: "GitHub",
+};
+const PROJECT_TITLES: Record<string, string> = {
+  overview: "Overview",
+  board: "Board",
+  list: "List",
+  table: "Table",
+  timeline: "Timeline",
+  files: "Files",
+  knowledge: "Knowledge",
+  activity: "Activity",
+  settings: "Project settings",
+  "settings/agents": "Agents",
+  "settings/agents/$handle": "Agent",
+};
+
 const app = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
@@ -90,7 +132,7 @@ const app = createRoute({
   ),
 });
 const appPage = (path: string, load: Parameters<typeof page>[0]) =>
-  createRoute({ getParentRoute: () => app, path, component: page(load) });
+  createRoute({ getParentRoute: () => app, path, staticData: { title: TITLES[path] }, component: page(load) });
 const appRedirect = (path: string, to: Parameters<typeof goTo>[0]) =>
   createRoute({ getParentRoute: () => app, path, ...goTo(to) });
 
@@ -125,7 +167,7 @@ const settings = createRoute({
   ),
 });
 const settingsPage = (path: string, load: Parameters<typeof page>[0]) =>
-  createRoute({ getParentRoute: () => settings, path, component: page(load) });
+  createRoute({ getParentRoute: () => settings, path, staticData: { title: SETTINGS_TITLES[path] }, component: page(load) });
 
 const settingsRoutes = [
   settingsPage("/", () => import("../pages/(app)/w/[workspace]/settings/page")),
@@ -154,7 +196,7 @@ const project = createRoute({
   ),
 });
 const projectPage = (path: string, load: Parameters<typeof page>[0]) =>
-  createRoute({ getParentRoute: () => project, path, component: page(load) });
+  createRoute({ getParentRoute: () => project, path, staticData: { title: PROJECT_TITLES[path] }, component: page(load) });
 const projectRedirect = (path: string, to: Parameters<typeof goTo>[0]) =>
   createRoute({ getParentRoute: () => project, path, ...goTo(to) });
 const P = (p: Record<string, string>) => `/w/${p.workspace}/p/${p.project}`;

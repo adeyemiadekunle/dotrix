@@ -19,6 +19,13 @@ import {
   SidebarRail,
   useSidebar,
 } from "@pmagent/ui/components/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@pmagent/ui/components/dropdown-menu";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
 import {
@@ -26,6 +33,11 @@ import {
   BellIcon,
   ChevronRightIcon,
   CircleCheckIcon,
+  CircleHelpIcon,
+  EllipsisIcon,
+  KeyboardIcon,
+  LinkIcon,
+  TerminalIcon,
   FolderKanbanIcon,
   LockIcon,
   StarIcon,
@@ -40,16 +52,19 @@ import {
 } from "lucide-react";
 import { Link, usePathname } from "@/lib/navigation";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { NavUser } from "@/components/nav-user";
 import { ProjectTile } from "@/components/project-tile";
+import { ConnectCliDialog, KeyboardShortcutsDialog } from "@/components/user-menu-dialogs";
 import { usePalette, useShortcutLabel } from "@/components/command-palette";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { canManageProjects } from "@/lib/labels";
 import { useWorkspaceIssues } from "@/lib/issues";
 import { useNotificationCounts } from "@/lib/notifications";
+import { projectDot } from "@/lib/project-look";
 import { useCurrentWorkspace, useProjects } from "@/lib/queries";
-import { starredFirst, useStarredProjects } from "@/lib/stars";
+import { starredFirst, useStarredProjects, useToggleStar } from "@/lib/stars";
 
 // The open project's views, the same as its tabs.
 const PROJECT_VIEWS: { href: string; label: string }[] = [
@@ -269,6 +284,7 @@ export function AppSidebar() {
                 const href = `${base}/p/${project.key}`; // opens its Overview
                 const open = pathname === href || pathname.startsWith(`${href}/`);
                 const showViews = expanded[project.id] ?? open;
+                const dot = projectDot(project);
                 return (
                   <SidebarMenuItem key={project.id}>
                     <SidebarMenuButton asChild isActive={open} tooltip={project.name}>
@@ -284,8 +300,22 @@ export function AppSidebar() {
                         {project.access === "restricted" && (
                           <LockIcon className="text-muted-foreground size-3.5! group-data-[collapsible=icon]:hidden" aria-label="Only people added" />
                         )}
+                        <span
+                          className={cn(
+                            "mr-5 size-1.5 shrink-0 rounded-full group-hover/menu-item:opacity-0 group-data-[collapsible=icon]:hidden",
+                            dot.dot,
+                          )}
+                          title={dot.label}
+                          aria-label={dot.label}
+                        />
                       </Link>
                     </SidebarMenuButton>
+                    <ProjectMenu
+                      project={project}
+                      href={href}
+                      starred={Boolean(starred.data?.includes(project.id))}
+                      canManage={canManageProjects(workspace?.role)}
+                    />
                     <SidebarMenuAction
                       onClick={() => setExpanded(project.id, !showViews)}
                       aria-expanded={showViews}
@@ -320,6 +350,7 @@ export function AppSidebar() {
       <SidebarFooter>
         {workspace && (
           <SidebarMenu>
+            <HelpMenu workspaceSlug={workspace.slug} />
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={pathname.startsWith(`${base}/settings`)} tooltip="Settings">
                 <Link href={`${base}/settings`}>
@@ -334,5 +365,96 @@ export function AppSidebar() {
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+  );
+}
+
+/** A project's menu in the sidebar (⋯ on hover): open it, star it, copy its link, its settings. */
+function ProjectMenu({
+  project,
+  href,
+  starred,
+  canManage,
+}: {
+  project: { id: string; name: string; workspace_id: string };
+  href: string;
+  starred: boolean;
+  canManage: boolean;
+}) {
+  const toggleStar = useToggleStar(project.workspace_id);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <SidebarMenuAction showOnHover className="right-7" aria-label={`${project.name} options`} title="Options">
+          <EllipsisIcon />
+        </SidebarMenuAction>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="right" align="start" className="w-48">
+        <DropdownMenuItem asChild>
+          <Link href={`${href}/overview`}>
+            <FolderKanbanIcon />
+            Open
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => toggleStar.mutate({ projectId: project.id, starred: !starred })}>
+          <StarIcon />
+          {starred ? "Unstar" : "Star"}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() =>
+            void navigator.clipboard
+              .writeText(`${location.origin}${href}/overview`)
+              .then(() => toast.success("Link copied"))
+              .catch(() => toast.error("Couldn't copy the link"))
+          }
+        >
+          <LinkIcon />
+          Copy link
+        </DropdownMenuItem>
+        {canManage && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href={`${href}/settings`}>
+                <SettingsIcon />
+                Project settings
+              </Link>
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** Help and resources: the keyboard shortcuts, and connecting the CLI. */
+function HelpMenu({ workspaceSlug }: { workspaceSlug: string }) {
+  const [dialog, setDialog] = useState<"shortcuts" | "cli" | null>(null);
+  return (
+    <SidebarMenuItem>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <SidebarMenuButton tooltip="Help and resources">
+            <CircleHelpIcon />
+            <span>Help and resources</span>
+          </SidebarMenuButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="right" align="end" className="w-56">
+          <DropdownMenuItem onSelect={() => setDialog("shortcuts")}>
+            <KeyboardIcon />
+            Keyboard shortcuts
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setDialog("cli")}>
+            <TerminalIcon />
+            Connect the CLI
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <KeyboardShortcutsDialog open={dialog === "shortcuts"} onOpenChange={(open) => !open && setDialog(null)} />
+      <ConnectCliDialog
+        open={dialog === "cli"}
+        onOpenChange={(open) => !open && setDialog(null)}
+        workspaceSlug={workspaceSlug}
+      />
+    </SidebarMenuItem>
   );
 }
