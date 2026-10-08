@@ -2,6 +2,7 @@ import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "@pmagent/ui/globals.css";
 import "./fonts.css";
+import "./dotrix.css";
 
 import { applyPrefs } from "./core/theme";
 

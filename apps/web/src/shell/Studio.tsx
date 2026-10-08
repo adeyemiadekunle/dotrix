@@ -8,7 +8,9 @@ import { D, projByKey, team, useStudio } from "../data/store";
 import { Drawer } from "../overlays/Drawer";
 import { ModalLayer } from "../overlays/Modals";
 import { installDragDrop } from "../core/dragdrop";
+import { Chat } from "../screens/Chat";
 import { Home } from "../screens/Home";
+import { Inbox, Notifications } from "../screens/Inbox";
 import { Project } from "../screens/Project";
 import { Overview, Projects } from "../screens/Projects";
 import { Search } from "../screens/Search";
@@ -28,6 +30,9 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   project: Project,
   overview: Overview,
   search: Search,
+  inbox: Inbox,
+  notifications: Notifications,
+  chat: Chat,
 };
 
 function NotFound() {

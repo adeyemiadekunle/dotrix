@@ -104,7 +104,13 @@ export const S = {
     inboxUnread: false,
     inboxSel: null as string | null,
     notifFilter: "all" as "all" | "unread",
+    notifTab: "all",
     notifSel: null as string | null,
+    // dotrix: chat
+    chatBusy: null as string | null,
+    chatAgent: "auto",
+    chatModel: "Gemini 3.8 Flash",
+    chatQ: "",
     searchQ: "",
     searchCat: "all",
     myView: "list" as "list" | "calendar",
