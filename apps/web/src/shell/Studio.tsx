@@ -3,7 +3,9 @@
 import { useEffect, type ReactNode } from "react";
 
 import { applyPrefs } from "../core/theme";
-import { useRoute, type Route } from "../core/nav";
+import { Ic } from "../core/icons";
+import { back, go, useRoute, type Route } from "../core/nav";
+import { DesignSystem, SystemStates } from "../screens/DesignSystem";
 import { D, projByKey, team, useStudio } from "../data/store";
 import { Drawer } from "../overlays/Drawer";
 import { ModalLayer } from "../overlays/Modals";
@@ -44,12 +46,33 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   team: TeamPage,
   archive: Archive,
   settings: Settings,
+  system: DesignSystem,
+  states: SystemStates,
 };
 
+/** Gr8r's 404 (gr8r-studio/src/pages/errors.js page404). */
 function NotFound() {
   return (
-    <div className="page">
-      <Empty icon="file-question" title="Page not found" text="The page you're looking for doesn't exist or was moved." />
+    <div className="fullstate">
+      <div className="box">
+        <div className="empty-state" style={{ padding: 0 }}>
+          <div className="glyph">
+            <Ic n="file-question" s={20} />
+          </div>
+        </div>
+        <span className="code">ERROR 404</span>
+        <h1>Page not found</h1>
+        <p>The page you&apos;re looking for was moved, deleted, or never existed. Check the link or head back home.</p>
+        <div className="row">
+          <button className="btn btn-secondary" onClick={back}>
+            <Ic n="arrow-left" s={14} />
+            Go back
+          </button>
+          <button className="btn btn-primary" onClick={() => go("home")}>
+            Go to Home
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

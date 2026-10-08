@@ -23,7 +23,7 @@ export function VerifyEmail({ token }: { token: string }) {
 
   const home = (
     <Button asChild className="w-full">
-      <Link href="/">Go to pmagent</Link>
+      <Link href="/">Go to dotrix</Link>
     </Button>
   );
   if (!token || verify.isError) {

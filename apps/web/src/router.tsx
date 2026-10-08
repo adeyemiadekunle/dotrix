@@ -11,7 +11,7 @@ import AuthLayout from "../pages/(auth)/layout";
 
 declare module "@tanstack/react-router" {
   interface StaticDataRouteOption {
-    /** The page's name in the browser tab ("Sign in · pmagent"). */
+    /** The page's name in the browser tab ("Sign in · dotrix"). */
     title?: string;
   }
   interface Register {

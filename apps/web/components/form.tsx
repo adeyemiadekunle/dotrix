@@ -1,4 +1,3 @@
-import { Alert, AlertDescription } from "@pmagent/ui/components/alert";
 import { Button } from "@pmagent/ui/components/button";
 import { Input } from "@pmagent/ui/components/input";
 import { Label } from "@pmagent/ui/components/label";
@@ -13,13 +12,16 @@ export function Field({
 }: ComponentProps<typeof Input> & { label: string; hint?: ReactNode; action?: ReactNode }) {
   const id = useId();
   return (
-    <div className="grid gap-2">
-      <div className="flex items-center justify-between">
-        <Label htmlFor={id}>{label}</Label>
+    <div className="field">
+      <div className="row">
+        <Label htmlFor={id} className="label">
+          {label}
+        </Label>
+        <span className="sp" />
         {action}
       </div>
-      <Input id={id} {...input} />
-      {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
+      <Input id={id} {...input} className={`input-lg ${input.className ?? ""}`} />
+      {hint && <span className="hint">{hint}</span>}
     </div>
   );
 }
@@ -36,10 +38,10 @@ export function SubmitButton({ pending, children, ...props }: ComponentProps<typ
 export function FormError({ message }: { message?: string | null }) {
   if (!message) return null;
   return (
-    <Alert variant="destructive">
-      <AlertCircleIcon />
-      <AlertDescription>{message}</AlertDescription>
-    </Alert>
+    <div className="alert danger" role="alert">
+      <AlertCircleIcon size={15} />
+      <span>{message}</span>
+    </div>
   );
 }
 

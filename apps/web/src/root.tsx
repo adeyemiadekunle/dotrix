@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import { EmptyState } from "@/components/states";
 import { Link } from "@/lib/navigation";
 
-const APP_NAME = "pmagent";
+const APP_NAME = "dotrix";
 
 /** Every page: names the browser tab after the deepest route that has a title (and its project). */
 export function RootLayout() {
