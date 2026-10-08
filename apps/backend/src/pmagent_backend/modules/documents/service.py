@@ -25,6 +25,8 @@ from uuid_utils.compat import uuid7
 from pmagent_backend.core.errors import Conflict, DomainError, NotFound, Unprocessable
 from pmagent_backend.core.jobs import Jobs
 from pmagent_backend.core.storage import BlobStorage
+from pmagent_backend.modules.audit.service import AuditLog
+from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.repository import ProjectRepository
@@ -207,6 +209,64 @@ class DocumentService:
 
     async def original(self, document: Document) -> bytes:
         return await self.storage.get(document.storage_key)
+
+    async def rename(self, access: ProjectAccess, document_id: uuid.UUID, filename: str) -> DocumentRead:
+        """A new name for the file, with the same extension. Its markdown in the project's
+        knowledge stays where it is (agents and links keep finding it)."""
+        document = await self.get(access.project.id, document_id)
+        name = safe_filename(filename)
+        if PurePath(name).suffix.lower() != PurePath(document.filename).suffix.lower():
+            raise UnsupportedFormat(f"Keep the extension: {PurePath(document.filename).suffix or 'none'}")
+        if name != document.filename:
+            self._audit(access, "document.renamed", document, {"from": document.filename, "to": name})
+            document.filename = name
+            await self.session.commit()
+            await self.session.refresh(document)
+        return DocumentRead.model_validate(document)
+
+    async def duplicate(self, access: ProjectAccess, document_id: uuid.UUID) -> DocumentRead:
+        """A copy of the original under a free name ("spec copy.pdf"), converted like an upload."""
+        document = await self.get(access.project.id, document_id)
+        data = await self.storage.get(document.storage_key)
+        taken = set(await self.session.scalars(select(Document.filename).where(Document.project_id == access.project.id)))
+        stem, suffix = PurePath(document.filename).stem, PurePath(document.filename).suffix
+        name, n = f"{stem} copy{suffix}", 2
+        while name in taken:
+            name, n = f"{stem} copy {n}{suffix}", n + 1
+        copy = await self.upload(access, name, data, max_bytes=len(data))
+        self._audit(access, "document.duplicated", document, {"copy": name, "copy_id": str(copy.id)})
+        await self.session.commit()
+        return copy
+
+    async def delete(self, access: ProjectAccess, document_id: uuid.UUID) -> None:
+        """Delete the original and, unless another upload made the same file, its markdown in the
+        project's knowledge (a versioned delete there: it can be restored from the history)."""
+        project, member = access.project, access.member
+        document = await self.get(project.id, document_id)
+        path, key, filename = document.knowledge_path, document.storage_key, document.filename
+        self._audit(access, "document.deleted", document, {"knowledge_path": path})
+        await self.session.delete(document)
+        await self.session.flush()
+        shared = await self.session.scalar(
+            select(Document.id).where(Document.project_id == project.id, Document.knowledge_path == path).limit(1)
+        )
+        if shared is None:
+            try:
+                # Commits the document's deletion with it.
+                await KnowledgeService(self.session).delete(project, path, Actor.person(member.user_id, member.role))
+            except NotFound:  # never converted, or already deleted there
+                await self.session.commit()
+        else:
+            await self.session.commit()
+        await self.storage.delete(key)  # after the commit: a failed delete only leaves an orphaned file
+        logger.info("deleted document %s (%s)", document_id, filename)
+
+    def _audit(self, access: ProjectAccess, action: str, document: Document, details: dict[str, str]) -> None:
+        AuditLog(self.session).record(
+            workspace_id=access.project.workspace_id, project_id=access.project.id, action=action,
+            target=document.filename, actor_type=AuthorType.USER, actor_user_id=access.member.user_id,
+            details=details,
+        )
 
 
 async def mark_interrupted_conversions(session_factory: Callable[[], AbstractAsyncContextManager[AsyncSession]]) -> None:

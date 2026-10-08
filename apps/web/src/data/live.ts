@@ -7,11 +7,10 @@
 // Wired: the workspace, members and roles, teams (who and which projects), projects (create,
 // edit, status, star), issues (create, every field, checklists, repeats, stars, attachments,
 // comments), notifications (read state), activity, agents (the list), Knowledge (read and save),
-// files (upload, list), automations (list, on/off, add a preset), the audit log.
+// files (upload, list, rename, duplicate, delete), automations (list, on/off, add a preset), the audit log.
 // Changes made through mutate() anywhere in the screens (a sub-task ticked, a star, a team's
 // people) are compared with what the API last had after each change (reconcile) and sent.
-// Not yet: chat and coding (their own step); renaming, duplicating, or deleting files, and custom
-// agents stay in this browser.
+// Not yet: chat and coding (their own step); custom agents stay in this browser.
 import { api, apiFetch, authPost, hasSession, problemMessage, unwrap, type Schemas } from "@/lib/api";
 
 import { PCOLORS } from "../core/constants";
@@ -781,6 +780,58 @@ export async function documentUploaded(file: File, pid: string, onProgress: (pct
   D().files.unshift(toFile(doc, pid));
   render();
   onProgress(100);
+}
+
+const docPath = (f: FileItem) => ({ params: { path: { ...projectPath(f.project), document_id: f.id } } });
+async function reloadFiles(pid: string) {
+  try {
+    const docs = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/documents", { params: { path: projectPath(pid) } }));
+    D().files = [...D().files.filter((f) => f.project !== pid), ...docs.map((d) => toFile(d, pid))];
+    render();
+  } catch {
+    /* leave what's shown */
+  }
+}
+
+/** A project file renamed in Files (the store shows the new name already). */
+export function fileRenamed(f: FileItem, was: string) {
+  if (!isLive()) return;
+  void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}", { ...docPath(f), body: { filename: f.name } }))
+    .then((d) => {
+      f.name = d.filename; // as the API cleaned it
+      f.type = fileType(d.filename);
+      render();
+    })
+    .catch((e) => {
+      failed(`“${was}”`, e);
+      f.name = was;
+      f.type = fileType(was);
+      render();
+    });
+}
+
+/** A copy of a project file: the API stores and converts it, then it's listed. */
+export async function fileDuplicated(f: FileItem) {
+  try {
+    const d = await unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}/duplicate", docPath(f)));
+    const i = D().files.indexOf(f);
+    D().files.splice(i + 1, 0, toFile(d, f.project));
+    render();
+    toast(`Duplicated as ${d.filename}`);
+  } catch (e) {
+    failed(`The copy of “${f.name}”`, e);
+  }
+}
+
+/** A project file deleted in Files (already gone from the store): its markdown in Knowledge goes too. */
+export function fileDeleted(f: FileItem) {
+  if (!isLive()) return;
+  void unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}", docPath(f)))
+    .then(() => reloadKnowledge(f.project))
+    .catch((e) => {
+      failed(`Deleting “${f.name}”`, e);
+      void reloadFiles(f.project);
+    });
 }
 
 /** A file added to an issue (the drawer, or the new-issue form once the issue exists). */

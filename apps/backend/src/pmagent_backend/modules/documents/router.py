@@ -12,7 +12,7 @@ from pmagent_backend.core.openapi import errors
 from pmagent_backend.core.storage import BlobStorage, get_storage
 from pmagent_backend.modules.projects.deps import ProjectManager, ProjectViewer
 
-from .schemas import DocumentRead
+from .schemas import DocumentRead, DocumentRename
 from .service import DocumentService
 
 router = APIRouter(
@@ -56,6 +56,30 @@ async def retry_document_conversion(
     until the job finishes, then `ready` or `failed` with a new `error`. 409 unless it failed.
     Owners and admins (the people who add documents)."""
     return await documents.retry(access.project.id, document_id)
+
+
+@router.patch("/{document_id}", responses=errors(403, 422))
+async def rename_document(
+    document_id: uuid.UUID, data: DocumentRename, access: ProjectManager, documents: Documents
+) -> DocumentRead:
+    """Rename a document, keeping its extension. Its markdown in the project's knowledge stays
+    where it is. Owners and admins (the people who add documents)."""
+    return await documents.rename(access, document_id, data.filename)
+
+
+@router.post("/{document_id}/duplicate", status_code=status.HTTP_201_CREATED, responses=errors(403, 503))
+async def duplicate_document(document_id: uuid.UUID, access: ProjectManager, documents: Documents) -> DocumentRead:
+    """Copy a document under a free name ("spec copy.pdf"); the copy is converted like an
+    upload (`converting`, then `ready` or `failed`). Owners and admins."""
+    return await documents.duplicate(access, document_id)
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 503))
+async def delete_document(document_id: uuid.UUID, access: ProjectManager, documents: Documents) -> None:
+    """Delete a document: its original, and its markdown in the project's knowledge unless another
+    upload made the same file (that delete is versioned, so it can be restored from the file's
+    history). Owners and admins."""
+    await documents.delete(access, document_id)
 
 
 @router.get("")

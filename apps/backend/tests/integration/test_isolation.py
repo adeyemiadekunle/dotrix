@@ -145,6 +145,7 @@ def _fill(template: str, params: dict[str, str]) -> str:
 # their resource up in the service, after it.
 BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("PATCH", "/v1/workspaces/{workspace_id}/members/{user_id}"): {"role": "admin"},
+    ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}"): {"filename": "x.md"},
     ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}"): {"title": "x"},
     ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}"): {
         "state": "dismissed"
