@@ -39,6 +39,7 @@ class IssueType(enum.StrEnum):
 
 
 class IssueStatus(enum.StrEnum):
+    BACKLOG = "backlog"  # not planned yet; never "ready"
     TODO = "todo"
     IN_PROGRESS = "in_progress"
     BLOCKED = "blocked"
@@ -51,6 +52,7 @@ class Priority(enum.StrEnum):
     MEDIUM = "medium"
     HIGH = "high"
     URGENT = "urgent"
+    NONE = "none"  # no priority set (sorts last)
 
 
 class AgentAssignee(enum.StrEnum):
@@ -73,7 +75,7 @@ PARENT_TYPES: dict[IssueType, frozenset[IssueType]] = {
 PARENT_REQUIRED = frozenset({IssueType.SUB_TASK})
 # Stories need acceptance criteria and bugs need repro steps, so both need a description.
 DESCRIPTION_REQUIRED = frozenset({IssueType.STORY, IssueType.BUG})
-PRIORITY_ORDER = {Priority.URGENT: 0, Priority.HIGH: 1, Priority.MEDIUM: 2, Priority.LOW: 3}
+PRIORITY_ORDER = {Priority.URGENT: 0, Priority.HIGH: 1, Priority.MEDIUM: 2, Priority.LOW: 3, Priority.NONE: 4}
 
 
 class Issue(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):

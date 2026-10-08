@@ -5018,7 +5018,7 @@ export interface components {
          * IssueStatus
          * @enum {string}
          */
-        IssueStatus: "todo" | "in_progress" | "blocked" | "review" | "done";
+        IssueStatus: "backlog" | "todo" | "in_progress" | "blocked" | "review" | "done";
         /**
          * IssueSummary
          * @description Board and list rows: everything except the description and log.
@@ -5642,7 +5642,7 @@ export interface components {
          * Priority
          * @enum {string}
          */
-        Priority: "low" | "medium" | "high" | "urgent";
+        Priority: "low" | "medium" | "high" | "urgent" | "none";
         /**
          * ProblemDetail
          * @description RFC 9457 problem details. Every error response has this shape.

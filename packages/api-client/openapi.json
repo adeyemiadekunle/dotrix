@@ -20220,6 +20220,7 @@
       "IssueStatus": {
         "type": "string",
         "enum": [
+          "backlog",
           "todo",
           "in_progress",
           "blocked",
@@ -21773,7 +21774,8 @@
           "low",
           "medium",
           "high",
-          "urgent"
+          "urgent",
+          "none"
         ],
         "title": "Priority"
       },
