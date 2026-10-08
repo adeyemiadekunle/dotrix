@@ -1129,9 +1129,10 @@ kbd,
   flex-shrink: 0;
 }
 .ws-logo.brand {
-  background: #000;
-  overflow: hidden;
-  border-radius: 28%;
+  /* dotrix's mark stands on its own: green dots, no tile behind them */
+  background: transparent;
+  overflow: visible;
+  border-radius: 0;
 }
 .ws-logo.brand svg {
   display: block;
