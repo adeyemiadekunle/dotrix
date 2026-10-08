@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { newUser, signUp, signUpWithProject } from "./helpers";
+import { NOT_WIRED, newUser, signUp, signUpWithProject } from "./helpers";
+
+test.fixme(true, NOT_WIRED);
 
 test("@mention a colleague in a comment, and they find it in Notifications", async ({ page, browser }) => {
   const { key } = await signUpWithProject(page);

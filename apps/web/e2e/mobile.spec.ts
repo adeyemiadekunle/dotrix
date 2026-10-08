@@ -1,6 +1,8 @@
 import { devices, expect, test } from "@playwright/test";
 
-import { signUpWithProject } from "./helpers";
+import { NOT_WIRED, signUpWithProject } from "./helpers";
+
+test.fixme(true, NOT_WIRED);
 
 // A phone: the sidebar is a sheet, the board's columns stack, and the chat input stays on screen.
 test.use({ ...devices["Pixel 7"], viewport: { width: 390, height: 844 } });

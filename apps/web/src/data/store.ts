@@ -134,16 +134,21 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l);
 };
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
+function writeNow() {
+  clearTimeout(saveTimer);
+  saveTimer = undefined;
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({ data: S.data, prefs: S.prefs, views: S.views, collapsed: S.ui.collapsed }));
+  } catch {
+    /* storage full or blocked: keep working in memory */
+  }
+}
 export function save() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ data: S.data, prefs: S.prefs, views: S.views, collapsed: S.ui.collapsed }));
-    } catch {
-      /* storage full or blocked: keep working in memory */
-    }
-  }, 150);
+  saveTimer = setTimeout(writeNow, 150);
 }
+// A change made just before a reload or navigating away is still written.
+if (typeof window !== "undefined") addEventListener("pagehide", () => saveTimer !== undefined && writeNow());
 /** Re-render whoever reads the store (UI-only changes: popovers, selection, the drawer). */
 export function render() {
   version++;

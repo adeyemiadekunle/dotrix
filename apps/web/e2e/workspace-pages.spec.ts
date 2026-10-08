@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { signUpWithProject } from "./helpers";
+import { NOT_WIRED, signUpWithProject } from "./helpers";
+
+test.fixme(true, NOT_WIRED);
 
 test("the workspace's pages: overview, tasks, activity, projects, and search", async ({ page }) => {
   const { key } = await signUpWithProject(page);

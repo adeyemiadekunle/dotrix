@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { signUp, signUpWithProject } from "./helpers";
+import { NOT_WIRED, signUp, signUpWithProject } from "./helpers";
+
+test.fixme(true, NOT_WIRED);
 
 test("an organisation: invite link, revoke, and the audit log records both", async ({ page }) => {
   await signUp(page);

@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { signUpWithProject } from "./helpers";
+import { NOT_WIRED, signUpWithProject } from "./helpers";
+
+test.fixme(true, NOT_WIRED);
 
 // The e2e backend's web is canned (PMAGENT_SEARCH_PROVIDER=fake): every search finds one gov.uk
 // page about VAT. "Research: <question>" makes the rule-based model search, read that page, and

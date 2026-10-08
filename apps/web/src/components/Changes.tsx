@@ -142,7 +142,7 @@ function Checkpoint({ ch }: { ch: ProposedChange }) {
                 Cancel
               </button>
               <button className="btn btn-sm btn-primary" disabled={!note.trim()} onClick={() => answerCheckpoint(ch.id, "steer", note)}>
-                Send
+                Update the plan
               </button>
             </>
           ) : (
