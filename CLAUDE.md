@@ -160,8 +160,16 @@ apps/web/
 ├── index.html, vite.config.ts
 ├── src/
 │   ├── main.tsx, providers.tsx  fonts, theme (next-themes, default "system"), React Query, tooltips, toasts
-│   ├── router.tsx               every URL and its page (loaded on first visit), redirects for old links, the sign-in guards (optimistic, from the readable `pm_session` cookie)
-│   └── root.tsx                 the browser tab's title (a route's `staticData.title`), the not-found page
+│   ├── router.tsx               every URL: the sign-in pages, /onboarding, and /w/{ws}/… (all one `Studio`, the screen picked from the path)
+│   ├── root.tsx                 the browser tab's title (a route's `staticData.title`), the not-found page
+│   ├── dotrix.css               Dotrix's surfaces Gr8r lacks (chat, proposed changes, diffs) on Gr8r's tokens
+│   │   (the seeded Gr8r port; each file names the Gr8r file it copies)
+│   ├── core/                    utils, constants, icons (`Ic`, a lucide subset from `icons-plugin.ts`), nav (`go`, `useRoute`, `href`), actions + more (Gr8r's actions), agents (decisions, checkpoints, chat replies, coding), theme, dragdrop, keyboard
+│   ├── data/                    types, seed (Gr8r's) + seed-dotrix (agents, threads, knowledge, coding, audit, automations), store (`S`, `mutate`, `useStudio`, lookups; saved in localStorage `dotrix.studio.v1`)
+│   ├── shell/                   Shell (sidebar, top bar), Studio (screens by route, overlays), viewEngine (filters, sort, group, toolbar)
+│   ├── overlays/                PopLayer (every popover and context menu), Modals, Drawer (the task), Palette (⌘K)
+│   ├── views/, components/, ui/ Board, List, Table, Calendar, Timeline, Files, project Overview; TaskList, Changes (proposed changes, checkpoints); helpers, toast
+│   └── screens/                 one module per page (Home, Inbox + Notifications, Chat, Projects + Overview, Project, Knowledge, TaskPages, Members, Settings, Archive, Search, DesignSystem, Onboarding)
 ├── pages/                       one module per page (default export), laid out like the URLs; layouts take `children`
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
 │   └── (app)/                   signed-in shell (sidebar): /w/[workspace] (Home), /w/[workspace]/{chat,overview,tasks,timeline,activity,approvals (Notifications),my-issues,projects,projects/new}, /w/[workspace]/settings/{profile,appearance,devices,calendar (your account), (General),members,invites,permissions,agents,audit} (/agents and /audit redirect there), /w/[workspace]/p/[KEY]/{overview,board,list,table,timeline,files,knowledge,activity,settings} (the project root redirects to overview; /backlog to list, /docs to files, /chat and /briefing to the workspace Chat), /settings (opens your profile in the workspace you were last in)
@@ -199,17 +207,15 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 
 ## Plan: Gr8r Studio into Dotrix (review, 2026-10-08)
 
-Why: Gr8r Studio (a separate Vite prototype, plain JS and CSS, seeded data) is the product's intended look and feel; Dotrix keeps everything Gr8r lacks (Chat, Knowledge, agents, approvals, coding). Review and decisions: [docs/gr8r-to-dotrix-review.md](docs/gr8r-to-dotrix-review.md) (React on Vite, shadcn restyled with Gr8r's tokens; the API sets the session cookies on one origin; Backlog added beside Blocked; Inbox for people's items, Notifications for agents'; Teams now, billing as UI later). Gr8r's screens are rebuilt in React against the API, not copied. One PR per phase.
+Why: Gr8r Studio (a separate Vite prototype, plain JS and CSS, seeded data) is the product's intended look and feel; Dotrix keeps everything Gr8r lacks (Chat, Knowledge, agents, approvals, coding). Review and decisions: [docs/gr8r-to-dotrix-review.md](docs/gr8r-to-dotrix-review.md) (React on Vite; the API sets the session cookies on one origin; Backlog added beside Blocked; Inbox for people's items, Notifications for agents'; Teams now, billing as UI later).
+
+Changed approach (2026-10-08, the owner's call): copy Gr8r's UI screen by screen (same markup and classes, its CSS verbatim in `packages/ui/src/styles/gr8r.css`) into React on **seeded data**, add Dotrix's screens in the same style, then wire the API screen by screen. The seeded app lives in `apps/web/src` (below); the API-backed pages in `pages/` stay for wiring (only the sign-in pages are routed, in Gr8r's auth design).
 
 - [x] **Phase 0, Next.js → Vite** (no visual change): Vite + TanStack Router (`src/router.tsx`, pages in `pages/`, `lib/navigation` keeps the pages' API); the session moved into the API (`modules/web`: cookies, refresh, CSRF via `X-Requested-With`, GitHub redirects); same-origin `/v1` (no proxy route); old links and calendar feed addresses keep working
-- [x] Phase 1, design system and shell: Gr8r's tokens in `packages/ui` under the existing names (and status, label, success colours, elevation, the gutter, accents), restyled buttons, inputs, selects, badges, tabs, cards, and menus; the sidebar (Gr8r's rows and labels, each project's status dot and ⋯ menu, Help and resources), the top bar (Search or jump to…, New ▾), a bottom bar on phones, a skip link, page fade-in, browser tab titles; projects' `status`, `icon`, `color` (project settings → Status); the accent in Settings → Appearance
-  - [ ] density (compact rows) with the views in Phase 3
-- [ ] Phase 2, Home, My Tasks (with Calendar), Inbox / Notifications, Favorites
-- [ ] Phase 3, views: one toolbar and filter model, saved views, board composer, inline editing, bulk actions, context menus, Calendar
-- [ ] Phase 4, the task drawer: full page, Markdown editor, sub-task checklist, attachments, reactions, recurrence
-- [ ] Phase 5, people: Members page, member profiles, Teams
-- [ ] Phase 6, projects: header, milestones, Projects table, Archive
-- [ ] Phase 7, settings, sign-in screens, onboarding, search page, error states
+- [x] Gr8r's whole UI on seeded data at `/w/gr8r/…`: shell (sidebar, top bar, bottom bar), Home, Inbox, My Tasks, Favorites, Overview, Projects (grid, list, table), Tasks, Calendar, Timeline, Members, profiles, Teams, Activity, Archive, Search, Settings (every Gr8r section), design system, system states, 404; a project's Overview, Board, List, Table, Calendar, Timeline, Files, Activity, saved views; the task drawer, every popover, modal, context menu, the command palette (⌘K), keyboard shortcuts, drag and drop, onboarding (`/onboarding`)
+- [x] Dotrix's screens in Gr8r's style, seeded: Chat (conversations by project and across projects, agent and model, replies with what the agent did, proposed changes with diffs to approve or reject, plans to continue / change / stop; the Coding tab: sessions, turns, approve, stop, follow-ups), Notifications (the agents' items with the change in the detail), Knowledge (a project's documents, edit with a note), "Start coding" in the drawer, Settings → Agents, Rules and skills, Automations, GitHub, Audit log, Devices and tokens, what members can do
+- [ ] Wire the API, screen by screen (the seeded store's shapes in `src/data/types.ts` become views over the API's schemas); then the e2e tests again (they target the old pages)
+- [ ] Brand: the wordmark and the seeded workspace are still Gr8r's
 
 ## Plan: UI redesign (design review, 2026-10-01)
 
