@@ -1,10 +1,11 @@
-// The app's URLs (TanStack Router). The workspace (/w/{workspace}/…) is Gr8r's shell with the
-// screen picked from the path (shell/Studio, like Gr8r's renderPage); it runs on seeded data, so
-// no sign-in is needed until the API is wired. The sign-in pages are the API-backed ones.
+// The app's URLs (TanStack Router). A workspace (/w/{workspace}/…) is Gr8r's shell with the
+// screen picked from the path (shell/Studio, like Gr8r's renderPage): one of yours comes from the
+// API (data/live.ts, sign-in needed), the demo (/w/dotrix) is seeded in the browser.
 import { Navigate, Outlet, createRootRoute, createRoute, createRouter, lazyRouteComponent } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { WS, setRouter } from "./core/nav";
+import { homeSlug } from "./data/live";
 import { NotFoundPage, RootLayout } from "./root";
 import { Studio } from "./shell/Studio";
 import AuthLayout from "../pages/(auth)/layout";
@@ -47,11 +48,15 @@ const authRoutes = [
   createRoute({ getParentRoute: () => auth, path: "/onboarding", staticData: { title: "Set up your workspace" }, component: page(() => import("./screens/Onboarding").then((m) => ({ default: m.Onboarding }))) }),
 ];
 
-const home = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: () => <Navigate to="/w/$ws" params={{ ws: WS }} replace />,
-});
+/** "/": your last (or first) workspace when signed in, else the demo. */
+function Start() {
+  const [slug, setSlug] = useState<string | null>(null);
+  useEffect(() => {
+    void homeSlug().then((s) => setSlug(s ?? WS));
+  }, []);
+  return slug ? <Navigate to="/w/$ws" params={{ ws: slug }} replace /> : null;
+}
+const home = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Start });
 const workspace = createRoute({ getParentRoute: () => rootRoute, path: "/w/$ws", component: Studio });
 const workspaceAny = createRoute({ getParentRoute: () => rootRoute, path: "/w/$ws/$", component: Studio });
 

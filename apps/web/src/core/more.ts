@@ -25,6 +25,7 @@ import {
   visibleProjects,
   type Modal,
 } from "../data/store";
+import { isLive, projectCreated, showDemo, signOutLive } from "../data/live";
 import { seed } from "../data/seed";
 import type { Project, Task } from "../data/types";
 import { fileType } from "../ui/helpers";
@@ -84,7 +85,7 @@ export function newTask(d: { project?: string; assignee?: string; due?: string; 
     form: {
       title: "",
       desc: "",
-      project: canSee(proj(pid)) ? pid : "p1",
+      project: canSee(proj(pid)) ? pid : visibleProjects().find(canSee)?.id,
       status: d.status || "todo",
       assignee: d.assignee || D().me,
       priority: "medium",
@@ -168,6 +169,7 @@ export function createProject(f: { name: string; desc?: string; icon: string; co
   D().activity.unshift({ id: uid("a"), by: D().me, verb: "created project", task: null, project: p.id, at: Date.now(), extra: "" });
   const tm = TEMPLATES.find((t) => t.id === tmplId);
   (tm?.tasks || []).forEach((title, i) => createTask({ project: p.id, title, status: i ? "todo" : "progress" }));
+  projectCreated(p);
   return p;
 }
 export function newProject() {
@@ -223,7 +225,15 @@ export function dupTask(id: string) {
   });
   toast("Task duplicated", { action: "Open", onAction: () => openTask(n!.id) });
 }
+/** The API can't archive or delete issues yet: a real workspace says so instead. */
+export function notYet(what: string, instead = "Mark the issue done instead.") {
+  if (!isLive()) return false;
+  S.ui.pop = null;
+  toast(`${what} isn't available yet.${instead ? ` ${instead}` : ""}`, { kind: "info" });
+  return true;
+}
 export function archiveTask(id: string) {
+  if (notYet("Archiving issues")) return;
   const t = task(id)!;
   const snap = snapshot();
   S.ui.pop = null;
@@ -235,6 +245,7 @@ export function archiveTask(id: string) {
   toast(`Archived “${t.title}”`, { action: "Undo", onAction: () => restore(snap) });
 }
 export function delTask(id: string) {
+  if (notYet("Deleting issues")) return;
   const t = task(id);
   S.ui.pop = null;
   if (!t) return;
@@ -263,6 +274,7 @@ export function dupProject(id: string) {
   toast(`Duplicated ${p.name}`, { action: "Open", onAction: () => go("project", { id: n!.key }) });
 }
 export function archiveProject(id: string) {
+  if (notYet("Archiving projects", "Set its status to Completed instead.")) return;
   const p = proj(id)!;
   S.ui.pop = null;
   confirmDlg({
@@ -280,6 +292,7 @@ export function archiveProject(id: string) {
   });
 }
 export function delProject(id: string) {
+  if (notYet("Deleting projects", "Set its status to Completed instead.")) return;
   const p = proj(id)!;
   S.ui.pop = null;
   const n = tasksOf(p.id).length;
@@ -355,6 +368,7 @@ export function colDoneAll(key: string, st: string) {
   if (guarded(() => ts.forEach((t) => applyPatch(t, { status: "done" })))) toast(`Marked ${ts.length} tasks as done`, { action: "Undo", onAction: () => restore(snap) });
 }
 export function colArchive(key: string) {
+  if (notYet("Archiving issues")) return;
   const ts = colTasks(key, "done");
   S.ui.pop = null;
   const snap = snapshot();
@@ -412,6 +426,7 @@ export function previewFile(id: string) {
 }
 export function renameFile(id: string) {
   const f = D().files.find((x) => x.id === id)!;
+  if (notYet("Renaming files", "Upload the file again under its new name.")) return;
   S.ui.pop = null;
   promptDlg({
     title: "Rename file",
@@ -428,6 +443,7 @@ export function renameFile(id: string) {
 }
 export function dupFile(id: string) {
   const f = D().files.find((x) => x.id === id)!;
+  if (notYet("Duplicating files", "Upload it again instead.")) return;
   S.ui.pop = null;
   mutate(() => {
     const i = D().files.indexOf(f);
@@ -437,6 +453,7 @@ export function dupFile(id: string) {
 }
 export function delFile(id: string) {
   const f = D().files.find((x) => x.id === id)!;
+  if (notYet("Deleting files", "")) return;
   S.ui.pop = null;
   confirmDlg({
     title: "Delete file?",
@@ -483,6 +500,10 @@ export function delView(id: string) {
 export function switchWs(id: string) {
   const w = D().workspaces.find((x) => x.id === id)!;
   S.ui.pop = null;
+  if (w.slug) {
+    location.assign(`/w/${w.slug}`); // a real workspace: load it from the API
+    return;
+  }
   D().ws = { ...w, url: w.name.toLowerCase().replace(/[^a-z0-9]+/g, ""), brand: Boolean(w.brand) };
   save();
   go("home");
@@ -494,7 +515,8 @@ export function signOut() {
   S.ui.drawer = null;
   S.ui.modals = [];
   render();
-  location.assign("/login");
+  showDemo();
+  void signOutLive(); // ends the session (if any), then the sign-in page
 }
 export function shortcuts() {
   S.ui.pop = null;

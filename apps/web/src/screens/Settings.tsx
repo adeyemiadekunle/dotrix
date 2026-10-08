@@ -5,9 +5,10 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { copy, openPop, setPref } from "../core/actions";
 import { Ic, WsLogo } from "../core/icons";
-import { invite, newTeam } from "../core/more";
+import { invite, newTeam, notYet } from "../core/more";
 import { go, useRoute } from "../core/nav";
 import { ago, dOff, fmtDate, uid } from "../core/utils";
+import { automationAdded, automationToggled, isLive } from "../data/live";
 import { D, S, me, mutate, proj, render, save, visibleProjects, who } from "../data/store";
 import { SHORTCUTS } from "../overlays/Modals";
 import { Av, Empty, PIcon } from "../ui/helpers";
@@ -378,6 +379,7 @@ function Agents() {
         <button
           className="btn btn-secondary btn-sm"
           onClick={() => {
+            if (notYet("Custom agents", "They come in a later update.")) return;
             const h = "agent" + (D().agents.length + 1);
             mutate(() => D().agents.push({ handle: h, name: "Custom", desc: "A custom agent.", icon: "bot", c: "#57544E", builtIn: false, tools: ["knowledge.read"] }));
             S.ui.agentSel = h;
@@ -474,7 +476,14 @@ function Automations() {
                     {a.last ? ` · last ran ${ago(a.last)}` : ""}
                   </div>
                 </div>
-                <Tog on={a.enabled} set={(v) => mutate(() => (a.enabled = v))} label={`Turn ${a.name} on`} />
+                <Tog
+                  on={a.enabled}
+                  set={(v) => {
+                    mutate(() => (a.enabled = v));
+                    automationToggled(a);
+                  }}
+                  label={`Turn ${a.name} on`}
+                />
               </div>
             );
           })
@@ -494,6 +503,10 @@ function Automations() {
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => {
+                if (isLive()) {
+                  void automationAdded(visibleProjects()[0]!.id, n!);
+                  return;
+                }
                 mutate(() => D().automations.push({ id: uid("am"), project: visibleProjects()[0]!.id, name: n!, agent: n!.startsWith("Watch") ? "research" : n!.startsWith("Triage") ? "auto" : "documentation", trigger: n!.startsWith("Triage") ? "When an issue is created" : "Weekly, Monday 08:00", enabled: true }));
                 toast(`Added “${n}”`);
               }}

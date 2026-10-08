@@ -3,6 +3,7 @@
 // When the API is wired, each becomes a call (runs, approvals, coding) and the replies stream.
 import { D, S, mutate, proj, render, task, who } from "../data/store";
 import type { ChatMessage, CodingSession, ProposedChange, Thread } from "../data/types";
+import { isLive } from "../data/live";
 import { toast } from "../ui/toast";
 import { createTask } from "./actions";
 import { dOff, uid } from "./utils";
@@ -130,9 +131,16 @@ function cannedAnswer(th: Thread, q: string): { text: string; activity: string[]
   };
 }
 
+/** Chat and coding run on the API in the next step; a real workspace says so instead of a canned reply. */
+export function agentsNotWired(): boolean {
+  if (!isLive()) return false;
+  toast("Chat with the agents comes to your workspace in the next update. Try it in the demo workspace.", { kind: "info", ms: 5000 });
+  return true;
+}
+
 export function sendChat(th: Thread, text: string, agent: string) {
   const q = text.trim();
-  if (!q) return;
+  if (!q || agentsNotWired()) return;
   mutate(() => {
     th.messages.push({ id: uid("cm"), role: "user", by: D().me, at: Date.now(), text: q });
     th.agent = agent;
@@ -142,7 +150,8 @@ export function sendChat(th: Thread, text: string, agent: string) {
   agentReply(th, agent, a.text, a.activity, a.changes);
 }
 
-export function newThread(project: string | null, agent: string, model: string, first: string, projects?: string[]): Thread {
+export function newThread(project: string | null, agent: string, model: string, first: string, projects?: string[]): Thread | null {
+  if (agentsNotWired()) return null;
   const title = first.replace(/^(hi|hello|hey)[,!.\s]+/i, "").replace(/^(can|could) you\s+|^please\s+/i, "").split(/[.?!\n]/)[0]!.split(" ").slice(0, 7).join(" ");
   const th: Thread = { id: uid("th"), project, projects, title: title[0]?.toUpperCase() + title.slice(1) || "New chat", by: D().me, agent, model, at: Date.now(), messages: [] };
   mutate(() => D().threads.unshift(th));

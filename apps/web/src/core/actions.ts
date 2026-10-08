@@ -2,6 +2,7 @@
 // They change the seeded data through mutate(); wiring the API turns these into API calls.
 import { PR, PSTAT, ST, type ProjectStatusId } from "./constants";
 import { TODAY, addD, fmtDate, iso, parse, uid } from "./utils";
+import { loadComments, projectChanged, projectStarred, roleChanged, taskCreated, taskPatched } from "../data/live";
 import { D, S, canSee, logAct, mem, mutate, proj, render, save, task, visibleProjects, who } from "../data/store";
 import type { Project, Task } from "../data/types";
 import { toast } from "../ui/toast";
@@ -51,16 +52,19 @@ export function createTask(f: Partial<Task>): Task {
   t.project = p.id;
   D().tasks.push(t);
   logAct("created", t);
+  void taskCreated(t);
   return t;
 }
 export const RECUR_DAYS: Record<string, number> = { Daily: 1, Weekly: 7, "Every 2 weeks": 14, Monthly: 30 };
 
 export function applyPatch(t: Task & { prevStatus?: Task["status"] }, patch: Partial<Task>): string[] {
   const msgs: string[] = [];
+  const changed: (keyof Task)[] = [];
   for (const k of Object.keys(patch) as (keyof Task)[]) {
     const old = t[k];
     const nv = patch[k];
     if (JSON.stringify(old) === JSON.stringify(nv)) continue;
+    changed.push(k);
     (t as unknown as Record<string, unknown>)[k] = nv;
     if (k === "status") {
       if (nv === "done") {
@@ -100,6 +104,7 @@ export function applyPatch(t: Task & { prevStatus?: Task["status"] }, patch: Par
     else if (k === "deps") logAct("updated dependencies of", t);
     t.updated = Date.now();
   }
+  taskPatched(t, changed);
   return msgs;
 }
 export function updateTask(id: string, patch: Partial<Task>) {
@@ -130,6 +135,7 @@ export function toggleFavProj(id: string) {
   mutate(() => {
     p.fav = !p.fav;
   });
+  projectStarred(p);
   S.ui.pop = null;
   toast(p.fav ? `Added ${p.name} to favorites` : "Removed from favorites", { ms: 1800 });
 }
@@ -139,6 +145,7 @@ export function setProjectStatus(id: string, v: ProjectStatusId) {
     pr.status = v;
     D().activity.unshift({ id: uid("a"), by: D().me, verb: "changed status of project", task: null, project: pr.id, at: Date.now(), extra: "to " + PSTAT[v].name });
   });
+  projectChanged(pr, ["status"]);
   S.ui.pop = null;
   toast(`${pr.name} marked ${PSTAT[v].name}`);
 }
@@ -147,6 +154,7 @@ export function setRole(id: string, role: string) {
   mutate(() => {
     m.role = role as typeof m.role;
   });
+  roleChanged(m);
   S.ui.pop = null;
   toast(`${m.name} is now ${role === "Admin" ? "an" : "a"} ${role}`);
 }
@@ -167,6 +175,7 @@ export function openTask(id: string) {
   S.ui.mention = null;
   S.ui.subOpen = null;
   render();
+  void loadComments(t);
 }
 export function closeDrawer() {
   S.ui.drawer = null;

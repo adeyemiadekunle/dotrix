@@ -4,11 +4,13 @@
 // coding" asks Claude Code or Codex to work on it, approved like any agent change.
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import { closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
+import { applyPatch, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
+import { agentsNotWired } from "../core/agents";
+import { commentPosted, documentUploaded, isLive } from "../data/live";
 import { TY, TYPES } from "../core/constants";
 import { Ic } from "../core/icons";
 import { openModal, restore, snapshot } from "../core/more";
-import { go } from "../core/nav";
+import { currentSlug, go } from "../core/nav";
 import { MOD, TODAY, ago, diffD, fmtDate, parse, relDate, uid } from "../core/utils";
 import { D, S, commentsOf, isOver, logAct, mutate, pColor, proj, render, save, task, who } from "../data/store";
 import type { Comment, Subtask, Task } from "../data/types";
@@ -38,6 +40,20 @@ export function handleFiles(files: FileList | File[] | null, ctx: { project: str
     const up: Upload = { id: uid("u"), name: file.name, size: fsize(file.size), project: ctx.project, task: ctx.task, pct: 0 };
     uploads = [...uploads, up];
     render();
+    // A real workspace: the file goes to the API (a task's attachment stays in this browser for now).
+    if (isLive()) {
+      void documentUploaded(file, ctx.project, (pct) => {
+        up.pct = pct;
+        render();
+      })
+        .then(() => toast(`Uploaded ${up.name}`))
+        .catch((e) => toast(`${up.name} didn't upload${e instanceof Error ? `: ${e.message}` : ""}`, { kind: "err", ms: 6000 }))
+        .finally(() => {
+          uploads = uploads.filter((x) => x !== up);
+          render();
+        });
+      return;
+    }
     const iv = setInterval(() => {
       up.pct = Math.min(100, up.pct + 9 + Math.round(Math.random() * 22));
       render();
@@ -71,6 +87,8 @@ export function postComment(id: string) {
     S.ui.mention = null;
     S.ui.drawerTab = "comments";
   });
+  // Who was @mentioned by name, so the API tells them.
+  commentPosted(t, txt, D().members.filter((m) => txt.includes(`@${m.name}`)).map((m) => m.id));
 }
 export function CommentItem({ c }: { c: Comment }) {
   const w = who(c.by);
@@ -264,11 +282,7 @@ function Rte({ t }: { t: Task }) {
           aria-labelledby="d-desc-l"
           onBlur={(e) => {
             const html = e.currentTarget.innerHTML;
-            if (html !== t.desc)
-              mutate(() => {
-                t.desc = html;
-                t.updated = Date.now();
-              });
+            if (html !== t.desc) mutate(() => applyPatch(t, { desc: html }));
           }}
         />
       </div>
@@ -430,6 +444,7 @@ function CodingSection({ t }: { t: Task }) {
   const latest = sessions[0];
   const start = (tool: "claude-code" | "codex") => {
     S.ui.pop = null;
+    if (agentsNotWired()) return;
     mutate(() => {
       D().coding.unshift({ id: uid("cs"), project: t.project, task: t.id, tool, status: "awaiting_approval", by: D().me, at: Date.now(), turns: [{ at: Date.now(), ask: t.title, events: [] }] });
       D().notifs.unshift({ id: uid("n"), type: "approval", by: `agent:${tool}`, project: t.project, task: t.id, text: "is waiting to start coding", snippet: `${t.key} ${t.title}`, at: Date.now(), read: false });
@@ -554,7 +569,7 @@ export function Drawer() {
           <button className="ibtn ibtn-sm" onClick={() => toggleFavTask(t.id)} data-tip={t.fav ? "Unfavorite" : "Favorite"} aria-pressed={t.fav} aria-label="Favorite" style={t.fav ? { color: "var(--amber)" } : undefined}>
             <Ic n="star" s={15} />
           </button>
-          <button className="ibtn ibtn-sm" onClick={() => void copy(`${location.origin}/w/dotrix/p/${p.key}/board?task=${t.key}`)} data-tip="Copy link" aria-label="Copy link">
+          <button className="ibtn ibtn-sm" onClick={() => void copy(`${location.origin}/w/${currentSlug()}/p/${p.key}/board?task=${t.key}`)} data-tip="Copy link" aria-label="Copy link">
             <Ic n="link" s={15} />
           </button>
           <button className="ibtn ibtn-sm hide-m" onClick={() => ((u.drawerFull = !u.drawerFull), render())} data-tip={u.drawerFull ? "Side panel" : "Full page"} aria-label="Toggle full page">

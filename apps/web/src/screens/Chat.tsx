@@ -306,7 +306,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
     S.ui.chatAgent = a;
     S.ui.chatModel = model;
     const th = pid ? newThread(pid, a, model, text) : newThread(null, a, model, text, picked);
-    open(`thread=${th.id}`);
+    if (th) open(`thread=${th.id}`);
   };
   const sugg = pid ? SUGGESTIONS : ACROSS;
   return (

@@ -66,7 +66,7 @@ async def test_a_run_starts_with_the_project_map(project, db_client: AsyncClient
     assert "- requirements/drivers.md: **Driver requirements**: Drivers can work several zones at once. (v1," in prompt
     assert "agent-rules/" not in prompt.split("# Project context")[1]  # rules are in the instructions already
     # The board.
-    assert "## Board (3 issues: 1 todo, 1 in progress, 1 blocked, 0 review, 0 done)" in prompt
+    assert "## Board (3 issues: 0 backlog, 1 todo, 1 in progress, 1 blocked, 0 review, 0 done)" in prompt
     assert "- KUN-1 [in_progress, medium] Multi-zone dispatch (unassigned)" in prompt
     assert "- KUN-2 [blocked, medium] Lagos postcodes rejected" in prompt
     assert f"- KUN-3 [todo, medium, due {due}] Migrate driver_zone" in prompt

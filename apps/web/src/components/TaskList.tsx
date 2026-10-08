@@ -5,7 +5,7 @@ import { Fragment, useState, type CSSProperties, type MouseEvent, type ReactElem
 import { openPop, openTask, toggleDone, updateTask } from "../core/actions";
 import { PR, ST } from "../core/constants";
 import { Ic } from "../core/icons";
-import { cancelComposer, commitComposer, confirmDlg, deleteTasks, newTask, restore, snapshot, startComposer } from "../core/more";
+import { cancelComposer, commitComposer, confirmDlg, deleteTasks, newTask, notYet, restore, snapshot, startComposer } from "../core/more";
 import { go } from "../core/nav";
 import { ago, relDate } from "../core/utils";
 import { D, S, commentsOf, isOver, logAct, mutate, pColor, proj, render, task, who } from "../data/store";
@@ -403,6 +403,7 @@ export function BulkBar({ ids }: { ids: string[] }) {
       ok: "Delete",
       danger: true,
       run: () => {
+        if (notYet("Deleting issues")) return;
         const snap = snapshot();
         mutate(() => deleteTasks(sel));
         toast(`Deleted ${sel.length} task${sel.length > 1 ? "s" : ""}`, { action: "Undo", onAction: () => restore(snap) });

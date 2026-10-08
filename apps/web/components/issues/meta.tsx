@@ -35,6 +35,7 @@ export const TYPE_META: Record<IssueType, { label: string; icon: LucideIcon; cla
 };
 
 export const STATUS_META: Record<IssueStatus, { label: string; className: string }> = {
+  backlog: { label: "Backlog", className: "text-slate-400 dark:text-slate-500" },
   todo: { label: "To do", className: "text-slate-500 dark:text-slate-400" },
   in_progress: { label: "In progress", className: "text-blue-600 dark:text-blue-400" },
   blocked: { label: "Blocked", className: "text-red-600 dark:text-red-400" },
@@ -46,6 +47,7 @@ type IconProps = { className?: string };
 
 // Each status has its own shape as well as its own colour, so it reads without colour vision.
 const STATUS_SHAPES: Record<IssueStatus, ComponentType> = {
+  backlog: () => <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeDasharray="1 2" />,
   todo: () => <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeDasharray="2.4 1.6" />,
   in_progress: () => (
     <>
@@ -90,7 +92,7 @@ export function StatusIcon({ status, className }: { status: IssueStatus } & Icon
 }
 
 /** Signal bars: `level` of three filled; the rest faint. */
-function bars(level: 1 | 2 | 3) {
+function bars(level: 0 | 1 | 2 | 3) {
   function Bars({ className }: IconProps) {
     return (
       <svg viewBox="0 0 14 14" aria-hidden className={cn("size-3.5 shrink-0", className)}>
@@ -123,6 +125,7 @@ export const PRIORITY_META: Record<Priority, { label: string; icon: ComponentTyp
   high: { label: "High", icon: bars(3), className: "text-orange-600 dark:text-orange-400" },
   medium: { label: "Medium", icon: bars(2), className: "text-muted-foreground" },
   low: { label: "Low", icon: bars(1), className: "text-muted-foreground" },
+  none: { label: "No priority", icon: bars(0), className: "text-muted-foreground" },
 };
 
 export const AGENT_LABELS: Record<AgentAssignee, string> = {

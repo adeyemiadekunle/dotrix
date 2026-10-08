@@ -26,13 +26,19 @@ export function Ic({ n, s = 16, cls = "", style }: { n: string; s?: number; cls?
   );
 }
 
-/* dotrix's mark: a 3×3 dot matrix whose middle dot (the fifth) is bigger, in a 24-unit box.
-   The wordmark follows the theme's text colour; the app icon is the white matrix on black. */
-const GRID = [4, 12, 20];
-export function Dots({ fill = "currentColor" }: { fill?: string }) {
+/* dotrix's mark: a 3×3 dot matrix in green, no background; the middle dot (the fifth) is bigger
+   and darker, the eight around it lighter. In a 24-unit box. The wordmark follows the text colour. */
+export const MARK_GREEN = "#3D8B5C";
+const GRID = [3.5, 12, 20.5];
+export function Dots() {
   return (
     <>
-      {GRID.flatMap((y) => GRID.map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r={x === 12 && y === 12 ? 3.9 : 2.3} fill={fill} />))}
+      {GRID.flatMap((y) =>
+        GRID.map((x) => {
+          const mid = x === 12 && y === 12;
+          return <circle key={`${x}-${y}`} cx={x} cy={y} r={mid ? 3.6 : 1.9} fill={MARK_GREEN} fillOpacity={mid ? 1 : 0.62} />;
+        }),
+      )}
     </>
   );
 }
@@ -49,9 +55,8 @@ export function Logo({ h = 22 }: { h?: number }) {
 }
 export function Mark({ px = 22 }: { px?: number }) {
   return (
-    <svg width={px} height={px} viewBox="-6 -6 36 36" aria-hidden="true">
-      <rect x="-6" y="-6" width="36" height="36" fill="#000" />
-      <Dots fill="#fff" />
+    <svg width={px} height={px} viewBox="0 0 24 24" aria-hidden="true">
+      <Dots />
     </svg>
   );
 }

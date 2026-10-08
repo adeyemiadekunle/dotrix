@@ -149,6 +149,17 @@ async def test_dependency_validation(project, db_client: AsyncClient) -> None:
     assert (await patch(db_client, url, c["key"], ada.headers, depends_on=[])).json()["depends_on"] == []
 
 
+async def test_backlog_and_no_priority(project, db_client: AsyncClient) -> None:
+    ada, _, url = await project()
+    idea = await new(db_client, url, ada.headers, title="Someday", status="backlog", priority="none")
+    assert (idea["status"], idea["priority"], idea["ready"]) == ("backlog", "none", False)  # not planned yet
+    urgent = await new(db_client, url, ada.headers, title="Now", priority="urgent")
+    # No priority sorts after every priority; a backlog issue is never next.
+    assert (await db_client.get(f"{url}/next", headers=ada.headers)).json()["key"] == urgent["key"]
+    by_priority = [i["key"] for i in (await db_client.get(url, params={"order": "priority"}, headers=ada.headers)).json()]
+    assert by_priority == [urgent["key"], idea["key"]]
+
+
 # -- next and claim ---------------------------------------------------------------------
 
 
@@ -269,7 +280,7 @@ async def test_board_backlog_and_rank(project, db_client: AsyncClient) -> None:
 
     board = (await db_client.get(f"{url}/board", headers=ada.headers)).json()
     columns = {col["status"]: [i["key"] for i in col["issues"]] for col in board["columns"]}
-    assert list(columns) == ["todo", "in_progress", "blocked", "review", "done"]
+    assert list(columns) == ["backlog", "todo", "in_progress", "blocked", "review", "done"]
     assert columns["todo"] == [a["key"]] and columns["in_progress"] == [b["key"]] and columns["done"] == [c["key"]]
 
     backlog = [i["key"] for i in (await db_client.get(f"{url}/backlog", headers=ada.headers)).json()]
