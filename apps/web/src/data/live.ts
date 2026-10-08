@@ -1002,3 +1002,34 @@ async function createTeam(tm: Team) {
     void reloadTeams();
   }
 }
+
+/* ---------- a new organisation (onboarding, or "Create workspace" in the switcher) ---------- */
+
+const PROJECT_ICONS = new Set(["globe", "smartphone", "megaphone", "rocket", "component", "building-2", "layout-grid", "palette", "code", "briefcase", "target", "layers", "zap", "heart", "folder", "sparkles"]);
+
+/** Create an organisation with its first project (and the template's starter issues), invite
+ * people, and return its slug to open. Signed in only; the demo keeps the seeded flow. */
+export async function organisationCreated(f: { name: string; project: string; icon: string; tasks: string[]; invites: string[] }): Promise<string> {
+  const ws = await unwrap(api.POST("/v1/workspaces", { body: { name: f.name, kind: "organization" } }));
+  const inWs = { params: { path: { workspace_id: ws.id } } };
+  const letters = f.project.toUpperCase().replace(/[^A-Z ]/g, "");
+  let key = letters.split(/\s+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 4);
+  if (key.length < 2) key = (letters.replace(/\s/g, "") + "PRJ").slice(0, 3);
+  const project = await unwrap(
+    api.POST("/v1/workspaces/{workspace_id}/projects", {
+      ...inWs,
+      body: { key, name: f.project, description: "", source: "docs_only", access: "workspace", icon: PROJECT_ICONS.has(f.icon) ? f.icon : "folder" },
+    }),
+  );
+  const inProject = { params: { path: { workspace_id: ws.id, project_id: project.id } } };
+  for (const title of f.tasks) // one at a time, so keys follow the template's order
+    await unwrap(
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", {
+        ...inProject,
+        body: { title, type: "task", description: "", status: "todo", priority: "none", depends_on: [], labels: [], components: [], links: [], checklist: [], parent: null },
+      }),
+    );
+  for (const email of f.invites)
+    await unwrap(api.POST("/v1/workspaces/{workspace_id}/invites", { ...inWs, body: { email, role: "member" } })).catch((e) => failed(`The invite to ${email}`, e));
+  return ws.slug;
+}
