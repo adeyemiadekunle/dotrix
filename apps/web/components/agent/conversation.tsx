@@ -193,6 +193,7 @@ export function Conversation({
     <div className="flex min-h-0 flex-1 flex-col">
       <ChatScroller
         followKey={threadId}
+        follow={Boolean(threadId)} // a new chat's welcome screen reads from the top
         contentClassName={cn("mx-auto grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-6", compact ? "p-3" : "p-4 md:p-6")}
       >
         {threadId && thread.isLoading && <Skeleton className="h-24" />}

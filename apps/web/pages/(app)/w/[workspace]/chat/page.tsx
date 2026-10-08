@@ -84,7 +84,7 @@ function WorkspaceChat() {
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-72 shrink-0 flex-col border-r md:flex">
           <div className="grid gap-2 p-3">
-            <div className="bg-muted grid grid-cols-2 gap-1 rounded-lg p-1" role="tablist" aria-label="Conversations or coding">
+            <div className="bg-muted grid grid-cols-2 gap-1 rounded-lg p-1" role="tablist" aria-label="Chat or code">
               <button
                 type="button"
                 role="tab"
@@ -92,7 +92,7 @@ function WorkspaceChat() {
                 onClick={() => open(project?.key ?? null, null)}
                 className={cn("rounded-md px-2 py-1 text-sm", !coding && "bg-background shadow-sm")}
               >
-                Conversations
+                Chat
               </button>
               <button
                 type="button"
@@ -101,7 +101,7 @@ function WorkspaceChat() {
                 onClick={() => openSession(null)}
                 className={cn("flex items-center justify-center gap-1.5 rounded-md px-2 py-1 text-sm", coding && "bg-background shadow-sm")}
               >
-                Coding
+                Code
                 {codingWaiting > 0 && (
                   <span className="bg-warning-muted rounded-full px-1.5 text-xs" aria-label={`${codingWaiting} waiting for approval`}>
                     {codingWaiting}
@@ -283,7 +283,7 @@ function WorkspaceChat() {
                   className="bg-background h-7 max-w-36 rounded-md border px-1.5 text-xs md:hidden"
                 >
                   <option value="">New chat</option>
-              <option value="coding:">Coding sessions</option>
+              <option value="coding:">Code</option>
                   {list.length > 1 && <option value="x:">New chat across projects</option>}
                   {crossThreads.data?.map((c) => (
                     <option key={c.thread_id} value={`x:${c.thread_id}`}>
