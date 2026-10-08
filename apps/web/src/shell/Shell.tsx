@@ -6,6 +6,7 @@ import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { openPop, projMove, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { Ic, WsLogo } from "../core/icons";
+import { newProject, newTeam } from "../core/more";
 import { go, useRoute, type Route } from "../core/nav";
 import { MOD, TODAY, diffD, parse } from "../core/utils";
 import { D, S, allTasks, pColor, projByKey, render, team, teamsList, useStudio, visibleProjects } from "../data/store";
@@ -180,7 +181,7 @@ function Sidebar() {
           <div className="sgroup-h">
             <span>Projects</span>
             <span className="sp" />
-            <button className="ibtn ibtn-xs" onClick={() => openModalSoon("project")} data-tip="New project  P" aria-label="New project">
+            <button className="ibtn ibtn-xs" onClick={newProject} data-tip="New project  P" aria-label="New project">
               <Ic n="plus" s={14} />
             </button>
           </div>
@@ -275,7 +276,7 @@ function Sidebar() {
           <div className="sgroup-h">
             <span>Teams</span>
             <span className="sp" />
-            <button className="ibtn ibtn-xs" onClick={() => openModalSoon("team")} data-tip="New team" aria-label="New team">
+            <button className="ibtn ibtn-xs" onClick={newTeam} data-tip="New team" aria-label="New team">
               <Ic n="plus" s={14} />
             </button>
           </div>
@@ -313,12 +314,6 @@ function Sidebar() {
       </div>
     </nav>
   );
-}
-
-/** Modals open through the overlay layer (overlays/Modals); a hook so the shell doesn't import it. */
-export let openModalSoon: (type: string, extra?: Record<string, unknown>) => void = () => {};
-export function setModalOpener(f: typeof openModalSoon) {
-  openModalSoon = f;
 }
 
 function Crumbs() {

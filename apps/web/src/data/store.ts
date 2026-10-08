@@ -76,7 +76,7 @@ export const S = {
     drawerTab: "comments" as "comments" | "activity",
     modals: [] as Modal[],
     pop: null as Pop,
-    palette: null as null | { q: string; scope: string; i: number },
+    palette: null as null | { q: string; mode: "cmd" | "search" | "ws"; scope: string; hl: number },
     offline: false,
     sel: new Set<string>(),
     composer: null as null | { key: string; group: string },

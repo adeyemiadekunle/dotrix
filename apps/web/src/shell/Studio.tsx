@@ -8,6 +8,8 @@ import { D, projByKey, team, useStudio } from "../data/store";
 import { Drawer } from "../overlays/Drawer";
 import { ModalLayer } from "../overlays/Modals";
 import { installDragDrop } from "../core/dragdrop";
+import { installKeyboard } from "../core/keyboard";
+import { Palette } from "../overlays/Palette";
 import { Archive } from "../screens/Archive";
 import { Chat } from "../screens/Chat";
 import { MemberPage, Members, TeamPage, Teams } from "../screens/Members";
@@ -68,7 +70,10 @@ export function Studio() {
   useStudio();
   const { route, params } = useRoute();
   applyPrefs();
-  useEffect(() => installDragDrop(), []);
+  useEffect(() => {
+    installDragDrop();
+    installKeyboard();
+  }, []);
   useEffect(() => {
     let t = ROUTE_NAMES[route] || "Not found";
     if (route === "project") {
@@ -86,6 +91,7 @@ export function Studio() {
       </Shell>
       <Drawer />
       <ModalLayer />
+      <Palette />
     </>
   );
 }
