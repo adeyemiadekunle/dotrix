@@ -30,9 +30,8 @@ function WorkspaceTimeline() {
   const showDone = doneParam === "1";
   const shown = useMemo(
     () =>
-      (issues.data ?? []).filter(
-        (i) => (!project || i.project_key === project) && (showDone || i.status !== "done") && i.type !== "epic",
-      ),
+      // The same issues as a project's Timeline (epics included), so the two agree.
+      (issues.data ?? []).filter((i) => (!project || i.project_key === project) && (showDone || i.status !== "done")),
     [issues.data, project, showDone],
   );
 

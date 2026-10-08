@@ -149,31 +149,34 @@ export function MembersCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
                     <ProjectsTheySee member={m} names={projectNames} />
                   </span>
                 </div>
-                {canChangeThisRole ? (
-                  <Select
-                    value={m.role}
-                    disabled={changeRole.isPending}
-                    onValueChange={(role) => changeRole.mutate({ userId: m.user_id, role: role as Role })}
-                  >
-                    <SelectTrigger size="sm" className="w-28" aria-label={`Role for ${m.display_name}`}>
-                      {/* Just the role name here; the options also carry a hint. */}
-                      <SelectValue>{ROLE_LABELS[m.role]}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent align="end">
-                      {assignable.map((r) => (
-                        <SelectItem key={r} value={r}>
-                          <span className="grid">
-                            <span>{ROLE_LABELS[r]}</span>
-                            <span className="text-muted-foreground text-xs">{ROLE_HINTS[r]}</span>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Badge variant={m.role === "owner" ? "default" : "outline"}>{ROLE_LABELS[m.role]}</Badge>
-                )}
-                {(isMe || (manage && m.role !== "owner")) && (
+                {/* The role and the menu take the same room in every row, so the columns line up. */}
+                <div className="flex w-28 shrink-0 justify-end">
+                  {canChangeThisRole ? (
+                    <Select
+                      value={m.role}
+                      disabled={changeRole.isPending}
+                      onValueChange={(role) => changeRole.mutate({ userId: m.user_id, role: role as Role })}
+                    >
+                      <SelectTrigger size="sm" className="w-28" aria-label={`Role for ${m.display_name}`}>
+                        {/* Just the role name here; the options also carry a hint. */}
+                        <SelectValue>{ROLE_LABELS[m.role]}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent align="end">
+                        {assignable.map((r) => (
+                          <SelectItem key={r} value={r}>
+                            <span className="grid">
+                              <span>{ROLE_LABELS[r]}</span>
+                              <span className="text-muted-foreground text-xs">{ROLE_HINTS[r]}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Badge variant={m.role === "owner" ? "default" : "outline"}>{ROLE_LABELS[m.role]}</Badge>
+                  )}
+                </div>
+                {(isMe || (manage && m.role !== "owner")) ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button size="icon" variant="ghost" className="size-8" aria-label={`More for ${m.display_name}`}>
@@ -238,6 +241,8 @@ export function MembersCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
                       )}
                     </DropdownMenuContent>
                   </DropdownMenu>
+                ) : (
+                  <span className="size-8 shrink-0" aria-hidden />
                 )}
               </li>
             );
