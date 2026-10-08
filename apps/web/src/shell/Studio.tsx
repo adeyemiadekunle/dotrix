@@ -5,13 +5,29 @@ import { useEffect, type ReactNode } from "react";
 import { applyPrefs } from "../core/theme";
 import { useRoute, type Route } from "../core/nav";
 import { D, projByKey, team, useStudio } from "../data/store";
+import { Drawer } from "../overlays/Drawer";
 import { ModalLayer } from "../overlays/Modals";
+import { installDragDrop } from "../core/dragdrop";
 import { Home } from "../screens/Home";
+import { Project } from "../screens/Project";
+import { Overview, Projects } from "../screens/Projects";
+import { Search } from "../screens/Search";
+import { ActivityPage, CalendarPage, Favorites, MyTasks, Tasks, TimelinePage } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
 import { ROUTE_NAMES, Shell } from "./Shell";
 
 const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   home: Home,
+  mytasks: MyTasks,
+  tasks: Tasks,
+  calendar: CalendarPage,
+  timeline: TimelinePage,
+  favorites: Favorites,
+  activity: ActivityPage,
+  projects: Projects,
+  project: Project,
+  overview: Overview,
+  search: Search,
 };
 
 function NotFound() {
@@ -38,6 +54,7 @@ export function Studio() {
   useStudio();
   const { route, params } = useRoute();
   applyPrefs();
+  useEffect(() => installDragDrop(), []);
   useEffect(() => {
     let t = ROUTE_NAMES[route] || "Not found";
     if (route === "project") {
@@ -53,6 +70,7 @@ export function Studio() {
       <Shell>
         <Screen />
       </Shell>
+      <Drawer />
       <ModalLayer />
     </>
   );

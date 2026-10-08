@@ -6,7 +6,7 @@
 import { useSyncExternalStore } from "react";
 
 import { PCOLORS, TEAMS_SEED } from "../core/constants";
-import { TODAY, diffD, parse, uid } from "../core/utils";
+import { TODAY, diffD, iso, parse, uid } from "../core/utils";
 import { AGENTS, CODING_TOOLS } from "./seed-dotrix";
 import { seed } from "./seed";
 import type { Data, Filter, Project, Task, Team } from "./types";
@@ -86,6 +86,35 @@ export const S = {
     drafts: {} as Record<string, string>,
     subOpen: null as null | { tid: string; sid: string },
     mention: null as null | { tid: string; q: string },
+    // each page's own controls (Gr8r keeps them in the store, so they survive navigating away)
+    calDate: iso(TODAY),
+    calMode: "month" as "month" | "week",
+    tlZoom: "week" as "week" | "month",
+    tlGroup: "status",
+    tlWsInit: false,
+    fileQ: "",
+    fileType: "all",
+    fileSort: "date",
+    fileView: "grid" as "grid" | "list",
+    projView: "grid" as "grid" | "list" | "table",
+    projQ: "",
+    projStatus: "all",
+    projSort: "recent",
+    inboxCat: "all",
+    inboxUnread: false,
+    inboxSel: null as string | null,
+    notifFilter: "all" as "all" | "unread",
+    notifSel: null as string | null,
+    searchQ: "",
+    searchCat: "all",
+    myView: "list" as "list" | "calendar",
+    membersTab: "members",
+    memQ: "",
+    memRole: "all",
+    memTab: "assigned",
+    actFilter: "all",
+    actWho: "all",
+    settings: "profile",
   },
 };
 
