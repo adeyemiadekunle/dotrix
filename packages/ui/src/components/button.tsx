@@ -3,31 +3,29 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@pmagent/ui/lib/utils"
 import { Slot } from "radix-ui"
 
+// Gr8r's buttons (gr8r.css: .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-danger, sizes
+// .btn-sm / .btn-lg). Icon sizes are the same button, square (Gr8r's .ibtn is the ghost one).
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "btn [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[15px] focus-visible:outline-2 focus-visible:outline-primary aria-invalid:border-destructive",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
-        outline:
-          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost:
-          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-        link: "text-primary underline-offset-4 hover:underline",
+        default: "btn-primary",
+        destructive: "btn-danger",
+        outline: "btn-secondary",
+        secondary: "btn-secondary",
+        ghost: "btn-ghost",
+        link: "h-auto! px-0! text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-        icon: "size-9",
-        "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-8",
-        "icon-lg": "size-10",
+        default: "",
+        xs: "btn-sm h-[22px]! px-1.5! [&_svg:not([class*='size-'])]:size-3",
+        sm: "btn-sm [&_svg:not([class*='size-'])]:size-3.5",
+        lg: "btn-lg",
+        icon: "aspect-square px-0!",
+        "icon-xs": "btn-sm aspect-square h-[22px]! px-0! [&_svg:not([class*='size-'])]:size-3.5",
+        "icon-sm": "btn-sm aspect-square px-0!",
+        "icon-lg": "btn-lg aspect-square px-0!",
       },
     },
     defaultVariants: {

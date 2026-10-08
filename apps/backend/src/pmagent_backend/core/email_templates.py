@@ -1,4 +1,4 @@
-"""Email templates: every email pmagent sends, in one layout, as HTML and plain text.
+"""Email templates: every email dotrix sends, in one layout, as HTML and plain text.
 
 An email is a heading, a few short paragraphs, one action (a button, with its link also
 written out for clients that block buttons), and a footer note. Everything put into the
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from .email import EmailMessage
 
-PRODUCT = "pmagent"
+PRODUCT = "dotrix"
 BRAND = "#155dfc"  # the app's brand colour (--brand, light theme)
 
 

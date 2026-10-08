@@ -14,7 +14,7 @@ def test_every_email_has_text_and_html_with_the_link() -> None:
         assert message.subject and message.body and message.html
         assert link in message.body  # plain text: the link as is, on its own
         assert 'href="http://app.test/magic-link?token=abc&amp;x=1"' in message.html  # escaped in HTML
-        assert message.html.startswith("<!doctype html>") and "pmagent" in message.html
+        assert message.html.startswith("<!doctype html>") and "dotrix" in message.html
 
 
 def test_everything_put_into_html_is_escaped() -> None:
@@ -29,7 +29,7 @@ def test_everything_put_into_html_is_escaped() -> None:
 
 def test_the_magic_link_email_says_when_it_expires() -> None:
     message = email_templates.magic_link("ada@example.com", "http://app.test/magic-link?token=t", 15)
-    assert message.subject == "Your pmagent sign-in link"
+    assert message.subject == "Your dotrix sign-in link"
     assert "expires in 15 minutes and works once" in message.body
 
 

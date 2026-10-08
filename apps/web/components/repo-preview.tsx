@@ -9,7 +9,7 @@ export function RepoPreview({ url }: { url: string }) {
   if (!url.trim()) return null;
   if (!github) {
     return looksLikeRepoUrl(url) ? (
-      <p className="text-muted-foreground text-xs">Linked by address; pmagent only reads GitHub repos for now.</p>
+      <p className="text-muted-foreground text-xs">Linked by address; dotrix only reads GitHub repos for now.</p>
     ) : (
       <p className="text-destructive text-xs">Paste the repo&apos;s address, like https://github.com/acme/app.</p>
     );

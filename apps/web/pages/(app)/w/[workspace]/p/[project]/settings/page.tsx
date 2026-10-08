@@ -6,9 +6,10 @@ import { Label } from "@pmagent/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { Textarea } from "@pmagent/ui/components/textarea";
+import { cn } from "@pmagent/ui/lib/utils";
 import { ArrowRightLeftIcon, BotIcon, DownloadIcon, FileTextIcon, LockIcon, UsersIcon, XIcon } from "lucide-react";
 import { Link, useRouter } from "@/lib/navigation";
-import { useState, type FormEvent } from "react";
+import { useState, type CSSProperties, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { Automations } from "@/components/automations";
@@ -18,6 +19,14 @@ import { Field, SaveBar } from "@/components/form";
 import { GitHubMark } from "@/components/github-sign-in";
 import { RepoPicker } from "@/components/github-repos";
 import { HEALTH_LABELS } from "@/components/project-health";
+import {
+  PROJECT_COLORS,
+  PROJECT_ICONS,
+  PROJECT_STATUSES,
+  projectColor,
+  type ProjectColor,
+  type ProjectStatus,
+} from "@/lib/project-look";
 import { RepoPreview } from "@/components/repo-preview";
 import {
   SettingsContent,
@@ -102,35 +111,67 @@ function General({ project, workspace, canEdit }: { project: Project; workspace:
 }
 
 const NO_HEALTH = "__none";
+const AUTO = "__auto";
 
-/** How it's going and when it should be done: shown on its card on Projects. */
+/** Its status, how it's going, and when it should be done; and how it looks (icon and colour). */
 function Status({ project, workspace, canEdit }: { project: Project; workspace: Workspace; canEdit: boolean }) {
   const update = useUpdateProject(workspace.id, project.id);
+  const [status, setStatus] = useState<ProjectStatus>(project.status);
   const [health, setHealth] = useState<string>(project.health ?? NO_HEALTH);
   const [target, setTarget] = useState(project.target_date ?? "");
-  const changed = health !== (project.health ?? NO_HEALTH) || target !== (project.target_date ?? "");
+  const [icon, setIcon] = useState<string>(project.icon ?? AUTO);
+  const [color, setColor] = useState<string>(project.color ?? AUTO);
+  const changed =
+    status !== project.status ||
+    health !== (project.health ?? NO_HEALTH) ||
+    target !== (project.target_date ?? "") ||
+    icon !== (project.icon ?? AUTO) ||
+    color !== (project.color ?? AUTO);
+  const tint = projectColor(project.key, color === AUTO ? null : (color as ProjectColor));
   return (
     <SettingsSection id="status">
       <SettingsHeader>
         <SettingsTitle>Status</SettingsTitle>
-        <SettingsDescription>How the project is going and when it should be done, shown on its card on Projects.</SettingsDescription>
+        <SettingsDescription>
+          Where the project is, how it's going, and when it should be done, shown in the sidebar and on Projects. Its
+          icon and colour mark it everywhere.
+        </SettingsDescription>
       </SettingsHeader>
       <SettingsContent>
         <form
-          className="grid gap-4"
+          className="grid gap-5"
           onSubmit={(e: FormEvent) => {
             e.preventDefault();
             update.mutate({
+              status,
               health: health === NO_HEALTH ? null : (health as NonNullable<Project["health"]>),
               target_date: target || null,
+              icon: icon === AUTO ? null : icon,
+              color: color === AUTO ? null : (color as ProjectColor),
             });
           }}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div className="grid gap-2">
-              <Label htmlFor="project-health">Status</Label>
+              <Label htmlFor="project-status">Status</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)} disabled={!canEdit}>
+                <SelectTrigger id="project-status" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROJECT_STATUSES.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      <span className={cn("size-2 rounded-full", s.dot)} />
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="project-health">Health</Label>
               <Select value={health} onValueChange={setHealth} disabled={!canEdit}>
-                <SelectTrigger id="project-health">
+                <SelectTrigger id="project-health" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -154,13 +195,71 @@ function Status({ project, workspace, canEdit }: { project: Project; workspace: 
               />
             </div>
           </div>
+          <fieldset className="grid gap-2" disabled={!canEdit}>
+            <legend className="mb-2 text-sm font-medium">Icon</legend>
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Icon">
+              {[AUTO, ...Object.keys(PROJECT_ICONS)].map((name) => {
+                const Icon = PROJECT_ICONS[name];
+                const on = icon === name;
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    aria-label={name === AUTO ? "Its key's first letter" : name}
+                    title={name === AUTO ? "Its key's first letter" : name}
+                    onClick={() => setIcon(name)}
+                    style={{ "--tile": tint } as CSSProperties}
+                    className={cn(
+                      "flex size-8 items-center justify-center rounded-md border text-xs font-semibold transition-colors",
+                      on
+                        ? "border-[var(--tile)] bg-[color-mix(in_srgb,var(--tile)_16%,transparent)] text-[var(--tile)]"
+                        : "text-muted-foreground hover:bg-secondary border-transparent",
+                    )}
+                  >
+                    {Icon ? <Icon className="size-4" /> : project.key.charAt(0)}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+          <fieldset className="grid gap-2" disabled={!canEdit}>
+            <legend className="mb-2 text-sm font-medium">Colour</legend>
+            <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Colour">
+              {[AUTO, ...Object.keys(PROJECT_COLORS)].map((name) => {
+                const on = color === name;
+                const swatch = name === AUTO ? projectColor(project.key) : PROJECT_COLORS[name as ProjectColor];
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    aria-label={name === AUTO ? "Automatic (from its key)" : name}
+                    title={name === AUTO ? "Automatic (from its key)" : name}
+                    onClick={() => setColor(name)}
+                    style={{ background: swatch }}
+                    className={cn(
+                      "ring-offset-background size-6 rounded-full transition-shadow",
+                      on ? "ring-foreground/70 ring-2 ring-offset-2" : "hover:ring-foreground/30 hover:ring-2",
+                      name === AUTO && "bg-[conic-gradient(#5a67d8,#23918a,#c48a1e,#c54b78,#5a67d8)]!",
+                    )}
+                  />
+                );
+              })}
+            </div>
+          </fieldset>
           {canEdit && (
             <SaveBar
               dirty={changed}
               pending={update.isPending}
               onDiscard={() => {
+                setStatus(project.status);
                 setHealth(project.health ?? NO_HEALTH);
                 setTarget(project.target_date ?? "");
+                setIcon(project.icon ?? AUTO);
+                setColor(project.color ?? AUTO);
               }}
             />
           )}
@@ -758,7 +857,7 @@ export default function ProjectSettings() {
     <div className="flex items-start gap-10 p-4 md:p-8">
       <div className="grid max-w-5xl min-w-0 flex-1 content-start gap-8">
         <General key={`g-${project.updated_at}`} project={project} workspace={workspace} canEdit={canEdit} />
-        <Status key={`s-${project.health}-${project.target_date}`} project={project} workspace={workspace} canEdit={canEdit} />
+        <Status key={`s-${project.updated_at}`} project={project} workspace={workspace} canEdit={canEdit} />
         <Repository project={project} workspace={workspace} canEdit={canEdit} />
         <Access project={project} workspace={workspace} canEdit={canEdit} />
         <Automations scope={scope} canEdit={canEdit} workspaceSlug={workspace.slug} projectKey={project.key} />

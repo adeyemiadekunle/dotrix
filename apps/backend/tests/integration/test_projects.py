@@ -347,6 +347,33 @@ async def test_status_and_target_date(signup, create_team, add_member, db_client
     assert (await db_client.patch(url, json={"health": "on_track"}, headers=cat.headers)).status_code == 403
 
 
+async def test_lifecycle_icon_and_colour(signup, create_team, add_member, db_client: AsyncClient) -> None:
+    ada = await signup()
+    cat = await signup(email="cat@example.com", name="Cat")
+    team = await create_team(ada.headers)
+    await add_member(team["id"], cat.id, Role.MEMBER)
+    plain = (await db_client.post(projects_url(team), json={"key": "KUN", "name": "K"}, headers=ada.headers)).json()
+    # By default: active, and it looks like its key (no icon, colour from the key).
+    assert (plain["status"], plain["icon"], plain["color"]) == ("active", None, None)
+    styled = await db_client.post(
+        projects_url(team), json={"key": "WEB", "name": "Web", "icon": "globe", "color": "teal"}, headers=ada.headers
+    )
+    assert styled.status_code == 201 and (styled.json()["icon"], styled.json()["color"]) == ("globe", "teal")
+
+    url = f"{projects_url(team)}/{plain['id']}"
+    res = await db_client.patch(url, json={"status": "on_hold", "icon": "rocket", "color": "rose"}, headers=ada.headers)
+    assert res.status_code == 200
+    assert (res.json()["status"], res.json()["icon"], res.json()["color"]) == ("on_hold", "rocket", "rose")
+    # Leaving them out keeps them; null puts the key's look back.
+    kept = (await db_client.patch(url, json={"name": "Kunemi"}, headers=ada.headers)).json()
+    assert (kept["status"], kept["icon"]) == ("on_hold", "rocket")
+    back = (await db_client.patch(url, json={"icon": None, "color": None}, headers=ada.headers)).json()
+    assert (back["icon"], back["color"], back["status"]) == (None, None, "on_hold")
+    for bad in ({"icon": "skull"}, {"color": "plaid"}, {"status": "sideways"}):
+        assert (await db_client.patch(url, json=bad, headers=ada.headers)).status_code == 422
+    assert (await db_client.patch(url, json={"status": "completed"}, headers=cat.headers)).status_code == 403
+
+
 async def test_stars_are_per_person_and_follow_what_you_can_see(
     signup, create_team, add_member, db_client: AsyncClient
 ) -> None:

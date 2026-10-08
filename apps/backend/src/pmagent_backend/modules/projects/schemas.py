@@ -15,7 +15,14 @@ from pydantic import (
 
 from pmagent_backend.modules.workspaces.models import Role
 
-from .models import ProjectAccessLevel, ProjectHealth, ProjectSource
+from .models import (
+    PROJECT_ICONS,
+    ProjectAccessLevel,
+    ProjectColor,
+    ProjectHealth,
+    ProjectSource,
+    ProjectStatus,
+)
 from .repo_urls import normalize_repo_url
 
 ProjectKey = Annotated[
@@ -46,6 +53,19 @@ ModelName = Annotated[
 ]
 
 
+def _icon(value: str) -> str:
+    if value not in PROJECT_ICONS:
+        raise ValueError(f"Use one of: {', '.join(sorted(PROJECT_ICONS))}")
+    return value
+
+
+ProjectIcon = Annotated[
+    str,
+    AfterValidator(_icon),
+    Field(description="A Lucide icon name from the set the web app offers (globe, rocket, code, ...)"),
+]
+
+
 # A repo remote in any form, stored canonical (https, no .git, no credentials).
 RepoUrl = Annotated[str, StringConstraints(max_length=500), AfterValidator(normalize_repo_url)]
 
@@ -69,6 +89,8 @@ class ProjectCreate(BaseModel):
         default=ProjectAccessLevel.WORKSPACE,
         description="workspace (every member sees it) or restricted (owners, admins, and the people added to it)",
     )
+    icon: ProjectIcon | None = Field(default=None, description="Its icon; none shows its key's first letter")
+    color: ProjectColor | None = Field(default=None, description="Its colour; none follows its key")
 
 
 TokenBudget = Annotated[
@@ -109,6 +131,11 @@ class ProjectUpdate(BaseModel):
     target_date: date | None = Field(
         default=None, description="When it should be done; send null to clear, leave it out to keep it"
     )
+    status: ProjectStatus | None = Field(
+        default=None, description="planning, active, on_hold, or completed; leave it out to keep it"
+    )
+    icon: ProjectIcon | None = Field(default=None, description="Send null for its key's letter; leave it out to keep it")
+    color: ProjectColor | None = Field(default=None, description="Send null to follow its key; leave it out to keep it")
 
 
 class ProjectRead(BaseModel):
@@ -131,6 +158,9 @@ class ProjectRead(BaseModel):
     token_budget: int | None = Field(description="Per-run token budget; null means the server's default")
     health: ProjectHealth | None = Field(description="How it's going, as its owners and admins say; null: not said")
     target_date: date | None = Field(description="When it should be done; null: no date")
+    status: ProjectStatus = Field(description="planning, active, on_hold, or completed")
+    icon: str | None = Field(description="A Lucide icon name; null: show its key's first letter")
+    color: ProjectColor | None = Field(description="Its colour; null: the colour follows its key")
     knowledge_revision: int
     created_at: datetime
     updated_at: datetime

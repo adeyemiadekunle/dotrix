@@ -139,7 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     docs = settings.docs_enabled
     app = FastAPI(
-        title="pmagent API",
+        title="dotrix API",
         version=API_VERSION,
         lifespan=lifespan,
         generate_unique_id_function=operation_id,

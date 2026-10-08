@@ -28,7 +28,7 @@ export function AcceptInvite({ token }: { token: string }) {
             {token ? errorMessage(preview.error) : "The link is incomplete."} Ask whoever invited you for a new link.
           </p>
           <Button asChild variant="outline" className="w-full">
-            <Link href="/">Go to pmagent</Link>
+            <Link href="/">Go to dotrix</Link>
           </Button>
         </div>
       </AuthCard>

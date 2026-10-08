@@ -216,7 +216,7 @@ class FakePlatform:
 
     @staticmethod
     def problem(status: int, code: str) -> httpx.Response:
-        return httpx.Response(status, json={"type": f"https://pmagent.dev/problems/{code}", "detail": code})
+        return httpx.Response(status, json={"type": f"https://dotrix.app/problems/{code}", "detail": code})
 
     def bodies(self, suffix: str) -> list[dict]:
         return [json.loads(r.content) for r in self.requests if r.url.path.endswith(suffix) and r.content]

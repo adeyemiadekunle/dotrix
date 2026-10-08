@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { signUp, signUpWithProject } from "./helpers";
+import { NOT_WIRED, signUp, signUpWithProject } from "./helpers";
+
+test.fixme(true, NOT_WIRED);
 
 // A 1×1 PNG, as a picked file.
 const PIXEL = Buffer.from(

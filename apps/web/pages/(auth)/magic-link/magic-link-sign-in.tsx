@@ -37,7 +37,7 @@ export function MagicLinkSignIn({ token }: { token: string }) {
   }
   return (
     <AuthCard
-      title="Sign in to pmagent"
+      title="Sign in to dotrix"
       description="You opened a sign-in link from your email."
       footer={<Link href="/login">Sign in another way</Link>}
     >

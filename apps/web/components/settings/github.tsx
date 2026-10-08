@@ -70,7 +70,7 @@ export function GitHubSettings({ workspace }: { workspace: Workspace }) {
       <SettingsHeader>
         <SettingsTitle>GitHub</SettingsTitle>
         <SettingsDescription>
-          The pmagent GitHub App reads the repos you give it, so each project can connect to its code, private repos
+          The dotrix GitHub App reads the repos you give it, so each project can connect to its code, private repos
           included. Agents use it to understand the codebase, and later to open pull requests. You choose which repos
           on GitHub.
         </SettingsDescription>

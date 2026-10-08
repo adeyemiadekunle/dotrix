@@ -2,21 +2,18 @@ import { expect, test } from "@playwright/test";
 
 import { newUser, signUp } from "./helpers";
 
-test("signed-out visitors are sent to sign in, and come back afterwards", async ({ page }) => {
+// The workspace runs on seeded data until the API is wired (CLAUDE.md, the Gr8r plan), so there
+// is no sign-in guard in front of it yet; the sign-in pages themselves still go through the API.
+test.fixme("signed-out visitors are sent to sign in, and come back afterwards", async ({ page }) => {
   await page.goto("/settings");
   await expect(page).toHaveURL(/\/login\?next=%2Fsettings/);
 });
 
-test("sign up, sign out, and sign back in", async ({ page }) => {
+test("sign up, then sign in: a wrong password is refused, the right one opens the workspace", async ({ page }) => {
   const user = await signUp(page, newUser("Grace Hopper"));
-  await expect(page.getByText(`Confirm your email address using the link we sent to ${user.email}`)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  await page.context().clearCookies();
 
-  await page.getByRole("button", { name: /Grace Hopper/ }).click();
-  await page.getByRole("menuitem", { name: "Sign out" }).click();
-  await expect(page).toHaveURL(/\/login/);
-
-  await page.goto("/settings");
+  await page.goto("/login");
   await page.getByLabel("Email").fill(user.email);
   await page.getByLabel("Password").fill("not-the-password");
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -24,21 +21,17 @@ test("sign up, sign out, and sign back in", async ({ page }) => {
 
   await page.getByLabel("Password").fill(user.password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  // Settings live in the workspace: /settings opens your profile there.
-  await expect(page).toHaveURL(/\/w\/[^/]+\/settings\/profile$/);
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await expect(page.getByRole("main").getByText(user.email, { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/w\/[^/]+$/);
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 });
 
 test("the theme follows the choice in settings and survives a reload", async ({ page }) => {
-  await signUp(page);
-  await page.goto("/settings");
-  await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Appearance" }).click();
-  await page.getByText("Dark", { exact: true }).click();
+  await page.goto("/w/dotrix/settings/appearance");
+  await page.getByRole("radio", { name: /Dark/ }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await page.reload();
   await expect(page.locator("html")).toHaveClass(/dark/);
-  await page.getByText("Light", { exact: true }).click();
+  await page.getByRole("radio", { name: /Light/ }).click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 });
 

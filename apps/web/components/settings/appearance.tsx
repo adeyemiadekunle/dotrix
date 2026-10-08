@@ -2,10 +2,11 @@ import { Label } from "@pmagent/ui/components/label";
 import { RadioGroup, RadioGroupItem } from "@pmagent/ui/components/radio-group";
 import { Skeleton } from "@pmagent/ui/components/skeleton";
 import { cn } from "@pmagent/ui/lib/utils";
-import { MonitorIcon, MoonIcon, SunIcon, type LucideIcon } from "lucide-react";
+import { CheckIcon, MonitorIcon, MoonIcon, SunIcon, type LucideIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";
 
+import { ACCENTS, useAccent } from "@/lib/accent";
 import {
   SettingsContent,
   SettingsDescription,
@@ -27,12 +28,55 @@ function useMounted() {
 }
 
 export function Appearance() {
+  return (
+    <div className="grid gap-8">
+      <Theme />
+      <AccentColour />
+    </div>
+  );
+}
+
+function AccentColour() {
+  const [accent, setAccent] = useAccent();
+  return (
+    <SettingsSection>
+      <SettingsHeader>
+        <SettingsTitle>Accent</SettingsTitle>
+        <SettingsDescription>The colour of the main buttons, links, focus, and selection. Saved in this browser.</SettingsDescription>
+      </SettingsHeader>
+      <SettingsContent>
+        <div role="radiogroup" aria-label="Accent colour" className="flex flex-wrap gap-3">
+          {ACCENTS.map(({ value, label, light }) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={accent === value}
+              onClick={() => setAccent(value)}
+              className="group text-muted-foreground hover:text-foreground flex flex-col items-center gap-1.5 text-xs aria-checked:text-foreground"
+            >
+              <span
+                className="ring-offset-background flex size-8 items-center justify-center rounded-full text-white ring-offset-2 group-aria-checked:ring-2 group-aria-checked:ring-foreground/60"
+                style={{ background: light }}
+              >
+                {accent === value && <CheckIcon className="size-4" />}
+              </span>
+              {label}
+            </button>
+          ))}
+        </div>
+      </SettingsContent>
+    </SettingsSection>
+  );
+}
+
+function Theme() {
   const { theme, setTheme } = useTheme();
   const mounted = useMounted();
   return (
     <SettingsSection>
       <SettingsHeader>
-        <SettingsTitle>Appearance</SettingsTitle>
+        <SettingsTitle>Theme</SettingsTitle>
         <SettingsDescription>System follows your device&apos;s light or dark setting. Saved in this browser.</SettingsDescription>
       </SettingsHeader>
       <SettingsContent>

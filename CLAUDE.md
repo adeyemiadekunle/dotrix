@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 Guidance for Claude Code working in this repo. Product spec: [docs/prd.md](docs/prd.md).
 Engine notes: [docs/engine.md](docs/engine.md). Agents v2 spec: [docs/agents-v2.md](docs/agents-v2.md).
@@ -80,7 +80,7 @@ apps/backend/
 │   │   ├── calendar/            per-person iCalendar feed of issue dates at a secret URL (FR-32)
 │   │   ├── workspaces/          workspaces (personal or organisation), members, roles, the permission matrix (permissions.py), turn into an organisation
 │   │   ├── invites/             email and link invites
-│   │   ├── projects/            projects, who can see them (open or restricted, project_members; `visible_to`), project access deps, canonical repo URLs
+│   │   ├── projects/            projects, who can see them (open or restricted, project_members; `visible_to`), project access deps, canonical repo URLs, how they look (`status`: planning / active / on hold / completed; `icon` from `PROJECT_ICONS`, `color`: null follows the key)
 │   │   ├── knowledge/           .pmagent/ files + version history + export
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge
 │   │   ├── issues/              issues, keys, board/backlog/epics, claim, issues across a workspace's visible projects, Markdown render for export
@@ -160,8 +160,16 @@ apps/web/
 ├── index.html, vite.config.ts
 ├── src/
 │   ├── main.tsx, providers.tsx  fonts, theme (next-themes, default "system"), React Query, tooltips, toasts
-│   ├── router.tsx               every URL and its page (loaded on first visit), redirects for old links, the sign-in guards (optimistic, from the readable `pm_session` cookie)
-│   └── root.tsx                 the browser tab's title (a route's `staticData.title`), the not-found page
+│   ├── router.tsx               every URL: the sign-in pages, /onboarding, and /w/{ws}/… (all one `Studio`, the screen picked from the path)
+│   ├── root.tsx                 the browser tab's title (a route's `staticData.title`), the not-found page
+│   ├── dotrix.css               Dotrix's surfaces Gr8r lacks (chat, proposed changes, diffs) on Gr8r's tokens
+│   │   (the seeded Gr8r port; each file names the Gr8r file it copies)
+│   ├── core/                    utils, constants, icons (`Ic`, a lucide subset from `icons-plugin.ts`), nav (`go`, `useRoute`, `href`), actions + more (Gr8r's actions), agents (decisions, checkpoints, chat replies, coding), theme, dragdrop, keyboard
+│   ├── data/                    types, seed (Gr8r's) + seed-dotrix (agents, threads, knowledge, coding, audit, automations), store (`S`, `mutate`, `useStudio`, lookups; saved in localStorage `dotrix.studio.v1`)
+│   ├── shell/                   Shell (sidebar, top bar), Studio (screens by route, overlays), viewEngine (filters, sort, group, toolbar)
+│   ├── overlays/                PopLayer (every popover and context menu), Modals, Drawer (the task), Palette (⌘K)
+│   ├── views/, components/, ui/ Board, List, Table, Calendar, Timeline, Files, project Overview; TaskList, Changes (proposed changes, checkpoints); helpers, toast
+│   └── screens/                 one module per page (Home, Inbox + Notifications, Chat, Projects + Overview, Project, Knowledge, TaskPages, Members, Settings, Archive, Search, DesignSystem, Onboarding)
 ├── pages/                       one module per page (default export), laid out like the URLs; layouts take `children`
 │   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
 │   └── (app)/                   signed-in shell (sidebar): /w/[workspace] (Home), /w/[workspace]/{chat,overview,tasks,timeline,activity,approvals (Notifications),my-issues,projects,projects/new}, /w/[workspace]/settings/{profile,appearance,devices,calendar (your account), (General),members,invites,permissions,agents,audit} (/agents and /audit redirect there), /w/[workspace]/p/[KEY]/{overview,board,list,table,timeline,files,knowledge,activity,settings} (the project root redirects to overview; /backlog to list, /docs to files, /chat and /briefing to the workspace Chat), /settings (opens your profile in the workspace you were last in)
@@ -187,26 +195,27 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 - **URL state:** filters, the open issue, the open file are search params (`useSearchParam`); change several at once with `useSetSearchParams`, since separate updates in a row undo each other.
 - **URLs use slugs and keys, never UUIDs:** `/w/{workspace slug}/p/{PROJECT KEY}`. Resolve them from the cached lists (`useCurrentWorkspace`, `useCurrentProject`).
 - **UI:**
-  - Use shadcn components from `@pmagent/ui/components/*` and Tailwind tokens (`bg-muted`, `text-muted-foreground`, `bg-brand`, `bg-brand-muted`, `bg-warning-muted`), never raw colours, so light and dark mode both work. `primary` is the brand blue (the main action, focus, selection); neutrals carry a faint cool tint.
+  - The design is Gr8r Studio's (`packages/ui` globals.css): warm paper neutrals, one accent (`primary`: indigo, or the one picked in Settings → Appearance, `data-accent` on `<html>`), 13.5px base text, 30px controls (26px `sm`), soft elevation (`shadow-card`, `shadow-pop`). Use shadcn components from `@pmagent/ui/components/*` and the tokens, never raw colours, so light and dark mode both work: `bg-muted`, `text-muted-foreground`, `bg-brand-muted`, `bg-warning-muted`, `text-success` / `bg-success-muted`, `bg-danger-muted`, `text-info`, `text-label-{violet,teal,rose,orange,gray}`, `text-status-{backlog,todo,progress,blocked,review,done}`. Page edges use `px-gutter` (the top bar, headers, toolbars line up). Badges have soft variants (`brand`, `success`, `warning`, `danger`); Tabs are Gr8r's segmented control (`default`) or underlined tabs (`line`).
+  - A project's look (`lib/project-look.ts`): `ProjectTile` takes only the key and finds the icon and colour in the cached project list; `projectDot` is its sidebar dot (red when at risk or off track, else its status).
+  - The shell (`components/app-shell.tsx`): a skip link, the top bar (`PageHeader`: breadcrumb, the page's actions, Search or jump to…, the bell, New ▾), the page fading in on arrival (not with reduced motion), and a bottom bar on phones (Home, My issues, Projects, Notifications, More). New ▾ → New issue asks the open project's layout with a window event (`NEW_ISSUE_EVENT`). Browser tab titles come from each route's `staticData.title` (`src/router.tsx`).
   - Shared pieces: issue status and priority look (`StatusIcon`, `StatusBadge`, `PriorityIcon` in `components/issues/meta.tsx`), `ProjectTile`, `EmptyState` (compact, at the top of the content), `SaveBar` (`components/form.tsx`: a form's Discard / Save, only while it has changes), and `SettingsSection` (`components/settings-section.tsx`: settings pages as sections, what it is on the left and its controls on the right; parts named like Card's).
   - Write copy in sentence case.
   - Show controls by role (`lib/labels.ts`), but the API is what enforces access.
-- **Theme:** Settings → Appearance (System / Light / Dark). It defaults to System and is stored in the browser.
+- **Theme:** Settings → Appearance (System / Light / Dark, and the accent: indigo, blue, violet, teal, rose, graphite). Both are stored in the browser; the accent is applied before the first paint (`lib/accent.ts`).
 - **Navigation:** links and hooks come from `@/lib/navigation` (plain hrefs: `/w/acme/p/KUN/board?issue=KUN-4`). A new page is a module in `pages/` plus a line in `src/router.tsx`.
 - The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@pmagent/ui/lib/utils` and `@/hooks/…` → `@pmagent/ui/hooks/…`.
 
 ## Plan: Gr8r Studio into Dotrix (review, 2026-10-08)
 
-Why: Gr8r Studio (a separate Vite prototype, plain JS and CSS, seeded data) is the product's intended look and feel; Dotrix keeps everything Gr8r lacks (Chat, Knowledge, agents, approvals, coding). Review and decisions: [docs/gr8r-to-dotrix-review.md](docs/gr8r-to-dotrix-review.md) (React on Vite, shadcn restyled with Gr8r's tokens; the API sets the session cookies on one origin; Backlog added beside Blocked; Inbox for people's items, Notifications for agents'; Teams now, billing as UI later). Gr8r's screens are rebuilt in React against the API, not copied. One PR per phase.
+Why: Gr8r Studio (a separate Vite prototype, plain JS and CSS, seeded data) is the product's intended look and feel; Dotrix keeps everything Gr8r lacks (Chat, Knowledge, agents, approvals, coding). Review and decisions: [docs/gr8r-to-dotrix-review.md](docs/gr8r-to-dotrix-review.md) (React on Vite; the API sets the session cookies on one origin; Backlog added beside Blocked; Inbox for people's items, Notifications for agents'; Teams now, billing as UI later).
+
+Changed approach (2026-10-08, the owner's call): copy Gr8r's UI screen by screen (same markup and classes, its CSS verbatim in `packages/ui/src/styles/gr8r.css`) into React on **seeded data**, add Dotrix's screens in the same style, then wire the API screen by screen. The seeded app lives in `apps/web/src` (below); the API-backed pages in `pages/` stay for wiring (only the sign-in pages are routed, in Gr8r's auth design).
 
 - [x] **Phase 0, Next.js → Vite** (no visual change): Vite + TanStack Router (`src/router.tsx`, pages in `pages/`, `lib/navigation` keeps the pages' API); the session moved into the API (`modules/web`: cookies, refresh, CSRF via `X-Requested-With`, GitHub redirects); same-origin `/v1` (no proxy route); old links and calendar feed addresses keep working
-- [ ] Phase 1, design system and shell (Gr8r tokens in `packages/ui`, sidebar, top bar with New ▾, bottom nav on phones)
-- [ ] Phase 2, Home, My Tasks (with Calendar), Inbox / Notifications, Favorites
-- [ ] Phase 3, views: one toolbar and filter model, saved views, board composer, inline editing, bulk actions, context menus, Calendar
-- [ ] Phase 4, the task drawer: full page, Markdown editor, sub-task checklist, attachments, reactions, recurrence
-- [ ] Phase 5, people: Members page, member profiles, Teams
-- [ ] Phase 6, projects: header, milestones, Projects table, Archive
-- [ ] Phase 7, settings, sign-in screens, onboarding, search page, error states
+- [x] Gr8r's whole UI on seeded data at `/w/dotrix/…`: shell (sidebar, top bar, bottom bar), Home, Inbox, My Tasks, Favorites, Overview, Projects (grid, list, table), Tasks, Calendar, Timeline, Members, profiles, Teams, Activity, Archive, Search, Settings (every Gr8r section), design system, system states, 404; a project's Overview, Board, List, Table, Calendar, Timeline, Files, Activity, saved views; the task drawer, every popover, modal, context menu, the command palette (⌘K), keyboard shortcuts, drag and drop, onboarding (`/onboarding`)
+- [x] Dotrix's screens in Gr8r's style, seeded: Chat (conversations by project and across projects, agent and model, replies with what the agent did, proposed changes with diffs to approve or reject, plans to continue / change / stop; the Coding tab: sessions, turns, approve, stop, follow-ups), Notifications (the agents' items with the change in the detail), Knowledge (a project's documents, edit with a note), "Start coding" in the drawer, Settings → Agents, Rules and skills, Automations, GitHub, Audit log, Devices and tokens, what members can do
+- [ ] Wire the API, screen by screen (the seeded store's shapes in `src/data/types.ts` become views over the API's schemas); un-park each screen's browser tests as it's wired (`test.fixme(true, NOT_WIRED)` in `apps/web/e2e`; `studio.spec.ts` covers the seeded app, `auth.spec.ts` the API-backed sign-in)
+- [x] Brand: dotrix everywhere people see it (the web app, API docs title, emails, calendar, coding commits); the logo is a 3×3 dot matrix with a bigger middle dot (`Dots`, `Logo`, `Mark` in `src/core/icons.tsx`, `public/favicon.svg`); the seeded workspace is Dotrix. Code names (`pmagent_*` packages, `PMAGENT_` settings, the `pmagent` CLI, `.pmagent/`) are unchanged
 
 ## Plan: UI redesign (design review, 2026-10-01)
 

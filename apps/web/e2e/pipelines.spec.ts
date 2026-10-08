@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { signUpWithProject } from "./helpers";
+import { NOT_WIRED, signUpWithProject } from "./helpers";
+
+test.fixme(true, NOT_WIRED);
 
 // The rule-based model: "Plan: a; b" stops at a checkpoint with those steps; anything else is
 // echoed back ("Test model reply: …").

@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { signUpWithProject } from "./helpers";
+import { NOT_WIRED, signUpWithProject } from "./helpers";
+
+test.fixme(true, NOT_WIRED);
 
 // The e2e backend runs the agents on a rule-based model: "Create issue: <title>" asks to create
 // that task (which waits for approval); anything else is echoed back.

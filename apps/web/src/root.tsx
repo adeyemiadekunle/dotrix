@@ -6,15 +6,21 @@ import { useEffect } from "react";
 import { EmptyState } from "@/components/states";
 import { Link } from "@/lib/navigation";
 
-const APP_NAME = "pmagent";
+const APP_NAME = "dotrix";
 
-/** Every page: names the browser tab after the deepest route that has a title. */
+/** Every page: names the browser tab after the deepest route that has a title (and its project). */
 export function RootLayout() {
   const title = useMatches({
-    select: (matches) => matches.findLast((match) => match.staticData.title)?.staticData.title,
+    select: (matches) => {
+      const match = matches.findLast((m) => m.staticData.title);
+      if (!match) return undefined;
+      const project = (match.params as { project?: string }).project;
+      return project ? `${match.staticData.title} · ${project.toUpperCase()}` : match.staticData.title;
+    },
   });
+  // Routes without a title (the workspace) set their own.
   useEffect(() => {
-    document.title = title ? `${title} · ${APP_NAME}` : APP_NAME;
+    if (title) document.title = `${title} · ${APP_NAME}`;
   }, [title]);
   return <Outlet />;
 }

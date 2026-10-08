@@ -75,6 +75,8 @@ class ProjectService:
             repo_url=data.repo_url,
             model=data.model or default_model,
             access=data.access,
+            icon=data.icon,
+            color=data.color,
             created_by_id=user.id,
         )
         self.projects.add(project)
@@ -113,6 +115,12 @@ class ProjectService:
             project.health = data.health
         if "target_date" in data.model_fields_set:
             project.target_date = data.target_date
+        if data.status is not None:
+            project.status = data.status
+        if "icon" in data.model_fields_set:
+            project.icon = data.icon
+        if "color" in data.model_fields_set:
+            project.color = data.color
         if "repo_url" in data.model_fields_set and data.repo_url != project.repo_url:
             if data.repo_url and (
                 taken := [p for p in await self.projects.list(project.workspace_id, repo_url=data.repo_url)

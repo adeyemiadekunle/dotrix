@@ -64,7 +64,7 @@ class ProfileService:
             select(OAuthAccount).where(OAuthAccount.provider == "github", OAuthAccount.provider_user_id == profile.id)
         )
         if linked is not None and linked.user_id != user.id:
-            raise Conflict(f"GitHub account @{profile.login} already signs in to another pmagent account")
+            raise Conflict(f"GitHub account @{profile.login} already signs in to another dotrix account")
         if linked is None:
             mine = await self.session.scalar(
                 select(OAuthAccount).where(OAuthAccount.user_id == user.id, OAuthAccount.provider == "github")

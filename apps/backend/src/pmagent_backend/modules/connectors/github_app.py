@@ -1,4 +1,4 @@
-"""The pmagent GitHub App: what it may see, as the app itself or as one installation.
+"""The dotrix GitHub App: what it may see, as the app itself or as one installation.
 
 The app signs a short JWT with its private key to act as itself (to read an installation), and
 trades it for an installation token to read that installation's repos. Tokens aren't stored:

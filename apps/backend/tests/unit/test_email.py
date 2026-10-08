@@ -31,7 +31,7 @@ def sendly(handler, **kwargs) -> tuple[SendlyEmailSender, list[httpx.Request]]:
 
 async def test_sends_plain_text_without_click_tracking() -> None:
     sender, seen = sendly(lambda r: httpx.Response(202, json={"id": "m1", "accepted": 1, "skipped": 0, "status": "queued"}),
-                          from_address="pmagent <no-reply@pmagent.dev>")
+                          from_address="dotrix <no-reply@dotrix.app>")
     await sender.send(MESSAGE)
     request = seen[0]
     assert request.method == "POST" and str(request.url) == "https://api.sendlyai.com/v1/messages"
@@ -43,7 +43,7 @@ async def test_sends_plain_text_without_click_tracking() -> None:
         "text": "Reset: http://app.test/reset?token=abc",
         "html": '<p>Reset: <a href="http://app.test/reset?token=abc">http://app.test/reset?token=abc</a></p>',
         "tracking": False,  # the link carries a token: never through a click tracker
-        "from": "pmagent <no-reply@pmagent.dev>",
+        "from": "dotrix <no-reply@dotrix.app>",
     }
     # The same message always carries the same key, so a retried job can't send it twice.
     await sender.send(MESSAGE)

@@ -93,7 +93,7 @@ class CalendarService:
         if feed.last_used_at is None or now - feed.last_used_at > TOUCH_EVERY:
             feed.last_used_at = now
             await self.session.commit()
-        return render_calendar("pmagent", await self._events(user, feed.scope, now), product="issues")
+        return render_calendar("dotrix", await self._events(user, feed.scope, now), product="issues")
 
     async def _events(self, user: User, scope: FeedScope, now: datetime) -> list[CalendarEvent]:
         # Only workspaces you can see projects in (guests see none), checked on every fetch.

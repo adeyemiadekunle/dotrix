@@ -68,7 +68,7 @@ def test_docs_are_served() -> None:
     client = TestClient(make_app())
     assert client.get("/docs").status_code == 200
     assert client.get("/redoc").status_code == 200
-    assert client.get("/openapi.json").json()["info"]["title"] == "pmagent API"
+    assert client.get("/openapi.json").json()["info"]["title"] == "dotrix API"
 
 
 def test_docs_can_be_turned_off() -> None:

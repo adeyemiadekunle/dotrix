@@ -13,7 +13,7 @@ async def test_sign_in_with_an_emailed_link(db_client: AsyncClient, signup, outb
     res = await db_client.post("/v1/auth/magic-link/request", json={"email": "ADA@example.com"})
     assert res.status_code == 202
     [message] = outbox.messages
-    assert message.to == "ada@example.com" and message.subject == "Your pmagent sign-in link"
+    assert message.to == "ada@example.com" and message.subject == "Your dotrix sign-in link"
     assert message.html and "Sign in" in message.html
 
     token = email_token("/magic-link")
@@ -33,7 +33,7 @@ async def test_a_new_address_gets_a_link_to_create_its_account(
     res = await db_client.post("/v1/auth/magic-link/request", json={"email": "Grace@Example.com"})
     assert res.status_code == 202  # the same answer as for an existing account
     [message] = outbox.messages
-    assert message.to == "grace@example.com" and message.subject == "Finish creating your pmagent account"
+    assert message.to == "grace@example.com" and message.subject == "Finish creating your dotrix account"
     token = email_token("/signup/finish")
 
     # The page can show which address it's for, without using the link up.
@@ -53,7 +53,7 @@ async def test_a_new_address_gets_a_link_to_create_its_account(
     login = await db_client.post("/v1/auth/login", json={"email": "grace@example.com", "password": "anything at all"})
     assert login.status_code == 401
     await db_client.post("/v1/auth/magic-link/request", json={"email": "grace@example.com"})
-    assert outbox.messages[-1].subject == "Your pmagent sign-in link"
+    assert outbox.messages[-1].subject == "Your dotrix sign-in link"
     # The sign-up link works once.
     again = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "Grace"})
     assert again.status_code == 400

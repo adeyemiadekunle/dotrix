@@ -83,7 +83,7 @@ function actorOf(e: AuditEvent, names: Map<string, string>): { who: string; kind
     const named = role ? `${role[0]!.toUpperCase()}${role.slice(1)} agent` : "An agent";
     return { who: AGENTS[agent] ?? named, kind: "agent" };
   }
-  if (e.actor_type === "system") return { who: "pmagent", kind: "system" };
+  if (e.actor_type === "system") return { who: "dotrix", kind: "system" };
   return { who: (e.actor_user_id && names.get(e.actor_user_id)) || "Someone", kind: "user" };
 }
 

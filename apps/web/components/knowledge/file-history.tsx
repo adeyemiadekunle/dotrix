@@ -20,7 +20,7 @@ export function authorship(v: VersionEntry, names: Map<string, string>): { who: 
     ].filter(Boolean);
     return { who: agentName(v.agent), agent: true, detail: parts.join(", ") || undefined };
   }
-  if (v.author_type === "system") return { who: "pmagent", agent: false, detail: "project setup or import" };
+  if (v.author_type === "system") return { who: "dotrix", agent: false, detail: "project setup or import" };
   return { who: person(v.author_id) ?? "Someone", agent: false };
 }
 

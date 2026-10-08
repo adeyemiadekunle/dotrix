@@ -5650,7 +5650,7 @@ export interface components {
         ProblemDetail: {
             /**
              * Type
-             * @example https://pmagent.dev/problems/not_found
+             * @example https://dotrix.app/problems/not_found
              */
             type: string;
             /**
@@ -5696,6 +5696,12 @@ export interface components {
          * @enum {string}
          */
         ProjectAccessLevel: "workspace" | "restricted";
+        /**
+         * ProjectColor
+         * @description The project's colour (its tile and dot); unset, the colour follows its key.
+         * @enum {string}
+         */
+        ProjectColor: "indigo" | "blue" | "violet" | "teal" | "rose" | "amber" | "green" | "slate";
         /** ProjectCreate */
         ProjectCreate: {
             /**
@@ -5732,6 +5738,13 @@ export interface components {
              * @default workspace
              */
             access: components["schemas"]["ProjectAccessLevel"];
+            /**
+             * Icon
+             * @description Its icon; none shows its key's first letter
+             */
+            icon?: string | null;
+            /** @description Its colour; none follows its key */
+            color?: components["schemas"]["ProjectColor"] | null;
         };
         /**
          * ProjectHealth
@@ -5815,6 +5828,15 @@ export interface components {
              * @description When it should be done; null: no date
              */
             target_date: string | null;
+            /** @description planning, active, on_hold, or completed */
+            status: components["schemas"]["ProjectStatus"];
+            /**
+             * Icon
+             * @description A Lucide icon name; null: show its key's first letter
+             */
+            icon: string | null;
+            /** @description Its colour; null: the colour follows its key */
+            color: components["schemas"]["ProjectColor"] | null;
             /** Knowledge Revision */
             knowledge_revision: number;
             /**
@@ -5833,6 +5855,12 @@ export interface components {
          * @enum {string}
          */
         ProjectSource: "new_repo" | "existing_repo" | "docs_only";
+        /**
+         * ProjectStatus
+         * @description Where the project is in its life (its pill in the header, its dot in the sidebar).
+         * @enum {string}
+         */
+        ProjectStatus: "planning" | "active" | "on_hold" | "completed";
         /** ProjectUpdate */
         ProjectUpdate: {
             /** @description workspace (every member) or restricted (owners, admins, and the people added to it) */
@@ -5865,6 +5893,15 @@ export interface components {
              * @description When it should be done; send null to clear, leave it out to keep it
              */
             target_date?: string | null;
+            /** @description planning, active, on_hold, or completed; leave it out to keep it */
+            status?: components["schemas"]["ProjectStatus"] | null;
+            /**
+             * Icon
+             * @description Send null for its key's letter; leave it out to keep it
+             */
+            icon?: string | null;
+            /** @description Send null to follow its key; leave it out to keep it */
+            color?: components["schemas"]["ProjectColor"] | null;
         };
         /** QuoteCheck */
         QuoteCheck: {

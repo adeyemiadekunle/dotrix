@@ -17,7 +17,8 @@ export async function signUp(page: Page, user = newUser()) {
   await page.getByLabel("Email").fill(user.email);
   await page.getByLabel("Password").fill(user.password);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).toHaveURL(/\/w\/personal-/);
+  // Signed in, it lands in the workspace (the seeded one until the API is wired).
+  await expect(page).toHaveURL(/\/w\/[^/]+$/);
   return user;
 }
 
@@ -34,3 +35,8 @@ export async function signUpWithProject(page: Page, name = "Kumove", key = "KUM"
   await expect(page).toHaveURL(new RegExp(`/p/${key}/board`));
   return { user, key };
 }
+
+/** Why a spec of the API-backed workspace pages is parked: /w/… shows the seeded Gr8r UI until
+ * each screen is wired to the API (CLAUDE.md, "Plan: Gr8r Studio into Dotrix"). Un-park a spec
+ * when its screens are wired, updating it for their markup. */
+export const NOT_WIRED = "the workspace runs on seeded data until this screen is wired to the API";

@@ -51,7 +51,7 @@ export function LoginForm({
   const signupHref = next ? `/signup?next=${encodeURIComponent(next)}` : "/signup";
   const footer = (
     <span>
-      New to pmagent?{" "}
+      New to dotrix?{" "}
       <Link href={signupHref} className="text-foreground underline underline-offset-4">
         Create an account
       </Link>
@@ -85,7 +85,7 @@ export function LoginForm({
       description={
         mode === "link"
           ? "We'll email you a link: it signs you in, or creates your account if you're new."
-          : "Sign in to your pmagent account."
+          : "Sign in to your dotrix account."
       }
       footer={footer}
     >
