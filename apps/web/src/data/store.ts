@@ -105,6 +105,8 @@ export const S = {
     inboxSel: null as string | null,
     notifFilter: "all" as "all" | "unread",
     notifTab: "all",
+    archTab: "tasks" as "tasks" | "projects",
+    agentSel: null as string | null,
     notifSel: null as string | null,
     // dotrix: chat
     chatBusy: null as string | null,
