@@ -156,13 +156,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         <AppSidebar />
         {/* Filling pages get exactly the window's height (less the bottom bar on phones), so
             banners, header, and tabs take what they need and the page's own flex-1 area gets
-            the rest (no hard-coded offsets). */}
+            the rest (no hard-coded offsets). min-w-0: a wide page part (the Table view) scrolls
+            inside the page instead of stretching it past the window. */}
         <SidebarInset
           ref={main}
           id="main-content"
           tabIndex={-1}
           className={cn(
-            "pb-14 outline-none md:pb-0",
+            "min-w-0 pb-14 outline-none md:pb-0",
             FILL_WINDOW.test(pathname) && "h-svh min-h-0 overflow-hidden",
           )}
         >
