@@ -52,7 +52,7 @@ import {
   switchWs,
   toggleOffline,
 } from "../core/more";
-import { go } from "../core/nav";
+import { currentSlug, go } from "../core/nav";
 import { MOD, MONL, TODAY, WD, addD, dOff, diffD, fmtDate, iso, parse } from "../core/utils";
 import { D, S, allTasks, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, visibleProjects } from "../data/store";
 import type { Task } from "../data/types";
@@ -803,7 +803,7 @@ function CtxMenu({ p }: { p: P }) {
         <Mi icon="folder-input" label="Move to project…" onClick={to("project")} />
         <Sep />
         <Mi icon="star" label={t.fav ? "Remove from favorites" : "Add to favorites"} onClick={() => toggleFavTask(id)} />
-        <Mi icon="link" label="Copy link" onClick={() => (closePop(), void copy(`${location.origin}/w/dotrix/p/${proj(t.project)!.key}/board?task=${t.key}`))} />
+        <Mi icon="link" label="Copy link" onClick={() => (closePop(), void copy(`${location.origin}/w/${currentSlug()}/p/${proj(t.project)!.key}/board?task=${t.key}`))} />
         <Mi icon="copy" label="Duplicate" onClick={() => dupTask(id)} />
         <Mi icon="archive" label="Archive" onClick={() => archiveTask(id)} />
         <Sep />
@@ -821,7 +821,7 @@ function CtxMenu({ p }: { p: P }) {
         <Mi icon="star" label={pr.fav ? "Remove from favorites" : "Add to favorites"} onClick={() => toggleFavProj(id)} />
         <Mi icon="pencil" label="Rename & edit" onClick={() => editProject(id)} />
         <Mi icon="share-2" label="Share" onClick={() => share(id)} />
-        <Mi icon="link" label="Copy link" onClick={() => (closePop(), void copy(`${location.origin}/w/dotrix/p/${pr.key}/overview`))} />
+        <Mi icon="link" label="Copy link" onClick={() => (closePop(), void copy(`${location.origin}/w/${currentSlug()}/p/${pr.key}/overview`))} />
         <Mi icon="copy" label="Duplicate" onClick={() => dupProject(id)} />
         <Sep />
         {vis.indexOf(pr) > 0 && <Mi icon="arrow-up" label="Move up in sidebar" onClick={() => projMove(id, -1)} />}
@@ -869,7 +869,7 @@ function CtxMenu({ p }: { p: P }) {
       <>
         <Mi icon="eye" label="Preview" onClick={() => previewFile(id)} />
         <Mi icon="pencil" label="Rename" onClick={() => renameFile(id)} />
-        <Mi icon="link" label="Copy link" onClick={() => (closePop(), void copy(`${location.origin}/w/dotrix/files/${id}`))} />
+        <Mi icon="link" label="Copy link" onClick={() => (closePop(), void copy(`${location.origin}/w/${currentSlug()}/files/${id}`))} />
         <Mi icon="copy" label="Duplicate" onClick={() => dupFile(id)} />
         <Sep />
         <Mi icon="trash-2" label="Delete" onClick={() => delFile(id)} danger />

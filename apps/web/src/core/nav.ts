@@ -2,7 +2,12 @@
 // without changing addresses). Screens ask where they are with useRoute().
 import { useRouterState, type AnyRouter } from "@tanstack/react-router";
 
-export const WS = "dotrix"; // the seeded workspace's slug
+export const WS = "dotrix"; // the demo (seeded) workspace's slug
+
+/** The workspace in the address (/w/{slug}/…), or the demo's. */
+export function currentSlug(): string {
+  return (typeof location !== "undefined" && location.pathname.match(/^\/w\/([^/]+)/)?.[1]) || WS;
+}
 
 export type Route =
   | "home"
@@ -56,7 +61,7 @@ const SIMPLE: Partial<Record<Route, string>> = {
 };
 
 export function href(route: Route, params: Params = {}): string {
-  const base = `/w/${WS}`;
+  const base = `/w/${currentSlug()}`;
   if (route === "home") return base;
   if (route === "project") return `${base}/p/${params.id}/${params.tab || "board"}`;
   if (route === "member") return `${base}/members/${params.id}`;

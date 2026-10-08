@@ -7,6 +7,7 @@
 import { PR, ST } from "./constants";
 import { applyPatch, updateTask } from "./actions";
 import { addD, diffD, fmtDate, iso, parse } from "./utils";
+import { taskRanked } from "../data/live";
 import { D, S, mutate, proj, render, save, task } from "../data/store";
 import type { Task } from "../data/types";
 import { viewOf } from "../shell/viewEngine";
@@ -178,6 +179,11 @@ export function installDragDrop() {
         t.order = order;
         if (moved) applyPatch(t, { status: d.col as Task["status"] });
       });
+      // The API's rank is per project: place it by its neighbour there.
+      const sameProject = colTs.filter((x) => x.project === t.project);
+      const before = d.before ? task(d.before) : undefined;
+      if (before?.project === t.project) taskRanked(t, before, undefined);
+      else if (!d.before && sameProject.length) taskRanked(t, undefined, sameProject[sameProject.length - 1]);
       if (moved) toast(`Moved “${t.title}” to ${ST[d.col as Task["status"]].name}`, { ms: 2200 });
     } else if (d.type === "row" && d.target) {
       const t = task(d.id)!;
@@ -198,6 +204,7 @@ export function installDragDrop() {
         if (g === "project" && proj(d.group)) patch.project = d.group;
       }
       let switched = false;
+      if (tg.project === t.project) taskRanked(t, d.pos === "before" ? tg : undefined, d.pos === "after" ? tg : undefined);
       mutate(() => {
         t.order = order;
         applyPatch(t, patch);

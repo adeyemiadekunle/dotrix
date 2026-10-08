@@ -6,8 +6,9 @@ import { applyPatch, copy, createTask, openPop, openTask } from "../core/actions
 import { PCOLORS, PICONS } from "../core/constants";
 import { Ic } from "../core/icons";
 import { closeModal, createProject, escapeHtml, newTask, restore, snapshot, TEMPLATES } from "../core/more";
-import { go } from "../core/nav";
+import { currentSlug, go } from "../core/nav";
 import { MOD, ago, fmtDate, uid } from "../core/utils";
+import { projectChanged } from "../data/live";
 import { D, S, TM, mem, mutate, pColor, proj, render, task, tasksOf, team, teamsList, type Modal } from "../data/store";
 import type { FileItem, Task } from "../data/types";
 import { Av, FT, FilePrev, Lbl, PrPill, StPill, fileType, fsize } from "../ui/helpers";
@@ -193,8 +194,8 @@ function TaskModal({ m }: { m: Modal }) {
     if (m.edit) {
       const t = task(m.edit as string)!;
       mutate(() => {
-        applyPatch(t, base);
-        if (f.desc !== (t.desc || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()) t.desc = f.desc ? `<p>${escapeHtml(f.desc)}</p>` : "";
+        const descChanged = f.desc !== (t.desc || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        applyPatch(t, descChanged ? { ...base, desc: f.desc ? `<p>${escapeHtml(f.desc)}</p>` : "" } : base);
         t.attachments.push(...files);
       });
       closeModal();
@@ -405,6 +406,7 @@ function ProjectModal({ m }: { m: Modal }) {
     if (m.edit) {
       const p = proj(m.edit as string)!;
       mutate(() => Object.assign(p, { name: f.name, desc: f.desc, icon: f.icon, color: f.color, team: f.team, lead: f.lead, due: f.due, members: [...new Set([...p.members, f.lead])] }));
+      projectChanged(p, ["name", "desc", "icon", "color", "due"]);
       closeModal();
       toast("Project updated");
       return;
@@ -727,7 +729,7 @@ function ShareModal({ m }: { m: Modal }) {
         </div>
       </div>
       <div className="modal-f">
-        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/dotrix/p/${p.key}/overview`)}>
+        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/${currentSlug()}/p/${p.key}/overview`)}>
           <Ic n="link" s={14} />
           Copy link
         </button>
@@ -1170,7 +1172,7 @@ function FilePreviewModal({ m }: { m: Modal }) {
         )}
       </div>
       <div className="modal-f">
-        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/dotrix/files/${f.id}`)}>
+        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/${currentSlug()}/files/${f.id}`)}>
           <Ic n="link" s={14} />
           Copy link
         </button>

@@ -11,6 +11,7 @@ import { ago, dayBucket } from "../core/utils";
 import { D, S, commentsOf, mutate, pColor, proj, render, task, who } from "../data/store";
 import type { Notif } from "../data/types";
 import { ChangeCard } from "../components/Changes";
+import { notifsRead } from "../data/live";
 import { CellAssignee, CellDue, CellPrio, CellStatus } from "../components/TaskList";
 import { CommentBox, CommentItem } from "../overlays/Drawer";
 import { AGENT_ITEMS, PEOPLE_ITEMS } from "../shell/Shell";
@@ -57,13 +58,18 @@ const TYPE_IC: Record<string, string> = {
 };
 
 function toggleRead(id: string) {
-  mutate(() => {
-    const n = D().notifs.find((x) => x.id === id)!;
-    n.read = !n.read;
-  });
+  const n = D().notifs.find((x) => x.id === id)!;
+  mutate(() => (n.read = !n.read));
+  if (n.read) notifsRead([n.id]); // the API keeps read, not unread
 }
 function markAllRead(types: string[]) {
-  mutate(() => D().notifs.forEach((n) => types.includes(n.type) && (n.read = true)));
+  const ns = D().notifs.filter((n) => types.includes(n.type) && !n.read);
+  mutate(() => ns.forEach((n) => (n.read = true)));
+  notifsRead(ns.map((n) => n.id));
+}
+function markRead(n: Notif) {
+  mutate(() => (n.read = true));
+  notifsRead([n.id]);
 }
 
 function Item({ n, on, select }: { n: Notif; on: boolean; select: (id: string) => void }) {
@@ -213,7 +219,7 @@ export function Inbox() {
   const select = (id: string) => {
     S.ui.inboxSel = id;
     const n = D().notifs.find((x) => x.id === id);
-    if (n && !n.read) mutate(() => (n.read = true));
+    if (n && !n.read) markRead(n);
     else render();
   };
   return (
@@ -398,7 +404,7 @@ export function Notifications() {
     S.ui.notifSel = id;
     const n = D().notifs.find((x) => x.id === id);
     // Approvals and plans stay unread until decided; the rest are read once opened.
-    if (n && !n.read && n.type !== "approval" && n.type !== "checkpoint") mutate(() => (n.read = true));
+    if (n && !n.read && n.type !== "approval" && n.type !== "checkpoint") markRead(n);
     go("notifications", {}, { replace: true, search: `n=${id}${tab !== "all" ? `&tab=${tab}` : ""}` });
   };
   const buckets: Record<string, Notif[]> = {};

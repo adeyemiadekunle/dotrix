@@ -23,6 +23,7 @@ const ROW = 36;
 const DAY_MS = 86_400_000;
 
 const BAR: Record<TimelineIssue["status"], string> = {
+  backlog: "bg-primary/20",
   todo: "bg-primary/35",
   in_progress: "bg-primary",
   blocked: "bg-destructive/80",

@@ -134,11 +134,13 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l);
 };
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
+/** What this browser keeps: the demo's data (a real workspace's lives in the API; data/live.ts). */
+export const persist = { data: (): Data => S.data };
 function writeNow() {
   clearTimeout(saveTimer);
   saveTimer = undefined;
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ data: S.data, prefs: S.prefs, views: S.views, collapsed: S.ui.collapsed }));
+    localStorage.setItem(STORE_KEY, JSON.stringify({ data: persist.data(), prefs: S.prefs, views: S.views, collapsed: S.ui.collapsed }));
   } catch {
     /* storage full or blocked: keep working in memory */
   }

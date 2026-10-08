@@ -35,7 +35,7 @@ export function ProjectOverview({ p }: { p: Project }) {
   const acts = D()
     .activity.filter((a) => a.project === p.id)
     .slice(0, 6);
-  const daysLeft = diffD(parse(p.due)!, TODAY);
+  const daysLeft = p.due ? diffD(parse(p.due)!, TODAY) : null;
   const threads = D()
     .threads.filter((t) => t.project === p.id)
     .slice(0, 3);
@@ -71,7 +71,7 @@ export function ProjectOverview({ p }: { p: Project }) {
                 <span style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-.03em" }} className="num">
                   {pr}%
                 </span>
-                <span className="muted">{daysLeft >= 0 ? `${daysLeft} days until ${fmtDate(p.due)}` : `Ended ${fmtDate(p.due)}`}</span>
+                <span className="muted">{daysLeft === null ? "No target date" : daysLeft >= 0 ? `${daysLeft} days until ${fmtDate(p.due)}` : `Ended ${fmtDate(p.due)}`}</span>
                 {over.length > 0 && (
                   <span className="badge red">
                     <Ic n="clock-alert" s={11} />
