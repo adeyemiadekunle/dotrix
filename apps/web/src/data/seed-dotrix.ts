@@ -148,7 +148,7 @@ const THREADS: Thread[] = [
 
 const md = (title: string, body: string) => `# ${title}\n\n${body}\n`;
 const KNOWLEDGE: KnowledgeFile[] = [
-  { path: "project.md", project: "p1", version: 3, by: "m2", at: minsAgo(9000), content: md("Website Redesign", "Rebuild gr8rstudio.com with a clearer information architecture, a responsive component library, and a faster CMS-driven blog.\n\n## Goals\n- Visitors find pricing in one click\n- Pages load under 1.5 s on 4G\n- Marketing publishes without engineering") },
+  { path: "project.md", project: "p1", version: 3, by: "m2", at: minsAgo(9000), content: md("Website Redesign", "Rebuild dotrix.app with a clearer information architecture, a responsive component library, and a faster CMS-driven blog.\n\n## Goals\n- Visitors find pricing in one click\n- Pages load under 1.5 s on 4G\n- Marketing publishes without engineering") },
   { path: "current-state.md", project: "p1", version: 7, by: "documentation", at: minsAgo(400), content: md("Current state", "Wireframes are in review; navigation is due today. Dev handoff in 14 days.\n\n**Blocked:** mobile onboarding permission prompts (legal).") },
   { path: "roadmap.md", project: "p1", version: 4, by: "m1", at: minsAgo(3000), content: md("Roadmap", "| Milestone | Date |\n| --- | --- |\n| Wireframes signed off | in 2 days |\n| Dev handoff | in 14 days |\n| Public launch | in 24 days |") },
   { path: "requirements/navigation.md", project: "p1", version: 2, by: "product", at: minsAgo(8000), content: md("Navigation", "The site has five top-level sections.\nProducts, Solutions, Pricing, Resources, Company.") },
@@ -171,7 +171,7 @@ const CODING: CodingSession[] = [
     by: "m3",
     at: minsAgo(2900),
     branch: "pmagent/web-154-fix-broken-anchor-links",
-    pr: { number: 42, state: "merged", url: "https://github.com/gr8r/site/pull/42" },
+    pr: { number: 42, state: "merged", url: "https://github.com/dotrix/site/pull/42" },
     turns: [{ at: minsAgo(2900), ask: "Fix the anchor links on the pricing page.", summary: "Fixed 4 anchors and added a test for heading ids.", events: ["Read pricing.tsx", "Edited 2 files", "Ran the tests: 48 passed"] }],
   },
   {

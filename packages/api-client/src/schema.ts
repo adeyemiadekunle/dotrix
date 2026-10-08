@@ -5650,7 +5650,7 @@ export interface components {
         ProblemDetail: {
             /**
              * Type
-             * @example https://pmagent.dev/problems/not_found
+             * @example https://dotrix.app/problems/not_found
              */
             type: string;
             /**

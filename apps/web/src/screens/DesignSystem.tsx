@@ -231,7 +231,7 @@ export function DesignSystem() {
                   </span>
                 </>,
               ],
-              ["Disabled", <input key="4" className="input" defaultValue="hello@gr8rstudio.com" disabled />],
+              ["Disabled", <input key="4" className="input" defaultValue="hello@dotrix.app" disabled />],
               [
                 "Search",
                 <div className="inwrap">
@@ -323,7 +323,7 @@ export function DesignSystem() {
           </div>
           <div className="col" style={{ gap: 14 }}>
             <nav className="crumbs" style={{ border: "1px solid var(--border)", borderRadius: "var(--r)", padding: 6 }}>
-              <button>Gr8r Studio</button>
+              <button>Dotrix</button>
               <span className="sep">/</span>
               <button>Projects</button>
               <span className="sep">/</span>
@@ -680,7 +680,7 @@ export function SystemStates() {
               <label className="label" htmlFor="st-e">
                 Email
               </label>
-              <input className="input is-error" id="st-e" defaultValue="hello@gr8rstudio" aria-invalid="true" />
+              <input className="input is-error" id="st-e" defaultValue="hello@dotrix" aria-invalid="true" />
               <span className="err">
                 <Ic n="circle-alert" s={12} />
                 Enter a valid email, like name@company.com

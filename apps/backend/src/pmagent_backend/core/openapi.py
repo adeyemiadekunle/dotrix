@@ -15,7 +15,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field
 
 DESCRIPTION = """
-The pmagent platform API. The web app, desktop app, and `pmagent` CLI are all clients of it.
+The dotrix platform API. The web app, desktop app, and `pmagent` CLI are all clients of it.
 
 ## Authentication
 
@@ -125,7 +125,7 @@ TAGS: list[dict[str, str]] = [
     },
     {
         "name": "github",
-        "description": "Connecting GitHub through the pmagent GitHub App: the GitHub accounts it's installed "
+        "description": "Connecting GitHub through the dotrix GitHub App: the GitHub accounts it's installed "
         "on in a workspace, each project's repo (private ones included), and GitHub's webhook deliveries.",
     },
     {
@@ -141,7 +141,7 @@ TAGS: list[dict[str, str]] = [
 class ProblemDetail(BaseModel):
     """RFC 9457 problem details. Every error response has this shape."""
 
-    type: str = Field(examples=["https://pmagent.dev/problems/not_found"])
+    type: str = Field(examples=["https://dotrix.app/problems/not_found"])
     title: str = Field(examples=["Not Found"])
     status: int = Field(examples=[404])
     detail: str = Field(examples=["Workspace not found"])

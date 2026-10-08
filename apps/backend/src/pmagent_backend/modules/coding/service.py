@@ -71,7 +71,7 @@ class CodingService:
         elif agent is None:
             reason = "The server needs an Anthropic key (Claude Code) or an OpenAI key (Codex)"
         elif not GitHubAppClient(self.settings).configured:
-            reason = "The pmagent GitHub App isn't set up on this server"
+            reason = "The dotrix GitHub App isn't set up on this server"
         elif await self._repo(project) is None:
             reason = "Connect the project's GitHub repository first (project settings → Repository)"
         return CodingAvailability(available=reason is None, agent=agent, sandbox=sandbox, reason=reason)

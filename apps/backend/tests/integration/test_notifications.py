@@ -301,7 +301,7 @@ async def test_daily_digest_off_and_read(world, db_client: AsyncClient, agent_sc
     assert await emails.send_digests(morning - timedelta(hours=2)) == 0  # not before 08:00 UTC
     assert await emails.send_digests(morning) == 1
     digest = outbox.messages[-1]
-    assert digest.to == ada.email and digest.subject.startswith("Your day in pmagent") and "Plan phase 2" in digest.body
+    assert digest.to == ada.email and digest.subject.startswith("Your day in dotrix") and "Plan phase 2" in digest.body
     assert "https://pm.example/w/" in digest.body
     assert await emails.send_digests(morning + timedelta(hours=1)) == 0  # once a day
 

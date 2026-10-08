@@ -63,17 +63,17 @@ def _content(items: list[Item], names: dict[uuid.UUID, str], app_url: str, *, di
         lines.append(f"…and {len(items) - MAX_LINES} more.")
     waiting = sum(i.notification.kind in DECISIONS for i in items)
     if digest:
-        subject = f"Your day in pmagent: {len(items)} notification{'s' * (len(items) != 1)}"
+        subject = f"Your day in dotrix: {len(items)} notification{'s' * (len(items) != 1)}"
     elif len(items) == 1:
         subject = lines[0].split(" · ", 1)[1][:120]
     else:
-        subject = f"{len(items)} things in pmagent" + (f", {waiting} waiting for you" if waiting else "")
+        subject = f"{len(items)} things in dotrix" + (f", {waiting} waiting for you" if waiting else "")
     link = f"{app_url.rstrip('/')}/w/{first.workspace_slug}/approvals"
     if len(items) == 1:
         link += f"?n={first.notification.id}"
     return EmailContent(
         subject=subject,
-        heading="Waiting for your decision" if waiting and waiting == len(items) else ("Today in pmagent" if digest else "What's new"),
+        heading="Waiting for your decision" if waiting and waiting == len(items) else ("Today in dotrix" if digest else "What's new"),
         paragraphs=lines,
         action_label="Open notifications",
         action_url=link,

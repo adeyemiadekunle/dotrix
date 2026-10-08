@@ -76,7 +76,7 @@ def problem(
     status: int, code: str, detail: str, headers: dict[str, str] | None = None, **extra: object
 ) -> JSONResponse:
     body = {
-        "type": f"https://pmagent.dev/problems/{code}",
+        "type": f"https://dotrix.app/problems/{code}",
         "title": HTTPStatus(status).phrase,
         "status": status,
         "detail": detail,

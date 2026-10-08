@@ -1,4 +1,4 @@
-"""Code hosts connected to a workspace (the pmagent GitHub App) and the repo each project uses."""
+"""Code hosts connected to a workspace (the dotrix GitHub App) and the repo each project uses."""
 from __future__ import annotations
 
 import uuid

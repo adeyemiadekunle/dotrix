@@ -9,7 +9,7 @@ function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: "pmagent",
+    title: "dotrix",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

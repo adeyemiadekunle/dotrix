@@ -1,6 +1,5 @@
-# pmagent 
+# dotrix
 
-# Now dotrix
 Dotrix — The AI workspace for building software.
 
 "Dotrix is inspired by linear algebra — dots represent specialised components, while the matrix represents the relationships between them. Dotrix brings AI agents, knowledge, tasks and tools together into one coordinated workspace"
@@ -49,7 +48,7 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
     documents may be out of date. It's drawn in Knowledge.
 - **Research** on the web (Tavily): every claim is checked against the page it cites, and
   reports can be saved as research notes.
-- **Code awareness:** connect a repo through the pmagent GitHub App and agents read its code
+- **Code awareness:** connect a repo through the dotrix GitHub App and agents read its code
   (read-only) when reviewing or planning.
 - **Coding:** "Start coding" on an issue hands it to Claude Code (or Codex, when the server has
   only an OpenAI key).

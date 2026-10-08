@@ -518,7 +518,7 @@ function GitHub() {
           t={
             <span className="row" style={{ gap: 8 }}>
               <Ic n="github" s={15} />
-              gr8r
+              dotrix
             </span>
           }
           d="Organisation · 12 repositories · added by Tanjim Islam"

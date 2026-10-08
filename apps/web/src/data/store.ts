@@ -11,7 +11,7 @@ import { AGENTS, CODING_TOOLS } from "./seed-dotrix";
 import { seed } from "./seed";
 import type { Data, Filter, Project, Task, Team } from "./types";
 
-export const STORE_KEY = "dotrix.studio.v1";
+export const STORE_KEY = "dotrix.studio.v2"; // v2: the seeded workspace is Dotrix (was Gr8r Studio)
 export const DEFAULT_PREFS = {
   theme: "system" as "system" | "light" | "dark",
   accent: "indigo",

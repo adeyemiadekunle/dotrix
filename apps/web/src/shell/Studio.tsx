@@ -84,7 +84,7 @@ function Screen() {
   if (C) return <C />;
   return (
     <div className="page">
-      <Empty icon="hammer" title={ROUTE_NAMES[route] ?? "Coming next"} text="This screen is being brought over from Gr8r Studio." />
+      <Empty icon="hammer" title={ROUTE_NAMES[route] ?? "Coming next"} text="This page isn't built yet." />
     </div>
   );
 }

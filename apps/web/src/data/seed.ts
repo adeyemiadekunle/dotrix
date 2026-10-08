@@ -1,4 +1,4 @@
-// Gr8r Studio's seeded workspace (gr8r-studio/src/data/seed.js), copied as is; dotrix's data is
+// Dotrix's seeded workspace (gr8r-studio/src/data/seed.js), copied as is; dotrix's data is
 // added in ./seed-dotrix.ts. Tasks get an issue type here (bugs from the bug label).
 import { dOff, minsAgo, uid } from "../core/utils";
 import type { Data, Member, Project, Task } from "./types";
@@ -9,7 +9,7 @@ export function seed(): Data {
     {
       id: 'm1',
       name: 'Tanjim Islam',
-      email: 'hello@gr8rstudio.com',
+      email: 'hello@dotrix.app',
       role: 'Owner',
       team: 'product',
       title: 'Head of Product',
@@ -21,7 +21,7 @@ export function seed(): Data {
     {
       id: 'm2',
       name: 'Sarah Chen',
-      email: 'sarah@gr8rstudio.com',
+      email: 'sarah@dotrix.app',
       role: 'Admin',
       team: 'design',
       title: 'Design Lead',
@@ -33,7 +33,7 @@ export function seed(): Data {
     {
       id: 'm3',
       name: 'John Carter',
-      email: 'john@gr8rstudio.com',
+      email: 'john@dotrix.app',
       role: 'Member',
       team: 'eng',
       title: 'Frontend Engineer',
@@ -45,7 +45,7 @@ export function seed(): Data {
     {
       id: 'm4',
       name: 'Emma Wilson',
-      email: 'emma@gr8rstudio.com',
+      email: 'emma@dotrix.app',
       role: 'Member',
       team: 'design',
       title: 'Product Designer',
@@ -57,7 +57,7 @@ export function seed(): Data {
     {
       id: 'm5',
       name: 'Priya Patel',
-      email: 'priya@gr8rstudio.com',
+      email: 'priya@dotrix.app',
       role: 'Member',
       team: 'mkt',
       title: 'Content Strategist',
@@ -69,7 +69,7 @@ export function seed(): Data {
     {
       id: 'm6',
       name: 'Marcus Lee',
-      email: 'marcus@gr8rstudio.com',
+      email: 'marcus@dotrix.app',
       role: 'Member',
       team: 'eng',
       title: 'Backend Engineer',
@@ -81,7 +81,7 @@ export function seed(): Data {
     {
       id: 'm7',
       name: 'Lena Fischer',
-      email: 'lena@gr8rstudio.com',
+      email: 'lena@dotrix.app',
       role: 'Admin',
       team: 'product',
       title: 'QA Lead',
@@ -117,7 +117,7 @@ export function seed(): Data {
       start: dOff(-30),
       fav: true,
       members: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7'],
-      desc: 'Rebuild gr8rstudio.com with a clearer information architecture, a responsive component library, and a faster CMS-driven blog.',
+      desc: 'Rebuild dotrix.app with a clearer information architecture, a responsive component library, and a faster CMS-driven blog.',
       milestones: [
         { name: 'Wireframes signed off', date: dOff(2) },
         { name: 'Dev handoff', date: dOff(14) },
@@ -502,9 +502,9 @@ export function seed(): Data {
   const tmp = tk('t3');
   tmp.updated = minsAgo(38);
   const base = {
-    ws: { name: 'Gr8r Studio', url: 'gr8rstudio', c: '#1D1C1A', brand: true },
+    ws: { name: 'Dotrix', url: 'dotrix', c: '#1D1C1A', brand: true },
     workspaces: [
-      { id: 'w1', name: 'Gr8r Studio', c: '#1D1C1A', plan: 'Team', brand: true },
+      { id: 'w1', name: 'Dotrix', c: '#1D1C1A', plan: 'Team', brand: true },
       { id: 'w2', name: 'Personal', c: '#3D8E5F', plan: 'Free' },
       { id: 'w3', name: 'Acme Labs', c: '#3B82C4', plan: 'Business' },
     ],
@@ -522,7 +522,7 @@ export function seed(): Data {
     recentSearches: ['homepage', 'Sarah', 'wireframes'],
     sessions: [
       { id: 'se1', dev: 'MacBook Pro · Chrome', loc: 'San Francisco, US', at: 'Active now', cur: true },
-      { id: 'se2', dev: 'iPhone 15 · Gr8r app', loc: 'San Francisco, US', at: '2 hours ago' },
+      { id: 'se2', dev: 'iPhone 15 · dotrix app', loc: 'San Francisco, US', at: '2 hours ago' },
       { id: 'se3', dev: 'Windows · Edge', loc: 'Oakland, US', at: 'Sep 12' },
     ],
     invoices: [

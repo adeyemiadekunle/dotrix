@@ -1,12 +1,8 @@
 import { cn } from "@pmagent/ui/lib/utils";
 
+import { Logo as Wordmark, Mark } from "@/src/core/icons";
+
+/** dotrix's logo: the dot matrix with the wordmark, or the app icon alone. */
 export function Logo({ className, withName = true }: { className?: string; withName?: boolean }) {
-  return (
-    <span className={cn("flex items-center gap-2 font-medium", className)}>
-      <span className="bg-brand text-brand-foreground flex size-7 items-center justify-center rounded-md text-xs font-semibold">
-        pm
-      </span>
-      {withName && <span>pmagent</span>}
-    </span>
-  );
+  return <span className={cn("flex items-center", className)}>{withName ? <Wordmark h={22} /> : <Mark px={26} />}</span>;
 }

@@ -554,7 +554,7 @@ export function Drawer() {
           <button className="ibtn ibtn-sm" onClick={() => toggleFavTask(t.id)} data-tip={t.fav ? "Unfavorite" : "Favorite"} aria-pressed={t.fav} aria-label="Favorite" style={t.fav ? { color: "var(--amber)" } : undefined}>
             <Ic n="star" s={15} />
           </button>
-          <button className="ibtn ibtn-sm" onClick={() => void copy(`${location.origin}/w/gr8r/p/${p.key}/board?task=${t.key}`)} data-tip="Copy link" aria-label="Copy link">
+          <button className="ibtn ibtn-sm" onClick={() => void copy(`${location.origin}/w/dotrix/p/${p.key}/board?task=${t.key}`)} data-tip="Copy link" aria-label="Copy link">
             <Ic n="link" s={15} />
           </button>
           <button className="ibtn ibtn-sm hide-m" onClick={() => ((u.drawerFull = !u.drawerFull), render())} data-tip={u.drawerFull ? "Side panel" : "Full page"} aria-label="Toggle full page">

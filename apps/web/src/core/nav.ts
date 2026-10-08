@@ -2,7 +2,7 @@
 // without changing addresses). Screens ask where they are with useRoute().
 import { useRouterState, type AnyRouter } from "@tanstack/react-router";
 
-export const WS = "gr8r"; // the seeded workspace's slug
+export const WS = "dotrix"; // the seeded workspace's slug
 
 export type Route =
   | "home"

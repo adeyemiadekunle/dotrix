@@ -727,7 +727,7 @@ function ShareModal({ m }: { m: Modal }) {
         </div>
       </div>
       <div className="modal-f">
-        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/gr8r/p/${p.key}/overview`)}>
+        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/dotrix/p/${p.key}/overview`)}>
           <Ic n="link" s={14} />
           Copy link
         </button>
@@ -1170,7 +1170,7 @@ function FilePreviewModal({ m }: { m: Modal }) {
         )}
       </div>
       <div className="modal-f">
-        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/gr8r/files/${f.id}`)}>
+        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/dotrix/files/${f.id}`)}>
           <Ic n="link" s={14} />
           Copy link
         </button>

@@ -164,7 +164,7 @@ async def test_a_github_account_links_to_one_person(db_client: AsyncClient, sign
     github.codes |= {"ada-code", "bob-code"}
     assert (await db_client.put("/v1/me/sign-in-methods/github", json={"code": "ada-code"}, headers=ada.headers)).status_code == 200
     taken = await db_client.put("/v1/me/sign-in-methods/github", json={"code": "bob-code"}, headers=bob.headers)
-    assert taken.status_code == 409 and "another pmagent account" in taken.json()["detail"]
+    assert taken.status_code == 409 and "another dotrix account" in taken.json()["detail"]
     # Not with an API token.
     token = (await db_client.post("/v1/me/tokens", json={"name": "cli"}, headers=bob.headers)).json()["token"]
     cli = await db_client.put(

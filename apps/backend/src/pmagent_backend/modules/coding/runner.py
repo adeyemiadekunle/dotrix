@@ -219,7 +219,7 @@ class CodingWorker:
             raise RunFailed("Refusing to push to the default branch")
         heading = f"{issue_key}: {title}" + (f" (turn {turn})" if turn > 1 else "")
         message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({NAMES[agent.value]})"
-        await run_git(host, "-c", f"user.name={NAMES[agent.value]} via pmagent", "-c", f"user.email={BOT_EMAIL}",
+        await run_git(host, "-c", f"user.name={NAMES[agent.value]} via dotrix", "-c", f"user.email={BOT_EMAIL}",
                       "commit", "-q", "--no-verify", "-m", message)
         commit_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
         await self._update(run_id, step=f"Pushing {branch}")
@@ -417,7 +417,7 @@ async def _export(host: Path, target: Path) -> None:
 async def _baseline(copy: Path) -> str:
     await run_git(copy, "init", "-q")
     await run_git(copy, "add", "-A")
-    await run_git(copy, "-c", "user.name=pmagent", "-c", f"user.email={BOT_EMAIL}", "commit", "-q",
+    await run_git(copy, "-c", "user.name=dotrix", "-c", f"user.email={BOT_EMAIL}", "commit", "-q",
                   "--no-verify", "--allow-empty", "-m", "The repository as the coding run found it")
     return (await run_git(copy, "rev-parse", "HEAD")).strip()
 
@@ -446,7 +446,7 @@ def _pr_body(summary: str | None, key: str, run_id: uuid.UUID, agent: str, files
         (summary or "The agent left no summary.").strip()[:20_000],
         "",
         "---",
-        f"Written by {NAMES[agent]} in a pmagent coding run for {key} ({run_id}), asked for and approved on "
+        f"Written by {NAMES[agent]} in a dotrix coding run for {key} ({run_id}), asked for and approved on "
         f"pmagent. {len(files)} file{'s' if len(files) != 1 else ''} changed. A person reviews and merges it.",
     ])
 

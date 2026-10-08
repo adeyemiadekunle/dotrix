@@ -93,7 +93,7 @@ export function Onboarding() {
           <label className="label" htmlFor="o-ws">
             Workspace name
           </label>
-          <input className={`input input-lg ${err ? "is-error" : ""}`} id="o-ws" value={o.ws} onChange={(e) => set({ ws: e.target.value, url: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "") })} placeholder="e.g. Gr8r Studio" autoFocus />
+          <input className={`input input-lg ${err ? "is-error" : ""}`} id="o-ws" value={o.ws} onChange={(e) => set({ ws: e.target.value, url: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "") })} placeholder="e.g. Acme Studio" autoFocus />
           {err && (
             <span className="err">
               <Ic n="circle-alert" s={12} />
@@ -109,7 +109,7 @@ export function Onboarding() {
             <span className="input input-lg" style={{ width: "auto", background: "var(--surface-2)", borderRight: 0, borderRadius: "6px 0 0 6px", display: "flex", alignItems: "center", color: "var(--text-2)" }}>
               dotrix.app/w/
             </span>
-            <input className="input input-lg" id="o-url" value={o.url} onChange={(e) => set({ url: e.target.value })} style={{ borderRadius: "0 6px 6px 0" }} placeholder="gr8rstudio" />
+            <input className="input input-lg" id="o-url" value={o.url} onChange={(e) => set({ url: e.target.value })} style={{ borderRadius: "0 6px 6px 0" }} placeholder="acme" />
           </div>
           {o.url && (
             <span className="hint" style={{ color: "var(--green)", display: "flex", gap: 4, alignItems: "center" }}>
