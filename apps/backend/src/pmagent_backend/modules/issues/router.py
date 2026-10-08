@@ -4,13 +4,16 @@ Issue keys (`KUN-42`) go in the URL and are case-insensitive.
 """
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from typing import Annotated, Literal
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 
-from pmagent_backend.api.deps import SessionDep, require_permission
+from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.openapi import errors
+from pmagent_backend.core.storage import BlobStorage, get_storage
 from pmagent_backend.modules.coding.router import Coding
 from pmagent_backend.modules.coding.service import CODING_AGENTS
 from pmagent_backend.modules.projects.deps import (
@@ -176,6 +179,67 @@ async def rank_issue(key: str, data: RankRequest, access: Editor, session: Sessi
     return await IssueService(session).rank(access.project, key, data)
 
 
+@router.put("/{key}/star", status_code=status.HTTP_204_NO_CONTENT)
+async def star_issue(key: str, access: ProjectViewer, session: SessionDep) -> None:
+    """Star an issue for yourself (your Favorites; nobody else sees your stars)."""
+    await IssueService(session).star(access.project, key, access.member.user_id, on=True)
+
+
+@router.delete("/{key}/star", status_code=status.HTTP_204_NO_CONTENT)
+async def unstar_issue(key: str, access: ProjectViewer, session: SessionDep) -> None:
+    """Take your star off an issue (no error if it had none)."""
+    await IssueService(session).star(access.project, key, access.member.user_id, on=False)
+
+
+Storage = Annotated[BlobStorage, Depends(get_storage)]
+
+
+@router.post("/{key}/attachments", status_code=status.HTTP_201_CREATED, responses=errors(403, 422, 503))
+async def attach_file_to_issue(
+    key: str,
+    access: Editor,
+    session: SessionDep,
+    storage: Storage,
+    settings: SettingsDep,
+    file: Annotated[UploadFile, File(description="Any file: an image, a PDF, a log, a design")],
+) -> IssueRead:
+    """Add a file to the issue, listed under it (any type; it isn't converted for the agents,
+    unlike a project document). Anyone who may edit issues."""
+    limit = settings.max_upload_mb * 1_000_000
+    data = await file.read(limit + 1)  # one byte past the limit to notice an oversized file
+    return await IssueService(session).attach(
+        access.project, key, _actor(access), storage, file.filename or "file", data, max_bytes=limit
+    )
+
+
+@router.get(
+    "/{key}/attachments/{attachment_id}",
+    response_class=Response,
+    responses={200: {"content": {"application/octet-stream": {}}, "description": "The file"}} | errors(503),
+)
+async def download_issue_attachment(
+    key: str, attachment_id: uuid.UUID, access: ProjectViewer, session: SessionDep, storage: Storage
+) -> Response:
+    """Download a file added to the issue, exactly as it was uploaded."""
+    found = await IssueService(session).attachment(access.project, key, attachment_id)
+    return Response(
+        content=await storage.get(found.storage_key),
+        media_type=found.content_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(found.filename)}",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.delete("/{key}/attachments/{attachment_id}", responses=errors(403, 503))
+async def remove_issue_attachment(
+    key: str, attachment_id: uuid.UUID, access: Editor, session: SessionDep, storage: Storage
+) -> IssueRead:
+    """Take a file off the issue; the file is deleted."""
+    return await IssueService(session).detach(access.project, key, _actor(access), storage, attachment_id)
+
+
 @router.put("/{key}/watch")
 async def watch_issue(key: str, access: ProjectViewer, session: SessionDep) -> IssueRead:
     """Get notified about changes to this issue."""
@@ -204,6 +268,7 @@ async def list_workspace_issues(
     ),
     reporter: str | None = Query(default=None, description="`me` or a user ID"),
     watching: bool = Query(default=False, description="Only issues you watch"),
+    starred: bool = Query(default=False, description="Only issues you starred (your Favorites)"),
     label: str | None = None,
     due_before: date | None = Query(default=None, description="Due on or before this day"),
     order: Literal["due", "priority", "created", "updated"] = "due",
@@ -214,6 +279,6 @@ async def list_workspace_issues(
     with its project. Restricted projects you aren't on are left out. `order=due` is earliest
     due first (no date last), then most urgent."""
     return await IssueService(session).across_projects(
-        member, types=type, statuses=status, assignee=assignee, reporter=reporter, watching=watching,
+        member, types=type, statuses=status, assignee=assignee, reporter=reporter, watching=watching, starred=starred,
         label=label, due_before=due_before, order=order, limit=limit, offset=offset,
     )

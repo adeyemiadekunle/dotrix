@@ -4,21 +4,40 @@
 // the store changes first (the screen answers at once), then the request; a refused request
 // puts the item back as the API has it and says why.
 //
-// Wired: the workspace, members and roles, projects (create, edit, status, star), issues
-// (create, every field the API has, comments), notifications (read state), activity, agents
-// (the list), Knowledge (read and save), files (upload, list), automations (list, on/off, add
-// a preset), the audit log.
-// Not yet: chat and coding (their own step); teams, sub-task checklists, attachments on issues,
-// repeats, starring an issue, renaming or duplicating files, and custom agents stay in this browser.
+// Wired: the workspace, members and roles, teams (who and which projects), projects (create,
+// edit, status, star), issues (create, every field, checklists, repeats, stars, attachments,
+// comments), notifications (read state), activity, agents (the list), Knowledge (read and save),
+// files (upload, list, rename, duplicate, delete), automations (list, on/off, add a preset), the audit log.
+// Changes made through mutate() anywhere in the screens (a sub-task ticked, a star, a team's
+// people) are compared with what the API last had after each change (reconcile) and sent.
+// Not yet: chat and coding (their own step); custom agents stay in this browser.
 import { api, apiFetch, authPost, hasSession, problemMessage, unwrap, type Schemas } from "@/lib/api";
 
 import { PCOLORS } from "../core/constants";
-import { uid } from "../core/utils";
+import { go } from "../core/nav";
+import { fmtDate, uid } from "../core/utils";
 import { fileType, fsize } from "../ui/helpers";
 import { toast } from "../ui/toast";
 import { AGENTS } from "./seed-dotrix";
-import { D, S, persist, render } from "./store";
-import type { Activity, Agent, AuditEvent, Automation, Comment, Data, FileItem, KnowledgeFile, Member, Notif, NotifType, Project, Task } from "./types";
+import { D, S, afterMutate, persist, render } from "./store";
+import type {
+  Activity,
+  Agent,
+  Attachment,
+  AuditEvent,
+  Automation,
+  Comment,
+  Data,
+  FileItem,
+  KnowledgeFile,
+  Member,
+  Notif,
+  NotifType,
+  Project,
+  Subtask,
+  Task,
+  Team,
+} from "./types";
 
 type W = Schemas["WorkspaceWithRole"];
 
@@ -134,6 +153,17 @@ function toProject(p: Schemas["ProjectRead"], members: Schemas["MemberRead"][], 
   };
 }
 
+const RECUR_IN: Record<string, string> = { daily: "Daily", weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly" };
+const RECUR_OUT: Record<string, Schemas["Recurrence"]> = { Daily: "daily", Weekly: "weekly", "Every 2 weeks": "biweekly", Monthly: "monthly" };
+
+const toSubtask = (c: Schemas["ChecklistItem"]): Subtask => ({ id: c.id, title: c.title, done: c.done ?? false, due: c.due ?? null, assignee: c.assignee_user_id ?? null });
+const toChecklist = (subs: Subtask[]): Schemas["ChecklistItem"][] =>
+  subs.map((x) => ({ id: x.id, title: x.title, done: x.done, due: x.due || null, assignee_user_id: x.assignee && fromApi(x.assignee) ? x.assignee : null }));
+const toAttachment = (a: Schemas["AttachmentRead"]): Attachment => ({ id: a.id, name: a.filename, type: fileType(a.filename), size: fsize(a.size), by: a.uploaded_by_id ?? "", at: ms(a.created_at) });
+/** Stand-ins for the attachments a list row only counts (cards show the count); the drawer loads the real ones. */
+const counted = (n: number): Attachment[] => Array.from({ length: n }, (_, k) => ({ id: `counted-${k}`, name: "", type: "other", size: "", by: "", at: 0 }));
+const toTeam = (t: Schemas["TeamRead"]): Team => ({ id: t.id, name: t.name, icon: t.icon, c: t.color, desc: t.description });
+
 type IssueLike = Schemas["WorkspaceIssue"] | (Schemas["IssueRead"] & { project_id?: string });
 function toTask(i: IssueLike, projectId: string, order: number): Task {
   const full = "description" in i;
@@ -148,8 +178,8 @@ function toTask(i: IssueLike, projectId: string, order: number): Task {
     due: i.due,
     start: i.scheduled ?? null,
     labels: i.labels,
-    subtasks: [],
-    attachments: [],
+    subtasks: (i.checklist ?? []).map(toSubtask),
+    attachments: "attachments" in i && i.attachments ? i.attachments.map(toAttachment) : counted(i.attachment_count ?? 0),
     deps: i.depends_on ?? [],
     desc: full ? mdToHtml(i.description) : "",
     estimate: i.estimate != null ? `${i.estimate}` : null,
@@ -157,7 +187,7 @@ function toTask(i: IssueLike, projectId: string, order: number): Task {
     updated: ms(i.updated_at),
     order,
     fav: false,
-    recur: null,
+    recur: i.recurrence ? (RECUR_IN[i.recurrence] ?? null) : null,
     completedAt: i.status === "done" ? ms(i.updated_at) : undefined,
     type: i.type,
     parent: i.parent_key ?? null,
@@ -306,7 +336,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
     const ps = projects.map((p) => toProject(p, members, stars));
     // Per project: knowledge (every file's content), documents, automations. Agents and the audit
     // log are the workspace's; the audit log is for owners and admins, so others get none.
-    const [perProject, agents, audit] = await Promise.all([
+    const [perProject, agents, audit, teams, starredIssues] = await Promise.all([
       Promise.all(
         projects.map(async (p) => {
           const pp = { params: { path: { workspace_id: ws.id, project_id: p.id } } };
@@ -320,14 +350,20 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       ),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", path)).catch(() => []),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/audit", { params: { path: { workspace_id: ws.id }, query: { limit: 200 } } })).catch(() => []),
+      unwrap(api.GET("/v1/workspaces/{workspace_id}/teams", path)).catch(() => []),
+      unwrap(api.GET("/v1/workspaces/{workspace_id}/issues", { params: { path: { workspace_id: ws.id }, query: { starred: true, limit: 5000 } } })).catch(() => []),
     ]);
+    const teamList = teams as Schemas["TeamRead"][];
+    const memberTeam = new Map(teamList.flatMap((t) => (t.member_ids ?? []).map((u) => [u, t.id] as const)));
+    ps.forEach((p) => (p.team = teamList.find((t) => (t.project_ids ?? []).includes(p.id))?.id ?? ""));
+    const starredKeys = new Set((starredIssues as Schemas["WorkspaceIssue"][]).map((i) => i.key));
     const data: Data = {
       ws: { id: ws.id, name: ws.name, c: hashTint(ws.id), plan: ws.kind === "personal" ? "Personal" : "Team", kind: ws.kind, url: ws.slug },
       workspaces: wss.map((w) => ({ id: w.id, name: w.name, c: hashTint(w.id), plan: w.kind === "personal" ? "Personal" : "Organisation", kind: w.kind, slug: w.slug })),
       me: me.id,
-      members: members.map(toMember),
+      members: members.map((m) => ({ ...toMember(m), team: memberTeam.get(m.user_id) ?? "" })),
       projects: ps,
-      tasks: issues.map((i) => toTask(i, i.project_id, i.rank)),
+      tasks: issues.map((i) => ({ ...toTask(i, i.project_id, i.rank), fav: starredKeys.has(i.key) })),
       comments: [],
       activity: activity.map(toActivity),
       notifs: notifs.map(toNotif),
@@ -340,7 +376,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       invoices: [],
       tfa: false,
       notifPrefs: {},
-      teams: [],
+      teams: teamList.map(toTeam),
       agents: (agents as Schemas["AgentRead"][]).map(toAgent),
       threads: [],
       knowledge: perProject.flatMap((x) => x.knowledge),
@@ -350,6 +386,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
     };
     if (live.demo === null) live.demo = S.data; // set aside the demo's data the first time only
     S.data = data;
+    baseline();
     S.prefs.name = me.display_name;
     S.prefs.title = me.title ?? "";
     live.ws = ws;
@@ -419,7 +456,8 @@ function failed(what: string, e: unknown) {
 async function reloadTask(t: Task) {
   try {
     const i = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } } }));
-    Object.assign(t, toTask(i, t.project, t.order), { subtasks: t.subtasks, attachments: t.attachments, fav: t.fav, recur: t.recur });
+    Object.assign(t, toTask(i, t.project, t.order), { fav: t.fav });
+    markTask(t);
     render();
   } catch {
     /* leave it */
@@ -440,6 +478,8 @@ function issueFields(t: Task, keys: (keyof Task)[]): Schemas["IssueUpdate"] {
     else if (k === "deps") body.depends_on = t.deps;
     else if (k === "type") body.type = t.type;
     else if (k === "parent") body.parent = t.parent ?? null;
+    else if (k === "subtasks") body.checklist = toChecklist(t.subtasks);
+    else if (k === "recur") body.recurrence = t.recur ? (RECUR_OUT[t.recur] ?? null) : null;
     else if (k === "estimate") {
       const n = Number.parseFloat(t.estimate ?? "");
       body.estimate = Number.isFinite(n) ? n : null;
@@ -463,9 +503,20 @@ export function taskPatched(t: Task, keys: (keyof Task)[]) {
   const body = issueFields(t, keys);
   if (!Object.keys(body).length) return;
   if (keys.includes("project")) toast("Moving an issue to another project isn't saved yet", { kind: "info" });
+  const was = synced.tasks.get(t);
+  if (was && body.checklist) was.sub = subSig(t); // sent here, so reconcile doesn't send it again
   void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } }, body }))
-    .then((i) => {
+    .then(async (i) => {
       t.updated = ms(i.updated_at);
+      // A repeating issue just finished: the API made the next one.
+      if (i.repeated_as && !D().tasks.some((x) => x.key === i.repeated_as)) {
+        const next = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: i.repeated_as } } }));
+        const nt = toTask(next, t.project, next.rank);
+        D().tasks.push(nt);
+        markTask(nt);
+        render();
+        toast(`Next “${nt.title}” scheduled for ${nt.due ? fmtDate(nt.due) : "later"}`, { kind: "info" });
+      }
     })
     .catch((e) => {
       failed(`“${t.title}”`, e);
@@ -480,7 +531,7 @@ export function taskCreated(t: Task): Promise<void> {
   const local = t.id;
   t.key = t.id = `new-${uid("")}`;
   if (S.ui.drawer === local) S.ui.drawer = t.id;
-  const full = issueFields(t, ["status", "priority", "assignee", "due", "start", "labels", "deps", "type", "estimate", "desc"]);
+  const full = issueFields(t, ["status", "priority", "assignee", "due", "start", "labels", "deps", "type", "estimate", "desc", "subtasks", "recur"]);
   const { components: _c, links: _l, ...rest } = full;
   const body: Schemas["IssueCreate"] = {
     ...rest,
@@ -489,24 +540,33 @@ export function taskCreated(t: Task): Promise<void> {
     description: full.description ?? "",
     depends_on: full.depends_on ?? [],
     labels: full.labels ?? [],
+    checklist: full.checklist ?? [],
     status: full.status ?? "todo",
     priority: full.priority ?? "none",
     parent: t.parent ?? null,
   };
-  return unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", { params: { path: projectPath(t.project) }, body }))
+  const made = unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", { params: { path: projectPath(t.project) }, body }))
     .then((i) => {
       const was = t.id;
       t.id = t.key = i.key;
       if (S.ui.drawer === was) S.ui.drawer = i.key;
       D().activity.forEach((a) => a.task === was && (a.task = i.key));
+      markTask(t);
       render();
+      // Starred while it was being created.
+      if (t.fav) reconcile();
     })
     .catch((e) => {
       failed(`“${t.title}”`, e);
       D().tasks = D().tasks.filter((x) => x !== t);
       render();
     });
+  creating.set(t, made);
+  return made;
 }
+const creating = new WeakMap<Task, Promise<void>>();
+/** Settles once a new issue is on the API (or failed to be), e.g. before adding files to it. */
+export const whenCreated = (t: Task) => creating.get(t) ?? Promise.resolve();
 
 /** Comments of an issue, when its drawer opens. */
 export async function loadComments(t: Task) {
@@ -517,8 +577,11 @@ export async function loadComments(t: Task) {
       .filter((e) => e.kind === "commented" && e.body)
       .map((e) => ({ id: uid("c"), task: t.id, by: actor(e.author_user_id, e.author_agent), at: ms(e.created_at), text: e.body!, re: {} }));
     D().comments = [...D().comments.filter((c) => c.task !== t.id), ...cs];
-    // The full issue has the description, which lists leave out.
+    // The full issue has the description and its attachments, which lists leave out.
     if (!t.desc) t.desc = mdToHtml(i.description);
+    t.attachments = (i.attachments ?? []).map(toAttachment);
+    const was = synced.tasks.get(t);
+    if (was) was.att = t.attachments.map((a) => a.id);
     render();
   } catch {
     /* the drawer still shows what the list had */
@@ -713,16 +776,229 @@ export async function automationAdded(pid: string, preset: string) {
 
 /** A file uploaded to a project's files; the store shows it once the API has it (converted in the background). */
 export async function documentUploaded(file: File, pid: string, onProgress: (pct: number) => void): Promise<void> {
+  const doc = await upload<Schemas["DocumentRead"]>(`/v1/workspaces/${wsId()}/projects/${pid}/documents`, file, onProgress);
+  D().files.unshift(toFile(doc, pid));
+  render();
+  onProgress(100);
+}
+
+const docPath = (f: FileItem) => ({ params: { path: { ...projectPath(f.project), document_id: f.id } } });
+async function reloadFiles(pid: string) {
+  try {
+    const docs = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/documents", { params: { path: projectPath(pid) } }));
+    D().files = [...D().files.filter((f) => f.project !== pid), ...docs.map((d) => toFile(d, pid))];
+    render();
+  } catch {
+    /* leave what's shown */
+  }
+}
+
+/** A project file renamed in Files (the store shows the new name already). */
+export function fileRenamed(f: FileItem, was: string) {
+  if (!isLive()) return;
+  void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}", { ...docPath(f), body: { filename: f.name } }))
+    .then((d) => {
+      f.name = d.filename; // as the API cleaned it
+      f.type = fileType(d.filename);
+      render();
+    })
+    .catch((e) => {
+      failed(`“${was}”`, e);
+      f.name = was;
+      f.type = fileType(was);
+      render();
+    });
+}
+
+/** A copy of a project file: the API stores and converts it, then it's listed. */
+export async function fileDuplicated(f: FileItem) {
+  try {
+    const d = await unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}/duplicate", docPath(f)));
+    const i = D().files.indexOf(f);
+    D().files.splice(i + 1, 0, toFile(d, f.project));
+    render();
+    toast(`Duplicated as ${d.filename}`);
+  } catch (e) {
+    failed(`The copy of “${f.name}”`, e);
+  }
+}
+
+/** A project file deleted in Files (already gone from the store): its markdown in Knowledge goes too. */
+export function fileDeleted(f: FileItem) {
+  if (!isLive()) return;
+  void unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}", docPath(f)))
+    .then(() => reloadKnowledge(f.project))
+    .catch((e) => {
+      failed(`Deleting “${f.name}”`, e);
+      void reloadFiles(f.project);
+    });
+}
+
+/** A file added to an issue (the drawer, or the new-issue form once the issue exists). */
+export async function issueFileAttached(file: File, t: Task, onProgress: (pct: number) => void = () => {}): Promise<void> {
+  await whenCreated(t);
+  if (t.key.startsWith("new-")) throw new Error("The issue wasn't created");
+  const i = await upload<Schemas["IssueRead"]>(`/v1/workspaces/${wsId()}/projects/${t.project}/issues/${encodeURIComponent(t.key)}/attachments`, file, onProgress);
+  t.attachments = (i.attachments ?? []).map(toAttachment);
+  const was = synced.tasks.get(t);
+  if (was) was.att = t.attachments.map((a) => a.id);
+  render();
+  onProgress(100);
+}
+/** Files picked in the new-issue form, added once the issue is on the API. */
+export function filesAttached(t: Task, files: File[]) {
+  for (const file of files) void issueFileAttached(file, t).catch((e) => failed(file.name, e));
+}
+
+async function upload<T>(url: string, file: File, onProgress: (pct: number) => void): Promise<T> {
   const body = new FormData();
   body.append("file", file);
   onProgress(15);
-  const res = await apiFetch(`/v1/workspaces/${wsId()}/projects/${pid}/documents`, { method: "POST", body });
+  const res = await apiFetch(url, { method: "POST", body });
   if (!res.ok) {
     const problem = (await res.json().catch(() => undefined)) as Parameters<typeof problemMessage>[0];
     throw new Error(problemMessage(problem) ?? "The file didn't upload");
   }
-  const doc = (await res.json()) as Schemas["DocumentRead"];
-  D().files.unshift(toFile(doc, pid));
-  render();
-  onProgress(100);
+  return (await res.json()) as T;
+}
+
+/* ---------- what the API last had: changes made anywhere are compared with it and sent ---------- */
+
+const synced = {
+  tasks: new Map<Task, { sub: string; fav: boolean; att: string[] }>(), // by the task itself: its id changes on create
+  teams: new Map<string, string>(),
+  memberTeam: new Map<string, string>(),
+  projectTeam: new Map<string, string>(),
+};
+const subSig = (t: Task) => JSON.stringify(toChecklist(t.subtasks));
+const teamSig = (t: Team) => JSON.stringify([t.name, t.desc, t.icon, t.c]);
+function markTask(t: Task) {
+  synced.tasks.set(t, { sub: subSig(t), fav: t.fav, att: t.attachments.map((a) => a.id) });
+}
+function markTeams() {
+  synced.teams = new Map((D().teams ?? []).filter((t) => fromApi(t.id)).map((t) => [t.id, teamSig(t)]));
+  synced.memberTeam = new Map(D().members.map((m) => [m.id, m.team]));
+  synced.projectTeam = new Map(D().projects.map((p) => [p.id, p.team]));
+}
+function baseline() {
+  synced.tasks = new Map();
+  D().tasks.forEach(markTask);
+  markTeams();
+}
+
+/** After every change in a real workspace: send what differs from what the API last had. */
+function reconcile() {
+  if (!isLive()) return;
+  for (const t of D().tasks) {
+    const was = synced.tasks.get(t);
+    if (!was || t.key.startsWith("new-")) continue; // not on the API yet: creating it sends it
+    const path = { params: { path: { ...projectPath(t.project), key: t.key } } };
+    const sub = subSig(t);
+    if (sub !== was.sub) {
+      was.sub = sub;
+      void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { ...path, body: { checklist: toChecklist(t.subtasks) } })).catch((e) => {
+        failed(`The checklist of “${t.title}”`, e);
+        void reloadTask(t);
+      });
+    }
+    if (t.fav !== was.fav) {
+      was.fav = t.fav;
+      const on = t.fav;
+      void unwrap(on ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path) : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path)).catch((e) => {
+        failed("The star", e);
+        t.fav = was.fav = !on;
+        render();
+      });
+    }
+    const gone = was.att.filter((id) => !id.startsWith("counted-") && !t.attachments.some((a) => a.id === id));
+    was.att = t.attachments.map((a) => a.id);
+    for (const id of gone)
+      void unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/attachments/{attachment_id}", { params: { path: { ...path.params.path, attachment_id: id } } })).catch((e) => {
+        failed("Removing the file", e);
+        void reloadTask(t);
+      });
+  }
+  reconcileTeams();
+}
+afterMutate.push(reconcile);
+
+const teamPath = (id: string) => ({ workspace_id: wsId(), team_id: id });
+const pendingTeams = new WeakSet<Team>();
+
+async function reloadTeams() {
+  try {
+    const teams = await unwrap(api.GET("/v1/workspaces/{workspace_id}/teams", { params: { path: { workspace_id: wsId() } } }));
+    D().teams = teams.map(toTeam);
+    D().members.forEach((m) => (m.team = teams.find((t) => (t.member_ids ?? []).includes(m.id))?.id ?? ""));
+    D().projects.forEach((p) => (p.team = teams.find((t) => (t.project_ids ?? []).includes(p.id))?.id ?? ""));
+    markTeams();
+    render();
+  } catch {
+    /* leave what's shown */
+  }
+}
+function teamFailed(what: string, e: unknown) {
+  failed(what, e);
+  void reloadTeams();
+}
+
+function reconcileTeams() {
+  const teams = D().teams ?? [];
+  for (const tm of teams) {
+    if (!fromApi(tm.id)) {
+      if (!pendingTeams.has(tm)) {
+        pendingTeams.add(tm);
+        void createTeam(tm);
+      }
+      continue;
+    }
+    const sig = teamSig(tm);
+    if (synced.teams.get(tm.id) !== sig) {
+      synced.teams.set(tm.id, sig);
+      void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/teams/{team_id}", { params: { path: teamPath(tm.id) }, body: { name: tm.name, description: tm.desc, icon: tm.icon, color: tm.c } })).catch((e) => teamFailed(tm.name, e));
+    }
+  }
+  for (const id of [...synced.teams.keys()])
+    if (!teams.some((t) => t.id === id)) {
+      synced.teams.delete(id);
+      void unwrap(api.DELETE("/v1/workspaces/{workspace_id}/teams/{team_id}", { params: { path: teamPath(id) } })).catch((e) => teamFailed("Deleting the team", e));
+    }
+  // Who is in which team, and which project is under which: one team each.
+  for (const m of D().members) {
+    const now = m.team || "";
+    const was = synced.memberTeam.get(m.id) ?? "";
+    if (!fromApi(m.id) || now === was || (now && !fromApi(now))) continue; // a team being created: sent once it exists
+    synced.memberTeam.set(m.id, now);
+    const req = now
+      ? api.PUT("/v1/workspaces/{workspace_id}/teams/{team_id}/members/{user_id}", { params: { path: { ...teamPath(now), user_id: m.id } } })
+      : api.DELETE("/v1/workspaces/{workspace_id}/teams/{team_id}/members/{user_id}", { params: { path: { ...teamPath(was), user_id: m.id } } });
+    void unwrap(req).catch((e) => teamFailed(`${m.name}'s team`, e));
+  }
+  for (const p of D().projects) {
+    const now = p.team || "";
+    const was = synced.projectTeam.get(p.id) ?? "";
+    if (!fromApi(p.id) || now === was || (now && !fromApi(now))) continue;
+    synced.projectTeam.set(p.id, now);
+    const req = now
+      ? api.PUT("/v1/workspaces/{workspace_id}/teams/{team_id}/projects/{project_id}", { params: { path: { ...teamPath(now), project_id: p.id } } })
+      : api.DELETE("/v1/workspaces/{workspace_id}/teams/{team_id}/projects/{project_id}", { params: { path: { ...teamPath(was), project_id: p.id } } });
+    void unwrap(req).catch((e) => teamFailed(`${p.name}'s team`, e));
+  }
+}
+
+async function createTeam(tm: Team) {
+  try {
+    const made = await unwrap(api.POST("/v1/workspaces/{workspace_id}/teams", { params: { path: { workspace_id: wsId() } }, body: { name: tm.name, description: tm.desc, icon: tm.icon, color: tm.c } }));
+    const old = tm.id;
+    tm.id = made.id;
+    D().members.forEach((m) => m.team === old && (m.team = made.id));
+    D().projects.forEach((p) => p.team === old && (p.team = made.id));
+    synced.teams.set(made.id, teamSig(tm));
+    if (location.pathname.includes(old)) go("team", { id: made.id }, { replace: true });
+    reconcile(); // its people and projects, now that it exists
+    render();
+  } catch (e) {
+    failed(tm.name, e);
+    void reloadTeams();
+  }
 }

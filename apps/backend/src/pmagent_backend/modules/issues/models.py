@@ -55,6 +55,15 @@ class Priority(enum.StrEnum):
     NONE = "none"  # no priority set (sorts last)
 
 
+class Recurrence(enum.StrEnum):
+    """How often a finished issue comes back (a new issue, due one interval later)."""
+
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    BIWEEKLY = "biweekly"
+    MONTHLY = "monthly"
+
+
 class AgentAssignee(enum.StrEnum):
     """Agents that appear as assignable members."""
 
@@ -123,6 +132,11 @@ class Issue(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     )
     # PRs, commits, docs, ADRs: [{"kind": "pr", "url": "...", "title": "..."}]
     links: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, server_default="[]")
+    # Its steps, in order: [{"id": "s1", "title": "...", "done": false, "due": null, "assignee_user_id": null}]
+    checklist: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, server_default="[]")
+    # Finishing it makes the next one, due one interval later; once only (`repeated_as` keeps its key).
+    recurrence: Mapped[Recurrence | None] = mapped_column(str_enum(Recurrence, 16))
+    repeated_as: Mapped[str | None] = mapped_column(String(24))
     # Backlog order: lower first. New issues go to the bottom; reorder takes a midpoint.
     rank: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -175,4 +189,31 @@ class IssueEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     author_agent: Mapped[str | None] = mapped_column(String(32))
     body: Mapped[str | None] = mapped_column(Text)  # comment text
     changes: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)  # {field: [old, new]}
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class IssueAttachment(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """A file added to an issue. The bytes live in object storage, like documents' originals,
+    but nothing converts it: any file type, from anyone who may edit issues."""
+
+    __tablename__ = "issue_attachments"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    issue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(255))
+    size: Mapped[int]
+    storage_key: Mapped[str] = mapped_column(String(600), unique=True)
+    uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class IssueStar(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """An issue someone starred for themselves (their Favorites); nobody else sees it."""
+
+    __tablename__ = "issue_stars"
+    __table_args__ = (UniqueConstraint("user_id", "issue_id"),)
+
+    issue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

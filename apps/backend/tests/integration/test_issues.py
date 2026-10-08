@@ -419,3 +419,140 @@ async def test_issues_across_projects(signup, create_team, add_member, db_client
 
     bad = await db_client.get(f"{ws}/issues", params={"reporter": "someone"}, headers=ada.headers)
     assert bad.status_code == 422
+
+
+# -- checklists, repeats, attachments, stars ----------------------------------------------
+
+
+async def test_a_checklist_is_kept_in_order_and_logged(project, db_client: AsyncClient) -> None:
+    ada, _, url = await project()
+    made = await new(db_client, url, ada.headers, checklist=[{"id": "a", "title": "Draft"}, {"id": "b", "title": "Review"}])
+    assert [c["title"] for c in made["checklist"]] == ["Draft", "Review"]
+    assert made["checklist"][0]["done"] is False
+
+    res = await patch(db_client, url, made["key"], ada.headers, checklist=[
+        {"id": "b", "title": "Review", "done": False}, {"id": "a", "title": "Draft", "done": True},
+    ])
+    assert res.status_code == 200, res.text
+    assert [(c["id"], c["done"]) for c in res.json()["checklist"]] == [("b", False), ("a", True)]
+    assert any("checklist" in event["changes"] for event in res.json()["log"])
+
+
+async def test_a_repeating_issue_comes_back_when_finished(project, db_client: AsyncClient) -> None:
+    ada, _, url = await project()
+    made = await new(
+        db_client, url, ada.headers, title="Water the plants", due="2026-10-10", recurrence="weekly",
+        checklist=[{"id": "p", "title": "Ferns", "done": True}],
+    )
+    done = await patch(db_client, url, made["key"], ada.headers, status="done")
+    assert done.status_code == 200, done.text
+
+    issues = (await db_client.get(url, headers=ada.headers)).json()
+    again = [i for i in issues if i["title"] == "Water the plants" and i["key"] != made["key"]]
+    assert len(again) == 1
+    assert done.json()["repeated_as"] == again[0]["key"]
+    assert again[0]["due"] == "2026-10-17"
+    assert again[0]["status"] == "todo"
+    detail = (await db_client.get(f"{url}/{again[0]['key']}", headers=ada.headers)).json()
+    assert detail["recurrence"] == "weekly"
+    assert detail["checklist"] == [{"id": "p", "title": "Ferns", "done": False, "due": None, "assignee_user_id": None}]
+
+    # Reopened and finished again, it doesn't come back twice.
+    await patch(db_client, url, made["key"], ada.headers, status="todo")
+    await patch(db_client, url, made["key"], ada.headers, status="done")
+    titles = [i["title"] for i in (await db_client.get(url, headers=ada.headers)).json()]
+    assert titles.count("Water the plants") == 2
+
+
+async def test_stopping_a_repeat_stops_the_next_one(project, db_client: AsyncClient) -> None:
+    ada, _, url = await project()
+    made = await new(db_client, url, ada.headers, title="Pay rent", due="2026-10-01", recurrence="monthly")
+    await patch(db_client, url, made["key"], ada.headers, recurrence=None)
+    await patch(db_client, url, made["key"], ada.headers, status="done")
+    titles = [i["title"] for i in (await db_client.get(url, headers=ada.headers)).json()]
+    assert titles.count("Pay rent") == 1
+
+
+def test_next_due_keeps_the_day_and_clamps_to_short_months() -> None:
+    from pmagent_backend.modules.issues.models import Recurrence
+    from pmagent_backend.modules.issues.service import next_due
+
+    assert next_due(date(2026, 1, 31), Recurrence.MONTHLY) == date(2026, 2, 28)
+    assert next_due(date(2026, 12, 15), Recurrence.MONTHLY) == date(2027, 1, 15)
+    assert next_due(date(2026, 2, 3), Recurrence.DAILY) == date(2026, 2, 4)
+    assert next_due(date(2026, 2, 3), Recurrence.BIWEEKLY) == date(2026, 2, 17)
+
+
+async def test_any_file_attaches_to_an_issue_and_comes_back(project, db_client: AsyncClient, storage) -> None:
+    ada, _, url = await project()
+    made = await new(db_client, url, ada.headers)
+    png = b"\x89PNG\r\n\x1a\nnot really"
+    added = await db_client.post(
+        f"{url}/{made['key']}/attachments", files={"file": ("screenshot.png", png, "image/png")}, headers=ada.headers
+    )
+    assert added.status_code == 201, added.text
+    [attachment] = added.json()["attachments"]
+    assert (attachment["filename"], attachment["content_type"], attachment["size"]) == ("screenshot.png", "image/png", len(png))
+    assert attachment["uploaded_by_id"] == ada.id
+    assert any("attachments" in event["changes"] for event in added.json()["log"])
+    listed = (await db_client.get(url, headers=ada.headers)).json()
+    assert next(i for i in listed if i["key"] == made["key"])["attachment_count"] == 1
+
+    got = await db_client.get(f"{url}/{made['key']}/attachments/{attachment['id']}", headers=ada.headers)
+    assert got.status_code == 200 and got.content == png
+    assert got.headers["x-content-type-options"] == "nosniff"
+
+    gone = await db_client.delete(f"{url}/{made['key']}/attachments/{attachment['id']}", headers=ada.headers)
+    assert gone.status_code == 200, gone.text
+    assert gone.json()["attachments"] == []
+    assert storage.objects == {}  # the file itself is deleted
+    missing = await db_client.get(f"{url}/{made['key']}/attachments/{attachment['id']}", headers=ada.headers)
+    assert missing.status_code == 404
+
+
+async def test_an_attachment_is_found_only_under_its_issue(project, db_client: AsyncClient) -> None:
+    ada, _, url = await project()
+    first = await new(db_client, url, ada.headers, title="First")
+    second = await new(db_client, url, ada.headers, title="Second")
+    added = await db_client.post(
+        f"{url}/{first['key']}/attachments", files={"file": ("log.txt", b"boom", "text/plain")}, headers=ada.headers
+    )
+    attachment_id = added.json()["attachments"][0]["id"]
+    elsewhere = await db_client.get(f"{url}/{second['key']}/attachments/{attachment_id}", headers=ada.headers)
+    assert elsewhere.status_code == 404
+    empty = await db_client.post(
+        f"{url}/{first['key']}/attachments", files={"file": ("empty.txt", b"", "text/plain")}, headers=ada.headers
+    )
+    assert empty.status_code == 422
+
+
+async def test_a_checklist_item_is_assigned_only_to_someone_who_sees_the_project(
+    project, db_client: AsyncClient, signup
+) -> None:
+    ada, _, url = await project()
+    stranger = await signup(email="stranger@example.com", name="Stranger")
+    refused = await db_client.post(url, json={"title": "x", "checklist": [
+        {"id": "a", "title": "Step", "assignee_user_id": stranger.id},
+    ]}, headers=ada.headers)
+    assert refused.status_code == 422
+    twice = await db_client.post(url, json={"title": "x", "checklist": [
+        {"id": "a", "title": "One"}, {"id": "a", "title": "Two"},
+    ]}, headers=ada.headers)
+    assert twice.status_code == 422
+
+
+async def test_starring_is_for_you_alone(project, db_client: AsyncClient, signup, add_member) -> None:
+    ada, team, url = await project()
+    made = await new(db_client, url, ada.headers, title="Keep an eye on this")
+    grace = await signup(email="grace-star@example.com", name="Grace")
+    await add_member(team["id"], grace.id, Role.MEMBER)
+
+    assert (await db_client.put(f"{url}/{made['key']}/star", headers=ada.headers)).status_code == 204
+    assert (await db_client.put(f"{url}/{made['key']}/star", headers=ada.headers)).status_code == 204  # idempotent
+    mine = (await db_client.get(f"/v1/workspaces/{team['id']}/issues?starred=true", headers=ada.headers)).json()
+    assert [i["key"] for i in mine] == [made["key"]]
+    theirs = (await db_client.get(f"/v1/workspaces/{team['id']}/issues?starred=true", headers=grace.headers)).json()
+    assert theirs == []
+
+    assert (await db_client.delete(f"{url}/{made['key']}/star", headers=ada.headers)).status_code == 204
+    assert (await db_client.get(f"/v1/workspaces/{team['id']}/issues?starred=true", headers=ada.headers)).json() == []

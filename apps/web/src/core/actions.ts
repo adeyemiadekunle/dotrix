@@ -2,7 +2,7 @@
 // They change the seeded data through mutate(); wiring the API turns these into API calls.
 import { PR, PSTAT, ST, type ProjectStatusId } from "./constants";
 import { TODAY, addD, fmtDate, iso, parse, uid } from "./utils";
-import { loadComments, projectChanged, projectStarred, roleChanged, taskCreated, taskPatched } from "../data/live";
+import { isLive, loadComments, projectChanged, projectStarred, roleChanged, taskCreated, taskPatched } from "../data/live";
 import { D, S, canSee, logAct, mem, mutate, proj, render, save, task, visibleProjects, who } from "../data/store";
 import type { Project, Task } from "../data/types";
 import { toast } from "../ui/toast";
@@ -72,7 +72,8 @@ export function applyPatch(t: Task & { prevStatus?: Task["status"] }, patch: Par
         t.prevStatus = old as Task["status"];
         logAct("completed", t);
       } else logAct("moved", t, `from ${ST[old as Task["status"]].name} to ${ST[nv as Task["status"]].name}`);
-      if (nv === "done" && t.recur && t.due) {
+      // In a real workspace the API makes the next one (data/live.ts adds it when the save comes back).
+      if (nv === "done" && t.recur && t.due && !isLive()) {
         const nd = iso(addD(parse(t.due)!, RECUR_DAYS[t.recur] || 7));
         const copy = JSON.parse(JSON.stringify(t)) as Task & { prevStatus?: string };
         delete copy.prevStatus;

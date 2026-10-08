@@ -19,11 +19,19 @@ from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.auth.repository import UserRepository
 from pmagent_backend.modules.connectors.models import ConnectedRepo
 from pmagent_backend.modules.documents.models import Document
-from pmagent_backend.modules.issues.models import Issue, IssueEvent, IssueEventKind, IssueWatcher
+from pmagent_backend.modules.issues.models import (
+    Issue,
+    IssueAttachment,
+    IssueEvent,
+    IssueEventKind,
+    IssueStar,
+    IssueWatcher,
+)
 from pmagent_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
 from pmagent_backend.modules.knowledge.service import KnowledgeService
 from pmagent_backend.modules.research.models import ResearchSource
 from pmagent_backend.modules.search.models import KnowledgeChunk
+from pmagent_backend.modules.teams.models import TeamProject
 from pmagent_backend.modules.workspaces.models import Membership, Role
 from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
@@ -47,7 +55,7 @@ class RepoTaken(Conflict):
 # too: it belongs to the workspace, not the project.
 _PROJECT_ROWS = (
     KnowledgeFile, KnowledgeVersion, Issue, AgentRun, AgentApproval, AgentRunOutput, ResearchSource, Document,
-    KnowledgeChunk, ProjectMember,
+    KnowledgeChunk, ProjectMember, IssueAttachment,
 )
 
 
@@ -186,6 +194,10 @@ class ProjectService:
         await self.session.execute(delete(ConnectedRepo).where(ConnectedRepo.project_id == project.id))
         # Stars are per workspace (a sidebar's order there); people star it again where it went.
         await self.session.execute(delete(ProjectStar).where(ProjectStar.project_id == project.id))
+        moving = select(Issue.id).where(Issue.project_id == project.id).scalar_subquery()
+        await self.session.execute(delete(IssueStar).where(IssueStar.issue_id.in_(moving)))
+        # Teams belong to a workspace: it joins one of the new workspace's teams there, if any.
+        await self.session.execute(delete(TeamProject).where(TeamProject.project_id == project.id))
         for model in _PROJECT_ROWS:
             await self.session.execute(
                 update(model).where(model.project_id == project.id).values(workspace_id=target_id)

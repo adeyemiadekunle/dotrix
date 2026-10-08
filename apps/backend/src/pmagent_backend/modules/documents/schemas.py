@@ -28,3 +28,10 @@ class DocumentRead(BaseModel):
     error: str | None = Field(default=None, description="Why the conversion failed")
     uploaded_by_id: uuid.UUID | None
     created_at: datetime
+
+
+class DocumentRename(BaseModel):
+    filename: str = Field(
+        min_length=1, max_length=255,
+        description="The new name, with the same extension (the type it's stored and served as follows it)",
+    )

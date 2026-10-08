@@ -25,7 +25,7 @@ import {
   visibleProjects,
   type Modal,
 } from "../data/store";
-import { isLive, projectCreated, showDemo, signOutLive } from "../data/live";
+import { fileDeleted, fileDuplicated, fileRenamed, isLive, projectCreated, showDemo, signOutLive } from "../data/live";
 import { seed } from "../data/seed";
 import type { Project, Task } from "../data/types";
 import { fileType } from "../ui/helpers";
@@ -426,25 +426,29 @@ export function previewFile(id: string) {
 }
 export function renameFile(id: string) {
   const f = D().files.find((x) => x.id === id)!;
-  if (notYet("Renaming files", "Upload the file again under its new name.")) return;
   S.ui.pop = null;
   promptDlg({
     title: "Rename file",
     label: "File name",
     value: f.name,
     run: (v) => {
-      if (v)
-        mutate(() => {
-          f.name = v;
-          f.type = fileType(v);
-        });
+      if (!v || v === f.name) return;
+      const was = f.name;
+      mutate(() => {
+        f.name = v;
+        f.type = fileType(v);
+      });
+      fileRenamed(f, was);
     },
   });
 }
 export function dupFile(id: string) {
   const f = D().files.find((x) => x.id === id)!;
-  if (notYet("Duplicating files", "Upload it again instead.")) return;
   S.ui.pop = null;
+  if (isLive()) {
+    void fileDuplicated(f);
+    return;
+  }
   mutate(() => {
     const i = D().files.indexOf(f);
     D().files.splice(i + 1, 0, { ...f, id: uid("f"), name: f.name.replace(/(\.[^.]+)$/, " copy$1"), at: Date.now(), by: D().me });
@@ -453,14 +457,21 @@ export function dupFile(id: string) {
 }
 export function delFile(id: string) {
   const f = D().files.find((x) => x.id === id)!;
-  if (notYet("Deleting files", "")) return;
   S.ui.pop = null;
   confirmDlg({
     title: "Delete file?",
-    body: `<b>${escapeHtml(f.name)}</b> will be removed from the project${f.task ? " and its task" : ""}.`,
+    body: isLive()
+      ? `<b>${escapeHtml(f.name)}</b> will be deleted, with its converted copy in Knowledge (that one can be restored from its history).`
+      : `<b>${escapeHtml(f.name)}</b> will be removed from the project${f.task ? " and its task" : ""}.`,
     ok: "Delete file",
     danger: true,
     run: () => {
+      if (isLive()) {
+        mutate(() => (D().files = D().files.filter((x) => x !== f)));
+        fileDeleted(f);
+        toast(`Deleted ${f.name}`);
+        return;
+      }
       const snap = snapshot();
       if (
         guarded(() => {

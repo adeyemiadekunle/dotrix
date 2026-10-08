@@ -219,3 +219,71 @@ async def test_retry_a_failed_conversion(project, db_client: AsyncClient, storag
     assert done["status"] == "ready" and done["error"] is None and done["knowledge_version"] == 1
     # Only a failed conversion can be retried.
     assert (await db_client.post(retry, headers=ada.headers)).status_code == 409
+
+
+# -- rename, duplicate, delete ------------------------------------------------------------
+
+
+async def test_rename_keeps_the_extension_and_the_markdown(project, db_client: AsyncClient) -> None:
+    ada, _, base = await project()
+    doc = (await upload(db_client, base, ada.headers, "notes.md", b"# Notes\n")).json()
+
+    renamed = await db_client.patch(f"{base}/documents/{doc['id']}", json={"filename": "Meeting notes.md"}, headers=ada.headers)
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["filename"] == "Meeting notes.md"
+    assert renamed.json()["knowledge_path"] == doc["knowledge_path"]  # agents still find it where it was
+    original = await db_client.get(f"{base}/documents/{doc['id']}/original", headers=ada.headers)
+    assert "Meeting%20notes.md" in original.headers["content-disposition"]
+
+    other_type = await db_client.patch(f"{base}/documents/{doc['id']}", json={"filename": "notes.pdf"}, headers=ada.headers)
+    assert other_type.status_code == 422
+
+
+async def test_duplicate_copies_the_original_under_a_free_name(project, db_client: AsyncClient, storage) -> None:
+    ada, _, base = await project()
+    doc = (await upload(db_client, base, ada.headers, "spec.md", b"# Spec\n")).json()
+
+    first = await db_client.post(f"{base}/documents/{doc['id']}/duplicate", headers=ada.headers)
+    assert first.status_code == 201, first.text
+    second = (await db_client.post(f"{base}/documents/{doc['id']}/duplicate", headers=ada.headers)).json()
+    assert (first.json()["filename"], second["filename"]) == ("spec copy.md", "spec copy 2.md")
+    assert first.json()["sha256"] == doc["sha256"] and first.json()["id"] != doc["id"]
+    assert len(storage.objects) == 3
+    copy = await db_client.get(f"{base}/documents/{first.json()['id']}/original", headers=ada.headers)
+    assert copy.content == b"# Spec\n"
+
+
+async def test_delete_removes_the_original_and_its_markdown(project, db_client: AsyncClient, storage) -> None:
+    ada, team, base = await project()
+    doc = (await upload(db_client, base, ada.headers, "old.md", b"# Old\n")).json()
+
+    gone = await db_client.delete(f"{base}/documents/{doc['id']}", headers=ada.headers)
+    assert gone.status_code == 204, gone.text
+    assert (await db_client.get(f"{base}/documents/{doc['id']}", headers=ada.headers)).status_code == 404
+    assert storage.objects == {}
+    assert (await db_client.get(f"{base}/knowledge/files/{doc['knowledge_path']}", headers=ada.headers)).status_code == 404
+    # A versioned delete: it can be restored from the file's history.
+    restored = await db_client.post(f"{base}/knowledge/files/{doc['knowledge_path']}/restore", json={"version": 1}, headers=ada.headers)
+    assert restored.status_code in (200, 201), restored.text
+    audit = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
+    assert "document.deleted" in {a["action"] for a in audit}
+
+
+async def test_deleting_one_upload_keeps_markdown_another_upload_made(project, db_client: AsyncClient) -> None:
+    ada, _, base = await project()
+    first = (await upload(db_client, base, ada.headers, "plan.md", b"# Plan v1\n")).json()
+    await upload(db_client, base, ada.headers, "plan.md", b"# Plan v2\n")  # same name: the same markdown file
+
+    assert (await db_client.delete(f"{base}/documents/{first['id']}", headers=ada.headers)).status_code == 204
+    md = await db_client.get(f"{base}/knowledge/files/{first['knowledge_path']}", headers=ada.headers)
+    assert md.status_code == 200 and "Plan v2" in md.json()["content"]
+
+
+async def test_only_owners_and_admins_change_documents(project, db_client: AsyncClient, add_member, signup) -> None:
+    ada, team, base = await project()
+    doc = (await upload(db_client, base, ada.headers, "notes.md", b"# Notes\n")).json()
+    grace = await signup(email="grace@example.com", name="Grace")
+    await add_member(team["id"], grace.id, Role.MEMBER)
+    assert (await db_client.patch(f"{base}/documents/{doc['id']}", json={"filename": "x.md"}, headers=grace.headers)).status_code == 403
+    assert (await db_client.post(f"{base}/documents/{doc['id']}/duplicate", headers=grace.headers)).status_code == 403
+    assert (await db_client.delete(f"{base}/documents/{doc['id']}", headers=grace.headers)).status_code == 403
