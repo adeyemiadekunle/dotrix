@@ -58,6 +58,12 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             f"{base}/automations", json={"name": "Daily", "instructions": "Summarise.", "schedule_hour": 6}, headers=h
         )
         assert automation.status_code == 201, automation.text
+        squad = await db_client.post(f"{ws}/teams", json={"name": "Design"}, headers=h)
+        assert squad.status_code == 201, squad.text
+        attached = await db_client.post(
+            f"{base}/issues/{issue.json()['key']}/attachments", files={"file": ("shot.png", b"png", "image/png")}, headers=h
+        )
+        assert attached.status_code == 201, attached.text
         params = {
             "workspace_id": team["id"],
             "project_id": project["id"],
@@ -74,6 +80,8 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             "index": "0",
             "installation_ref": "01a0e000-0000-7000-8000-000000000000",
             "automation_id": automation.json()["id"],
+            "team_id": squad.json()["id"],
+            "attachment_id": attached.json()["attachments"][0]["id"],
             "name": "release-note",
         }
         # A run paused on an approval: it has a run, a thread, and a pending action.
@@ -166,7 +174,7 @@ async def _call(client: AsyncClient, method: str, url: str, body: bool, headers:
 async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
     known = {"workspace_id", "project_id", "key", "path", "version", "document_id", "invite_id",
              "user_id", "run_id", "thread_id", "handle", "output_id", "index", "installation_ref", "automation_id",
-             "lesson_id", "link_id", "name", "coding_run_id", "session_id"}
+             "lesson_id", "link_id", "name", "coding_run_id", "session_id", "team_id", "attachment_id"}
     routes = _scoped_routes(db_client)
     assert len(routes) > 60  # sanity: the whole API is being walked
     for _, template, _ in routes:
@@ -191,7 +199,7 @@ async def test_ids_from_another_workspace_dont_work_in_your_own(db_client: Async
     IDs, used under Mallory's workspace (and project), must still be not found."""
     ada = await build_world("ada@example.com", "Ada")
     mallory = await build_world("mallory@example.com", "Mallory")
-    mixed_in = ["project_id", "document_id", "run_id", "thread_id", "invite_id", "user_id"]
+    mixed_in = ["project_id", "document_id", "run_id", "thread_id", "invite_id", "user_id", "team_id", "attachment_id"]
     leaks = []
     for method, template, body in _scoped_routes(db_client):
         if "{workspace_id}" not in template:

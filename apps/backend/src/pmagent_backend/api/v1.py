@@ -38,6 +38,7 @@ from pmagent_backend.modules.projects.router import router as projects
 from pmagent_backend.modules.rules.router import router as rules
 from pmagent_backend.modules.search.router import router as search
 from pmagent_backend.modules.search.router import workspace_router as workspace_search
+from pmagent_backend.modules.teams.router import router as teams
 from pmagent_backend.modules.workspaces.router import router as workspaces
 
 router = APIRouter(prefix="/v1")
@@ -78,6 +79,7 @@ for module_router in (
     coding,
     workspace_coding,
     github_webhook,
+    teams,
     search,
     workspace_search,
 ):

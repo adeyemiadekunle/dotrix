@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 
-from .models import AgentAssignee, IssueEventKind, IssueStatus, IssueType, Priority
+from .models import AgentAssignee, IssueEventKind, IssueStatus, IssueType, Priority, Recurrence
 
 
 def _labels(values: list[str]) -> list[str]:
@@ -42,6 +42,38 @@ class Link(BaseModel):
     title: str | None = Field(default=None, max_length=200)
 
 
+class ChecklistItem(BaseModel):
+    """A step in an issue's checklist. The list is sent whole: its order is the order shown."""
+
+    id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    done: bool = False
+    due: date | None = None
+    assignee_user_id: uuid.UUID | None = Field(default=None, description="A member who can see the project")
+
+
+Checklist = Annotated[list[ChecklistItem], Field(max_length=100)]
+
+
+def _unique_ids(items: list[ChecklistItem] | None) -> list[ChecklistItem] | None:
+    if items is not None and len({i.id for i in items}) != len(items):
+        raise ValueError("Each checklist item needs its own id")
+    return items
+
+
+class AttachmentRead(BaseModel):
+    """A file added to an issue; download it from `.../attachments/{id}`."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    filename: str
+    content_type: str
+    size: int = Field(description="Bytes")
+    uploaded_by_id: uuid.UUID | None
+    created_at: datetime
+
+
 class _AssigneeFields(BaseModel):
     assignee_user_id: uuid.UUID | None = None
     assignee_agent: AgentAssignee | None = None
@@ -67,6 +99,10 @@ class IssueCreate(_AssigneeFields):
     labels: Labels = Field(default_factory=list)
     components: Labels = Field(default_factory=list)
     links: list[Link] = Field(default_factory=list, max_length=100)
+    checklist: Annotated[Checklist, AfterValidator(_unique_ids)] = Field(default_factory=list)
+    recurrence: Recurrence | None = Field(
+        default=None, description="Finishing it makes the next one, due one interval later (needs a due date)"
+    )
     as_agent: AgentAssignee | None = AS_AGENT
 
 
@@ -86,6 +122,10 @@ class IssueUpdate(_AssigneeFields):
     labels: Labels | None = None
     components: Labels | None = None
     links: list[Link] | None = Field(default=None, max_length=100)
+    checklist: Annotated[Checklist | None, AfterValidator(_unique_ids)] = Field(
+        default=None, description="Replaces the whole checklist"
+    )
+    recurrence: Recurrence | None = None
     note: str | None = Field(default=None, max_length=5_000, description="Added to the issue's log")
     as_agent: AgentAssignee | None = AS_AGENT
 
@@ -138,6 +178,12 @@ class IssueSummary(BaseModel):
     due: date | None
     scheduled: datetime | None = Field(default=None, description="When work on it is planned to start")
     depends_on: list[str] = Field(default_factory=list, description="Keys of the issues it waits for")
+    checklist: list[ChecklistItem] = Field(default_factory=list)
+    recurrence: Recurrence | None = None
+    repeated_as: str | None = Field(
+        default=None, description="The key of the issue made when this repeating one was finished"
+    )
+    attachment_count: int = 0
     rank: float
     created_at: datetime
     updated_at: datetime
@@ -176,6 +222,7 @@ class IssueRead(IssueSummary):
     blocks: list[str] = Field(default_factory=list, description="Keys blocked by this issue")
     children: list[str] = Field(default_factory=list)
     watchers: list[uuid.UUID] = Field(default_factory=list)
+    attachments: list[AttachmentRead] = Field(default_factory=list, description="Oldest first")
     ready: bool = Field(
         default=False,
         description="todo, and everything it depends on is done (assignment aside)",

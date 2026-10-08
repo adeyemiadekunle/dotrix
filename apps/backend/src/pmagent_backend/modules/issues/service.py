@@ -8,10 +8,13 @@
 """
 from __future__ import annotations
 
+import calendar
+import hashlib
+import mimetypes
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import and_, case, delete, exists, func, or_, select
@@ -20,9 +23,11 @@ from sqlalchemy.orm import aliased
 from uuid_utils.compat import uuid7
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
+from pmagent_backend.core.storage import BlobStorage
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.automations.events import record_event
 from pmagent_backend.modules.automations.models import AutomationEvent
+from pmagent_backend.modules.documents.service import safe_filename
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.models import Project
@@ -38,14 +43,18 @@ from .models import (
     PRIORITY_ORDER,
     AgentAssignee,
     Issue,
+    IssueAttachment,
     IssueDependency,
     IssueEvent,
     IssueEventKind,
+    IssueStar,
     IssueStatus,
     IssueType,
     IssueWatcher,
+    Recurrence,
 )
 from .schemas import (
+    AttachmentRead,
     Board,
     BoardColumn,
     ClaimRequest,
@@ -61,6 +70,7 @@ from .schemas import (
 )
 
 RANK_STEP = 1024.0
+_INTERVAL_DAYS = {Recurrence.DAILY: 1, Recurrence.WEEKLY: 7, Recurrence.BIWEEKLY: 14}
 # Statuses a coding tool may move its own issue to.
 AGENT_STATUSES = frozenset({IssueStatus.IN_PROGRESS, IssueStatus.BLOCKED, IssueStatus.REVIEW})
 # Fields a coding tool may change on its own issue.
@@ -132,6 +142,23 @@ def _what_changed(changes: dict[str, list[Any]]) -> str:
     return "; ".join(parts)
 
 
+def next_due(due: date, recurrence: Recurrence) -> date:
+    """One interval after `due`. Monthly keeps the day of the month, or the month's last day
+    when it's shorter (31 January -> 28 February)."""
+    if recurrence is Recurrence.MONTHLY:
+        year, month = (due.year + 1, 1) if due.month == 12 else (due.year, due.month + 1)
+        return due.replace(year=year, month=month, day=min(due.day, calendar.monthrange(year, month)[1]))
+    return due + timedelta(days=_INTERVAL_DAYS[recurrence])
+
+
+def _checklist_progress(items: list[dict[str, Any]]) -> str:
+    return f"{sum(1 for i in items if i.get('done'))}/{len(items)} done"
+
+
+class AttachmentTooLarge(Unprocessable):
+    code = "attachment_too_large"
+
+
 def blocked_clause() -> Any:
     """True while some issue this one depends on isn't done."""
     return exists(
@@ -164,6 +191,12 @@ class IssueService:
     # -- create ------------------------------------------------------------------------
 
     async def create(self, project: Project, actor: IssueActor, data: IssueCreate) -> IssueRead:
+        issue = await self._insert(project, actor, data)
+        await self.session.commit()
+        return await self.get(project, issue.key)
+
+    async def _insert(self, project: Project, actor: IssueActor, data: IssueCreate) -> Issue:
+        """Add an issue to the transaction (with its log, audit, and events); the caller commits."""
         parent = await self._by_key(project, data.parent) if data.parent else None
         if actor.agent is not None:
             if data.type is not IssueType.SUB_TASK or parent is None or parent.assignee_agent is not actor.agent:
@@ -207,6 +240,8 @@ class IssueService:
             labels=data.labels,
             components=data.components,
             links=[link.model_dump() for link in data.links],
+            checklist=[item.model_dump(mode="json") for item in data.checklist],
+            recurrence=data.recurrence,
             rank=(max_rank or 0.0) + RANK_STEP,
             created_at=now,
             updated_at=now,
@@ -214,6 +249,7 @@ class IssueService:
         )
         if data.assignee_user_id is not None:
             await self._check_member(project, data.assignee_user_id)
+        await self._check_checklist(project, issue.checklist)
         self.session.add(issue)
         await self.session.flush()
         if data.depends_on:
@@ -230,8 +266,7 @@ class IssueService:
                 event=AutomationEvent.ISSUE_CREATED, summary=f"{issue.key} created: {issue.title}",
                 details={"key": issue.key, "type": issue.type.value},
             )
-        await self.session.commit()
-        return await self.get(project, issue.key)
+        return issue
 
     # -- read --------------------------------------------------------------------------
 
@@ -274,8 +309,18 @@ class IssueService:
             .where(IssueEvent.issue_id == issue.id)
             .order_by(IssueEvent.created_at, IssueEvent.id)
         )
+        attachments = [
+            AttachmentRead.model_validate(a)
+            for a in await self.session.scalars(
+                select(IssueAttachment)
+                .where(IssueAttachment.issue_id == issue.id)
+                .order_by(IssueAttachment.created_at, IssueAttachment.id)
+            )
+        ]
         return IssueRead.model_validate(issue).model_copy(
             update={
+                "attachments": attachments,
+                "attachment_count": len(attachments),
                 "parent_key": parent_key,
                 "depends_on": depends_on,
                 "blocks": blocks,
@@ -313,8 +358,8 @@ class IssueService:
             "updated": (Issue.updated_at.desc(),),
         }[order]
         rows = (await self.session.execute(stmt.order_by(*ordering, Issue.number).limit(limit).offset(offset))).all()
-        deps = await self._dependency_map([issue.id for issue, _ in rows])
-        return [self._summary(issue, parent_key, deps) for issue, parent_key in rows]
+        deps, counts = await self._row_extras([issue.id for issue, _ in rows])
+        return [self._summary(issue, parent_key, deps, counts) for issue, parent_key in rows]
 
     async def across_projects(
         self,
@@ -325,6 +370,7 @@ class IssueService:
         assignee: str | None = None,
         reporter: str | None = None,
         watching: bool = False,
+        starred: bool = False,
         label: str | None = None,
         due_before: date | None = None,
         order: str = "due",
@@ -355,6 +401,10 @@ class IssueService:
             stmt = stmt.where(
                 exists().where(IssueWatcher.issue_id == Issue.id, IssueWatcher.user_id == member.user_id)
             )
+        if starred:
+            stmt = stmt.where(
+                exists().where(IssueStar.issue_id == Issue.id, IssueStar.user_id == member.user_id)
+            )
         if due_before is not None:
             stmt = stmt.where(Issue.due <= due_before)
         ordering = {
@@ -364,10 +414,10 @@ class IssueService:
             "updated": (Issue.updated_at.desc(),),
         }[order]
         rows = (await self.session.execute(stmt.order_by(*ordering, Issue.id).limit(limit).offset(offset))).all()
-        deps = await self._dependency_map([row[0].id for row in rows])
+        deps, counts = await self._row_extras([row[0].id for row in rows])
         return [
             WorkspaceIssue.model_validate(
-                self._summary(issue, parent_key, deps).model_dump()
+                self._summary(issue, parent_key, deps, counts).model_dump()
                 | {"project_id": issue.project_id, "project_key": key, "project_name": name}
             )
             for issue, parent_key, key, name in rows
@@ -387,10 +437,10 @@ class IssueService:
             epic_issue = await self._by_key(project, epic)
             stmt = stmt.where(Issue.parent_id == epic_issue.id)
         rows = (await self.session.execute(stmt.order_by(Issue.rank, Issue.number))).all()
-        deps = await self._dependency_map([issue.id for issue, _ in rows])
+        deps, counts = await self._row_extras([issue.id for issue, _ in rows])
         columns: dict[IssueStatus, list[IssueSummary]] = {status: [] for status in IssueStatus}
         for issue, parent_key in rows:
-            columns[issue.status].append(self._summary(issue, parent_key, deps))
+            columns[issue.status].append(self._summary(issue, parent_key, deps, counts))
         return Board(columns=[BoardColumn(status=s, issues=columns[s]) for s in IssueStatus])
 
     async def epics(self, project: Project) -> list[EpicProgress]:
@@ -451,6 +501,14 @@ class IssueService:
                 change(field, value)
         if "links" in sent:
             change("links", [link.model_dump() for link in data.links or []])
+        if "checklist" in sent:
+            items = [item.model_dump(mode="json") for item in data.checklist or []]
+            if items != issue.checklist:
+                await self._check_checklist(project, items)
+                changes["checklist"] = [_checklist_progress(issue.checklist), _checklist_progress(items)]
+                issue.checklist = items
+        if "recurrence" in sent:
+            change("recurrence", data.recurrence)
 
         if "assignee_user_id" in sent or "assignee_agent" in sent:
             self._check_assignment(actor, data.assignee_agent)
@@ -487,6 +545,10 @@ class IssueService:
             change("status", data.status)
             if data.status is IssueStatus.DONE and before is not IssueStatus.DONE:
                 issue.resolved_at = _now()
+                if issue.recurrence is not None and issue.due is not None and issue.repeated_as is None:
+                    following = await self._repeat(project, issue, actor)
+                    changes["repeated_as"] = [None, following.key]
+                    issue.repeated_as = following.key
             elif data.status is not IssueStatus.DONE:
                 issue.resolved_at = None
 
@@ -569,6 +631,89 @@ class IssueService:
         if on:
             self.session.add(IssueWatcher(issue_id=issue.id, user_id=user_id))
         await self.session.commit()
+        return await self.get(project, issue.key)
+
+    # -- stars (per person) ----------------------------------------------------------------
+
+    async def star(self, project: Project, key: str, user_id: uuid.UUID, *, on: bool) -> None:
+        issue = await self._by_key(project, key)
+        existing = await self.session.scalar(
+            select(IssueStar).where(IssueStar.issue_id == issue.id, IssueStar.user_id == user_id)
+        )
+        if on and existing is None:
+            self.session.add(
+                IssueStar(workspace_id=issue.workspace_id, issue_id=issue.id, user_id=user_id, created_at=_now())
+            )
+        elif not on and existing is not None:
+            await self.session.delete(existing)
+        await self.session.commit()
+
+    # -- attachments -----------------------------------------------------------------------
+
+    async def attach(
+        self,
+        project: Project,
+        key: str,
+        actor: IssueActor,
+        storage: BlobStorage,
+        filename: str,
+        data: bytes,
+        *,
+        max_bytes: int,
+    ) -> IssueRead:
+        """Store a file and list it under the issue (any type; nothing converts it)."""
+        issue = await self._by_key(project, key)
+        if actor.agent is not None:
+            self._check_agent_owns(actor, issue)
+        if len(data) > max_bytes:
+            raise AttachmentTooLarge(f"Attachments are limited to {max_bytes // 1_000_000} MB")
+        if not data:
+            raise InvalidIssue("The file is empty")
+        filename = safe_filename(filename)
+        attachment_id = uuid7()
+        storage_key = f"{project.workspace_id}/{project.id}/attachments/{attachment_id}/{filename}"
+        # From the extension, never the client's header, so the type it's served with can be trusted.
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        await storage.put(storage_key, data, content_type)
+        self.session.add(
+            IssueAttachment(
+                id=attachment_id, workspace_id=project.workspace_id, project_id=project.id, issue_id=issue.id,
+                filename=filename, content_type=content_type, size=len(data), storage_key=storage_key,
+                uploaded_by_id=actor.user_id, created_at=_now(),
+            )
+        )
+        issue.updated_at = _now()
+        self._event(issue, actor, IssueEventKind.UPDATED, changes={"attachments": [None, filename]})
+        self._audit(
+            project, actor, "issue.attachment_added", issue,
+            {"filename": filename, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()},
+        )
+        await self.session.commit()
+        return await self.get(project, issue.key)
+
+    async def attachment(self, project: Project, key: str, attachment_id: uuid.UUID) -> IssueAttachment:
+        issue = await self._by_key(project, key)
+        found = await self.session.scalar(
+            select(IssueAttachment).where(IssueAttachment.id == attachment_id, IssueAttachment.issue_id == issue.id)
+        )
+        if found is None:
+            raise NotFound("Attachment not found")
+        return found
+
+    async def detach(
+        self, project: Project, key: str, actor: IssueActor, storage: BlobStorage, attachment_id: uuid.UUID
+    ) -> IssueRead:
+        """Take a file off the issue and delete it."""
+        found = await self.attachment(project, key, attachment_id)
+        issue = await self._by_key(project, key)
+        if actor.agent is not None:
+            self._check_agent_owns(actor, issue)
+        await self.session.delete(found)
+        issue.updated_at = _now()
+        self._event(issue, actor, IssueEventKind.UPDATED, changes={"attachments": [found.filename, None]})
+        self._audit(project, actor, "issue.attachment_removed", issue, {"filename": found.filename})
+        await self.session.commit()
+        await storage.delete(found.storage_key)  # after the commit: a failed delete only leaves an orphaned file
         return await self.get(project, issue.key)
 
     # -- next and claim (FR-32) ----------------------------------------------------------
@@ -663,10 +808,35 @@ class IssueService:
         return stmt
 
     @staticmethod
-    def _summary(issue: Issue, parent_key: str | None, deps: dict[uuid.UUID, list[str]] | None = None) -> IssueSummary:
+    def _summary(
+        issue: Issue,
+        parent_key: str | None,
+        deps: dict[uuid.UUID, list[str]] | None = None,
+        counts: dict[uuid.UUID, int] | None = None,
+    ) -> IssueSummary:
         return IssueSummary.model_validate(issue).model_copy(
-            update={"parent_key": parent_key, "depends_on": (deps or {}).get(issue.id, [])}
+            update={
+                "parent_key": parent_key,
+                "depends_on": (deps or {}).get(issue.id, []),
+                "attachment_count": (counts or {}).get(issue.id, 0),
+            }
         )
+
+    async def _row_extras(
+        self, issue_ids: list[uuid.UUID]
+    ) -> tuple[dict[uuid.UUID, list[str]], dict[uuid.UUID, int]]:
+        """What list rows need beyond the issue: the keys each waits for, and its attachment count."""
+        if not issue_ids:
+            return {}, {}
+        counts: dict[uuid.UUID, int] = {
+            issue_id: count
+            for issue_id, count in await self.session.execute(
+                select(IssueAttachment.issue_id, func.count())
+                .where(IssueAttachment.issue_id.in_(issue_ids))
+                .group_by(IssueAttachment.issue_id)
+            )
+        }
+        return await self._dependency_map(issue_ids), counts
 
     async def _dependency_map(self, issue_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
         """The keys each of these issues waits for, in one query."""
@@ -748,6 +918,31 @@ class IssueService:
     async def _check_member(self, project: Project, user_id: uuid.UUID) -> None:
         if not await ProjectRepository(self.session).can_see(project, user_id):
             raise InvalidIssue("The assignee must be someone who can see this project")
+
+    async def _check_checklist(self, project: Project, items: list[dict[str, Any]]) -> None:
+        for user_id in {i["assignee_user_id"] for i in items if i.get("assignee_user_id")}:
+            if not await ProjectRepository(self.session).can_see(project, uuid.UUID(user_id)):
+                raise InvalidIssue("A checklist item's assignee must be someone who can see this project")
+
+    async def _repeat(self, project: Project, issue: Issue, actor: IssueActor) -> Issue:
+        """The next occurrence of a repeating issue that was just finished: the same issue, to do,
+        its checklist unticked, due (and planned to start) one interval later."""
+        assert issue.recurrence is not None and issue.due is not None
+        due = next_due(issue.due, issue.recurrence)
+        parent_key = (
+            await self.session.scalar(select(Issue.key).where(Issue.id == issue.parent_id))
+            if issue.parent_id else None
+        )
+        data = IssueCreate(
+            type=issue.type, title=issue.title, description=issue.description, status=IssueStatus.TODO,
+            priority=issue.priority, parent=parent_key, estimate=issue.estimate, due=due,
+            scheduled=issue.scheduled + (due - issue.due) if issue.scheduled else None,
+            labels=issue.labels, components=issue.components,
+            checklist=[{**item, "done": False} for item in issue.checklist],
+            recurrence=issue.recurrence,
+            assignee_user_id=issue.assignee_user_id, assignee_agent=issue.assignee_agent,
+        )
+        return await self._insert(project, actor, data)
 
     async def _dependency_keys(self, issue: Issue) -> list[str]:
         return sorted(

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 
 import { applyPatch, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
 import { agentsNotWired } from "../core/agents";
-import { commentPosted, documentUploaded, isLive } from "../data/live";
+import { commentPosted, documentUploaded, isLive, issueFileAttached } from "../data/live";
 import { TY, TYPES } from "../core/constants";
 import { Ic } from "../core/icons";
 import { openModal, restore, snapshot } from "../core/more";
@@ -40,12 +40,14 @@ export function handleFiles(files: FileList | File[] | null, ctx: { project: str
     const up: Upload = { id: uid("u"), name: file.name, size: fsize(file.size), project: ctx.project, task: ctx.task, pct: 0 };
     uploads = [...uploads, up];
     render();
-    // A real workspace: the file goes to the API (a task's attachment stays in this browser for now).
+    // A real workspace: the file goes to the API, onto the issue or into the project's files.
     if (isLive()) {
-      void documentUploaded(file, ctx.project, (pct) => {
+      const onPct = (pct: number) => {
         up.pct = pct;
         render();
-      })
+      };
+      const onIssue = ctx.task ? task(ctx.task) : undefined;
+      void (onIssue ? issueFileAttached(file, onIssue, onPct) : documentUploaded(file, ctx.project, onPct))
         .then(() => toast(`Uploaded ${up.name}`))
         .catch((e) => toast(`${up.name} didn't upload${e instanceof Error ? `: ${e.message}` : ""}`, { kind: "err", ms: 6000 }))
         .finally(() => {

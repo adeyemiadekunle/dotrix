@@ -8,7 +8,7 @@ import { Ic } from "../core/icons";
 import { closeModal, createProject, escapeHtml, newTask, restore, snapshot, TEMPLATES } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, ago, fmtDate, uid } from "../core/utils";
-import { projectChanged } from "../data/live";
+import { filesAttached, isLive, projectChanged } from "../data/live";
 import { D, S, TM, mem, mutate, pColor, proj, render, task, tasksOf, team, teamsList, type Modal } from "../data/store";
 import type { FileItem, Task } from "../data/types";
 import { Av, FT, FilePrev, Lbl, PrPill, StPill, fileType, fsize } from "../ui/helpers";
@@ -149,7 +149,8 @@ type TaskForm = {
   start: string | null;
   labels: string[];
   subtasks: Task["subtasks"];
-  files: { name: string; size: string; type: string }[];
+  /** `file` is kept so a real workspace can upload it once the issue exists. */
+  files: { name: string; size: string; type: string; file?: File }[];
   recur: string | null;
   type: Task["type"];
   more?: boolean;
@@ -161,6 +162,8 @@ function FormChip({ pop, label, field, children }: { pop: string; label: string;
     </button>
   );
 }
+/** The files picked in the form that can be uploaded (not just named). */
+const picked = (files: TaskForm["files"]) => files.flatMap((x) => (x.file ? [x.file] : []));
 function TaskModal({ m }: { m: Modal }) {
   const f = m.form as TaskForm;
   const err = m.err as string | undefined;
@@ -196,17 +199,19 @@ function TaskModal({ m }: { m: Modal }) {
       mutate(() => {
         const descChanged = f.desc !== (t.desc || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
         applyPatch(t, descChanged ? { ...base, desc: f.desc ? `<p>${escapeHtml(f.desc)}</p>` : "" } : base);
-        t.attachments.push(...files);
+        if (!isLive()) t.attachments.push(...files);
       });
+      if (isLive()) filesAttached(t, picked(f.files));
       closeModal();
       toast("Changes saved");
       return;
     }
     let t: Task | undefined;
     mutate(() => {
-      t = createTask({ ...base, desc: f.desc ? `<p>${escapeHtml(f.desc)}</p>` : "", attachments: files });
-      files.forEach((x) => D().files.unshift({ ...x, project: t!.project, task: t!.id } as FileItem));
+      t = createTask({ ...base, desc: f.desc ? `<p>${escapeHtml(f.desc)}</p>` : "", attachments: isLive() ? [] : files });
+      if (!isLive()) files.forEach((x) => D().files.unshift({ ...x, project: t!.project, task: t!.id } as FileItem));
     });
+    if (isLive()) filesAttached(t!, picked(f.files));
     if (f.more) {
       Object.assign(f, { title: "", desc: "", subtasks: [], files: [] });
       render();
@@ -353,7 +358,7 @@ function TaskModal({ m }: { m: Modal }) {
               multiple
               hidden
               onChange={(e) => {
-                [...(e.target.files ?? [])].forEach((x) => f.files.push({ name: x.name, size: fsize(x.size), type: fileType(x.name) }));
+                [...(e.target.files ?? [])].forEach((x) => f.files.push({ name: x.name, size: fsize(x.size), type: fileType(x.name), file: x }));
                 render();
               }}
             />

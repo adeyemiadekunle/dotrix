@@ -156,11 +156,14 @@ export function render() {
   version++;
   for (const l of listeners) l();
 }
+/** Run after every change (data/live.ts sends a real workspace's changes to the API from here). */
+export const afterMutate: (() => void)[] = [];
 /** Change the workspace's data: kept in this browser, then re-rendered. */
 export function mutate(fn: () => void) {
   fn();
   save();
   render();
+  for (const hook of afterMutate) hook();
 }
 /** The store, re-rendering this component on every change. */
 export function useStudio() {
