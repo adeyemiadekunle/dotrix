@@ -155,6 +155,10 @@ class Settings(DatabaseSettings):
     automation_daily_runs: int = Field(default=50, ge=0)
     # Tokens (input + output) a workspace's automation runs may use per UTC day; 0: no limit.
     automation_daily_tokens: int = Field(default=2_000_000, ge=0)
+    # Changes agents may make without a person approving them (owners' standing rules): per run
+    # step, and per workspace per UTC day. Past either, the change waits for approval as usual.
+    unattended_changes_per_run: int = Field(default=20, ge=0)
+    unattended_changes_per_day: int = Field(default=200, ge=0)
     # A conversation's older turns are summarised once its prompt passes this many tokens
     # (the most recent turns are kept word for word).
     summarize_after_tokens: int = Field(default=40_000, ge=5_000)

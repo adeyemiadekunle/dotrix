@@ -197,7 +197,11 @@ filtered by the existing `CompactTools` middleware plus `access`: an agent witho
 - `block`: the tool isn't given for that action, and the service refuses it anyway.
 - `allow`: the action runs without interrupting. It is only offered for **low-risk actions**:
   `issues.comment`, `issues.label`, `graph.write`. Document writes, creating and updating
-  issues stay `ask` in v2.
+  issues stay `ask` in v2. *Widened 2026-10-09 (the owner's call):* owners may also allow
+  `knowledge.write`, `issues.create`, and `issues.update`, with guards: the rule's owner is the
+  recorded approver, closing issues always asks, folder access still applies, the instructing
+  person must be able to make the change, a per-run and per-day cap, a workspace pause, and
+  automations act unasked only with their own switch (`apps/backend/.../agents/unattended.py`).
 - **Decided (D1):** a standing `allow` rule is a pre-approval by an owner. CLAUDE.md's rule now
   reads: every agent write is approved, by a person at the time or by a standing rule an owner
   approved (low-risk actions only; versioned and audited). Only owners set `allow` rules.
@@ -579,7 +583,7 @@ something changed, with proposed document updates to approve.
 
 | # | Decision | Outcome |
 |---|---|---|
-| D1 | Standing `allow` rules vs "no agent write without approval" | **Decided:** owners approve standing rules; low-risk actions only; the CLAUDE.md rule is amended (§4.5) |
+| D1 | Standing `allow` rules vs "no agent write without approval" | **Decided:** owners approve standing rules; low-risk actions only; the CLAUDE.md rule is amended (§4.5). Widened 2026-10-09 to documents and issues, with guards (§4.5) |
 | D2 | Where contracts live | **Decided:** the workspace (Personal or Organisation), with per-project overrides |
 | D3 | Search provider | **Decided:** Tavily (built for agents, simple pricing), behind a `SearchProvider` interface; the model's built-in search stays as the fallback without a key (§6) |
 | D4 | Quality evals | On demand with a key, not in CI |

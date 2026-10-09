@@ -74,6 +74,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         web=build_web_research(settings),
         checkouts=checkouts,
         summarize_after_tokens=settings.summarize_after_tokens,
+        unattended_limits=(settings.unattended_changes_per_run, settings.unattended_changes_per_day),
         inline=True,  # this process executes the runs
         stop_reasons=RunQueue(redis),
         streams=RedisRunStreams(redis),

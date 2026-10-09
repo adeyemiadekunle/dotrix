@@ -189,7 +189,7 @@ export function Automations({
                     <DropdownMenuItem
                       onSelect={() =>
                         setEditing({
-                          body: { name: "", agent: "auto", instructions: "", events: [], schedule_hour: 7, enabled: true, max_runs_per_day: 5 },
+                          body: { name: "", agent: "auto", instructions: "", events: [], schedule_hour: 7, enabled: true, max_runs_per_day: 5, unattended: false },
                         })
                       }
                     >
@@ -220,6 +220,7 @@ function toBody(a: Automation): AutomationCreate {
     schedule_weekday: a.schedule_weekday,
     enabled: a.enabled,
     max_runs_per_day: a.max_runs_per_day,
+    unattended: a.unattended,
   };
 }
 

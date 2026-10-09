@@ -4277,6 +4277,12 @@ export interface components {
              * @default 5
              */
             max_runs_per_day: number;
+            /**
+             * Unattended
+             * @description Its runs may make the changes the agent's contract allows without approval (owners turn it on); off: every change beyond comments and links asks
+             * @default false
+             */
+            unattended: boolean;
         };
         /**
          * AutomationEvent
@@ -4316,6 +4322,11 @@ export interface components {
             enabled: boolean;
             /** Max Runs Per Day */
             max_runs_per_day: number;
+            /**
+             * Unattended
+             * @description Its runs may make the changes the agent's contract allows without approval (owners turn it on); off: every change beyond comments and links asks
+             */
+            unattended: boolean;
             /**
              * Created By Id
              * @description Whose instruction its runs carry
@@ -4369,6 +4380,8 @@ export interface components {
             enabled?: boolean | null;
             /** Max Runs Per Day */
             max_runs_per_day?: number | null;
+            /** Unattended */
+            unattended?: boolean | null;
         };
         /** Board */
         Board: {
@@ -7505,6 +7518,11 @@ export interface components {
              * @description What members may do beyond chatting, brainstorming, and working the board: any of `knowledge:write` (edit documents), `agents:approve` (approve agent changes), `agents:code` (instruct the coding agent). Empty: owners and admins only.
              */
             member_permissions?: components["schemas"]["Permission"][] | null;
+            /**
+             * Unattended Paused
+             * @description Pause every agent's changes without approval (owners and admins); only owners resume them
+             */
+            unattended_paused?: boolean | null;
         };
         /** WorkspaceWithRole */
         WorkspaceWithRole: {
@@ -7529,6 +7547,12 @@ export interface components {
              * @description What this workspace lets members do beyond the defaults
              */
             member_permissions?: components["schemas"]["Permission"][];
+            /**
+             * Unattended Paused
+             * @description Agents' standing rules to act without approval are paused: every change asks
+             * @default false
+             */
+            unattended_paused: boolean;
             role: components["schemas"]["Role"];
             /**
              * Permissions

@@ -29,6 +29,8 @@ class ResolvedAgent:
     scope: str  # default, workspace, project
     version: int | None
     updated_at: datetime | None
+    # Who saved the version in effect: the person whose standing rules (allow) it carries.
+    author_id: uuid.UUID | None = None
 
 
 class AgentDefinitionRepository:
@@ -97,6 +99,7 @@ class AgentDefinitionRepository:
                 "project" if definition.project_id else "workspace",
                 definition.current_version,
                 definition.updated_at,
+                version.author_user_id,
             )
         return list(agents.values())
 

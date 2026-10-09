@@ -38,6 +38,7 @@ import {
   sessions,
   signInMethods,
   skillSaved,
+  unattendedPaused,
   skills,
   tokenCreated,
   tokenRevoked,
@@ -148,8 +149,8 @@ function SRow({ t, d, children }: { t: ReactNode; d?: ReactNode; children?: Reac
     </div>
   );
 }
-function Tog({ on, set, label }: { on: boolean; set: (v: boolean) => void; label: string }) {
-  return <input type="checkbox" className="toggle" checked={on} onChange={(e) => set(e.target.checked)} aria-label={label} />;
+function Tog({ on, set, label, disabled }: { on: boolean; set: (v: boolean) => void; label: string; disabled?: boolean }) {
+  return <input type="checkbox" className="toggle" checked={on} onChange={(e) => set(e.target.checked)} aria-label={label} disabled={disabled} />;
 }
 const PTog = ({ k, def = true }: { k: string; def?: boolean }) => <Tog on={P()[k] === undefined ? def : Boolean(P()[k])} set={(v) => setP(k, v)} label={k} />;
 const NTog = ({ k, def = false }: { k: string; def?: boolean }) => <Tog on={NP()[k] === undefined ? def : Boolean(NP()[k])} set={(v) => setNP(k, v)} label={k} />;
@@ -474,7 +475,7 @@ function LiveAgent({ handle }: { handle: string }) {
       <div className="sblock">
         <h2>Tools</h2>
         <p className="muted" style={{ fontSize: 13 }}>
-          From the catalogue. Writes always wait for approval unless an owner allows a low-risk action.
+          From the catalogue. Writes wait for approval unless an owner allows them below.
         </p>
         {cat.data.tools.map((t) => (
           <SRow key={t.id} t={t.label} d={t.description}>
@@ -485,25 +486,34 @@ function LiveAgent({ handle }: { handle: string }) {
       <div className="sblock">
         <h2>Without asking</h2>
         <p className="muted" style={{ fontSize: 13 }}>
-          Low-risk actions only. Only owners can allow one; every other write waits for approval.
+          Only owners can let an agent act without asking; each change is recorded as approved by the owner who saved this version. Closing issues and coding always wait for a person, folder access still applies, and a run makes at most a few changes this way.
         </p>
-        {cat.data.low_risk_actions.map((act) => (
-          <SRow key={act} t={act === "issues.comment" ? "Comment on issues" : act === "graph.link" ? "Link things in the graph" : act}>
-            <select
-              className="select"
-              style={{ width: "auto" }}
-              value={v.autonomy?.[act] ?? "ask"}
-              onChange={(e) => set({ autonomy: { ...v.autonomy, [act]: e.target.value as "allow" | "ask" | "block" } })}
-              aria-label={act}
-            >
-              <option value="ask">Ask first</option>
-              <option value="allow" disabled={!owner}>
-                Allow
-              </option>
-              <option value="block">Block</option>
-            </select>
-          </SRow>
-        ))}
+        {live.ws?.unattended_paused && <div className="alert warn" style={{ marginBottom: 8 }}>Paused for this workspace: every change waits for approval until an owner resumes it.</div>}
+        {cat.data.tools
+          .filter((t) => t.actions.length && v.tools.includes(t.id))
+          .flatMap((t) => t.actions.map((act) => [t, act] as const))
+          .map(([t, act]) => {
+            const rule = v.autonomy?.[act] ?? "ask";
+            const risky = !cat.data!.low_risk_actions.includes(act);
+            return (
+              <SRow key={act} t={t.label} d={rule === "allow" && risky ? "Changes go through without anyone approving them." : undefined}>
+                <select
+                  className="select"
+                  style={{ width: "auto" }}
+                  value={rule}
+                  onChange={(e) => set({ autonomy: { ...v.autonomy, [act]: e.target.value as "allow" | "ask" | "block" } })}
+                  aria-label={`${t.label} without asking`}
+                >
+                  <option value="ask">Ask first</option>
+                  <option value="allow" disabled={!owner}>
+                    Allow
+                  </option>
+                  <option value="block">Block</option>
+                </select>
+              </SRow>
+            );
+          })}
+        {!owner && <p className="faint" style={{ fontSize: 12.5 }}>Only owners can allow an action, or save a version that allows more than comments and links.</p>}
       </div>
       <div className="sblock">
         <h2>Instructions</h2>
@@ -595,7 +605,7 @@ function Agents() {
             ))}
           </select>
         </SRow>
-        <SRow t="Tools" d="From the catalogue. Writes always wait for approval unless an owner allows a low-risk action.">
+        <SRow t="Tools" d="From the catalogue. Writes wait for approval unless an owner allows them.">
           <span className="row" style={{ gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {sel.tools.map((t) => (
               <span key={t} className="badge mono">
@@ -604,7 +614,7 @@ function Agents() {
             ))}
           </span>
         </SRow>
-        <SRow t="Comments and labels" d="Low-risk actions an owner may let this agent take without asking.">
+        <SRow t="Without asking" d="Changes an owner lets this agent make without waiting for approval: documents, issues, comments, links.">
           <select className="select" style={{ width: "auto" }} defaultValue="ask">
             <option value="ask">Ask first</option>
             <option value="allow">Allow</option>
@@ -648,6 +658,7 @@ function Agents() {
           New agent
         </button>
       </div>
+      <UnattendedPause />
       <div className="panel" style={{ overflow: "hidden" }}>
         {D().agents.map((a) => (
           <div key={a.handle} className="mini" style={{ minHeight: 52 }} onClick={() => ((S.ui.agentSel = a.handle), render())}>
@@ -666,6 +677,26 @@ function Agents() {
         ))}
       </div>
     </>
+  );
+}
+
+/** The workspace's switch for every agent's changes without approval: owners and admins pause, owners resume. */
+function UnattendedPause() {
+  const [demo, setDemo] = useState(false);
+  const role = isLive() ? live.ws?.role : "owner";
+  if (role !== "owner" && role !== "admin") return null;
+  const paused = isLive() ? !!live.ws?.unattended_paused : demo;
+  return (
+    <div className="panel" style={{ padding: "4px 14px", marginBottom: 12 }}>
+      <SRow t="Pause changes without approval" d={paused ? "Every agent asks before every change, whatever its contract allows." : "Agents make the changes their contracts allow without waiting. Pause to make every change ask."}>
+        <Tog
+          on={paused}
+          set={(on) => (isLive() ? void unattendedPaused(on) : setDemo(on))}
+          label="Pause changes without approval"
+          disabled={paused && role !== "owner"}
+        />
+      </SRow>
+    </div>
   );
 }
 
@@ -836,6 +867,19 @@ function Automations() {
                     {a.last ? ` · last ran ${ago(a.last)}` : ""}
                   </div>
                 </div>
+                <label className="row faint" style={{ gap: 6, fontSize: 12.5, whiteSpace: "nowrap" }} title="Its runs may make the changes the agent's contract allows without approval; off: they ask">
+                  <input
+                    type="checkbox"
+                    checked={!!a.unattended}
+                    disabled={isLive() && live.ws?.role !== "owner" && !a.unattended}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      mutate(() => (a.unattended = on));
+                      automationToggled(a, "unattended");
+                    }}
+                  />
+                  Without approval
+                </label>
                 <Tog
                   on={a.enabled}
                   set={(v) => {

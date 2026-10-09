@@ -101,6 +101,22 @@ export async function memberPermissionsSaved(perms: Schemas["Permission"][]) {
   render();
 }
 
+/** Pause (owners and admins) or resume (owners) every agent's changes without approval. */
+export async function unattendedPaused(on: boolean) {
+  const was = !!live.ws!.unattended_paused;
+  live.ws = { ...live.ws!, unattended_paused: on };
+  render();
+  try {
+    const w = await unwrap(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { unattended_paused: on } }));
+    live.ws = { ...live.ws!, unattended_paused: w.unattended_paused };
+    toast(on ? "Agents ask before every change" : "Agents' standing rules are back on");
+  } catch (e) {
+    live.ws = { ...live.ws!, unattended_paused: was };
+    failed("Pausing changes without approval", e);
+  }
+  render();
+}
+
 /** A personal workspace becomes an organisation (you get a new, empty personal one); reloaded. */
 export async function convertedToOrganization(name: string | null) {
   const w = await unwrap(api.POST("/v1/workspaces/{workspace_id}/convert-to-organization", { ...wsPath(), body: { name } }));

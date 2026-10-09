@@ -104,6 +104,25 @@ test("agents: change a built-in's contract, then reset it; workspace rules are s
   await expect(page.getByText("Rules saved (v1)")).toBeVisible();
 });
 
+test("agents: an owner lets one write documents without asking, and the workspace can pause it", async ({ page }) => {
+  await signUp(page);
+  await settings(page, "agents");
+  await page.locator("#main-content .mini", { hasText: "@product" }).click();
+  await page.getByLabel("Write documents without asking").selectOption("allow");
+  await expect(page.getByText("Changes go through without anyone approving them.")).toBeVisible();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(/Saved as version \d+/)).toBeVisible();
+  await page.reload();
+  await page.locator("#main-content .mini", { hasText: "@product" }).click();
+  await expect(page.getByLabel("Write documents without asking")).toHaveValue("allow");
+
+  await settings(page, "agents");
+  await page.getByLabel("Pause changes without approval").check();
+  await expect(page.getByText("Agents ask before every change")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Pause changes without approval")).toBeChecked();
+});
+
 test("GitHub says when the app isn't set up on this server", async ({ page }) => {
   await signUp(page);
   await settings(page, "github");

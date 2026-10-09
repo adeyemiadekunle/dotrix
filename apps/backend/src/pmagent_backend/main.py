@@ -109,6 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 web=build_web_research(settings),
                 checkouts=app.state.checkouts,
                 summarize_after_tokens=settings.summarize_after_tokens,
+                unattended_limits=(settings.unattended_changes_per_run, settings.unattended_changes_per_day),
                 inline=settings.jobs == "inline",
                 queue=queue,
                 streams=streams,

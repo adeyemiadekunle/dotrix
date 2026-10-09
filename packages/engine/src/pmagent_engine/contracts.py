@@ -18,7 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .catalog import ACTIONS, CATALOG, LOW_RISK_ACTIONS, TOOL_IDS, group
+from .catalog import ACTIONS, CATALOG, TOOL_IDS, group
 from .permissions import ISSUE_TYPES, Access
 
 HANDLE = re.compile(r"^[a-z][a-z0-9-]{1,30}$")
@@ -95,9 +95,6 @@ class AgentSpec(BaseModel):
         unknown = sorted(set(value) - set(ACTIONS))
         if unknown:
             raise ValueError(f"Unknown actions: {', '.join(unknown)}")
-        risky = sorted(a for a, rule in value.items() if rule == "allow" and a not in LOW_RISK_ACTIONS)
-        if risky:
-            raise ValueError(f"Only low-risk actions can be allowed without asking, not: {', '.join(risky)}")
         return value
 
     @field_validator("output")
@@ -143,8 +140,20 @@ class AgentSpec(BaseModel):
         return self.has(tool) and not any(self.rule(a) == "block" for a in group(tool).actions)
 
     def allowed(self, action: str) -> bool:
-        """It may take `action` without asking: an owner's standing rule, low-risk actions only."""
-        return self.rule(action) == "allow" and action in LOW_RISK_ACTIONS
+        """It may take `action` without asking: an owner's standing rule."""
+        return self.rule(action) == "allow"
+
+    def allows(self) -> list[str]:
+        """The actions it may take without asking, among the tools it has."""
+        return [a for a in ACTIONS if self.allowed(a) and self.can(_TOOL_FOR_ACTION[a])]
+
+    def asking(self, actions: Iterable[str]) -> AgentSpec:
+        """This contract with `actions` turned from allow back to ask (a run that may not act
+        unattended: paused, a briefing, an automation without the switch)."""
+        drop = {a for a in actions if self.rule(a) == "allow"}
+        if not drop:
+            return self
+        return self.model_copy(update={"autonomy": {a: ("ask" if a in drop else r) for a, r in self.autonomy.items()}})
 
     def folder_access(self, path: str) -> Access:
         """What this agent may do to `path` (relative to `.pmagent/`): the first matching pattern

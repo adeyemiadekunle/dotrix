@@ -47,7 +47,6 @@ def test_builtins_keep_the_folder_matrix_and_issue_rules() -> None:
         ({"access": {"/etc/*": "write"}}, "relative"),
         ({"issue_types": ["story"]}, "issues.create"),
         ({"issue_types": ["saga"], "tools": ["issues.create"]}, "Unknown issue types"),
-        ({"autonomy": {"issues.create": "allow"}}, "low-risk"),
         ({"autonomy": {"deploy": "block"}}, "Unknown actions"),
     ],
 )
@@ -160,6 +159,11 @@ def test_autonomy_shapes_tools_and_gates() -> None:
     policy = AgentPolicy([agent])
     assert policy.allowed("security", "issues.comment")
     assert not policy.allowed("security", "issues.create") and not policy.can_create_issue("security", "bug")
+    writer = spec(tools=["knowledge.write", "issues.update"], autonomy={"knowledge.write": "allow", "issues.update": "allow"})
+    assert "write_file" not in _gate(writer, box) and writer.allows() == ["knowledge.write", "issues.update"]
+    asking = writer.asking(["knowledge.write"])
+    assert "write_file" in _gate(asking, box) and asking.allows() == ["issues.update"]
+
     blocked_writes = spec(tools=["knowledge.write"], access={"reviews/*": "write"}, autonomy={"knowledge.write": "block"})
     assert not AgentPolicy([blocked_writes]).can_write("security", "reviews/r.md")
 
@@ -190,3 +194,14 @@ def test_output_and_pipeline_names_are_checked() -> None:
         spec(output="essay")
     with pytest.raises(ValidationError, match="Unknown pipeline"):
         spec(pipeline="freestyle")
+
+
+def test_an_agent_is_told_what_it_may_change_without_asking() -> None:
+    from pmagent_engine.agent import autonomy_note
+
+    assert autonomy_note(spec(tools=["knowledge.write"])) == ""
+    note = autonomy_note(spec(tools=["knowledge.write", "issues.create"], issue_types=["bug"],
+                              autonomy={"knowledge.write": "allow", "issues.create": "allow"}))
+    assert "write documents, open issues without waiting" in note and "Closing an issue" in note
+    # An allow for a tool it doesn't have says nothing.
+    assert autonomy_note(spec(tools=["board.read"], autonomy={"issues.update": "allow"})) == ""

@@ -258,6 +258,8 @@ export interface Automation {
   agent: string;
   trigger: string;
   enabled: boolean;
+  /** its runs may make the changes the agent's contract allows without approval */
+  unattended?: boolean;
   last?: number;
 }
 

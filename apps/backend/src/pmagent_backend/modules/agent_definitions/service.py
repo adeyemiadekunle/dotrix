@@ -122,7 +122,11 @@ class AgentDefinitionService:
             )
         current = await self._find(workspace_id, project_id, handle)
         previous = current.spec if current else None
-        if (_allowed(spec) - _allowed(previous)) and member.role is not Role.OWNER:
+        # A version carries its author's approval for what it allows: adding any allow, or saving
+        # a version that keeps one beyond the low-risk actions, is an owner's call.
+        if member.role is not Role.OWNER and (
+            (_allowed(spec) - _allowed(previous)) or (_allowed(spec) - catalog.LOW_RISK_ACTIONS)
+        ):
             raise Forbidden("Only owners can let an agent act without asking")
         if live and previous is not None and previous == spec:
             return await self.get(workspace_id, project_id, handle)  # nothing changed

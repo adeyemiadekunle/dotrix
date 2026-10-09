@@ -13,12 +13,15 @@ from typing import Any
 from pydantic import ValidationError
 
 from pmagent_backend.core.errors import DomainError
+from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.graph.schemas import LinkCreate, NodeRead
 from pmagent_backend.modules.graph.service import GraphService, Linker
+from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.projects.repository import ProjectRepository
 
 from .board_tools import BoardContext
 from .storage_backend import current_agent_role
+from .unattended import REFUSED
 
 GRAPH_TOOLS_GUIDE = """
 ## How things connect
@@ -106,7 +109,7 @@ def build_graph_tools(ctx: BoardContext) -> list[Callable]:
         return await _read(fn)
 
     async def link_items(source: str, target: str, kind: str = "relates_to", reason: str = "") -> Any:
-        """Link two things the text doesn't link. ACTION MODE ONLY: pauses for a person's approval.
+        """Link two things the text doesn't link. ACTION MODE ONLY: pauses for a person's approval unless allowed.
 
         Args:
             source: What the link is from (a path, an issue key, or "module:<name>").
@@ -117,8 +120,12 @@ def build_graph_tools(ctx: BoardContext) -> list[Callable]:
         agent = current_agent_role()
         if ctx.instructed_by_id is None:
             return {"error": "Links need a person's instruction"}
-        if ctx.approved_by_id is None and not (ctx.policy and ctx.policy.allowed(agent, "graph.link")):
-            return {"error": "Links need a person's approval"}
+        approved_by_id, rule = ctx.approved_by_id, None
+        if approved_by_id is None:
+            granted = ctx.unattended.grant(agent, "graph.link") if ctx.unattended else REFUSED
+            if isinstance(granted, str):
+                return {"error": granted}
+            approved_by_id, rule = granted
         try:
             data = LinkCreate(source=source, target=target, kind=kind, reason=reason or None)
         except ValidationError as exc:
@@ -129,10 +136,18 @@ def build_graph_tools(ctx: BoardContext) -> list[Callable]:
                 return {"error": "The project is gone"}
             try:
                 await GraphService(session).link(
-                    project, data, Linker(ctx.instructed_by_id, agent=agent, approved_by_id=ctx.approved_by_id)
+                    project, data, Linker(ctx.instructed_by_id, agent=agent, approved_by_id=approved_by_id)
                 )
             except DomainError as exc:
                 return {"error": exc.detail}
+            if rule is not None:
+                AuditLog(session).record(
+                    workspace_id=ctx.workspace_id, project_id=ctx.project_id, action="graph.link.allowed",
+                    target=f"{data.source} {data.kind.value} {data.target}"[:300], actor_type=AuthorType.AGENT,
+                    agent=agent, instructed_by_id=ctx.instructed_by_id, approved_by_id=approved_by_id,
+                    details={"rule": rule},
+                )
+                await session.commit()
         return {"linked": f"{data.source} {data.kind.value} {data.target}"}
 
     return [graph_neighbors, graph_impact, graph_path, link_items]

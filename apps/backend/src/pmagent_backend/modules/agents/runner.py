@@ -24,7 +24,7 @@ from sqlalchemy import select
 from pmagent_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.automations.events import record_event
-from pmagent_backend.modules.automations.models import AutomationEvent
+from pmagent_backend.modules.automations.models import Automation, AutomationEvent
 from pmagent_backend.modules.code.checkouts import CodeCheckouts
 from pmagent_backend.modules.code.service import CodeService
 from pmagent_backend.modules.knowledge.models import AuthorType
@@ -36,11 +36,12 @@ from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository, visible_to
 from pmagent_backend.modules.research.service import RunWeb, WebResearch, check_report
 from pmagent_backend.modules.rules.service import WorkspaceRules, WorkspaceSkills, layered
+from pmagent_backend.modules.workspaces.models import Workspace
 from pmagent_backend.modules.workspaces.repository import MembershipRepository
 from pmagent_engine import approvals as hitl
 from pmagent_engine.agent import PM_ROLE, briefing_system_prompt, build_team, role_for_agent_name
 from pmagent_engine.code import build_code_tools
-from pmagent_engine.contracts import AgentPolicy
+from pmagent_engine.contracts import AgentPolicy, AgentSpec
 from pmagent_engine.layout import AGENTS
 from pmagent_engine.skills import SKILLS_FOLDER, default_skills, skill_name, skills_guide
 from pmagent_engine.templates import TEMPLATES_GUIDE, default_templates
@@ -56,6 +57,7 @@ from .models import AgentApproval, AgentRun, AgentRunOutput, ApprovalStatus, Run
 from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
+from .unattended import Unattended, changes_today, effective_specs
 from .usage import TokenBudgetExceeded, TokenUsage, merge_breakdown
 from .workspace_runs import WORKSPACE_GUIDE, build_workspace_pack, build_workspace_tools, read_only
 
@@ -170,8 +172,11 @@ class AgentRunner:
         embedder: Any = None,
         web: WebResearch | None = None,
         checkouts: CodeCheckouts | None = None,
+        unattended_limits: tuple[int, int] = (20, 200),
     ) -> None:
         self.session_factory = session_factory
+        # Changes agents may make under standing rules: per run step, per workspace per day.
+        self.unattended_limits = unattended_limits
         # Connected repos' checkouts, for the agents' code tools (None: agents don't read code).
         self.checkouts = checkouts
         # Agents' web tools (search, reading pages, sources); None: only the model's own search.
@@ -194,6 +199,32 @@ class AgentRunner:
         # Local mode: background tasks by run, so a person can stop one; and why it was stopped.
         self._running: dict[uuid.UUID, asyncio.Task[None]] = {}
         self._stopped: dict[uuid.UUID, str] = {}
+
+    async def _unattended_specs(
+        self, session: Any, run: AgentRun, specs: list[AgentSpec], resolved: dict[str, Any]
+    ) -> tuple[list[AgentSpec], int]:
+        """The run's contracts with the standing rules it may not use turned back into ask, and
+        how many changes it may make without approval (unattended.py)."""
+        per_run, per_day = self.unattended_limits
+        left = min(per_run, max(0, per_day - await changes_today(session, run.workspace_id)))
+        members = MembershipRepository(session)
+        workspace = await session.get(Workspace, run.workspace_id)
+        automation = await session.get(Automation, run.automation_id) if run.automation_id else None
+        authors = {
+            handle: await members.get(run.workspace_id, agent.author_id) if agent.author_id else None
+            for handle, agent in resolved.items()
+        }
+        instructor = await members.get(run.workspace_id, run.requested_by_id) if run.requested_by_id else None
+        specs = effective_specs(
+            specs,
+            authors=authors,
+            instructor=instructor,
+            # Past the day's cap, every change asks: as if paused.
+            paused=bool(workspace and workspace.unattended_paused) or left <= 0,
+            briefing=run.kind is RunKind.BRIEFING,
+            automation=None if run.automation_id is None else bool(automation and automation.unattended),
+        )
+        return specs, left
 
     async def _code(
         self, workspace_id: uuid.UUID, project_id: uuid.UUID, context: str
@@ -338,8 +369,12 @@ class AgentRunner:
                 choice = self.model_factory(project, run.model)
                 lead = run.agent  # None: Auto (the Project Manager)
                 mode = run.mode
+                specs, unattended_left = await self._unattended_specs(session, run, specs, resolved)
                 policy = AgentPolicy(specs)
                 versions = {handle: agent.version for handle, agent in resolved.items()}
+                unattended = Unattended(
+                    policy, {h: a.author_id for h, a in resolved.items() if a.author_id}, versions, unattended_left
+                )
                 prior_web = (run.usage or {}).get("web")
 
             # A briefing is one call with no tools: it doesn't read code.
@@ -357,6 +392,7 @@ class AgentRunner:
                         instructed_by_id=instructed_by,
                         approved_by_id=approved_by_id,
                         policy=policy,
+                        unattended=unattended,
                     )
                 },
             )
@@ -367,7 +403,7 @@ class AgentRunner:
                 instructed_by_id=instructed_by,
                 approved_by_id=approved_by_id,
                 policy=policy,
-                versions=versions,
+                unattended=unattended,
             )
             read_tools, pm_write_tools, _ = build_board_tools(board_context)
             if self.web is not None:

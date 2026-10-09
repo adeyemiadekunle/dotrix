@@ -24,6 +24,7 @@ class AutomationCreate(BaseModel):
     schedule_weekday: Weekday | None = None
     enabled: bool = True
     max_runs_per_day: RunsPerDay = 5
+    unattended: bool = Field(default=False, description="Its runs may make the changes the agent's contract allows without approval (owners turn it on); off: every change beyond comments and links asks")
 
     @model_validator(mode="after")
     def _when(self) -> AutomationCreate:
@@ -45,6 +46,7 @@ class AutomationUpdate(BaseModel):
     schedule_weekday: Weekday | None = None
     enabled: bool | None = None
     max_runs_per_day: RunsPerDay | None = None
+    unattended: bool | None = None
 
 
 class AutomationRead(BaseModel):
@@ -60,6 +62,7 @@ class AutomationRead(BaseModel):
     schedule_weekday: int | None
     enabled: bool
     max_runs_per_day: int
+    unattended: bool = Field(description="Its runs may make the changes the agent's contract allows without approval (owners turn it on); off: every change beyond comments and links asks")
     created_by_id: uuid.UUID | None = Field(description="Whose instruction its runs carry")
     thread_id: uuid.UUID | None = Field(description="Its conversation in Chat (null until it first runs)")
     next_run_at: datetime | None

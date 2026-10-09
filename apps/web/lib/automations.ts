@@ -47,6 +47,7 @@ export const PRESETS: { id: string; label: string; body: AutomationCreate }[] = 
         "Bring /pmagent/current-state.md and /pmagent/roadmap.md up to date with what just changed, and any other document it makes stale. Propose only the edits that are needed; change nothing else.",
       max_runs_per_day: 5,
       enabled: true,
+      unattended: false,
     },
   },
   {
@@ -62,6 +63,7 @@ export const PRESETS: { id: string; label: string; body: AutomationCreate }[] = 
         "Write this week's status into /pmagent/current-state.md: what got done, what's in progress, what's blocked, and what's next. Keep it short.",
       max_runs_per_day: 1,
       enabled: true,
+      unattended: false,
     },
   },
   {
@@ -75,6 +77,7 @@ export const PRESETS: { id: string; label: string; body: AutomationCreate }[] = 
         "Look at the new issues: find duplicates on the board and in the documents, and propose a type, priority, and links for each, or a comment on the issue it repeats.",
       max_runs_per_day: 10,
       enabled: true,
+      unattended: false,
     },
   },
   {
@@ -88,6 +91,7 @@ export const PRESETS: { id: string; label: string; body: AutomationCreate }[] = 
         "Check what was just pushed against the requirements and the open issues. Record anything missing or at odds as findings; don't change anything.",
       max_runs_per_day: 5,
       enabled: true,
+      unattended: false,
     },
   },
   {
@@ -103,6 +107,7 @@ export const PRESETS: { id: string; label: string; body: AutomationCreate }[] = 
         "Re-check <the topic: a regulation, a competitor, a dependency's releases and security advisories> on the web. Compare with the newest note on it in /pmagent/research/. If nothing material changed, say so in one line and propose nothing. If something did, report only what changed, with sources, and propose updating the note (and any requirement or decision it affects).",
       max_runs_per_day: 1,
       enabled: true,
+      unattended: false,
     },
   },
   {
@@ -118,6 +123,7 @@ export const PRESETS: { id: string; label: string; body: AutomationCreate }[] = 
         "Go through the documents the project context lists as possibly out of date. For each, check with graph_neighbors what changed, and propose the edits that bring it up to date; leave alone what's still right.",
       max_runs_per_day: 1,
       enabled: true,
+      unattended: false,
     },
   },
 ];

@@ -19982,6 +19982,12 @@
             "minimum": 1.0,
             "title": "Max Runs Per Day",
             "default": 5
+          },
+          "unattended": {
+            "type": "boolean",
+            "title": "Unattended",
+            "description": "Its runs may make the changes the agent's contract allows without approval (owners turn it on); off: every change beyond comments and links asks",
+            "default": false
           }
         },
         "type": "object",
@@ -20064,6 +20070,11 @@
           "max_runs_per_day": {
             "type": "integer",
             "title": "Max Runs Per Day"
+          },
+          "unattended": {
+            "type": "boolean",
+            "title": "Unattended",
+            "description": "Its runs may make the changes the agent's contract allows without approval (owners turn it on); off: every change beyond comments and links asks"
           },
           "created_by_id": {
             "anyOf": [
@@ -20162,6 +20173,7 @@
           "schedule_weekday",
           "enabled",
           "max_runs_per_day",
+          "unattended",
           "created_by_id",
           "thread_id",
           "next_run_at",
@@ -20278,6 +20290,17 @@
               }
             ],
             "title": "Max Runs Per Day"
+          },
+          "unattended": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unattended"
           }
         },
         "type": "object",
@@ -27652,6 +27675,18 @@
             ],
             "title": "Member Permissions",
             "description": "What members may do beyond chatting, brainstorming, and working the board: any of `knowledge:write` (edit documents), `agents:approve` (approve agent changes), `agents:code` (instruct the coding agent). Empty: owners and admins only."
+          },
+          "unattended_paused": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unattended Paused",
+            "description": "Pause every agent's changes without approval (owners and admins); only owners resume them"
           }
         },
         "type": "object",
@@ -27689,6 +27724,12 @@
             "type": "array",
             "title": "Member Permissions",
             "description": "What this workspace lets members do beyond the defaults"
+          },
+          "unattended_paused": {
+            "type": "boolean",
+            "title": "Unattended Paused",
+            "description": "Agents' standing rules to act without approval are paused: every change asks",
+            "default": false
           },
           "role": {
             "$ref": "#/components/schemas/Role"

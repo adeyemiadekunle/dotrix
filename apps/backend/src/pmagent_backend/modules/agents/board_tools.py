@@ -26,6 +26,7 @@ from pmagent_backend.modules.workspaces.repository import MembershipRepository
 from pmagent_engine.contracts import AgentPolicy
 
 from .storage_backend import SessionFactory, current_agent_role
+from .unattended import REFUSED, Unattended
 
 LOG_ENTRIES_SHOWN = 10
 
@@ -66,8 +67,8 @@ class BoardContext:
     instructed_by_id: uuid.UUID | None
     approved_by_id: uuid.UUID | None  # set only when resuming after a person approved
     policy: AgentPolicy | None = None  # the run's agent contracts (built-ins when None)
-    # Each agent's definition version (None: the built-in), recorded when a standing rule is used.
-    versions: dict[str, int | None] | None = None
+    # The run's standing rules (changes without a person approving them); None: every change asks.
+    unattended: Unattended | None = None
 
 
 def _assignee(value: str | None) -> dict[str, Any]:
@@ -91,14 +92,21 @@ def _error(exc: Exception) -> dict[str, str]:
 def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable], list[Callable]]:
     """(read tools, PM write tools, specialists' write tools)."""
 
-    async def _run(write: bool, fn: Callable[[IssueService, Any, IssueActor], Any], action: str | None = None) -> Any:
+    async def _run(
+        write: bool, fn: Callable[[IssueService, Any, IssueActor], Any], action: str | None = None, *, closes: bool = False
+    ) -> Any:
         rule: dict[str, Any] | None = None
+        approved_by_id = ctx.approved_by_id
         if write and (ctx.approved_by_id is None or ctx.instructed_by_id is None):
             # Not approved by a person in this step: only an owner's standing rule lets it through.
-            agent = current_agent_role()
-            if ctx.instructed_by_id is None or action is None or not (ctx.policy and ctx.policy.allowed(agent, action)):
-                return {"error": "Changes need a person's instruction and approval"}
-            rule = {"agent": agent, "action": action, "version": (ctx.versions or {}).get(agent)}
+            if ctx.instructed_by_id is None or action is None or ctx.unattended is None:
+                return {"error": REFUSED}
+            if closes:
+                return {"error": "Closing an issue needs a person: propose it, or move it to review"}
+            granted = ctx.unattended.grant(current_agent_role(), action)
+            if isinstance(granted, str):
+                return {"error": granted}
+            approved_by_id, rule = granted
         async with ctx.session_factory() as session:
             project = await ProjectRepository(session).get(ctx.workspace_id, ctx.project_id)
             member = (
@@ -109,7 +117,7 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
             if project is None or member is None or not await ProjectRepository(session).can_see(project, member.user_id):
                 return {"error": "The project or the person who instructed this run is gone"}
             actor = IssueActor(
-                member, thinking_agent=current_agent_role(), approved_by_id=ctx.approved_by_id, policy=ctx.policy
+                member, thinking_agent=current_agent_role(), approved_by_id=approved_by_id, policy=ctx.policy
             )
             try:
                 result = await fn(IssueService(session), project, actor)
@@ -118,7 +126,8 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
                     AuditLog(session).record(
                         workspace_id=ctx.workspace_id, project_id=ctx.project_id, action=f"{action}.allowed",
                         target=str((result or {}).get("key") or ""), actor_type=AuthorType.AGENT,
-                        agent=rule["agent"], instructed_by_id=ctx.instructed_by_id, details={"rule": rule},
+                        agent=rule["agent"], instructed_by_id=ctx.instructed_by_id, approved_by_id=approved_by_id,
+                        details={"rule": rule},
                     )
                     await session.commit()
                 return result
@@ -254,7 +263,7 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
         async def fn(service: IssueService, project: Any, actor: IssueActor) -> Any:
             return _detail(await service.update(project, key, actor, IssueUpdate(**fields)))
 
-        return await _run(True, fn, "issues.update")
+        return await _run(True, fn, "issues.update", closes=status == "done")
 
     async def comment_issue(key: str, text: str) -> Any:
         """Add a comment to an issue's log. ACTION MODE ONLY: pauses for approval.

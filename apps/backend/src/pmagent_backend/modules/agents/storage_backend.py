@@ -46,11 +46,15 @@ from langgraph.config import get_config
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pmagent_backend.core.errors import DomainError
+from pmagent_backend.modules.audit.service import AuditLog
+from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
 from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_engine.agent import role_for_agent_name
 from pmagent_engine.contracts import AgentPolicy
+
+from .unattended import Unattended
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -73,6 +77,7 @@ class PlatformKnowledgeBackend(BackendProtocol):
         instructed_by_id: uuid.UUID | None,
         approved_by_id: uuid.UUID | None = None,
         policy: AgentPolicy | None = None,
+        unattended: Unattended | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.policy = policy  # the run's agent contracts (built-ins when None)
@@ -81,6 +86,8 @@ class PlatformKnowledgeBackend(BackendProtocol):
         self.instructed_by_id = instructed_by_id
         # Set only when a run resumes after a person approved its pending writes.
         self.approved_by_id = approved_by_id
+        # Owners' standing rules: writes an agent may make without a person approving them.
+        self.unattended = unattended
 
     # -- reads -------------------------------------------------------------------------
 
@@ -169,17 +176,38 @@ class PlatformKnowledgeBackend(BackendProtocol):
 
     async def _write(self, file_path: str, content: str) -> str | None:
         """Write through KnowledgeService; returns an error message for the agent, or None."""
-        if self.approved_by_id is None or self.instructed_by_id is None:
+        if self.instructed_by_id is None:
             return "Permission denied: writes need a person's instruction and approval"
-        actor = Actor.agent_run(current_agent_role(), self.instructed_by_id, self.approved_by_id, self.policy)
+        agent = current_agent_role()
+        path = file_path.lstrip("/")
+        approved_by_id, rule = self.approved_by_id, None
+        if approved_by_id is None:
+            # Not approved by a person in this step: only an owner's standing rule lets it through,
+            # and only where the agent's folder access lets it write.
+            if self.unattended is None:
+                return "Permission denied: writes need a person's instruction and approval"
+            if self.policy is not None and not self.policy.can_write(agent, path):
+                return f"Permission denied: the {agent} agent can't write {path}"
+            granted = self.unattended.grant(agent, "knowledge.write")
+            if isinstance(granted, str):
+                return f"Permission denied: {granted}"
+            approved_by_id, rule = granted
+        actor = Actor.agent_run(agent, self.instructed_by_id, approved_by_id, self.policy)
         async with self.session_factory() as session:
             project = await ProjectRepository(session).get(self.workspace_id, self.project_id)
             if project is None:
                 return "Project not found"
             try:
-                await KnowledgeService(session).write(project, file_path.lstrip("/"), content, actor)
+                await KnowledgeService(session).write(project, path, content, actor)
             except DomainError as exc:
                 return f"Error: {exc.detail}"
+            if rule is not None:
+                AuditLog(session).record(
+                    workspace_id=self.workspace_id, project_id=self.project_id, action="knowledge.write.allowed",
+                    target=path, actor_type=AuthorType.AGENT, agent=agent, instructed_by_id=self.instructed_by_id,
+                    approved_by_id=approved_by_id, details={"rule": rule},
+                )
+                await session.commit()
         return None
 
     # -- not offered to agents -----------------------------------------------------------

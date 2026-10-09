@@ -30,6 +30,10 @@ class WorkspaceUpdate(BaseModel):
         "`knowledge:write` (edit documents), `agents:approve` (approve agent changes), `agents:code` "
         "(instruct the coding agent). Empty: owners and admins only.",
     )
+    unattended_paused: bool | None = Field(
+        default=None,
+        description="Pause every agent's changes without approval (owners and admins); only owners resume them",
+    )
 
     @field_validator("member_permissions")
     @classmethod
@@ -52,6 +56,9 @@ class WorkspaceRead(BaseModel):
     created_at: datetime
     member_permissions: list[Permission] = Field(
         default_factory=list, description="What this workspace lets members do beyond the defaults"
+    )
+    unattended_paused: bool = Field(
+        default=False, description="Agents' standing rules to act without approval are paused: every change asks"
     )
 
     @field_validator("member_permissions", mode="before")
