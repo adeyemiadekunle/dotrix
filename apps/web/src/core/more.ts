@@ -26,6 +26,7 @@ import {
   type Modal,
 } from "../data/store";
 import { fileDeleted, fileDuplicated, fileRenamed, isLive, projectCreated, projectDeleted, resynced, showDemo, signOutLive, tasksDeleted } from "../data/live";
+import { inviteResent, isInvite, memberRemoved, ownershipTransferred } from "../data/account";
 import { seed } from "../data/seed";
 import type { Project, Task } from "../data/types";
 import { fileType } from "../ui/helpers";
@@ -390,21 +391,69 @@ export function copyEmail(id: string) {
   closePop();
   void copy(mem(id)!.email, "Email copied");
 }
+const errOf = (e: unknown) => (e instanceof Error && e.message ? e.message : "try again");
 export function resendInvite(id: string) {
   closePop();
-  toast(`Invite resent to ${mem(id)!.email}`);
+  const m = mem(id)!;
+  if (!isLive()) return toast(`Invite resent to ${m.email}`);
+  void inviteResent(m)
+    .then(() => toast(`Invite resent to ${m.email}`))
+    .catch((e: unknown) => toast(`The invite wasn't resent: ${errOf(e)}`, { kind: "err" }));
+}
+/** Hand a workspace to another member (its owner only); you become an admin. */
+export function transferOwnership(id: string) {
+  const m = mem(id)!;
+  S.ui.pop = null;
+  confirmDlg({
+    title: `Make ${m.name} the owner?`,
+    body: `${escapeHtml(m.name)} becomes the owner of ${escapeHtml(D().ws.name)}, and you become an admin. Only they can hand it back.`,
+    ok: "Transfer ownership",
+    danger: true,
+    icon: "crown",
+    run: () => {
+      if (!isLive()) {
+        mutate(() => {
+          me()!.role = "Admin";
+          m.role = "Owner";
+        });
+        toast(`${m.name} owns the workspace now`);
+        return;
+      }
+      void ownershipTransferred(m)
+        .then(() => toast(`${m.name} owns the workspace now`))
+        .catch((e: unknown) => toast(`Ownership didn't move: ${errOf(e)}`, { kind: "err" }));
+    },
+  });
 }
 export function removeMember(id: string) {
   const m = mem(id)!;
   S.ui.pop = null;
   const n = allTasks().filter((t) => t.assignee === m.id && t.status !== "done").length;
+  const pending = isInvite(m.id);
   confirmDlg({
-    title: `Remove ${m.name}?`,
-    body: `${escapeHtml(m.name)} will lose access to ${escapeHtml(D().ws.name)} immediately.${n ? ` Their <b>${n} open task${n > 1 ? "s" : ""}</b> will become unassigned.` : ""}`,
-    ok: "Remove member",
+    title: pending ? `Revoke the invite to ${m.email}?` : `Remove ${m.name}?`,
+    body: pending
+      ? "The link in their email stops working."
+      : `${escapeHtml(m.name)} will lose access to ${escapeHtml(D().ws.name)} immediately.${n ? ` Their <b>${n} open task${n > 1 ? "s" : ""}</b> will become unassigned.` : ""}`,
+    ok: pending ? "Revoke invite" : "Remove member",
     danger: true,
     icon: "user-minus",
     run: () => {
+      if (isLive()) {
+        // Permanent on the API: no undo. The store follows once it's done.
+        void memberRemoved(m)
+          .then(() => {
+            mutate(() => {
+              D().members = D().members.filter((x) => x.id !== m.id);
+              D().tasks.forEach((t) => t.assignee === m.id && (t.assignee = null));
+              D().projects.forEach((p) => (p.members = p.members.filter((x) => x !== m.id)));
+            });
+            if (here().route === "member") go("members");
+            toast(pending ? `Revoked the invite to ${m.email}` : `Removed ${m.name}`);
+          })
+          .catch((e: unknown) => toast(`${m.name} wasn't removed: ${errOf(e)}`, { kind: "err", ms: 6000 }));
+        return;
+      }
       const snap = snapshot();
       if (
         guarded(() => {

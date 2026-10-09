@@ -12,7 +12,7 @@ import { Ic } from "../core/icons";
 import { openModal, restore, snapshot } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, TODAY, ago, diffD, fmtDate, parse, relDate, uid } from "../core/utils";
-import { D, S, commentsOf, isOver, logAct, me, mutate, pColor, proj, render, save, task, who } from "../data/store";
+import { D, S, commentsOf, isOver, logAct, me, mutate, pColor, proj, render, save, task, who, people } from "../data/store";
 import type { Comment, Subtask, Task } from "../data/types";
 import { CellAssignee, CellDue, CellPrio, CellProject, CellStatus } from "../components/TaskList";
 import { Av, CommentText, FT, FilePrev, Lbl, ProgBar, fileType, fsize } from "../ui/helpers";
@@ -90,7 +90,7 @@ export function postComment(id: string) {
     S.ui.drawerTab = "comments";
   });
   // Who was @mentioned by name, so the API tells them.
-  commentPosted(t, txt, D().members.filter((m) => txt.includes(`@${m.name}`)).map((m) => m.id));
+  commentPosted(t, txt, people().filter((m) => txt.includes(`@${m.name}`)).map((m) => m.id));
 }
 /** Add or take back your reaction to a comment. */
 export function toggleReaction(c: Comment, e: string) {
@@ -217,8 +217,7 @@ export function CommentBox({ t, id = "d-cmt", placeholder = "Leave a comment… 
   const ref = useRef<HTMLTextAreaElement>(null);
   const ment =
     S.ui.mention && S.ui.mention.tid === t.id
-      ? D()
-          .members.filter((m) => {
+      ? people().filter((m) => {
             const q = S.ui.mention!.q.toLowerCase();
             return m.name.toLowerCase().startsWith(q) || m.name.split(" ")[1]?.toLowerCase().startsWith(q);
           })

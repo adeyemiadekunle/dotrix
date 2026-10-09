@@ -6,7 +6,7 @@ import { closePop, openPop } from "../core/actions";
 import { LABELS, PR, PRIOS, STATUSES, type StatusId } from "../core/constants";
 import { Ic } from "../core/icons";
 import { DAY, TODAY, diffD, parse } from "../core/utils";
-import { D, S, canSee, isOver, mem, pColor, proj, render, save, visibleProjects, type View } from "../data/store";
+import { D, S, canSee, isOver, mem, pColor, proj, render, save, visibleProjects, type View, people } from "../data/store";
 import type { Filter, Task } from "../data/types";
 import { Av, PrIcon, StIcon } from "../ui/helpers";
 
@@ -139,7 +139,7 @@ export function groupTasks(ts: Task[], g: string): Group[] {
   else if (g === "priority") groups = PRIOS.map((p) => ({ key: p.id, name: p.name, html: <PrIcon p={p.id} />, set: { priority: p.id } }));
   else if (g === "assignee")
     groups = [
-      ...D().members.map((m) => ({ key: m.id, name: m.name, html: <Av id={m.id} cls="sm" tip={false} />, set: { assignee: m.id } })),
+      ...people().map((m) => ({ key: m.id, name: m.name, html: <Av id={m.id} cls="sm" tip={false} />, set: { assignee: m.id } })),
       { key: "none", name: "Unassigned", html: <Av id={null} cls="sm" tip={false} />, set: { assignee: null } },
     ];
   else if (g === "project")

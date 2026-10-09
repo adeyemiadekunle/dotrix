@@ -12,7 +12,8 @@
 // people) are compared with what the API last had after each change (reconcile) and sent.
 // Archive, delete, and moving an issue to another project go to the API too (a delete can't be
 // undone there, so it offers no undo).
-// Not yet: chat and coding (their own step); custom agents stay in this browser.
+// Settings and Members (your account, the workspace, its people, agents' settings) are in
+// account.ts. Not yet: chat and coding (their own step).
 import { api, apiFetch, authPost, hasSession, problemMessage, unwrap, type Schemas } from "@/lib/api";
 
 import { PCOLORS } from "../core/constants";
@@ -42,6 +43,9 @@ import type {
 } from "./types";
 
 type W = Schemas["WorkspaceWithRole"];
+
+/** Run after a real workspace loads (account.ts adds its pending invites). */
+export const onLoaded: (() => void)[] = [];
 
 /** Where the store's data comes from right now. */
 export const live = {
@@ -294,6 +298,18 @@ function toAgent(a: Schemas["AgentRead"]): Agent {
   };
 }
 
+/** The agents list again, after one was saved, reset, or created in Settings. */
+export async function reloadAgents() {
+  if (!isLive()) return;
+  try {
+    const agents = await unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", { params: { path: { workspace_id: live.ws!.id } } }));
+    D().agents = agents.map(toAgent);
+    render();
+  } catch {
+    /* leave what's shown */
+  }
+}
+
 /* ---------- loading ---------- */
 
 export async function myWorkspaces(): Promise<W[]> {
@@ -398,6 +414,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
     // Nothing opened against the previous data stays open.
     Object.assign(S.ui, { drawer: null, modals: [], pop: null, palette: null, sel: new Set<string>(), composer: null, editCell: null });
     render();
+    onLoaded.forEach((f) => f());
     try {
       localStorage.setItem("dotrix.lastWorkspace", slug);
     } catch {
@@ -623,8 +640,9 @@ async function reloadProjects() {
   if (isLive()) await loadWorkspace(live.slug!);
 }
 
-export function projectChanged(p: Project, keys: (keyof Project)[]) {
-  if (!isLive()) return;
+/** A project's fields changed in the store: send them. Settles once the API has them (or refused). */
+export function projectChanged(p: Project, keys: (keyof Project)[]): Promise<void> {
+  if (!isLive()) return Promise.resolve();
   const body: Schemas["ProjectUpdate"] = {};
   for (const k of keys) {
     if (k === "name") body.name = p.name;
@@ -635,11 +653,14 @@ export function projectChanged(p: Project, keys: (keyof Project)[]) {
     else if (k === "status") Object.assign(body, PSTATUS_OUT[p.status]);
     else if (k === "private") body.access = p.private ? "restricted" : "workspace";
   }
-  if (!Object.keys(body).length) return;
-  void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(p.id) }, body })).catch((e) => {
-    failed(p.name, e);
-    void reloadProjects();
-  });
+  if (!Object.keys(body).length) return Promise.resolve();
+  return unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(p.id) }, body })).then(
+    () => undefined,
+    (e) => {
+      failed(p.name, e);
+      void reloadProjects();
+    },
+  );
 }
 
 export function projectCreated(p: Project) {
