@@ -12,6 +12,8 @@ from uuid_utils.compat import uuid7
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from pmagent_backend.modules.agent_definitions.repository import AgentDefinitionRepository
+from pmagent_backend.modules.agent_definitions.schemas import AgentRead
+from pmagent_backend.modules.agent_definitions.service import AgentDefinitionService
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.issues.service import IssueService
@@ -19,6 +21,7 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
 from pmagent_backend.modules.lessons.models import LessonSource
 from pmagent_backend.modules.lessons.service import propose as propose_lesson
+from pmagent_backend.modules.model_keys.service import ModelKeys
 from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
@@ -27,6 +30,7 @@ from pmagent_backend.modules.research.models import ResearchSource
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission, can
 from pmagent_engine.agent import PM_ROLE
+from pmagent_engine.catalog import action_for
 from pmagent_engine.outputs import ACTIONS as OUTPUT_ACTIONS
 from pmagent_engine.permissions import REVIEWER
 from pmagent_engine.web.note import note_path, render_note
@@ -184,7 +188,8 @@ class AgentService:
                     raise Forbidden("Only owners and admins (or members the workspace allows) choose the model")
                 if available is not None and model not in available:
                     raise ModelNotAvailable(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
-        self.runner.model_factory(project, model)  # fail fast (503) if the model can't run
+        keys = await ModelKeys(self.session, self.runner.secrets).keys(project.workspace_id)
+        self.runner.model_factory(project, model, keys=keys)  # fail fast (503) if the model can't run
         now = _now()
         run = AgentRun(
             id=uuid7(),
@@ -420,6 +425,22 @@ class AgentService:
             )
             for row in rows
         ]
+
+    async def always_allow(self, access: ProjectAccess, run_id: uuid.UUID, approval_id: uuid.UUID) -> AgentRead:
+        """Let the agent behind a waiting change make that kind of change without asking from now
+        on (agent_definitions: a new contract version). The change itself still waits."""
+        approval = await self.session.scalar(
+            select(AgentApproval).where(
+                AgentApproval.id == approval_id,
+                AgentApproval.run_id == run_id,
+                AgentApproval.project_id == access.project.id,
+            )
+        )
+        if approval is None:
+            raise NotFound("No such change")
+        return await AgentDefinitionService(self.session).always_allow(
+            access.member, access.project.id, approval.agent, action_for(approval.tool)
+        )
 
     async def decide(
         self, access: ProjectAccess, run_id: uuid.UUID, data: DecisionsRequest

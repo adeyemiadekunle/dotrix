@@ -1,4 +1,7 @@
-"""Which chat model a project's agents use, and whether it can run right now."""
+"""Which chat model a project's agents use, with whose key, and whether it can run right now.
+
+A workspace's own key for the provider comes first (model_keys); without one, the server's,
+when `PMAGENT_SERVER_MODEL_KEYS` lends them (self-hosting, development)."""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -25,13 +28,17 @@ class Provider:
     env_var: str
     setting: str  # Settings attribute holding the key
     kwarg: str  # init_chat_model keyword for the key
+    label: str = ""
 
 
 PROVIDERS = {
-    "anthropic": Provider("ANTHROPIC_API_KEY", "anthropic_api_key", "api_key"),
-    "openai": Provider("OPENAI_API_KEY", "openai_api_key", "api_key"),
-    "google_genai": Provider("GOOGLE_API_KEY", "google_api_key", "google_api_key"),
+    "anthropic": Provider("ANTHROPIC_API_KEY", "anthropic_api_key", "api_key", "Anthropic"),
+    "openai": Provider("OPENAI_API_KEY", "openai_api_key", "api_key", "OpenAI"),
+    "google_genai": Provider("GOOGLE_API_KEY", "google_api_key", "google_api_key", "Google"),
 }
+
+# provider -> a workspace's own key (model_keys.ModelKeys.keys)
+Keys = dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -77,25 +84,41 @@ def build_chat_model(model: str, api_key: str) -> Any:
     return init_chat_model(model, **{PROVIDERS[provider].kwarg: api_key})
 
 
-def has_key(settings: Settings, model: str) -> bool:
-    provider = PROVIDERS.get(model.partition(":")[0])
-    key = getattr(settings, provider.setting) if provider else None
-    return key is not None and bool(key.get_secret_value().strip())
+def server_key(settings: Settings, provider: str) -> str | None:
+    """The server's own key for a provider, or None (unset, or `KEY=` left empty in .env)."""
+    spec = PROVIDERS.get(provider)
+    key = getattr(settings, spec.setting) if spec else None
+    value = key.get_secret_value().strip() if key is not None else ""
+    return value or None
 
 
-def available_models(settings: Settings, *also: str) -> list[str]:
-    """The models a conversation can start on: the catalogue (and `also`, e.g. the project's
-    model) whose provider has a key, in order, without repeats."""
+def key_for(settings: Settings, model: str, keys: Keys | None = None) -> str | None:
+    """The key a model runs with here: the workspace's own, else the server's if it lends them."""
+    provider = model.partition(":")[0]
+    if keys and keys.get(provider):
+        return keys[provider]
+    return server_key(settings, provider) if settings.server_model_keys else None
+
+
+def has_key(settings: Settings, model: str, connected: set[str] | None = None) -> bool:
+    provider = model.partition(":")[0]
+    return provider in (connected or set()) or (settings.server_model_keys and server_key(settings, provider) is not None)
+
+
+def available_models(settings: Settings, *also: str, connected: set[str] | None = None) -> list[str]:
+    """The models a conversation or an agent can run on here: the catalogue (and `also`, e.g. the
+    project's model) whose provider has a key (the workspace's own, `connected`, or the server's),
+    in order, without repeats."""
     found: list[str] = []
     for model in [*also, *settings.models, settings.default_model]:
-        runnable = has_key(settings, model) or (settings.e2e_models and model.startswith("e2e:"))
+        runnable = has_key(settings, model, connected) or (settings.e2e_models and model.startswith("e2e:"))
         if model and runnable and model not in found:
             found.append(model)
     return found
 
 
 def settings_model_factory(settings: Settings) -> ModelFactory:
-    def factory(project: Project, model: str | None = None) -> ModelChoice:
+    def factory(project: Project, model: str | None = None, keys: Keys | None = None) -> ModelChoice:
         chosen = model or project.model
         if chosen.startswith("e2e:"):
             if not settings.e2e_models:
@@ -105,16 +128,43 @@ def settings_model_factory(settings: Settings) -> ModelFactory:
             return ModelChoice(model=RuleBasedChatModel(), web_search=None)
         specialist = project.specialist_model
         return ModelChoice(
-            model=_build(chosen),
+            model=_build(chosen, keys),
             web_search=_web_search_tool(chosen),
-            specialist_model=_build(specialist) if specialist and specialist != chosen else None,
+            specialist_model=_build(specialist, keys) if specialist and specialist != chosen else None,
         )
 
-    def _build(model: str) -> Any:
+    def _build(model: str, keys: Keys | None) -> Any:
         provider = provider_of(model)
-        key = getattr(settings, provider.setting)
-        if key is None or not key.get_secret_value().strip():  # `KEY=` in .env is empty
-            raise ModelUnavailable(f"No API key for {model}: set {provider.env_var} in .env and restart")
-        return build_chat_model(model, key.get_secret_value())
+        key = key_for(settings, model, keys)
+        if key is None:
+            hint = f"set {provider.env_var} in .env and restart" if settings.server_model_keys else "an owner or admin connects it"
+            raise ModelUnavailable(
+                f"No {provider.label} key for {model}: connect one in Settings → Models ({hint})"
+            )
+        return build_chat_model(model, key)
 
     return factory
+
+
+# -- a provider refusing for its limits ------------------------------------------------------
+
+_LIMIT_MARKERS = (
+    "rate limit", "rate_limit", "ratelimit", "resource_exhausted", "resource exhausted", "quota",
+    "insufficient_quota", "credit balance", "too many requests",
+)
+
+
+def limit_error(exc: BaseException) -> str | None:
+    """When `exc` is a provider refusing for a rate limit, quota, or spent credit (HTTP 429, or
+    Anthropic's "credit balance is too low"), what it said in a line; None for anything else."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        status = getattr(current, "status_code", None) or getattr(getattr(current, "response", None), "status_code", None)
+        text = str(current)
+        name = type(current).__name__.lower()
+        if status == 429 or "ratelimit" in name or "resourceexhausted" in name or any(m in text.lower() for m in _LIMIT_MARKERS):
+            return " ".join(text.split())[:300] or type(current).__name__
+        current = current.__cause__ or current.__context__
+    return None

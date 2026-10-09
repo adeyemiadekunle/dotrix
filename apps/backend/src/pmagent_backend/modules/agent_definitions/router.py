@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Path, status
 from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.agents.llm import available_models
+from pmagent_backend.modules.model_keys.deps import Connected
 from pmagent_backend.modules.projects.deps import ProjectManager, ProjectViewer
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
@@ -52,14 +53,15 @@ async def get_agent(handle: Handle, member: Viewer, session: SessionDep) -> Agen
 
 @router.put("/{handle}", responses=errors(403, 409, 422))
 async def save_agent(
-    handle: Handle, data: AgentSave, member: Manager, session: SessionDep, settings: SettingsDep
+    handle: Handle, data: AgentSave, member: Manager, session: SessionDep, settings: SettingsDep,
+    connected: Connected,
 ) -> AgentRead:
     """Create a custom agent, or change one (a built-in's first change makes it customised).
     Owners and admins; only owners let an agent act without asking (`allow`). Each save is a new
     version; send the `version` you edited as `base_version` (409 `agent_changed` otherwise).
     422 `invalid_agent` with the reason when the contract breaks a rule."""
     return await AgentDefinitionService(session).save(
-        member, None, handle, data, available_models=available_models(settings)
+        member, None, handle, data, available_models=available_models(settings, connected=connected)
     )
 
 
@@ -77,11 +79,12 @@ async def list_agent_versions(handle: Handle, member: Viewer, session: SessionDe
 
 @router.post("/{handle}/versions/{version}/restore", responses=errors(403, 409, 422))
 async def restore_agent_version(
-    handle: Handle, version: int, member: Manager, session: SessionDep, settings: SettingsDep
+    handle: Handle, version: int, member: Manager, session: SessionDep, settings: SettingsDep,
+    connected: Connected,
 ) -> AgentRead:
     """Make an earlier version the current one (saved as a new version)."""
     return await AgentDefinitionService(session).restore(
-        member, None, handle, version, available_models=available_models(settings)
+        member, None, handle, version, available_models=available_models(settings, connected=connected)
     )
 
 
@@ -102,12 +105,13 @@ async def get_project_agent(handle: Handle, access: ProjectViewer, session: Sess
 
 @project_router.put("/{handle}", responses=errors(403, 409, 422))
 async def save_project_agent(
-    handle: Handle, data: AgentSave, access: ProjectManager, session: SessionDep, settings: SettingsDep
+    handle: Handle, data: AgentSave, access: ProjectManager, session: SessionDep, settings: SettingsDep,
+    connected: Connected,
 ) -> AgentRead:
     """Override an agent for this project only, or create an agent only this project has."""
     return await AgentDefinitionService(session).save(
         access.member, access.project.id, handle, data,
-        available_models=available_models(settings, access.project.model),
+        available_models=available_models(settings, access.project.model, connected=connected),
     )
 
 
@@ -128,10 +132,11 @@ async def list_project_agent_versions(
 
 @project_router.post("/{handle}/versions/{version}/restore", responses=errors(403, 409, 422))
 async def restore_project_agent_version(
-    handle: Handle, version: int, access: ProjectManager, session: SessionDep, settings: SettingsDep
+    handle: Handle, version: int, access: ProjectManager, session: SessionDep, settings: SettingsDep,
+    connected: Connected,
 ) -> AgentRead:
     """Make an earlier version of this project's override the current one."""
     return await AgentDefinitionService(session).restore(
         access.member, access.project.id, handle, version,
-        available_models=available_models(settings, access.project.model),
+        available_models=available_models(settings, access.project.model, connected=connected),
     )

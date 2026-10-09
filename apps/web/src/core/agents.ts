@@ -1,11 +1,12 @@
 // dotrix's agent actions on the seeded data: deciding an agent's proposed changes, answering a
 // checkpoint, chatting (a canned reply after a short "working" pause), and coding sessions.
 // When the API is wired, each becomes a call (runs, approvals, coding) and the replies stream.
-import { D, S, mutate, proj, render, task, who } from "../data/store";
+import { D, S, me, mutate, proj, render, task, who } from "../data/store";
 import type { ChatMessage, CodingSession, ProposedChange, Thread } from "../data/types";
-import { isLive } from "../data/live";
+import { isLive, live } from "../data/live";
 import { toast } from "../ui/toast";
 import { createTask } from "./actions";
+import { go } from "./nav";
 import { dOff, uid } from "./utils";
 
 export function threadOf(changeId: string): { th: Thread; msg: ChatMessage; ch: ProposedChange } | null {
@@ -65,6 +66,33 @@ export function decideChange(changeId: string, approve: boolean, reason = "") {
     settleNotifs(th);
   });
   toast(approve ? `Approved: ${ch.title}` : `Rejected: ${ch.title}`, { ms: 2200 });
+}
+
+/** The autonomy action each kind of change takes, and how to say it. */
+export const ACTION_OF: Partial<Record<ProposedChange["kind"], [string, string]>> = {
+  write_file: ["knowledge.write", "write documents"],
+  create_issue: ["issues.create", "open issues"],
+  update_issue: ["issues.update", "edit issues"],
+  comment: ["issues.comment", "comment on issues"],
+};
+
+/** Who may "Always allow this": owners. */
+export const canAlwaysAllow = () => (isLive() ? live.ws?.role === "owner" : me()?.role === "Owner");
+
+/** "Always allow this": approve the change, and let its agent make that kind of change without
+ * asking from now on (a new version of its contract; the API's `.../always-allow`). */
+export function alwaysAllow(changeId: string) {
+  const f = threadOf(changeId);
+  const act = f && ACTION_OF[f.ch.kind];
+  const agent = f && D().agents.find((a) => a.handle === f.msg.by);
+  if (!f || !act || !agent) return;
+  mutate(() => {
+    agent.allows = [...new Set([...(agent.allows ?? []), act[0]])];
+    agent.customised = agent.builtIn || undefined;
+    D().audit.unshift({ id: uid("au"), at: Date.now(), by: D().me, action: "agent.updated", target: `${agent.name}: always ${act[1]}` });
+  });
+  decideChange(changeId, true);
+  toast(`${agent.name} may now ${act[1]} without asking`, { action: "Settings", onAction: () => ((S.ui.agentSel = agent.handle), go("settings", { sec: "agents" })) });
 }
 
 export function decideAll(msg: ChatMessage, approve: boolean) {

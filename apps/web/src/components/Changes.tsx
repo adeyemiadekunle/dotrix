@@ -2,7 +2,7 @@
 // continue, change, or stop), the same in Chat and Notifications.
 import { useState } from "react";
 
-import { answerCheckpoint, decideAll, decideChange } from "../core/agents";
+import { ACTION_OF, alwaysAllow, answerCheckpoint, canAlwaysAllow, decideAll, decideChange, threadOf } from "../core/agents";
 import { Ic } from "../core/icons";
 import { D, who } from "../data/store";
 import type { ChatMessage, ProposedChange } from "../data/types";
@@ -38,6 +38,14 @@ function Decided({ ch }: { ch: ProposedChange }) {
   );
 }
 
+/** Whether this change offers "Always allow" (owners; a kind of change a rule covers), and for whom. */
+function alwaysAllowOf(ch: ProposedChange): { agent: string; what: string } | null {
+  const act = ACTION_OF[ch.kind];
+  const by = threadOf(ch.id)?.msg.by;
+  const agent = D().agents.find((a) => a.handle === by);
+  return act && agent && canAlwaysAllow() ? { agent: agent.name, what: act[1] } : null;
+}
+
 export function ChangeCard({ ch }: { ch: ProposedChange }) {
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -45,6 +53,7 @@ export function ChangeCard({ ch }: { ch: ProposedChange }) {
   if (ch.kind === "checkpoint") return <Checkpoint ch={ch} />;
   const [icon, label] = KIND[ch.kind];
   const pending = ch.status === "pending";
+  const allow = pending ? alwaysAllowOf(ch) : null;
   return (
     <div className="change">
       <div className="change-h">
@@ -101,6 +110,11 @@ export function ChangeCard({ ch }: { ch: ProposedChange }) {
               <button className="btn btn-sm btn-secondary" onClick={() => setRejecting(true)}>
                 Reject
               </button>
+              {allow && (
+                <button className="btn btn-sm btn-ghost" onClick={() => alwaysAllow(ch.id)} title={`Approve, and let ${allow.agent} ${allow.what} without asking from now on`}>
+                  Always allow
+                </button>
+              )}
               <button className="btn btn-sm btn-primary" onClick={() => decideChange(ch.id, true)}>
                 <Ic n="check" s={13} />
                 Approve

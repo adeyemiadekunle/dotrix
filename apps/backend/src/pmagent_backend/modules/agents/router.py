@@ -10,6 +10,8 @@ from fastapi.responses import StreamingResponse
 
 from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.openapi import errors
+from pmagent_backend.modules.agent_definitions.schemas import AgentRead
+from pmagent_backend.modules.model_keys.deps import Connected
 from pmagent_backend.modules.projects.deps import (
     KnowledgeEditor,
     ProjectAccess,
@@ -65,7 +67,9 @@ IssueEditor = Annotated[ProjectAccess, Depends(require_project_permission(Permis
 
 
 @router.post("/runs", status_code=status.HTTP_202_ACCEPTED, responses=errors(403, 409, 422, 503))
-async def create_run(data: RunCreate, access: Chatter, agents: Agents, settings: SettingsDep) -> AgentRunRead:
+async def create_run(
+    data: RunCreate, access: Chatter, agents: Agents, settings: SettingsDep, connected: Connected
+) -> AgentRunRead:
     """Send a message to the project's agents: `agent` picks who answers (`auto`, the Project
     Manager with the specialists it needs, or one specialist, who leads and may ask the others).
     It runs in the background: poll the run until `status` is `completed`, `failed`, or
@@ -74,7 +78,7 @@ async def create_run(data: RunCreate, access: Chatter, agents: Agents, settings:
     `model` (fixed from then on: 409 `model_locked` for another on an existing conversation;
     403 without agents:choose_model; 422 `model_not_available`). 503 `model_unavailable` if the
     model has no API key."""
-    available = available_models(settings, access.project.model)
+    available = available_models(settings, access.project.model, connected=connected)
     return await agents.create_run(access, data, available=available)
 
 
@@ -190,18 +194,36 @@ async def decide_approvals(
     return await agents.decide(access, run_id, data)
 
 
+@router.post("/runs/{run_id}/approvals/{approval_id}/always-allow", responses=errors(403, 409))
+async def always_allow_approval(
+    run_id: uuid.UUID, approval_id: uuid.UUID, access: Chatter, agents: Agents
+) -> AgentRead:
+    """"Always allow this": the agent that proposed this change may make that kind of change
+    (its `action`: writing documents, opening or editing issues, comments, links) without asking
+    from now on, saved as a new version of its contract where it's defined for this project.
+    Owners only (403). The change itself still waits for a decision; closing issues and coding
+    always ask. 409 `cannot_always_allow` when the change doesn't name its agent or isn't one a
+    rule covers (a checkpoint, say)."""
+    return await agents.always_allow(access, run_id, approval_id)
+
+
 models_router = APIRouter(prefix="/workspaces/{workspace_id}/models", tags=["agents"], responses=errors(401, 404))
 
 
 @models_router.get("")
 async def list_models(
-    member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], settings: SettingsDep
+    member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], settings: SettingsDep,
+    connected: Connected,
 ) -> list[ModelOption]:
-    """The models a conversation can be started on here: those whose provider has an API key.
-    A project's own model is always allowed too, even if it isn't listed."""
+    """The models a conversation, or an agent, can run on here: those whose provider has a key
+    (the workspace's own, `source: workspace`, or the server's, `server`). A project's own model
+    is always allowed too, even if it isn't listed."""
     return [
-        ModelOption(id=model, provider=model.partition(":")[0], name=model.partition(":")[2])
-        for model in available_models(settings)
+        ModelOption(
+            id=model, provider=model.partition(":")[0], name=model.partition(":")[2],
+            source="workspace" if model.partition(":")[0] in connected else "server",
+        )
+        for model in available_models(settings, connected=connected)
     ]
 
 
@@ -295,14 +317,15 @@ async def list_conversations(member: WorkspaceChatter, runs: WorkspaceRuns) -> l
 
 @conversations_router.post("/runs", status_code=status.HTTP_202_ACCEPTED, responses=errors(409, 422, 503))
 async def create_workspace_run(
-    data: WorkspaceRunCreate, member: WorkspaceChatter, runs: WorkspaceRuns, settings: SettingsDep
+    data: WorkspaceRunCreate, member: WorkspaceChatter, runs: WorkspaceRuns, settings: SettingsDep,
+    connected: Connected,
 ) -> AgentRunRead:
     """Ask about several projects at once (`project_ids`, fixed when the conversation starts),
     or none. Read-only: agents read each project's documents and board but change nothing; they
     say which project's conversation to make a change in. Poll the run, or follow its stream,
     as for a project's runs. 404 for a project you can't see; 409 `scope_locked` for other
     projects or another model on an existing conversation, `thread_busy` while it's answering."""
-    available = available_models(settings, settings.default_model)
+    available = available_models(settings, settings.default_model, connected=connected)
     return await runs.create(member, data, default_model=settings.default_model, available=available)
 
 

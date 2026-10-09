@@ -24,6 +24,7 @@ from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend
 
 from . import tasks as T
+from .approvals import agent_tag
 from .backend import LockingFilesystemBackend
 from .builtins import BUILTIN_HANDLES, SPECIALISTS, builtin_specs, introduce
 from .catalog import group as catalog_group
@@ -176,7 +177,7 @@ directly, in your role.
 Default to CHAT MODE: read, search, analyse, and discuss; don't call write_file, edit_file,
 or any board-changing tool. Only when the person explicitly asks for a change (e.g. "write
 that up", "create those stories") make it, say exactly what changed, and return to Chat Mode.
-Every change waits for a person's approval anyway.
+Changes wait for a person's approval unless your contract allows them (below).
 
 When part of the work needs another specialist's expertise, ask them with the `task` tool:
 a short brief (the question, what the person asked for, what you already know, where to
@@ -289,15 +290,43 @@ def _tools_for(spec: AgentSpec, box: dict[str, list[Any]]) -> list[Any]:
     return [tool for group_id in spec.tools if spec.can(group_id) for tool in box.get(group_id, [])]
 
 
+def autonomy_note(spec: AgentSpec) -> str:
+    """Tells an agent which changes an owner let it make without asking, so it makes those
+    directly (only when asked for a change) and proposes the rest."""
+    allowed = spec.allows()
+    if not allowed:
+        return ""
+    labels = ", ".join(_ACTION_LABELS.get(a, a) for a in allowed)
+    return (
+        "\n\n## What you may change without asking\n"
+        f"An owner allowed you to {labels} without waiting for approval. When a person asks for such "
+        "a change, make it and say exactly what you changed. Everything else you change still waits "
+        "for a person's approval. Closing an issue is always a person's call. The platform may still "
+        "ask a person (a cap on unattended changes, a paused workspace); then the change waits like any other."
+    )
+
+
+_ACTION_LABELS = {
+    "knowledge.write": "write documents",
+    "issues.create": "open issues",
+    "issues.update": "edit issues",
+    "issues.comment": "comment on issues",
+    "graph.link": "link things in the project graph",
+}
+
+
 def _gate(spec: AgentSpec, box: dict[str, list[Any]]) -> dict[str, Any]:
     """What pauses for approval when this agent acts: its file writes and board changes, except
-    the low-risk actions an owner allowed it to take without asking."""
+    the actions an owner allowed it to take without asking."""
+    # Each pause says which agent asked (approvals.agent_of), so "Always allow this" knows whose
+    # contract to change.
+    approval = _APPROVAL | {"description": agent_tag(spec.handle)}
     gated: dict[str, Any] = {}
-    if spec.can("knowledge.write"):
-        gated |= {"write_file": _APPROVAL, "edit_file": _APPROVAL}
+    if spec.can("knowledge.write") and not spec.allowed("knowledge.write"):
+        gated |= {"write_file": approval, "edit_file": approval}
     for group_id in _WRITE_TOOL_GROUPS:
         if spec.can(group_id) and not all(spec.allowed(a) for a in catalog_group(group_id).actions):
-            gated |= {tool_name(tool): _APPROVAL for tool in box.get(group_id, [])}
+            gated |= {tool_name(tool): approval for tool in box.get(group_id, [])}
     return gated
 
 
@@ -397,9 +426,9 @@ def build_team(
     specialist_box = _toolbox([*read_task_tools, *(subagent_task_tools or []), *reading, *web])
 
     def guides(spec: AgentSpec) -> str:
-        """How to use the code and web tools it was given."""
+        """How to use the code and web tools it was given, and what it may change unasked."""
         text = CODE_GUIDE if code_tools and spec.can("code.read") else ""
-        return text + (WEB_GUIDE if web_tools and spec.can("web.search") else "")
+        return text + (WEB_GUIDE if web_tools and spec.can("web.search") else "") + autonomy_note(spec)
 
     if board_instructions is not None:
         board = board_instructions

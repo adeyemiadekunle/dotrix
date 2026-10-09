@@ -12,7 +12,7 @@ Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 Instructions = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)]
 Hour = Annotated[int, Field(ge=0, le=23, description="Hour of the day, UTC")]
 Weekday = Annotated[int, Field(ge=0, le=6, description="0 Monday … 6 Sunday")]
-RunsPerDay = Annotated[int, Field(ge=1, le=50)]
+RunsPerDay = Annotated[int, Field(ge=1, le=1000, description="At most this many runs a day (UTC); null: no limit")]
 
 
 class AutomationCreate(BaseModel):
@@ -23,7 +23,8 @@ class AutomationCreate(BaseModel):
     schedule_hour: Hour | None = Field(default=None, description="Run every day (or `schedule_weekday`) at this hour, UTC")
     schedule_weekday: Weekday | None = None
     enabled: bool = True
-    max_runs_per_day: RunsPerDay = 5
+    max_runs_per_day: RunsPerDay | None = None
+    unattended: bool = Field(default=False, description="Its runs may make the changes the agent's contract allows without approval (owners turn it on); off: every change beyond comments and links asks")
 
     @model_validator(mode="after")
     def _when(self) -> AutomationCreate:
@@ -35,7 +36,7 @@ class AutomationCreate(BaseModel):
 
 
 class AutomationUpdate(BaseModel):
-    """Fields left out stay as they are; send null to clear the schedule."""
+    """Fields left out stay as they are; send null to clear the schedule or the daily cap."""
 
     name: Name | None = None
     agent: str | None = Field(default=None, max_length=32)
@@ -45,6 +46,7 @@ class AutomationUpdate(BaseModel):
     schedule_weekday: Weekday | None = None
     enabled: bool | None = None
     max_runs_per_day: RunsPerDay | None = None
+    unattended: bool | None = None
 
 
 class AutomationRead(BaseModel):
@@ -59,7 +61,8 @@ class AutomationRead(BaseModel):
     schedule_hour: int | None
     schedule_weekday: int | None
     enabled: bool
-    max_runs_per_day: int
+    max_runs_per_day: int | None = Field(description="Its own daily cap, if any (null: none)")
+    unattended: bool = Field(description="Its runs may make the changes the agent's contract allows without approval (owners turn it on); off: every change beyond comments and links asks")
     created_by_id: uuid.UUID | None = Field(description="Whose instruction its runs carry")
     thread_id: uuid.UUID | None = Field(description="Its conversation in Chat (null until it first runs)")
     next_run_at: datetime | None

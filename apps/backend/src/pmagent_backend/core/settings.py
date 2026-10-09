@@ -139,6 +139,13 @@ class Settings(DatabaseSettings):
     google_api_key: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("GOOGLE_API_KEY", "PMAGENT_GOOGLE_API_KEY")
     )
+    # Organisations connect their own provider keys (Settings → Models), stored encrypted with
+    # these Fernet keys: comma-separated, the first encrypts, every one decrypts (to rotate, put
+    # a new key first and re-save). None: workspaces can't connect keys.
+    encryption_key: SecretStr | None = None
+    # Whether workspaces without their own key for a provider may use the server's keys above
+    # (self-hosting and development). Off for a hosted service where everyone brings their own.
+    server_model_keys: bool = True
     # Model for new projects ("provider:model"); each project can change its own.
     default_model: str = "anthropic:claude-sonnet-5"
     # Models a conversation can be started on; only those whose provider has a key are offered.
@@ -146,15 +153,23 @@ class Settings(DatabaseSettings):
         "google_genai:gemini-3.8-flash",
         "anthropic:claude-opus-5-5",
         "anthropic:claude-sonnet-5",
+        "anthropic:claude-haiku-5-5",
         "anthropic:claude-haiku-4-5-20251001",
+        "openai:gpt-5.5",
+        "openai:gpt-5.5-mini",
     ]
     # The most tokens (input + output, over all its steps) one agent run may use before it
     # stops; a project can set its own. 0 turns the limit off.
     run_token_budget: int = Field(default=500_000, ge=0)
-    # Automation runs a workspace may start per day (UTC), across all its projects.
-    automation_daily_runs: int = Field(default=50, ge=0)
+    # Automation runs a workspace may start per day (UTC), across all its projects; 0: no limit
+    # (the default: organisations run on their own keys, and their provider's limits apply).
+    automation_daily_runs: int = Field(default=0, ge=0)
     # Tokens (input + output) a workspace's automation runs may use per UTC day; 0: no limit.
-    automation_daily_tokens: int = Field(default=2_000_000, ge=0)
+    automation_daily_tokens: int = Field(default=0, ge=0)
+    # Changes agents may make without a person approving them (owners' standing rules): per run
+    # step, and per workspace per UTC day. Past either, the change waits for approval as usual.
+    unattended_changes_per_run: int = Field(default=20, ge=0)
+    unattended_changes_per_day: int = Field(default=200, ge=0)
     # A conversation's older turns are summarised once its prompt passes this many tokens
     # (the most recent turns are kept word for word).
     summarize_after_tokens: int = Field(default=40_000, ge=5_000)

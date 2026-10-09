@@ -102,3 +102,16 @@ test("Home's ask box starts a conversation with Nova", async ({ page }) => {
   await expect(page.getByText(/open issues, \d+ in progress/)).toBeVisible();
   await expect(page.locator(".chat-msg .role", { hasText: "Lead" }).first()).toBeVisible();
 });
+
+test("always allow from a waiting change: it's approved, and the agent may do it unasked from now on", async ({ page }) => {
+  await page.goto("/w/dotrix/chat?thread=th1");
+  const doc = page.locator(".change", { hasText: "requirements/navigation.md" });
+  await doc.getByRole("button", { name: "Always allow" }).click();
+  await expect(page.getByText("Nova may now write documents without asking")).toBeVisible();
+  await expect(doc.getByText("Approved", { exact: true })).toBeVisible();
+
+  await page.goto("/w/dotrix/settings/agents");
+  await page.locator("#main-content .mini", { hasText: "@auto" }).click();
+  await expect(page.getByLabel("write documents without asking")).toHaveValue("allow");
+  await expect(page.getByLabel("open issues without asking")).toHaveValue("ask");
+});

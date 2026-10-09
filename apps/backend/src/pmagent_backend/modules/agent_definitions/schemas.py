@@ -29,7 +29,7 @@ class AgentFields(BaseModel):
     can_call: list[str] = Field(default_factory=list, description="Handles it may hand work to; ['*'] for all")
     autonomy: dict[str, Autonomy] = Field(
         default_factory=dict,
-        description="Action -> allow, ask, or block (unlisted: ask). Only owners set allow, and only for low-risk actions",
+        description="Action -> allow, ask, or block (unlisted: ask). Only owners set allow; beyond comments and links, only owners save a version that allows",
     )
     output: str | None = None
     pipeline: str | None = None

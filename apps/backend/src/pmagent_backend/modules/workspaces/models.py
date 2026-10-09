@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 import uuid
 
-from sqlalchemy import ARRAY, ForeignKey, String, UniqueConstraint
+from sqlalchemy import ARRAY, Boolean, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pmagent_backend.db.base import (
@@ -41,6 +41,9 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     member_permissions: Mapped[list[str]] = mapped_column(
         ARRAY(String(32)), default=list, server_default="{}"
     )
+    # Every agent asks before changing anything while set: the standing rules that let agents act
+    # without approval are paused (owners and admins pause; owners resume).
+    unattended_paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class Membership(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):

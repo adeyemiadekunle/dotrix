@@ -44,7 +44,11 @@ class Automation(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base
     schedule_hour: Mapped[int | None] = mapped_column(SmallInteger)  # 0-23 UTC; null: no schedule
     schedule_weekday: Mapped[int | None] = mapped_column(SmallInteger)  # 0 Monday … 6 Sunday; null: daily
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    max_runs_per_day: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
+    # Its own daily cap, if an owner set one; null: none (runs use the organisation's own keys).
+    max_runs_per_day: Mapped[int | None] = mapped_column(Integer)
+    # Its runs may use the agents' standing rules to change things without approval (beyond the
+    # low-risk ones). Off by default; owners turn it on.
+    unattended: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # Who set it up: its runs are instructed by them, see what they see, and stop if they can't.
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     thread_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # its conversation, from the first run

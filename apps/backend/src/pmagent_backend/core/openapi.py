@@ -73,6 +73,11 @@ TAGS: list[dict[str, str]] = [
         "description": "Teams in a workspace (Design, Engineering, ...): the people in each and the projects "
         "each looks after. One team each, for people and for projects.",
     },
+    {
+        "name": "models",
+        "description": "An organisation's own model provider keys (Anthropic, OpenAI, Google), stored "
+        "encrypted and used for its agents' runs, and when a provider last refused a run for its limits.",
+    },
     {"name": "projects", "description": "Projects: start from a new repo, an existing repo, or docs only."},
     {
         "name": "knowledge",

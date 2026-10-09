@@ -64,6 +64,19 @@ def test_approve_all(platform: FakePlatform, state: LinkState) -> None:
     assert outcome.status == "completed"
 
 
+def test_always_allow_saves_the_rule_and_approves(platform: FakePlatform, state: LinkState) -> None:
+    change = approval("a1") | {"agent": "product", "action": "knowledge.write"}
+    platform.agent_script = [{"status": "awaiting_approval", "approvals": [change]}, {"status": "completed", "reply": "Ok."}]
+    notes: list[str] = []
+    outcome = agent(platform, state).converse(
+        agent(platform, state).start("write it"), lambda *a: "always-allow", on_note=notes.append
+    )
+    assert outcome.status == "completed"
+    assert any(r.url.path.endswith("/runs/run-1/approvals/a1/always-allow") for r in platform.requests)
+    assert platform.bodies("/decisions")[0]["decisions"][0]["decision"] == "approve"
+    assert notes == ["@product may now write documents without asking"]
+
+
 def test_person_without_approve_permission_leaves_it_waiting(platform: FakePlatform, state: LinkState) -> None:
     platform.agent_script = [{"status": "awaiting_approval", "approvals": [approval("a1")]}]
     platform.deny_decisions = True

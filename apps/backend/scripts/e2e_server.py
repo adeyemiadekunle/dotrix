@@ -12,6 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from cryptography.fernet import Fernet
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -60,6 +61,8 @@ def main() -> None:
         # Search by keywords only: no embedding calls with a developer's key.
         "PMAGENT_EMBEDDING_MODEL": "",
         # Only used if no secret is configured (e.g. CI); this server holds throwaway data.
+        # A fresh key each run (the database is thrown away too): organisations' model keys.
+        "PMAGENT_ENCRYPTION_KEY": Fernet.generate_key().decode(),
         "PMAGENT_JWT_SECRET": os.environ.get("PMAGENT_JWT_SECRET") or "e2e-only-secret-for-throwaway-test-data",
     }
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=BACKEND, env=env, check=True)

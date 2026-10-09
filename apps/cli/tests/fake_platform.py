@@ -170,6 +170,10 @@ class FakePlatform:
             run = {"id": "run-1", "thread_id": body.get("thread_id") or "thread-1", "status": "queued",
                    "approvals": [], "reply": None, "error": None}
             return httpx.Response(202, json=run)
+        if path.startswith(AGENT + "/runs/") and path.endswith("/always-allow") and method == "POST":
+            if self.deny_decisions:
+                return self.problem(403, "forbidden")
+            return httpx.Response(200, json={"handle": "product", "autonomy": {"knowledge.write": "allow"}})
         if path.startswith(AGENT + "/runs/") and path.endswith("/decisions"):
             if self.deny_decisions:
                 return self.problem(403, "forbidden")

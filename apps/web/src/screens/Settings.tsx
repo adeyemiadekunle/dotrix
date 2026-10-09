@@ -4,6 +4,7 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { copy, openPop, setPref } from "../core/actions";
+import { ACTION_OF } from "../core/agents";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, newTeam, promptDlg } from "../core/more";
 import { go, useRoute } from "../core/nav";
@@ -13,6 +14,7 @@ import { ApiError } from "@/lib/api";
 import {
   GRANTABLE,
   agentCatalog,
+  agentList,
   agentDetail,
   agentReset,
   agentSaved,
@@ -24,6 +26,9 @@ import {
   installationRemoved,
   linkGitHub,
   memberPermissionsSaved,
+  modelKeyRemoved,
+  modelKeySaved,
+  modelKeys,
   models,
   notifSettings,
   notifSettingsSaved,
@@ -38,6 +43,7 @@ import {
   sessions,
   signInMethods,
   skillSaved,
+  unattendedPaused,
   skills,
   tokenCreated,
   tokenRevoked,
@@ -83,6 +89,7 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
     "Agents",
     [
       ["agents", "Agents", "bot"],
+      ["models", "Models", "cpu"],
       ["rules", "Rules and skills", "scroll-text"],
       ["automations", "Automations", "zap"],
       ["github", "GitHub", "github"],
@@ -148,8 +155,8 @@ function SRow({ t, d, children }: { t: ReactNode; d?: ReactNode; children?: Reac
     </div>
   );
 }
-function Tog({ on, set, label }: { on: boolean; set: (v: boolean) => void; label: string }) {
-  return <input type="checkbox" className="toggle" checked={on} onChange={(e) => set(e.target.checked)} aria-label={label} />;
+function Tog({ on, set, label, disabled }: { on: boolean; set: (v: boolean) => void; label: string; disabled?: boolean }) {
+  return <input type="checkbox" className="toggle" checked={on} onChange={(e) => set(e.target.checked)} aria-label={label} disabled={disabled} />;
 }
 const PTog = ({ k, def = true }: { k: string; def?: boolean }) => <Tog on={P()[k] === undefined ? def : Boolean(P()[k])} set={(v) => setP(k, v)} label={k} />;
 const NTog = ({ k, def = false }: { k: string; def?: boolean }) => <Tog on={NP()[k] === undefined ? def : Boolean(NP()[k])} set={(v) => setNP(k, v)} label={k} />;
@@ -474,7 +481,7 @@ function LiveAgent({ handle }: { handle: string }) {
       <div className="sblock">
         <h2>Tools</h2>
         <p className="muted" style={{ fontSize: 13 }}>
-          From the catalogue. Writes always wait for approval unless an owner allows a low-risk action.
+          From the catalogue. Writes wait for approval unless an owner allows them below.
         </p>
         {cat.data.tools.map((t) => (
           <SRow key={t.id} t={t.label} d={t.description}>
@@ -485,25 +492,34 @@ function LiveAgent({ handle }: { handle: string }) {
       <div className="sblock">
         <h2>Without asking</h2>
         <p className="muted" style={{ fontSize: 13 }}>
-          Low-risk actions only. Only owners can allow one; every other write waits for approval.
+          Only owners can let an agent act without asking; each change is recorded as approved by the owner who saved this version. Closing issues and coding always wait for a person, folder access still applies, and a run makes at most a few changes this way.
         </p>
-        {cat.data.low_risk_actions.map((act) => (
-          <SRow key={act} t={act === "issues.comment" ? "Comment on issues" : act === "graph.link" ? "Link things in the graph" : act}>
-            <select
-              className="select"
-              style={{ width: "auto" }}
-              value={v.autonomy?.[act] ?? "ask"}
-              onChange={(e) => set({ autonomy: { ...v.autonomy, [act]: e.target.value as "allow" | "ask" | "block" } })}
-              aria-label={act}
-            >
-              <option value="ask">Ask first</option>
-              <option value="allow" disabled={!owner}>
-                Allow
-              </option>
-              <option value="block">Block</option>
-            </select>
-          </SRow>
-        ))}
+        {live.ws?.unattended_paused && <div className="alert warn" style={{ marginBottom: 8 }}>Paused for this workspace: every change waits for approval until an owner resumes it.</div>}
+        {cat.data.tools
+          .filter((t) => t.actions.length && v.tools.includes(t.id))
+          .flatMap((t) => t.actions.map((act) => [t, act] as const))
+          .map(([t, act]) => {
+            const rule = v.autonomy?.[act] ?? "ask";
+            const risky = !cat.data!.low_risk_actions.includes(act);
+            return (
+              <SRow key={act} t={t.label} d={rule === "allow" && risky ? "Changes go through without anyone approving them." : undefined}>
+                <select
+                  className="select"
+                  style={{ width: "auto" }}
+                  value={rule}
+                  onChange={(e) => set({ autonomy: { ...v.autonomy, [act]: e.target.value as "allow" | "ask" | "block" } })}
+                  aria-label={`${t.label} without asking`}
+                >
+                  <option value="ask">Ask first</option>
+                  <option value="allow" disabled={!owner}>
+                    Allow
+                  </option>
+                  <option value="block">Block</option>
+                </select>
+              </SRow>
+            );
+          })}
+        {!owner && <p className="faint" style={{ fontSize: 12.5 }}>Only owners can allow an action, or save a version that allows more than comments and links.</p>}
       </div>
       <div className="sblock">
         <h2>Instructions</h2>
@@ -595,7 +611,7 @@ function Agents() {
             ))}
           </select>
         </SRow>
-        <SRow t="Tools" d="From the catalogue. Writes always wait for approval unless an owner allows a low-risk action.">
+        <SRow t="Tools" d="From the catalogue. Writes wait for approval unless an owner allows them.">
           <span className="row" style={{ gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {sel.tools.map((t) => (
               <span key={t} className="badge mono">
@@ -604,13 +620,26 @@ function Agents() {
             ))}
           </span>
         </SRow>
-        <SRow t="Comments and labels" d="Low-risk actions an owner may let this agent take without asking.">
-          <select className="select" style={{ width: "auto" }} defaultValue="ask">
-            <option value="ask">Ask first</option>
-            <option value="allow">Allow</option>
-            <option value="block">Block</option>
-          </select>
-        </SRow>
+        <div className="sblock">
+          <h2>Without asking</h2>
+          <p className="muted" style={{ fontSize: 13 }}>
+            Changes an owner lets this agent make without waiting for approval. &ldquo;Always allow&rdquo; on a waiting change sets one here.
+          </p>
+          {Object.values(ACTION_OF).map(([act, what]) => (
+            <SRow key={act} t={what[0]!.toUpperCase() + what.slice(1)}>
+              <select
+                className="select"
+                style={{ width: "auto" }}
+                value={sel.allows?.includes(act) ? "allow" : "ask"}
+                onChange={(e) => mutate(() => ((sel.allows = e.target.value === "allow" ? [...(sel.allows ?? []), act] : (sel.allows ?? []).filter((x) => x !== act)), (sel.customised = sel.builtIn || undefined)))}
+                aria-label={`${what} without asking`}
+              >
+                <option value="ask">Ask first</option>
+                <option value="allow">Allow</option>
+              </select>
+            </SRow>
+          ))}
+        </div>
         <div className="sblock">
           <h2>Instructions</h2>
           <textarea className="textarea" rows={6} defaultValue={`You are ${sel.name}, the ${sel.role.toLowerCase()} agent. ${sel.desc}`} style={{ marginTop: 10 }} aria-label="Instructions" />
@@ -648,6 +677,7 @@ function Agents() {
           New agent
         </button>
       </div>
+      <UnattendedPause />
       <div className="panel" style={{ overflow: "hidden" }}>
         {D().agents.map((a) => (
           <div key={a.handle} className="mini" style={{ minHeight: 52 }} onClick={() => ((S.ui.agentSel = a.handle), render())}>
@@ -663,6 +693,216 @@ function Agents() {
             <span className="badge">{!a.builtIn ? "Custom" : a.customised ? "Customised" : "Built-in"}</span>
             <Ic n="chevron-right" s={14} />
           </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** The workspace's switch for every agent's changes without approval: owners and admins pause, owners resume. */
+function UnattendedPause() {
+  const [demo, setDemo] = useState(false);
+  const role = isLive() ? live.ws?.role : "owner";
+  if (role !== "owner" && role !== "admin") return null;
+  const paused = isLive() ? !!live.ws?.unattended_paused : demo;
+  return (
+    <div className="panel" style={{ padding: "4px 14px", marginBottom: 12 }}>
+      <SRow t="Pause changes without approval" d={paused ? "Every agent asks before every change, whatever its contract allows." : "Agents make the changes their contracts allow without waiting. Pause to make every change ask."}>
+        <Tog
+          on={paused}
+          set={(on) => (isLive() ? void unattendedPaused(on) : setDemo(on))}
+          label="Pause changes without approval"
+          disabled={paused && role !== "owner"}
+        />
+      </SRow>
+    </div>
+  );
+}
+
+/* ---------- Models: the organisation's own keys, and which model each agent uses ---------- */
+
+const MODEL_HINT =
+  "Small jobs don't need the most powerful model: give Echo (documents) and Juno (reviews) a fast, cheaper one, and keep the most capable for Nova and Orion.";
+const RUNS_NOTE = "Agents run as often as you ask; your provider's own limits apply. When a key reaches one, it shows here and the run says so.";
+
+interface KeyLook {
+  provider: string;
+  label: string;
+  connected: boolean;
+  last4?: string | null;
+  updated_at?: string | null;
+  server_key: boolean;
+  limit_reached_at?: string | null;
+  limit_message?: string | null;
+}
+
+/** A provider's key: connected or not, its limit if reached, and Connect / Replace / Remove. */
+function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean; onSave: (key: string) => Promise<unknown>; onRemove: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const state = k.connected ? `Connected · key ending ${k.last4}${k.updated_at ? ` · added ${ago(Date.parse(k.updated_at))}` : ""}` : k.server_key ? "Not connected · runs use the server's key for now" : "Not connected · its models can't run here";
+  const save = () => {
+    if (!value.trim()) return;
+    setBusy(true);
+    onSave(value.trim())
+      .then(() => (setEditing(false), setValue("")))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="srow-wrap">
+      <SRow t={k.label} d={state}>
+        {canEdit && !editing && (
+          <span className="row" style={{ gap: 6 }}>
+            {k.connected && (
+              <button className="btn btn-sm btn-ghost" onClick={onRemove}>
+                Remove
+              </button>
+            )}
+            <button className="btn btn-sm btn-secondary" onClick={() => setEditing(true)}>
+              {k.connected ? "Replace" : "Connect"}
+            </button>
+          </span>
+        )}
+      </SRow>
+      {editing && (
+        <div className="row" style={{ gap: 6, marginTop: 6 }}>
+          <input className="input" type="password" autoComplete="off" placeholder={`${k.label} API key`} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()} aria-label={`${k.label} API key`} autoFocus style={{ flex: 1 }} />
+          <button className="btn btn-sm btn-ghost" onClick={() => (setEditing(false), setValue(""))}>
+            Cancel
+          </button>
+          <button className="btn btn-sm btn-primary" onClick={save} disabled={busy || !value.trim()}>
+            Save key
+          </button>
+        </div>
+      )}
+      {k.limit_reached_at && (
+        <div className="alert warn" style={{ marginTop: 6 }}>
+          <Ic n="triangle-alert" s={15} />
+          <div>
+            <b>Limit reached {ago(Date.parse(k.limit_reached_at))}.</b> {k.label} refused a run: {k.limit_message} Runs on its models stop until the limit resets; give some agents a smaller model below, or use a key with more room.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Models() {
+  if (isLive()) return <LiveModels />;
+  return <DemoModels />;
+}
+
+function LiveModels() {
+  const keys = useApi(modelKeys);
+  const agents = useApi(agentList);
+  const ms = useApi(models);
+  const canEdit = live.ws?.role === "owner" || live.ws?.role === "admin";
+  if (keys.error) return <div className="alert danger">{keys.error}</div>;
+  if (!keys.data || !agents.data || !ms.data) return <div className="faint">Loading…</div>;
+  const refresh = () => (keys.reload(), ms.reload());
+  const remove = (k: { provider: string; label: string }) =>
+    confirmDlg({
+      title: `Remove the ${k.label} key?`,
+      body: "Agents set to its models stop running here until a key is connected again.",
+      ok: "Remove key",
+      danger: true,
+      icon: "trash-2",
+      run: () => {
+        modelKeyRemoved(k.provider)
+          .then(() => (toast(`${k.label} key removed`), refresh()))
+          .catch((e: unknown) => toast(`It wasn't removed: ${errText(e)}`, { kind: "err" }));
+      },
+    });
+  const setModel = (a: (typeof agents.data)[number], model: string) =>
+    agentSaved(a.handle, { ...fieldsOf(a), model: model || null }, a.version ?? null, model ? `Model: ${model}` : "Model: the project's")
+      .then(async () => {
+        toast(`${a.name} now uses ${model || "the project's model"}`);
+        agents.reload();
+        await reloadAgents();
+      })
+      .catch((e: unknown) => toast(`${a.name} didn't change: ${errText(e)}`, { kind: "err", ms: 6000 }));
+  return (
+    <>
+      <div className="sblock" style={{ marginTop: 0 }}>
+        <h2>Your model keys</h2>
+        <p className="muted" style={{ fontSize: 13 }}>
+          Connect your organisation&apos;s own keys. They&apos;re stored encrypted and used for every agent run here; only the last four characters are shown.
+        </p>
+        {keys.data.map((k) => (
+          <KeyRow
+            key={k.provider}
+            k={k}
+            canEdit={canEdit}
+            onSave={(v) =>
+              modelKeySaved(k.provider, v)
+                .then(() => (toast(`${k.label} key saved`), refresh()))
+                .catch((e: unknown) => toast(`The key wasn't saved: ${errText(e)}`, { kind: "err", ms: 6000 }))
+            }
+            onRemove={() => remove(k)}
+          />
+        ))}
+        <p className="faint" style={{ fontSize: 12.5 }}>{RUNS_NOTE}</p>
+      </div>
+      <div className="sblock">
+        <h2>Which model each agent uses</h2>
+        <p className="muted" style={{ fontSize: 13 }}>{MODEL_HINT}</p>
+        {agents.data.map((a) => (
+          <SRow key={a.handle} t={`${a.name}`} d={a.description || undefined}>
+            <select className="select" style={{ width: "auto", minWidth: 220 }} value={a.model ?? ""} onChange={(e) => void setModel(a, e.target.value)} disabled={!canEdit} aria-label={`${a.name}'s model`}>
+              <option value="">Project&apos;s model</option>
+              {[...new Set([...(a.model ? [a.model] : []), ...ms.data!.map((m) => m.id)])].map((m) => (
+                <option key={m} value={m}>
+                  {m.split(":")[1] ?? m}
+                </option>
+              ))}
+            </select>
+          </SRow>
+        ))}
+      </div>
+    </>
+  );
+}
+
+const DEMO_KEYS: KeyLook[] = [
+  { provider: "anthropic", label: "Anthropic", connected: true, last4: "7Qa2", server_key: false, limit_reached_at: null, limit_message: null },
+  { provider: "openai", label: "OpenAI", connected: false, server_key: false },
+  { provider: "google_genai", label: "Google", connected: true, last4: "kP0e", server_key: false, limit_reached_at: new Date(Date.now() - 3_600_000 * 2).toISOString(), limit_message: "429 RESOURCE_EXHAUSTED: quota exceeded for requests per day." },
+];
+const DEMO_MODELS = ["Claude Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Gemini 3.8 Flash"];
+
+function DemoModels() {
+  const [keys, setKeys] = useState(DEMO_KEYS);
+  return (
+    <>
+      <div className="sblock" style={{ marginTop: 0 }}>
+        <h2>Your model keys</h2>
+        <p className="muted" style={{ fontSize: 13 }}>
+          Connect your organisation&apos;s own keys. They&apos;re stored encrypted and used for every agent run here; only the last four characters are shown.
+        </p>
+        {keys.map((k) => (
+          <KeyRow
+            key={k.provider}
+            k={k}
+            canEdit
+            onSave={async (v) => (setKeys(keys.map((x) => (x.provider === k.provider ? { ...x, connected: true, last4: v.slice(-4), limit_reached_at: null, limit_message: null } : x))), toast(`${k.label} key saved`))}
+            onRemove={() => (setKeys(keys.map((x) => (x.provider === k.provider ? { ...x, connected: false, last4: null } : x))), toast(`${k.label} key removed`))}
+          />
+        ))}
+        <p className="faint" style={{ fontSize: 12.5 }}>{RUNS_NOTE}</p>
+      </div>
+      <div className="sblock">
+        <h2>Which model each agent uses</h2>
+        <p className="muted" style={{ fontSize: 13 }}>{MODEL_HINT}</p>
+        {D().agents.map((a) => (
+          <SRow key={a.handle} t={a.name} d={a.desc}>
+            <select className="select" style={{ width: "auto", minWidth: 220 }} value={a.model ?? ""} onChange={(e) => mutate(() => ((a.model = e.target.value || undefined), (a.customised = a.builtIn || undefined)))} aria-label={`${a.name}'s model`}>
+              <option value="">Project&apos;s model</option>
+              {DEMO_MODELS.map((m) => (
+                <option key={m}>{m}</option>
+              ))}
+            </select>
+          </SRow>
         ))}
       </div>
     </>
@@ -836,6 +1076,19 @@ function Automations() {
                     {a.last ? ` · last ran ${ago(a.last)}` : ""}
                   </div>
                 </div>
+                <label className="row faint" style={{ gap: 6, fontSize: 12.5, whiteSpace: "nowrap" }} title="Its runs may make the changes the agent's contract allows without approval; off: they ask">
+                  <input
+                    type="checkbox"
+                    checked={!!a.unattended}
+                    disabled={isLive() && live.ws?.role !== "owner" && !a.unattended}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      mutate(() => (a.unattended = on));
+                      automationToggled(a, "unattended");
+                    }}
+                  />
+                  Without approval
+                </label>
                 <Tog
                   on={a.enabled}
                   set={(v) => {
@@ -1992,6 +2245,8 @@ function Body({ sec }: { sec: string }) {
       );
     case "agents":
       return <Agents />;
+    case "models":
+      return <Models />;
     case "rules":
       return <Rules />;
     case "automations":

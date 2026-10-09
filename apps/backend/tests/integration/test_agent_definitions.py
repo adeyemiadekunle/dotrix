@@ -127,15 +127,22 @@ async def test_who_may_change_agents(world, db_client: AsyncClient) -> None:
     ada, bob, cat, ws, _ = await world()
     assert (await save(db_client, f"{ws}/agents/security", cat.headers, SECURITY)).status_code == 403
     assert (await save(db_client, f"{ws}/agents/security", bob.headers, SECURITY)).status_code == 200
-    # Only owners let an agent act without asking, and only for low-risk actions.
+    # Only owners let an agent act without asking.
     allow = SECURITY | {"tools": [*SECURITY["tools"], "issues.comment"], "autonomy": {"issues.comment": "allow"}}
     by_admin = await save(db_client, f"{ws}/agents/security", bob.headers, allow, base_version=1)
     assert by_admin.status_code == 403
     by_owner = await save(db_client, f"{ws}/agents/security", ada.headers, allow, base_version=1)
     assert by_owner.status_code == 200 and by_owner.json()["autonomy"] == {"issues.comment": "allow"}
-    risky = await save(db_client, f"{ws}/agents/security", ada.headers,
-                       allow | {"autonomy": {"issues.create": "allow"}}, base_version=2)
-    assert risky.status_code == 422 and "low-risk" in risky.json()["detail"]
+    # An admin may keep a low-risk allow when changing something else...
+    kept = await save(db_client, f"{ws}/agents/security", bob.headers, allow | {"description": "Finds holes."},
+                      base_version=2)
+    assert kept.status_code == 200
+    # ...but beyond the low-risk actions, every version that allows them is an owner's.
+    risky = allow | {"autonomy": {"issues.comment": "allow", "issues.create": "allow"}}
+    assert (await save(db_client, f"{ws}/agents/security", ada.headers, risky, base_version=3)).status_code == 200
+    again = await save(db_client, f"{ws}/agents/security", bob.headers, risky | {"description": "Finds."},
+                       base_version=4)
+    assert again.status_code == 403
 
 
 @pytest.mark.parametrize(

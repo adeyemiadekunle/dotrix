@@ -171,6 +171,7 @@ class AgentScript:
         self.model: ScriptedChatModel | None = None
         self.specialist: ScriptedChatModel | None = None
         self.models_used: list[str | None] = []  # the model each run (or check) asked for
+        self.keys_used: list[dict | None] = []  # the workspace keys each was given
 
     def say(self, *replies: object) -> ScriptedChatModel:
         self.model = ScriptedChatModel.of(*replies)  # type: ignore[arg-type]
@@ -181,8 +182,9 @@ class AgentScript:
         self.specialist = ScriptedChatModel.of(*replies)  # type: ignore[arg-type]
         return self.specialist
 
-    def factory(self, project: object, model: str | None = None) -> ModelChoice:
+    def factory(self, project: object, model: str | None = None, keys: dict | None = None) -> ModelChoice:
         self.models_used.append(model)
+        self.keys_used.append(keys)
         if self.model is None:
             raise ModelUnavailable("No API key for the test model")
         return ModelChoice(model=self.model, web_search=None, specialist_model=self.specialist)
@@ -236,6 +238,7 @@ async def db_client(
         model_factory=agent_script.factory,
         inline=True,
         checkouts=checkouts,
+        secrets=app.state.secrets,
     )
     app.state.jobs = InlineJobs(
         JobContext(shared_session, app.state.settings, outbox, storage, checkouts=checkouts, runner=runner), JOBS

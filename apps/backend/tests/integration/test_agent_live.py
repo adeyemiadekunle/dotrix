@@ -45,7 +45,7 @@ def live(db_client: AsyncClient, create_team, signup):
         app.state.runner = AgentRunner(
             session_factory=inline.session_factory,
             checkpointer=inline.checkpointer,
-            model_factory=lambda _project, _model=None: ModelChoice(model=model, web_search=None),
+            model_factory=lambda _project, _model=None, **_: ModelChoice(model=model, web_search=None),
             inline=False,
         )
         return ada, team, f"/v1/workspaces/{team['id']}/projects/{project['id']}", model

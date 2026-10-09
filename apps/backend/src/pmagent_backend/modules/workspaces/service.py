@@ -116,6 +116,11 @@ class WorkspaceService:
             if before != after:
                 await self._audit(member, "workspace.member_permissions_changed", **{"from": before, "to": after})
                 workspace.member_permissions = after
+        if data.unattended_paused is not None and data.unattended_paused != workspace.unattended_paused:
+            if not data.unattended_paused and member.role is not Role.OWNER:
+                raise Forbidden("Only owners can let agents act without approval again")
+            await self._audit(member, "workspace.unattended_paused" if data.unattended_paused else "workspace.unattended_resumed")
+            workspace.unattended_paused = data.unattended_paused
         await self.session.commit()
         return WorkspaceWithRole.of(workspace, member.role)
 

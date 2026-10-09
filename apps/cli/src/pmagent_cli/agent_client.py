@@ -48,6 +48,16 @@ class Outcome:
         return self.run["status"]
 
 
+# What each autonomy action lets an agent do, in words.
+_ACTIONS = {
+    "knowledge.write": "write documents",
+    "issues.create": "open issues",
+    "issues.update": "edit issues",
+    "issues.comment": "comment on issues",
+    "graph.link": "link things in the project graph",
+}
+
+
 class PlatformAgent:
     def __init__(self, client: PlatformClient, state: LinkState, *, sleep: Callable[[float], None] = time.sleep) -> None:
         self.client = client
@@ -166,6 +176,11 @@ class PlatformAgent:
                 raise ApprovalNotAllowed(exc.detail) from exc
             raise
 
+    def always_allow(self, run: dict, approval: dict) -> dict:
+        """Let the agent behind `approval` make that kind of change without asking (owners);
+        returns its contract's new version."""
+        return self.client.post(f"{self.base}/runs/{run['id']}/approvals/{approval['id']}/always-allow", {})
+
     def converse(
         self,
         run: dict,
@@ -174,11 +189,13 @@ class PlatformAgent:
         on_tick: Callable[[dict], None] | None = None,
         on_text: OnText | None = None,
         on_activity: OnActivity | None = None,
+        on_note: Callable[[str], None] | None = None,
     ) -> Outcome:
         """Wait for the run, settle each pause with `decide`, and repeat until it ends.
 
-        `decide(approval, index, total)` returns a Decision, or "approve-all" to approve
-        this and every remaining change in the same pause.
+        `decide(approval, index, total)` returns a Decision, "approve-all" to approve this and
+        every remaining change in the same pause, or "always-allow" to approve it and let its
+        agent make that kind of change without asking from now on (`on_note` hears how that went).
         """
         shown = [""]
         run = self.wait(run, on_tick=on_tick, on_text=on_text, on_activity=on_activity, shown=shown)
@@ -193,6 +210,16 @@ class PlatformAgent:
                 answer = decide(approval, index, len(pending))
                 if answer == "approve-all":
                     approve_rest = True
+                    answer = ("approve", None)
+                elif answer == "always-allow":
+                    try:
+                        agent = self.always_allow(run, approval)
+                        what = _ACTIONS.get(approval.get("action") or "", approval.get("action"))
+                        note = f"@{agent['handle']} may now {what} without asking"
+                    except PlatformError as exc:
+                        note = f"Not saved as a standing rule: {exc.detail}"
+                    if on_note is not None:
+                        on_note(note)
                     answer = ("approve", None)
                 decisions.append((approval, answer))  # type: ignore[arg-type]
             try:

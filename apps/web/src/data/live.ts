@@ -256,7 +256,7 @@ function triggerLabel(a: Schemas["AutomationRead"]): string {
   if (a.schedule_hour != null) parts.unshift(a.schedule_weekday != null ? `Weekly, ${SCHEDULE_DAYS[a.schedule_weekday]} ${hour(a.schedule_hour)}` : `Daily, ${hour(a.schedule_hour)}`);
   return parts.join(" · ") || "Run by hand";
 }
-const toAutomation = (a: Schemas["AutomationRead"]): Automation => ({ id: a.id, project: a.project_id, name: a.name, agent: AGENT_IN[a.agent] ?? a.agent, trigger: triggerLabel(a), enabled: a.enabled });
+const toAutomation = (a: Schemas["AutomationRead"]): Automation => ({ id: a.id, project: a.project_id, name: a.name, agent: AGENT_IN[a.agent] ?? a.agent, trigger: triggerLabel(a), enabled: a.enabled, unattended: a.unattended });
 
 function toKnowledge(f: Schemas["FileRead"], pid: string): KnowledgeFile {
   return { path: f.path, project: pid, content: f.content, version: f.version, by: "", at: ms(f.updated_at) };
@@ -759,10 +759,10 @@ async function reloadAutomations(pid: string) {
   }
 }
 
-/** An automation switched on or off in Settings (the store already shows it). */
-export function automationToggled(a: Automation) {
+/** An automation switched on or off, or let act without approval, in Settings (the store already shows it). */
+export function automationToggled(a: Automation, field: "enabled" | "unattended" = "enabled") {
   if (!isLive()) return;
-  void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/automations/{automation_id}", { params: { path: { ...projectPath(a.project), automation_id: a.id } }, body: { enabled: a.enabled } })).catch((e) => {
+  void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/automations/{automation_id}", { params: { path: { ...projectPath(a.project), automation_id: a.id } }, body: { [field]: !!a[field] } })).catch((e) => {
     failed(a.name, e);
     void reloadAutomations(a.project);
   });
@@ -796,7 +796,8 @@ export async function automationAdded(pid: string, preset: string) {
           schedule_hour: spec.weekly ? 8 : null,
           schedule_weekday: spec.weekly ? 0 : null,
           enabled: true,
-          max_runs_per_day: 3,
+          max_runs_per_day: null,
+          unattended: false,
         },
       }),
     );

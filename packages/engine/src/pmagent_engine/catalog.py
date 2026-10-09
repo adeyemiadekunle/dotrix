@@ -31,7 +31,7 @@ CATALOG: tuple[ToolGroup, ...] = (
     ),
     ToolGroup(
         "knowledge.write", "Write documents",
-        "Create and edit documents in the folders its access allows. Every write waits for approval.",
+        "Create and edit documents in the folders its access allows. Writes wait for approval unless an owner allowed them.",
         ("write_file", "edit_file"),
         ("knowledge.write",),
     ),
@@ -90,10 +90,19 @@ TOOL_IDS: tuple[str, ...] = tuple(group.id for group in CATALOG)
 _BY_ID = {group.id: group for group in CATALOG}
 _ID_BY_NAME = {name: group.id for group in CATALOG for name in group.names}
 
-# Every action an autonomy rule can name, and the ones that may be allowed without asking
-# (low-risk; decided D1). Everything else is `ask` at most.
+# Every action an autonomy rule can name. Owners may allow any of them without asking (a standing
+# rule); the low-risk ones (D1) are also what admins may keep and what automations take without
+# their own switch. Closing an issue, coding, and anything outside the catalogue always ask a person.
 ACTIONS: tuple[str, ...] = tuple(action for group in CATALOG for action in group.actions)
 LOW_RISK_ACTIONS = frozenset({"issues.comment", "graph.link"})
+
+
+def action_for(name: str) -> str | None:
+    """The action a supplied tool's name takes (write_file -> knowledge.write), or None for a tool
+    that changes nothing an autonomy rule covers."""
+    found = _ID_BY_NAME.get(name)
+    actions = _BY_ID[found].actions if found else ()
+    return actions[0] if len(actions) == 1 else None
 
 
 def group(tool_id: str) -> ToolGroup:

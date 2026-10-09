@@ -35,6 +35,10 @@ class InvalidAgent(Unprocessable):
     code = "invalid_agent"
 
 
+class CannotAlwaysAllow(Conflict):
+    code = "cannot_always_allow"
+
+
 class AgentModelNotAvailable(Unprocessable):
     code = "model_not_available"
 
@@ -57,6 +61,9 @@ def _read(agent: ResolvedAgent) -> AgentRead:
         version=agent.version,
         updated_at=agent.updated_at,
     )
+
+
+_TOOL_FOR = {action: g.id for g in catalog.CATALOG for action in g.actions}
 
 
 def _allowed(spec: AgentSpec | None) -> set[str]:
@@ -122,7 +129,11 @@ class AgentDefinitionService:
             )
         current = await self._find(workspace_id, project_id, handle)
         previous = current.spec if current else None
-        if (_allowed(spec) - _allowed(previous)) and member.role is not Role.OWNER:
+        # A version carries its author's approval for what it allows: adding any allow, or saving
+        # a version that keeps one beyond the low-risk actions, is an owner's call.
+        if member.role is not Role.OWNER and (
+            (_allowed(spec) - _allowed(previous)) or (_allowed(spec) - catalog.LOW_RISK_ACTIONS)
+        ):
             raise Forbidden("Only owners can let an agent act without asking")
         if live and previous is not None and previous == spec:
             return await self.get(workspace_id, project_id, handle)  # nothing changed
@@ -196,6 +207,31 @@ class AgentDefinitionService:
         )
 
     # -- helpers ---------------------------------------------------------------------------
+
+    async def always_allow(
+        self, member: Membership, project_id: uuid.UUID, handle: str | None, action: str | None
+    ) -> AgentRead:
+        """"Always allow this" on a change waiting for approval: a new version of the agent's
+        contract with `action` allowed, where the agent is defined for this project (its override,
+        else the workspace's). Owners only; their approval stands for the changes it lets through."""
+        if member.role is not Role.OWNER:
+            raise Forbidden("Only owners can let an agent act without asking")
+        if handle is None or action is None:
+            raise CannotAlwaysAllow("This change doesn't say which agent asked, or isn't one a rule can allow")
+        agent = await self._resolved(member.workspace_id, project_id, handle)
+        if not agent.spec.can(_TOOL_FOR[action]):
+            raise CannotAlwaysAllow(f"@{handle} doesn't have the tool for {action} any more")
+        if agent.spec.allowed(action):
+            return _read(agent)
+        fields = _fields(agent.spec)
+        fields.autonomy = {**fields.autonomy, action: "allow"}
+        return await self.save(
+            member,
+            project_id if agent.scope == "project" else None,
+            handle,
+            AgentSave(agent=fields, base_version=agent.version if agent.scope != "default" else None),
+            note=f"Always allow {action} (from a change waiting for approval)",
+        )
 
     async def _find(self, workspace_id: uuid.UUID, project_id: uuid.UUID | None, handle: str) -> ResolvedAgent | None:
         return next((a for a in await self.repo.resolve(workspace_id, project_id) if a.spec.handle == handle), None)
