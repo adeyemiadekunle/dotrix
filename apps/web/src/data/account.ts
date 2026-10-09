@@ -66,6 +66,7 @@ export const sessionSignedOut = (id: string) => unwrap(api.DELETE("/v1/me/sessio
 export const otherSessionsSignedOut = () => unwrap(api.POST("/v1/me/sessions/sign-out-others"));
 
 export const tokens = () => unwrap(api.GET("/v1/me/tokens"));
+export const tokenCreated = (name: string, days: number | null) => unwrap(api.POST("/v1/me/tokens", { body: { name, scopes: ["read", "write"], expires_in_days: days } }));
 export const tokenRevoked = (id: string) => unwrap(api.DELETE("/v1/me/tokens/{token_id}", { params: { path: { token_id: id } } }));
 
 /* ---------- the workspace ---------- */

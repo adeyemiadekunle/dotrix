@@ -39,6 +39,7 @@ import {
   signInMethods,
   skillSaved,
   skills,
+  tokenCreated,
   tokenRevoked,
   tokens,
   unlinkGitHub,
@@ -1589,20 +1590,34 @@ function LiveNotifs({ sec }: { sec: string }) {
   }
 }
 
-/** Where you're signed in: browsers and the desktop app, then the CLI (its sign-ins are tokens). */
+/** Where you're signed in: browsers and the desktop app, then your tokens (the CLI's sign-ins, and any made for scripts). */
 function LiveSessions() {
   const r = useApi(sessions);
   const cli = useApi(tokens);
+  const [made, setMade] = useState<{ name: string; token: string } | null>(null);
   if (r.error) return <div className="alert danger">{r.error}</div>;
   if (!r.data) return <div className="faint">Loading…</div>;
   const out = (id: string) =>
     sessionSignedOut(id)
       .then(() => (r.reload(), toast("Signed out")))
       .catch((e: unknown) => toast(`It wasn't signed out: ${errText(e)}`, { kind: "err" }));
-  const cliOut = (id: string) =>
+  const revoke = (id: string) =>
     tokenRevoked(id)
-      .then(() => (cli.reload(), toast("Signed out")))
-      .catch((e: unknown) => toast(`It wasn't signed out: ${errText(e)}`, { kind: "err" }));
+      .then(() => (cli.reload(), setMade(null), toast("Revoked")))
+      .catch((e: unknown) => toast(`It wasn't revoked: ${errText(e)}`, { kind: "err" }));
+  const create = () =>
+    promptDlg({
+      title: "New token",
+      label: "What it's for (e.g. CI)",
+      value: "",
+      run: (v: string) => {
+        const name = v.trim();
+        if (!name) return;
+        tokenCreated(name, 90)
+          .then((t) => (setMade({ name: t.name, token: t.token }), cli.reload()))
+          .catch((e: unknown) => toast(`The token wasn't created: ${errText(e)}`, { kind: "err" }));
+      },
+    });
   return (
     <>
       {r.data.map((x) => (
@@ -1638,31 +1653,54 @@ function LiveSessions() {
         </button>
       </div>
       <div className="sblock">
-        <h2>The CLI</h2>
+        <h2>Tokens</h2>
         <p className="muted" style={{ fontSize: 13 }}>
-          Sign in with{" "}
+          Let something other than this browser act as you: the CLI gets one when you run{" "}
           <button className="btn btn-ghost btn-sm mono" style={{ padding: "0 4px", height: "auto" }} onClick={() => void copy("pmagent login", "Command copied")}>
             pmagent login
-          </button>{" "}
-          to let Claude Code and Codex work your board from a local checkout.
+          </button>
+          , and a script or CI job uses one in <span className="mono">PMAGENT_TOKEN</span>. A token can do what you can, and expires after 90 days.
         </p>
+        {made && (
+          <div className="alert ok" style={{ marginBottom: 12 }}>
+            <Ic n="key-round" s={15} />
+            <div className="grow" style={{ minWidth: 0 }}>
+              <b>{made.name}</b>: copy it now, it isn't shown again.
+              <div className="row" style={{ gap: 6, marginTop: 6 }}>
+                <code className="mono grow trunc" style={{ fontSize: 12 }}>
+                  {made.token}
+                </code>
+                <button className="btn btn-secondary btn-sm" onClick={() => void copy(made.token, "Token copied")}>
+                  Copy
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {cli.error && <div className="alert danger">{cli.error}</div>}
         {(cli.data ?? []).map((t) => (
           <SRow
             key={t.id}
             t={
               <span className="row" style={{ gap: 8 }}>
-                <Ic n="terminal" s={15} />
-                {t.name}
+                <Ic n={/cli|pmagent/i.test(t.name) ? "terminal" : "key-round"} s={15} />
+                {t.name} <span className="faint mono">({t.display_prefix}…)</span>
               </span>
             }
-            d={`${t.last_used_at ? `last used ${ago(new Date(t.last_used_at).getTime())}` : "never used"} · signed in ${fmtDate(t.created_at.slice(0, 10), true)}`}
+            d={`${t.last_used_at ? `last used ${ago(new Date(t.last_used_at).getTime())}` : "never used"} · created ${fmtDate(t.created_at.slice(0, 10), true)}${t.expires_at ? ` · expires ${fmtDate(t.expires_at.slice(0, 10), true)}` : ""}`}
           >
-            <button className="btn btn-secondary btn-sm" onClick={() => void cliOut(t.id)}>
-              Sign out
+            <button className="btn btn-secondary btn-sm" onClick={() => void revoke(t.id)}>
+              Revoke
             </button>
           </SRow>
         ))}
-        {cli.data && !cli.data.length && <p className="faint">The CLI isn't signed in anywhere.</p>}
+        {cli.data && !cli.data.length && <p className="faint">No tokens. Nothing but your browsers is signed in as you.</p>}
+        <div style={{ marginTop: 12 }}>
+          <button className="btn btn-secondary btn-sm" onClick={create}>
+            <Ic n="plus" s={13} />
+            New token
+          </button>
+        </div>
       </div>
     </>
   );
@@ -2140,6 +2178,31 @@ function Body({ sec }: { sec: string }) {
               Sign out of all other sessions
             </button>
           </div>
+          <div className="sblock">
+            <h2>Tokens</h2>
+            <p className="muted" style={{ fontSize: 13 }}>
+              Let something other than this browser act as you: the CLI after <span className="mono">pmagent login</span>, or a script or CI job.
+            </p>
+            {[
+              ["terminal", "pmagent CLI on MacBook Pro", "last used 2 hours ago · expires Jan 3"],
+              ["key-round", "CI (pmat_…7f3a)", "last used yesterday · expires Dec 11"],
+            ].map(([i, t, dd]) => (
+              <SRow
+                key={t}
+                t={
+                  <span className="row" style={{ gap: 8 }}>
+                    <Ic n={i!} s={15} />
+                    {t}
+                  </span>
+                }
+                d={dd}
+              >
+                <button className="btn btn-secondary btn-sm" onClick={() => toast("Revoked")}>
+                  Revoke
+                </button>
+              </SRow>
+            ))}
+          </div>
         </>
       );
     case "2fa":
@@ -2242,7 +2305,7 @@ const LEADS: Record<string, string> = {
   preferences: "Personal defaults for how you work.",
   shortcuts: "Move faster with the keyboard.",
   password: "Use a long password you don't use anywhere else.",
-  sessions: "Browsers, apps, and the CLI signed in to your account.",
+  sessions: "Browsers and apps signed in to your account, and the tokens that act as you.",
   "2fa": "Add a second step when signing in.",
   plan: "Your subscription and usage.",
   payment: "Payment method and billing details.",
