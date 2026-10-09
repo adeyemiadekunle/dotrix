@@ -32,6 +32,7 @@ from pmagent_backend.modules.issues.router import router as issues
 from pmagent_backend.modules.issues.router import workspace_router as workspace_issues
 from pmagent_backend.modules.knowledge.router import router as knowledge
 from pmagent_backend.modules.lessons.router import router as lessons
+from pmagent_backend.modules.model_keys.router import router as model_keys
 from pmagent_backend.modules.notifications.router import router as notifications
 from pmagent_backend.modules.notifications.router import settings_router as notification_settings
 from pmagent_backend.modules.projects.router import router as projects
@@ -80,6 +81,7 @@ for module_router in (
     workspace_coding,
     github_webhook,
     teams,
+    model_keys,
     search,
     workspace_search,
 ):

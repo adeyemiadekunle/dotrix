@@ -86,6 +86,7 @@ apps/backend/
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge; rename (same extension), duplicate (converted again), delete (with its Markdown unless another upload made it)
 │   │   ├── issues/              issues, keys, board/backlog/epics, claim, issues across a workspace's visible projects, checklists, repeats (the next one made when one is finished), per-person stars, attachments (any file, in storage), Markdown render for export
 │   │   ├── agent_definitions/   agent contracts per workspace with project overrides, versions, resolution for runs (agents v2 step 1)
+│   │   ├── model_keys/          an organisation's own model provider keys (encrypted), when a provider last refused a run for its limits
 │   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals, checkpoints and decisions, triage and issue review, findings dedup, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis), conversations across projects (workspace_runs.py)
 │   │   ├── activity/            a project's activity feed for everyone who sees it, read from issue logs, document versions, runs, and decisions
 │   │   ├── notifications/       per-person notifications (approvals and checkpoints waiting, assignments, findings, mentions, decisions), written by the runner and the issues service (notify.py), read and marked read per person, emailed as they happen or as a daily digest (emails.py)
@@ -377,8 +378,7 @@ Decided (D3, 2026-10-01): Tavily, behind a pluggable provider; without a key the
 ### Step 4: triggers, background runs, and an inbox
 - [x] **Automations** (`modules/automations`): an agent (or Auto) with instructions that runs on a schedule (daily or weekly at an hour, UTC) and/or on events: `issue.created`, `issue.done`, `document.changed` (people's changes only), `changes.approved` (a run's approved changes), `code.pushed` (the webhook). Events go to an outbox (`automation_events`) in the same transaction, only when an enabled automation listens; `run_automations` (every minute: the worker's cron, or a loop in the API) claims them and due schedules first, then starts one run per automation with the events as data. Owners and admins set them up (`GET/POST/PATCH/DELETE .../projects/{id}/automations`, `POST .../{id}/run`; audited), members see them; project settings → Automations, with presets
   - [x] a run is instructed by whoever set it up, in the automation's own conversation (`AgentRun.automation_id`); its writes wait for approval as always; an agent's changes never set automations off, and an automation's approved changes never set off `changes.approved` (no loops)
-  - [x] limits: runs per automation per day (`max_runs_per_day`), per workspace per day (`PMAGENT_AUTOMATION_DAILY_RUNS`, 50), never while its last run is still going or waiting; it turns itself off when its creator can no longer ask agents
-  - [x] a token budget per workspace per day (`PMAGENT_AUTOMATION_DAILY_TOKENS`, 2,000,000; 0 = none)
+  - [x] limits: never while its last run is still going or waiting; it turns itself off when its creator can no longer ask agents. No run caps by default since organisations bring their own keys (2026-10-09): `max_runs_per_day` is optional (null), `PMAGENT_AUTOMATION_DAILY_RUNS` and `PMAGENT_AUTOMATION_DAILY_TOKENS` default to 0 (none); the provider's own limits apply and show in Settings → Models
   - [ ] PR and CI events (step 5)
 - [x] The inbox is Notifications (UI redesign Phase 6), by email too (Phase 4)
 
@@ -490,7 +490,7 @@ Today every run starts cold: the PM gets its instructions and agent rules, then 
   - **Agents can call each other:** the lead gets a `task` tool listing the other specialists (Auto's PM still delegates to all five). The called agent gets the context pack plus the caller's brief, and each hand-off shows as activity and in the run's details
   - **Limits:** one level deep (a called agent gets no `task` tool, so no chains or loops); specialists don't call the PM; hand-offs count towards the run's token budget
   - **Safety is unchanged,** because it's keyed by agent: a change is attributed to the agent that made it, with that agent's folder permissions (FR-41) and issue rules; every write waits for approval; Reviewer stays read-only; Research keeps web search; members' requests wait for an owner or admin; runs and hand-offs are audited
-  - [ ] **Later (needs `PMAGENT_ENCRYPTION_KEY` and a key-rotation plan):** a workspace connects its own Anthropic, OpenAI, or Google key, and its models join the list
+  - [x] a workspace connects its own Anthropic, OpenAI, or Google key (2026-10-09, `modules/model_keys`; Settings → Models): stored encrypted (`core/crypto.py`, Fernet with `PMAGENT_ENCRYPTION_KEY`, comma-separated keys to rotate: the first encrypts, all decrypt; 503 `encryption_not_configured` without one), only the last four characters shown; `GET/PUT/DELETE /v1/workspaces/{id}/model-keys[/{provider}]` (owners and admins, audited `model_key.saved` / `.removed`). A run uses the workspace's key for its model's provider, else the server's while `PMAGENT_SERVER_MODEL_KEYS` lends them (on by default; off for a hosted service); `GET .../models` lists what can run with `source` (workspace or server). A provider refusing for its rate limit, quota, or credit (`llm.limit_error`) fails the run saying so and is shown on the key (`limit_reached_at`, `limit_message`) until a run works again. Each agent's model is set per agent (its contract's `model`), also from Settings → Models ("Which model each agent uses")
 - [ ] **Ideas:** brainstorming conversations in a workspace before any project exists (the PM and specialists, no files to change); members can start and join them. Moved to agents v2 step 6 (Space)
 - [ ] **"Start a project from this idea"** (owners and admins): creates the project and drafts `project.md`, vision, requirements, roadmap, and the first epics and stories from the conversation, as one batch of changes to review and approve
 - [ ] **Promote from chat:** turn an answer or a whole conversation into a document, a decision (ADR), or issues, with the conversation linked as its source
@@ -612,7 +612,7 @@ External accounts, keys, and config have to exist before these items can be buil
 
 **2FA (TOTP) and stored OAuth tokens**
 - [ ] Library: `pyotp`; QR codes rendered in the web app
-- [ ] Encryption key for secrets at rest (TOTP secrets, OAuth tokens): `PMAGENT_ENCRYPTION_KEY` with `cryptography` (Fernet), and a plan for rotating the key
+- [ ] Encryption key for secrets at rest (TOTP secrets, OAuth tokens): `PMAGENT_ENCRYPTION_KEY` with `cryptography` (Fernet) exists (`core/crypto.py`, used for model keys; rotate by listing a new key first); TOTP secrets and OAuth tokens still to use it
 
 **Rate limiting**
 - [ ] Redis is already in docker-compose; needs `PMAGENT_REDIS_URL` in production
@@ -679,7 +679,8 @@ Organisations are workspaces of kind `organization` (agents v2 step 0, D6); the 
 - [x] **FR-19** Briefing endpoint (read-only; any write it attempts is auto-rejected)
 - [x] **(you)** Model key in `.env`: `GOOGLE_API_KEY` set; live-tested with `google_genai:gemini-3.8-flash` (chat that reads project files; approved edit to `roadmap.md`)
 - [x] Model choice per project (`model` on create/update) and `PMAGENT_DEFAULT_MODEL` for new projects
-- [ ] Workspace-level default model and per-workspace provider keys (business plans bring their own keys)
+- [x] Per-workspace provider keys (organisations bring their own; Settings → Models)
+- [ ] Workspace-level default model
 - [x] Streaming of agent output to clients: the runner reads the graph's stream (collecting results and interrupts as `ainvoke` does) and publishes the PM's text to in-process `RunStreams`; subagents aren't streamed
 - [x] Streams go through Redis in worker mode (`RedisRunStreams`: snapshot + deltas by position, pub/sub), in-process otherwise
 - [x] Runs in a separate worker process (`PMAGENT_JOBS=worker`, arq on Redis): they survive API restarts; a worker cut off mid-run has the job retried from its last checkpoint (never resending the message); Stop aborts the job. `local` (default) keeps runs in the API process

@@ -48,7 +48,7 @@ async def create_automation(data: AutomationCreate, access: ProjectManager, auto
     """Set an agent to run on its own: on `events` (people's issue and document changes,
     approved agent changes, pushes; never an agent's own) and/or a schedule (`schedule_hour`
     UTC, every day or on `schedule_weekday`). Its runs are instructed by you and see what you
-    see; their changes wait for approval. At most `max_runs_per_day`. Owners and admins."""
+    see; their changes wait for approval. At most `max_runs_per_day` when it has one. Owners and admins."""
     return await automations.create(access, data)
 
 

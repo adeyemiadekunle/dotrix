@@ -123,6 +123,28 @@ test("agents: an owner lets one write documents without asking, and the workspac
   await expect(page.getByLabel("Pause changes without approval")).toBeChecked();
 });
 
+test("models: connect the organisation's own key, and give an agent a smaller model", async ({ page }) => {
+  await signUp(page);
+  await settings(page, "models");
+  const anthropic = page.locator(".srow-wrap", { hasText: "Anthropic" });
+  await anthropic.getByRole("button", { name: "Connect" }).click();
+  await page.getByLabel("Anthropic API key").fill("sk-ant-e2e-" + "x".repeat(30) + "AB12");
+  await page.getByRole("button", { name: "Save key" }).click();
+  await expect(page.getByText("Anthropic key saved")).toBeVisible();
+  await expect(anthropic.getByText(/Connected · key ending AB12/)).toBeVisible();
+  await expect(page.getByText("sk-ant-e2e")).toHaveCount(0);
+
+  // Echo (documentation) doesn't need the biggest model.
+  await page.getByLabel("Echo's model").selectOption("anthropic:claude-haiku-5-5");
+  await expect(page.getByText("Echo now uses anthropic:claude-haiku-5-5")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Echo's model")).toHaveValue("anthropic:claude-haiku-5-5");
+
+  await page.locator(".srow-wrap", { hasText: "Anthropic" }).getByRole("button", { name: "Remove" }).click();
+  await page.locator(".modal").getByRole("button", { name: "Remove key" }).click();
+  await expect(page.getByText("Anthropic key removed")).toBeVisible();
+});
+
 test("GitHub says when the app isn't set up on this server", async ({ page }) => {
   await signUp(page);
   await settings(page, "github");

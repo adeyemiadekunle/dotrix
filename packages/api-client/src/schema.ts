@@ -2119,8 +2119,9 @@ export interface paths {
         };
         /**
          * List Models
-         * @description The models a conversation can be started on here: those whose provider has an API key.
-         *     A project's own model is always allowed too, even if it isn't listed.
+         * @description The models a conversation, or an agent, can run on here: those whose provider has a key
+         *     (the workspace's own, `source: workspace`, or the server's, `server`). A project's own model
+         *     is always allowed too, even if it isn't listed.
          */
         get: operations["list_models"];
         put?: never;
@@ -2215,7 +2216,7 @@ export interface paths {
          * @description Set an agent to run on its own: on `events` (people's issue and document changes,
          *     approved agent changes, pushes; never an agent's own) and/or a schedule (`schedule_hour`
          *     UTC, every day or on `schedule_weekday`). Its runs are instructed by you and see what you
-         *     see; their changes wait for approval. At most `max_runs_per_day`. Owners and admins.
+         *     see; their changes wait for approval. At most `max_runs_per_day` when it has one. Owners and admins.
          */
         post: operations["create_automation"];
         delete?: never;
@@ -3559,6 +3560,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/model-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Model Keys
+         * @description Each model provider: whether this workspace has its own key (its last four characters,
+         *     never the key), whether the server's key stands in without one, the provider's models, and
+         *     when it last refused a run for a rate limit or quota. Owners and admins.
+         */
+        get: operations["list_model_keys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/model-keys/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Model Key
+         * @description Connect or replace this workspace's key for `anthropic`, `openai`, or `google_genai`. It's
+         *     stored encrypted and used for every agent run here that picks one of the provider's models.
+         *     503 `encryption_not_configured` when the server can't store keys. Owners and admins; audited.
+         */
+        put: operations["save_model_key"];
+        post?: never;
+        /**
+         * Remove Model Key
+         * @description Remove this workspace's key for a provider; its models stop running here unless the server
+         *     lends its own. Owners and admins; audited.
+         */
+        delete: operations["remove_model_key"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
         parameters: {
             query?: never;
@@ -4307,11 +4357,8 @@ export interface components {
              * @default true
              */
             enabled: boolean;
-            /**
-             * Max Runs Per Day
-             * @default 5
-             */
-            max_runs_per_day: number;
+            /** Max Runs Per Day */
+            max_runs_per_day?: number | null;
             /**
              * Unattended
              * @description Its runs may make the changes the agent's contract allows without approval (owners turn it on); off: every change beyond comments and links asks
@@ -4355,8 +4402,11 @@ export interface components {
             schedule_weekday: number | null;
             /** Enabled */
             enabled: boolean;
-            /** Max Runs Per Day */
-            max_runs_per_day: number;
+            /**
+             * Max Runs Per Day
+             * @description Its own daily cap, if any (null: none)
+             */
+            max_runs_per_day: number | null;
             /**
              * Unattended
              * @description Its runs may make the changes the agent's contract allows without approval (owners turn it on); off: every change beyond comments and links asks
@@ -4396,7 +4446,7 @@ export interface components {
         };
         /**
          * AutomationUpdate
-         * @description Fields left out stay as they are; send null to clear the schedule.
+         * @description Fields left out stay as they are; send null to clear the schedule or the daily cap.
          */
         AutomationUpdate: {
             /** Name */
@@ -5843,6 +5893,61 @@ export interface components {
         MemberRoleUpdate: {
             role: components["schemas"]["Role"];
         };
+        /** ModelKeyRead */
+        ModelKeyRead: {
+            /**
+             * Provider
+             * @description anthropic, openai, or google_genai
+             */
+            provider: string;
+            /**
+             * Label
+             * @description The provider's name, e.g. Anthropic
+             */
+            label: string;
+            /**
+             * Connected
+             * @description This workspace has its own key for the provider
+             */
+            connected: boolean;
+            /**
+             * Last4
+             * @description The key's last four characters, when connected
+             */
+            last4: string | null;
+            /** Added By Id */
+            added_by_id: string | null;
+            /** Updated At */
+            updated_at: string | null;
+            /**
+             * Server Key
+             * @description Without a key of its own, the workspace may use the server's for this provider
+             */
+            server_key: boolean;
+            /**
+             * Limit Reached At
+             * @description When the provider last refused a run for a rate limit or quota (cleared by the next run that works)
+             */
+            limit_reached_at: string | null;
+            /**
+             * Limit Message
+             * @description What the provider said, in a line
+             */
+            limit_message: string | null;
+            /**
+             * Models
+             * @description The models of this provider agents can be given
+             */
+            models: string[];
+        };
+        /** ModelKeySave */
+        ModelKeySave: {
+            /**
+             * Api Key
+             * @description The provider's API key; stored encrypted, never shown again
+             */
+            api_key: string;
+        };
         /** ModelOption */
         ModelOption: {
             /**
@@ -5857,6 +5962,13 @@ export interface components {
              * @description The model's name without the provider
              */
             name: string;
+            /**
+             * Source
+             * @description Whose key runs it: the workspace's own, or the server's
+             * @default server
+             * @enum {string}
+             */
+            source: "workspace" | "server";
         };
         /** NeighborsRead */
         NeighborsRead: {
@@ -19210,6 +19322,193 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TeamRead"];
                 };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_model_keys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelKeyRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    save_model_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelKeySave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelKeyRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    remove_model_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Missing, invalid, or expired credentials */
             401: {

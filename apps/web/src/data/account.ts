@@ -227,6 +227,15 @@ export const agentSaved = (handle: string, agent: AgentFields, base: number | nu
 /** A built-in back to its default, or a custom agent removed. */
 export const agentReset = (handle: string) => unwrap(api.DELETE("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }));
 
+/* ---------- models: the organisation's own keys, and each agent's model ---------- */
+
+export const modelKeys = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/model-keys", wsPath()));
+export const modelKeySaved = (provider: string, apiKey: string) =>
+  unwrap(api.PUT("/v1/workspaces/{workspace_id}/model-keys/{provider}", { params: { path: { workspace_id: live.ws!.id, provider } }, body: { api_key: apiKey } }));
+export const modelKeyRemoved = (provider: string) =>
+  unwrap(api.DELETE("/v1/workspaces/{workspace_id}/model-keys/{provider}", { params: { path: { workspace_id: live.ws!.id, provider } } }));
+export const agentList = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", wsPath()));
+
 export const rules = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/rules", wsPath()));
 export const ruleSaved = (handle: string, content: string, base: number) => unwrap(api.PUT("/v1/workspaces/{workspace_id}/rules/{handle}", { params: { path: { workspace_id: live.ws!.id, handle } }, body: { content, base_version: base } }));
 export const skills = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/skills", wsPath()));

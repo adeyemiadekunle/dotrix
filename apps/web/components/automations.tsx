@@ -189,7 +189,7 @@ export function Automations({
                     <DropdownMenuItem
                       onSelect={() =>
                         setEditing({
-                          body: { name: "", agent: "auto", instructions: "", events: [], schedule_hour: 7, enabled: true, max_runs_per_day: 5, unattended: false },
+                          body: { name: "", agent: "auto", instructions: "", events: [], schedule_hour: 7, enabled: true, max_runs_per_day: null, unattended: false },
                         })
                       }
                     >
@@ -365,14 +365,14 @@ function AutomationDialog({
             </div>
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="automation-limit">Runs a day at most</Label>
+            <Label htmlFor="automation-limit">Runs a day at most (empty: no limit)</Label>
             <Input
               id="automation-limit"
               type="number"
               min={1}
-              max={50}
-              value={body.max_runs_per_day}
-              onChange={(e) => set({ max_runs_per_day: Number(e.target.value) || 1 })}
+              max={1000}
+              value={body.max_runs_per_day ?? ""}
+              onChange={(e) => set({ max_runs_per_day: Number(e.target.value) || null })}
               className="w-24"
             />
           </div>

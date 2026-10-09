@@ -21,6 +21,7 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
 from pmagent_backend.modules.lessons.models import LessonSource
 from pmagent_backend.modules.lessons.service import propose as propose_lesson
+from pmagent_backend.modules.model_keys.service import ModelKeys
 from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
@@ -187,7 +188,8 @@ class AgentService:
                     raise Forbidden("Only owners and admins (or members the workspace allows) choose the model")
                 if available is not None and model not in available:
                     raise ModelNotAvailable(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
-        self.runner.model_factory(project, model)  # fail fast (503) if the model can't run
+        keys = await ModelKeys(self.session, self.runner.secrets).keys(project.workspace_id)
+        self.runner.model_factory(project, model, keys=keys)  # fail fast (503) if the model can't run
         now = _now()
         run = AgentRun(
             id=uuid7(),

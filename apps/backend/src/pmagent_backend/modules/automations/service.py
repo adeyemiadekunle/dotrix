@@ -78,7 +78,7 @@ def schedule_label(hour: int | None, weekday: int | None) -> str:
 
 class AutomationService:
     def __init__(
-        self, session: AsyncSession, runner: Any, *, workspace_daily_runs: int = 50, workspace_daily_tokens: int = 0
+        self, session: AsyncSession, runner: Any, *, workspace_daily_runs: int = 0, workspace_daily_tokens: int = 0
     ) -> None:
         self.session = session
         self.runner = runner
@@ -117,7 +117,9 @@ class AutomationService:
             row.agent = await self._agent(access.project, data.agent)
         if "unattended" in fields and data.unattended is not None:
             row.unattended = _unattended(access, data.unattended, row.unattended)
-        for name in ("name", "instructions", "enabled", "max_runs_per_day"):
+        if "max_runs_per_day" in fields:
+            row.max_runs_per_day = data.max_runs_per_day  # null: no limit
+        for name in ("name", "instructions", "enabled"):
             if name in fields and getattr(data, name) is not None:
                 setattr(row, name, getattr(data, name))
         if "events" in fields and data.events is not None:
@@ -209,7 +211,7 @@ class AutomationService:
                 return False
         today = _day_start(now)
         runs_today = await self._runs_today(automation.id, today)
-        if runs_today >= automation.max_runs_per_day:
+        if automation.max_runs_per_day is not None and runs_today >= automation.max_runs_per_day:
             automation.last_error = f"Skipped: it reached its limit of {automation.max_runs_per_day} runs today"
             return False
         workspace_runs, workspace_tokens = (await self.session.execute(
@@ -221,7 +223,7 @@ class AutomationService:
                 AgentRun.created_at >= today,
             )
         )).one()
-        if workspace_runs >= self.workspace_daily_runs:
+        if self.workspace_daily_runs and workspace_runs >= self.workspace_daily_runs:
             automation.last_error = f"Skipped: the workspace reached its {self.workspace_daily_runs} automation runs today"
             return False
         if self.workspace_daily_tokens and workspace_tokens >= self.workspace_daily_tokens:

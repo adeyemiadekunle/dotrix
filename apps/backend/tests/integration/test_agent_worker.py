@@ -138,7 +138,7 @@ async def test_stop_aborts_the_job_in_the_worker(worker_mode, db_client: AsyncCl
     agent_script.say("unused")  # the API checks a model is configured before it enqueues
     model = GatedModel.of("A long report…")
     model.started, model.gate = asyncio.Event(), asyncio.Event()
-    worker = make_worker(model_factory=lambda _p, _m=None: ModelChoice(model=model, web_search=None), burst=False)
+    worker = make_worker(model_factory=lambda _p, _m=None, **_: ModelChoice(model=model, web_search=None), burst=False)
     running = asyncio.create_task(worker.async_run())
     try:
         created = await db_client.post(f"{base}/agent/runs", json={"message": "Write a long report"}, headers=ada.headers)

@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import health, v1
+from .core.crypto import Secrets
 from .core.email import build_email_sender
 from .core.errors import register_exception_handlers
 from .core.jobs import InlineJobs, JobContext, LocalJobs, QueuedEmailSender, QueuedJobs
@@ -110,6 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 checkouts=app.state.checkouts,
                 summarize_after_tokens=settings.summarize_after_tokens,
                 unattended_limits=(settings.unattended_changes_per_run, settings.unattended_changes_per_day),
+                secrets=app.state.secrets,
                 inline=settings.jobs == "inline",
                 queue=queue,
                 streams=streams,
@@ -151,6 +153,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     install_openapi(app, API_VERSION)
     app.state.settings = settings
+    # Reads and writes organisations' own model provider keys (encrypted at rest).
+    app.state.secrets = Secrets.from_settings(settings)
     # Replaced in lifespan by a sender that queues each email as a job; until then (and in
     # tests that don't run the lifespan) emails go straight to the provider.
     app.state.email_sender = build_email_sender(settings)

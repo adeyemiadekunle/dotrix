@@ -87,6 +87,7 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             "comment_id": next(e["id"] for e in commented.json()["log"] if e["kind"] == "commented"),
             "emoji": "\N{THUMBS UP SIGN}",
             "name": "release-note",
+            "provider": "anthropic",
         }
         # A run paused on an approval: it has a run, a thread, and a pending action.
         agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
@@ -180,7 +181,7 @@ async def _call(client: AsyncClient, method: str, url: str, body: bool, headers:
 async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
     known = {"workspace_id", "project_id", "key", "path", "version", "document_id", "invite_id",
              "user_id", "run_id", "thread_id", "handle", "output_id", "index", "installation_ref", "automation_id",
-             "lesson_id", "link_id", "name", "coding_run_id", "session_id", "team_id", "attachment_id", "comment_id", "emoji", "approval_id"}
+             "lesson_id", "link_id", "name", "coding_run_id", "session_id", "team_id", "attachment_id", "comment_id", "emoji", "approval_id", "provider"}
     routes = _scoped_routes(db_client)
     assert len(routes) > 60  # sanity: the whole API is being walked
     for _, template, _ in routes:

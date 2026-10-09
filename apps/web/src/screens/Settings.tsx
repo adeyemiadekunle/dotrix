@@ -14,6 +14,7 @@ import { ApiError } from "@/lib/api";
 import {
   GRANTABLE,
   agentCatalog,
+  agentList,
   agentDetail,
   agentReset,
   agentSaved,
@@ -25,6 +26,9 @@ import {
   installationRemoved,
   linkGitHub,
   memberPermissionsSaved,
+  modelKeyRemoved,
+  modelKeySaved,
+  modelKeys,
   models,
   notifSettings,
   notifSettingsSaved,
@@ -85,6 +89,7 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
     "Agents",
     [
       ["agents", "Agents", "bot"],
+      ["models", "Models", "cpu"],
       ["rules", "Rules and skills", "scroll-text"],
       ["automations", "Automations", "zap"],
       ["github", "GitHub", "github"],
@@ -711,6 +716,196 @@ function UnattendedPause() {
         />
       </SRow>
     </div>
+  );
+}
+
+/* ---------- Models: the organisation's own keys, and which model each agent uses ---------- */
+
+const MODEL_HINT =
+  "Small jobs don't need the most powerful model: give Echo (documents) and Juno (reviews) a fast, cheaper one, and keep the most capable for Nova and Orion.";
+const RUNS_NOTE = "Agents run as often as you ask; your provider's own limits apply. When a key reaches one, it shows here and the run says so.";
+
+interface KeyLook {
+  provider: string;
+  label: string;
+  connected: boolean;
+  last4?: string | null;
+  updated_at?: string | null;
+  server_key: boolean;
+  limit_reached_at?: string | null;
+  limit_message?: string | null;
+}
+
+/** A provider's key: connected or not, its limit if reached, and Connect / Replace / Remove. */
+function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean; onSave: (key: string) => Promise<unknown>; onRemove: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const state = k.connected ? `Connected · key ending ${k.last4}${k.updated_at ? ` · added ${ago(Date.parse(k.updated_at))}` : ""}` : k.server_key ? "Not connected · runs use the server's key for now" : "Not connected · its models can't run here";
+  const save = () => {
+    if (!value.trim()) return;
+    setBusy(true);
+    onSave(value.trim())
+      .then(() => (setEditing(false), setValue("")))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="srow-wrap">
+      <SRow t={k.label} d={state}>
+        {canEdit && !editing && (
+          <span className="row" style={{ gap: 6 }}>
+            {k.connected && (
+              <button className="btn btn-sm btn-ghost" onClick={onRemove}>
+                Remove
+              </button>
+            )}
+            <button className="btn btn-sm btn-secondary" onClick={() => setEditing(true)}>
+              {k.connected ? "Replace" : "Connect"}
+            </button>
+          </span>
+        )}
+      </SRow>
+      {editing && (
+        <div className="row" style={{ gap: 6, marginTop: 6 }}>
+          <input className="input" type="password" autoComplete="off" placeholder={`${k.label} API key`} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()} aria-label={`${k.label} API key`} autoFocus style={{ flex: 1 }} />
+          <button className="btn btn-sm btn-ghost" onClick={() => (setEditing(false), setValue(""))}>
+            Cancel
+          </button>
+          <button className="btn btn-sm btn-primary" onClick={save} disabled={busy || !value.trim()}>
+            Save key
+          </button>
+        </div>
+      )}
+      {k.limit_reached_at && (
+        <div className="alert warn" style={{ marginTop: 6 }}>
+          <Ic n="triangle-alert" s={15} />
+          <div>
+            <b>Limit reached {ago(Date.parse(k.limit_reached_at))}.</b> {k.label} refused a run: {k.limit_message} Runs on its models stop until the limit resets; give some agents a smaller model below, or use a key with more room.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Models() {
+  if (isLive()) return <LiveModels />;
+  return <DemoModels />;
+}
+
+function LiveModels() {
+  const keys = useApi(modelKeys);
+  const agents = useApi(agentList);
+  const ms = useApi(models);
+  const canEdit = live.ws?.role === "owner" || live.ws?.role === "admin";
+  if (keys.error) return <div className="alert danger">{keys.error}</div>;
+  if (!keys.data || !agents.data || !ms.data) return <div className="faint">Loading…</div>;
+  const refresh = () => (keys.reload(), ms.reload());
+  const remove = (k: { provider: string; label: string }) =>
+    confirmDlg({
+      title: `Remove the ${k.label} key?`,
+      body: "Agents set to its models stop running here until a key is connected again.",
+      ok: "Remove key",
+      danger: true,
+      icon: "trash-2",
+      run: () => {
+        modelKeyRemoved(k.provider)
+          .then(() => (toast(`${k.label} key removed`), refresh()))
+          .catch((e: unknown) => toast(`It wasn't removed: ${errText(e)}`, { kind: "err" }));
+      },
+    });
+  const setModel = (a: (typeof agents.data)[number], model: string) =>
+    agentSaved(a.handle, { ...fieldsOf(a), model: model || null }, a.version ?? null, model ? `Model: ${model}` : "Model: the project's")
+      .then(async () => {
+        toast(`${a.name} now uses ${model || "the project's model"}`);
+        agents.reload();
+        await reloadAgents();
+      })
+      .catch((e: unknown) => toast(`${a.name} didn't change: ${errText(e)}`, { kind: "err", ms: 6000 }));
+  return (
+    <>
+      <div className="sblock" style={{ marginTop: 0 }}>
+        <h2>Your model keys</h2>
+        <p className="muted" style={{ fontSize: 13 }}>
+          Connect your organisation&apos;s own keys. They&apos;re stored encrypted and used for every agent run here; only the last four characters are shown.
+        </p>
+        {keys.data.map((k) => (
+          <KeyRow
+            key={k.provider}
+            k={k}
+            canEdit={canEdit}
+            onSave={(v) =>
+              modelKeySaved(k.provider, v)
+                .then(() => (toast(`${k.label} key saved`), refresh()))
+                .catch((e: unknown) => toast(`The key wasn't saved: ${errText(e)}`, { kind: "err", ms: 6000 }))
+            }
+            onRemove={() => remove(k)}
+          />
+        ))}
+        <p className="faint" style={{ fontSize: 12.5 }}>{RUNS_NOTE}</p>
+      </div>
+      <div className="sblock">
+        <h2>Which model each agent uses</h2>
+        <p className="muted" style={{ fontSize: 13 }}>{MODEL_HINT}</p>
+        {agents.data.map((a) => (
+          <SRow key={a.handle} t={`${a.name}`} d={a.description || undefined}>
+            <select className="select" style={{ width: "auto", minWidth: 220 }} value={a.model ?? ""} onChange={(e) => void setModel(a, e.target.value)} disabled={!canEdit} aria-label={`${a.name}'s model`}>
+              <option value="">Project&apos;s model</option>
+              {[...new Set([...(a.model ? [a.model] : []), ...ms.data!.map((m) => m.id)])].map((m) => (
+                <option key={m} value={m}>
+                  {m.split(":")[1] ?? m}
+                </option>
+              ))}
+            </select>
+          </SRow>
+        ))}
+      </div>
+    </>
+  );
+}
+
+const DEMO_KEYS: KeyLook[] = [
+  { provider: "anthropic", label: "Anthropic", connected: true, last4: "7Qa2", server_key: false, limit_reached_at: null, limit_message: null },
+  { provider: "openai", label: "OpenAI", connected: false, server_key: false },
+  { provider: "google_genai", label: "Google", connected: true, last4: "kP0e", server_key: false, limit_reached_at: new Date(Date.now() - 3_600_000 * 2).toISOString(), limit_message: "429 RESOURCE_EXHAUSTED: quota exceeded for requests per day." },
+];
+const DEMO_MODELS = ["Claude Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Gemini 3.8 Flash"];
+
+function DemoModels() {
+  const [keys, setKeys] = useState(DEMO_KEYS);
+  return (
+    <>
+      <div className="sblock" style={{ marginTop: 0 }}>
+        <h2>Your model keys</h2>
+        <p className="muted" style={{ fontSize: 13 }}>
+          Connect your organisation&apos;s own keys. They&apos;re stored encrypted and used for every agent run here; only the last four characters are shown.
+        </p>
+        {keys.map((k) => (
+          <KeyRow
+            key={k.provider}
+            k={k}
+            canEdit
+            onSave={async (v) => (setKeys(keys.map((x) => (x.provider === k.provider ? { ...x, connected: true, last4: v.slice(-4), limit_reached_at: null, limit_message: null } : x))), toast(`${k.label} key saved`))}
+            onRemove={() => (setKeys(keys.map((x) => (x.provider === k.provider ? { ...x, connected: false, last4: null } : x))), toast(`${k.label} key removed`))}
+          />
+        ))}
+        <p className="faint" style={{ fontSize: 12.5 }}>{RUNS_NOTE}</p>
+      </div>
+      <div className="sblock">
+        <h2>Which model each agent uses</h2>
+        <p className="muted" style={{ fontSize: 13 }}>{MODEL_HINT}</p>
+        {D().agents.map((a) => (
+          <SRow key={a.handle} t={a.name} d={a.desc}>
+            <select className="select" style={{ width: "auto", minWidth: 220 }} value={a.model ?? ""} onChange={(e) => mutate(() => ((a.model = e.target.value || undefined), (a.customised = a.builtIn || undefined)))} aria-label={`${a.name}'s model`}>
+              <option value="">Project&apos;s model</option>
+              {DEMO_MODELS.map((m) => (
+                <option key={m}>{m}</option>
+              ))}
+            </select>
+          </SRow>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -2050,6 +2245,8 @@ function Body({ sec }: { sec: string }) {
       );
     case "agents":
       return <Agents />;
+    case "models":
+      return <Models />;
     case "rules":
       return <Rules />;
     case "automations":

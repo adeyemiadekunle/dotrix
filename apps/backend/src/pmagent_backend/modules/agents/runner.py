@@ -21,6 +21,7 @@ from deepagents.backends import CompositeBackend, StateBackend
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
 from sqlalchemy import select
 
+from pmagent_backend.core.crypto import Secrets
 from pmagent_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.automations.events import record_event
@@ -31,6 +32,7 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
 from pmagent_backend.modules.lessons.service import lessons_path
+from pmagent_backend.modules.model_keys.service import ModelKeys
 from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository, visible_to
@@ -52,7 +54,7 @@ from .context import build_context_pack
 from .findings import dedupe_findings
 from .graph_tools import GRAPH_TOOLS_GUIDE, build_graph_tools
 from .knowledge_tools import KNOWLEDGE_TOOLS_GUIDE, build_knowledge_tools
-from .llm import ModelFactory
+from .llm import PROVIDERS, ModelFactory, limit_error
 from .models import AgentApproval, AgentRun, AgentRunOutput, ApprovalStatus, RunKind, RunStatus
 from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
@@ -91,6 +93,12 @@ NO_REPLY_AFTER_DECISIONS_ERROR = (
     "The PM finished without writing a reply, even when asked again. "
     "The approved actions above were applied."
 )
+MODEL_LIMIT_ERROR = (
+    "Stopped: {provider} refused this run because the key reached its rate limit, quota, or credit "
+    "({said}). It works again when the limit resets, or with a key that has more room; owners and "
+    "admins see and replace keys in Settings → Models, and can give agents a smaller model there."
+)
+
 BUDGET_ERROR = (
     "Stopped: this run reached its token budget ({used:,} of {budget:,} tokens). Changes already "
     "approved were kept. Ask a narrower question, or an owner or admin can raise the budget in the "
@@ -173,8 +181,11 @@ class AgentRunner:
         web: WebResearch | None = None,
         checkouts: CodeCheckouts | None = None,
         unattended_limits: tuple[int, int] = (20, 200),
+        secrets: Secrets | None = None,
     ) -> None:
         self.session_factory = session_factory
+        # Reads workspaces' own model provider keys (model_keys); unconfigured: none can be read.
+        self.secrets = secrets or Secrets(None)
         # Changes agents may make under standing rules: per run step, per workspace per day.
         self.unattended_limits = unattended_limits
         # Connected repos' checkouts, for the agents' code tools (None: agents don't read code).
@@ -366,7 +377,8 @@ class AgentRunner:
                 kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
                 name, description, project_key = project.name, project.description, project.key
-                choice = self.model_factory(project, run.model)
+                keys = await ModelKeys(session, self.secrets).keys(run.workspace_id)
+                choice = self.model_factory(project, run.model, keys=keys)
                 lead = run.agent  # None: Auto (the Project Manager)
                 mode = run.mode
                 specs, unattended_left = await self._unattended_specs(session, run, specs, resolved)
@@ -426,7 +438,7 @@ class AgentRunner:
                 # contract lists, and the issue service checks the contract again on every change.
                 subagent_task_tools=pm_write_tools,
                 agents=specs,
-                models=lambda name: self.model_factory(project, name).model,
+                models=lambda name: self.model_factory(project, name, keys=keys).model,
                 board_instructions=board_instructions(project_key) + KNOWLEDGE_TOOLS_GUIDE + GRAPH_TOOLS_GUIDE,
                 context=context,
                 knowledge_tools=[
@@ -505,6 +517,8 @@ class AgentRunner:
                 logger.info("agent run %s: %s", run_id, budget)
                 await self._fail(run_id, BUDGET_ERROR.format(used=budget.used, budget=budget.budget), usage)
                 return
+            if await self._limited(run_id, exc, usage):
+                return
             logger.exception("agent run %s failed", run_id)
             await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}", usage)
         finally:
@@ -558,7 +572,8 @@ class AgentRunner:
                 workspace_id, thread_id, instructed_by = run.workspace_id, run.thread_id, member.user_id
                 lead = run.agent
                 stand_in = SimpleNamespace(model=run.conversation_model, specialist_model=None)
-                choice = self.model_factory(stand_in, run.conversation_model)  # type: ignore[arg-type]
+                keys = await ModelKeys(session, self.secrets).keys(run.workspace_id)
+                choice = self.model_factory(stand_in, run.conversation_model, keys=keys)  # type: ignore[arg-type]
                 names = ", ".join(p.key for p in projects) or "no particular project"
 
             backend = CompositeBackend(default=StateBackend(), routes={
@@ -575,7 +590,7 @@ class AgentRunner:
                 "this workspace", f"A conversation about {names}", choice.model, backend,
                 checkpointer=self.checkpointer, web_search=choice.web_search, rules=rules,
                 task_tools=(read_tools if projects else [], []), subagent_task_tools=[], agents=specs,
-                models=lambda name: self.model_factory(stand_in, name).model,  # type: ignore[arg-type]
+                models=lambda name: self.model_factory(stand_in, name, keys=keys).model,  # type: ignore[arg-type]
                 board_instructions=WORKSPACE_GUIDE, context=context,
                 knowledge_tools=search_tools if projects else [], lead=lead,
             )
@@ -622,6 +637,8 @@ class AgentRunner:
         except Exception as exc:
             if (budget := _budget_error(exc)) is not None:
                 await self._fail(run_id, BUDGET_ERROR.format(used=budget.used, budget=budget.budget), usage)
+                return
+            if await self._limited(run_id, exc, usage):
                 return
             logger.exception("agent run %s (across projects) failed", run_id)
             await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}", usage)
@@ -688,6 +705,24 @@ class AgentRunner:
                 details={"pending_actions": len(pending), **tokens} if pending else tokens,
             )
             await session.commit()
+            if run.model:  # it worked, so the provider's limit isn't in the way any more
+                await ModelKeys(session, self.secrets).limit_cleared(run.workspace_id, run.model.partition(":")[0])
+
+    async def _limited(self, run_id: uuid.UUID, exc: BaseException, usage: TokenUsage) -> bool:
+        """A provider refused for its rate limit, quota, or credit: the run fails saying so, and
+        the workspace's key records it for Settings → Models. False for any other failure."""
+        said = limit_error(exc)
+        if said is None:
+            return False
+        async with self.session_factory() as session:
+            run = await session.get(AgentRun, run_id)
+            provider = (run.model or "").partition(":")[0] if run else ""
+            if run is not None and provider in PROVIDERS:
+                await ModelKeys(session, self.secrets).limit_reached(run.workspace_id, provider, said)
+        label = PROVIDERS[provider].label if provider in PROVIDERS else "The model provider"
+        logger.info("agent run %s: %s limit reached: %s", run_id, label, said)
+        await self._fail(run_id, MODEL_LIMIT_ERROR.format(provider=label, said=said), usage)
+        return True
 
     async def _fail(self, run_id: uuid.UUID, error: str, usage: TokenUsage) -> None:
         """Stopped and failed runs keep the tokens they used."""

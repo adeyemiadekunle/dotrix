@@ -796,7 +796,7 @@ export async function automationAdded(pid: string, preset: string) {
           schedule_hour: spec.weekly ? 8 : null,
           schedule_weekday: spec.weekly ? 0 : null,
           enabled: true,
-          max_runs_per_day: 3,
+          max_runs_per_day: null,
           unattended: false,
         },
       }),

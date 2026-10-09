@@ -44,6 +44,9 @@ class ModelOption(BaseModel):
     id: str = Field(description="provider:model, e.g. google_genai:gemini-3.8-flash")
     provider: str
     name: str = Field(description="The model's name without the provider")
+    source: Literal["workspace", "server"] = Field(
+        default="server", description="Whose key runs it: the workspace's own, or the server's"
+    )
 
 
 class TriageRequest(BaseModel):

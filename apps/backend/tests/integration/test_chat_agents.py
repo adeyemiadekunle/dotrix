@@ -139,7 +139,7 @@ async def test_the_models_that_can_run(db_client: AsyncClient, create_team, sign
     team = await create_team(ada.headers)
     models = (await db_client.get(f"/v1/workspaces/{team['id']}/models", headers=ada.headers)).json()
     assert [m["id"] for m in models] == [GEMINI]  # OpenAI and Anthropic have no key here
-    assert models[0] == {"id": GEMINI, "provider": "google_genai", "name": "gemini-3.8-flash"}
+    assert models[0] == {"id": GEMINI, "provider": "google_genai", "name": "gemini-3.8-flash", "source": "server"}
     outsider = await signup(email="eve@example.com", name="Eve")
     assert (await db_client.get(f"/v1/workspaces/{team['id']}/models", headers=outsider.headers)).status_code == 404
 

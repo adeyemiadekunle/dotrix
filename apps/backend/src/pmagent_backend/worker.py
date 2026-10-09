@@ -19,6 +19,7 @@ from arq import cron, func
 from arq.connections import RedisSettings
 from arq.worker import Function, Retry, run_worker
 
+from .core.crypto import Secrets
 from .core.email import build_email_sender
 from .core.jobs import QUEUE_NAME, JobContext, JobFunction
 from .core.logging import configure_logging
@@ -59,7 +60,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     # inside a job that has to finish within a minute.
     dispatcher = AgentRunner(
         session_factory=sessionmaker, checkpointer=checkpointer, model_factory=settings_model_factory(settings),
-        queue=RunQueue(redis),
+        queue=RunQueue(redis), secrets=Secrets.from_settings(settings),
     )
     ctx["jobs"] = JobContext(
         sessionmaker, settings, build_email_sender(settings), build_storage(settings), embedder, checkouts,
@@ -75,6 +76,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         checkouts=checkouts,
         summarize_after_tokens=settings.summarize_after_tokens,
         unattended_limits=(settings.unattended_changes_per_run, settings.unattended_changes_per_day),
+        secrets=Secrets.from_settings(settings),
         inline=True,  # this process executes the runs
         stop_reasons=RunQueue(redis),
         streams=RedisRunStreams(redis),
