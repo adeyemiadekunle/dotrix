@@ -115,3 +115,17 @@ test("always allow from a waiting change: it's approved, and the agent may do it
   await expect(page.getByLabel("write documents without asking")).toHaveValue("allow");
   await expect(page.getByLabel("open issues without asking")).toHaveValue("ask");
 });
+
+test("a conversation stopped at its model's limit continues from Chat, or from Notifications", async ({ page }) => {
+  await page.goto("/w/dotrix/notifications?n=na5");
+  await expect(page.getByText("Stopped at the model's limit.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue when it resets" })).toBeVisible();
+
+  await page.goto("/w/dotrix/chat?thread=th5");
+  await expect(page.getByText("Stopped at Anthropic's limit.")).toBeVisible();
+  await expect(page.getByText(/It resets in about \d+ minutes?/)).toBeVisible();
+  await page.getByRole("button", { name: "Continue now" }).click();
+  await expect(page.getByText("Continuing where it stopped")).toBeVisible();
+  await expect(page.getByText(/Picking up where I stopped/)).toBeVisible();
+  await expect(page.getByText("Stopped at Anthropic's limit.")).toHaveCount(0);
+});

@@ -11,12 +11,20 @@ from fastapi import APIRouter, Depends, Path, status
 from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.agents.llm import available_models
-from pmagent_backend.modules.model_keys.deps import Connected
+from pmagent_backend.modules.model_keys.deps import Connected, Personal
 from pmagent_backend.modules.projects.deps import ProjectManager, ProjectViewer
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
-from .schemas import AgentCatalog, AgentRead, AgentSave, AgentVersionRead
+from .preferences import AgentPreferences
+from .schemas import (
+    AgentCatalog,
+    AgentPreferenceRead,
+    AgentPreferenceSave,
+    AgentRead,
+    AgentSave,
+    AgentVersionRead,
+)
 from .service import AgentDefinitionService, catalog_read
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/agents", tags=["agents"], responses=errors(401, 404))
@@ -140,3 +148,35 @@ async def restore_project_agent_version(
         access.member, access.project.id, handle, version,
         available_models=available_models(settings, access.project.model, connected=connected),
     )
+
+
+mine_router = APIRouter(prefix="/workspaces/{workspace_id}/my-agents", tags=["agents"], responses=errors(401, 404))
+
+Chatter = Annotated[Membership, Depends(require_permission(Permission.CHAT))]
+
+
+@mine_router.get("")
+async def list_my_agent_preferences(member: Chatter, session: SessionDep) -> list[AgentPreferenceRead]:
+    """Your own preferences for this workspace's agents: extra instructions and a model, for the
+    runs you start. Agents you haven't touched aren't listed."""
+    return await AgentPreferences(session).list(member)
+
+
+@mine_router.put("/{handle}", responses=errors(403, 422))
+async def save_my_agent_preference(
+    handle: Handle, data: AgentPreferenceSave, member: Chatter, session: SessionDep, settings: SettingsDep,
+    connected: Connected, personal: Personal,
+) -> AgentPreferenceRead:
+    """How you like an agent to work (up to 2,000 characters, added to its instructions) and its
+    model, for the runs you start. Within limits: it can't change the agent's tools, folder
+    access, or what it may do without asking. A model needs the workspace's permission to
+    choose models, unless your own key runs it (403). Empty instructions and no model: removed."""
+    return await AgentPreferences(session).save(
+        member, handle, data, available=available_models(settings, connected=connected), personal=personal
+    )
+
+
+@mine_router.delete("/{handle}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_my_agent_preference(handle: Handle, member: Chatter, session: SessionDep) -> None:
+    """Back to the agent as the workspace set it up, for your runs."""
+    await AgentPreferences(session).remove(member, handle)

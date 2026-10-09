@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pmagent_backend.modules.agents.models import AgentApproval, AgentRun, ApprovalStatus
+from pmagent_backend.modules.agents.privacy import runs_visible_to
 from pmagent_backend.modules.issues.models import Issue, IssueEvent
 from pmagent_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
 from pmagent_backend.modules.projects.deps import ProjectAccess
@@ -120,7 +121,8 @@ class ActivityService:
 
         # Conversations and decisions are for people who can chat with the agents here.
         if can(member, Permission.CHAT):
-            runs = select(AgentRun).where(AgentRun.project_id.in_(ids))
+            # Conversations are private to whoever started them (agents/privacy.py).
+            runs = select(AgentRun).where(AgentRun.project_id.in_(ids), runs_visible_to(member))
             if before is not None:
                 runs = runs.where(AgentRun.created_at < before)
             for run in await self.session.scalars(runs.order_by(AgentRun.created_at.desc()).limit(limit)):

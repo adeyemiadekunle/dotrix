@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from pmagent_backend.modules.activity.router import router as activity
 from pmagent_backend.modules.activity.router import workspace_router as workspace_activity
+from pmagent_backend.modules.agent_definitions.router import mine_router as my_agents
 from pmagent_backend.modules.agent_definitions.router import (
     project_router as project_agent_definitions,
 )
@@ -32,6 +33,7 @@ from pmagent_backend.modules.issues.router import router as issues
 from pmagent_backend.modules.issues.router import workspace_router as workspace_issues
 from pmagent_backend.modules.knowledge.router import router as knowledge
 from pmagent_backend.modules.lessons.router import router as lessons
+from pmagent_backend.modules.model_keys.router import me_router as my_models
 from pmagent_backend.modules.model_keys.router import router as model_keys
 from pmagent_backend.modules.notifications.router import router as notifications
 from pmagent_backend.modules.notifications.router import settings_router as notification_settings
@@ -58,6 +60,7 @@ for module_router in (
     documents,
     agent_definitions,
     project_agent_definitions,
+    my_agents,
     agents,
     conversations,
     models,
@@ -82,6 +85,7 @@ for module_router in (
     github_webhook,
     teams,
     model_keys,
+    my_models,
     search,
     workspace_search,
 ):

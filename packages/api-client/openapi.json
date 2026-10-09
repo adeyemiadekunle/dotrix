@@ -7492,6 +7492,252 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/my-agents": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List My Agent Preferences",
+        "description": "Your own preferences for this workspace's agents: extra instructions and a model, for the\nruns you start. Agents you haven't touched aren't listed.",
+        "operationId": "list_my_agent_preferences",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPreferenceRead"
+                  },
+                  "title": "Response List My Agent Preferences"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/my-agents/{handle}": {
+      "put": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Save My Agent Preference",
+        "description": "How you like an agent to work (up to 2,000 characters, added to its instructions) and its\nmodel, for the runs you start. Within limits: it can't change the agent's tools, folder\naccess, or what it may do without asking. A model needs the workspace's permission to\nchoose models, unless your own key runs it (403). Empty instructions and no model: removed.",
+        "operationId": "save_my_agent_preference",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "handle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,30}$",
+              "description": "The agent's handle, e.g. research",
+              "title": "Handle"
+            },
+            "description": "The agent's handle, e.g. research"
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPreferenceSave"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPreferenceRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Remove My Agent Preference",
+        "description": "Back to the agent as the workspace set it up, for your runs.",
+        "operationId": "remove_my_agent_preference",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "handle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,30}$",
+              "description": "The agent's handle, e.g. research",
+              "title": "Handle"
+            },
+            "description": "The agent's handle, e.g. research"
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs": {
       "post": {
         "tags": [
@@ -8915,6 +9161,125 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/continue": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Continue Run",
+        "description": "Continue a run that stopped at its model's limit (`error_kind: model_limit`) from where it\nstopped, without sending the message again: now, or once the limit resets (`when_reset`,\nwhen the provider said when: `resumes_at`). Only whoever asked. 409 `nothing_to_continue`\nfor any other run, or when the conversation went on since.",
+        "operationId": "continue_run",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinueRun"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}": {
       "patch": {
         "tags": [
@@ -9714,7 +10079,7 @@
           "agents"
         ],
         "summary": "List Models",
-        "description": "The models a conversation, or an agent, can run on here: those whose provider has a key\n(the workspace's own, `source: workspace`, or the server's, `server`). A project's own model\nis always allowed too, even if it isn't listed.",
+        "description": "The models a conversation, or an agent, can run on here: those whose provider has a key\n(your own, `source: personal`; the workspace's, `workspace`; or the server's, `server`). A project's own model\nis always allowed too, even if it isn't listed.",
         "operationId": "list_models",
         "security": [
           {
@@ -18484,6 +18849,252 @@
         }
       }
     },
+    "/v1/me/models": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Get My Models",
+        "description": "Your own model keys (last four characters only) and your default model for new\nconversations. Your keys run what you start: always in your personal workspace, and in an\norganisation that allows personal keys (otherwise its own key does).",
+        "operationId": "get_my_models",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalModelsRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Set My Default Model",
+        "description": "Your default model for new conversations (null: each project's). It's used where it can\nrun: with your own key for its provider, or where the workspace lets people choose models.",
+        "operationId": "set_my_default_model",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefaultModelSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalModelsRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/me/model-keys/{provider}": {
+      "put": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Save My Model Key",
+        "description": "Connect or replace your own key for `anthropic`, `openai`, or `google_genai`; stored\nencrypted, never shown again. 503 `encryption_not_configured` when the server can't store keys.",
+        "operationId": "save_my_model_key",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelKeySave"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalModelsRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Remove My Model Key",
+        "description": "Remove your own key for a provider; what you start uses the workspace's key again.",
+        "operationId": "remove_my_model_key",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalModelsRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
       "get": {
         "tags": [
@@ -19226,6 +19837,77 @@
         "title": "AgentFields",
         "description": "An agent's contract without its handle (the handle is in the path). Validated against\n`pmagent_engine.contracts.AgentSpec` on save (422 with the reason)."
       },
+      "AgentPreferenceRead": {
+        "properties": {
+          "instructions": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Instructions",
+            "description": "How you like this agent to work (tone, format, what to focus on); added to its instructions for the runs you start. It can't change what the agent may do",
+            "default": ""
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Its model for your runs; null: as set for the workspace"
+          },
+          "handle": {
+            "type": "string",
+            "title": "Handle"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "handle"
+        ],
+        "title": "AgentPreferenceRead"
+      },
+      "AgentPreferenceSave": {
+        "properties": {
+          "instructions": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Instructions",
+            "description": "How you like this agent to work (tone, format, what to focus on); added to its instructions for the runs you start. It can't change what the agent may do",
+            "default": ""
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Its model for your runs; null: as set for the workspace"
+          }
+        },
+        "type": "object",
+        "title": "AgentPreferenceSave"
+      },
       "AgentRead": {
         "properties": {
           "name": {
@@ -19506,6 +20188,37 @@
               }
             ],
             "title": "Error"
+          },
+          "error_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Kind",
+            "description": "`model_limit`: it stopped at its model's limit and can be continued (`.../continue`)"
+          },
+          "resumes_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resumes At",
+            "description": "When the limit resets, if the provider said"
+          },
+          "continue_at_reset": {
+            "type": "boolean",
+            "title": "Continue At Reset",
+            "description": "It continues by itself once the limit resets",
+            "default": false
           },
           "automation_id": {
             "anyOf": [
@@ -21849,6 +22562,18 @@
         "title": "ConnectedRepoRead",
         "description": "The repository a project's code lives in, connected through the GitHub App."
       },
+      "ContinueRun": {
+        "properties": {
+          "when_reset": {
+            "type": "boolean",
+            "title": "When Reset",
+            "description": "Continue it automatically once the limit resets (when the provider said when), instead of now",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "ContinueRun"
+      },
       "Decision": {
         "properties": {
           "approval_id": {
@@ -21904,6 +22629,25 @@
           "decisions"
         ],
         "title": "DecisionsRequest"
+      },
+      "DefaultModelSave": {
+        "properties": {
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model",
+            "description": "provider:model, or null for the project's"
+          }
+        },
+        "type": "object",
+        "title": "DefaultModelSave"
       },
       "DeviceCodeRequest": {
         "properties": {
@@ -24490,11 +25234,12 @@
           "source": {
             "type": "string",
             "enum": [
+              "personal",
               "workspace",
               "server"
             ],
             "title": "Source",
-            "description": "Whose key runs it: the workspace's own, or the server's",
+            "description": "Whose key runs it for you: your own, the workspace's, or the server's",
             "default": "server"
           }
         },
@@ -24618,7 +25363,8 @@
           "finding",
           "mention",
           "decided",
-          "watching"
+          "watching",
+          "limit"
         ],
         "title": "NotificationKind"
       },
@@ -25055,6 +25801,46 @@
           "agents:choose_model"
         ],
         "title": "Permission"
+      },
+      "PersonalModelsRead": {
+        "properties": {
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/ModelKeyRead"
+            },
+            "type": "array",
+            "title": "Keys",
+            "description": "Each provider: whether you've connected your own key"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model",
+            "description": "Your default model for new conversations; null: the project's"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models",
+            "description": "The models you can pick from"
+          }
+        },
+        "type": "object",
+        "required": [
+          "keys",
+          "default_model",
+          "models"
+        ],
+        "title": "PersonalModelsRead",
+        "description": "Your own keys and default model (Account \u2192 Models)."
       },
       "PrState": {
         "type": "string",
@@ -28273,6 +29059,18 @@
             ],
             "title": "Unattended Paused",
             "description": "Pause every agent's changes without approval (owners and admins); only owners resume them"
+          },
+          "personal_keys": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personal Keys",
+            "description": "Let people's own model keys run what they start here (owners and admins)"
           }
         },
         "type": "object",
@@ -28316,6 +29114,12 @@
             "title": "Unattended Paused",
             "description": "Agents' standing rules to act without approval are paused: every change asks",
             "default": false
+          },
+          "personal_keys": {
+            "type": "boolean",
+            "title": "Personal Keys",
+            "description": "People's own model keys run what they start here (else the workspace's key)",
+            "default": true
           },
           "role": {
             "$ref": "#/components/schemas/Role"

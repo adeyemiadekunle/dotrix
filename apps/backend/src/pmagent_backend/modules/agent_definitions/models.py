@@ -56,3 +56,17 @@ class AgentDefinitionVersion(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     note: Mapped[str] = mapped_column(String(500), default="", server_default="")
     author_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AgentPreference(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):
+    """One person's own touches to an agent in a workspace (Settings → Your agents): extra
+    instructions and a model, for the runs they start. Never tools, folder access, issue types,
+    or what it may do without asking: those stay the workspace's (the contract)."""
+
+    __tablename__ = "agent_preferences"
+    __table_args__ = (UniqueConstraint("workspace_id", "user_id", "handle"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    handle: Mapped[str] = mapped_column(String(32))
+    instructions: Mapped[str] = mapped_column(String(2000), default="", server_default="")
+    model: Mapped[str | None] = mapped_column(String(100))

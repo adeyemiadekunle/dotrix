@@ -71,6 +71,14 @@ class Notifier:
         self._add(project, requester_id, NotificationKind.FINDING, at, run_id=run_id, title=title, count=count,
                   actor_agent=agent)
 
+    def limit(
+        self, project: Project, requester_id: uuid.UUID, run_id: uuid.UUID, title: str, said: str, at: datetime,
+        agent: str | None,
+    ) -> None:
+        """A run someone asked for stopped at its model's limit: they can continue it."""
+        self._add(project, requester_id, NotificationKind.LIMIT, at, run_id=run_id, title=title,
+                  excerpt=_excerpt(said), actor_agent=agent)
+
     def decided(
         self, project: Project, requester_id: uuid.UUID, run_id: uuid.UUID | None, title: str, at: datetime, *,
         approved: int, rejected: int, reason: str | None, actor_user_id: uuid.UUID,

@@ -94,12 +94,17 @@ async def test_workspace_conversations(project, db_client: AsyncClient, agent_sc
     ]
     assert threads[0]["thread_id"] == first["thread_id"] and threads[0]["waiting"] is False
 
-    # A member doesn't see conversations in a restricted project they aren't on.
+    # Conversations are private: a colleague sees only their own, and none in a restricted
+    # project they aren't on.
     bob = await signup(email="bob@example.com", name="Bob")
     await add_member(team["id"], bob.id, Role.MEMBER)
+    assert (await db_client.get(f"{ws}/threads", headers=bob.headers)).json() == []
     await db_client.patch(other_base, json={"access": "restricted"}, headers=ada.headers)
+    agent_script.say("Two things block it.", "Mine.")
+    await run(db_client, base, bob.headers, "What's mine to do?")
     seen = (await db_client.get(f"{ws}/threads", headers=bob.headers)).json()
-    assert [t["project_key"] for t in seen] == ["KUN"]
+    assert [(t["project_key"], t["title"]) for t in seen] == [("KUN", "What's mine to do")]
+    assert len((await db_client.get(f"{ws}/threads", headers=ada.headers)).json()) == 2  # not Bob's
 
 
 async def test_workspace_agent_usage(project, db_client: AsyncClient, agent_script, signup, add_member) -> None:
@@ -569,8 +574,8 @@ async def test_owners_see_where_the_tokens_went(
 
     bob = await signup(email="bob@example.com", name="Bob")
     await add_member(team["id"], bob.id, Role.MEMBER)
-    as_member = (await db_client.get(f"{base}/agent/runs/{done['id']}", headers=bob.headers)).json()
-    assert as_member["breakdown"] is None
+    # Someone else's conversation isn't theirs to open, details or not.
+    assert (await db_client.get(f"{base}/agent/runs/{done['id']}", headers=bob.headers)).status_code == 404
 
 
 async def test_a_run_stops_at_its_token_budget(project, db_client: AsyncClient, agent_script) -> None:
@@ -671,14 +676,10 @@ async def test_only_owners_and_admins_see_token_usage(
     listed = (await db_client.get(f"{base}/agent/runs", headers=bob.headers)).json()
     assert all(r["input_tokens"] is None and r["model"] is None for r in listed)
 
-    as_owner = (await db_client.get(f"{base}/agent/runs/{done['id']}", headers=ada.headers)).json()
-    assert (as_owner["input_tokens"], as_owner["output_tokens"]) == (150, 20) and as_owner["model"]
-    await add_member(team["id"], (await signup(email="cy@example.com", name="Cy")).id, Role.ADMIN)
-    cy = await db_client.post("/v1/auth/login", json={"email": "cy@example.com", "password": "correct horse battery"})
-    as_admin = (
-        await db_client.get(f"{base}/agent/runs/{done['id']}", headers={"Authorization": f"Bearer {cy.json()['access_token']}"})
-    ).json()
-    assert as_admin["input_tokens"] == 150
+    # Owners and admins don't open Bob's conversation, but his tokens count in the workspace's usage.
+    assert (await db_client.get(f"{base}/agent/runs/{done['id']}", headers=ada.headers)).status_code == 404
+    usage = (await db_client.get(f"/v1/workspaces/{team['id']}/agent-usage", headers=ada.headers)).json()
+    assert (usage["runs"], usage["input_tokens"], usage["output_tokens"]) == (1, 150, 20)
 
 
 async def test_past_briefings_are_listed_by_kind(project, db_client: AsyncClient, agent_script) -> None:

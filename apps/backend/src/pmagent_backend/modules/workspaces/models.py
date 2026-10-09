@@ -44,6 +44,9 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Every agent asks before changing anything while set: the standing rules that let agents act
     # without approval are paused (owners and admins pause; owners resume).
     unattended_paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Whether people's own model keys (Account → Models) run what they start here; otherwise
+    # every run uses the workspace's key. A personal workspace always uses its owner's.
+    personal_keys: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
 
 class Membership(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):

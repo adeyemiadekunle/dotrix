@@ -229,10 +229,12 @@ async def test_a_run_records_its_result_and_people_act_on_each_item(world, db_cl
     assert all(i["state"] == "open" for i in output["items"])
 
     url = f"{base}/agent/runs/{done['id']}/outputs/{output['id']}/items"
-    dismissed = await db_client.patch(f"{url}/1", json={"state": "dismissed", "reason": "Dev only"}, headers=cat.headers)
+    # The run is Ada's: a colleague doesn't see it, so can't act on it.
+    assert (await db_client.patch(f"{url}/1", json={"state": "dismissed"}, headers=cat.headers)).status_code == 404
+    dismissed = await db_client.patch(f"{url}/1", json={"state": "dismissed", "reason": "Dev only"}, headers=ada.headers)
     assert dismissed.status_code == 200, dismissed.text
     item = dismissed.json()["outputs"][0]["items"][1]
-    assert item["state"] == "dismissed" and item["reason"] == "Dev only" and item["acted_by_id"] == cat.id
+    assert item["state"] == "dismissed" and item["reason"] == "Dev only" and item["acted_by_id"] == ada.id
     marked = (await db_client.patch(f"{url}/0", json={"state": "done", "link": "KUN-7"}, headers=ada.headers)).json()
     assert marked["outputs"][0]["items"][0]["link"] == "KUN-7"
     assert (await db_client.patch(f"{url}/9", json={"state": "done"}, headers=ada.headers)).status_code == 404

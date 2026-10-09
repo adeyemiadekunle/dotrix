@@ -75,7 +75,7 @@ async def test_changes_waiting_notify_whoever_may_approve(world, db_client: Asyn
     assert note["resolved"] and not note["read"]
     assert await _counts(db_client, ws, bob) == {
         "unread": 0,
-        "by_kind": {"approval": 0, "checkpoint": 0, "assigned": 0, "finding": 0, "mention": 0, "decided": 0, "watching": 0},
+        "by_kind": {"approval": 0, "checkpoint": 0, "assigned": 0, "finding": 0, "mention": 0, "decided": 0, "watching": 0, "limit": 0},
     }
 
 

@@ -107,7 +107,7 @@ export interface Activity {
   at: number;
   extra: string;
 }
-export type NotifType = "mention" | "assign" | "comment" | "update" | "approval" | "checkpoint" | "finding" | "decided";
+export type NotifType = "mention" | "assign" | "comment" | "update" | "approval" | "checkpoint" | "finding" | "decided" | "limit";
 export interface Notif {
   id: string;
   type: NotifType;
@@ -116,6 +116,8 @@ export interface Notif {
   project?: string;
   /** dotrix: the chat thread an agent item belongs to */
   thread?: string;
+  /** the agent run it's about (a run stopped at its model's limit can continue) */
+  run?: string;
   text: string;
   snippet: string;
   at: number;
@@ -213,6 +215,8 @@ export interface ChatMessage {
   activity?: string[];
   changes?: ProposedChange[];
   tokens?: number;
+  /** it stopped at its model's limit: continue now, or once the limit resets */
+  limit?: { provider: string; resetsAt: number | null; whenReset?: boolean; continued?: boolean };
 }
 export interface Thread {
   id: string;

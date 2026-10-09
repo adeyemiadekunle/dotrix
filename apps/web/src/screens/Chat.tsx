@@ -4,7 +4,8 @@
 // URL: ?project=KEY&thread=ID, ?tab=coding&session=ID, ?q= (start with a question), ?agent=.
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
-import { decideCoding, followUp, newThread, sendChat, stopCoding } from "../core/agents";
+import { continueLimited, decideCoding, followUp, newThread, sendChat, stopCoding } from "../core/agents";
+import { LimitNotice } from "../components/LimitNotice";
 import { openTask } from "../core/actions";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
@@ -184,6 +185,9 @@ function Message({ th, i }: { th: Thread; i: number }) {
           </div>
         )}
         <Changes msg={m} />
+        {m.limit && !m.limit.continued && (
+          <LimitNotice provider={m.limit.provider} resetsAt={m.limit.resetsAt} whenReset={m.limit.whenReset} onContinue={(w) => continueLimited({ thread: th.id, project: th.project ?? undefined }, w)} />
+        )}
       </div>
     </div>
   );

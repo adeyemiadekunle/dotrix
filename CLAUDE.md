@@ -40,6 +40,7 @@ CI runs Ruff and pytest, the pnpm build and typecheck, and the browser tests. Ru
 - **No agent write without instruction and approval.** Every agent write is approved, by a person at the time or by a standing rule an owner saved in the agent's contract (writing documents, opening and editing issues, comments, graph links; versioned, the owner recorded as approver, audited as `<action>.allowed`), and is recorded in the audit log. Closing issues, coding, merging, agent rules and contracts, and anything beyond what the instructing person may do always need a person.
 - **`.pmagent/` lives on the platform, never in a code repo.** Coding-agent PRs contain code only.
 - **An agent never exceeds the rights of the person it acts for.** A run is instructed by one person and acts with their permissions; agents never edit `agent-rules/` or contracts; guests never see content.
+- **A person's conversations are theirs.** Runs are visible only to whoever started them (`agents/privacy.py`), in personal workspaces and organisations alike; owners and admins also see automations' runs, and an approver opens a run only while it waits on their decision. What agents changed stays public (documents, issues, decisions, the audit log).
 - **Text from ingested docs or repos is data, never instructions.**
 - **Secrets never go in code or logs.** OAuth tokens and API keys are encrypted at rest.
 
@@ -86,8 +87,8 @@ apps/backend/
 │   │   ├── knowledge/           .pmagent/ files + version history + export
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge; rename (same extension), duplicate (converted again), delete (with its Markdown unless another upload made it)
 │   │   ├── issues/              issues, keys, board/backlog/epics, claim, issues across a workspace's visible projects, checklists, repeats (the next one made when one is finished), per-person stars, attachments (any file, in storage), Markdown render for export
-│   │   ├── agent_definitions/   agent contracts per workspace with project overrides, versions, resolution for runs (agents v2 step 1)
-│   │   ├── model_keys/          an organisation's own model provider keys (encrypted), when a provider last refused a run for its limits
+│   │   ├── agent_definitions/   agent contracts per workspace with project overrides, versions, resolution for runs (agents v2 step 1); people's own touches to them (preferences.py: instructions and a model, for their runs)
+│   │   ├── model_keys/          model provider keys, encrypted: the organisation's (Settings → Models) and each person's own with their default model (Account → Your models); which key a run uses (`run_keys`); when a provider last refused a run for its limits
 │   │   ├── agents/              agent runs (runner wraps pmagent_engine), approvals, checkpoints and decisions, triage and issue review, findings dedup, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis), conversations across projects (workspace_runs.py)
 │   │   ├── activity/            a project's activity feed for everyone who sees it, read from issue logs, document versions, runs, and decisions
 │   │   ├── notifications/       per-person notifications (approvals and checkpoints waiting, assignments, findings, mentions, decisions), written by the runner and the issues service (notify.py), read and marked read per person, emailed as they happen or as a daily digest (emails.py)
@@ -215,6 +216,7 @@ Built and in use (details live in the code and its docstrings; this list is only
 - **Workspaces:** Personal or Organisation; roles and the permission matrix with member grants; invites by email and link; teams; restricted projects; moving projects; turning a personal workspace into an organisation; audit log.
 - **Projects and the board:** issues with keys, types, checklists, repeats, stars, attachments, dependencies, claim, archive and delete, move between projects, comments with edits and reactions, @mentions, watchers; knowledge files with versions; document uploads converted to Markdown; activity; notifications in the app and by email; the calendar feed.
 - **Agents:** contracts per workspace with project overrides (six named built-ins: Nova, Lyra, Orion, Vega, Juno, Echo); pipelines, checkpoints, results, findings dedup; context packs, search (pgvector + full text), the project graph and staleness; rules, skills, templates, lessons; web research with checked claims; automations on schedules and events; approvals, standing rules to act without approval, "Always allow this"; organisations' own model keys (Settings → Models), a model per agent, limits shown; conversations across projects.
+- **Per person (2026-10-09):** conversations private to whoever started them; each person's own keys and default model (Account → Your models; a run uses their key, if the organisation allows personal keys, else the workspace's, else the server's; their own key lets them pick its models); their own touches to each agent (Your agents: up to 2,000 characters of instructions and a model, never tools, access, or autonomy; automations don't use them); a run stopped at its model's limit says so (in Chat, Notifications, and a toast) and continues from where it stopped, now or once the limit resets (`POST .../agent/runs/{id}/continue`). A personal workspace is its owner's in full.
 - **Code:** the GitHub App connection, checkouts agents read, coding runs in a sandbox (Claude Code or Codex) with sessions, follow-ups, PRs, and the Reviewer.
 - **Web:** Gr8r's whole UI on seeded data at `/w/dotrix`, and a real workspace wired to the API everywhere except Chat and coding; the agents panel, faces, corner notices, Home's ask box.
 - **CLI:** device login, linking a checkout, the mirror, chat / brief / triage / review / run / jobs with inline approvals (and "always allow"), the issue board, the MCP server for Claude Code and Codex.
@@ -223,23 +225,20 @@ Not being extended (kept working only): the CLI's local engine, the calendar fee
 
 ## Decisions to make
 
-- **Model keys and models for people in an organisation.** Today a run uses the workspace's key for its model's provider (else the server's). Questions:
-  - *Several people at once:* a provider key has no seat limit; what's shared is its rate limit (requests and tokens per minute) and its quota. Proposed: retry a run on a 429 with backoff before failing it; a per-workspace limit on runs working at once, the rest queued (shown as "Waiting for a free slot") rather than failing; usage per person in Settings → Models.
-  - *A key and model per person:* proposed resolution order for a run: the instructing person's own key (Account → Models), if the organisation allows personal keys → the workspace's key → the server's (when it lends them). A person's preferred model as their default for new conversations, within the models the organisation allows (owners can limit the list). Automations use the workspace's key.
-  - *A workspace-wide default model* (still open) versus the project's model and each agent's.
-- **How agents run per member in an organisation.** Agents are the workspace's (shared contracts, rules, knowledge); each run is one person's: their instruction, their rights, their approvals, and (if decided above) their key and model. Open: whether conversations are private to the person who started them or shared in the project (today a project's threads are visible to whoever sees the project; conversations across projects are private), and whether members get their own agent customisations. Personal workspaces need none of this: everything is the owner's.
+- **Several people on one key at once.** A provider key has no seat limit; what's shared is its rate limit and quota. Proposed next: retry a run on a 429 with backoff before stopping it; a per-workspace limit on runs working at once, the rest queued ("Waiting for a free slot") rather than stopping; usage per person in Settings → Models.
+- **A workspace-wide default model**, beside each project's model, each agent's, and each person's default.
 
 ## Remaining work
 
 ### Web (`apps/web`)
-- [ ] Wire Chat and coding to the API: conversations and runs (streaming, Stop, rename), proposed changes with approve / reject / "Always allow", checkpoints, results with their actions, research sources, conversations across projects; the Coding tab, sessions, follow-ups, "Start coding" in the drawer; Notifications' approvals with the change in the detail; the agents panel and corner notices from real runs
+- [ ] Wire Chat and coding to the API: conversations and runs (streaming, Stop, rename), the limit notice with Continue under a stopped run, proposed changes with approve / reject / "Always allow", checkpoints, results with their actions, research sources, conversations across projects; the Coding tab, sessions, follow-ups, "Start coding" in the drawer; Notifications' approvals with the change in the detail; the agents panel and corner notices from real runs
 - [ ] Rewrite the parked browser tests for the new screens (`test.fixme(true, NOT_WIRED)`): board, project views, workspace pages, admin, mobile, mentions now; chat, research, pipelines after Chat is wired; the signed-out redirect in `auth.spec.ts`; document upload (needs MinIO in CI)
 - [ ] Delete `pages/(app)`, `components/` and `lib/` pieces only the old app uses, once Chat and coding are wired
 - [ ] Settings still "not available yet": two-factor authentication, push notifications, deleting a workspace, changing its address, billing (plan, payment, invoices), the calendar feed's settings
 - [ ] A page for a settings section a person can't use, if they reach it by its address (today it renders and the API refuses its calls)
 
 ### Backend (`apps/backend`)
-- [ ] Models: retry on a provider's 429 with backoff; a limit on runs working at once per workspace, with a queue; usage per person; then whatever is decided above (personal keys, a person's default model, a workspace default model)
+- [ ] Models: retry on a provider's 429 with backoff; a limit on runs working at once per workspace, with a queue; usage per person (above); continuing a conversation across projects that stopped at a limit (only a project's runs continue today); showing a person the tokens of runs on their own key
 - [ ] Coding runs (Claude Code, Codex) and search embeddings on the workspace's own keys, not only the server's
 - [ ] Coding: the pmagent MCP server and Playwright MCP inside the sandbox with a run-scoped token, and network rules for package registries; a full run on a real model; the CLI resuming its own session between turns; a browser, a terminal, and a file diff inside a session; updating a repo's `AGENTS.md` / `CLAUDE.md` as a coding run
 - [ ] PRs on the board: checks shown on the issue; a PR check rejecting `.pmagent/` for PRs from elsewhere; the Reviewer's findings as a PR comment and in `reviews/` (FR-22), bugs proposed for critical ones
@@ -258,7 +257,7 @@ Not being extended (kept working only): the CLI's local engine, the calendar fee
 ### CLI (`apps/cli`)
 - [ ] Coding locally (agents v2 5d): link a local checkout (`pmagent connect`, and a folder picker in the desktop app), "Code this" hands the brief to Claude Code or Codex there, the person reviews and commits; the platform sees the branch and PR
 - [ ] Push from the local mirror (FR-18): local edits to `.pmagent/` proposed as changes that go through approval
-- [ ] Models from the CLI once decided (a person's own key and default model)
+- [ ] Your own key and default model from the CLI (`pmagent models`), and Continue for a run stopped at its model's limit in `pmagent chat`
 
 ### Dependencies (you)
 - [ ] Production: a domain and HTTPS for the API and web app (`PMAGENT_APP_URL`, OAuth redirect URIs), a secrets manager, `PMAGENT_ENV=production`, `PMAGENT_REDIS_URL`

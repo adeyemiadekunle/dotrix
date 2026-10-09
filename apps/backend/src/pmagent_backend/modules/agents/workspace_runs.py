@@ -27,7 +27,7 @@ from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.issues.models import Issue, IssueStatus
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
-from pmagent_backend.modules.model_keys.service import ModelKeys
+from pmagent_backend.modules.model_keys.service import run_keys
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import visible_to
 from pmagent_backend.modules.search.embeddings import Embedder
@@ -255,7 +255,7 @@ class WorkspaceRunService:
                 if model not in available:
                     raise ScopeLocked(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
             # Fail fast (503) if the model can't run.
-            keys = await ModelKeys(self.session, self.runner.secrets).keys(member.workspace_id)
+            keys = (await run_keys(self.session, self.runner.secrets, member.workspace_id, member.user_id)).keys
             self.runner.model_factory(SimpleNamespace(model=model, specialist_model=None), model, keys=keys)
         projects = await self._visible(member, project_ids)
         if data.agent != "auto":

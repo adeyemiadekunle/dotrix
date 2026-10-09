@@ -19,6 +19,7 @@ class NotificationKind(enum.StrEnum):
     MENTION = "mention"  # someone @mentioned you in an issue comment or a chat message
     DECIDED = "decided"  # changes you asked an agent for were approved or rejected (by someone else)
     WATCHING = "watching"  # an issue you watch changed, or someone commented on it
+    LIMIT = "limit"  # a run you asked for stopped at its model's limit; it can continue once that resets
 
 
 # What people may turn off. Approvals and checkpoints always come through: agents wait on them.

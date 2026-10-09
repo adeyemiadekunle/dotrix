@@ -31,3 +31,15 @@ class ModelKeyRead(BaseModel):
     )
     limit_message: str | None = Field(description="What the provider said, in a line")
     models: list[str] = Field(description="The models of this provider agents can be given")
+
+
+class PersonalModelsRead(BaseModel):
+    """Your own keys and default model (Account → Models)."""
+
+    keys: list[ModelKeyRead] = Field(description="Each provider: whether you've connected your own key")
+    default_model: str | None = Field(description="Your default model for new conversations; null: the project's")
+    models: list[str] = Field(description="The models you can pick from")
+
+
+class DefaultModelSave(BaseModel):
+    default_model: str | None = Field(default=None, max_length=100, description="provider:model, or null for the project's")

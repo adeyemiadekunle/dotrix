@@ -4,6 +4,7 @@ A workspace's own key for the provider comes first (model_keys); without one, th
 when `PMAGENT_SERVER_MODEL_KEYS` lends them (self-hosting, development)."""
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -166,5 +167,33 @@ def limit_error(exc: BaseException) -> str | None:
         name = type(current).__name__.lower()
         if status == 429 or "ratelimit" in name or "resourceexhausted" in name or any(m in text.lower() for m in _LIMIT_MARKERS):
             return " ".join(text.split())[:300] or type(current).__name__
+        current = current.__cause__ or current.__context__
+    return None
+
+
+_RESET_IN = re.compile(r"(?:retry|try again)[^0-9]{0,30}?(\d+(?:\.\d+)?)\s*(ms|s|sec|seconds?|m|min|minutes?)\b", re.I)
+_RETRY_DELAY = re.compile(r"retry_?delay['\"]?\s*[:=]\s*['\"]?(\d+(?:\.\d+)?)s", re.I)
+
+
+def limit_resets_in(exc: BaseException) -> float | None:
+    """Seconds until a provider's limit resets, when it says (a Retry-After header, Google's
+    retryDelay, or "try again in 20s"); None when it doesn't."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        headers = getattr(getattr(current, "response", None), "headers", None) or {}
+        try:
+            after = headers.get("retry-after")
+            if after is not None:
+                return max(0.0, float(after))
+        except (TypeError, ValueError):
+            pass
+        text = str(current)
+        if m := _RETRY_DELAY.search(text):
+            return float(m.group(1))
+        if m := _RESET_IN.search(text):
+            value, unit = float(m.group(1)), m.group(2).lower()
+            return value / 1000 if unit == "ms" else value * 60 if unit.startswith("m") and unit != "ms" else value
         current = current.__cause__ or current.__context__
     return None

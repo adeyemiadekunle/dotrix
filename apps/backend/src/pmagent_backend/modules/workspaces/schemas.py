@@ -34,6 +34,9 @@ class WorkspaceUpdate(BaseModel):
         default=None,
         description="Pause every agent's changes without approval (owners and admins); only owners resume them",
     )
+    personal_keys: bool | None = Field(
+        default=None, description="Let people's own model keys run what they start here (owners and admins)"
+    )
 
     @field_validator("member_permissions")
     @classmethod
@@ -59,6 +62,9 @@ class WorkspaceRead(BaseModel):
     )
     unattended_paused: bool = Field(
         default=False, description="Agents' standing rules to act without approval are paused: every change asks"
+    )
+    personal_keys: bool = Field(
+        default=True, description="People's own model keys run what they start here (else the workspace's key)"
     )
 
     @field_validator("member_permissions", mode="before")

@@ -1682,6 +1682,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/my-agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Agent Preferences
+         * @description Your own preferences for this workspace's agents: extra instructions and a model, for the
+         *     runs you start. Agents you haven't touched aren't listed.
+         */
+        get: operations["list_my_agent_preferences"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/my-agents/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save My Agent Preference
+         * @description How you like an agent to work (up to 2,000 characters, added to its instructions) and its
+         *     model, for the runs you start. Within limits: it can't change the agent's tools, folder
+         *     access, or what it may do without asking. A model needs the workspace's permission to
+         *     choose models, unless your own key runs it (403). Empty instructions and no model: removed.
+         */
+        put: operations["save_my_agent_preference"];
+        post?: never;
+        /**
+         * Remove My Agent Preference
+         * @description Back to the agent as the workspace set it up, for your runs.
+         */
+        delete: operations["remove_my_agent_preference"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs": {
         parameters: {
             query?: never;
@@ -1957,6 +2005,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Continue Run
+         * @description Continue a run that stopped at its model's limit (`error_kind: model_limit`) from where it
+         *     stopped, without sending the message again: now, or once the limit resets (`when_reset`,
+         *     when the provider said when: `resumes_at`). Only whoever asked. 409 `nothing_to_continue`
+         *     for any other run, or when the conversation went on since.
+         */
+        post: operations["continue_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}": {
         parameters: {
             query?: never;
@@ -2120,7 +2191,7 @@ export interface paths {
         /**
          * List Models
          * @description The models a conversation, or an agent, can run on here: those whose provider has a key
-         *     (the workspace's own, `source: workspace`, or the server's, `server`). A project's own model
+         *     (your own, `source: personal`; the workspace's, `workspace`; or the server's, `server`). A project's own model
          *     is always allowed too, even if it isn't listed.
          */
         get: operations["list_models"];
@@ -3609,6 +3680,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Models
+         * @description Your own model keys (last four characters only) and your default model for new
+         *     conversations. Your keys run what you start: always in your personal workspace, and in an
+         *     organisation that allows personal keys (otherwise its own key does).
+         */
+        get: operations["get_my_models"];
+        /**
+         * Set My Default Model
+         * @description Your default model for new conversations (null: each project's). It's used where it can
+         *     run: with your own key for its provider, or where the workspace lets people choose models.
+         */
+        put: operations["set_my_default_model"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/model-keys/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save My Model Key
+         * @description Connect or replace your own key for `anthropic`, `openai`, or `google_genai`; stored
+         *     encrypted, never shown again. 503 `encryption_not_configured` when the server can't store keys.
+         */
+        put: operations["save_my_model_key"];
+        post?: never;
+        /**
+         * Remove My Model Key
+         * @description Remove your own key for a provider; what you start uses the workspace's key again.
+         */
+        delete: operations["remove_my_model_key"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/search": {
         parameters: {
             query?: never;
@@ -3856,6 +3979,38 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /** AgentPreferenceRead */
+        AgentPreferenceRead: {
+            /**
+             * Instructions
+             * @description How you like this agent to work (tone, format, what to focus on); added to its instructions for the runs you start. It can't change what the agent may do
+             * @default
+             */
+            instructions: string;
+            /**
+             * Model
+             * @description Its model for your runs; null: as set for the workspace
+             */
+            model?: string | null;
+            /** Handle */
+            handle: string;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** AgentPreferenceSave */
+        AgentPreferenceSave: {
+            /**
+             * Instructions
+             * @description How you like this agent to work (tone, format, what to focus on); added to its instructions for the runs you start. It can't change what the agent may do
+             * @default
+             */
+            instructions: string;
+            /**
+             * Model
+             * @description Its model for your runs; null: as set for the workspace
+             */
+            model?: string | null;
+        };
         /** AgentRead */
         AgentRead: {
             /** Name */
@@ -3987,6 +4142,22 @@ export interface components {
             reply: string | null;
             /** Error */
             error: string | null;
+            /**
+             * Error Kind
+             * @description `model_limit`: it stopped at its model's limit and can be continued (`.../continue`)
+             */
+            error_kind?: string | null;
+            /**
+             * Resumes At
+             * @description When the limit resets, if the provider said
+             */
+            resumes_at?: string | null;
+            /**
+             * Continue At Reset
+             * @description It continues by itself once the limit resets
+             * @default false
+             */
+            continue_at_reset: boolean;
             /**
              * Automation Id
              * @description The automation that started it, if one did
@@ -4890,6 +5061,15 @@ export interface components {
              */
             checkout_error: string | null;
         };
+        /** ContinueRun */
+        ContinueRun: {
+            /**
+             * When Reset
+             * @description Continue it automatically once the limit resets (when the provider said when), instead of now
+             * @default false
+             */
+            when_reset: boolean;
+        };
         /** Decision */
         Decision: {
             /**
@@ -4916,6 +5096,14 @@ export interface components {
              * @description One decision for every pending approval of the run
              */
             decisions: components["schemas"]["Decision"][];
+        };
+        /** DefaultModelSave */
+        DefaultModelSave: {
+            /**
+             * Default Model
+             * @description provider:model, or null for the project's
+             */
+            default_model?: string | null;
         };
         /** DeviceCodeRequest */
         DeviceCodeRequest: {
@@ -5964,11 +6152,11 @@ export interface components {
             name: string;
             /**
              * Source
-             * @description Whose key runs it: the workspace's own, or the server's
+             * @description Whose key runs it for you: your own, the workspace's, or the server's
              * @default server
              * @enum {string}
              */
-            source: "workspace" | "server";
+            source: "personal" | "workspace" | "server";
         };
         /** NeighborsRead */
         NeighborsRead: {
@@ -6019,7 +6207,7 @@ export interface components {
          * NotificationKind
          * @enum {string}
          */
-        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention" | "decided" | "watching";
+        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention" | "decided" | "watching" | "limit";
         /**
          * NotificationRead
          * @description Something that waits for you or happened to you. `kind` says which: changes waiting for
@@ -6226,6 +6414,27 @@ export interface components {
          * @enum {string}
          */
         Permission: "workspace:view" | "agents:chat" | "issues:write" | "knowledge:write" | "agents:approve" | "agents:code" | "projects:manage" | "workspace:manage" | "members:manage" | "workspace:billing" | "usage:view" | "agents:choose_model";
+        /**
+         * PersonalModelsRead
+         * @description Your own keys and default model (Account → Models).
+         */
+        PersonalModelsRead: {
+            /**
+             * Keys
+             * @description Each provider: whether you've connected your own key
+             */
+            keys: components["schemas"]["ModelKeyRead"][];
+            /**
+             * Default Model
+             * @description Your default model for new conversations; null: the project's
+             */
+            default_model: string | null;
+            /**
+             * Models
+             * @description The models you can pick from
+             */
+            models: string[];
+        };
         /**
          * PrState
          * @enum {string}
@@ -7680,6 +7889,11 @@ export interface components {
              * @description Pause every agent's changes without approval (owners and admins); only owners resume them
              */
             unattended_paused?: boolean | null;
+            /**
+             * Personal Keys
+             * @description Let people's own model keys run what they start here (owners and admins)
+             */
+            personal_keys?: boolean | null;
         };
         /** WorkspaceWithRole */
         WorkspaceWithRole: {
@@ -7710,6 +7924,12 @@ export interface components {
              * @default false
              */
             unattended_paused: boolean;
+            /**
+             * Personal Keys
+             * @description People's own model keys run what they start here (else the workspace's key)
+             * @default true
+             */
+            personal_keys: boolean;
             role: components["schemas"]["Role"];
             /**
              * Permissions
@@ -12940,6 +13160,168 @@ export interface operations {
             };
         };
     };
+    list_my_agent_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPreferenceRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    save_my_agent_preference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentPreferenceSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPreferenceRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    remove_my_agent_preference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     list_runs: {
         parameters: {
             query?: {
@@ -13771,6 +14153,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    continue_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinueRun"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
@@ -19521,6 +19976,188 @@ export interface operations {
             };
             /** @description Signed in, but your role or token scope doesn't allow this */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_my_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalModelsRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_my_default_model: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DefaultModelSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalModelsRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    save_my_model_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelKeySave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalModelsRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    remove_my_model_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalModelsRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

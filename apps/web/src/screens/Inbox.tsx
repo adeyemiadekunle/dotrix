@@ -3,7 +3,8 @@
 // approve, plans to steer, findings, decisions; with the change itself in the detail.
 import type { CSSProperties } from "react";
 
-import { decideCoding } from "../core/agents";
+import { continueLimited, decideCoding } from "../core/agents";
+import { LimitNotice } from "../components/LimitNotice";
 import { openTask } from "../core/actions";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
@@ -55,6 +56,7 @@ const TYPE_IC: Record<string, string> = {
   checkpoint: "map",
   finding: "search-check",
   decided: "check-check",
+  limit: "gauge",
 };
 
 function toggleRead(id: string) {
@@ -315,7 +317,15 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
           {ago(n.at)}
           {th && ` · in “${th.title}”`}
         </div>
-        {th && (
+        {n.type === "limit" && (
+          <LimitNotice
+            said={n.snippet}
+            resetsAt={th?.messages.findLast((m) => m.limit)?.limit?.resetsAt ?? null}
+            whenReset={th?.messages.findLast((m) => m.limit)?.limit?.whenReset}
+            onContinue={(w) => continueLimited({ thread: n.thread, project: n.project, run: n.run, notif: n.id }, w)}
+          />
+        )}
+        {th && n.type !== "limit" && (
           <>
             <div className="eyebrow" style={{ marginBottom: 2 }}>
               {n.type === "checkpoint" ? "The plan" : "Changes"}

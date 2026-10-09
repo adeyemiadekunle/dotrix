@@ -119,10 +119,8 @@ async def test_a_research_run_records_its_sources_and_checks_its_claims(
     ]
     assert run["breakdown"]["web"] == {"searches": 1, "fetches": 1, "credits": 1, "flagged": []}
 
-    # Members see the sources and checks; usage stays for owners and admins.
-    seen = (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=cat.headers)).json()
-    assert [s["label"] for s in seen["sources"]] == ["S1", "S2"] and seen["breakdown"] is None
-    assert seen["outputs"][0]["items"][0]["check"]["status"] == "supported"
+    # The conversation is private to whoever asked: a colleague doesn't open it.
+    assert (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=cat.headers)).status_code == 404
 
 
 async def test_source_ids_stay_the_same_when_a_run_resumes(world, web, db_client: AsyncClient, agent_script) -> None:
