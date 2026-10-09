@@ -4,7 +4,9 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+
+from pmagent_engine.catalog import action_for
 
 from .models import ApprovalStatus, RunKind, RunStatus
 
@@ -67,6 +69,12 @@ class ApprovalRead(BaseModel):
     run_id: uuid.UUID
     position: int
     tool: str = Field(description="e.g. write_file, edit_file")
+    agent: str | None = Field(default=None, description="The handle of the agent whose change it is")
+    action: str | None = Field(
+        default=None,
+        description="The autonomy action it takes (e.g. knowledge.write); with `agent`, what "
+        "`.../always-allow` would let that agent do without asking",
+    )
     target: str | None = Field(description="What the action changes, e.g. /pmagent/vision.md")
     args: dict[str, Any]
     diff: str | None = Field(description="For file writes: unified diff of what would change")
@@ -75,6 +83,13 @@ class ApprovalRead(BaseModel):
     decided_by_id: uuid.UUID | None
     decided_at: datetime | None
     created_at: datetime
+
+
+    @model_validator(mode="after")
+    def _action(self) -> ApprovalRead:
+        if self.action is None:
+            self.action = action_for(self.tool)
+        return self
 
 
 class WorkspaceApprovalRead(ApprovalRead):

@@ -116,6 +116,8 @@ class AgentApproval(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     position: Mapped[int]
     interrupt_id: Mapped[str | None] = mapped_column(String(128))
     tool: Mapped[str] = mapped_column(String(64))
+    # The handle of the agent whose change this is (null before agents said so, and checkpoints).
+    agent: Mapped[str | None] = mapped_column(String(32))
     args: Mapped[dict[str, Any]] = mapped_column(JSONB)
     target: Mapped[str | None] = mapped_column(String(400))  # e.g. the file path
     diff: Mapped[str | None] = mapped_column(Text)  # for file writes: what would change

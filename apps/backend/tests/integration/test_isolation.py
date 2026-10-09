@@ -92,7 +92,7 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
         agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
         run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=h)).json()
         assert run["status"] == "awaiting_approval", run
-        params |= {"run_id": run["id"], "thread_id": run["thread_id"]}
+        params |= {"run_id": run["id"], "thread_id": run["thread_id"], "approval_id": run["approvals"][0]["id"]}
         # A rejected change with a reason: a proposed lesson.
         agent_script.say(tool_call("write_file", file_path="/pmagent/vision.md", content="# V\n"), "Fine.")
         other = (await db_client.post(f"{base}/agent/runs", json={"message": "Vision"}, headers=h)).json()
@@ -180,7 +180,7 @@ async def _call(client: AsyncClient, method: str, url: str, body: bool, headers:
 async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
     known = {"workspace_id", "project_id", "key", "path", "version", "document_id", "invite_id",
              "user_id", "run_id", "thread_id", "handle", "output_id", "index", "installation_ref", "automation_id",
-             "lesson_id", "link_id", "name", "coding_run_id", "session_id", "team_id", "attachment_id", "comment_id", "emoji"}
+             "lesson_id", "link_id", "name", "coding_run_id", "session_id", "team_id", "attachment_id", "comment_id", "emoji", "approval_id"}
     routes = _scoped_routes(db_client)
     assert len(routes) > 60  # sanity: the whole API is being walked
     for _, template, _ in routes:

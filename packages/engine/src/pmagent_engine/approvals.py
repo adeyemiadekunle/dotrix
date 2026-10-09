@@ -50,8 +50,24 @@ def pending_actions(result: dict) -> list[dict]:
                 "tool": req.get("name"),
                 "args": req.get("args", {}),
                 "description": req.get("description"),
+                "agent": agent_of(req.get("description")),
             })
     return out
+
+
+_AGENT_TAG = "Asked by @"
+
+
+def agent_tag(handle: str) -> str:
+    """The description a gated tool's pause carries: which agent asked (build_team's gate)."""
+    return f"{_AGENT_TAG}{handle}"
+
+
+def agent_of(description: str | None) -> str | None:
+    """The handle of the agent that asked, from a pause's description; None if it doesn't say."""
+    if description and description.startswith(_AGENT_TAG):
+        return description[len(_AGENT_TAG):].split()[0] or None
+    return None
 
 
 def format_action(action: dict) -> str:

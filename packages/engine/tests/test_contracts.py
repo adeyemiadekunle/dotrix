@@ -205,3 +205,15 @@ def test_an_agent_is_told_what_it_may_change_without_asking() -> None:
     assert "write documents, open issues without waiting" in note and "Closing an issue" in note
     # An allow for a tool it doesn't have says nothing.
     assert autonomy_note(spec(tools=["board.read"], autonomy={"issues.update": "allow"})) == ""
+
+
+def test_a_pause_says_which_agent_asked() -> None:
+    from pmagent_engine.agent import _gate, _toolbox
+    from pmagent_engine.approvals import agent_of
+    from pmagent_engine.catalog import action_for
+
+    def create_issue(): ...
+
+    gate = _gate(spec(tools=["knowledge.write", "issues.create"], issue_types=["bug"]), _toolbox([create_issue]))
+    assert agent_of(gate["write_file"]["description"]) == agent_of(gate["create_issue"]["description"]) == "security"
+    assert action_for("edit_file") == "knowledge.write" and action_for("checkpoint") is None

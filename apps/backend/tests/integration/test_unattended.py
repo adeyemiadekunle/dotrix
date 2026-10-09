@@ -176,3 +176,47 @@ def test_what_a_run_may_use_and_the_cap() -> None:
     assert isinstance(unattended.grant("writer", "issues.update"), tuple)
     assert "limit of 2" in unattended.grant("writer", "issues.update")  # type: ignore[operator]
     assert "approval" in Unattended(AgentPolicy([spec]), {}, {}, left=5).grant("writer", "issues.create")  # type: ignore[operator]
+
+
+async def test_always_allow_from_a_waiting_change(world, db_client: AsyncClient, agent_script) -> None:
+    ada, bob, _, ws, base = await world()
+    # Lyra (product) asks before writing; owners can turn that into a standing rule from the change.
+    agent_script.say(tool_call("write_file", file_path="/pmagent/requirements/a.md", content="# A\n"), "Done.")
+    run = (await db_client.post(f"{base}/agent/runs", json={"message": "write it", "agent": "product"},
+                                headers=ada.headers)).json()
+    change = run["approvals"][0]
+    assert run["status"] == "awaiting_approval"
+    assert change["agent"] == "product" and change["action"] == "knowledge.write"
+    url = f"{base}/agent/runs/{run['id']}/approvals/{change['id']}/always-allow"
+
+    assert (await db_client.post(url, headers=bob.headers)).status_code == 403  # admins can't
+    allowed = await db_client.post(url, headers=ada.headers)
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["autonomy"] == {"knowledge.write": "allow"} and allowed.json()["source"] == "customised"
+    history = (await db_client.get(f"{ws}/agents/product/versions", headers=ada.headers)).json()
+    assert history[0]["note"].startswith("Always allow knowledge.write")
+    # The change itself still waits; the next one goes straight through.
+    assert (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=ada.headers)).json()["status"] == "awaiting_approval"
+    agent_script.say(tool_call("write_file", file_path="/pmagent/requirements/b.md", content="# B\n"), "Done.")
+    second = (await db_client.post(f"{base}/agent/runs", json={"message": "and b", "agent": "product"},
+                                   headers=ada.headers)).json()
+    assert second["status"] == "completed", second
+
+    # An id that isn't one of this run's changes is 404.
+    assert (await db_client.post(f"{base}/agent/runs/{run['id']}/approvals/{uuid.uuid4()}/always-allow",
+                                 headers=ada.headers)).status_code == 404
+
+
+async def test_a_project_override_gets_the_rule_not_the_workspace(world, db_client: AsyncClient, agent_script) -> None:
+    ada, _, _, ws, base = await world()
+    product = (await db_client.get(f"{ws}/agents/product", headers=ada.headers)).json()
+    fields = {k: product[k] for k in ("name", "description", "instructions", "tools", "access", "issue_types", "can_call")}
+    assert (await db_client.put(f"{base}/agents/product", json={"agent": fields | {"description": "Ours."}},
+                                headers=ada.headers)).status_code == 200
+    agent_script.say(tool_call("write_file", file_path="/pmagent/requirements/a.md", content="# A\n"), "Done.")
+    run = (await db_client.post(f"{base}/agent/runs", json={"message": "write it", "agent": "product"},
+                                headers=ada.headers)).json()
+    url = f"{base}/agent/runs/{run['id']}/approvals/{run['approvals'][0]['id']}/always-allow"
+    saved = (await db_client.post(url, headers=ada.headers)).json()
+    assert saved["scope"] == "project" and saved["autonomy"] == {"knowledge.write": "allow"}
+    assert (await db_client.get(f"{ws}/agents/product", headers=ada.headers)).json()["autonomy"] == {}

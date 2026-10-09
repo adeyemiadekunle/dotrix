@@ -4,6 +4,7 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { copy, openPop, setPref } from "../core/actions";
+import { ACTION_OF } from "../core/agents";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, newTeam, promptDlg } from "../core/more";
 import { go, useRoute } from "../core/nav";
@@ -614,13 +615,26 @@ function Agents() {
             ))}
           </span>
         </SRow>
-        <SRow t="Without asking" d="Changes an owner lets this agent make without waiting for approval: documents, issues, comments, links.">
-          <select className="select" style={{ width: "auto" }} defaultValue="ask">
-            <option value="ask">Ask first</option>
-            <option value="allow">Allow</option>
-            <option value="block">Block</option>
-          </select>
-        </SRow>
+        <div className="sblock">
+          <h2>Without asking</h2>
+          <p className="muted" style={{ fontSize: 13 }}>
+            Changes an owner lets this agent make without waiting for approval. &ldquo;Always allow&rdquo; on a waiting change sets one here.
+          </p>
+          {Object.values(ACTION_OF).map(([act, what]) => (
+            <SRow key={act} t={what[0]!.toUpperCase() + what.slice(1)}>
+              <select
+                className="select"
+                style={{ width: "auto" }}
+                value={sel.allows?.includes(act) ? "allow" : "ask"}
+                onChange={(e) => mutate(() => ((sel.allows = e.target.value === "allow" ? [...(sel.allows ?? []), act] : (sel.allows ?? []).filter((x) => x !== act)), (sel.customised = sel.builtIn || undefined)))}
+                aria-label={`${what} without asking`}
+              >
+                <option value="ask">Ask first</option>
+                <option value="allow">Allow</option>
+              </select>
+            </SRow>
+          ))}
+        </div>
         <div className="sblock">
           <h2>Instructions</h2>
           <textarea className="textarea" rows={6} defaultValue={`You are ${sel.name}, the ${sel.role.toLowerCase()} agent. ${sel.desc}`} style={{ marginTop: 10 }} aria-label="Instructions" />

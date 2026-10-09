@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.openapi import errors
+from pmagent_backend.modules.agent_definitions.schemas import AgentRead
 from pmagent_backend.modules.projects.deps import (
     KnowledgeEditor,
     ProjectAccess,
@@ -188,6 +189,19 @@ async def decide_approvals(
     the changes as `reason`, or reject to stop. Your decision is recorded next to who
     instructed the run."""
     return await agents.decide(access, run_id, data)
+
+
+@router.post("/runs/{run_id}/approvals/{approval_id}/always-allow", responses=errors(403, 409))
+async def always_allow_approval(
+    run_id: uuid.UUID, approval_id: uuid.UUID, access: Chatter, agents: Agents
+) -> AgentRead:
+    """"Always allow this": the agent that proposed this change may make that kind of change
+    (its `action`: writing documents, opening or editing issues, comments, links) without asking
+    from now on, saved as a new version of its contract where it's defined for this project.
+    Owners only (403). The change itself still waits for a decision; closing issues and coding
+    always ask. 409 `cannot_always_allow` when the change doesn't name its agent or isn't one a
+    rule covers (a checkpoint, say)."""
+    return await agents.always_allow(access, run_id, approval_id)
 
 
 models_router = APIRouter(prefix="/workspaces/{workspace_id}/models", tags=["agents"], responses=errors(401, 404))

@@ -726,17 +726,29 @@ def _ask_checkpoint(approval: dict):
             return ("reject", None)
 
 
+def _note(text: str) -> None:
+    typer.secho(text, dim=True)
+
+
 def _ask_decision(approval: dict, index: int, total: int):
     if approval["tool"] == "checkpoint":
         return _ask_checkpoint(approval)
     target = f" -> {approval['target']}" if approval.get("target") else ""
     typer.secho(f"\n[{index}/{total}] The agents want to: {approval['tool']}{target}", bold=True)
     _echo_approval(approval)
-    options = "[a]pprove, [r]eject" + (", [A]pprove all" if total > 1 else "") + ", [v]iew in full"
+    always = bool(approval.get("agent") and approval.get("action"))
+    options = (
+        "[a]pprove, [r]eject"
+        + (", [A]pprove all" if total > 1 else "")
+        + (f", a[l]ways allow @{approval['agent']} to do this" if always else "")
+        + ", [v]iew in full"
+    )
     while True:
         choice = typer.prompt(options, default="a", show_default=False).strip()
         if choice in ("a", "approve"):
             return ("approve", None)
+        if choice == "l" and always:
+            return "always-allow"
         if choice == "A" and total > 1:
             return "approve-all"
         if choice in ("r", "reject"):
@@ -904,7 +916,7 @@ def _platform_chat(project: str, thread: str | None, *, agent: str = "auto", mod
             typer.secho("(working…)", dim=True)
             printer = _StreamPrinter()
             _echo_outcome(
-                client.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity),
+                client.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity, on_note=_note),
                 printer,
             )
         except (PlatformError, TimeoutError) as exc:
@@ -917,7 +929,7 @@ def _follow_run(agent: PlatformAgent, run: dict) -> Outcome:
     """Stream a run here, settling its approvals inline, until it ends or waits on someone else."""
     printer = _StreamPrinter()
     outcome = _platform_call(
-        lambda: agent.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity)
+        lambda: agent.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity, on_note=_note)
     )
     _echo_outcome(outcome, printer)
     return outcome
@@ -1404,7 +1416,7 @@ def architecture_draft(
     typer.secho("(the Architecture agent is working…)", dim=True)
     agent = PlatformAgent(client, state)
     printer = _StreamPrinter()
-    outcome = _platform_call(lambda: agent.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity))
+    outcome = _platform_call(lambda: agent.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity, on_note=_note))
     _echo_outcome(outcome, printer)
     if outcome.status == "completed":
         _echo_pull(_platform_call(lambda: pull(client, state, config.pmagent_dir)))

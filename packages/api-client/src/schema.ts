@@ -1932,6 +1932,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/approvals/{approval_id}/always-allow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Always Allow Approval
+         * @description "Always allow this": the agent that proposed this change may make that kind of change
+         *     (its `action`: writing documents, opening or editing issues, comments, links) without asking
+         *     from now on, saved as a new version of its contract where it's defined for this project.
+         *     Owners only (403). The change itself still waits for a decision; closing issues and coding
+         *     always ask. 409 `cannot_always_allow` when the change doesn't name its agent or isn't one a
+         *     rule covers (a checkpoint, say).
+         */
+        post: operations["always_allow_approval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}": {
         parameters: {
             query?: never;
@@ -3764,7 +3789,7 @@ export interface components {
             can_call?: string[];
             /**
              * Autonomy
-             * @description Action -> allow, ask, or block (unlisted: ask). Only owners set allow, and only for low-risk actions
+             * @description Action -> allow, ask, or block (unlisted: ask). Only owners set allow; beyond comments and links, only owners save a version that allows
              */
             autonomy?: {
                 [key: string]: "allow" | "ask" | "block";
@@ -3829,7 +3854,7 @@ export interface components {
             can_call?: string[];
             /**
              * Autonomy
-             * @description Action -> allow, ask, or block (unlisted: ask). Only owners set allow, and only for low-risk actions
+             * @description Action -> allow, ask, or block (unlisted: ask). Only owners set allow; beyond comments and links, only owners save a version that allows
              */
             autonomy?: {
                 [key: string]: "allow" | "ask" | "block";
@@ -4128,6 +4153,16 @@ export interface components {
              * @description e.g. write_file, edit_file
              */
             tool: string;
+            /**
+             * Agent
+             * @description The handle of the agent whose change it is
+             */
+            agent?: string | null;
+            /**
+             * Action
+             * @description The autonomy action it takes (e.g. knowledge.write); with `agent`, what `.../always-allow` would let that agent do without asking
+             */
+            action?: string | null;
             /**
              * Target
              * @description What the action changes, e.g. /pmagent/vision.md
@@ -7185,6 +7220,16 @@ export interface components {
              * @description e.g. write_file, edit_file
              */
             tool: string;
+            /**
+             * Agent
+             * @description The handle of the agent whose change it is
+             */
+            agent?: string | null;
+            /**
+             * Action
+             * @description The autonomy action it takes (e.g. knowledge.write); with `agent`, what `.../always-allow` would let that agent do without asking
+             */
+            action?: string | null;
             /**
              * Target
              * @description What the action changes, e.g. /pmagent/vision.md
@@ -13583,6 +13628,76 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    always_allow_approval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                approval_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

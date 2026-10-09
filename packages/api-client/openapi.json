@@ -8796,6 +8796,125 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/approvals/{approval_id}/always-allow": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Always Allow Approval",
+        "description": "\"Always allow this\": the agent that proposed this change may make that kind of change\n(its `action`: writing documents, opening or editing issues, comments, links) without asking\nfrom now on, saved as a new version of its contract where it's defined for this project.\nOwners only (403). The change itself still waits for a decision; closing issues and coding\nalways ask. 409 `cannot_always_allow` when the change doesn't name its agent or isn't one a\nrule covers (a checkpoint, say).",
+        "operationId": "always_allow_approval",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Approval Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}": {
       "patch": {
         "tags": [
@@ -18794,7 +18913,7 @@
             },
             "type": "object",
             "title": "Autonomy",
-            "description": "Action -> allow, ask, or block (unlisted: ask). Only owners set allow, and only for low-risk actions"
+            "description": "Action -> allow, ask, or block (unlisted: ask). Only owners set allow; beyond comments and links, only owners save a version that allows"
           },
           "output": {
             "anyOf": [
@@ -18926,7 +19045,7 @@
             },
             "type": "object",
             "title": "Autonomy",
-            "description": "Action -> allow, ask, or block (unlisted: ask). Only owners set allow, and only for low-risk actions"
+            "description": "Action -> allow, ask, or block (unlisted: ask). Only owners set allow; beyond comments and links, only owners save a version that allows"
           },
           "output": {
             "anyOf": [
@@ -19608,6 +19727,30 @@
             "type": "string",
             "title": "Tool",
             "description": "e.g. write_file, edit_file"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent",
+            "description": "The handle of the agent whose change it is"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action",
+            "description": "The autonomy action it takes (e.g. knowledge.write); with `agent`, what `.../always-allow` would let that agent do without asking"
           },
           "target": {
             "anyOf": [
@@ -26937,6 +27080,30 @@
             "type": "string",
             "title": "Tool",
             "description": "e.g. write_file, edit_file"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent",
+            "description": "The handle of the agent whose change it is"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action",
+            "description": "The autonomy action it takes (e.g. knowledge.write); with `agent`, what `.../always-allow` would let that agent do without asking"
           },
           "target": {
             "anyOf": [

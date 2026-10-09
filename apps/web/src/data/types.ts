@@ -185,6 +185,8 @@ export interface Agent {
   customised?: boolean;
   tools: string[];
   model?: string;
+  /** actions an owner lets it take without asking ("knowledge.write", "issues.create", …) */
+  allows?: string[];
 }
 /** A change an agent wants to make, waiting for a person (an approval). */
 export interface ProposedChange {

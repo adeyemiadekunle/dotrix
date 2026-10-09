@@ -660,6 +660,7 @@ class AgentRunner:
                             position=position,
                             interrupt_id=action["interrupt_id"],
                             tool=action["tool"] or "?",
+                            agent=action.get("agent"),
                             args=_jsonable(action["args"]),
                             target=target,
                             diff=diff,

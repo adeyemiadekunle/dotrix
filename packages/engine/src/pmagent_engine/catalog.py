@@ -97,6 +97,14 @@ ACTIONS: tuple[str, ...] = tuple(action for group in CATALOG for action in group
 LOW_RISK_ACTIONS = frozenset({"issues.comment", "graph.link"})
 
 
+def action_for(name: str) -> str | None:
+    """The action a supplied tool's name takes (write_file -> knowledge.write), or None for a tool
+    that changes nothing an autonomy rule covers."""
+    found = _ID_BY_NAME.get(name)
+    actions = _BY_ID[found].actions if found else ()
+    return actions[0] if len(actions) == 1 else None
+
+
 def group(tool_id: str) -> ToolGroup:
     return _BY_ID[tool_id]
 

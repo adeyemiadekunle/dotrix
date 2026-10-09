@@ -24,6 +24,7 @@ from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend
 
 from . import tasks as T
+from .approvals import agent_tag
 from .backend import LockingFilesystemBackend
 from .builtins import BUILTIN_HANDLES, SPECIALISTS, builtin_specs, introduce
 from .catalog import group as catalog_group
@@ -317,12 +318,15 @@ _ACTION_LABELS = {
 def _gate(spec: AgentSpec, box: dict[str, list[Any]]) -> dict[str, Any]:
     """What pauses for approval when this agent acts: its file writes and board changes, except
     the actions an owner allowed it to take without asking."""
+    # Each pause says which agent asked (approvals.agent_of), so "Always allow this" knows whose
+    # contract to change.
+    approval = _APPROVAL | {"description": agent_tag(spec.handle)}
     gated: dict[str, Any] = {}
     if spec.can("knowledge.write") and not spec.allowed("knowledge.write"):
-        gated |= {"write_file": _APPROVAL, "edit_file": _APPROVAL}
+        gated |= {"write_file": approval, "edit_file": approval}
     for group_id in _WRITE_TOOL_GROUPS:
         if spec.can(group_id) and not all(spec.allowed(a) for a in catalog_group(group_id).actions):
-            gated |= {tool_name(tool): _APPROVAL for tool in box.get(group_id, [])}
+            gated |= {tool_name(tool): approval for tool in box.get(group_id, [])}
     return gated
 
 
