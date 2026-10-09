@@ -21,8 +21,9 @@ class AuditEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     __tablename__ = "audit_events"
     __table_args__ = (Index("ix_audit_events_workspace_id_created_at", "workspace_id", "created_at"),)
 
+    # SET NULL: deleting a project keeps its history here (append-only); `target` names what it was.
     project_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+        ForeignKey("projects.id", ondelete="SET NULL"), index=True
     )
     # e.g. "knowledge.write", "knowledge.delete", "approval.approved", "agent_run.started"
     action: Mapped[str] = mapped_column(String(64))

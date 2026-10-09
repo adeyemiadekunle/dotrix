@@ -229,7 +229,7 @@ export function Members() {
                           </button>
                         </td>
                         <td style={{ textAlign: "left" }}>
-                          {isAdmin && m.role !== "Owner" ? (
+                          {isAdmin && m.role !== "Owner" && m.id !== D().me ? (
                             <button className="pillbtn bordered" onClick={(e) => openPop(e.currentTarget, "role", { id: m.id })}>
                               {m.role}
                               <Ic n="chevron-down" s={12} />

@@ -45,6 +45,7 @@ import {
   renameFile,
   renameView,
   resendInvite,
+  transferOwnership,
   resetDemo,
   share,
   shortcuts,
@@ -54,10 +55,11 @@ import {
 } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, MONL, TODAY, WD, addD, dOff, diffD, fmtDate, iso, parse } from "../core/utils";
-import { D, S, allTasks, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, visibleProjects } from "../data/store";
+import { D, S, allTasks, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, visibleProjects, people } from "../data/store";
 import type { Task } from "../data/types";
 import { Av, AvStack, PrIcon, StIcon } from "../ui/helpers";
 import { FIELDS, viewChange, viewOf } from "../shell/viewEngine";
+import { toggleReaction } from "./Drawer";
 import { taskForm } from "./Modals";
 import { openPaletteSoon } from "../shell/Shell";
 
@@ -239,8 +241,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             search="Assign subtask to…"
             items={[
               { id: "", name: "Unassigned", html: <Av id={null} cls="sm" tip={false} />, on: !sb.assignee },
-              ...D()
-                .members.filter((m) => m.status !== "deactivated")
+              ...people()
                 .map((m) => ({ id: m.id, name: m.name + (m.id === D().me ? " (you)" : ""), html: <Av id={m.id} cls="sm" tip={false} />, on: sb.assignee === m.id })),
             ]}
             onPick={(v) => {
@@ -266,8 +267,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             search="Assign to…"
             items={[
               { id: "", name: "Unassigned", html: <Av id={null} cls="sm" tip={false} />, on: !t?.assignee },
-              ...D()
-                .members.filter((m) => m.status !== "deactivated")
+              ...people()
                 .map((m) => ({ id: m.id, name: m.name + (m.id === D().me ? " (you)" : ""), html: <Av id={m.id} cls="sm" tip={false} />, on: t?.assignee === m.id })),
               // dotrix: coding tools are assignable; assigning one starts a coding session (with approval)
               { id: "agent:claude-code", name: "Claude Code", html: <Av id="agent:claude-code" cls="sm" tip={false} />, on: t?.assignee === "agent:claude-code" },
@@ -510,7 +510,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             <div className="mh">Help &amp; resources</div>
             <Mi icon="keyboard" label="Keyboard shortcuts" onClick={shortcuts} r={<kbd>?</kbd>} />
             <Mi icon="command" label="Command menu" onClick={() => (closePop(), openPaletteSoon())} r={<kbd>{MOD}K</kbd>} />
-            <Mi icon="terminal" label="Connect the CLI" onClick={() => (closePop(), go("settings", { sec: "devices" }))} />
+            <Mi icon="terminal" label="Connect the CLI" onClick={() => (closePop(), go("settings", { sec: "sessions" }))} />
             <Mi icon="component" label="Design system" onClick={() => (closePop(), go("system"))} />
             <Mi icon="layers" label="System states" onClick={() => (closePop(), go("states"))} />
             <Sep />
@@ -735,10 +735,7 @@ export function react(commentId: string, e: string) {
   const c = D().comments.find((x) => x.id === commentId);
   if (!c) return;
   S.ui.pop = null;
-  mutate(() => {
-    const list = c.re[e] || (c.re[e] = []);
-    c.re[e] = list.includes(D().me) ? list.filter((x) => x !== D().me) : [...list, D().me];
-  });
+  toggleReaction(c, e);
 }
 
 function BulkMenu({ p }: { p: P }) {
@@ -771,7 +768,7 @@ function BulkMenu({ p }: { p: P }) {
     );
   return (
     <>
-      {[{ id: "", name: "Unassigned" }, ...D().members].map((m) => (
+      {[{ id: "", name: "Unassigned" }, ...people()].map((m) => (
         <button key={m.id} className="mi" onClick={() => set("assignee", m.id || null)}>
           <Av id={m.id || null} cls="sm" tip={false} />
           {m.name}
@@ -847,18 +844,21 @@ function CtxMenu({ p }: { p: P }) {
   if (p.ctx === "member") {
     const m = mem(id);
     if (!m) return null;
-    const canRm = m.role !== "Owner" && m.id !== D().me;
+    const myRole = D().members.find((x) => x.id === D().me)?.role;
+    const canRm = m.role !== "Owner" && m.id !== D().me && (myRole === "Owner" || myRole === "Admin");
+    const invited = m.status === "invited";
     return (
       <>
-        <Mi icon="user" label="View profile" onClick={() => (closePop(), go("member", { id }))} />
-        <Mi icon="plus" label="Assign a task" onClick={() => newTask({ assignee: id })} />
+        {!invited && <Mi icon="user" label="View profile" onClick={() => (closePop(), go("member", { id }))} />}
+        {!invited && <Mi icon="plus" label="Assign a task" onClick={() => newTask({ assignee: id })} />}
         <Mi icon="mail" label="Copy email" onClick={() => copyEmail(id)} />
         {canRm && (
           <>
             <Mi icon="shield" label="Change role…" onClick={to("role")} />
-            {m.status === "invited" && <Mi icon="send" label="Resend invite" onClick={() => resendInvite(id)} />}
+            {invited && <Mi icon="send" label="Resend invite" onClick={() => resendInvite(id)} />}
+            {!invited && myRole === "Owner" && m.role !== "Guest" && <Mi icon="crown" label="Make owner…" onClick={() => transferOwnership(id)} />}
             <Sep />
-            <Mi icon="user-minus" label="Remove from workspace" onClick={() => removeMember(id)} danger />
+            <Mi icon="user-minus" label={invited ? "Revoke invite" : "Remove from workspace"} onClick={() => removeMember(id)} danger />
           </>
         )}
       </>

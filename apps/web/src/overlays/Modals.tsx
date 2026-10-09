@@ -8,9 +8,12 @@ import { Ic } from "../core/icons";
 import { closeModal, createProject, escapeHtml, newTask, restore, snapshot, TEMPLATES } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, ago, fmtDate, uid } from "../core/utils";
-import { filesAttached, isLive, projectChanged } from "../data/live";
-import { D, S, TM, mem, mutate, pColor, proj, render, task, tasksOf, team, teamsList, type Modal } from "../data/store";
-import type { FileItem, Task } from "../data/types";
+import type { Schemas } from "@/lib/api";
+
+import { inviteLinkCreated, invitesSent, projectMemberSet, projectMembers } from "../data/account";
+import { filesAttached, isLive, live, projectChanged } from "../data/live";
+import { D, S, TM, mem, mutate, pColor, proj, render, task, tasksOf, team, teamsList, type Modal, people } from "../data/store";
+import type { FileItem, Member, Task } from "../data/types";
 import { Av, FT, FilePrev, Lbl, PrPill, StPill, fileType, fsize } from "../ui/helpers";
 import { toast } from "../ui/toast";
 import { viewOf } from "../shell/viewEngine";
@@ -88,7 +91,7 @@ function ModalBody({ m }: { m: Modal }) {
     case "share":
       return (
         <Wrap m={m}>
-          <ShareModal m={m} />
+          {isLive() ? <LiveShareModal m={m} /> : <ShareModal m={m} />}
         </Wrap>
       );
     case "invite":
@@ -747,6 +750,138 @@ function ShareModal({ m }: { m: Modal }) {
   );
 }
 
+/** Who sees a project in a real workspace: everyone, or (restricted) owners, admins, and the
+ * people added. Changes go to the API as they're made. */
+function LiveShareModal({ m }: { m: Modal }) {
+  const p = proj(m.id as string)!;
+  const [rows, setRows] = useState<Schemas["ProjectMemberRead"][] | null>(null);
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const admin = live.ws?.role === "owner" || live.ws?.role === "admin";
+  const load = () =>
+    projectMembers(p.id)
+      .then((r) => {
+        setRows(r);
+        mutate(() => (p.members = r.map((x) => x.user_id)));
+      })
+      .catch((e: unknown) => toast(`Who sees ${p.name} didn't load: ${errOf(e)}`, { kind: "err" }));
+  useEffect(() => {
+    void load();
+  }, [p.id]);
+  const act = (f: () => Promise<unknown>, done: string) => {
+    setBusy(true);
+    f()
+      .then(() => (toast(done), load()))
+      .catch((e: unknown) => toast(`It didn't change: ${errOf(e)}`, { kind: "err", ms: 6000 }))
+      .finally(() => setBusy(false));
+  };
+  const setAccess = (restricted: boolean) => {
+    mutate(() => (p.private = restricted));
+    void projectChanged(p, ["private"]).then(load);
+  };
+  const seeing = new Set((rows ?? []).map((r) => r.user_id));
+  const candidates = D().members.filter((x) => !seeing.has(x.id) && x.status !== "invited" && (x.name.toLowerCase().includes(q.toLowerCase()) || x.email.toLowerCase().includes(q.toLowerCase())));
+  const VIA: Record<string, string> = { role: "Owners and admins see every project", workspace: "Everyone in the workspace", added: "Added to this project" };
+  return (
+    <>
+      <H id="share" title={`Share “${p.name}”`} />
+      <div className="modal-b">
+        {p.private && admin && (
+          <div>
+            <label className="sr" htmlFor="share-in">
+              Add people
+            </label>
+            <input className="input" id="share-in" placeholder="Add people in this workspace by name or email" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+            {q && (
+              <div className="panel" style={{ padding: 4, marginTop: 6 }}>
+                {candidates.map((x) => (
+                  <button key={x.id} className="mi" disabled={busy} onClick={() => (setQ(""), act(() => projectMemberSet(p.id, x.id, true), `${x.name} can see ${p.name}`))}>
+                    <Av id={x.id} cls="sm" tip={false} />
+                    {x.name}
+                    <span className="r">{x.email}</span>
+                  </button>
+                ))}
+                {!candidates.length && (
+                  <div className="mi faint" style={{ cursor: "default" }}>
+                    Nobody else matches. Invite people to the workspace from Members first.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 4 }}>
+            People with access
+          </div>
+          {!rows && <div className="faint">Loading…</div>}
+          {(rows ?? []).map((r) => (
+            <div key={r.user_id} className="row" style={{ height: 44 }}>
+              <Av id={r.user_id} cls="md" tip={false} />
+              <div className="grow" style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 500, fontSize: 13 }}>
+                  {r.display_name}
+                  {r.user_id === D().me && (
+                    <span className="faint" style={{ fontWeight: 400 }}>
+                      {" "}
+                      (you)
+                    </span>
+                  )}
+                </div>
+                <div className="faint trunc" style={{ fontSize: 11.5 }}>
+                  {r.email} · {VIA[r.via] ?? r.via}
+                </div>
+              </div>
+              {r.added && admin && (
+                <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => act(() => projectMemberSet(p.id, r.user_id, false), `${r.display_name} no longer sees ${p.name}`)}>
+                  Remove
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div style={{ borderTop: "1px solid var(--divider)", paddingTop: 12 }}>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>
+            General access
+          </div>
+          <div className="row" style={{ gap: 10 }}>
+            <span className="ftype" style={css({ "--c": "var(--text-2)" })}>
+              <Ic n={p.private ? "lock" : "building-2"} s={14} />
+            </span>
+            <div className="grow">
+              <select
+                className="select"
+                style={{ height: 28, width: "auto", borderColor: "transparent", paddingLeft: 4, fontWeight: 500 }}
+                value={p.private ? "private" : "workspace"}
+                aria-label="General access"
+                disabled={!admin}
+                onChange={(e) => setAccess(e.target.value === "private")}
+              >
+                <option value="private">Only people added</option>
+                <option value="workspace">Everyone at {D().ws.name}</option>
+              </select>
+              <div className="faint" style={{ fontSize: 11.5, paddingLeft: 4 }}>
+                {p.private ? "Owners, admins, and the people added. Taking someone off unassigns their issues here." : "Every member can open it; guests can't."}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="modal-f">
+        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/${currentSlug()}/p/${p.key}/overview`)}>
+          <Ic n="link" s={14} />
+          Copy link
+        </button>
+        <span className="sp" />
+        <button className="btn btn-primary" onClick={closeModal}>
+          Done
+        </button>
+      </div>
+    </>
+  );
+}
+const errOf = (e: unknown) => (e instanceof Error && e.message ? e.message : "try again");
+
 /* ---------- invite ---------- */
 function InviteModal() {
   const m = top();
@@ -754,7 +889,10 @@ function InviteModal() {
   const [role, setRole] = useState("Member");
   const [tm, setTm] = useState(teamsList()[0]?.id ?? "");
   const err = m.err as string | undefined;
+  // A personal workspace is just for its owner: only organisations invite.
+  const personal = isLive() && live.ws?.kind === "personal";
   const submit = () => {
+    if (personal) return;
     const list = emails
       .split(/[\s,;]+/)
       .map((s) => s.trim())
@@ -762,6 +900,11 @@ function InviteModal() {
     const bad = list.filter((e) => !/^\S+@\S+\.\S+$/.test(e));
     if (!list.length) return ((m.err = "Enter at least one email address"), render());
     if (bad.length) return ((m.err = `${bad[0]} isn't a valid email address`), render());
+    if (isLive()) {
+      closeModal();
+      void invitesSent(list, role as Member["role"]).then((n) => n && toast(`${n} invitation${n > 1 ? "s" : ""} sent`));
+      return;
+    }
     mutate(() =>
       list.forEach((e) => {
         if (!D().members.some((x) => x.email === e))
@@ -841,15 +984,32 @@ function InviteModal() {
             </select>
           </div>
         </div>
-        <div className="alert info">
-          <Ic n="info" s={14} />
-          <span>
-            <b>Guests</b> can only see projects they&apos;re added to and can&apos;t create projects.
-          </span>
-        </div>
+        {personal ? (
+          <div className="alert warn">
+            <Ic n="info" s={14} />
+            <span>A personal workspace is just for you. Turn it into an organisation in Settings → Workspace to invite people.</span>
+          </div>
+        ) : (
+          <div className="alert info">
+            <Ic n="info" s={14} />
+            <span>
+              <b>Guests</b> can only see projects they&apos;re added to and can&apos;t create projects.
+            </span>
+          </div>
+        )}
       </form>
       <div className="modal-f">
-        <button className="btn btn-ghost" onClick={() => void copy(`${location.origin}/join/${D().ws.url}-7f3k2`, "Invite link copied")}>
+        <button
+          className="btn btn-ghost"
+          disabled={personal}
+          onClick={() =>
+            isLive()
+              ? void inviteLinkCreated(role as Member["role"])
+                  .then((url) => copy(url, `Invite link copied: anyone with it joins as ${role === "Guest" ? "a guest" : "a member"} for a week`))
+                  .catch((e: unknown) => toast(`No link: ${e instanceof Error ? e.message : "try again"}`, { kind: "err" }))
+              : void copy(`${location.origin}/join/${D().ws.url}-7f3k2`, "Invite link copied")
+          }
+        >
           <Ic n="link" s={14} />
           Copy invite link
         </button>
@@ -857,7 +1017,7 @@ function InviteModal() {
         <button className="btn btn-secondary" onClick={closeModal}>
           Cancel
         </button>
-        <button className="btn btn-primary" data-submit onClick={submit}>
+        <button className="btn btn-primary" data-submit onClick={submit} disabled={personal}>
           Send invites
         </button>
       </div>
@@ -1026,7 +1186,7 @@ type TeamForm = { name: string; desc: string; icon: string; color: string; membe
 function TeamModal({ m }: { m: Modal }) {
   const f = m.form as TeamForm;
   const err = m.err as string | undefined;
-  const people = D().members.filter((x) => x.status !== "deactivated");
+  const ppl = people();
   const set = (k: keyof TeamForm, v: string) => {
     (f as Record<string, unknown>)[k] = v;
     render();
@@ -1122,7 +1282,7 @@ function TeamModal({ m }: { m: Modal }) {
             </span>
           </legend>
           <div className="panel" style={{ maxHeight: 220, overflowY: "auto", padding: 4 }}>
-            {people.map((x) => (
+            {ppl.map((x) => (
               <label key={x.id} className="mi" style={{ cursor: "pointer", minHeight: 36 }}>
                 <input
                   type="checkbox"

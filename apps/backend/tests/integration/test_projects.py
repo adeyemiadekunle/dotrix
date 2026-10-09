@@ -398,3 +398,29 @@ async def test_stars_are_per_person_and_follow_what_you_can_see(
     assert (await db_client.delete(f"{url}/{kun['id']}/star", headers=cat.headers)).status_code == 204
     assert (await db_client.delete(f"{url}/{kun['id']}/star", headers=cat.headers)).status_code == 204
     assert (await db_client.get(f"{url}/starred", headers=cat.headers)).json() == []
+
+
+async def test_archive_restore_and_delete_a_project(signup, create_team, add_member, db_client: AsyncClient, storage) -> None:
+    ada = await signup()
+    team = await create_team(ada.headers)
+    url = projects_url(team)
+    project = (await db_client.post(url, json={"key": "OLD", "name": "Old"}, headers=ada.headers)).json()
+    base = f"{url}/{project['id']}"
+    await db_client.post(f"{base}/issues", json={"title": "Leftover"}, headers=ada.headers)
+    await db_client.post(f"{base}/documents", files={"file": ("notes.md", b"# Notes\n", "text/markdown")}, headers=ada.headers)
+
+    archived = await db_client.patch(base, json={"archived": True}, headers=ada.headers)
+    assert archived.status_code == 200 and archived.json()["archived_at"] is not None
+    restored = await db_client.patch(base, json={"archived": False}, headers=ada.headers)
+    assert restored.json()["archived_at"] is None
+
+    grace = await signup(email="grace@example.com", name="Grace")
+    await add_member(team["id"], grace.id, Role.MEMBER)
+    assert (await db_client.delete(base, headers=grace.headers)).status_code == 403
+
+    assert (await db_client.delete(base, headers=ada.headers)).status_code == 204
+    assert (await db_client.get(base, headers=ada.headers)).status_code == 404
+    assert storage.objects == {}  # its files went with it
+    audit = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
+    actions = [a["action"] for a in audit]
+    assert "project.deleted" in actions and "project.archived" in actions  # its history stays

@@ -136,6 +136,9 @@ class ProjectUpdate(BaseModel):
     )
     icon: ProjectIcon | None = Field(default=None, description="Send null for its key's letter; leave it out to keep it")
     color: ProjectColor | None = Field(default=None, description="Send null to follow its key; leave it out to keep it")
+    archived: bool | None = Field(
+        default=None, description="true archives it (out of the sidebar and Projects, kept as it is), false restores it"
+    )
 
 
 class ProjectRead(BaseModel):
@@ -161,6 +164,7 @@ class ProjectRead(BaseModel):
     status: ProjectStatus = Field(description="planning, active, on_hold, or completed")
     icon: str | None = Field(description="A Lucide icon name; null: show its key's first letter")
     color: ProjectColor | None = Field(description="Its colour; null: the colour follows its key")
+    archived_at: datetime | None = Field(default=None, description="When it was archived; null while in use")
     knowledge_revision: int
     created_at: datetime
     updated_at: datetime

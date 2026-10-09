@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Date, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pmagent_backend.db.base import (
@@ -100,6 +100,8 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):
     # How it looks: an icon (one of PROJECT_ICONS; null: its key's first letter) and a colour.
     icon: Mapped[str | None] = mapped_column(String(32))
     color: Mapped[ProjectColor | None] = mapped_column(str_enum(ProjectColor, 16))
+    # Archived: out of the sidebar and Projects, kept as it is; null while it's in use.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ProjectStar(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):

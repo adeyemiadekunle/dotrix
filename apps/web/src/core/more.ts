@@ -25,7 +25,8 @@ import {
   visibleProjects,
   type Modal,
 } from "../data/store";
-import { fileDeleted, fileDuplicated, fileRenamed, isLive, projectCreated, showDemo, signOutLive } from "../data/live";
+import { fileDeleted, fileDuplicated, fileRenamed, isLive, projectCreated, projectDeleted, resynced, showDemo, signOutLive, tasksDeleted } from "../data/live";
+import { inviteResent, isInvite, memberRemoved, ownershipTransferred } from "../data/account";
 import { seed } from "../data/seed";
 import type { Project, Task } from "../data/types";
 import { fileType } from "../ui/helpers";
@@ -39,6 +40,7 @@ export function restore(snap: string) {
   S.data = JSON.parse(snap);
   save();
   render();
+  resynced(); // a real workspace sends what the undo changed (an archive, a star, a checklist)
 }
 
 /* ---------- modals ---------- */
@@ -207,8 +209,11 @@ export function editTeam(id: string) {
 }
 
 /* ---------- tasks ---------- */
-export function deleteTasks(ids: string[]) {
+/** Remove issues from the store; a real workspace deletes them on the API too (`send: false` when
+ * something else deletes them there, like their project). */
+export function deleteTasks(ids: string[], { send = true } = {}) {
   const set = new Set(ids);
+  if (send) tasksDeleted(D().tasks.filter((t) => set.has(t.id)));
   D().tasks = D().tasks.filter((t) => !set.has(t.id));
   D().tasks.forEach((t) => (t.deps = t.deps.filter((d) => !set.has(d))));
   D().comments = D().comments.filter((c) => !set.has(c.task));
@@ -225,7 +230,7 @@ export function dupTask(id: string) {
   });
   toast("Task duplicated", { action: "Open", onAction: () => openTask(n!.id) });
 }
-/** The API can't archive or delete issues yet: a real workspace says so instead. */
+/** Something a real workspace can't do yet: it says so instead. */
 export function notYet(what: string, instead = "Mark the issue done instead.") {
   if (!isLive()) return false;
   S.ui.pop = null;
@@ -233,7 +238,6 @@ export function notYet(what: string, instead = "Mark the issue done instead.") {
   return true;
 }
 export function archiveTask(id: string) {
-  if (notYet("Archiving issues")) return;
   const t = task(id)!;
   const snap = snapshot();
   S.ui.pop = null;
@@ -245,11 +249,11 @@ export function archiveTask(id: string) {
   toast(`Archived “${t.title}”`, { action: "Undo", onAction: () => restore(snap) });
 }
 export function delTask(id: string) {
-  if (notYet("Deleting issues")) return;
   const t = task(id);
   S.ui.pop = null;
   if (!t) return;
   const n = commentsOf(t.id).length;
+  const undoable = !isLive(); // a real workspace's delete is for good
   confirmDlg({
     title: "Delete task?",
     body: `<b>${escapeHtml(t.title)}</b>${t.subtasks.length ? `, its ${t.subtasks.length} subtasks,` : ""} and ${n} comment${n === 1 ? "" : "s"} will be permanently deleted.`,
@@ -257,7 +261,7 @@ export function delTask(id: string) {
     danger: true,
     run: () => {
       const snap = snapshot();
-      if (guarded(() => deleteTasks([t.id]))) toast(`Deleted “${t.title}”`, { action: "Undo", onAction: () => restore(snap) });
+      if (guarded(() => deleteTasks([t.id]))) toast(`Deleted “${t.title}”`, undoable ? { action: "Undo", onAction: () => restore(snap) } : {});
     },
   });
 }
@@ -274,7 +278,6 @@ export function dupProject(id: string) {
   toast(`Duplicated ${p.name}`, { action: "Open", onAction: () => go("project", { id: n!.key }) });
 }
 export function archiveProject(id: string) {
-  if (notYet("Archiving projects", "Set its status to Completed instead.")) return;
   const p = proj(id)!;
   S.ui.pop = null;
   confirmDlg({
@@ -292,7 +295,6 @@ export function archiveProject(id: string) {
   });
 }
 export function delProject(id: string) {
-  if (notYet("Deleting projects", "Set its status to Completed instead.")) return;
   const p = proj(id)!;
   S.ui.pop = null;
   const n = tasksOf(p.id).length;
@@ -306,14 +308,18 @@ export function delProject(id: string) {
       const snap = snapshot();
       if (
         guarded(() => {
-          deleteTasks(D().tasks.filter((t) => t.project === p.id).map((t) => t.id));
+          // Deleting the project deletes its issues on the API: none are sent one by one.
+          deleteTasks(D().tasks.filter((t) => t.project === p.id).map((t) => t.id), { send: false });
           D().projects = D().projects.filter((x) => x !== p);
           D().projOrder = D().projOrder.filter((x) => x !== p.id);
           D().files = D().files.filter((f) => f.project !== p.id);
         })
       ) {
         if (here().route === "project") go("projects");
-        toast(`Deleted ${p.name}`, { action: "Undo", onAction: () => restore(snap) });
+        if (isLive()) {
+          projectDeleted(p);
+          toast(`Deleted ${p.name}`);
+        } else toast(`Deleted ${p.name}`, { action: "Undo", onAction: () => restore(snap) });
       }
     },
   });
@@ -368,7 +374,6 @@ export function colDoneAll(key: string, st: string) {
   if (guarded(() => ts.forEach((t) => applyPatch(t, { status: "done" })))) toast(`Marked ${ts.length} tasks as done`, { action: "Undo", onAction: () => restore(snap) });
 }
 export function colArchive(key: string) {
-  if (notYet("Archiving issues")) return;
   const ts = colTasks(key, "done");
   S.ui.pop = null;
   const snap = snapshot();
@@ -386,21 +391,69 @@ export function copyEmail(id: string) {
   closePop();
   void copy(mem(id)!.email, "Email copied");
 }
+const errOf = (e: unknown) => (e instanceof Error && e.message ? e.message : "try again");
 export function resendInvite(id: string) {
   closePop();
-  toast(`Invite resent to ${mem(id)!.email}`);
+  const m = mem(id)!;
+  if (!isLive()) return toast(`Invite resent to ${m.email}`);
+  void inviteResent(m)
+    .then(() => toast(`Invite resent to ${m.email}`))
+    .catch((e: unknown) => toast(`The invite wasn't resent: ${errOf(e)}`, { kind: "err" }));
+}
+/** Hand a workspace to another member (its owner only); you become an admin. */
+export function transferOwnership(id: string) {
+  const m = mem(id)!;
+  S.ui.pop = null;
+  confirmDlg({
+    title: `Make ${m.name} the owner?`,
+    body: `${escapeHtml(m.name)} becomes the owner of ${escapeHtml(D().ws.name)}, and you become an admin. Only they can hand it back.`,
+    ok: "Transfer ownership",
+    danger: true,
+    icon: "crown",
+    run: () => {
+      if (!isLive()) {
+        mutate(() => {
+          me()!.role = "Admin";
+          m.role = "Owner";
+        });
+        toast(`${m.name} owns the workspace now`);
+        return;
+      }
+      void ownershipTransferred(m)
+        .then(() => toast(`${m.name} owns the workspace now`))
+        .catch((e: unknown) => toast(`Ownership didn't move: ${errOf(e)}`, { kind: "err" }));
+    },
+  });
 }
 export function removeMember(id: string) {
   const m = mem(id)!;
   S.ui.pop = null;
   const n = allTasks().filter((t) => t.assignee === m.id && t.status !== "done").length;
+  const pending = isInvite(m.id);
   confirmDlg({
-    title: `Remove ${m.name}?`,
-    body: `${escapeHtml(m.name)} will lose access to ${escapeHtml(D().ws.name)} immediately.${n ? ` Their <b>${n} open task${n > 1 ? "s" : ""}</b> will become unassigned.` : ""}`,
-    ok: "Remove member",
+    title: pending ? `Revoke the invite to ${m.email}?` : `Remove ${m.name}?`,
+    body: pending
+      ? "The link in their email stops working."
+      : `${escapeHtml(m.name)} will lose access to ${escapeHtml(D().ws.name)} immediately.${n ? ` Their <b>${n} open task${n > 1 ? "s" : ""}</b> will become unassigned.` : ""}`,
+    ok: pending ? "Revoke invite" : "Remove member",
     danger: true,
     icon: "user-minus",
     run: () => {
+      if (isLive()) {
+        // Permanent on the API: no undo. The store follows once it's done.
+        void memberRemoved(m)
+          .then(() => {
+            mutate(() => {
+              D().members = D().members.filter((x) => x.id !== m.id);
+              D().tasks.forEach((t) => t.assignee === m.id && (t.assignee = null));
+              D().projects.forEach((p) => (p.members = p.members.filter((x) => x !== m.id)));
+            });
+            if (here().route === "member") go("members");
+            toast(pending ? `Revoked the invite to ${m.email}` : `Removed ${m.name}`);
+          })
+          .catch((e: unknown) => toast(`${m.name} wasn't removed: ${errOf(e)}`, { kind: "err", ms: 6000 }));
+        return;
+      }
       const snap = snapshot();
       if (
         guarded(() => {

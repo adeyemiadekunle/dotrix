@@ -1,124 +1,111 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-import { NOT_WIRED, signUp, signUpWithProject } from "./helpers";
+import { PASSWORD, signUp } from "./helpers";
 
-test.fixme(true, NOT_WIRED);
+// Settings in a real workspace: each section reads and saves through the API.
 
-// A 1×1 PNG, as a picked file.
-const PIXEL = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
-  "base64",
-);
+const slugOf = (page: Page) => new URL(page.url()).pathname.split("/")[2]!;
+const settings = (page: Page, sec: string) => page.goto(`/w/${slugOf(page)}/settings/${sec}`);
 
-test("your profile in Settings: a photo and what you do, shown to the team in Members", async ({ page }) => {
-  await signUpWithProject(page, "Kuprofile", "KUP");
-  const settings = page.getByRole("navigation", { name: "Settings" });
-
-  // The user menu opens your profile.
-  await page.getByRole("button", { name: /Ada Tester/ }).click();
-  await page.getByRole("menuitem", { name: "Profile" }).click();
-  await expect(page).toHaveURL(/\/settings\/profile$/);
-
-  await page.getByLabel("Profile photo").setInputFiles({ name: "me.png", mimeType: "image/png", buffer: PIXEL });
-  await expect(page.getByRole("button", { name: "Change photo" })).toBeVisible();
-  await expect(page.getByRole("main").locator('img[src*="/v1/me/avatar"]')).toBeVisible();
-
-  await page.getByLabel("What you do").fill("Product designer");
-  await page.getByRole("button", { name: "Save changes" }).click();
+test("your profile: name and what you do are saved, and Members shows them", async ({ page }) => {
+  await signUp(page);
+  await settings(page, "profile");
+  await page.getByLabel("Full name").fill("Ada Lovelace");
+  await page.getByLabel("What you do").fill("Analyst");
+  await page.getByRole("button", { name: "Save profile" }).click();
   await expect(page.getByText("Profile saved")).toBeVisible();
-  await expect(page.getByRole("list", { name: "Sign-in methods" }).getByText("Password", { exact: true })).toBeVisible();
+  await expect(page.getByText("Not linked")).toBeVisible(); // GitHub, from the sign-in methods
 
-  // Members shows it, with the projects each person sees, and filters by role or text.
-  await settings.getByRole("link", { name: "Members", exact: true }).click();
-  const row = page.getByRole("listitem").filter({ hasText: "Product designer" });
-  await expect(row).toBeVisible();
-  await expect(row.getByTestId("projects-they-see")).toHaveText("All projects");
-  await page.getByLabel("Search members").fill("nobody-like-this");
-  await expect(page.getByText("Nobody matches.")).toBeVisible();
-  await page.getByLabel("Search members").fill("designer");
-  await expect(row).toBeVisible();
-
-  // Agents and the audit log moved here from the sidebar; old addresses still work.
-  await expect(page.locator("[data-sidebar=sidebar]").getByRole("link", { name: "Agents" })).toHaveCount(0);
-  await page.goto(page.url().replace(/\/settings\/members$/, "/agents"));
-  await expect(page).toHaveURL(/\/settings\/agents$/);
-  await expect(page.getByText("@research")).toBeVisible();
-  await settings.getByRole("link", { name: "Audit log" }).click();
-  await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("What you do")).toHaveValue("Analyst");
+  await page.goto(`/w/${slugOf(page)}/members`);
+  await expect(page.locator("tr", { hasText: "Ada Lovelace" })).toBeVisible();
 });
 
-test("where you're signed in: see each browser, and sign another one out", async ({ page, browser }) => {
+test("where you're signed in: each browser is listed, and another one can be signed out", async ({ page, browser }) => {
   const user = await signUp(page);
-  const other = await browser.newContext({ baseURL: test.info().project.use.baseURL });
-  const laptop = await other.newPage();
-  await laptop.goto("/login");
-  await laptop.getByLabel("Email").fill(user.email);
-  await laptop.getByLabel("Password").fill(user.password);
-  await laptop.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(laptop).toHaveURL(/\/w\//);
+  const other = await browser.newContext();
+  const second = await other.newPage();
+  await second.goto("/login");
+  await second.getByLabel("Email").fill(user.email);
+  await second.getByLabel("Password").fill(user.password);
+  await second.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(second).toHaveURL(/\/w\//);
 
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Devices and tokens" }).click();
-  const sessions = page.getByRole("list", { name: "Signed-in browsers and apps" });
-  await expect(sessions.getByRole("listitem")).toHaveCount(2);
-  await expect(sessions.getByRole("listitem").first()).toContainText("This device");
-  await expect(sessions.getByRole("listitem").first()).toContainText(/Chrome on/);
-
-  // Sign the other browser out: its next request sends it back to sign in.
-  await sessions.getByRole("button", { name: /^Sign out Chrome on \w+$/ }).click();
-  await expect(sessions.getByRole("listitem")).toHaveCount(1);
-  await laptop.reload();
-  await expect(laptop).toHaveURL(/\/login/);
+  await settings(page, "sessions");
+  await expect(page.getByText("This browser", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign out", exact: true })).toHaveCount(1);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByText("Signed out", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign out", exact: true })).toHaveCount(0);
   await other.close();
 });
 
-test("change your password in Settings, and choose which notifications you get", async ({ page }) => {
-  const user = await signUp(page);
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
-  const settingsNav = page.getByRole("navigation", { name: "Settings" });
-  await settingsNav.getByRole("link", { name: "Profile" }).click();
+test("change your password (a wrong current one is refused), and choose which notifications you get", async ({ page }) => {
+  await signUp(page);
+  await settings(page, "password");
+  await page.getByLabel("Current password").fill("not-my-password-1");
+  await page.getByLabel("New password", { exact: true }).fill("a-new-password-2026!");
+  await page.getByLabel("Confirm new password").fill("a-new-password-2026!");
+  await page.getByRole("button", { name: "Update password" }).click();
+  await expect(page.getByText("That isn't your current password")).toBeVisible();
+  await page.getByLabel("Current password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Update password" }).click();
+  await expect(page.getByText("Password updated")).toBeVisible();
 
-  await page.getByRole("button", { name: "Change password" }).click();
-  const dialog = page.getByRole("dialog", { name: "Change your password" });
-  await dialog.getByLabel("Current password").fill("not my password");
-  await dialog.getByLabel("New password", { exact: true }).fill("a brand new secret");
-  await dialog.getByLabel("Confirm new password").fill("a brand new secret");
-  await dialog.getByRole("button", { name: "Change password" }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("Your current password isn't right");
-  await dialog.getByLabel("Current password").fill(user.password);
-  await dialog.getByRole("button", { name: "Change password" }).click();
-  await expect(page.getByText("Password changed")).toBeVisible();
-  await expect(dialog).toHaveCount(0);
-
-  // Notifications: mentions off, remembered; approvals can't be turned off.
-  await settingsNav.getByRole("link", { name: "Notifications" }).click();
-  const kinds = page.getByRole("list", { name: "Notifications you get" });
-  await kinds.getByRole("checkbox", { name: /Mentions/ }).click();
-  await expect(kinds.getByRole("checkbox", { name: /Changes waiting for your decision/ })).toBeDisabled();
+  await settings(page, "notif-email");
+  await page.getByLabel("Email me").selectOption("daily");
+  await settings(page, "notif-mentions");
+  await page.getByLabel("Mentions").uncheck();
   await page.reload();
-  await expect(page.getByRole("list", { name: "Notifications you get" }).getByRole("checkbox", { name: /Mentions/ })).not.toBeChecked();
-  await expect(page.getByRole("list", { name: "Notifications you get" }).getByRole("checkbox", { name: /Assigned to you/ })).toBeChecked();
+  await expect(page.getByLabel("Mentions")).not.toBeChecked();
+  await settings(page, "notif-email");
+  await expect(page.getByLabel("Email me")).toHaveValue("daily");
 });
 
-test("GitHub in Settings, and a project's repository by address while the app isn't set up", async ({ page }) => {
-  const { key } = await signUpWithProject(page, "Kurepo", "KUR");
-  const workspaceUrl = page.url().replace(/\/p\/.*$/, "");
+test("tokens under Sessions: the CLI's sign-in is listed, a new one is shown once, both revoke; the old Devices address opens Sessions", async ({ page }) => {
+  await signUp(page);
+  // What `pmagent login` leaves behind: a token named for the device.
+  await page.evaluate(() =>
+    fetch("/v1/me/tokens", { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "e2e" }, body: JSON.stringify({ name: "pmagent CLI on laptop" }) }),
+  );
+  await settings(page, "devices");
+  await expect(page.locator(".set-in h1")).toHaveText("Sessions");
+  await expect(page.getByRole("heading", { name: "Tokens" })).toBeVisible();
+  await expect(page.locator(".srow", { hasText: "pmagent CLI on laptop" })).toBeVisible();
 
-  await page.goto(`${workspaceUrl}/settings/github`);
-  await expect(page.getByText("The GitHub App isn't set up on this server")).toBeVisible();
-  // A setup redirect that this browser didn't start comes back with an error, not an installation.
-  const forged = await page.request.get("/api/github/setup?installation_id=1&setup_action=install&state=forged", {
-    maxRedirects: 0,
-  });
-  expect(forged.status()).toBe(303);
-  expect(forged.headers()["location"]).toContain("github_error=");
+  await page.getByRole("button", { name: "New token" }).click();
+  await page.locator(".modal input").fill("CI");
+  await page.locator(".modal input").press("Enter");
+  await expect(page.getByText("copy it now, it isn't shown again")).toBeVisible();
+  await expect(page.locator("code", { hasText: /^pmat_/ })).toBeVisible();
 
-  await page.goto(`${workspaceUrl}/p/${key}/settings`);
-  await page.getByRole("button", { name: "Connect from GitHub" }).click();
-  await expect(page.getByText("needs the GitHub App, which isn't set up on this server yet", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: "Use an address instead" }).click();
-  await page.getByLabel("Repository address").fill("https://gitlab.com/acme/kurepo");
-  await page.getByRole("button", { name: "Link repository" }).click();
-  await expect(page.getByText("Address only")).toBeVisible();
-  await expect(page.getByRole("link", { name: "https://gitlab.com/acme/kurepo" })).toBeVisible();
+  await page.locator(".srow", { hasText: "CI" }).getByRole("button", { name: "Revoke" }).click();
+  await page.locator(".srow", { hasText: "pmagent CLI on laptop" }).getByRole("button", { name: "Revoke" }).click();
+  await expect(page.getByText("No tokens.")).toBeVisible();
+});
+
+test("agents: change a built-in's contract, then reset it; workspace rules are saved as versions", async ({ page }) => {
+  await signUp(page);
+  await settings(page, "agents");
+  await page.getByText("Research Agent").first().click();
+  await page.getByLabel("Description").fill("Finds and checks sources on the web.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(/Saved as version \d+/)).toBeVisible();
+  await expect(page.getByText("Customised").first()).toBeVisible();
+  await page.getByRole("button", { name: "Reset to default" }).click();
+  await page.locator(".modal").getByRole("button", { name: "Reset to default" }).click();
+  await expect(page.getByText("Reset to default", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("Built-in").first()).toBeVisible();
+
+  await settings(page, "rules");
+  await page.getByLabel("Rules").fill("- Write in plain English.");
+  await page.getByRole("button", { name: "Save", exact: true }).first().click();
+  await expect(page.getByText("Rules saved (v1)")).toBeVisible();
+});
+
+test("GitHub says when the app isn't set up on this server", async ({ page }) => {
+  await signUp(page);
+  await settings(page, "github");
+  await expect(page.getByText("The GitHub App isn't set up on this server yet")).toBeVisible();
 });

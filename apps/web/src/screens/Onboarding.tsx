@@ -1,13 +1,16 @@
 // Gr8r's onboarding (gr8r-studio/src/pages/auth.js renderOnboarding): six steps in the auth
 // shell. On the seeded data it renames the workspace, creates the first project from a template
-// (dotrix: with its documents for the agents), and adds the invites. Wired later to
-// POST /v1/workspaces, /projects, /invites.
+// (dotrix: with its documents for the agents), and adds the invites. Signed in, it creates a real
+// organisation instead (data/live.ts organisationCreated) and opens it.
 import { useState } from "react";
 
 import { Ic } from "../core/icons";
 import { TEMPLATES, createProject } from "../core/more";
 import { go } from "../core/nav";
 import { uid } from "../core/utils";
+import { errorMessage, hasSession } from "@/lib/api";
+
+import { organisationCreated } from "../data/live";
 import { D, me, mutate } from "../data/store";
 
 type Data = { use: string; ws: string; url: string; team: string; size: string; proj: string; tmpl: string; invites: string[] };
@@ -17,6 +20,7 @@ export function Onboarding() {
   const [st, setSt] = useState(0);
   const [o, setO] = useState<Data>({ use: "product", ws: "", url: "", team: "kanban", size: "2-10", proj: "My first project", tmpl: "product", invites: ["", "", ""] });
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
   const set = (p: Partial<Data>) => setO({ ...o, ...p });
   const next = (skip = false) => {
     if (st === 1 && !o.ws.trim()) return setErr("Give your workspace a name");
@@ -25,6 +29,24 @@ export function Onboarding() {
     setSt(st + 1);
   };
   const finish = () => {
+    if (hasSession()) {
+      const tm = TEMPLATES.find((t) => t.id === o.tmpl);
+      setBusy(true);
+      setErr("");
+      void organisationCreated({
+        name: o.ws.trim() || "My Workspace",
+        project: o.proj.trim() || "My first project",
+        icon: tm?.icon || "folder",
+        tasks: tm?.tasks ?? [],
+        invites: o.invites.map((x) => x.trim()).filter((x) => x.includes("@")),
+      })
+        .then((slug) => location.assign(`/w/${slug}`))
+        .catch((e) => {
+          setBusy(false);
+          setErr(errorMessage(e));
+        });
+      return;
+    }
     mutate(() => {
       D().ws.name = o.ws.trim() || "My Workspace";
       D().ws.url = o.url || "workspace";
@@ -224,9 +246,15 @@ export function Onboarding() {
             </div>
           ))}
         </div>
-        <button className="btn btn-primary btn-lg btn-block" onClick={finish}>
-          Open workspace
-          <Ic n="arrow-right" s={15} />
+        {err && (
+          <span className="err" role="alert">
+            <Ic n="circle-alert" s={12} />
+            {err}
+          </span>
+        )}
+        <button className="btn btn-primary btn-lg btn-block" onClick={finish} disabled={busy} aria-busy={busy}>
+          {busy ? "Creating your workspace…" : "Open workspace"}
+          {!busy && <Ic n="arrow-right" s={15} />}
         </button>
       </>
     );

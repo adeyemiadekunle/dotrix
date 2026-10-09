@@ -10,7 +10,10 @@
 // files (upload, list, rename, duplicate, delete), automations (list, on/off, add a preset), the audit log.
 // Changes made through mutate() anywhere in the screens (a sub-task ticked, a star, a team's
 // people) are compared with what the API last had after each change (reconcile) and sent.
-// Not yet: chat and coding (their own step); custom agents stay in this browser.
+// Archive, delete, and moving an issue to another project go to the API too (a delete can't be
+// undone there, so it offers no undo).
+// Settings and Members (your account, the workspace, its people, agents' settings) are in
+// account.ts. Not yet: chat and coding (their own step).
 import { api, apiFetch, authPost, hasSession, problemMessage, unwrap, type Schemas } from "@/lib/api";
 
 import { PCOLORS } from "../core/constants";
@@ -40,6 +43,9 @@ import type {
 } from "./types";
 
 type W = Schemas["WorkspaceWithRole"];
+
+/** Run after a real workspace loads (account.ts adds its pending invites). */
+export const onLoaded: (() => void)[] = [];
 
 /** Where the store's data comes from right now. */
 export const live = {
@@ -150,6 +156,7 @@ function toProject(p: Schemas["ProjectRead"], members: Schemas["MemberRead"][], 
     private: p.access === "restricted",
     repo: p.repo_url ?? undefined,
     model: p.model,
+    archived: p.archived_at ? true : undefined,
   };
 }
 
@@ -189,6 +196,7 @@ function toTask(i: IssueLike, projectId: string, order: number): Task {
     fav: false,
     recur: i.recurrence ? (RECUR_IN[i.recurrence] ?? null) : null,
     completedAt: i.status === "done" ? ms(i.updated_at) : undefined,
+    archived: i.archived_at ? true : undefined,
     type: i.type,
     parent: i.parent_key ?? null,
   };
@@ -290,6 +298,18 @@ function toAgent(a: Schemas["AgentRead"]): Agent {
   };
 }
 
+/** The agents list again, after one was saved, reset, or created in Settings. */
+export async function reloadAgents() {
+  if (!isLive()) return;
+  try {
+    const agents = await unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", { params: { path: { workspace_id: live.ws!.id } } }));
+    D().agents = agents.map(toAgent);
+    render();
+  } catch {
+    /* leave what's shown */
+  }
+}
+
 /* ---------- loading ---------- */
 
 export async function myWorkspaces(): Promise<W[]> {
@@ -328,7 +348,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       unwrap(api.GET("/v1/workspaces/{workspace_id}/members", path)),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/projects", path)),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/starred", path)).catch(() => []),
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/issues", { params: { path: { workspace_id: ws.id }, query: { limit: 5000, order: "created" } } })),
+      unwrap(api.GET("/v1/workspaces/{workspace_id}/issues", { params: { path: { workspace_id: ws.id }, query: { limit: 5000, order: "created", archived: "include" } } })),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/notifications", { params: { path: { workspace_id: ws.id }, query: { limit: 200 } } })).catch(() => []),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/activity", { params: { path: { workspace_id: ws.id }, query: { limit: 200, agents: true } } })).catch(() => []),
     ]);
@@ -394,6 +414,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
     // Nothing opened against the previous data stays open.
     Object.assign(S.ui, { drawer: null, modals: [], pop: null, palette: null, sel: new Set<string>(), composer: null, editCell: null });
     render();
+    onLoaded.forEach((f) => f());
     try {
       localStorage.setItem("dotrix.lastWorkspace", slug);
     } catch {
@@ -479,6 +500,7 @@ function issueFields(t: Task, keys: (keyof Task)[]): Schemas["IssueUpdate"] {
     else if (k === "type") body.type = t.type;
     else if (k === "parent") body.parent = t.parent ?? null;
     else if (k === "subtasks") body.checklist = toChecklist(t.subtasks);
+    else if (k === "archived") body.archived = Boolean(t.archived);
     else if (k === "recur") body.recurrence = t.recur ? (RECUR_OUT[t.recur] ?? null) : null;
     else if (k === "estimate") {
       const n = Number.parseFloat(t.estimate ?? "");
@@ -502,8 +524,7 @@ export function taskPatched(t: Task, keys: (keyof Task)[]) {
   if (!isLive() || t.key.startsWith("new-")) return;
   const body = issueFields(t, keys);
   if (!Object.keys(body).length) return;
-  if (keys.includes("project")) toast("Moving an issue to another project isn't saved yet", { kind: "info" });
-  const was = synced.tasks.get(t);
+  const was = synced.tasks.get(t.key);
   if (was && body.checklist) was.sub = subSig(t); // sent here, so reconcile doesn't send it again
   void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } }, body }))
     .then(async (i) => {
@@ -575,12 +596,12 @@ export async function loadComments(t: Task) {
     const i = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } } }));
     const cs: Comment[] = (i.log ?? [])
       .filter((e) => e.kind === "commented" && e.body)
-      .map((e) => ({ id: uid("c"), task: t.id, by: actor(e.author_user_id, e.author_agent), at: ms(e.created_at), text: e.body!, re: {} }));
+      .map((e) => ({ id: e.id, task: t.id, by: actor(e.author_user_id, e.author_agent), at: ms(e.created_at), text: e.body!, re: e.reactions ?? {} }));
     D().comments = [...D().comments.filter((c) => c.task !== t.id), ...cs];
     // The full issue has the description and its attachments, which lists leave out.
     if (!t.desc) t.desc = mdToHtml(i.description);
     t.attachments = (i.attachments ?? []).map(toAttachment);
-    const was = synced.tasks.get(t);
+    const was = synced.tasks.get(t.key);
     if (was) was.att = t.attachments.map((a) => a.id);
     render();
   } catch {
@@ -590,7 +611,14 @@ export async function loadComments(t: Task) {
 
 export function commentPosted(t: Task, text: string, mentions: string[] = []) {
   if (!isLive()) return;
-  void unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments", { params: { path: { ...projectPath(t.project), key: t.key } }, body: { body: text, mentions } })).catch((e) => failed("Your comment", e));
+  void unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments", { params: { path: { ...projectPath(t.project), key: t.key } }, body: { body: text, mentions } }))
+    .then((i) => {
+      // The comment shown since it was posted takes the API's id, so it can be edited or reacted to.
+      const posted = [...(i.log ?? [])].reverse().find((e) => e.kind === "commented" && e.body === text);
+      const local = D().comments.find((c) => c.task === t.id && c.text === text && !fromApi(c.id));
+      if (posted?.id && local) local.id = posted.id;
+    })
+    .catch((e) => failed("Your comment", e));
 }
 
 /** A rank change in a list or on the board: place it before the issue that now follows it. */
@@ -612,8 +640,9 @@ async function reloadProjects() {
   if (isLive()) await loadWorkspace(live.slug!);
 }
 
-export function projectChanged(p: Project, keys: (keyof Project)[]) {
-  if (!isLive()) return;
+/** A project's fields changed in the store: send them. Settles once the API has them (or refused). */
+export function projectChanged(p: Project, keys: (keyof Project)[]): Promise<void> {
+  if (!isLive()) return Promise.resolve();
   const body: Schemas["ProjectUpdate"] = {};
   for (const k of keys) {
     if (k === "name") body.name = p.name;
@@ -624,11 +653,14 @@ export function projectChanged(p: Project, keys: (keyof Project)[]) {
     else if (k === "status") Object.assign(body, PSTATUS_OUT[p.status]);
     else if (k === "private") body.access = p.private ? "restricted" : "workspace";
   }
-  if (!Object.keys(body).length) return;
-  void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(p.id) }, body })).catch((e) => {
-    failed(p.name, e);
-    void reloadProjects();
-  });
+  if (!Object.keys(body).length) return Promise.resolve();
+  return unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(p.id) }, body })).then(
+    () => undefined,
+    (e) => {
+      failed(p.name, e);
+      void reloadProjects();
+    },
+  );
 }
 
 export function projectCreated(p: Project) {
@@ -840,7 +872,7 @@ export async function issueFileAttached(file: File, t: Task, onProgress: (pct: n
   if (t.key.startsWith("new-")) throw new Error("The issue wasn't created");
   const i = await upload<Schemas["IssueRead"]>(`/v1/workspaces/${wsId()}/projects/${t.project}/issues/${encodeURIComponent(t.key)}/attachments`, file, onProgress);
   t.attachments = (i.attachments ?? []).map(toAttachment);
-  const was = synced.tasks.get(t);
+  const was = synced.tasks.get(t.key);
   if (was) was.att = t.attachments.map((a) => a.id);
   render();
   onProgress(100);
@@ -865,7 +897,8 @@ async function upload<T>(url: string, file: File, onProgress: (pct: number) => v
 /* ---------- what the API last had: changes made anywhere are compared with it and sent ---------- */
 
 const synced = {
-  tasks: new Map<Task, { sub: string; fav: boolean; att: string[] }>(), // by the task itself: its id changes on create
+  tasks: new Map<string, { sub: string; fav: boolean; att: string[]; arch: boolean }>(), // by key: undo puts back copies
+  projects: new Map<string, boolean>(), // archived
   teams: new Map<string, string>(),
   memberTeam: new Map<string, string>(),
   projectTeam: new Map<string, string>(),
@@ -873,7 +906,7 @@ const synced = {
 const subSig = (t: Task) => JSON.stringify(toChecklist(t.subtasks));
 const teamSig = (t: Team) => JSON.stringify([t.name, t.desc, t.icon, t.c]);
 function markTask(t: Task) {
-  synced.tasks.set(t, { sub: subSig(t), fav: t.fav, att: t.attachments.map((a) => a.id) });
+  synced.tasks.set(t.key, { sub: subSig(t), fav: t.fav, att: t.attachments.map((a) => a.id), arch: Boolean(t.archived) });
 }
 function markTeams() {
   synced.teams = new Map((D().teams ?? []).filter((t) => fromApi(t.id)).map((t) => [t.id, teamSig(t)]));
@@ -883,6 +916,7 @@ function markTeams() {
 function baseline() {
   synced.tasks = new Map();
   D().tasks.forEach(markTask);
+  synced.projects = new Map(D().projects.map((p) => [p.id, Boolean(p.archived)]));
   markTeams();
 }
 
@@ -890,7 +924,7 @@ function baseline() {
 function reconcile() {
   if (!isLive()) return;
   for (const t of D().tasks) {
-    const was = synced.tasks.get(t);
+    const was = synced.tasks.get(t.key);
     if (!was || t.key.startsWith("new-")) continue; // not on the API yet: creating it sends it
     const path = { params: { path: { ...projectPath(t.project), key: t.key } } };
     const sub = subSig(t);
@@ -910,6 +944,13 @@ function reconcile() {
         render();
       });
     }
+    if (Boolean(t.archived) !== was.arch) {
+      was.arch = Boolean(t.archived);
+      void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { ...path, body: { archived: was.arch } })).catch((e) => {
+        failed(`“${t.title}”`, e);
+        void reloadTask(t);
+      });
+    }
     const gone = was.att.filter((id) => !id.startsWith("counted-") && !t.attachments.some((a) => a.id === id));
     was.att = t.attachments.map((a) => a.id);
     for (const id of gone)
@@ -918,9 +959,107 @@ function reconcile() {
         void reloadTask(t);
       });
   }
+  for (const pr of D().projects) {
+    const was = synced.projects.get(pr.id);
+    if (was === undefined || Boolean(pr.archived) === was) continue;
+    synced.projects.set(pr.id, Boolean(pr.archived));
+    void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(pr.id) }, body: { archived: Boolean(pr.archived) } })).catch((e) => {
+      failed(pr.name, e);
+      void reloadProjects();
+    });
+  }
   reconcileTeams();
 }
 afterMutate.push(reconcile);
+/** Run after the store's data was replaced (undo): what differs from the API is sent. */
+export const resynced = () => reconcile();
+
+/* ---------- delete, move, comments ---------- */
+
+/** Issues deleted in the screens (already gone from the store). A delete can't be undone. */
+export function tasksDeleted(ts: Task[]) {
+  if (!isLive()) return;
+  for (const t of ts) {
+    if (t.key.startsWith("new-")) continue;
+    synced.tasks.delete(t.key);
+    void unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } } })).catch(async (e) => {
+      failed(`Deleting “${t.title}”`, e);
+      try {
+        // Put it back as the API has it.
+        const i = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } } }));
+        const back = { ...toTask(i, t.project, t.order), fav: t.fav };
+        D().tasks.push(back);
+        markTask(back);
+        render();
+      } catch {
+        /* gone after all */
+      }
+    });
+  }
+}
+
+/** A project deleted in the screens (already gone from the store), with everything in it. */
+export function projectDeleted(pr: Project) {
+  if (!isLive()) return;
+  synced.projects.delete(pr.id);
+  void unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(pr.id) } })).catch((e) => {
+    failed(`Deleting ${pr.name}`, e);
+    void reloadProjects();
+  });
+}
+
+/** Move an issue to another project: the API creates it there (next key, its history with it) and
+ * deletes it here; the store's task becomes the new one. */
+export async function taskMoved(t: Task, toProject: string) {
+  const from = t.key;
+  try {
+    const i = await unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/move", { params: { path: { ...projectPath(t.project), key: from } }, body: { project_id: toProject } }));
+    synced.tasks.delete(from);
+    Object.assign(t, toTask(i, toProject, t.order), { fav: t.fav });
+    markTask(t);
+    if (S.ui.drawer === from) S.ui.drawer = t.id;
+    D().comments.forEach((c) => c.task === from && (c.task = t.id));
+    D().activity.forEach((a) => a.task === from && (a.task = t.id));
+    render();
+    toast(`Moved to ${t.key}`);
+  } catch (e) {
+    failed(`Moving “${t.title}”`, e);
+  }
+}
+
+const commentPath = (c: Comment) => {
+  const t = D().tasks.find((x) => x.id === c.task)!;
+  return { ...projectPath(t.project), key: t.key, comment_id: c.id };
+};
+async function reloadComments(c: Comment) {
+  const t = D().tasks.find((x) => x.id === c.task);
+  if (t) await loadComments(t);
+}
+/** A comment's new text (its author only; the store shows it already). */
+export function commentEdited(c: Comment) {
+  if (!isLive() || !fromApi(c.id)) return;
+  void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}", { params: { path: commentPath(c) }, body: { body: c.text } })).catch((e) => {
+    failed("Your comment", e);
+    void reloadComments(c);
+  });
+}
+/** A comment deleted (already gone from the store). */
+export function commentDeleted(c: Comment) {
+  if (!isLive() || !fromApi(c.id)) return;
+  void unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}", { params: { path: commentPath(c) } })).catch((e) => {
+    failed("Deleting the comment", e);
+    void reloadComments(c);
+  });
+}
+/** Your reaction added or taken back (the store shows it already). */
+export function commentReacted(c: Comment, emoji: string, on: boolean) {
+  if (!isLive() || !fromApi(c.id)) return;
+  const path = { params: { path: { ...commentPath(c), emoji } } };
+  void unwrap(on ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}/reactions/{emoji}", path) : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}/reactions/{emoji}", path)).catch((e) => {
+    failed("Your reaction", e);
+    void reloadComments(c);
+  });
+}
 
 const teamPath = (id: string) => ({ workspace_id: wsId(), team_id: id });
 const pendingTeams = new WeakSet<Team>();
@@ -1001,4 +1140,35 @@ async function createTeam(tm: Team) {
     failed(tm.name, e);
     void reloadTeams();
   }
+}
+
+/* ---------- a new organisation (onboarding, or "Create workspace" in the switcher) ---------- */
+
+const PROJECT_ICONS = new Set(["globe", "smartphone", "megaphone", "rocket", "component", "building-2", "layout-grid", "palette", "code", "briefcase", "target", "layers", "zap", "heart", "folder", "sparkles"]);
+
+/** Create an organisation with its first project (and the template's starter issues), invite
+ * people, and return its slug to open. Signed in only; the demo keeps the seeded flow. */
+export async function organisationCreated(f: { name: string; project: string; icon: string; tasks: string[]; invites: string[] }): Promise<string> {
+  const ws = await unwrap(api.POST("/v1/workspaces", { body: { name: f.name, kind: "organization" } }));
+  const inWs = { params: { path: { workspace_id: ws.id } } };
+  const letters = f.project.toUpperCase().replace(/[^A-Z ]/g, "");
+  let key = letters.split(/\s+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 4);
+  if (key.length < 2) key = (letters.replace(/\s/g, "") + "PRJ").slice(0, 3);
+  const project = await unwrap(
+    api.POST("/v1/workspaces/{workspace_id}/projects", {
+      ...inWs,
+      body: { key, name: f.project, description: "", source: "docs_only", access: "workspace", icon: PROJECT_ICONS.has(f.icon) ? f.icon : "folder" },
+    }),
+  );
+  const inProject = { params: { path: { workspace_id: ws.id, project_id: project.id } } };
+  for (const title of f.tasks) // one at a time, so keys follow the template's order
+    await unwrap(
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", {
+        ...inProject,
+        body: { title, type: "task", description: "", status: "todo", priority: "none", depends_on: [], labels: [], components: [], links: [], checklist: [], parent: null },
+      }),
+    );
+  for (const email of f.invites)
+    await unwrap(api.POST("/v1/workspaces/{workspace_id}/invites", { ...inWs, body: { email, role: "member" } })).catch((e) => failed(`The invite to ${email}`, e));
+  return ws.slug;
 }

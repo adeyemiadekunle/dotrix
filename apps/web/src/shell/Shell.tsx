@@ -1,7 +1,7 @@
 // Gr8r's shell (gr8r-studio/src/shell/layout.js): sidebar, top bar, the page, and on phones a
 // bottom bar. dotrix adds Chat to the Workspace group; the Inbox holds people's items and
 // Notifications the agents' (approvals, plans, findings).
-import type { CSSProperties, MouseEvent, ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 import { openPop, projMove, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
@@ -44,16 +44,65 @@ export const ROUTE_NAMES: Record<string, string> = {
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
+// Below 900px the sidebar is a drawer (280px wide): always with its labels, whatever the
+// collapsed setting says (that's for the wide layout).
+const NARROW = "(max-width: 900px)";
+const narrow = () => typeof window !== "undefined" && window.matchMedia(NARROW).matches;
+/** The sidebar shows icons only: collapsed, on a wide screen. */
+export const sideCollapsed = () => S.ui.collapsed && !narrow();
+
+/** A collapsed sidebar's labels on hover or focus. They float over the page: the sidebar clips
+ * anything that overflows it, so CSS tooltips (`data-tip`) can't show from inside it. */
+function SideTip() {
+  const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    const side = document.querySelector<HTMLElement>("nav.side");
+    if (!side) return;
+    const show = (e: Event) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>("[data-tip]");
+      if (!el || !side.contains(el) || !sideCollapsed()) return setTip(null);
+      const r = el.getBoundingClientRect();
+      setTip({ text: el.dataset.tip!, x: r.right + 8, y: r.top + r.height / 2 });
+    };
+    const hide = () => setTip(null);
+    side.addEventListener("pointerover", show);
+    side.addEventListener("focusin", show);
+    side.addEventListener("pointerleave", hide);
+    side.addEventListener("focusout", hide);
+    side.addEventListener("click", hide);
+    return () => {
+      side.removeEventListener("pointerover", show);
+      side.removeEventListener("focusin", show);
+      side.removeEventListener("pointerleave", hide);
+      side.removeEventListener("focusout", hide);
+      side.removeEventListener("click", hide);
+    };
+  }, []);
+  return tip ? (
+    <div className="side-tip" role="tooltip" style={{ left: tip.x, top: tip.y }}>
+      {tip.text}
+    </div>
+  ) : null;
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const s = useStudio();
   const u = s.ui;
+  // Crossing the narrow breakpoint changes what "collapsed" means: re-render.
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW);
+    const onChange = () => render();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
   return (
     <>
       <a className="skip" href="#main-content">
         Skip to content
       </a>
-      <div className={`shell ${u.collapsed ? "collapsed" : ""} ${u.mnav ? "mnav" : ""}`}>
+      <div className={`shell ${sideCollapsed() ? "collapsed" : ""} ${u.mnav ? "mnav" : ""}`}>
         <Sidebar />
+        <SideTip />
         {u.mnav && <div className="side-scrim" onClick={() => ((S.ui.mnav = false), render())} />}
         <main className="main" id="main">
           <Topbar />
@@ -111,7 +160,7 @@ function SItem({
     <button
       className={`sitem ${active ? "on" : ""}`}
       onClick={onClick ?? (() => route && go(route, params))}
-      data-tip={S.ui.collapsed ? label : undefined}
+      data-tip={sideCollapsed() ? label : undefined}
       data-tip-pos="right"
       aria-current={active ? "page" : undefined}
     >
@@ -148,7 +197,7 @@ function Sidebar() {
               <Ic n="chevrons-up-down" s={13} />
             </span>
           </button>
-          {!u.collapsed && (
+          {!sideCollapsed() && (
             <button className="ibtn ibtn-sm hide-m" onClick={toggleSide} data-tip="Collapse sidebar  [" aria-label="Collapse sidebar">
               <Ic n="panel-left" s={15} />
             </button>
@@ -156,7 +205,7 @@ function Sidebar() {
         </div>
       </div>
       <div className="side-scroll">
-        {u.collapsed && (
+        {sideCollapsed() && (
           <button className="sitem" onClick={toggleSide} data-tip="Expand sidebar" data-tip-pos="right" aria-label="Expand sidebar">
             <Ic n="panel-left" s={16} />
           </button>
@@ -200,7 +249,7 @@ function Sidebar() {
                     e.preventDefault();
                     openPop(e.currentTarget, "ctx", { ctx: "project", id: p.id });
                   }}
-                  data-tip={u.collapsed ? p.name : undefined}
+                  data-tip={sideCollapsed() ? p.name : undefined}
                   data-tip-pos="right"
                 >
                   <span
@@ -251,7 +300,7 @@ function Sidebar() {
                     </span>
                   </span>
                 </div>
-                <div className={`sub ${open && !u.collapsed ? "open" : ""}`}>
+                <div className={`sub ${open && !sideCollapsed() ? "open" : ""}`}>
                   {(
                     [
                       ["board", "Board", "square-kanban"],
@@ -289,7 +338,7 @@ function Sidebar() {
         <button
           className="sitem"
           onClick={(e) => openPop(e.currentTarget, "help")}
-          data-tip={u.collapsed ? "Help" : undefined}
+          data-tip={sideCollapsed() ? "Help" : undefined}
           data-tip-pos="right"
         >
           <Ic n="circle-help" s={16} />
@@ -300,7 +349,7 @@ function Sidebar() {
           className="sitem"
           onClick={(e) => openPop(e.currentTarget, "user")}
           style={{ height: 36 }}
-          data-tip={u.collapsed ? "Profile" : undefined}
+          data-tip={sideCollapsed() ? "Profile" : undefined}
           data-tip-pos="right"
         >
           <Av id={d.me} cls="presence" tip={false} />

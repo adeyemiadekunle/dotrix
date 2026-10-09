@@ -6,13 +6,13 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 
 import { applyPatch, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
 import { agentsNotWired } from "../core/agents";
-import { commentPosted, documentUploaded, isLive, issueFileAttached } from "../data/live";
+import { commentDeleted, commentEdited, commentPosted, commentReacted, documentUploaded, isLive, issueFileAttached } from "../data/live";
 import { TY, TYPES } from "../core/constants";
 import { Ic } from "../core/icons";
 import { openModal, restore, snapshot } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, TODAY, ago, diffD, fmtDate, parse, relDate, uid } from "../core/utils";
-import { D, S, commentsOf, isOver, logAct, mutate, pColor, proj, render, save, task, who } from "../data/store";
+import { D, S, commentsOf, isOver, logAct, me, mutate, pColor, proj, render, save, task, who, people } from "../data/store";
 import type { Comment, Subtask, Task } from "../data/types";
 import { CellAssignee, CellDue, CellPrio, CellProject, CellStatus } from "../components/TaskList";
 import { Av, CommentText, FT, FilePrev, Lbl, ProgBar, fileType, fsize } from "../ui/helpers";
@@ -90,11 +90,31 @@ export function postComment(id: string) {
     S.ui.drawerTab = "comments";
   });
   // Who was @mentioned by name, so the API tells them.
-  commentPosted(t, txt, D().members.filter((m) => txt.includes(`@${m.name}`)).map((m) => m.id));
+  commentPosted(t, txt, people().filter((m) => txt.includes(`@${m.name}`)).map((m) => m.id));
+}
+/** Add or take back your reaction to a comment. */
+export function toggleReaction(c: Comment, e: string) {
+  const on = !(c.re[e] || []).includes(D().me);
+  mutate(() => {
+    const list = c.re[e] || [];
+    c.re[e] = on ? [...list, D().me] : list.filter((x) => x !== D().me);
+  });
+  commentReacted(c, e, on);
 }
 export function CommentItem({ c }: { c: Comment }) {
   const w = who(c.by);
   const mine = c.by === D().me;
+  // Your own comments, and anyone's for owners and admins.
+  const canDelete = mine || ["Owner", "Admin"].includes(me()?.role ?? "");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(c.text);
+  const saveEdit = () => {
+    const v = draft.trim();
+    setEditing(false);
+    if (!v || v === c.text) return;
+    mutate(() => (c.text = v));
+    commentEdited(c);
+  };
   return (
     <div className="cmt">
       <Av id={c.by} cls="md" tip={false} />
@@ -102,9 +122,22 @@ export function CommentItem({ c }: { c: Comment }) {
         <div className="who">
           <b>{w?.name}</b>
           <time>{ago(c.at)}</time>
-          {mine && (
+          {canDelete && (
             <>
               <span className="sp" />
+              {mine && !editing && (
+                <button
+                  className="ibtn ibtn-xs"
+                  aria-label="Edit comment"
+                  data-tip="Edit"
+                  onClick={() => {
+                    setDraft(c.text);
+                    setEditing(true);
+                  }}
+                >
+                  <Ic n="pencil" s={12} />
+                </button>
+              )}
               <button
                 className="ibtn ibtn-xs"
                 aria-label="Delete comment"
@@ -112,7 +145,10 @@ export function CommentItem({ c }: { c: Comment }) {
                 onClick={() => {
                   const snap = snapshot();
                   mutate(() => (D().comments = D().comments.filter((x) => x !== c)));
-                  toast("Comment deleted", { action: "Undo", onAction: () => restore(snap) });
+                  if (isLive()) {
+                    commentDeleted(c); // for good: no undo
+                    toast("Comment deleted");
+                  } else toast("Comment deleted", { action: "Undo", onAction: () => restore(snap) });
                 }}
               >
                 <Ic n="trash-2" s={12} />
@@ -120,9 +156,38 @@ export function CommentItem({ c }: { c: Comment }) {
             </>
           )}
         </div>
-        <div className="txt">
-          <CommentText text={c.text} />
-        </div>
+        {editing ? (
+          <div className="txt">
+            <textarea
+              className="input"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveEdit();
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setEditing(false);
+                }
+              }}
+              aria-label="Edit comment"
+              rows={3}
+              autoFocus
+              style={{ width: "100%", resize: "vertical" }}
+            />
+            <div className="row" style={{ gap: 6, marginTop: 6 }}>
+              <button className="btn btn-primary btn-sm" onClick={saveEdit}>
+                Save
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="txt">
+            <CommentText text={c.text} />
+          </div>
+        )}
         <div className="reacts">
           {Object.entries(c.re || {})
             .filter(([, v]) => v.length)
@@ -132,12 +197,7 @@ export function CommentItem({ c }: { c: Comment }) {
                 className={`react ${v.includes(D().me) ? "mine" : ""}`}
                 aria-label={`${e} ${v.length}`}
                 title={v.map((i) => who(i)?.name).join(", ")}
-                onClick={() =>
-                  mutate(() => {
-                    const list = c.re[e] || [];
-                    c.re[e] = list.includes(D().me) ? list.filter((x) => x !== D().me) : [...list, D().me];
-                  })
-                }
+                onClick={() => toggleReaction(c, e)}
               >
                 {e}
                 <span className="num">{v.length}</span>
@@ -157,8 +217,7 @@ export function CommentBox({ t, id = "d-cmt", placeholder = "Leave a comment… 
   const ref = useRef<HTMLTextAreaElement>(null);
   const ment =
     S.ui.mention && S.ui.mention.tid === t.id
-      ? D()
-          .members.filter((m) => {
+      ? people().filter((m) => {
             const q = S.ui.mention!.q.toLowerCase();
             return m.name.toLowerCase().startsWith(q) || m.name.split(" ")[1]?.toLowerCase().startsWith(q);
           })

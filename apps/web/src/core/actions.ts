@@ -2,7 +2,8 @@
 // They change the seeded data through mutate(); wiring the API turns these into API calls.
 import { PR, PSTAT, ST, type ProjectStatusId } from "./constants";
 import { TODAY, addD, fmtDate, iso, parse, uid } from "./utils";
-import { isLive, loadComments, projectChanged, projectStarred, roleChanged, taskCreated, taskPatched } from "../data/live";
+import { inviteResent, isInvite } from "../data/account";
+import { isLive, loadComments, projectChanged, projectStarred, roleChanged, taskCreated, taskMoved, taskPatched } from "../data/live";
 import { D, S, canSee, logAct, mem, mutate, proj, render, save, task, visibleProjects, who } from "../data/store";
 import type { Project, Task } from "../data/types";
 import { toast } from "../ui/toast";
@@ -64,6 +65,11 @@ export function applyPatch(t: Task & { prevStatus?: Task["status"] }, patch: Par
     const old = t[k];
     const nv = patch[k];
     if (JSON.stringify(old) === JSON.stringify(nv)) continue;
+    // A real workspace moves an issue on the API (a new key there); the store follows its answer.
+    if (k === "project" && isLive()) {
+      void taskMoved(t, nv as string);
+      continue;
+    }
     changed.push(k);
     (t as unknown as Record<string, unknown>)[k] = nv;
     if (k === "status") {
@@ -152,6 +158,15 @@ export function setProjectStatus(id: string, v: ProjectStatusId) {
 }
 export function setRole(id: string, role: string) {
   const m = mem(id)!;
+  if (isLive() && isInvite(m.id)) {
+    // A pending invite's role: a new invite with that role in place of the old one.
+    S.ui.pop = null;
+    render();
+    void inviteResent({ ...m, role: role as typeof m.role })
+      .then(() => toast(`Invite to ${m.email} resent as ${role === "Admin" ? "an" : "a"} ${role}`))
+      .catch((e: unknown) => toast(`The invite didn't change: ${e instanceof Error ? e.message : "try again"}`, { kind: "err" }));
+    return;
+  }
   mutate(() => {
     m.role = role as typeof m.role;
   });
@@ -232,7 +247,9 @@ export function openPop(el: Element, type: PopType, extra: Record<string, unknow
     closePop();
     return;
   }
-  S.ui.pop = { type, anchor: r, x: r.left, y: r.bottom + 4, top: r.top, w: r.width, q: "", ...extra };
+  // An extra left undefined (a context menu's x and y on a click) keeps the anchor's position.
+  const given = Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== undefined));
+  S.ui.pop = { type, anchor: r, x: r.left, y: r.bottom + 4, top: r.top, w: r.width, q: "", ...given };
   if (type === "date") {
     const t = task(extra.id as string);
     const field = extra.field as string;

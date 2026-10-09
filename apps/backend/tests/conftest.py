@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 from pmagent_backend.core.email import OutboxEmailSender, get_email_sender
 from pmagent_backend.core.jobs import InlineJobs, JobContext
 from pmagent_backend.core.settings import Settings, get_database_settings
-from pmagent_backend.core.storage import MemoryBlobStorage, get_storage
+from pmagent_backend.core.storage import MemoryBlobStorage, get_storage, optional_storage
 from pmagent_backend.db.session import get_session
 from pmagent_backend.jobs import JOBS
 from pmagent_backend.main import create_app
@@ -213,6 +213,7 @@ async def db_client(
     app.dependency_overrides[get_session] = lambda: db_session
     app.dependency_overrides[get_email_sender] = lambda: outbox
     app.dependency_overrides[get_storage] = lambda: storage
+    app.dependency_overrides[optional_storage] = lambda: storage
 
     @asynccontextmanager
     async def shared_session() -> AsyncIterator[AsyncSession]:

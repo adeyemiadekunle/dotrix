@@ -6,6 +6,7 @@ import { PSTAT } from "../core/constants";
 import { Ic } from "../core/icons";
 import { confirmDlg, delProject, deleteTasks, escapeHtml, restore, snapshot } from "../core/more";
 import { ago } from "../core/utils";
+import { isLive } from "../data/live";
 import { D, S, canSee, mutate, proj, render } from "../data/store";
 import { Empty, PIcon, StIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -27,7 +28,7 @@ function purgeTask(id: string) {
     run: () => {
       const snap = snapshot();
       mutate(() => deleteTasks([t.id]));
-      toast(`Deleted “${t.title}”`, { action: "Undo", onAction: () => restore(snap) });
+      toast(`Deleted “${t.title}”`, isLive() ? {} : { action: "Undo", onAction: () => restore(snap) }); // for good in a real workspace
     },
   });
 }

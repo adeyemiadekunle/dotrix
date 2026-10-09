@@ -181,6 +181,8 @@ export function resetData() {
 export const D = () => S.data;
 export const me = () => D().members.find((m) => m.id === D().me)!;
 export const mem = (id: string | null | undefined) => D().members.find((m) => m.id === id);
+/** People who can be assigned, mentioned, or put in a team: not deactivated, and not an invite still pending in a real workspace (no account yet). */
+export const people = () => D().members.filter((m) => m.status !== "deactivated" && !m.id.startsWith("invite:"));
 export const proj = (id: string | null | undefined) => D().projects.find((p) => p.id === id);
 export const projByKey = (key: string | undefined) => D().projects.find((p) => p.key.toLowerCase() === key?.toLowerCase());
 export const task = (id: string | null | undefined) => D().tasks.find((t) => t.id === id);
