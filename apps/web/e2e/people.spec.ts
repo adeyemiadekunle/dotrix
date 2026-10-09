@@ -69,6 +69,20 @@ test("join by link, see a restricted project once added, then become the owner; 
   await bob.getByRole("button", { name: "Accept and join" }).click();
   await expect(bob).toHaveURL(new RegExp(`/w/${slug}`));
 
+  // A member doesn't see what only owners and admins do: inviting, new projects and teams,
+  // the workspace's own settings.
+  await bob.goto(`/w/${slug}`);
+  await expect(bob.getByRole("heading", { level: 1 }).first()).toBeVisible();
+  await expect(bob.getByRole("button", { name: "Invite member" })).toHaveCount(0);
+  await expect(bob.getByRole("button", { name: "New project" })).toHaveCount(0);
+  await bob.goto(`/w/${slug}/members`);
+  await expect(bob.locator("tr", { hasText: "Ada Owner" })).toBeVisible();
+  await expect(bob.getByRole("button", { name: "Invite member" })).toHaveCount(0);
+  await bob.goto(`/w/${slug}/settings/profile`);
+  const nav = bob.getByRole("navigation", { name: "Settings" });
+  await expect(nav.getByRole("button", { name: "Profile" })).toBeVisible();
+  for (const name of ["Models", "Rules and skills", "Audit log", "Permissions", "Plan"]) await expect(nav.getByRole("button", { name, exact: true })).toHaveCount(0);
+
   // Restrict the project and add Bob.
   await page.goto(`/w/${slug}/p/SEC/overview`);
   await page.getByRole("button", { name: "Share" }).click();

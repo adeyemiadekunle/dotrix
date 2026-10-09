@@ -17,6 +17,7 @@ import {
   updateTask,
 } from "../core/actions";
 import { LABELS, PRIOS, PSTAT, STATUSES, type ProjectStatusId } from "../core/constants";
+import { allowed, canInvite } from "../core/can";
 import { Ic, WsLogo } from "../core/icons";
 import {
   archiveProject,
@@ -222,11 +223,15 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
           <>
             <div className="mh">Create</div>
             <Mi icon="circle-check" label="Task" onClick={() => newTask()} r={<kbd>N</kbd>} />
-            <Mi icon="folder-plus" label="Project" onClick={newProject} r={<kbd>P</kbd>} />
-            <Mi icon="users" label="Team" onClick={newTeam} />
+            {allowed("projects:manage") && <Mi icon="folder-plus" label="Project" onClick={newProject} r={<kbd>P</kbd>} />}
+            {allowed("members:manage") && <Mi icon="users" label="Team" onClick={newTeam} />}
             <Mi icon="message-square-plus" label="Chat with the agents" onClick={() => (closePop(), go("chat"))} />
-            <Sep />
-            <Mi icon="user-plus" label="Invite member" onClick={invite} />
+            {canInvite() && (
+              <>
+                <Sep />
+                <Mi icon="user-plus" label="Invite member" onClick={invite} />
+              </>
+            )}
           </>
         ),
       };
@@ -454,8 +459,8 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             ))}
             <Sep />
             <Mi icon="plus" label="Create workspace" onClick={() => (closePop(), window.location.assign("/onboarding"))} />
-            <Mi icon="settings" label="Workspace settings" onClick={() => (closePop(), go("settings", { sec: "workspace" }))} />
-            <Mi icon="user-plus" label="Invite members" onClick={invite} />
+            {allowed("workspace:manage") && <Mi icon="settings" label="Workspace settings" onClick={() => (closePop(), go("settings", { sec: "workspace" }))} />}
+            {canInvite() && <Mi icon="user-plus" label="Invite members" onClick={invite} />}
             <Sep />
             <Mi icon="log-out" label="Sign out" onClick={signOut} />
           </>

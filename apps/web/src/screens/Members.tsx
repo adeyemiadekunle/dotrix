@@ -2,6 +2,7 @@
 // adds what each role may do with the agents (approving changes, editing documents, coding).
 import { openPop } from "../core/actions";
 import { ROLES } from "../core/constants";
+import { allowed, canInvite } from "../core/can";
 import { Ic } from "../core/icons";
 import { copyEmail, editTeam, invite, newTask, newTeam } from "../core/more";
 import { go, useRoute } from "../core/nav";
@@ -140,10 +141,10 @@ export function Members() {
           </p>
         </div>
         <div className="acts">
-          <button className="btn btn-primary" onClick={invite}>
+          {canInvite() && (<button className="btn btn-primary" onClick={invite}>
             <Ic n="user-plus" s={14} />
             Invite member
-          </button>
+          </button>)}
         </div>
       </div>
       <div className="tabs" style={{ marginBottom: 14 }}>
@@ -164,10 +165,10 @@ export function Members() {
               {teamsList().length} teams
             </span>
             <span className="sp" />
-            <button className="btn btn-secondary btn-sm" onClick={newTeam}>
+            {allowed("members:manage") && (<button className="btn btn-secondary btn-sm" onClick={newTeam}>
               <Ic n="plus" s={13} />
               New team
-            </button>
+            </button>)}
           </div>
           <TeamsGrid />
         </>
@@ -296,10 +297,10 @@ export function Teams() {
           <p>Groups of people who work on projects together.</p>
         </div>
         <div className="acts">
-          <button className="btn btn-primary" onClick={newTeam}>
+          {allowed("members:manage") && (<button className="btn btn-primary" onClick={newTeam}>
             <Ic n="plus" s={14} />
             New team
-          </button>
+          </button>)}
         </div>
       </div>
       {teamsList().length ? (
@@ -307,10 +308,10 @@ export function Teams() {
       ) : (
         <div className="panel">
           <Empty icon="users" title="No teams yet" text="Create a team to group people and give projects an owner.">
-            <button className="btn btn-primary btn-sm" onClick={newTeam}>
+            {allowed("members:manage") && (<button className="btn btn-primary btn-sm" onClick={newTeam}>
               <Ic n="plus" s={14} />
               New team
-            </button>
+            </button>)}
           </Empty>
         </div>
       )}
@@ -338,14 +339,14 @@ export function TeamPage() {
           </div>
         </div>
         <div className="acts">
-          <button className="btn btn-secondary" onClick={() => editTeam(t.id)}>
+          {allowed("members:manage") && (<button className="btn btn-secondary" onClick={() => editTeam(t.id)}>
             <Ic n="pencil" s={14} />
             Edit team
-          </button>
-          <button className="btn btn-secondary" onClick={invite}>
+          </button>)}
+          {canInvite() && (<button className="btn btn-secondary" onClick={invite}>
             <Ic n="user-plus" s={14} />
             Invite to workspace
-          </button>
+          </button>)}
         </div>
       </div>
       <div className="grid2">

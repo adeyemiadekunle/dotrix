@@ -5,6 +5,7 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { copy, openPop, setPref } from "../core/actions";
 import { ACTION_OF } from "../core/agents";
+import { allowed, canInvite, type Perm } from "../core/can";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, newTeam, promptDlg } from "../core/more";
 import { go, useRoute } from "../core/nav";
@@ -2106,10 +2107,10 @@ function Body({ sec }: { sec: string }) {
       return (
         <>
           <div className="row" style={{ marginBottom: 12 }}>
-            <button className="btn btn-primary" onClick={invite}>
+            {canInvite() && (<button className="btn btn-primary" onClick={invite}>
               <Ic n="user-plus" s={14} />
               Invite member
-            </button>
+            </button>)}
             <button className="btn btn-secondary" onClick={() => go("members")}>
               Open member directory
             </button>
@@ -2563,20 +2564,30 @@ const LEADS: Record<string, string> = {
   invoices: "Past invoices for this workspace.",
 };
 
+const ITEM_NEEDS: Record<string, Perm> = {
+  workspace: "workspace:manage",
+  permissions: "workspace:manage",
+  plan: "workspace:billing",
+  payment: "workspace:billing",
+  invoices: "workspace:billing",
+};
+
 export function Settings() {
   const { params } = useRoute();
   const asked = params.sec || S.ui.settings || "profile";
   const sec = asked === "devices" ? "sessions" : asked; // Devices and tokens is part of Sessions now
-  const admin = ["Owner", "Admin"].includes(me()!.role);
+  const admin = allowed("workspace:manage");
+  // Pages only some people may open: shown to them alone (the API refuses the rest anyway).
+  const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true);
   const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === sec);
   const lead = sec === "members" ? `${D().members.length} ${LEADS.members}` : LEADS[sec];
   return (
     <div className="set">
       <nav className="set-nav" aria-label="Settings">
-        {SET_NAV.filter(([, , adminOnly]) => !adminOnly || admin).map(([g, items]) => (
+        {SET_NAV.filter(([, items, adminOnly]) => (!adminOnly || admin) && items.some(([k]) => shown(k))).map(([g, items]) => (
           <div key={g} style={{ display: "contents" }}>
             <div className="gh">{g}</div>
-            {items.map(([k, n, i]) => (
+            {items.filter(([k]) => shown(k)).map(([k, n, i]) => (
               <button key={k} className={`sitem ${sec === k ? "on" : ""}`} onClick={() => ((S.ui.settings = k), (S.ui.agentSel = null), go("settings", { sec: k }))}>
                 <Ic n={i} s={15} />
                 <span>{n}</span>

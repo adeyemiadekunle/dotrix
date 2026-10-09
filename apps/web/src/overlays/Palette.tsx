@@ -6,6 +6,7 @@ import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { openTask, setPref, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { Ic, Logo, WsLogo } from "../core/icons";
+import { allowed, canInvite } from "../core/can";
 import { invite, newProject, newTask, openModal, shortcuts, signOut, switchWs } from "../core/more";
 import { go } from "../core/nav";
 import { effectiveDark } from "../core/theme";
@@ -37,8 +38,15 @@ export function toggleDark() {
   setPref("theme", effectiveDark() ? "light" : "dark");
 }
 
+// Commands only some people may run: shown to them alone.
+const NEEDS: Record<string, () => boolean> = {
+  "c-proj": () => allowed("projects:manage"),
+  "c-inv": canInvite,
+  "c-agents": () => allowed("workspace:manage"),
+};
+
 function commands(): (Item & { id: string })[] {
-  return [
+  return ([
     { id: "c-task", name: "Create task", icon: "plus", kbd: "N", run: () => newTask() },
     { id: "c-proj", name: "Create project", icon: "folder-plus", kbd: "P", run: newProject },
     { id: "c-chat", name: "Ask the agents in Chat", icon: "message-square", run: () => go("chat", {}, { search: "new=1" }) },
@@ -61,7 +69,7 @@ function commands(): (Item & { id: string })[] {
     { id: "c-side", name: "Toggle sidebar", icon: "panel-left", kbd: "[", run: toggleSide },
     { id: "c-keys", name: "Keyboard shortcuts", icon: "keyboard", kbd: "?", run: shortcuts },
     { id: "c-out", name: "Sign out", icon: "log-out", run: signOut },
-  ];
+  ] as (Item & { id: string })[]).filter((c) => NEEDS[c.id]?.() ?? true);
 }
 
 const agentIcon = (c: string) => <Face c={c} size={20} />;
