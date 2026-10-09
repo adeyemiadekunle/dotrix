@@ -39,7 +39,6 @@ import {
   signInMethods,
   skillSaved,
   skills,
-  tokenCreated,
   tokenRevoked,
   tokens,
   unlinkGitHub,
@@ -111,7 +110,6 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
     [
       ["password", "Password", "key-round"],
       ["sessions", "Sessions", "monitor-smartphone"],
-      ["devices", "Devices and tokens", "terminal"],
       ["2fa", "Two-factor authentication", "shield-check"],
     ],
   ],
@@ -1591,15 +1589,19 @@ function LiveNotifs({ sec }: { sec: string }) {
   }
 }
 
-const CLI = ["uv tool install pmagent", "pmagent login", "pmagent connect"];
-
+/** Where you're signed in: browsers and the desktop app, then the CLI (its sign-ins are tokens). */
 function LiveSessions() {
   const r = useApi(sessions);
+  const cli = useApi(tokens);
   if (r.error) return <div className="alert danger">{r.error}</div>;
   if (!r.data) return <div className="faint">Loading…</div>;
   const out = (id: string) =>
     sessionSignedOut(id)
       .then(() => (r.reload(), toast("Signed out")))
+      .catch((e: unknown) => toast(`It wasn't signed out: ${errText(e)}`, { kind: "err" }));
+  const cliOut = (id: string) =>
+    tokenRevoked(id)
+      .then(() => (cli.reload(), toast("Signed out")))
       .catch((e: unknown) => toast(`It wasn't signed out: ${errText(e)}`, { kind: "err" }));
   return (
     <>
@@ -1635,93 +1637,32 @@ function LiveSessions() {
           Sign out of all other sessions
         </button>
       </div>
-    </>
-  );
-}
-
-function LiveDevices() {
-  const r = useApi(tokens);
-  const [made, setMade] = useState<{ name: string; token: string } | null>(null);
-  const create = () =>
-    promptDlg({
-      title: "New personal access token",
-      label: "What it's for",
-      value: "",
-      run: (v: string) => {
-        const name = v.trim();
-        if (!name) return;
-        tokenCreated(name, 90)
-          .then((t) => (setMade({ name: t.name, token: t.token }), r.reload()))
-          .catch((e: unknown) => toast(`The token wasn't created: ${errText(e)}`, { kind: "err" }));
-      },
-    });
-  return (
-    <>
-      <div className="sblock" style={{ marginTop: 0 }}>
-        <h2>Connect the CLI</h2>
-        <p className="muted" style={{ fontSize: 13 }}>
-          The <span className="mono">pmagent</span> CLI and its MCP server let Claude Code and Codex work your board from a local checkout.
-        </p>
-        {CLI.map((c) => (
-          <div key={c} className="row" style={{ gap: 8, marginTop: 6 }}>
-            <code className="mono grow" style={{ padding: "6px 10px", background: "var(--surface-2)", borderRadius: "var(--r-sm)", fontSize: 12.5 }}>
-              {c}
-            </code>
-            <button className="ibtn ibtn-sm" onClick={() => void copy(c, "Command copied")} aria-label={`Copy ${c}`}>
-              <Ic n="copy" s={14} />
-            </button>
-          </div>
-        ))}
-      </div>
       <div className="sblock">
-        <h2>Signed-in devices and tokens</h2>
-        {made && (
-          <div className="alert ok" style={{ marginBottom: 12 }}>
-            <Ic n="key-round" s={15} />
-            <div className="grow" style={{ minWidth: 0 }}>
-              <b>{made.name}</b>: copy it now, it isn't shown again.
-              <div className="row" style={{ gap: 6, marginTop: 6 }}>
-                <code className="mono grow trunc" style={{ fontSize: 12 }}>
-                  {made.token}
-                </code>
-                <button className="btn btn-secondary btn-sm" onClick={() => void copy(made.token, "Token copied")}>
-                  Copy
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        {r.error && <div className="alert danger">{r.error}</div>}
-        {(r.data ?? []).map((t) => (
+        <h2>The CLI</h2>
+        <p className="muted" style={{ fontSize: 13 }}>
+          Sign in with{" "}
+          <button className="btn btn-ghost btn-sm mono" style={{ padding: "0 4px", height: "auto" }} onClick={() => void copy("pmagent login", "Command copied")}>
+            pmagent login
+          </button>{" "}
+          to let Claude Code and Codex work your board from a local checkout.
+        </p>
+        {(cli.data ?? []).map((t) => (
           <SRow
             key={t.id}
             t={
               <span className="row" style={{ gap: 8 }}>
-                <Ic n={t.name.toLowerCase().includes("cli") || t.name.toLowerCase().includes("device") ? "terminal" : "key-round"} s={15} />
-                {t.name} <span className="faint mono">({t.display_prefix}…)</span>
+                <Ic n="terminal" s={15} />
+                {t.name}
               </span>
             }
-            d={`Created ${fmtDate(t.created_at.slice(0, 10), true)}${t.last_used_at ? ` · last used ${ago(new Date(t.last_used_at).getTime())}` : " · never used"}${t.expires_at ? ` · expires ${fmtDate(t.expires_at.slice(0, 10), true)}` : ""}`}
+            d={`${t.last_used_at ? `last used ${ago(new Date(t.last_used_at).getTime())}` : "never used"} · signed in ${fmtDate(t.created_at.slice(0, 10), true)}`}
           >
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() =>
-                tokenRevoked(t.id)
-                  .then(() => (r.reload(), toast("Revoked")))
-                  .catch((e: unknown) => toast(`It wasn't revoked: ${errText(e)}`, { kind: "err" }))
-              }
-            >
-              Revoke
+            <button className="btn btn-secondary btn-sm" onClick={() => void cliOut(t.id)}>
+              Sign out
             </button>
           </SRow>
         ))}
-        {r.data && !r.data.length && <p className="faint">No devices or tokens. `pmagent login` signs the CLI in here.</p>}
-        <div style={{ marginTop: 12 }}>
-          <button className="btn btn-secondary btn-sm" onClick={create}>
-            <Ic n="plus" s={13} />
-            New token
-          </button>
-        </div>
+        {cli.data && !cli.data.length && <p className="faint">The CLI isn't signed in anywhere.</p>}
       </div>
     </>
   );
@@ -2201,50 +2142,6 @@ function Body({ sec }: { sec: string }) {
           </div>
         </>
       );
-    case "devices":
-      if (isLive()) return <LiveDevices />;
-      return (
-        <>
-          <div className="sblock" style={{ marginTop: 0 }}>
-            <h2>Connect the CLI</h2>
-            <p className="muted" style={{ fontSize: 13 }}>
-              The <span className="mono">pmagent</span> CLI and its MCP server let Claude Code and Codex work your board from a local checkout.
-            </p>
-            {["uv tool install pmagent", "pmagent login", "pmagent connect"].map((c) => (
-              <div key={c} className="row" style={{ gap: 8, marginTop: 6 }}>
-                <code className="mono grow" style={{ padding: "6px 10px", background: "var(--surface-2)", borderRadius: "var(--r-sm)", fontSize: 12.5 }}>
-                  {c}
-                </code>
-                <button className="ibtn ibtn-sm" onClick={() => void copy(c, "Command copied")} aria-label={`Copy ${c}`}>
-                  <Ic n="copy" s={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="sblock">
-            <h2>Signed-in devices and tokens</h2>
-            {[
-              ["terminal", "pmagent CLI on MacBook Pro", "Device login · last used 2 hours ago"],
-              ["key-round", "CI token (pmat_…7f3a)", "Personal access token · created Sep 12 · last used yesterday"],
-            ].map(([i, t, dd]) => (
-              <SRow
-                key={t}
-                t={
-                  <span className="row" style={{ gap: 8 }}>
-                    <Ic n={i!} s={15} />
-                    {t}
-                  </span>
-                }
-                d={dd}
-              >
-                <button className="btn btn-secondary btn-sm" onClick={() => toast("Revoked")}>
-                  Revoke
-                </button>
-              </SRow>
-            ))}
-          </div>
-        </>
-      );
     case "2fa":
       return <TwoFA />;
     case "plan":
@@ -2345,8 +2242,7 @@ const LEADS: Record<string, string> = {
   preferences: "Personal defaults for how you work.",
   shortcuts: "Move faster with the keyboard.",
   password: "Use a long password you don't use anywhere else.",
-  sessions: "Browsers and apps currently signed in to your account.",
-  devices: "The CLI and the tokens that act as you.",
+  sessions: "Browsers, apps, and the CLI signed in to your account.",
   "2fa": "Add a second step when signing in.",
   plan: "Your subscription and usage.",
   payment: "Payment method and billing details.",
@@ -2355,7 +2251,8 @@ const LEADS: Record<string, string> = {
 
 export function Settings() {
   const { params } = useRoute();
-  const sec = params.sec || S.ui.settings || "profile";
+  const asked = params.sec || S.ui.settings || "profile";
+  const sec = asked === "devices" ? "sessions" : asked; // Devices and tokens is part of Sessions now
   const admin = ["Owner", "Admin"].includes(me()!.role);
   const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === sec);
   const lead = sec === "members" ? `${D().members.length} ${LEADS.members}` : LEADS[sec];

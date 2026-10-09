@@ -63,17 +63,19 @@ test("change your password (a wrong current one is refused), and choose which no
   await expect(page.getByLabel("Email me")).toHaveValue("daily");
 });
 
-test("a personal access token: shown once, listed, then revoked", async ({ page }) => {
+test("the CLI's sign-ins are listed with the sessions, and can be signed out; the old Devices address opens Sessions", async ({ page }) => {
   await signUp(page);
+  // What `pmagent login` leaves behind: a token named for the device.
+  await page.evaluate(() =>
+    fetch("/v1/me/tokens", { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "e2e" }, body: JSON.stringify({ name: "pmagent CLI on laptop" }) }),
+  );
   await settings(page, "devices");
-  await page.getByRole("button", { name: "New token" }).click();
-  await page.locator(".modal input").fill("CI");
-  await page.locator(".modal input").press("Enter");
-  await expect(page.getByText("copy it now, it isn't shown again")).toBeVisible();
-  await expect(page.locator("code", { hasText: /^pmat_/ })).toBeVisible();
-  await page.getByRole("button", { name: "Revoke" }).click();
-  await expect(page.getByText("Revoked")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Revoke" })).toHaveCount(0);
+  await expect(page.locator("#main-content h1, .set-in h1").first()).toHaveText("Sessions");
+  const row = page.locator(".srow", { hasText: "pmagent CLI on laptop" });
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByText("The CLI isn't signed in anywhere.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Devices and tokens" })).toHaveCount(0);
 });
 
 test("agents: change a built-in's contract, then reset it; workspace rules are saved as versions", async ({ page }) => {

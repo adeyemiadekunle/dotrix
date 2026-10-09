@@ -1,5 +1,5 @@
 // Settings and Members against the API, for a real workspace (live.ts loads the rest). Your
-// account (profile, sign-in methods, password, notifications, browsers and apps, tokens), the
+// account (profile, sign-in methods, password, notifications, where you're signed in), the
 // workspace (name, what members can do, turning a personal one into an organisation), its people
 // (invites, removing, handing over ownership, who sees a restricted project), and the agents'
 // settings (contracts, rules, skills, GitHub). Sections load what they show when they open
@@ -66,7 +66,6 @@ export const sessionSignedOut = (id: string) => unwrap(api.DELETE("/v1/me/sessio
 export const otherSessionsSignedOut = () => unwrap(api.POST("/v1/me/sessions/sign-out-others"));
 
 export const tokens = () => unwrap(api.GET("/v1/me/tokens"));
-export const tokenCreated = (name: string, days: number | null) => unwrap(api.POST("/v1/me/tokens", { body: { name, scopes: ["read", "write"], expires_in_days: days } }));
 export const tokenRevoked = (id: string) => unwrap(api.DELETE("/v1/me/tokens/{token_id}", { params: { path: { token_id: id } } }));
 
 /* ---------- the workspace ---------- */

@@ -510,7 +510,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             <div className="mh">Help &amp; resources</div>
             <Mi icon="keyboard" label="Keyboard shortcuts" onClick={shortcuts} r={<kbd>?</kbd>} />
             <Mi icon="command" label="Command menu" onClick={() => (closePop(), openPaletteSoon())} r={<kbd>{MOD}K</kbd>} />
-            <Mi icon="terminal" label="Connect the CLI" onClick={() => (closePop(), go("settings", { sec: "devices" }))} />
+            <Mi icon="terminal" label="Connect the CLI" onClick={() => (closePop(), go("settings", { sec: "sessions" }))} />
             <Mi icon="component" label="Design system" onClick={() => (closePop(), go("system"))} />
             <Mi icon="layers" label="System states" onClick={() => (closePop(), go("states"))} />
             <Sep />
