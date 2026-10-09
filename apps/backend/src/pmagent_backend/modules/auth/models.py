@@ -23,6 +23,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(default=True, server_default=true())
     # What they do ("Product designer"), shown next to their name.
     title: Mapped[str | None] = mapped_column(String(100))
+    # Their default model for new conversations ("provider:model"; Account → Models); null: the project's.
+    default_model: Mapped[str | None] = mapped_column(String(100))
     # When their photo last changed (null: no photo); clients add it to the photo's address.
     avatar_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Notification kinds they turned off (Settings → Notifications); approvals can't be.

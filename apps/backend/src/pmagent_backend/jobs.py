@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 from .core.email import EmailMessage, EmailSendError
 from .core.jobs import JobContext, JobFunction
+from .modules.agents.service import continue_due_runs
 from .modules.api_tokens.repository import DeviceAuthorizationRepository
 from .modules.auth.repository import (
     ActionTokenRepository,
@@ -118,7 +119,9 @@ async def run_automations(ctx: JobContext) -> dict[str, int]:
             session, ctx.runner, workspace_daily_runs=ctx.settings.automation_daily_runs,
             workspace_daily_tokens=ctx.settings.automation_daily_tokens
         ).run_due()
-    if done.get("fired") or done.get("skipped"):
+        # Runs whose person asked to continue once their model's limit reset.
+        done["continued"] = await continue_due_runs(session, ctx.runner)
+    if done.get("fired") or done.get("skipped") or done.get("continued"):
         logger.info("automations: %s", done)
     return done
 

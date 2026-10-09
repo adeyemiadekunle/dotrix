@@ -5,6 +5,7 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { copy, openPop, setPref } from "../core/actions";
 import { ACTION_OF } from "../core/agents";
+import { allowed, canInvite, type Perm } from "../core/can";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, newTeam, promptDlg } from "../core/more";
 import { go, useRoute } from "../core/nav";
@@ -15,6 +16,7 @@ import {
   GRANTABLE,
   agentCatalog,
   agentList,
+  apiHandle,
   agentDetail,
   agentReset,
   agentSaved,
@@ -29,6 +31,13 @@ import {
   modelKeyRemoved,
   modelKeySaved,
   modelKeys,
+  myAgentSaved,
+  myAgents,
+  myDefaultModelSaved,
+  myKeyRemoved,
+  myKeySaved,
+  myModels,
+  personalKeysAllowed,
   models,
   notifSettings,
   notifSettingsSaved,
@@ -111,6 +120,8 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
     "Personal",
     [
       ["profile", "Profile", "user"],
+      ["my-models", "Your models", "key-round"],
+      ["my-agents", "Your agents", "bot"],
       ["preferences", "Preferences", "sliders-horizontal"],
       ["shortcuts", "Keyboard shortcuts", "keyboard"],
     ],
@@ -843,6 +854,11 @@ function LiveModels() {
           />
         ))}
         <p className="faint" style={{ fontSize: 12.5 }}>{RUNS_NOTE}</p>
+        {live.ws?.kind === "organization" && (
+          <SRow t="People's own keys" d="Let each person's own key (Your models) run the conversations they start, instead of the workspace's. Automations always use the workspace's key.">
+            <Tog on={live.ws?.personal_keys ?? true} set={(v) => void personalKeysAllowed(v).then(() => toast(v ? "People's own keys run their conversations" : "The workspace's keys run everything"))} label="People's own keys" disabled={!canEdit} />
+          </SRow>
+        )}
       </div>
       <div className="sblock">
         <h2>Which model each agent uses</h2>
@@ -905,6 +921,117 @@ function DemoModels() {
           </SRow>
         ))}
       </div>
+    </>
+  );
+}
+
+/* ---------- Personal: your own keys and model, your touches to the agents ---------- */
+
+function MyModels() {
+  const demo = async (): Promise<{ keys: KeyLook[]; default_model: string | null; models: string[] }> => ({
+    keys: DEMO_KEYS.map((k) => ({ ...k, connected: false, last4: null, limit_reached_at: null })),
+    default_model: null,
+    models: DEMO_MODELS,
+  });
+  const data = useApi<{ keys: KeyLook[]; default_model?: string | null; models: string[] }>(isLive() ? myModels : demo);
+  if (data.error) return <div className="alert danger">{data.error}</div>;
+  if (!data.data) return <div className="faint">Loading…</div>;
+  const d = data.data;
+  const org = isLive() ? live.ws?.kind === "organization" : true;
+  const off = isLive() && org && live.ws?.personal_keys === false;
+  const save = (p: Promise<unknown>, ok: string) => p.then(() => (toast(ok), data.reload())).catch((e: unknown) => toast(errText(e), { kind: "err", ms: 6000 }));
+  return (
+    <>
+      <div className="sblock" style={{ marginTop: 0 }}>
+        <h2>Your keys</h2>
+        <p className="muted" style={{ fontSize: 13 }}>
+          Your own provider keys run the conversations you start: always in your personal workspace{org ? ", and in an organisation that allows them" : ""}. Stored encrypted; only the last four characters are shown. With your own key you can pick any of its models.
+        </p>
+        {off && <div className="alert info" style={{ marginBottom: 8 }}>This organisation runs everything on its own keys, so yours aren't used here.</div>}
+        {d.keys.map((k) => (
+          <KeyRow
+            key={k.provider}
+            k={{ ...k, server_key: false }}
+            canEdit
+            onSave={(v) => (isLive() ? save(myKeySaved(k.provider, v), `Your ${k.label} key is saved`) : Promise.resolve(toast(`Your ${k.label} key is saved`)))}
+            onRemove={() => (isLive() ? void save(myKeyRemoved(k.provider), `Your ${k.label} key is removed`) : toast(`Your ${k.label} key is removed`))}
+          />
+        ))}
+      </div>
+      <div className="sblock">
+        <h2>Your default model</h2>
+        <SRow t="New conversations" d="The model your conversations start on. It's used where it can run for you: on your own key, or where the workspace lets people choose models.">
+          <select className="select" style={{ width: "auto", minWidth: 220 }} value={d.default_model ?? ""} onChange={(e) => (isLive() ? void save(myDefaultModelSaved(e.target.value || null), "Default model saved") : toast("Default model saved"))} aria-label="Your default model">
+            <option value="">Each project&apos;s model</option>
+            {d.models.map((m) => (
+              <option key={m} value={m}>
+                {m.split(":")[1] ?? m}
+              </option>
+            ))}
+          </select>
+        </SRow>
+      </div>
+    </>
+  );
+}
+
+/** One agent's personal touches: instructions and a model, saved for you only. */
+function MyAgentRow({ a, pref, models, onSave }: { a: { handle: string; name: string; desc: string }; pref?: { instructions: string; model?: string | null }; models: string[]; onSave: (instructions: string, model: string | null) => Promise<unknown> }) {
+  const [text, setText] = useState(pref?.instructions ?? "");
+  const [model, setModel] = useState(pref?.model ?? "");
+  const [busy, setBusy] = useState(false);
+  const changed = text !== (pref?.instructions ?? "") || model !== (pref?.model ?? "");
+  return (
+    <div className="sblock">
+      <h2>
+        {a.name} <span className="faint mono" style={{ fontSize: 12, fontWeight: 400 }}>@{a.handle}</span>
+      </h2>
+      <p className="muted" style={{ fontSize: 13 }}>{a.desc}</p>
+      <textarea className="textarea" rows={3} maxLength={2000} placeholder="How you like it to work: tone, format, what to focus on" value={text} onChange={(e) => setText(e.target.value)} aria-label={`How you like ${a.name} to work`} />
+      <div className="row" style={{ gap: 8, marginTop: 8 }}>
+        <select className="select" style={{ width: "auto", minWidth: 200 }} value={model} onChange={(e) => setModel(e.target.value)} aria-label={`${a.name}'s model for you`}>
+          <option value="">As the workspace set it</option>
+          {models.map((m) => (
+            <option key={m} value={m}>
+              {m.split(":")[1] ?? m}
+            </option>
+          ))}
+        </select>
+        <span className="faint" style={{ fontSize: 12 }}>{text.length}/2000</span>
+        <span className="sp" />
+        <button className="btn btn-primary btn-sm" disabled={!changed || busy} onClick={() => (setBusy(true), void onSave(text, model || null).finally(() => setBusy(false)))}>
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MyAgents() {
+  const prefs = useApi(isLive() ? myAgents : async () => [] as { handle: string; instructions: string; model?: string | null }[]);
+  const ms = useApi(isLive() ? models : async () => DEMO_MODELS.map((m) => ({ id: m })));
+  if (prefs.error) return <div className="alert danger">{prefs.error}</div>;
+  if (!prefs.data || !ms.data) return <div className="faint">Loading…</div>;
+  return (
+    <>
+      <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
+        Within limits: your touches can&apos;t change what an agent may do, read, or change, and automations don&apos;t use them. A model of your own needs your key for it, or the workspace&apos;s permission to choose models.
+      </p>
+      {D().agents.map((a) => (
+        <MyAgentRow
+          key={a.handle}
+          a={a}
+          pref={prefs.data!.find((p) => p.handle === apiHandle(a.handle))}
+          models={ms.data!.map((m) => m.id)}
+          onSave={(text, model) =>
+            isLive()
+              ? myAgentSaved(a.handle, text, model)
+                  .then(() => (toast(`${a.name} saved for you`), prefs.reload()))
+                  .catch((e: unknown) => toast(`${a.name} didn't save: ${errText(e)}`, { kind: "err", ms: 6000 }))
+              : Promise.resolve(toast(`${a.name} saved for you`))
+          }
+        />
+      ))}
     </>
   );
 }
@@ -2106,10 +2233,10 @@ function Body({ sec }: { sec: string }) {
       return (
         <>
           <div className="row" style={{ marginBottom: 12 }}>
-            <button className="btn btn-primary" onClick={invite}>
+            {canInvite() && (<button className="btn btn-primary" onClick={invite}>
               <Ic n="user-plus" s={14} />
               Invite member
-            </button>
+            </button>)}
             <button className="btn btn-secondary" onClick={() => go("members")}>
               Open member directory
             </button>
@@ -2247,6 +2374,10 @@ function Body({ sec }: { sec: string }) {
       return <Agents />;
     case "models":
       return <Models />;
+    case "my-models":
+      return <MyModels />;
+    case "my-agents":
+      return <MyAgents />;
     case "rules":
       return <Rules />;
     case "automations":
@@ -2555,6 +2686,8 @@ const LEADS: Record<string, string> = {
   profile: "How you appear to others in the workspace.",
   preferences: "Personal defaults for how you work.",
   shortcuts: "Move faster with the keyboard.",
+  "my-models": "Your own model keys and the model you start conversations on.",
+  "my-agents": "How you like each agent to work, for the conversations you start. Only you see these.",
   password: "Use a long password you don't use anywhere else.",
   sessions: "Browsers and apps signed in to your account, and the tokens that act as you.",
   "2fa": "Add a second step when signing in.",
@@ -2563,20 +2696,30 @@ const LEADS: Record<string, string> = {
   invoices: "Past invoices for this workspace.",
 };
 
+const ITEM_NEEDS: Record<string, Perm> = {
+  workspace: "workspace:manage",
+  permissions: "workspace:manage",
+  plan: "workspace:billing",
+  payment: "workspace:billing",
+  invoices: "workspace:billing",
+};
+
 export function Settings() {
   const { params } = useRoute();
   const asked = params.sec || S.ui.settings || "profile";
   const sec = asked === "devices" ? "sessions" : asked; // Devices and tokens is part of Sessions now
-  const admin = ["Owner", "Admin"].includes(me()!.role);
+  const admin = allowed("workspace:manage");
+  // Pages only some people may open: shown to them alone (the API refuses the rest anyway).
+  const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true);
   const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === sec);
   const lead = sec === "members" ? `${D().members.length} ${LEADS.members}` : LEADS[sec];
   return (
     <div className="set">
       <nav className="set-nav" aria-label="Settings">
-        {SET_NAV.filter(([, , adminOnly]) => !adminOnly || admin).map(([g, items]) => (
+        {SET_NAV.filter(([, items, adminOnly]) => (!adminOnly || admin) && items.some(([k]) => shown(k))).map(([g, items]) => (
           <div key={g} style={{ display: "contents" }}>
             <div className="gh">{g}</div>
-            {items.map(([k, n, i]) => (
+            {items.filter(([k]) => shown(k)).map(([k, n, i]) => (
               <button key={k} className={`sitem ${sec === k ? "on" : ""}`} onClick={() => ((S.ui.settings = k), (S.ui.agentSel = null), go("settings", { sec: k }))}>
                 <Ic n={i} s={15} />
                 <span>{n}</span>

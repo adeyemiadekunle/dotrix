@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 
 import { openPop } from "../core/actions";
 import { PSTAT, STATUSES } from "../core/constants";
+import { allowed } from "../core/can";
 import { Ic } from "../core/icons";
 import { newProject } from "../core/more";
 import { go } from "../core/nav";
@@ -101,10 +102,10 @@ export function Projects() {
     body = (
       <div className="panel">
         <Empty icon="folder-kanban" title="No projects yet" text="Create your first project to start organizing your work.">
-          <button className="btn btn-primary btn-sm" onClick={newProject}>
+          {allowed("projects:manage") && (<button className="btn btn-primary btn-sm" onClick={newProject}>
             <Ic n="plus" s={14} />
             Create project
-          </button>
+          </button>)}
         </Empty>
       </div>
     );
@@ -245,10 +246,10 @@ export function Projects() {
           </p>
         </div>
         <div className="acts">
-          <button className="btn btn-primary" onClick={newProject}>
+          {allowed("projects:manage") && (<button className="btn btn-primary" onClick={newProject}>
             <Ic n="plus" s={14} />
             New project
-          </button>
+          </button>)}
         </div>
       </div>
       <div className="row" style={{ marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
@@ -327,10 +328,10 @@ export function Overview() {
             <Ic n="chart-gantt" s={14} />
             Timeline
           </button>
-          <button className="btn btn-primary" onClick={newProject}>
+          {allowed("projects:manage") && (<button className="btn btn-primary" onClick={newProject}>
             <Ic n="plus" s={14} />
             New project
-          </button>
+          </button>)}
         </div>
       </div>
       <div className="stats" style={{ marginBottom: 16 }}>

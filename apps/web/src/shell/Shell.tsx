@@ -7,6 +7,7 @@ import { openPop, projMove, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { Ic, WsLogo } from "../core/icons";
 import { presence } from "../core/presence";
+import { allowed } from "../core/can";
 import { newProject, newTeam } from "../core/more";
 import { go, useRoute, type Route } from "../core/nav";
 import { MOD, TODAY, diffD, parse } from "../core/utils";
@@ -241,9 +242,9 @@ function Sidebar() {
           <div className="sgroup-h">
             <span>Projects</span>
             <span className="sp" />
-            <button className="ibtn ibtn-xs" onClick={newProject} data-tip="New project  P" aria-label="New project">
+            {allowed("projects:manage") && (<button className="ibtn ibtn-xs" onClick={newProject} data-tip="New project  P" aria-label="New project">
               <Ic n="plus" s={14} />
-            </button>
+            </button>)}
           </div>
           {projs.map((p) => {
             const open = Boolean(u.expanded[p.id]);
@@ -336,9 +337,9 @@ function Sidebar() {
           <div className="sgroup-h">
             <span>Teams</span>
             <span className="sp" />
-            <button className="ibtn ibtn-xs" onClick={newTeam} data-tip="New team" aria-label="New team">
+            {allowed("members:manage") && (<button className="ibtn ibtn-xs" onClick={newTeam} data-tip="New team" aria-label="New team">
               <Ic n="plus" s={14} />
-            </button>
+            </button>)}
           </div>
           {teamsList().map((t) => (
             <SItem key={t.id} route="team" label={t.name} icon={t.icon} params={{ id: t.id }} />

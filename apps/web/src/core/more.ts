@@ -1,6 +1,7 @@
 // More of Gr8r's actions (gr8r-studio/src/actions/*.js): undo snapshots, confirmations, modals,
 // and what the context menus do (duplicate, archive, delete, rename, share, columns, members,
 // files, saved views), with Gr8r's wording and undo.
+import { allowed, canInvite } from "./can";
 import { PR, PCOLORS } from "./constants";
 import { applyPatch, closePop, copy, createTask, guarded, nextKey, openTask } from "./actions";
 import { go, routeOf } from "./nav";
@@ -175,6 +176,7 @@ export function createProject(f: { name: string; desc?: string; icon: string; co
   return p;
 }
 export function newProject() {
+  if (!allowed("projects:manage")) return;
   openModal({ type: "project", form: { name: "", desc: "", icon: "folder", color: "indigo", team: me().team, lead: D().me, due: dOff(30), tmpl: "blank" } });
 }
 export function editProject(id: string) {
@@ -185,9 +187,11 @@ export function share(id: string) {
   openModal({ type: "share", id });
 }
 export function invite() {
+  if (!canInvite()) return; // (a shortcut or an old link; the control itself isn't shown)
   openModal({ type: "invite" });
 }
 export function newTeam() {
+  if (!allowed("members:manage")) return;
   openModal({ type: "team", form: { name: "", desc: "", icon: "users", color: "teal", members: [] as string[] } });
 }
 export function editTeam(id: string) {

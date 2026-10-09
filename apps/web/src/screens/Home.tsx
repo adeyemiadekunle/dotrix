@@ -3,6 +3,7 @@
 import { useState, type CSSProperties } from "react";
 
 import { openTask } from "../core/actions";
+import { allowed, canInvite } from "../core/can";
 import { Ic } from "../core/icons";
 import { invite, newProject, newTask } from "../core/more";
 import { go } from "../core/nav";
@@ -192,14 +193,16 @@ export function Home() {
           </p>
         </div>
         <div className="acts">
-          <button className="btn btn-secondary hide-m" onClick={invite}>
-            <Ic n="user-plus" s={14} />
-            Invite member
-          </button>
-          <button className="btn btn-secondary hide-m" onClick={newProject}>
+          {canInvite() && (
+            <button className="btn btn-secondary hide-m" onClick={invite}>
+              <Ic n="user-plus" s={14} />
+              Invite member
+            </button>
+          )}
+          {allowed("projects:manage") && <button className="btn btn-secondary hide-m" onClick={newProject}>
             <Ic n="folder-plus" s={14} />
             New project
-          </button>
+          </button>}
           <button className="btn btn-primary" onClick={() => newTask()}>
             <Ic n="plus" s={14} />
             New task

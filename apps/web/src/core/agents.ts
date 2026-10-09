@@ -3,6 +3,7 @@
 // When the API is wired, each becomes a call (runs, approvals, coding) and the replies stream.
 import { D, S, me, mutate, proj, render, task, who } from "../data/store";
 import type { ChatMessage, CodingSession, ProposedChange, Thread } from "../data/types";
+import { runContinued } from "../data/account";
 import { isLive, live } from "../data/live";
 import { toast } from "../ui/toast";
 import { createTask } from "./actions";
@@ -213,4 +214,72 @@ export function followUp(cs: CodingSession, ask: string) {
     cs.status = "awaiting_approval";
     cs.at = Date.now();
   });
+}
+
+
+/* ---------- a run stopped at its model's limit ---------- */
+
+/** Where a conversation stopped at its model's limit (the seeded data's message for it). */
+function limitedMessage(threadId: string | undefined): { th: Thread; msg: ChatMessage } | null {
+  const th = D().threads.find((t) => t.id === threadId);
+  const msg = th?.messages.findLast((m) => m.limit && !m.limit.continued);
+  return th && msg ? { th, msg } : null;
+}
+
+/** Continue a run that stopped at its model's limit: now, or once the limit resets. In a real
+ * workspace it's the API's `.../continue`; on the seeded data it carries on here. */
+export function continueLimited(at: { thread?: string; project?: string; run?: string; notif?: string }, whenReset: boolean) {
+  const done = () => {
+    if (at.notif) mutate(() => D().notifs.forEach((n) => n.id === at.notif && (n.read = true)));
+  };
+  if (isLive()) {
+    if (!at.project || !at.run) return;
+    void runContinued(at.project, at.run, whenReset)
+      .then((r) => {
+        done();
+        toast(r.continue_at_reset ? "It'll continue when the limit resets" : r.status === "failed" ? "Still at the limit; try again shortly" : "Continuing where it stopped");
+      })
+      .catch((e: unknown) => toast(e instanceof Error && e.message ? e.message : "It couldn't continue", { kind: "err" }));
+    return;
+  }
+  const found = limitedMessage(at.thread);
+  if (!found) return done();
+  const { th, msg } = found;
+  if (whenReset) {
+    mutate(() => (msg.limit!.whenReset = true));
+    done();
+    return toast("It'll continue when the limit resets");
+  }
+  mutate(() => {
+    msg.limit!.continued = true;
+    th.messages.push({
+      id: uid("cm"),
+      role: "agent",
+      by: msg.by,
+      at: Date.now(),
+      activity: ["Picked up where it stopped", "Read requirements/navigation.md"],
+      text: "Picking up where I stopped: two things block the handoff. **The navigation spec** waits for your approval, and **WEB-139** (the hero component) hasn't started.",
+    });
+  });
+  done();
+  toast("Continuing where it stopped");
+}
+
+
+const toasted = new Set<string>();
+
+/** A real workspace opening with a run stopped at its model's limit (the last 12 hours, unread):
+ * a toast with Continue, once per session. */
+export function limitToasts() {
+  const since = Date.now() - 12 * 3_600_000;
+  for (const n of D().notifs) {
+    if (n.type !== "limit" || n.read || n.at < since || toasted.has(n.id)) continue;
+    toasted.add(n.id);
+    const agent = D().agents.find((a) => a.handle === n.by);
+    toast(`${agent?.name ?? "An agent"} stopped at its model's limit: ${n.text}`, {
+      action: "Continue",
+      onAction: () => continueLimited({ thread: n.thread, project: n.project, run: n.run, notif: n.id }, false),
+      ms: 10_000,
+    });
+  }
 }

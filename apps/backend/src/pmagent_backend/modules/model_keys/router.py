@@ -5,14 +5,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
 
-from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
+from pmagent_backend.api.deps import CurrentUser, SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.crypto import Secrets
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
-from .schemas import ModelKeyRead, ModelKeySave
-from .service import ModelKeys
+from .schemas import DefaultModelSave, ModelKeyRead, ModelKeySave, PersonalModelsRead
+from .service import ModelKeys, PersonalKeys
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/model-keys", tags=["models"], responses=errors(401, 403, 404))
 
@@ -49,3 +49,40 @@ async def remove_model_key(provider: str, member: Manager, session: SessionDep, 
     """Remove this workspace's key for a provider; its models stop running here unless the server
     lends its own. Owners and admins; audited."""
     await ModelKeys(session, secrets).remove(member, provider)
+
+
+me_router = APIRouter(prefix="/me", tags=["models"], responses=errors(401))
+
+
+@me_router.get("/models")
+async def get_my_models(user: CurrentUser, session: SessionDep, settings: SettingsDep, secrets: SecretsDep) -> PersonalModelsRead:
+    """Your own model keys (last four characters only) and your default model for new
+    conversations. Your keys run what you start: always in your personal workspace, and in an
+    organisation that allows personal keys (otherwise its own key does)."""
+    return await PersonalKeys(session, secrets).read(user, settings)
+
+
+@me_router.put("/models", responses=errors(422))
+async def set_my_default_model(
+    data: DefaultModelSave, user: CurrentUser, session: SessionDep, settings: SettingsDep, secrets: SecretsDep
+) -> PersonalModelsRead:
+    """Your default model for new conversations (null: each project's). It's used where it can
+    run: with your own key for its provider, or where the workspace lets people choose models."""
+    return await PersonalKeys(session, secrets).set_default(user, data, settings)
+
+
+@me_router.put("/model-keys/{provider}", responses=errors(404, 422, 503))
+async def save_my_model_key(
+    provider: str, data: ModelKeySave, user: CurrentUser, session: SessionDep, settings: SettingsDep, secrets: SecretsDep
+) -> PersonalModelsRead:
+    """Connect or replace your own key for `anthropic`, `openai`, or `google_genai`; stored
+    encrypted, never shown again. 503 `encryption_not_configured` when the server can't store keys."""
+    return await PersonalKeys(session, secrets).save(user, provider, data, settings)
+
+
+@me_router.delete("/model-keys/{provider}", responses=errors(404))
+async def remove_my_model_key(
+    provider: str, user: CurrentUser, session: SessionDep, settings: SettingsDep, secrets: SecretsDep
+) -> PersonalModelsRead:
+    """Remove your own key for a provider; what you start uses the workspace's key again."""
+    return await PersonalKeys(session, secrets).remove(user, provider, settings)

@@ -202,7 +202,7 @@ function toTask(i: IssueLike, projectId: string, order: number): Task {
   };
 }
 
-const NOTIF_IN: Record<string, NotifType> = { assigned: "assign", mention: "mention", watching: "update", approval: "approval", checkpoint: "checkpoint", finding: "finding", decided: "decided" };
+const NOTIF_IN: Record<string, NotifType> = { assigned: "assign", mention: "mention", watching: "update", approval: "approval", checkpoint: "checkpoint", finding: "finding", decided: "decided", limit: "limit" };
 function toNotif(n: Schemas["NotificationRead"]): Notif {
   return {
     id: n.id,
@@ -211,6 +211,7 @@ function toNotif(n: Schemas["NotificationRead"]): Notif {
     task: n.issue_key ?? undefined,
     project: n.project_id,
     thread: n.thread_id ?? undefined,
+    run: n.run_id ?? undefined,
     text: n.title,
     snippet: n.excerpt ?? "",
     at: ms(n.created_at),

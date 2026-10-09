@@ -144,6 +144,28 @@ const THREADS: Thread[] = [
       },
     ],
   },
+  {
+    id: "th5",
+    project: "p1",
+    title: "What blocks the dev handoff",
+    by: "m1",
+    agent: "auto",
+    model: "Claude Sonnet 5.5",
+    at: minsAgo(3),
+    messages: [
+      { id: "cm9", role: "user", by: "m1", at: minsAgo(4), text: "What still blocks the dev handoff?" },
+      {
+        id: "cm10",
+        role: "agent",
+        by: "auto",
+        at: minsAgo(3),
+        activity: ["Read current-state.md", "Listed the board"],
+        tokens: 6400,
+        text: "I'd read the board and the current state when the model's limit was reached.",
+        limit: { provider: "Anthropic", resetsAt: Date.now() + 4 * 60_000 },
+      },
+    ],
+  },
 ];
 
 const md = (title: string, body: string) => `# ${title}\n\n${body}\n`;
@@ -233,6 +255,7 @@ export function seedDotrix(base: Base) {
     { id: "na1", type: "approval", by: "auto", project: "p1", thread: "th1", text: "wants to change", snippet: "requirements/navigation.md, and 1 more change", at: minsAgo(30), read: false },
     { id: "na2", type: "checkpoint", by: "architecture", project: "p2", thread: "th2", text: "shared a plan for", snippet: "Offline sync: map, compare, recommend", at: minsAgo(305), read: false },
     { id: "na3", type: "finding", by: "reviewer", task: "t3", text: "found an issue in", snippet: "Mobile layout has no acceptance criteria for the logo strip", at: minsAgo(700), read: true },
+    { id: "na5", type: "limit", by: "auto", project: "p1", thread: "th5", run: "run-th5", text: "stopped at its model's limit in", snippet: "Anthropic: rate limit reached, resets in about 4 minutes", at: minsAgo(3), read: false },
     { id: "na4", type: "approval", by: "agent:claude-code", project: "p1", task: "t13", text: "is waiting to start coding", snippet: "WEB-139 Build hero component", at: minsAgo(45), read: false },
   ];
   const activity: Activity[] = [

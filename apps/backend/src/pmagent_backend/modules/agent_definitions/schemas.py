@@ -81,3 +81,17 @@ class AgentCatalog(BaseModel):
     reserved_handles: list[str] = Field(description="Handles a new agent can't take")
     outputs: list[str] = Field(description="Result schemas an agent can declare (its `output`)")
     pipelines: dict[str, list[str]] = Field(description="Pipelines an agent can follow, with their stages")
+
+
+class AgentPreferenceSave(BaseModel):
+    instructions: str = Field(
+        default="", max_length=2000,
+        description="How you like this agent to work (tone, format, what to focus on); added to its "
+        "instructions for the runs you start. It can't change what the agent may do",
+    )
+    model: str | None = Field(default=None, max_length=100, description="Its model for your runs; null: as set for the workspace")
+
+
+class AgentPreferenceRead(AgentPreferenceSave):
+    handle: str
+    updated_at: datetime | None = None

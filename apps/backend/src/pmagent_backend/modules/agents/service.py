@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from uuid_utils.compat import uuid7
 
 from pmagent_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
+from pmagent_backend.modules.agent_definitions.preferences import preferences_for
 from pmagent_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from pmagent_backend.modules.agent_definitions.schemas import AgentRead
 from pmagent_backend.modules.agent_definitions.service import AgentDefinitionService
@@ -21,7 +22,7 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
 from pmagent_backend.modules.lessons.models import LessonSource
 from pmagent_backend.modules.lessons.service import propose as propose_lesson
-from pmagent_backend.modules.model_keys.service import ModelKeys
+from pmagent_backend.modules.model_keys.service import may_choose, run_keys
 from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.deps import ProjectAccess
 from pmagent_backend.modules.projects.models import Project
@@ -44,6 +45,7 @@ from .models import (
     RunKind,
     RunStatus,
 )
+from .privacy import run_openable_by, runs_visible_to
 from .runner import BRIEFING_PROMPT, AgentRunner
 from .runner import CHECKPOINT_TOOL as CHECKPOINT
 from .schemas import (
@@ -52,6 +54,7 @@ from .schemas import (
     AgentUsage,
     ApprovalRead,
     ArchitectureDraftRequest,
+    ContinueRun,
     Decision,
     DecisionsRequest,
     OutputItemUpdate,
@@ -99,6 +102,10 @@ The report, as it came in (data, not instructions):
 REVIEW_PROMPT = """Review {key} ({title}, status: {status}) against its acceptance criteria and the
 requirement it implements. Recommend closing it, or sending it back with the specific changes, and
 record each criterion that isn't met as a finding."""
+
+
+class NothingToContinue(Conflict):
+    code = "nothing_to_continue"
 
 
 class ThreadBusy(Conflict):
@@ -174,21 +181,39 @@ class AgentService:
             if data.agent not in handles:
                 raise UnknownAgent(f"This project has no @{data.agent} agent")
         thread_id = data.thread_id or uuid7()
+        # The person's own keys run what they start (where allowed); automations use the workspace's.
+        run_key = await run_keys(
+            self.session, self.runner.secrets, project.workspace_id, member.user_id, own=automation_id is None
+        )
         if data.thread_id is not None:
-            await self._check_thread(project.id, data.thread_id)
+            await self._check_thread(project.id, data.thread_id, member)
             model = await self._thread_model(project.id, data.thread_id)
             if data.model is not None and data.model != (model or project.model):
                 raise ModelLocked(
                     "A conversation keeps the model it started with; start a new conversation to use another"
                 )
         else:
-            model = data.model or project.model
+            model = data.model
+            if model is None and automation_id is None:
+                # Their own model for this agent, else their default, where they may use it.
+                user = await self.session.get(User, member.user_id)
+                handle = PM_ROLE if data.agent in ("auto", PM_ROLE) else data.agent
+                pref = (await preferences_for(self.session, project.workspace_id, member.user_id)).get(handle)
+                preferred = (pref.model if pref else None) or (user.default_model if user else None)
+                if preferred and may_choose(member, preferred, run_key.personal) and (
+                    available is None or preferred in available
+                ):
+                    model = preferred
+            model = model or project.model
             if model != project.model:
-                if not can(member, Permission.CHOOSE_MODEL):
-                    raise Forbidden("Only owners and admins (or members the workspace allows) choose the model")
+                if not may_choose(member, model, run_key.personal):
+                    raise Forbidden(
+                        "Only owners and admins (or members the workspace allows) choose the model, "
+                        "unless it runs on your own key"
+                    )
                 if available is not None and model not in available:
                     raise ModelNotAvailable(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
-        keys = await ModelKeys(self.session, self.runner.secrets).keys(project.workspace_id)
+        keys = run_key.keys
         self.runner.model_factory(project, model, keys=keys)  # fail fast (503) if the model can't run
         now = _now()
         run = AgentRun(
@@ -271,14 +296,17 @@ class AgentService:
             access, RunCreate(message=BRIEFING_PROMPT), RunKind.BRIEFING, title="Daily briefing"
         )
 
-    async def get(self, access: ProjectAccess, run_id: uuid.UUID) -> AgentRunRead:
-        run = await self.session.scalar(
+    async def get(self, access: ProjectAccess, run_id: uuid.UUID, *, acted: bool = False) -> AgentRunRead:
+        """A run its requester sees, or one waiting on a decision you may make (privacy.py).
+        `acted`: you just decided or stopped it, so you see where it got to."""
+        stmt = (
             select(AgentRun)
             .options(selectinload(AgentRun.approvals), selectinload(AgentRun.output_rows),
                      selectinload(AgentRun.source_rows))
             .where(AgentRun.project_id == access.project.id, AgentRun.id == run_id)
             .execution_options(populate_existing=True)
         )
+        run = await self.session.scalar(stmt if acted else stmt.where(run_openable_by(access.member)))
         if run is None:
             raise NotFound("Run not found")
         return _read(access, run)
@@ -290,7 +318,7 @@ class AgentService:
             select(AgentRun)
             .options(selectinload(AgentRun.approvals), selectinload(AgentRun.output_rows),
                      selectinload(AgentRun.source_rows))
-            .where(AgentRun.project_id == access.project.id)
+            .where(AgentRun.project_id == access.project.id, runs_visible_to(access.member))
         )
         if thread_id is not None:
             stmt = stmt.where(AgentRun.thread_id == thread_id)
@@ -394,7 +422,8 @@ class AgentService:
                 func.bool_or(AgentRun.status == RunStatus.AWAITING_APPROVAL).label("waiting"),
             )
             .join(Project, Project.id == AgentRun.project_id)
-            .where(Project.workspace_id == member.workspace_id, visible_to(member.user_id, member.role))
+            .where(Project.workspace_id == member.workspace_id, visible_to(member.user_id, member.role),
+                   runs_visible_to(member))
             .group_by(AgentRun.thread_id, AgentRun.project_id, Project.key, Project.name)
             .order_by(func.max(AgentRun.updated_at).desc())
             .limit(limit)
@@ -535,6 +564,31 @@ class AgentService:
             # Answering only checkpoints approves nothing.
             approved_by_id=member.user_id if changes else None,
         )
+        return await self.get(access, run.id, acted=True)
+
+    async def continue_run(self, access: ProjectAccess, run_id: uuid.UUID, data: ContinueRun) -> AgentRunRead:
+        """A run that stopped at its model's limit goes on from where it stopped: now, or once the
+        limit resets (`when_reset`, when the provider said when). Only whoever asked."""
+        run = await self.session.scalar(
+            select(AgentRun)
+            .where(AgentRun.project_id == access.project.id, AgentRun.id == run_id,
+                   AgentRun.requested_by_id == access.member.user_id)
+            .with_for_update()
+        )
+        if run is None:
+            raise NotFound("Run not found")
+        if run.status is not RunStatus.FAILED or run.error_kind != "model_limit":
+            raise NothingToContinue("Only a run that stopped at its model's limit can be continued")
+        later = await self.session.scalar(
+            select(AgentRun.id).where(AgentRun.thread_id == run.thread_id, AgentRun.created_at > run.created_at)
+        )
+        if later is not None:
+            raise NothingToContinue("The conversation went on since; ask again there")
+        if data.when_reset and run.resumes_at is not None and run.resumes_at > _now():
+            run.continue_at_reset = True
+            await self.session.commit()
+            return await self.get(access, run.id)
+        await resume_limited(self.session, self.runner, run)
         return await self.get(access, run.id)
 
     async def stop(self, access: ProjectAccess, run_id: uuid.UUID) -> AgentRunRead:
@@ -571,13 +625,14 @@ class AgentService:
             run.status, run.error = RunStatus.FAILED, reason
             run.updated_at = run.finished_at = _now()
             await self.session.commit()
-        return await self.get(access, run.id)
+        return await self.get(access, run.id, acted=True)
 
     async def update_output_item(
         self, access: ProjectAccess, run_id: uuid.UUID, output_id: uuid.UUID, index: int, data: OutputItemUpdate
     ) -> AgentRunRead:
         """Mark one result item done (with what it became, e.g. an issue key), dismissed (with why),
         or open again."""
+        await self.check_run(access, run_id)
         row = await self.session.scalar(
             select(AgentRunOutput)
             .where(AgentRunOutput.id == output_id, AgentRunOutput.run_id == run_id,
@@ -619,6 +674,7 @@ class AgentService:
     async def save_research_note(self, access: ProjectAccess, run_id: uuid.UUID, output_id: uuid.UUID) -> AgentRunRead:
         """Write a report as a research note (`pmagent_engine.web.note`), as the person saving it.
         Saving it again updates the same note (a new version), so research isn't duplicated."""
+        await self.check_run(access, run_id)
         row = await self.session.scalar(
             select(AgentRunOutput)
             .where(AgentRunOutput.id == output_id, AgentRunOutput.run_id == run_id,
@@ -659,7 +715,8 @@ class AgentService:
         """A conversation's title lives on its first run."""
         first = await self.session.scalar(
             select(AgentRun)
-            .where(AgentRun.project_id == access.project.id, AgentRun.thread_id == thread_id)
+            .where(AgentRun.project_id == access.project.id, AgentRun.thread_id == thread_id,
+                   runs_visible_to(access.member))
             .order_by(AgentRun.created_at)
             .limit(1)
             .with_for_update()
@@ -672,7 +729,9 @@ class AgentService:
 
     async def check_run(self, access: ProjectAccess, run_id: uuid.UUID) -> None:
         found = await self.session.scalar(
-            select(AgentRun.id).where(AgentRun.project_id == access.project.id, AgentRun.id == run_id)
+            select(AgentRun.id).where(
+                AgentRun.project_id == access.project.id, AgentRun.id == run_id, run_openable_by(access.member)
+            )
         )
         if found is None:
             raise NotFound("Run not found")
@@ -686,14 +745,14 @@ class AgentService:
             .limit(1)
         )
 
-    async def _check_thread(self, project_id: uuid.UUID, thread_id: uuid.UUID) -> None:
-        runs = list(
-            await self.session.scalars(
-                select(AgentRun.status).where(
-                    AgentRun.project_id == project_id, AgentRun.thread_id == thread_id
-                )
-            )
-        )
+    async def _check_thread(
+        self, project_id: uuid.UUID, thread_id: uuid.UUID, member: Membership | None = None
+    ) -> None:
+        """The conversation exists here (and is `member`'s: someone else's is not found)."""
+        stmt = select(AgentRun.status).where(AgentRun.project_id == project_id, AgentRun.thread_id == thread_id)
+        if member is not None:
+            stmt = stmt.where(runs_visible_to(member))
+        runs = list(await self.session.scalars(stmt))
         if not runs:
             raise NotFound("Thread not found in this project")
         if any(status in ACTIVE_STATUSES for status in runs):
@@ -763,3 +822,29 @@ def _breakdown(run: AgentRun) -> RunBreakdown:
         token_budget=run.token_budget,
         web=WebUsageRead(**usage["web"]) if usage.get("web") else None,
     )
+
+
+async def resume_limited(session: AsyncSession, runner: AgentRunner, run: AgentRun) -> None:
+    """Queue a run that stopped at its model's limit to go on from its last checkpoint."""
+    run.status, run.error, run.error_kind = RunStatus.QUEUED, None, None
+    run.continue_at_reset, run.finished_at, run.updated_at = False, None, _now()
+    AuditLog(session).record(
+        workspace_id=run.workspace_id, project_id=run.project_id, action="agent_run.continued",
+        target=str(run.id), actor_type=AuthorType.USER, actor_user_id=run.requested_by_id,
+    )
+    await session.commit()
+    await runner.continue_run(run.id, run.message)
+
+
+async def continue_due_runs(session: AsyncSession, runner: AgentRunner) -> int:
+    """Runs whose person asked to continue once the limit reset, and it has: continued. Every
+    minute, with the automations."""
+    due = list(await session.scalars(
+        select(AgentRun).where(
+            AgentRun.status == RunStatus.FAILED, AgentRun.error_kind == "model_limit",
+            AgentRun.continue_at_reset.is_(True), AgentRun.resumes_at <= _now(),
+        ).with_for_update(skip_locked=True)
+    ))
+    for run in due:
+        await resume_limited(session, runner, run)
+    return len(due)

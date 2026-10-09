@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -62,6 +62,11 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     title: Mapped[str | None] = mapped_column(String(120))
     reply: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
+    # Why it failed, when that's something to act on: "model_limit" (a provider refused for its
+    # rate limit, quota, or credit). Such a run can be continued from where it stopped.
+    error_kind: Mapped[str | None] = mapped_column(String(32))
+    resumes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # when the limit resets, if said
+    continue_at_reset: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # The person who instructed the run; recorded as "instructed by" on every write.
     requested_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")

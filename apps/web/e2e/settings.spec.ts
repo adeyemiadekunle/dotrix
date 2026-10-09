@@ -145,6 +145,28 @@ test("models: connect the organisation's own key, and give an agent a smaller mo
   await expect(page.getByText("Anthropic key removed")).toBeVisible();
 });
 
+test("your own models and agents: a key of your own, a default model, and how you like Lyra to work", async ({ page }) => {
+  await signUp(page);
+  await settings(page, "my-models");
+  const anthropic = page.locator(".srow-wrap", { hasText: "Anthropic" });
+  await anthropic.getByRole("button", { name: "Connect" }).click();
+  await page.getByLabel("Anthropic API key").fill("sk-ant-mine-" + "m".repeat(30) + "ME42");
+  await page.getByRole("button", { name: "Save key" }).click();
+  await expect(page.getByText("Your Anthropic key is saved")).toBeVisible();
+  await expect(anthropic.getByText(/key ending ME42/)).toBeVisible();
+  await page.getByLabel("Your default model").selectOption("anthropic:claude-haiku-5-5");
+  await expect(page.getByText("Default model saved")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Your default model")).toHaveValue("anthropic:claude-haiku-5-5");
+
+  await settings(page, "my-agents");
+  await page.getByLabel("How you like Lyra to work").fill("Short stories, British English.");
+  await page.locator(".sblock", { hasText: "@product" }).getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Lyra saved for you")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("How you like Lyra to work")).toHaveValue("Short stories, British English.");
+});
+
 test("GitHub says when the app isn't set up on this server", async ({ page }) => {
   await signUp(page);
   await settings(page, "github");

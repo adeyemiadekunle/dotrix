@@ -12,7 +12,7 @@ import asyncio
 import difflib
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -22,8 +22,10 @@ from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, Syst
 from sqlalchemy import select
 
 from pmagent_backend.core.crypto import Secrets
+from pmagent_backend.modules.agent_definitions.preferences import preferences_for, with_preferences
 from pmagent_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from pmagent_backend.modules.audit.service import AuditLog
+from pmagent_backend.modules.auth.models import User
 from pmagent_backend.modules.automations.events import record_event
 from pmagent_backend.modules.automations.models import Automation, AutomationEvent
 from pmagent_backend.modules.code.checkouts import CodeCheckouts
@@ -32,7 +34,7 @@ from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
 from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
 from pmagent_backend.modules.lessons.service import lessons_path
-from pmagent_backend.modules.model_keys.service import ModelKeys
+from pmagent_backend.modules.model_keys.service import ModelKeys, PersonalKeys, run_keys
 from pmagent_backend.modules.notifications.notify import Notifier
 from pmagent_backend.modules.projects.models import Project
 from pmagent_backend.modules.projects.repository import ProjectRepository, visible_to
@@ -54,7 +56,7 @@ from .context import build_context_pack
 from .findings import dedupe_findings
 from .graph_tools import GRAPH_TOOLS_GUIDE, build_graph_tools
 from .knowledge_tools import KNOWLEDGE_TOOLS_GUIDE, build_knowledge_tools
-from .llm import PROVIDERS, ModelFactory, limit_error
+from .llm import PROVIDERS, ModelFactory, limit_error, limit_resets_in
 from .models import AgentApproval, AgentRun, AgentRunOutput, ApprovalStatus, RunKind, RunStatus
 from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
@@ -289,6 +291,11 @@ class AgentRunner:
             },
         )
 
+    async def continue_run(self, run_id: uuid.UUID, message: str) -> None:
+        """Pick up a run that stopped at a model's limit from its last checkpoint (the person's
+        message isn't sent again)."""
+        await self._dispatch(run_id, {"kind": "continue", "message": message})
+
     async def _dispatch(self, run_id: uuid.UUID, payload: dict[str, Any]) -> None:
         if self.queue is not None:
             await self.queue.enqueue(run_id, payload)
@@ -346,7 +353,8 @@ class AgentRunner:
                 if run is None or run.status not in (RunStatus.QUEUED, RunStatus.RUNNING):
                     logger.info("agent run %s: nothing to do (%s)", run_id, run and run.status)
                     return
-                retry = run.status is RunStatus.RUNNING  # a previous attempt was cut off
+                # A previous attempt was cut off, or the person continues one that stopped at a limit.
+                retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue"
                 project = await ProjectRepository(session).get(run.workspace_id, run.project_id)
                 assert project is not None
                 # The agents in effect for this project: its overrides, the workspace's, the built-ins.
@@ -360,6 +368,12 @@ class AgentRunner:
                     await self._fail(run_id, gone, usage)
                     return
                 specs = [a.spec for a in resolved.values()]
+                if run.automation_id is None and run.requested_by_id is not None:
+                    # The person's own touches (agent_definitions/preferences.py): instructions, a model.
+                    prefs = await preferences_for(session, run.workspace_id, run.requested_by_id)
+                    if prefs:
+                        person = await session.get(User, run.requested_by_id)
+                        specs = with_preferences(specs, prefs, person.display_name if person else "the person")
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
                 run.model = run.conversation_model or project.model
                 run.agent_version = lead_agent.version
@@ -377,7 +391,9 @@ class AgentRunner:
                 kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
                 name, description, project_key = project.name, project.description, project.key
-                keys = await ModelKeys(session, self.secrets).keys(run.workspace_id)
+                keys = (await run_keys(
+                    session, self.secrets, run.workspace_id, run.requested_by_id, own=run.automation_id is None
+                )).keys
                 choice = self.model_factory(project, run.model, keys=keys)
                 lead = run.agent  # None: Auto (the Project Manager)
                 mode = run.mode
@@ -535,7 +551,7 @@ class AgentRunner:
                 run = await session.get(AgentRun, run_id)
                 if run is None or run.status not in (RunStatus.QUEUED, RunStatus.RUNNING):
                     return
-                retry = run.status is RunStatus.RUNNING
+                retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue"
                 member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
                     if run.requested_by_id else None
                 if member is None:
@@ -572,7 +588,7 @@ class AgentRunner:
                 workspace_id, thread_id, instructed_by = run.workspace_id, run.thread_id, member.user_id
                 lead = run.agent
                 stand_in = SimpleNamespace(model=run.conversation_model, specialist_model=None)
-                keys = await ModelKeys(session, self.secrets).keys(run.workspace_id)
+                keys = (await run_keys(session, self.secrets, run.workspace_id, run.requested_by_id)).keys
                 choice = self.model_factory(stand_in, run.conversation_model, keys=keys)  # type: ignore[arg-type]
                 names = ", ".join(p.key for p in projects) or "no particular project"
 
@@ -706,7 +722,21 @@ class AgentRunner:
             )
             await session.commit()
             if run.model:  # it worked, so the provider's limit isn't in the way any more
-                await ModelKeys(session, self.secrets).limit_cleared(run.workspace_id, run.model.partition(":")[0])
+                await self._key_limit(session, run, run.model.partition(":")[0], None)
+
+    async def _key_limit(self, session: Any, run: AgentRun, provider: str, said: str | None) -> None:
+        """Record (or clear, `said` None) a provider's limit on the key the run used: the person's
+        own, or the workspace's."""
+        used = await run_keys(session, self.secrets, run.workspace_id, run.requested_by_id, own=run.automation_id is None)
+        if provider in used.personal and run.requested_by_id is not None:
+            keys: Any = PersonalKeys(session, self.secrets)
+            owner = run.requested_by_id
+        else:
+            keys, owner = ModelKeys(session, self.secrets), run.workspace_id
+        if said is None:
+            await keys.limit_cleared(owner, provider)
+        else:
+            await keys.limit_reached(owner, provider, said)
 
     async def _limited(self, run_id: uuid.UUID, exc: BaseException, usage: TokenUsage) -> bool:
         """A provider refused for its rate limit, quota, or credit: the run fails saying so, and
@@ -718,10 +748,25 @@ class AgentRunner:
             run = await session.get(AgentRun, run_id)
             provider = (run.model or "").partition(":")[0] if run else ""
             if run is not None and provider in PROVIDERS:
-                await ModelKeys(session, self.secrets).limit_reached(run.workspace_id, provider, said)
+                await self._key_limit(session, run, provider, said)
         label = PROVIDERS[provider].label if provider in PROVIDERS else "The model provider"
         logger.info("agent run %s: %s limit reached: %s", run_id, label, said)
         await self._fail(run_id, MODEL_LIMIT_ERROR.format(provider=label, said=said), usage)
+        # It can continue from where it stopped (`continue_run`); tell whoever asked.
+        wait = limit_resets_in(exc)
+        async with self.session_factory() as session:
+            run = await session.get(AgentRun, run_id)
+            if run is None:
+                return True
+            now = _now()
+            run.error_kind = "model_limit"
+            run.resumes_at = now + timedelta(seconds=wait) if wait is not None else None
+            run.continue_at_reset = False
+            project = await session.get(Project, run.project_id) if run.project_id else None
+            if project is not None and run.requested_by_id is not None:
+                Notifier(session).limit(project, run.requested_by_id, run.id, run.title or run.message[:80],
+                                        f"{label}: {said}", now, run.agent)
+            await session.commit()
         return True
 
     async def _fail(self, run_id: uuid.UUID, error: str, usage: TokenUsage) -> None:

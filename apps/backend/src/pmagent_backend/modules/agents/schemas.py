@@ -44,8 +44,8 @@ class ModelOption(BaseModel):
     id: str = Field(description="provider:model, e.g. google_genai:gemini-3.8-flash")
     provider: str
     name: str = Field(description="The model's name without the provider")
-    source: Literal["workspace", "server"] = Field(
-        default="server", description="Whose key runs it: the workspace's own, or the server's"
+    source: Literal["personal", "workspace", "server"] = Field(
+        default="server", description="Whose key runs it for you: your own, the workspace's, or the server's"
     )
 
 
@@ -287,6 +287,11 @@ class AgentRunRead(BaseModel):
     )
     reply: str | None
     error: str | None
+    error_kind: str | None = Field(
+        default=None, description="`model_limit`: it stopped at its model's limit and can be continued (`.../continue`)"
+    )
+    resumes_at: datetime | None = Field(default=None, description="When the limit resets, if the provider said")
+    continue_at_reset: bool = Field(default=False, description="It continues by itself once the limit resets")
     automation_id: uuid.UUID | None = Field(default=None, description="The automation that started it, if one did")
     requested_by_id: uuid.UUID | None
     agent: Annotated[str, BeforeValidator(lambda v: v or "auto")] = Field(
@@ -363,3 +368,10 @@ class ThreadRename(BaseModel):
 class ThreadRead(BaseModel):
     thread_id: uuid.UUID
     title: str
+
+
+class ContinueRun(BaseModel):
+    when_reset: bool = Field(
+        default=False,
+        description="Continue it automatically once the limit resets (when the provider said when), instead of now",
+    )

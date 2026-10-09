@@ -78,6 +78,8 @@ function headline(n: Notification, members: MemberMap): string {
       return n.count === 1 ? `${who} found something to look at` : `${who} found ${n.count} things to look at`;
     case "mention":
       return n.issue_key ? `${who} mentioned you on ${n.issue_key}` : `${who} mentioned you in Chat`;
+    case "limit":
+      return `${who} stopped at its model's limit`;
     case "decided":
       return `${who} decided the changes you asked for`;
     case "watching":

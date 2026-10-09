@@ -227,7 +227,26 @@ export const agentSaved = (handle: string, agent: AgentFields, base: number | nu
 /** A built-in back to its default, or a custom agent removed. */
 export const agentReset = (handle: string) => unwrap(api.DELETE("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }));
 
-/* ---------- models: the organisation's own keys, and each agent's model ---------- */
+/* ---------- models: the organisation's own keys, your own, and each agent's model ---------- */
+
+export const myModels = () => unwrap(api.GET("/v1/me/models"));
+export const myDefaultModelSaved = (model: string | null) => unwrap(api.PUT("/v1/me/models", { body: { default_model: model } }));
+export const myKeySaved = (provider: string, apiKey: string) => unwrap(api.PUT("/v1/me/model-keys/{provider}", { params: { path: { provider } }, body: { api_key: apiKey } }));
+export const myKeyRemoved = (provider: string) => unwrap(api.DELETE("/v1/me/model-keys/{provider}", { params: { path: { provider } } }));
+export const myAgents = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/my-agents", wsPath()));
+export const myAgentSaved = (handle: string, instructions: string, model: string | null) =>
+  unwrap(api.PUT("/v1/workspaces/{workspace_id}/my-agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } }, body: { instructions, model } }));
+
+/** Let people's own keys run what they start here, or not (owners and admins). */
+export async function personalKeysAllowed(on: boolean) {
+  const w = await unwrap(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { personal_keys: on } }));
+  live.ws = { ...live.ws!, personal_keys: w.personal_keys };
+  render();
+}
+
+/** A run that stopped at its model's limit goes on: now, or once the limit resets. */
+export const runContinued = (projectId: string, runId: string, whenReset: boolean) =>
+  unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/continue", { params: { path: { workspace_id: live.ws!.id, project_id: projectId, run_id: runId } }, body: { when_reset: whenReset } }));
 
 export const modelKeys = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/model-keys", wsPath()));
 export const modelKeySaved = (provider: string, apiKey: string) =>

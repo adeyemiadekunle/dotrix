@@ -21,3 +21,18 @@ class WorkspaceModelKey(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixi
     # The provider last refused a run for a rate limit or quota; cleared by the next run that works.
     limit_reached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     limit_message: Mapped[str | None] = mapped_column(String(500))
+
+
+class UserModelKey(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A person's own key for a provider (Account → Models), used for the runs they start where
+    the workspace allows personal keys (always in their personal workspace)."""
+
+    __tablename__ = "user_model_keys"
+    __table_args__ = (UniqueConstraint("user_id", "provider"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(32))
+    encrypted: Mapped[str] = mapped_column(Text)
+    last4: Mapped[str] = mapped_column(String(4))
+    limit_reached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    limit_message: Mapped[str | None] = mapped_column(String(500))

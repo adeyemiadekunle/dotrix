@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.openapi import errors
 from pmagent_backend.modules.agent_definitions.schemas import AgentRead
-from pmagent_backend.modules.model_keys.deps import Connected
+from pmagent_backend.modules.model_keys.deps import Connected, Personal
 from pmagent_backend.modules.projects.deps import (
     KnowledgeEditor,
     ProjectAccess,
@@ -27,6 +27,7 @@ from .schemas import (
     AgentRunRead,
     ApprovalRead,
     ArchitectureDraftRequest,
+    ContinueRun,
     DecisionsRequest,
     ModelOption,
     OutputItemUpdate,
@@ -207,6 +208,15 @@ async def always_allow_approval(
     return await agents.always_allow(access, run_id, approval_id)
 
 
+@router.post("/runs/{run_id}/continue", responses=errors(409))
+async def continue_run(run_id: uuid.UUID, data: ContinueRun, access: Chatter, agents: Agents) -> AgentRunRead:
+    """Continue a run that stopped at its model's limit (`error_kind: model_limit`) from where it
+    stopped, without sending the message again: now, or once the limit resets (`when_reset`,
+    when the provider said when: `resumes_at`). Only whoever asked. 409 `nothing_to_continue`
+    for any other run, or when the conversation went on since."""
+    return await agents.continue_run(access, run_id, data)
+
+
 models_router = APIRouter(prefix="/workspaces/{workspace_id}/models", tags=["agents"], responses=errors(401, 404))
 
 
@@ -214,14 +224,16 @@ models_router = APIRouter(prefix="/workspaces/{workspace_id}/models", tags=["age
 async def list_models(
     member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], settings: SettingsDep,
     connected: Connected,
+    personal: Personal,
 ) -> list[ModelOption]:
     """The models a conversation, or an agent, can run on here: those whose provider has a key
-    (the workspace's own, `source: workspace`, or the server's, `server`). A project's own model
+    (your own, `source: personal`; the workspace's, `workspace`; or the server's, `server`). A project's own model
     is always allowed too, even if it isn't listed."""
     return [
         ModelOption(
             id=model, provider=model.partition(":")[0], name=model.partition(":")[2],
-            source="workspace" if model.partition(":")[0] in connected else "server",
+            source="personal" if model.partition(":")[0] in personal
+            else "workspace" if model.partition(":")[0] in connected else "server",
         )
         for model in available_models(settings, connected=connected)
     ]
