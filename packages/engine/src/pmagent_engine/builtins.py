@@ -34,7 +34,7 @@ do your subagents."""
 _SPECIALIST_TEXT: dict[str, tuple[str, str, str]] = {
     # handle: (name, description, instructions)
     PRODUCT: (
-        "Product Agent",
+        "Lyra",
         "Owns product thinking: features, user stories, business rules, acceptance criteria.",
         "Given a feature request, work through: why it's needed, who "
         "uses it, user stories, business rules, edge cases, acceptance "
@@ -46,20 +46,20 @@ _SPECIALIST_TEXT: dict[str, tuple[str, str, str]] = {
         "Never write application code.",
     ),
     ARCH: (
-        "Architecture Agent",
+        "Orion",
         "Tracks system architecture and the ripple effects of proposed changes.",
         "Maintain files under /pmagent/architecture/. When asked about a "
         "proposed change, name every existing module/entity it touches. "
         "Never write application code.",
     ),
     RESEARCH: (
-        "Research Agent",
+        "Vega",
         "Runs external research (regulations, APIs, competitors, market changes).",
         "Investigate using web search. Clearly separate verified facts "
         "(with sources) from assumptions. Write findings under /pmagent/research/.",
     ),
     REVIEWER: (
-        "Reviewer Agent",
+        "Juno",
         "Reviews what has been built against stated requirements, including "
         "tasks in 'review' status handed back by coding agents. Read-only.",
         "Read /pmagent/requirements/ and /pmagent/architecture/ (and the "
@@ -72,7 +72,7 @@ _SPECIALIST_TEXT: dict[str, tuple[str, str, str]] = {
         "in your reply.",
     ),
     DOCS: (
-        "Documentation Agent",
+        "Echo",
         "Keeps /pmagent/ organized; writes the decision log.",
         "Keep /pmagent/ tidy across project.md, requirements/, "
         "architecture/, decisions/, research/, progress/. When a "
@@ -113,11 +113,29 @@ def _issue_types(role: str, tools: list[str]) -> list[str]:
     return [t for t in ("epic", "story", "task", "bug", "spike", "sub-task") if t in ISSUE_CREATE_TYPES.get(role, ())]
 
 
+# What each built-in does, said after its name in its prompt ("You are Vega, the research
+# agent for Kunemi"); a contract based on a built-in keeps its role.
+ROLES = {
+    PM_HANDLE: "the project manager",
+    PRODUCT: "the product agent",
+    ARCH: "the architecture agent",
+    RESEARCH: "the research agent",
+    REVIEWER: "the reviewer agent",
+    DOCS: "the documentation agent",
+}
+
+
+def introduce(spec: AgentSpec, project_name: str) -> str:
+    """The first line of an agent's prompt: its name, what it does, and the project."""
+    role = ROLES.get(spec.base or spec.handle)
+    return f"You are {spec.name}, {role}, for {project_name}." if role else f"You are {spec.name}, an agent for {project_name}."
+
+
 def builtin_specs() -> list[AgentSpec]:
-    """The Project Manager first, then the five specialists."""
+    """Nova (the project manager) first, then the five specialists."""
     pm = AgentSpec(
         handle=PM_HANDLE,
-        name="Project Manager",
+        name="Nova",
         description="Coordinates the specialists and keeps the board and plan current.",
         base=PM_HANDLE,
         instructions=PM_INSTRUCTIONS,

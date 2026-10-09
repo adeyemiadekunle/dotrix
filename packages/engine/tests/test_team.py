@@ -45,7 +45,7 @@ def test_rules_are_prepended_to_prompts() -> None:
     agent = team(model, rules={"base": "BASE RULES", "project-manager": "PM RULES"})
     agent.invoke({"messages": [{"role": "user", "content": "hi"}]}, config("t3"))
     system = str(model.received[0][0].content)
-    assert system.index("BASE RULES") < system.index("PM RULES") < system.index("Project Manager for Kunemi")
+    assert system.index("BASE RULES") < system.index("PM RULES") < system.index("project manager, for Kunemi")
 
 
 def test_role_for_agent_name() -> None:
@@ -82,9 +82,9 @@ def test_a_specialist_can_lead_and_call_the_others() -> None:
     result = agent.invoke({"messages": [{"role": "user", "content": "draft multi-zone stories"}]}, config("t5"))
     assert result["messages"][-1].content.startswith("Stories drafted")
     lead_prompt, called_prompt = str(model.received[0][0].content), str(model.received[1][0].content)
-    assert "You are the Product Agent" in lead_prompt and "You're in the project's chat" in lead_prompt
-    assert "Project Manager for Kunemi" not in lead_prompt
-    assert "You are the Architecture Agent" in called_prompt and "Answer with findings" in called_prompt
+    assert "You are Lyra, the product agent" in lead_prompt and "You're in the project's chat" in lead_prompt
+    assert "project manager, for Kunemi" not in lead_prompt
+    assert "You are Orion, the architecture agent" in called_prompt and "Answer with findings" in called_prompt
 
     with pytest.raises(ValueError, match="Unknown lead agent"):
         build_team("Kunemi", "x", model, backend, lead="marketing")

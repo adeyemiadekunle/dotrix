@@ -26,6 +26,8 @@ export const DEFAULT_PREFS = {
   openTasks: "drawer" as "drawer" | "full",
   name: "Tanjim Islam",
   title: "Head of Product",
+  /** the agents panel on the right, on wide screens */
+  agentsPanel: true,
 };
 export type Prefs = typeof DEFAULT_PREFS;
 
@@ -123,6 +125,10 @@ export const S = {
     actFilter: "all",
     actWho: "all",
     settings: "profile",
+    /** the agents panel as a sheet, on narrower screens */
+    agentsSheet: false,
+    /** corner notices closed this session (by key) */
+    noticesShut: [] as string[],
   },
 };
 
@@ -214,8 +220,8 @@ export function who(id: string | null | undefined): { id: string; name: string; 
   if (!id) return null;
   const m = mem(id);
   if (m) return { id, name: m.name, c: m.c, agent: false };
-  const a = AGENTS.find((x) => x.handle === id);
-  if (a) return { id, name: /agent$/i.test(a.name) ? a.name : `${a.name} agent`, c: a.c, agent: true };
+  const a = (D().agents ?? []).find((x) => x.handle === id) ?? AGENTS.find((x) => x.handle === id);
+  if (a) return { id, name: a.name, c: a.c, agent: true };
   const tool = CODING_TOOLS.find((x) => x.id === id);
   if (tool) return { id, name: tool.name, c: tool.c, agent: true };
   return null;

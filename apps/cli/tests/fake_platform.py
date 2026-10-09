@@ -113,7 +113,7 @@ class FakePlatform:
             ]})
         if path == f"/v1/workspaces/{WS}/projects/{PID}/agents" and method == "GET":
             return httpx.Response(200, json=[
-                {"handle": "project-manager", "name": "Project Manager", "source": "built_in", "scope": "default",
+                {"handle": "project-manager", "name": "Nova", "source": "built_in", "scope": "default",
                  "description": "Coordinates the specialists."},
                 {"handle": "research", "name": "Research Agent", "source": "built_in", "scope": "default",
                  "description": "Runs external research."},

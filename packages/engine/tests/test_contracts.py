@@ -109,7 +109,7 @@ def test_the_pm_delegates_to_a_custom_agent() -> None:
     assert result["messages"][-1].content == "Security says the flow is fine."
     pm, called = str(model.received[0][0].content), str(model.received[1][0].content)
     assert "security-agent" in pm
-    assert "You are the Security reviewer for Kunemi" in called and "Look for risks." in called
+    assert "You are Security reviewer, an agent for Kunemi" in called and "Look for risks." in called
 
 
 def test_a_custom_agent_leads_with_its_own_gates() -> None:
@@ -122,7 +122,7 @@ def test_a_custom_agent_leads_with_its_own_gates() -> None:
                        agents=[*builtin_specs(), writer], lead="security")
     result = agent.invoke({"messages": [{"role": "user", "content": "write it"}]}, {"configurable": {"thread_id": "c2"}})
     assert [a["tool"] for a in approvals.pending_actions(result)] == ["write_file"]
-    assert "You are the Security reviewer" in str(model.received[0][0].content)
+    assert "You are Security reviewer" in str(model.received[0][0].content)
 
 
 def test_a_custom_agent_without_document_writes_is_refused_outright() -> None:

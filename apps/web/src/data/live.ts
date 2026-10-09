@@ -284,10 +284,12 @@ const toAudit = (a: Schemas["AuditEventRead"]): AuditEvent => ({
 /** An agent as the store has it: the API's definition, with the store's icon and colour for it. */
 function toAgent(a: Schemas["AgentRead"]): Agent {
   const handle = AGENT_IN[a.handle] ?? a.handle;
-  const look = AGENTS.find((x) => x.handle === handle);
+  // A built-in's look and role; a contract based on one keeps them.
+  const look = AGENTS.find((x) => x.handle === handle) ?? AGENTS.find((x) => x.handle === (AGENT_IN[a.base ?? ""] ?? a.base));
   return {
     handle,
     name: a.name,
+    role: look?.role ?? "Custom",
     desc: a.description,
     icon: look?.icon ?? "bot",
     c: look?.c ?? "#57544E",

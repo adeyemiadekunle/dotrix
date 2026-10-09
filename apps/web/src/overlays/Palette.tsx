@@ -16,6 +16,7 @@ import { goTasks } from "../screens/Home";
 import { setPaletteOpener } from "../shell/Shell";
 import { sortTasks } from "../shell/viewEngine";
 import { Av, FT, Hl, StIcon } from "../ui/helpers";
+import { Face } from "../ui/face";
 
 type Item = { icon?: string; html?: ReactNode; name: string; sub?: string; r?: string; kbd?: string; run: () => void };
 type Group = { name: string; items: Item[] };
@@ -63,11 +64,7 @@ function commands(): (Item & { id: string })[] {
   ];
 }
 
-const agentIcon = (c: string, icon: string) => (
-  <span className="av sm" style={{ "--c": c } as CSSProperties}>
-    <Ic n={icon} s={11} />
-  </span>
-);
+const agentIcon = (c: string) => <Face c={c} size={20} />;
 
 function items(): Group[] {
   const pl = S.ui.palette!;
@@ -97,7 +94,7 @@ function items(): Group[] {
     }
     if (cmds.length) groups.push({ name: "Commands", items: cmds.slice(0, 5) });
     const ags = D().agents.filter((a) => a.name.toLowerCase().includes(ql) || a.handle.includes(ql) || "agent".startsWith(ql));
-    if (ags.length) groups.push({ name: "Agents", items: ags.map((a) => ({ html: agentIcon(a.c, a.icon), name: a.handle === "auto" ? "Auto" : `${a.name} agent`, sub: a.desc, run: () => go("chat", {}, { search: `new=1&agent=${a.handle}` }) })) });
+    if (ags.length) groups.push({ name: "Agents", items: ags.map((a) => ({ html: agentIcon(a.c), name: a.name, sub: `${a.role} · ${a.desc}`, run: () => go("chat", {}, { search: `new=1&agent=${a.handle}` }) })) });
   }
   const r = searchAll(q);
   const sc = pl.mode === "search" ? pl.scope : "all";

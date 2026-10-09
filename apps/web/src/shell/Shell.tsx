@@ -6,6 +6,7 @@ import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNod
 import { openPop, projMove, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { Ic, WsLogo } from "../core/icons";
+import { presence } from "../core/presence";
 import { newProject, newTeam } from "../core/more";
 import { go, useRoute, type Route } from "../core/nav";
 import { MOD, TODAY, diffD, parse } from "../core/utils";
@@ -14,6 +15,8 @@ import type { NotifType } from "../data/types";
 import { Av } from "../ui/helpers";
 import { PopLayer } from "../overlays/PopLayer";
 import { Toasts } from "../ui/toast";
+import { AgentsPanel, agentsShown, panelWide, toggleAgents } from "./AgentsPanel";
+import { Notices } from "./Notices";
 
 export const PEOPLE_ITEMS: NotifType[] = ["mention", "assign", "comment"];
 export const AGENT_ITEMS: NotifType[] = ["approval", "checkpoint", "finding", "decided", "update"];
@@ -90,17 +93,17 @@ export function Shell({ children }: { children: ReactNode }) {
   const u = s.ui;
   // Crossing the narrow breakpoint changes what "collapsed" means: re-render.
   useEffect(() => {
-    const mq = window.matchMedia(NARROW);
+    const mqs = [window.matchMedia(NARROW), window.matchMedia("(min-width: 1200px)")];
     const onChange = () => render();
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
+    mqs.forEach((mq) => mq.addEventListener("change", onChange));
+    return () => mqs.forEach((mq) => mq.removeEventListener("change", onChange));
   }, []);
   return (
     <>
       <a className="skip" href="#main-content">
         Skip to content
       </a>
-      <div className={`shell ${sideCollapsed() ? "collapsed" : ""} ${u.mnav ? "mnav" : ""}`}>
+      <div className={`shell ${sideCollapsed() ? "collapsed" : ""} ${u.mnav ? "mnav" : ""} ${agentsShown() ? "with-agents" : ""}`}>
         <Sidebar />
         <SideTip />
         {u.mnav && <div className="side-scrim" onClick={() => ((S.ui.mnav = false), render())} />}
@@ -122,9 +125,17 @@ export function Shell({ children }: { children: ReactNode }) {
             {children}
           </div>
         </main>
+        {agentsShown() && (
+          <>
+            {!panelWide() && <div className="agents-scrim" onClick={() => ((S.ui.agentsSheet = false), rerender())} />}
+            <AgentsPanel />
+          </>
+        )}
         <BottomNav />
       </div>
       <PopLayer />
+      {/* The panel lists the same things: notices only while it's closed. */}
+      {!agentsShown() && <Notices />}
       <Toasts />
     </>
   );
@@ -415,6 +426,7 @@ function Crumbs() {
 
 function Topbar() {
   const unread = D().notifs.some((n) => !n.read);
+  const waiting = presence().filter((p) => p.state === "needs" || p.state === "blocked").length;
   return (
     <header className="topbar">
       <button className="ibtn mnav-btn" onClick={() => ((S.ui.mnav = true), rerender())} aria-label="Open navigation">
@@ -426,6 +438,10 @@ function Topbar() {
         <Ic n="search" s={14} />
         <span className="lbltxt">Search or jump to…</span>
         <span className="kbd">{MOD}K</span>
+      </button>
+      <button className={`ibtn ${agentsShown() ? "on" : ""}`} onClick={toggleAgents} data-tip="Agents" aria-label={agentsShown() ? "Hide the agents panel" : "Show the agents panel"} aria-pressed={agentsShown()} style={{ position: "relative" }}>
+        <Ic n="bot" s={16} />
+        {waiting > 0 && !agentsShown() && <span className="top-dot" />}
       </button>
       <button className="ibtn" onClick={() => go("notifications")} data-tip="Notifications" aria-label="Notifications" style={{ position: "relative" }}>
         <Ic n="bell" s={16} />

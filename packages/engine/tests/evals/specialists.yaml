@@ -8,7 +8,7 @@
     tools_include: [list_issues, create_issue, comment_issue, task]
     tools_exclude: [update_issue, web_search]
     pending: [create_issue]
-    prompt_contains: ["You are the Product Agent", "You're in the project's chat"]
+    prompt_contains: ["You are Lyra, the product agent", "You're in the project's chat"]
 
 - name: architecture may open tasks
   agent: architecture

@@ -55,6 +55,8 @@ import { Av, Empty, PIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";
 import { restoreProject } from "./Archive";
 import { PermsTable, TeamsGrid } from "./Members";
+import { moodOf } from "../core/presence";
+import { Face } from "../ui/face";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -429,12 +431,10 @@ function LiveAgent({ handle }: { handle: string }) {
         All agents
       </button>
       <div className="row" style={{ gap: 12, marginBottom: 16 }}>
-        <span className="av lg" style={css({ "--c": look?.c ?? "#57544E" })}>
-          <Ic n={look?.icon ?? "bot"} s={18} />
-        </span>
+        <Face c={look?.c ?? "#57544E"} size={36} mood={moodOf(handle)} />
         <div className="grow" style={{ minWidth: 0 }}>
           <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>
-            {handle === "auto" ? "Auto" : ag.name} <span className="faint mono" style={{ fontSize: 12, fontWeight: 400 }}>@{handle}</span>
+            {ag.name} <span className="faint mono" style={{ fontSize: 12, fontWeight: 400 }}>@{handle}</span>
           </h2>
           <div className="muted">{ag.description}</div>
         </div>
@@ -577,12 +577,10 @@ function Agents() {
           All agents
         </button>
         <div className="row" style={{ gap: 12, marginBottom: 16 }}>
-          <span className="av lg" style={css({ "--c": sel.c })}>
-            <Ic n={sel.icon} s={18} />
-          </span>
+          <Face c={sel.c} size={36} />
           <div>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>
-              {sel.handle === "auto" ? "Auto" : `${sel.name} agent`} <span className="faint mono" style={{ fontSize: 12, fontWeight: 400 }}>@{sel.handle}</span>
+              {sel.name} <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>{sel.role}</span> <span className="faint mono" style={{ fontSize: 12, fontWeight: 400 }}>@{sel.handle}</span>
             </h2>
             <div className="muted">{sel.desc}</div>
           </div>
@@ -615,7 +613,7 @@ function Agents() {
         </SRow>
         <div className="sblock">
           <h2>Instructions</h2>
-          <textarea className="textarea" rows={6} defaultValue={`You are the ${sel.name} agent. ${sel.desc}`} style={{ marginTop: 10 }} aria-label="Instructions" />
+          <textarea className="textarea" rows={6} defaultValue={`You are ${sel.name}, the ${sel.role.toLowerCase()} agent. ${sel.desc}`} style={{ marginTop: 10 }} aria-label="Instructions" />
           <div className="row" style={{ marginTop: 10, gap: 6 }}>
             <button className="btn btn-primary" onClick={() => (mutate(() => (sel.customised = true)), toast("Saved as a new version"))}>
               Save
@@ -641,7 +639,7 @@ function Agents() {
           onClick={() => {
             if (isLive()) return newLiveAgent();
             const h = "agent" + (D().agents.length + 1);
-            mutate(() => D().agents.push({ handle: h, name: "Custom", desc: "A custom agent.", icon: "bot", c: "#57544E", builtIn: false, tools: ["knowledge.read"] }));
+            mutate(() => D().agents.push({ handle: h, name: "Custom", role: "Custom", desc: "A custom agent.", icon: "bot", c: "#57544E", builtIn: false, tools: ["knowledge.read"] }));
             S.ui.agentSel = h;
             render();
           }}
@@ -653,12 +651,10 @@ function Agents() {
       <div className="panel" style={{ overflow: "hidden" }}>
         {D().agents.map((a) => (
           <div key={a.handle} className="mini" style={{ minHeight: 52 }} onClick={() => ((S.ui.agentSel = a.handle), render())}>
-            <span className="av md" style={css({ "--c": a.c })}>
-              <Ic n={a.icon} s={13} />
-            </span>
+            <Face c={a.c} size={26} mood={moodOf(a.handle)} />
             <div className="grow" style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 500 }}>
-                {a.handle === "auto" ? "Auto" : `${a.name} agent`} <span className="faint mono" style={{ fontSize: 11.5, fontWeight: 400 }}>@{a.handle}</span>
+                {a.name} <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{a.role}</span> <span className="faint mono" style={{ fontSize: 11.5, fontWeight: 400 }}>@{a.handle}</span>
               </div>
               <div className="faint trunc" style={{ fontSize: 12 }}>
                 {a.desc}
@@ -860,7 +856,7 @@ function Automations() {
         {[
           ["Keep documents current", "After approved changes, Documentation proposes current-state and roadmap updates."],
           ["Flag stale documents", "Weekly, lists documents that may be out of date."],
-          ["Triage new bugs", "When an issue is created, Auto checks for duplicates and fills in the fields."],
+          ["Triage new bugs", "When an issue is created, Nova checks for duplicates and fills in the fields."],
           ["Watch a topic", "Research re-checks a topic weekly and reports what changed."],
         ].map(([n, d]) => (
           <SRow key={n} t={n} d={d}>

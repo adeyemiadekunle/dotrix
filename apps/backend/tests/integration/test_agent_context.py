@@ -85,7 +85,7 @@ async def test_specialists_get_the_same_map(project, db_client: AsyncClient, age
     )
     await db_client.post(f"{base}/agent/runs", json={"message": "Ask research"}, headers=ada.headers)
     specialist = next(str(m.content) for m in model.received[1] if m.type == "system")
-    assert specialist.startswith("You are the Research Agent") or "Research Agent" in specialist
+    assert specialist.startswith("You are Vega, the research agent") or "Vega, the research agent" in specialist
     assert "# Project context: Kumove (KUN)" in specialist
 
 
