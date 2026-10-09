@@ -13,7 +13,10 @@ import { D, S, canSee, me, pColor, proj, projByKey, render, task, visibleProject
 import type { CodingSession, Thread } from "../data/types";
 import { Markdown } from "@/components/markdown";
 import { Changes } from "../components/Changes";
+import { openDocument } from "./Knowledge";
 import { Av, Empty, PIcon } from "../ui/helpers";
+import { moodOf } from "../core/presence";
+import { Face } from "../ui/face";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const MODELS = ["Gemini 3.8 Flash", "Claude Sonnet 5.5", "Claude Opus 5.5", "GPT-5.5"];
@@ -106,44 +109,78 @@ function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
 
 /* ---------- a conversation ---------- */
 
+/** Issue keys a reply names, and documents it read: chips that open them. */
+function refsOf(th: Thread, text: string, activity: string[] = []): { tasks: string[]; docs: string[] } {
+  const tasks = [...new Set(text.match(/\b[A-Z]{2,6}-\d+\b/g) ?? [])].filter((k) => D().tasks.some((t) => t.key === k)).slice(0, 4);
+  const p = proj(th.project);
+  const docs = p
+    ? [...new Set(activity.flatMap((a) => a.match(/[\w./-]+\.md\b/g) ?? []))]
+        .map((n) => D().knowledge.find((f) => f.project === p.id && (f.path === n || f.path.endsWith(`/${n}`)))?.path)
+        .filter((x): x is string => Boolean(x))
+        .slice(0, 4)
+    : [];
+  return { tasks, docs };
+}
+
 function Message({ th, i }: { th: Thread; i: number }) {
   const m = th.messages[i]!;
   const w = who(m.by);
   const agent = m.role === "agent" ? D().agents.find((a) => a.handle === m.by) : null;
+  const [openSteps, setOpenSteps] = useState(false);
+  const refs = agent ? refsOf(th, m.text, m.activity) : { tasks: [], docs: [] };
+  const p = proj(th.project);
+  const admin = me()?.role === "Owner" || me()?.role === "Admin";
   return (
     <div className={`chat-msg ${m.role}`}>
-      {agent ? (
-        <span className="av md" style={css({ "--c": agent.c })} aria-hidden>
-          <Ic n={agent.icon} s={13} />
-        </span>
-      ) : (
-        <Av id={m.by} cls="md" tip={false} />
-      )}
+      {agent ? <Face c={agent.c} size={26} mood="idle" /> : <Av id={m.by} cls="md" tip={false} />}
       <div className="body">
         <div className="who">
-          <b>{w?.name}</b>
+          <b>{m.by === D().me ? "You" : w?.name}</b>
+          {agent && <span className="role">{agent.role}</span>}
           <time>{ago(m.at)}</time>
-          {m.tokens && (me()?.role === "Owner" || me()?.role === "Admin") && (
-            <span className="faint" style={{ fontSize: 11 }}>
-              {(m.tokens / 1000).toFixed(1)}k tokens
-            </span>
-          )}
+          {m.tokens && admin && <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span>}
         </div>
         {m.activity && m.activity.length > 0 && (
-          <div className="chat-act">
-            {m.activity.map((a) => (
-              <span key={a}>
-                <Ic n="check" s={11} />
-                {a}
-              </span>
-            ))}
+          <div className="chat-steps">
+            <button className="chat-steps-h" onClick={() => setOpenSteps(!openSteps)} aria-expanded={openSteps}>
+              <Ic n="chevron-right" s={12} cls={`chev ${openSteps ? "open" : ""}`} />
+              <Ic n="sparkles" s={12} />
+              Worked through {m.activity.length} step{m.activity.length > 1 ? "s" : ""}
+            </button>
+            {openSteps && (
+              <ul>
+                {m.activity.map((a) => (
+                  <li key={a}>
+                    <Ic n="check" s={11} />
+                    {a}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
         {m.role === "user" ? (
-          <div className="bubble">{m.text}</div>
+          <div className="said">{m.text}</div>
         ) : (
           <div className="md">
             <Markdown>{m.text}</Markdown>
+          </div>
+        )}
+        {(refs.tasks.length > 0 || refs.docs.length > 0) && (
+          <div className="chat-refs">
+            {refs.tasks.map((k) => (
+              <button key={k} className="ref" onClick={() => openTask(D().tasks.find((t) => t.key === k)!.id)}>
+                <Ic n="square-check" s={12} />
+                {k}
+              </button>
+            ))}
+            {p &&
+              refs.docs.map((d) => (
+                <button key={d} className="ref" onClick={() => openDocument(p, d)}>
+                  <Ic n="file-text" s={12} />
+                  {d}
+                </button>
+              ))}
           </div>
         )}
         <Changes msg={m} />
@@ -152,24 +189,28 @@ function Message({ th, i }: { th: Thread; i: number }) {
   );
 }
 
-function Composer({ placeholder, onSend, agent, setAgent, model, setModel, autoFocus, initial = "" }: { placeholder: string; onSend: (text: string, agent: string) => void; agent: string; setAgent: (a: string) => void; model?: string; setModel?: (m: string) => void; autoFocus?: boolean; initial?: string }) {
+const MODELS_ICON = "cpu";
+
+function Composer({ placeholder, onSend, agent, setAgent, model, setModel, autoFocus, initial = "", context }: { placeholder: string; onSend: (text: string, agent: string) => void; agent: string; setAgent: (a: string) => void; model?: string; setModel?: (m: string) => void; autoFocus?: boolean; initial?: string; context?: string }) {
   const [text, setText] = useState(initial);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const a = D().agents.find((x) => x.handle === agent);
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
   const send = () => {
     let q = text.trim();
     if (!q || S.ui.offline) return;
-    // "@research …" picks the agent
+    // "@vega …" (or its handle, "@research") picks the agent
     const m = q.match(/^@(\w+)\s+/);
-    let a = agent;
-    if (m && D().agents.some((x) => x.handle === m[1])) {
-      a = m[1]!;
+    let pick = agent;
+    const named = m && D().agents.find((x) => x.handle === m[1] || x.name.toLowerCase() === m[1]!.toLowerCase());
+    if (m && named) {
+      pick = named.handle;
       q = q.slice(m[0].length);
-      setAgent(a);
+      setAgent(pick);
     }
-    onSend(q, a);
+    onSend(q, pick);
     setText("");
   };
   return (
@@ -188,33 +229,44 @@ function Composer({ placeholder, onSend, agent, setAgent, model, setModel, autoF
         }}
         aria-label="Message"
       />
-      <div className="row" style={{ gap: 6 }}>
-        <select className="select" style={{ height: 26, width: "auto", fontSize: 12 }} value={agent} onChange={(e) => setAgent(e.target.value)} aria-label="Agent">
-          {D().agents.map((a) => (
-            <option key={a.handle} value={a.handle}>
-              {a.handle === "auto" ? "Auto" : `${a.name} agent`}
-            </option>
-          ))}
-        </select>
-        {setModel ? (
-          <select className="select" style={{ height: 26, width: "auto", fontSize: 12 }} value={model} onChange={(e) => setModel(e.target.value)} aria-label="Model">
-            {MODELS.map((m) => (
-              <option key={m}>{m}</option>
+      <div className="cbox-row">
+        {context && (
+          <span className="cpill" data-tip="What the agents read: the project's documents and board">
+            <Ic n="at-sign" s={12} />
+            {context}
+          </span>
+        )}
+        <label className="cpill pick">
+          {a && <Face c={a.c} size={16} mood="idle" />}
+          <select value={agent} onChange={(e) => setAgent(e.target.value)} aria-label="Agent">
+            {D().agents.map((x) => (
+              <option key={x.handle} value={x.handle}>
+                {x.name} · {x.role}
+              </option>
             ))}
           </select>
+          <Ic n="chevron-down" s={11} />
+        </label>
+        {setModel ? (
+          <label className="cpill pick">
+            <Ic n={MODELS_ICON} s={12} />
+            <select value={model} onChange={(e) => setModel(e.target.value)} aria-label="Model">
+              {MODELS.map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+            <Ic n="chevron-down" s={11} />
+          </label>
         ) : (
           model && (
-            <span className="faint row" style={{ fontSize: 11.5, gap: 4 }} data-tip="The model is fixed once a conversation starts">
-              <Ic n="cpu" s={12} />
+            <span className="cpill" data-tip="The model is fixed once a conversation starts">
+              <Ic n={MODELS_ICON} s={12} />
               {model}
             </span>
           )
         )}
         <span className="sp" />
-        <span className="faint hide-m" style={{ fontSize: 11.5 }}>
-          Enter to send · Shift+Enter for a new line
-        </span>
-        <button className="btn btn-primary btn-sm" onClick={send} disabled={!text.trim() || S.ui.offline} aria-label="Send">
+        <button className="cbox-send" onClick={send} disabled={!text.trim() || S.ui.offline} aria-label="Send">
           <Ic n="arrow-up" s={14} />
         </button>
       </div>
@@ -251,9 +303,15 @@ function Conversation({ th }: { th: Thread }) {
             {(th.projects ?? []).map((id) => proj(id)?.name).join(", ") || "Across projects"}
           </span>
         )}
-        <span className="badge hide-m">
-          <Ic n="cpu" s={11} />
-          {th.model}
+        <span className="chat-faces hide-m" aria-label="Agents in this conversation">
+          {[...new Set(th.messages.filter((x) => x.role === "agent").map((x) => x.by))].map((h) => {
+            const ag = D().agents.find((x) => x.handle === h);
+            return ag ? (
+              <span key={h} data-tip={`${ag.name} · ${ag.role}`}>
+                <Face c={ag.c} size={20} mood={moodOf(h)} />
+              </span>
+            ) : null;
+          })}
         </span>
       </div>
       <div className="chat-scroll">
@@ -263,12 +321,11 @@ function Conversation({ th }: { th: Thread }) {
           ))}
           {busy && (
             <div className="chat-msg">
-              <span className="av md" style={css({ "--c": D().agents.find((a) => a.handle === agent)?.c ?? "var(--acc)" })}>
-                <Ic n={D().agents.find((a) => a.handle === agent)?.icon ?? "sparkles"} s={13} />
-              </span>
+              <Face c={D().agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={26} mood="working" />
               <div className="body">
                 <div className="who">
-                  <b>{agentName(agent)} agent</b>
+                  <b>{agentName(agent)}</b>
+                  <span className="role">{D().agents.find((a) => a.handle === agent)?.role}</span>
                 </div>
                 <div className="row muted" style={{ gap: 8, fontSize: 12.5, marginTop: 6 }}>
                   <span className="chat-typing">
@@ -276,7 +333,7 @@ function Conversation({ th }: { th: Thread }) {
                     <i />
                     <i />
                   </span>
-                  Reading the project's documents…
+                  {agentName(agent)} is reading the project's documents…
                 </div>
               </div>
             </div>
@@ -285,7 +342,7 @@ function Conversation({ th }: { th: Thread }) {
         </div>
       </div>
       <div className="chat-input">
-        <Composer placeholder={`Ask ${agent === "auto" ? "the agents" : `the ${agentName(agent)} agent`}… type @ to pick an agent`} agent={agent} setAgent={setAgent} model={th.model} onSend={(q, a) => sendChat(th, q, a)} autoFocus />
+        <Composer placeholder={`Ask ${agentName(agent)}, or type @ to pick an agent`} agent={agent} setAgent={setAgent} model={th.model} context={p?.name ?? "Across projects"} onSend={(q, a) => sendChat(th, q, a)} autoFocus />
         {!th.project && (
           <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
             <Ic n="lock" s={11} /> Across projects the agents only read; for a change they'll say which project's chat to ask in.
@@ -338,7 +395,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
               </label>
             ))}
         </div>
-        <Composer key={q} placeholder="Ask anything… type @ to pick an agent" agent={agent} setAgent={setAgent} model={model} setModel={setModel} onSend={start} autoFocus initial={q} />
+        <Composer key={q} placeholder="Ask anything, or type @ to pick an agent" agent={agent} setAgent={setAgent} model={model} setModel={setModel} context={proj(pid)?.name ?? "Across projects"} onSend={start} autoFocus initial={q} />
         <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 14 }}>
           {sugg.map(([i, s]) => (
             <button key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={!pid && !picked.length}>
@@ -353,11 +410,9 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
         <div className="panel" style={{ overflow: "hidden" }}>
           {D().agents.map((a) => (
             <button key={a.handle} className="mini" style={{ width: "100%" }} onClick={() => setAgent(a.handle)}>
-              <span className="av md" style={css({ "--c": a.c })}>
-                <Ic n={a.icon} s={13} />
-              </span>
-              <span className="tt">
-                <b style={{ fontWeight: 500 }}>{a.handle === "auto" ? "Auto" : `${a.name} agent`}</b>{" "}
+              <Face c={a.c} size={26} mood={moodOf(a.handle)} />
+              <span className="tt" style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                <b style={{ fontWeight: 500 }}>{a.name}</b> <span className="muted" style={{ fontSize: 12 }}>{a.role}</span>{" "}
                 <span className="faint" style={{ fontSize: 12 }}>
                   {a.desc}
                 </span>

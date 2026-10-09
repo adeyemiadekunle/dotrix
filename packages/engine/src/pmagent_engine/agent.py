@@ -25,7 +25,7 @@ from deepagents.backends import CompositeBackend, StateBackend
 
 from . import tasks as T
 from .backend import LockingFilesystemBackend
-from .builtins import BUILTIN_HANDLES, SPECIALISTS, builtin_specs
+from .builtins import BUILTIN_HANDLES, SPECIALISTS, builtin_specs, introduce
 from .catalog import group as catalog_group
 from .catalog import tool_id, tool_name
 from .code import CODE_GUIDE
@@ -162,7 +162,7 @@ brief and the project context, then ask for all of it in one turn (several read_
 read_section, get_issue, or search calls at once), and answer as soon as you can; an empty
 document needs no second look.
 
-Your reply goes back to the Project Manager, not to a person. Answer with findings: a short
+Your reply goes back to Nova, the project manager, not to a person. Answer with findings: a short
 answer first, then the key points, each with the path and section it comes from, and any
 changes you propose. Don't paste whole documents back; quote only the lines that matter."""
 
@@ -242,7 +242,7 @@ Action Mode change like any other.
 """
 
 
-_BRIEFING_INSTRUCTIONS = """You are the Project Manager for {project_name}.
+_BRIEFING_INSTRUCTIONS = """You are Nova, the project manager, for {project_name}.
 
 {description}
 
@@ -416,7 +416,7 @@ def build_team(
 
     team = _callable(pm, specs)
     names = ", ".join(spec.agent_name for spec in team) or "none yet"
-    pm_instructions = f"""You are the {pm.name} for {project_name}.
+    pm_instructions = f"""{introduce(pm, project_name)}
 
 {description}
 
@@ -491,9 +491,9 @@ blockers, and documentation status. A briefing never writes.
 
     def prompt(spec: AgentSpec) -> str:
         if spec.handle == lead:
-            text = f"You are the {spec.name} for {project_name}.\n{spec.instructions}\n{board}\n{_LEAD_GUIDE}"
+            text = f"{introduce(spec, project_name)}\n{spec.instructions}\n{board}\n{_LEAD_GUIDE}"
         else:
-            text = f"You are the {spec.name} for {project_name}.\n{spec.instructions}\n{_FINDINGS_GUIDE}"
+            text = f"{introduce(spec, project_name)}\n{spec.instructions}\n{_FINDINGS_GUIDE}"
         text += extras(spec)[1] + guides(spec)
         return _with_context(_with_rules(rules, spec.handle, text), context)
 

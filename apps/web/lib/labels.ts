@@ -19,12 +19,13 @@ export const PROJECT_SOURCE_LABELS: Record<Schemas["ProjectSource"], string> = {
 };
 
 const AGENT_NAMES: Record<string, string> = {
-  "project-manager": "PM agent",
-  product: "Product agent",
-  architecture: "Architecture agent",
-  research: "Research agent",
-  reviewer: "Reviewer agent",
-  documentation: "Documentation agent",
+  "project-manager": "Nova",
+  auto: "Nova",
+  product: "Lyra",
+  architecture: "Orion",
+  research: "Vega",
+  reviewer: "Juno",
+  documentation: "Echo",
   coding: "Coding agent",
 };
 

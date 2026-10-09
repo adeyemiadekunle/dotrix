@@ -25,6 +25,13 @@ function tree(files: KnowledgeFile[]) {
   return root;
 }
 
+/** Open one of a project's documents in Knowledge (a chat reply's file chip). */
+export function openDocument(p: Project, path: string) {
+  open.path = path;
+  open.editing = false;
+  go("project", { id: p.key, tab: "knowledge" });
+}
+
 export function Knowledge({ p }: { p: Project }) {
   const files = D()
     .knowledge.filter((f) => f.project === p.id)

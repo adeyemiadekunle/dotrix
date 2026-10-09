@@ -5,13 +5,16 @@ import { Fragment } from "react";
 import { LB, PR, PSTAT, ST, TY, type IssueType, type PriorityId, type ProjectStatusId, type StatusId } from "../core/constants";
 import { Ic } from "../core/icons";
 import { TODAY, diffD, initials, parse, relDate } from "../core/utils";
-import { AGENTS } from "../data/seed-dotrix";
+import { moodOf } from "../core/presence";
+import { Face } from "./face";
 import { D, pColor, who } from "../data/store";
 import type { FileItem, Project, Task } from "../data/types";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
 /** A person's (or an agent's) avatar; nobody: the dashed "unassigned" circle. */
+const FACE_PX: Record<string, number> = { sm: 20, md: 26, lg: 36, xl: 64 };
+
 export function Av({ id, cls = "", tip = true }: { id: string | null | undefined; cls?: string; tip?: boolean }) {
   const w = who(id);
   if (!w) {
@@ -21,10 +24,16 @@ export function Av({ id, cls = "", tip = true }: { id: string | null | undefined
       </span>
     );
   }
-  const agent = AGENTS.find((a) => a.handle === w.id);
+  // Agents and coding tools have faces; people have initials.
+  if (w.agent)
+    return (
+      <span className={`av face-av ${cls}`} data-tip={tip ? w.name : undefined} aria-label={w.name}>
+        <Face c={w.c} size={FACE_PX[cls.split(" ").find((k) => k in FACE_PX) ?? ""] ?? 22} mood={moodOf(w.id)} />
+      </span>
+    );
   return (
     <span className={`av ${cls}`} style={css({ "--c": w.c })} data-tip={tip ? w.name : undefined} aria-label={w.name}>
-      {agent ? <Ic n={agent.icon} s={11} /> : w.agent ? <Ic n="bot" s={11} /> : initials(w.name)}
+      {initials(w.name)}
     </span>
   );
 }

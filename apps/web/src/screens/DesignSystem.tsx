@@ -429,7 +429,7 @@ export function DesignSystem() {
             <i />
             <i />
           </span>
-          Research agent is searching the web…
+          Vega is searching the web…
         </div>
       </Sec>
       <Sec title="Feedback">

@@ -88,7 +88,7 @@ test("tokens under Sessions: the CLI's sign-in is listed, a new one is shown onc
 test("agents: change a built-in's contract, then reset it; workspace rules are saved as versions", async ({ page }) => {
   await signUp(page);
   await settings(page, "agents");
-  await page.getByText("Research Agent").first().click();
+  await page.locator("#main-content .mini", { hasText: "@research" }).click();
   await page.getByLabel("Description").fill("Finds and checks sources on the web.");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText(/Saved as version \d+/)).toBeVisible();

@@ -10,6 +10,10 @@ import { DAY, MONL, TODAY, WDL, ago, diffD, fmtDate, greeting, parse } from "../
 import { D, S, allTasks, canSee, isOver, pColor, progressOf, proj, visibleProjects, who } from "../data/store";
 import type { Notif } from "../data/types";
 import { ActItem, MiniRow } from "../components/TaskList";
+import { newThread } from "../core/agents";
+import { moodOf } from "../core/presence";
+import { isLive } from "../data/live";
+import { Face } from "../ui/face";
 import { sortTasks, viewOf } from "../shell/viewEngine";
 import { Av, AvStack, Empty, PIcon, PStatus, PrIcon, ProgBar } from "../ui/helpers";
 
@@ -58,6 +62,89 @@ export function AgentItem({ n }: { n: Notif }) {
       {n.type === "approval" && <span className="badge amber">Review</span>}
       {n.type === "checkpoint" && <span className="badge accent">Plan</span>}
     </div>
+  );
+}
+
+const ASKS: [string, string][] = [
+  ["file-text", "Summarize what changed this week"],
+  ["search", "Research how competitors price their plans"],
+  ["list-checks", "Turn the checkout requirements into stories"],
+  ["shield-check", "Review what's in review against its acceptance criteria"],
+];
+
+/** Home's ask box (after Orbit's): Nova in the middle with the others around it; what you type
+ * starts a conversation with Nova, who brings in whoever the work needs. */
+function AskHero() {
+  const [text, setText] = useState("");
+  const lead = D().agents.find((a) => a.handle === "auto") ?? D().agents[0];
+  const others = D().agents.filter((a) => a !== lead).slice(0, 5);
+  const ask = (q: string) => {
+    const t = q.trim();
+    if (!t) return;
+    // A real workspace's chat isn't wired yet: the question waits in a new chat there.
+    if (isLive()) return go("chat", {}, { search: `new=1&q=${encodeURIComponent(t)}` });
+    const p = visibleProjects().find((x) => canSee(x) && !x.archived);
+    const th = newThread(p?.id ?? null, "auto", S.ui.chatModel, t, p ? undefined : visibleProjects().map((x) => x.id));
+    if (th) go("chat", {}, { search: `thread=${th.id}` });
+  };
+  return (
+    <section className="ask-hero" aria-label={`Ask ${lead?.name ?? "the agents"}`}>
+      <div className="ask-orbit" aria-hidden>
+        {lead && (
+          <span className="lead">
+            <Face c={lead.c} size={64} mood={moodOf(lead.handle)} />
+          </span>
+        )}
+        {others.map((a, i) => (
+          <span key={a.handle} className={`sat s${i}`}>
+            <Face c={a.c} size={24} mood={moodOf(a.handle)} />
+            <em>{a.name}</em>
+          </span>
+        ))}
+      </div>
+      <form
+        className="cbox ask-box"
+        onSubmit={(e) => {
+          e.preventDefault();
+          ask(text);
+        }}
+      >
+        <textarea
+          rows={2}
+          value={text}
+          placeholder={`Ask ${lead?.name ?? "the agents"} anything, or describe a task…`}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              ask(text);
+            }
+          }}
+          aria-label={`Ask ${lead?.name ?? "the agents"}`}
+        />
+        <div className="cbox-row">
+          {lead && <Face c={lead.c} size={16} />}
+          <span className="muted" style={{ fontSize: 12 }}>
+            {lead?.name} sends it to the right agent
+          </span>
+          <span className="sp" />
+          <span className="faint hide-m" style={{ fontSize: 11 }}>
+            ↵ to start
+          </span>
+          <button className="cbox-send" type="submit" disabled={!text.trim()} aria-label="Start">
+            <Ic n="arrow-up" s={14} />
+          </button>
+        </div>
+      </form>
+      <div className="ask-sugg">
+        {ASKS.map(([i, q]) => (
+          <button key={q} className="cpill pick" onClick={() => ask(q)}>
+            <Ic n={i} s={12} />
+            {q}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -119,6 +206,7 @@ export function Home() {
           </button>
         </div>
       </div>
+      <AskHero />
       <div className="stats" style={{ marginBottom: 16 }}>
         <button className="stat" onClick={() => go("projects")}>
           <span className="k">

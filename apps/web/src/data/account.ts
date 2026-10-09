@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { api, unwrap, type Schemas } from "@/lib/api";
 
 import { toast } from "../ui/toast";
-import { isLive, live, loadWorkspace, onLoaded } from "./live";
+import { isLive, live, loadWorkspace } from "./live";
 import { D, render } from "./store";
 import type { Member } from "./types";
 
@@ -136,8 +136,6 @@ export async function loadInvites() {
     /* members only: no invites to show */
   }
 }
-
-onLoaded.push(() => void loadInvites());
 
 /** Invite people by email; each one sent is listed as pending. Returns how many were sent. */
 export async function invitesSent(emails: string[], role: Member["role"]): Promise<number> {

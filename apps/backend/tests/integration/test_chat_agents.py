@@ -51,7 +51,7 @@ async def test_a_specialist_answers_directly(project, db_client: AsyncClient, ag
     assert done["status"] == "completed" and done["agent"] == "research"
     assert done["reply"] == "Three competitors ship multi-zone already."
     system = str(model.received[0][0].content)
-    assert "You are the Research Agent" in system and "You're in the project's chat" in system
+    assert "You are Vega, the research agent" in system and "You're in the project's chat" in system
     assert [a["agent"] for a in done["breakdown"]["by_agent"]] == ["research"]  # no PM hop
     events = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
     assert next(e for e in events if e["action"] == "agent_run.completed")["agent"] == "research"

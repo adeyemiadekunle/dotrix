@@ -17,12 +17,12 @@ import type {
 type Base = { tasks: Task[]; notifs: Notif[]; activity: Activity[] };
 
 export const AGENTS: Agent[] = [
-  { handle: "auto", name: "Auto", desc: "Picks the specialists a request needs and brings their work together.", icon: "sparkles", c: "#4B5BD6", builtIn: true, tools: ["knowledge.read", "board.write", "graph.read", "code.read"] },
-  { handle: "product", name: "Product", desc: "Requirements, user stories, acceptance criteria.", icon: "target", c: "#3D8E5F", builtIn: true, tools: ["knowledge.write", "board.write"] },
-  { handle: "architecture", name: "Architecture", desc: "Impact of a change, options, decisions (ADRs).", icon: "layers", c: "#3B82C4", builtIn: true, tools: ["knowledge.write", "code.read", "graph.read"] },
-  { handle: "research", name: "Research", desc: "Reads the web and our documents; claims with sources.", icon: "search", c: "#C48A1E", builtIn: true, tools: ["web.search", "knowledge.read"] },
-  { handle: "reviewer", name: "Reviewer", desc: "Checks work against requirements; read-only.", icon: "shield-check", c: "#C54B78", builtIn: true, customised: true, tools: ["knowledge.read", "code.read"] },
-  { handle: "documentation", name: "Documentation", desc: "Keeps documents current after changes.", icon: "file-text", c: "#8662C9", builtIn: true, tools: ["knowledge.write"] },
+  { handle: "auto", name: "Nova", role: "Lead", desc: "Plans the work, hands it to the right agent, and brings it together.", icon: "sparkles", c: "#E0A92E", builtIn: true, tools: ["knowledge.read", "board.write", "graph.read", "code.read"] },
+  { handle: "product", name: "Lyra", role: "Product", desc: "Requirements, user stories, acceptance criteria.", icon: "target", c: "#3D9E6A", builtIn: true, tools: ["knowledge.write", "board.write"] },
+  { handle: "architecture", name: "Orion", role: "Architecture", desc: "Impact of a change, options, decisions (ADRs).", icon: "layers", c: "#3B82C4", builtIn: true, tools: ["knowledge.write", "code.read", "graph.read"] },
+  { handle: "research", name: "Vega", role: "Research", desc: "Reads the web and our documents; claims with sources.", icon: "search", c: "#5AA9D6", builtIn: true, tools: ["web.search", "knowledge.read"] },
+  { handle: "reviewer", name: "Juno", role: "Review", desc: "Checks work against requirements; read-only.", icon: "shield-check", c: "#D0628B", builtIn: true, customised: true, tools: ["knowledge.read", "code.read"] },
+  { handle: "documentation", name: "Echo", role: "Documentation", desc: "Keeps documents current after changes.", icon: "file-text", c: "#8C6FD6", builtIn: true, tools: ["knowledge.write"] },
 ];
 /** Coding tools: assignable like people, they open pull requests. */
 export const CODING_TOOLS = [
@@ -55,7 +55,7 @@ const THREADS: Thread[] = [
         role: "agent",
         by: "auto",
         at: minsAgo(30),
-        activity: ["Read roadmap.md", "Read requirements/navigation.md", "Listed the board", "Asked the reviewer agent"],
+        activity: ["Read roadmap.md", "Read requirements/navigation.md", "Listed the board", "Asked Juno to review"],
         tokens: 18420,
         text: "Three things stand between you and **Dev handoff** (in 14 days):\n\n1. **WEB-109 Create homepage wireframes** is in review: the annotations subtask is still open.\n2. **WEB-112 Finalize navigation** is due today and the mega-menu content isn't in yet.\n3. **WEB-127 Design mobile onboarding** is a day overdue; the permission prompts wait on legal.\n\nThe navigation requirements still describe the old menu, so I've proposed an update below, and an issue to track the legal review.",
         changes: [

@@ -175,7 +175,9 @@ export interface Workspace {
 
 export interface Agent {
   handle: string; // "auto", "product", ...
-  name: string;
+  name: string; // "Nova", "Lyra", ... (a custom agent's own name)
+  /** what it does, after its name ("Research"); a custom agent's is "Custom" */
+  role: string;
   desc: string;
   icon: string;
   c: string;

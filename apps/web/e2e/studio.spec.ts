@@ -63,7 +63,7 @@ test("change an agent's plan at its checkpoint, and ask a question", async ({ pa
 test("approve a coding run from Notifications", async ({ page }) => {
   await page.goto("/w/dotrix/notifications?n=na4");
   await expect(page.getByText("Build the hero component from the wireframes.")).toBeVisible();
-  await page.getByRole("button", { name: "Approve" }).click();
+  await page.locator("#main-content").getByRole("button", { name: "Approve" }).click();
   await page.goto("/w/dotrix/chat?tab=coding&session=cs2");
   await expect(page.getByText("Working", { exact: true }).first()).toBeVisible();
 });
@@ -72,7 +72,33 @@ test("the command palette finds an agent and opens Chat with it", async ({ page 
   await page.goto("/w/dotrix");
   await page.keyboard.press("Control+k");
   await page.getByRole("combobox").fill("research");
-  await page.getByRole("option", { name: /Research agent/ }).click();
+  await page.getByRole("option", { name: /Vega/ }).click();
   await expect(page).toHaveURL(/\/chat\?new=1&agent=research/);
-  await expect(page.getByLabel("Agent")).toHaveValue("research");
+  await expect(page.getByLabel("Agent", { exact: true })).toHaveValue("research");
+});
+
+test("the agents panel shows who needs you, and approving from it settles the change", async ({ page }) => {
+  await page.goto("/w/dotrix");
+  const panel = page.getByRole("complementary", { name: "Agents" });
+  await expect(panel.getByText("Nova", { exact: true })).toBeVisible();
+  const claude = panel.locator(".ap-row", { hasText: "Claude Code" });
+  await expect(claude.getByText("Needs you")).toBeVisible();
+  await claude.getByRole("button", { name: "Approve" }).click();
+  await expect(claude.getByText("Working")).toBeVisible();
+
+  // Hidden, the same things come as notices in the corner.
+  await panel.getByRole("button", { name: "Hide the agents panel" }).click();
+  await expect(panel).toBeHidden();
+  const notices = page.getByRole("region", { name: "Waiting for you" });
+  await expect(notices.getByText("needs your approval").first()).toBeVisible();
+  await notices.getByRole("button", { name: /Close the notice/ }).first().click();
+});
+
+test("Home's ask box starts a conversation with Nova", async ({ page }) => {
+  await page.goto("/w/dotrix");
+  await page.getByRole("textbox", { name: "Ask Nova" }).fill("Summarize the project status");
+  await page.getByRole("textbox", { name: "Ask Nova" }).press("Enter");
+  await expect(page).toHaveURL(/\/chat\?thread=/);
+  await expect(page.getByText(/open issues, \d+ in progress/)).toBeVisible();
+  await expect(page.locator(".chat-msg .role", { hasText: "Lead" }).first()).toBeVisible();
 });

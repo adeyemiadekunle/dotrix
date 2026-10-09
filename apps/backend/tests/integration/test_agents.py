@@ -630,7 +630,7 @@ async def test_specialists_can_run_on_a_cheaper_model(project, db_client: AsyncC
     done = await run(db_client, base, ada.headers, "Ask product")
     assert done["status"] == "completed" and done["reply"] == "Product says: logistics."
     assert len(pm.received) == 2 and len(specialist.received) == 1
-    assert "You are the Product Agent" in str(specialist.received[0][0].content)
+    assert "You are Lyra, the product agent" in str(specialist.received[0][0].content)
 
 
 async def test_project_model_settings(project, db_client: AsyncClient, signup, add_member) -> None:

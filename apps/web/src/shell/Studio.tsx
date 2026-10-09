@@ -7,7 +7,8 @@ import { hasSession } from "@/lib/api";
 import { applyPrefs } from "../core/theme";
 import { Ic } from "../core/icons";
 import { WS, back, currentSlug, go, useRoute, type Route } from "../core/nav";
-import { live, loadWorkspace, showDemo } from "../data/live";
+import { live, loadWorkspace, onLoaded, showDemo } from "../data/live";
+import { loadInvites } from "../data/account";
 import { DesignSystem, SystemStates } from "../screens/DesignSystem";
 import { D, projByKey, team, useStudio } from "../data/store";
 import { Drawer } from "../overlays/Drawer";
@@ -27,6 +28,9 @@ import { Search } from "../screens/Search";
 import { ActivityPage, CalendarPage, Favorites, MyTasks, Tasks, TimelinePage } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
 import { ROUTE_NAMES, Shell } from "./Shell";
+
+// A real workspace's pending invites join its members once it loads (Members, Settings).
+onLoaded.push(() => void loadInvites());
 
 const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   home: Home,
