@@ -25,7 +25,7 @@ import {
   visibleProjects,
   type Modal,
 } from "../data/store";
-import { fileDeleted, fileDuplicated, fileRenamed, isLive, projectCreated, showDemo, signOutLive } from "../data/live";
+import { fileDeleted, fileDuplicated, fileRenamed, isLive, projectCreated, projectDeleted, resynced, showDemo, signOutLive, tasksDeleted } from "../data/live";
 import { seed } from "../data/seed";
 import type { Project, Task } from "../data/types";
 import { fileType } from "../ui/helpers";
@@ -39,6 +39,7 @@ export function restore(snap: string) {
   S.data = JSON.parse(snap);
   save();
   render();
+  resynced(); // a real workspace sends what the undo changed (an archive, a star, a checklist)
 }
 
 /* ---------- modals ---------- */
@@ -207,8 +208,11 @@ export function editTeam(id: string) {
 }
 
 /* ---------- tasks ---------- */
-export function deleteTasks(ids: string[]) {
+/** Remove issues from the store; a real workspace deletes them on the API too (`send: false` when
+ * something else deletes them there, like their project). */
+export function deleteTasks(ids: string[], { send = true } = {}) {
   const set = new Set(ids);
+  if (send) tasksDeleted(D().tasks.filter((t) => set.has(t.id)));
   D().tasks = D().tasks.filter((t) => !set.has(t.id));
   D().tasks.forEach((t) => (t.deps = t.deps.filter((d) => !set.has(d))));
   D().comments = D().comments.filter((c) => !set.has(c.task));
@@ -225,7 +229,7 @@ export function dupTask(id: string) {
   });
   toast("Task duplicated", { action: "Open", onAction: () => openTask(n!.id) });
 }
-/** The API can't archive or delete issues yet: a real workspace says so instead. */
+/** Something a real workspace can't do yet: it says so instead. */
 export function notYet(what: string, instead = "Mark the issue done instead.") {
   if (!isLive()) return false;
   S.ui.pop = null;
@@ -233,7 +237,6 @@ export function notYet(what: string, instead = "Mark the issue done instead.") {
   return true;
 }
 export function archiveTask(id: string) {
-  if (notYet("Archiving issues")) return;
   const t = task(id)!;
   const snap = snapshot();
   S.ui.pop = null;
@@ -245,11 +248,11 @@ export function archiveTask(id: string) {
   toast(`Archived “${t.title}”`, { action: "Undo", onAction: () => restore(snap) });
 }
 export function delTask(id: string) {
-  if (notYet("Deleting issues")) return;
   const t = task(id);
   S.ui.pop = null;
   if (!t) return;
   const n = commentsOf(t.id).length;
+  const undoable = !isLive(); // a real workspace's delete is for good
   confirmDlg({
     title: "Delete task?",
     body: `<b>${escapeHtml(t.title)}</b>${t.subtasks.length ? `, its ${t.subtasks.length} subtasks,` : ""} and ${n} comment${n === 1 ? "" : "s"} will be permanently deleted.`,
@@ -257,7 +260,7 @@ export function delTask(id: string) {
     danger: true,
     run: () => {
       const snap = snapshot();
-      if (guarded(() => deleteTasks([t.id]))) toast(`Deleted “${t.title}”`, { action: "Undo", onAction: () => restore(snap) });
+      if (guarded(() => deleteTasks([t.id]))) toast(`Deleted “${t.title}”`, undoable ? { action: "Undo", onAction: () => restore(snap) } : {});
     },
   });
 }
@@ -274,7 +277,6 @@ export function dupProject(id: string) {
   toast(`Duplicated ${p.name}`, { action: "Open", onAction: () => go("project", { id: n!.key }) });
 }
 export function archiveProject(id: string) {
-  if (notYet("Archiving projects", "Set its status to Completed instead.")) return;
   const p = proj(id)!;
   S.ui.pop = null;
   confirmDlg({
@@ -292,7 +294,6 @@ export function archiveProject(id: string) {
   });
 }
 export function delProject(id: string) {
-  if (notYet("Deleting projects", "Set its status to Completed instead.")) return;
   const p = proj(id)!;
   S.ui.pop = null;
   const n = tasksOf(p.id).length;
@@ -306,14 +307,18 @@ export function delProject(id: string) {
       const snap = snapshot();
       if (
         guarded(() => {
-          deleteTasks(D().tasks.filter((t) => t.project === p.id).map((t) => t.id));
+          // Deleting the project deletes its issues on the API: none are sent one by one.
+          deleteTasks(D().tasks.filter((t) => t.project === p.id).map((t) => t.id), { send: false });
           D().projects = D().projects.filter((x) => x !== p);
           D().projOrder = D().projOrder.filter((x) => x !== p.id);
           D().files = D().files.filter((f) => f.project !== p.id);
         })
       ) {
         if (here().route === "project") go("projects");
-        toast(`Deleted ${p.name}`, { action: "Undo", onAction: () => restore(snap) });
+        if (isLive()) {
+          projectDeleted(p);
+          toast(`Deleted ${p.name}`);
+        } else toast(`Deleted ${p.name}`, { action: "Undo", onAction: () => restore(snap) });
       }
     },
   });
@@ -368,7 +373,6 @@ export function colDoneAll(key: string, st: string) {
   if (guarded(() => ts.forEach((t) => applyPatch(t, { status: "done" })))) toast(`Marked ${ts.length} tasks as done`, { action: "Undo", onAction: () => restore(snap) });
 }
 export function colArchive(key: string) {
-  if (notYet("Archiving issues")) return;
   const ts = colTasks(key, "done");
   S.ui.pop = null;
   const snap = snapshot();

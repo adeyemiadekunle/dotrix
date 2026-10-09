@@ -1117,7 +1117,13 @@ export interface paths {
         get: operations["get_project"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Project
+         * @description Delete a project and everything in it: issues, knowledge, documents and their files, agent
+         *     conversations. It can't be undone (archive it instead to keep it). 409 while an agent run is
+         *     working or waiting for approval. Its audit history stays, in the workspace's log. Owners and admins.
+         */
+        delete: operations["delete_project"];
         options?: never;
         head?: never;
         /**
@@ -2702,7 +2708,12 @@ export interface paths {
         get: operations["get_issue"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Issue
+         * @description Delete an issue with its log and files. It can't be undone (archive it to keep it). Owners
+         *     and admins, or whoever reported it; 409 while it has sub-issues.
+         */
+        delete: operations["delete_issue"];
         options?: never;
         head?: never;
         /**
@@ -2750,6 +2761,77 @@ export interface paths {
          */
         post: operations["rank_issue"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move Issue
+         * @description Move an issue to another project in the workspace: it's created there with that project's
+         *     next key, taking its log, comments, watchers, stars, and files, and deleted here. Its parent and
+         *     dependencies stay behind (they belong to this project). 409 while it has sub-issues or coding
+         *     sessions.
+         */
+        post: operations["move_issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Issue Comment
+         * @description Delete a comment: its author, or owners and admins.
+         */
+        delete: operations["delete_issue_comment"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit Issue Comment
+         * @description Change a comment's text (its author only); it's marked edited.
+         */
+        patch: operations["edit_issue_comment"];
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}/reactions/{emoji}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * React To Issue Comment
+         * @description React to a comment with an emoji (once per emoji each).
+         */
+        put: operations["react_to_issue_comment"];
+        post?: never;
+        /**
+         * Unreact To Issue Comment
+         * @description Take back your reaction to a comment.
+         */
+        delete: operations["unreact_to_issue_comment"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4660,6 +4742,11 @@ export interface components {
              */
             mentions?: string[];
         };
+        /** CommentUpdate */
+        CommentUpdate: {
+            /** Body */
+            body: string;
+        };
         /**
          * ConnectedRepoRead
          * @description The repository a project's code lives in, connected through the GitHub App.
@@ -5189,6 +5276,11 @@ export interface components {
         IssueEventKind: "created" | "updated" | "commented" | "claimed";
         /** IssueEventRead */
         IssueEventRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             kind: components["schemas"]["IssueEventKind"];
             /** Author User Id */
             author_user_id: string | null;
@@ -5205,6 +5297,27 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Edited At
+             * @description Comments: when its author last changed it
+             */
+            edited_at?: string | null;
+            /**
+             * Reactions
+             * @description Comments: who reacted with each emoji
+             */
+            reactions?: {
+                [key: string]: string[];
+            };
+        };
+        /** IssueMove */
+        IssueMove: {
+            /**
+             * Project Id
+             * Format: uuid
+             * @description The project to move it to, in the same workspace
+             */
+            project_id: string;
         };
         /** IssueRead */
         IssueRead: {
@@ -5246,6 +5359,11 @@ export interface components {
              * @default 0
              */
             attachment_count: number;
+            /**
+             * Archived At
+             * @description When it was archived; null while in use
+             */
+            archived_at?: string | null;
             /** Rank */
             rank: number;
             /**
@@ -5351,6 +5469,11 @@ export interface components {
              * @default 0
              */
             attachment_count: number;
+            /**
+             * Archived At
+             * @description When it was archived; null while in use
+             */
+            archived_at?: string | null;
             /** Rank */
             rank: number;
             /**
@@ -5406,6 +5529,11 @@ export interface components {
              */
             checklist?: components["schemas"]["ChecklistItem"][] | null;
             recurrence?: components["schemas"]["Recurrence"] | null;
+            /**
+             * Archived
+             * @description true archives it (off the board and lists, kept as it is), false restores it
+             */
+            archived?: boolean | null;
             /**
              * Note
              * @description Added to the issue's log
@@ -6142,6 +6270,11 @@ export interface components {
             icon: string | null;
             /** @description Its colour; null: the colour follows its key */
             color: components["schemas"]["ProjectColor"] | null;
+            /**
+             * Archived At
+             * @description When it was archived; null while in use
+             */
+            archived_at?: string | null;
             /** Knowledge Revision */
             knowledge_revision: number;
             /**
@@ -6207,6 +6340,11 @@ export interface components {
             icon?: string | null;
             /** @description Send null to follow its key; leave it out to keep it */
             color?: components["schemas"]["ProjectColor"] | null;
+            /**
+             * Archived
+             * @description true archives it (out of the sidebar and Projects, kept as it is), false restores it
+             */
+            archived?: boolean | null;
         };
         /** QuoteCheck */
         QuoteCheck: {
@@ -7163,6 +7301,11 @@ export interface components {
              * @default 0
              */
             attachment_count: number;
+            /**
+             * Archived At
+             * @description When it was archived; null while in use
+             */
+            archived_at?: string | null;
             /** Rank */
             rank: number;
             /**
@@ -10399,6 +10542,72 @@ export interface operations {
             };
             /** @description Not found, or not visible to you */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    delete_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -15368,6 +15577,8 @@ export interface operations {
                 order?: "rank" | "priority" | "created" | "updated";
                 limit?: number;
                 offset?: number;
+                /** @description `exclude` archived issues (the default), `include` them, or `only` them */
+                archived?: "exclude" | "include" | "only";
             };
             header?: never;
             path: {
@@ -15815,6 +16026,73 @@ export interface operations {
             };
         };
     };
+    delete_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     update_issue: {
         parameters: {
             query?: never;
@@ -15997,6 +16275,311 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    move_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueMove"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    delete_issue_comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                comment_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    edit_issue_comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                comment_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    react_to_issue_comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                comment_id: string;
+                emoji: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    unreact_to_issue_comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                comment_id: string;
+                emoji: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -16424,6 +17007,8 @@ export interface operations {
                 watching?: boolean;
                 /** @description Only issues you starred (your Favorites) */
                 starred?: boolean;
+                /** @description `exclude` archived issues (the default), `include` them, or `only` them */
+                archived?: "exclude" | "include" | "only";
                 label?: string | null;
                 /** @description Due on or before this day */
                 due_before?: string | null;

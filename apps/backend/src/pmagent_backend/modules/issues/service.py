@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, case, delete, exists, func, or_, select
+from sqlalchemy import and_, case, delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from uuid_utils.compat import uuid7
@@ -27,6 +27,7 @@ from pmagent_backend.core.storage import BlobStorage
 from pmagent_backend.modules.audit.service import AuditLog
 from pmagent_backend.modules.automations.events import record_event
 from pmagent_backend.modules.automations.models import AutomationEvent
+from pmagent_backend.modules.coding.models import CodingRun
 from pmagent_backend.modules.documents.service import safe_filename
 from pmagent_backend.modules.knowledge.models import AuthorType
 from pmagent_backend.modules.notifications.notify import Notifier
@@ -157,6 +158,18 @@ def _checklist_progress(items: list[dict[str, Any]]) -> str:
 
 class AttachmentTooLarge(Unprocessable):
     code = "attachment_too_large"
+
+
+ArchivedFilter = str  # "exclude" (default), "include", or "only"
+
+
+def _archived(mode: ArchivedFilter) -> Any:
+    """Which issues by archive state: in use (exclude archived), all (include), or archived only."""
+    if mode == "only":
+        return Issue.archived_at.is_not(None)
+    if mode == "include":
+        return True
+    return Issue.archived_at.is_(None)
 
 
 def blocked_clause() -> Any:
@@ -344,8 +357,9 @@ class IssueService:
         order: str = "rank",
         limit: int = 500,
         offset: int = 0,
+        archived: ArchivedFilter = "exclude",
     ) -> list[IssueSummary]:
-        stmt = self._summary_query(project, types, statuses, assignee, label)
+        stmt = self._summary_query(project, types, statuses, assignee, label).where(_archived(archived))
         if parent is not None:
             parent_issue = await self._by_key(project, parent)
             stmt = stmt.where(Issue.parent_id == parent_issue.id)
@@ -371,6 +385,7 @@ class IssueService:
         reporter: str | None = None,
         watching: bool = False,
         starred: bool = False,
+        archived: ArchivedFilter = "exclude",
         label: str | None = None,
         due_before: date | None = None,
         order: str = "due",
@@ -390,7 +405,7 @@ class IssueService:
                 visible_to(member.user_id, member.role),
             )
         )
-        stmt = self._filtered(stmt, types, statuses, me if assignee == "me" else assignee, label)
+        stmt = self._filtered(stmt, types, statuses, me if assignee == "me" else assignee, label).where(_archived(archived))
         if reporter is not None:
             try:
                 reporter_id = uuid.UUID(me if reporter == "me" else reporter)
@@ -432,7 +447,7 @@ class IssueService:
         label: str | None = None,
         epic: str | None = None,
     ) -> Board:
-        stmt = self._summary_query(project, types, (), assignee, label)
+        stmt = self._summary_query(project, types, (), assignee, label).where(Issue.archived_at.is_(None))
         if epic is not None:
             epic_issue = await self._by_key(project, epic)
             stmt = stmt.where(Issue.parent_id == epic_issue.id)
@@ -509,6 +524,9 @@ class IssueService:
                 issue.checklist = items
         if "recurrence" in sent:
             change("recurrence", data.recurrence)
+        if data.archived is not None and data.archived != (issue.archived_at is not None):
+            changes["archived"] = [issue.archived_at is not None, data.archived]
+            issue.archived_at = _now() if data.archived else None
 
         if "assignee_user_id" in sent or "assignee_agent" in sent:
             self._check_assignment(actor, data.assignee_agent)
@@ -631,6 +649,127 @@ class IssueService:
         if on:
             self.session.add(IssueWatcher(issue_id=issue.id, user_id=user_id))
         await self.session.commit()
+        return await self.get(project, issue.key)
+
+    # -- delete and move -------------------------------------------------------------------
+
+    async def delete(self, project: Project, key: str, actor: IssueActor) -> list[str]:
+        """Delete an issue and its log, files, and stars: owners and admins, or whoever reported
+        it. Not while it has sub-issues. Returns its files' storage keys, to delete once committed."""
+        issue = await self._by_key(project, key, for_update=True)
+        if actor.agent_name is not None:
+            raise Forbidden("Agents can't delete issues")
+        if not (can(actor.member, Permission.MANAGE_PROJECTS) or issue.reporter_user_id == actor.user_id):
+            raise Forbidden("Only owners, admins, or whoever reported it can delete an issue")
+        await self._check_no_children(issue)
+        keys = list(await self.session.scalars(select(IssueAttachment.storage_key).where(IssueAttachment.issue_id == issue.id)))
+        self._audit(project, actor, "issue.deleted", issue, {"title": issue.title})
+        await self.session.delete(issue)
+        await self.session.commit()
+        return keys
+
+    async def move(self, project: Project, key: str, actor: IssueActor, target: Project) -> IssueRead:
+        """Move an issue to another project of the workspace: it's created there with the next key
+        (its log, comments, watchers, stars, and files go with it) and deleted here. Links that only
+        make sense in one project (its parent, dependencies) stay behind. Not while it has sub-issues
+        or coding sessions (their branch belongs to this project's repo)."""
+        if target.id == project.id:
+            raise InvalidIssue(f"{normalize_key(key)} is already in {project.key}")
+        if actor.agent_name is not None:
+            raise Forbidden("Agents can't move issues")
+        issue = await self._by_key(project, key, for_update=True)
+        await self._check_no_children(issue)
+        if await self.session.scalar(select(CodingRun.id).where(CodingRun.issue_id == issue.id).limit(1)) is not None:
+            raise Conflict(f"{issue.key} has coding sessions, which belong to {project.key}'s repo")
+        assignee = issue.assignee_user_id
+        if assignee is not None and not await ProjectRepository(self.session).can_see(target, assignee):
+            assignee = None  # they can't see the other project
+        data = IssueCreate(
+            type=IssueType.TASK if issue.type is IssueType.SUB_TASK else issue.type,
+            title=issue.title, description=issue.description, status=issue.status, priority=issue.priority,
+            estimate=issue.estimate, due=issue.due, scheduled=issue.scheduled, labels=issue.labels,
+            components=issue.components, links=issue.links, checklist=issue.checklist, recurrence=issue.recurrence,
+            assignee_user_id=assignee, assignee_agent=issue.assignee_agent,
+        )
+        moved = await self._insert(target, actor, data)
+        moved.created_at, moved.resolved_at, moved.archived_at = issue.created_at, issue.resolved_at, issue.archived_at
+        await self.session.flush()
+        # What goes with it: its log (comments included), watchers, stars, and files.
+        await self.session.execute(delete(IssueWatcher).where(IssueWatcher.issue_id == moved.id))
+        for model in (IssueEvent, IssueWatcher, IssueStar):
+            await self.session.execute(update(model).where(model.issue_id == issue.id).values(issue_id=moved.id))
+        await self.session.execute(
+            update(IssueAttachment).where(IssueAttachment.issue_id == issue.id).values(issue_id=moved.id, project_id=target.id)
+        )
+        self._event(moved, actor, IssueEventKind.UPDATED, changes={"key": [issue.key, moved.key]})
+        self._audit(project, actor, "issue.moved", issue, {"to": moved.key})
+        await self.session.delete(issue)
+        await self.session.commit()
+        return await self.get(target, moved.key)
+
+    async def _check_no_children(self, issue: Issue) -> None:
+        children = list(await self.session.scalars(select(Issue.key).where(Issue.parent_id == issue.id).order_by(Issue.number)))
+        if children:
+            raise Conflict(f"{issue.key} has sub-issues ({', '.join(children)}); move or delete them first")
+
+    # -- comments ---------------------------------------------------------------------------
+
+    async def _comment(self, issue: Issue, comment_id: uuid.UUID) -> IssueEvent:
+        found = await self.session.scalar(
+            select(IssueEvent).where(
+                IssueEvent.id == comment_id, IssueEvent.issue_id == issue.id, IssueEvent.kind == IssueEventKind.COMMENTED
+            )
+        )
+        if found is None:
+            raise NotFound("Comment not found")
+        return found
+
+    async def edit_comment(
+        self, project: Project, key: str, actor: IssueActor, comment_id: uuid.UUID, body: str
+    ) -> IssueRead:
+        """Change a comment's text: its author only."""
+        issue = await self._by_key(project, key)
+        comment = await self._comment(issue, comment_id)
+        if actor.agent_name is not None or comment.author_user_id != actor.user_id:
+            raise Forbidden("Only its author can edit a comment")
+        if body != comment.body:
+            comment.body, comment.edited_at = body, _now()
+            await self.session.commit()
+        return await self.get(project, issue.key)
+
+    async def delete_comment(self, project: Project, key: str, actor: IssueActor, comment_id: uuid.UUID) -> IssueRead:
+        """Delete a comment: its author, or owners and admins."""
+        issue = await self._by_key(project, key)
+        comment = await self._comment(issue, comment_id)
+        mine = actor.agent_name is None and comment.author_user_id == actor.user_id
+        if not (mine or can(actor.member, Permission.MANAGE_PROJECTS)):
+            raise Forbidden("Only its author, owners, or admins can delete a comment")
+        self._audit(project, actor, "issue.comment_deleted", issue, {"author_user_id": str(comment.author_user_id)})
+        await self.session.delete(comment)
+        await self.session.commit()
+        return await self.get(project, issue.key)
+
+    async def react(
+        self, project: Project, key: str, user_id: uuid.UUID, comment_id: uuid.UUID, emoji: str, *, on: bool
+    ) -> IssueRead:
+        """Add or take back your reaction to a comment."""
+        issue = await self._by_key(project, key)
+        comment = await self._comment(issue, comment_id)
+        reactions = {k: list(v) for k, v in (comment.reactions or {}).items()}
+        who = reactions.get(emoji, [])
+        if on and str(user_id) not in who:
+            if emoji not in reactions and len(reactions) >= 20:
+                raise InvalidIssue("A comment takes at most 20 different reactions")
+            reactions[emoji] = [*who, str(user_id)]
+        elif not on and str(user_id) in who:
+            rest = [u for u in who if u != str(user_id)]
+            if rest:
+                reactions[emoji] = rest
+            else:
+                reactions.pop(emoji)
+        if reactions != comment.reactions:
+            comment.reactions = reactions  # a new dict, so the change is saved
+            await self.session.commit()
         return await self.get(project, issue.key)
 
     # -- stars (per person) ----------------------------------------------------------------
@@ -861,6 +1000,7 @@ class IssueService:
                 Issue.project_id == project.id,
                 Issue.status == IssueStatus.TODO,
                 Issue.type != IssueType.EPIC,  # epics are containers, not work
+                Issue.archived_at.is_(None),
                 ~blocked_clause(),
                 or_(unassigned, mine),
             )

@@ -58,6 +58,7 @@ import { D, S, allTasks, canSee, logAct as logActSub, me, mem, mutate, pColor, p
 import type { Task } from "../data/types";
 import { Av, AvStack, PrIcon, StIcon } from "../ui/helpers";
 import { FIELDS, viewChange, viewOf } from "../shell/viewEngine";
+import { toggleReaction } from "./Drawer";
 import { taskForm } from "./Modals";
 import { openPaletteSoon } from "../shell/Shell";
 
@@ -735,10 +736,7 @@ export function react(commentId: string, e: string) {
   const c = D().comments.find((x) => x.id === commentId);
   if (!c) return;
   S.ui.pop = null;
-  mutate(() => {
-    const list = c.re[e] || (c.re[e] = []);
-    c.re[e] = list.includes(D().me) ? list.filter((x) => x !== D().me) : [...list, D().me];
-  });
+  toggleReaction(c, e);
 }
 
 function BulkMenu({ p }: { p: P }) {

@@ -556,3 +556,105 @@ async def test_starring_is_for_you_alone(project, db_client: AsyncClient, signup
 
     assert (await db_client.delete(f"{url}/{made['key']}/star", headers=ada.headers)).status_code == 204
     assert (await db_client.get(f"/v1/workspaces/{team['id']}/issues?starred=true", headers=ada.headers)).json() == []
+
+
+# -- archive, delete, move, comments ------------------------------------------------------
+
+
+async def test_an_archived_issue_leaves_the_board_and_lists(project, db_client: AsyncClient) -> None:
+    ada, team, url = await project()
+    made = await new(db_client, url, ada.headers, title="Old idea")
+    res = await patch(db_client, url, made["key"], ada.headers, archived=True)
+    assert res.status_code == 200 and res.json()["archived_at"] is not None
+
+    assert [i["key"] for i in (await db_client.get(url, headers=ada.headers)).json()] == []
+    board = (await db_client.get(f"{url}/board", headers=ada.headers)).json()
+    assert all(not col["issues"] for col in board["columns"])
+    ws = f"/v1/workspaces/{team['id']}/issues"
+    assert [i["key"] for i in (await db_client.get(f"{ws}?archived=only", headers=ada.headers)).json()] == [made["key"]]
+    assert [i["key"] for i in (await db_client.get(f"{ws}?archived=include", headers=ada.headers)).json()] == [made["key"]]
+
+    await patch(db_client, url, made["key"], ada.headers, archived=False)
+    assert [i["key"] for i in (await db_client.get(url, headers=ada.headers)).json()] == [made["key"]]
+
+
+async def test_deleting_an_issue(project, db_client: AsyncClient, signup, add_member, storage) -> None:
+    ada, team, url = await project()
+    grace = await signup(email="grace-del@example.com", name="Grace")
+    await add_member(team["id"], grace.id, Role.MEMBER)
+    epic = await new(db_client, url, ada.headers, type="epic", title="Epic")
+    child = await new(db_client, url, ada.headers, title="Child", parent=epic["key"])
+    await db_client.post(f"{url}/{child['key']}/attachments", files={"file": ("a.txt", b"a", "text/plain")}, headers=ada.headers)
+    hers = await new(db_client, url, grace.headers, title="Grace's")
+
+    assert (await db_client.delete(f"{url}/{epic['key']}", headers=ada.headers)).status_code == 409  # has a child
+    assert (await db_client.delete(f"{url}/{child['key']}", headers=grace.headers)).status_code == 403  # not hers
+    assert (await db_client.delete(f"{url}/{hers['key']}", headers=grace.headers)).status_code == 204  # she reported it
+    assert (await db_client.delete(f"{url}/{child['key']}", headers=ada.headers)).status_code == 204
+    assert (await db_client.get(f"{url}/{child['key']}", headers=ada.headers)).status_code == 404
+    assert storage.objects == {}
+    assert (await db_client.delete(f"{url}/{epic['key']}", headers=ada.headers)).status_code == 204
+
+
+async def test_moving_an_issue_creates_it_there_with_its_history(project, db_client: AsyncClient) -> None:
+    ada, team, url = await project()
+    other = (
+        await db_client.post(f"/v1/workspaces/{team['id']}/projects", json={"key": "OPS", "name": "Ops"}, headers=ada.headers)
+    ).json()
+    other_url = f"/v1/workspaces/{team['id']}/projects/{other['id']}/issues"
+    blocker = await new(db_client, url, ada.headers, title="Blocker")
+    made = await new(
+        db_client, url, ada.headers, title="Move me", priority="high", labels=["infra"], depends_on=[blocker["key"]],
+        checklist=[{"id": "a", "title": "Step"}],
+    )
+    await db_client.post(f"{url}/{made['key']}/comments", json={"body": "Keep this"}, headers=ada.headers)
+    await db_client.put(f"{url}/{made['key']}/star", headers=ada.headers)
+    await db_client.post(
+        f"{url}/{made['key']}/attachments", files={"file": ("plan.txt", b"plan", "text/plain")}, headers=ada.headers
+    )
+
+    moved = await db_client.post(f"{url}/{made['key']}/move", json={"project_id": other["id"]}, headers=ada.headers)
+    assert moved.status_code == 200, moved.text
+    body = moved.json()
+    assert body["key"] == "OPS-1" and body["title"] == "Move me" and body["priority"] == "high"
+    assert body["labels"] == ["infra"] and body["checklist"][0]["title"] == "Step"
+    assert body["depends_on"] == []  # dependencies belong to the old project
+    assert any(e["kind"] == "commented" and e["body"] == "Keep this" for e in body["log"])
+    assert [a["filename"] for a in body["attachments"]] == ["plan.txt"]
+    assert any(e["changes"].get("key") == [made["key"], "OPS-1"] for e in body["log"])
+    assert (await db_client.get(f"{url}/{made['key']}", headers=ada.headers)).status_code == 404
+    starred = (await db_client.get(f"/v1/workspaces/{team['id']}/issues?starred=true", headers=ada.headers)).json()
+    assert [i["key"] for i in starred] == ["OPS-1"]
+    download = await db_client.get(f"{other_url}/OPS-1/attachments/{body['attachments'][0]['id']}", headers=ada.headers)
+    assert download.content == b"plan"
+
+    same = await db_client.post(f"{other_url}/OPS-1/move", json={"project_id": other["id"]}, headers=ada.headers)
+    assert same.status_code == 422
+
+
+async def test_comments_can_be_edited_deleted_and_reacted_to(project, db_client: AsyncClient, signup, add_member) -> None:
+    ada, team, url = await project()
+    grace = await signup(email="grace-c@example.com", name="Grace")
+    await add_member(team["id"], grace.id, Role.MEMBER)
+    made = await new(db_client, url, ada.headers)
+    posted = (await db_client.post(f"{url}/{made['key']}/comments", json={"body": "First draft"}, headers=grace.headers)).json()
+    comment = next(e for e in posted["log"] if e["kind"] == "commented")
+    curl = f"{url}/{made['key']}/comments/{comment['id']}"
+
+    assert (await db_client.patch(curl, json={"body": "Not mine"}, headers=ada.headers)).status_code == 403
+    edited = await db_client.patch(curl, json={"body": "Second draft"}, headers=grace.headers)
+    assert edited.status_code == 200
+    after = next(e for e in edited.json()["log"] if e["id"] == comment["id"])
+    assert after["body"] == "Second draft" and after["edited_at"] is not None
+
+    await db_client.put(f"{curl}/reactions/\N{THUMBS UP SIGN}", headers=ada.headers)
+    await db_client.put(f"{curl}/reactions/\N{THUMBS UP SIGN}", headers=ada.headers)  # once each
+    liked = (await db_client.put(f"{curl}/reactions/\N{THUMBS UP SIGN}", headers=grace.headers)).json()
+    assert next(e for e in liked["log"] if e["id"] == comment["id"])["reactions"] == {"\N{THUMBS UP SIGN}": [ada.id, grace.id]}
+    unliked = (await db_client.delete(f"{curl}/reactions/\N{THUMBS UP SIGN}", headers=ada.headers)).json()
+    assert next(e for e in unliked["log"] if e["id"] == comment["id"])["reactions"] == {"\N{THUMBS UP SIGN}": [grace.id]}
+
+    # Owners and admins may delete anyone's comment.
+    gone = await db_client.delete(curl, headers=ada.headers)
+    assert gone.status_code == 200
+    assert not any(e["id"] == comment["id"] for e in gone.json()["log"])

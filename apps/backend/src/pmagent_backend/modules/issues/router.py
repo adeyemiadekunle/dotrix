@@ -4,6 +4,7 @@ Issue keys (`KUN-42`) go in the URL and are case-insensitive.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date
 from typing import Annotated, Literal
@@ -12,8 +13,9 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 
 from pmagent_backend.api.deps import SessionDep, SettingsDep, require_permission
+from pmagent_backend.core.errors import NotFound
 from pmagent_backend.core.openapi import errors
-from pmagent_backend.core.storage import BlobStorage, get_storage
+from pmagent_backend.core.storage import BlobStorage, get_storage, optional_storage
 from pmagent_backend.modules.coding.router import Coding
 from pmagent_backend.modules.coding.service import CODING_AGENTS
 from pmagent_backend.modules.projects.deps import (
@@ -21,6 +23,7 @@ from pmagent_backend.modules.projects.deps import (
     ProjectViewer,
     require_project_permission,
 )
+from pmagent_backend.modules.projects.repository import ProjectRepository
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
@@ -29,8 +32,11 @@ from .schemas import (
     Board,
     ClaimRequest,
     CommentCreate,
+    CommentUpdate,
+    Emoji,
     EpicProgress,
     IssueCreate,
+    IssueMove,
     IssueRead,
     IssueSummary,
     IssueUpdate,
@@ -46,6 +52,15 @@ router = APIRouter(
 )
 
 Editor = Annotated[ProjectAccess, Depends(require_project_permission(Permission.EDIT_ISSUES))]
+
+ARCHIVED_FILTER = Query(
+    default="exclude", description="`exclude` archived issues (the default), `include` them, or `only` them"
+)
+logger = logging.getLogger(__name__)
+
+
+
+OptionalStorage = Annotated[BlobStorage | None, Depends(optional_storage)]
 
 ASSIGNEE_FILTER = Query(
     default=None, description="A user ID, an agent (coding-agent, claude-code, codex), or `none`"
@@ -82,12 +97,13 @@ async def list_issues(
     order: Literal["rank", "priority", "created", "updated"] = "rank",
     limit: int = Query(default=500, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
+    archived: Literal["exclude", "include", "only"] = ARCHIVED_FILTER,
 ) -> list[IssueSummary]:
     """Issues, filtered. `order=rank` is the backlog order; `priority` is urgent first, then
     earliest due, then oldest."""
     return await IssueService(session).list(
         access.project, types=type, statuses=status, assignee=assignee, label=label,
-        parent=parent, ready=ready, order=order, limit=limit, offset=offset,
+        parent=parent, ready=ready, order=order, limit=limit, offset=offset, archived=archived,
     )
 
 
@@ -177,6 +193,60 @@ async def comment_on_issue(
 async def rank_issue(key: str, data: RankRequest, access: Editor, session: SessionDep) -> IssueRead:
     """Move an issue in the backlog: just before or just after another issue."""
     return await IssueService(session).rank(access.project, key, data)
+
+
+@router.delete("/{key}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 409))
+async def delete_issue(key: str, access: Editor, session: SessionDep, storage: OptionalStorage) -> None:
+    """Delete an issue with its log and files. It can't be undone (archive it to keep it). Owners
+    and admins, or whoever reported it; 409 while it has sub-issues."""
+    keys = await IssueService(session).delete(access.project, key, _actor(access))
+    for stored in keys if storage is not None else []:  # after the commit: a failure only orphans a file
+        try:
+            await storage.delete(stored)
+        except Exception:  # noqa: BLE001 - the issue is gone either way
+            logger.warning("couldn't delete %s from storage", stored)
+
+
+@router.post("/{key}/move", responses=errors(403, 409, 422))
+async def move_issue(key: str, data: IssueMove, access: Editor, session: SessionDep) -> IssueRead:
+    """Move an issue to another project in the workspace: it's created there with that project's
+    next key, taking its log, comments, watchers, stars, and files, and deleted here. Its parent and
+    dependencies stay behind (they belong to this project). 409 while it has sub-issues or coding
+    sessions."""
+    target = await ProjectRepository(session).visible(access.member, data.project_id)
+    if target is None:
+        raise NotFound("Project not found")
+    return await IssueService(session).move(access.project, key, _actor(access), target)
+
+
+@router.patch("/{key}/comments/{comment_id}", responses=errors(403, 422))
+async def edit_issue_comment(
+    key: str, comment_id: uuid.UUID, data: CommentUpdate, access: Editor, session: SessionDep
+) -> IssueRead:
+    """Change a comment's text (its author only); it's marked edited."""
+    return await IssueService(session).edit_comment(access.project, key, _actor(access), comment_id, data.body)
+
+
+@router.delete("/{key}/comments/{comment_id}", responses=errors(403))
+async def delete_issue_comment(key: str, comment_id: uuid.UUID, access: Editor, session: SessionDep) -> IssueRead:
+    """Delete a comment: its author, or owners and admins."""
+    return await IssueService(session).delete_comment(access.project, key, _actor(access), comment_id)
+
+
+@router.put("/{key}/comments/{comment_id}/reactions/{emoji}", responses=errors(422))
+async def react_to_issue_comment(
+    key: str, comment_id: uuid.UUID, emoji: Emoji, access: ProjectViewer, session: SessionDep
+) -> IssueRead:
+    """React to a comment with an emoji (once per emoji each)."""
+    return await IssueService(session).react(access.project, key, access.member.user_id, comment_id, emoji, on=True)
+
+
+@router.delete("/{key}/comments/{comment_id}/reactions/{emoji}")
+async def unreact_to_issue_comment(
+    key: str, comment_id: uuid.UUID, emoji: Emoji, access: ProjectViewer, session: SessionDep
+) -> IssueRead:
+    """Take back your reaction to a comment."""
+    return await IssueService(session).react(access.project, key, access.member.user_id, comment_id, emoji, on=False)
 
 
 @router.put("/{key}/star", status_code=status.HTTP_204_NO_CONTENT)
@@ -269,6 +339,7 @@ async def list_workspace_issues(
     reporter: str | None = Query(default=None, description="`me` or a user ID"),
     watching: bool = Query(default=False, description="Only issues you watch"),
     starred: bool = Query(default=False, description="Only issues you starred (your Favorites)"),
+    archived: Literal["exclude", "include", "only"] = ARCHIVED_FILTER,
     label: str | None = None,
     due_before: date | None = Query(default=None, description="Due on or before this day"),
     order: Literal["due", "priority", "created", "updated"] = "due",
@@ -279,6 +350,6 @@ async def list_workspace_issues(
     with its project. Restricted projects you aren't on are left out. `order=due` is earliest
     due first (no date last), then most urgent."""
     return await IssueService(session).across_projects(
-        member, types=type, statuses=status, assignee=assignee, reporter=reporter, watching=watching, starred=starred,
+        member, types=type, statuses=status, assignee=assignee, reporter=reporter, watching=watching, starred=starred, archived=archived,
         label=label, due_before=due_before, order=order, limit=limit, offset=offset,
     )

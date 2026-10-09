@@ -129,6 +129,9 @@ class ProjectService:
             project.icon = data.icon
         if "color" in data.model_fields_set:
             project.color = data.color
+        if data.archived is not None and data.archived != (project.archived_at is not None):
+            project.archived_at = datetime.now(UTC) if data.archived else None
+            self._audit(actor, project, "project.archived" if data.archived else "project.restored")
         if "repo_url" in data.model_fields_set and data.repo_url != project.repo_url:
             if data.repo_url and (
                 taken := [p for p in await self.projects.list(project.workspace_id, repo_url=data.repo_url)
@@ -139,6 +142,28 @@ class ProjectService:
         await self.session.commit()
         await self.session.refresh(project)  # updated_at is set by the database
         return ProjectRead.model_validate(project)
+
+    async def delete(self, project: Project, actor: Membership) -> list[str]:
+        """Delete a project and everything in it (issues, knowledge, documents, runs). Not while an
+        agent run is working or waiting. Its audit history stays, recorded in the workspace.
+        Returns the storage keys of its files, to delete once this is committed."""
+        active = await self.session.scalar(
+            select(AgentRun.id).where(AgentRun.project_id == project.id, AgentRun.status.in_(ACTIVE_STATUSES)).limit(1)
+        )
+        if active is not None:
+            raise Conflict("An agent run is still working or waiting for approval; stop it or decide it first")
+        keys = [
+            *await self.session.scalars(select(Document.storage_key).where(Document.project_id == project.id)),
+            *await self.session.scalars(select(IssueAttachment.storage_key).where(IssueAttachment.project_id == project.id)),
+        ]
+        AuditLog(self.session).record(
+            workspace_id=project.workspace_id, project_id=None, action="project.deleted", target=project.key,
+            actor_type=AuthorType.USER, actor_user_id=actor.user_id,
+            details={"project_id": str(project.id), "name": project.name},
+        )
+        await self.session.delete(project)
+        await self.session.commit()
+        return keys
 
     # -- stars (per person) --------------------------------------------------------------
 

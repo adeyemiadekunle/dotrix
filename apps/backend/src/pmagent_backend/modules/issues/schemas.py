@@ -126,6 +126,9 @@ class IssueUpdate(_AssigneeFields):
         default=None, description="Replaces the whole checklist"
     )
     recurrence: Recurrence | None = None
+    archived: bool | None = Field(
+        default=None, description="true archives it (off the board and lists, kept as it is), false restores it"
+    )
     note: str | None = Field(default=None, max_length=5_000, description="Added to the issue's log")
     as_agent: AgentAssignee | None = AS_AGENT
 
@@ -138,6 +141,17 @@ class CommentCreate(BaseModel):
         description="People @mentioned (user ids). Each is told if \"@Their Name\" is in the text and they "
         "can see the project; others are ignored",
     )
+
+
+class CommentUpdate(BaseModel):
+    body: str = Field(min_length=1, max_length=20_000)
+
+
+Emoji = Annotated[str, StringConstraints(min_length=1, max_length=16)]
+
+
+class IssueMove(BaseModel):
+    project_id: uuid.UUID = Field(description="The project to move it to, in the same workspace")
 
 
 class RankRequest(BaseModel):
@@ -184,6 +198,7 @@ class IssueSummary(BaseModel):
         default=None, description="The key of the issue made when this repeating one was finished"
     )
     attachment_count: int = 0
+    archived_at: datetime | None = Field(default=None, description="When it was archived; null while in use")
     rank: float
     created_at: datetime
     updated_at: datetime
@@ -200,12 +215,17 @@ class WorkspaceIssue(IssueSummary):
 class IssueEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    id: uuid.UUID
     kind: IssueEventKind
     author_user_id: uuid.UUID | None
     author_agent: str | None
     body: str | None
     changes: dict[str, Any]
     created_at: datetime
+    edited_at: datetime | None = Field(default=None, description="Comments: when its author last changed it")
+    reactions: dict[str, list[uuid.UUID]] = Field(
+        default_factory=dict, description="Comments: who reacted with each emoji"
+    )
 
 
 class IssueRead(IssueSummary):

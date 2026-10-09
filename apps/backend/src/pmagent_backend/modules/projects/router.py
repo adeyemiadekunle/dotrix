@@ -1,6 +1,7 @@
 """Projects (FR-9). Each project's `.pmagent/` lives under .../knowledge (modules/knowledge)."""
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Annotated
 
@@ -9,6 +10,7 @@ from fastapi import APIRouter, Depends, Query, status
 from pmagent_backend.api.deps import CurrentUser, SessionDep, SettingsDep, require_permission
 from pmagent_backend.core.errors import Unprocessable
 from pmagent_backend.core.openapi import errors
+from pmagent_backend.core.storage import BlobStorage, optional_storage
 from pmagent_backend.modules.workspaces.models import Membership
 from pmagent_backend.modules.workspaces.permissions import Permission
 
@@ -24,6 +26,11 @@ router = APIRouter(
 )
 
 Viewer = Annotated[Membership, Depends(require_permission(Permission.VIEW))]
+
+
+
+Storage = Annotated[BlobStorage | None, Depends(optional_storage)]
+logger = logging.getLogger(__name__)
 Creator = Annotated[Membership, Depends(require_permission(Permission.MANAGE_PROJECTS))]
 
 
@@ -96,6 +103,19 @@ async def update_project(
     or link or unlink its repo (one project per repo in a workspace: 409 if another has it). The
     key can't change. Restricting it unassigns people who can no longer see it from its issues."""
     return await ProjectService(session).update(access.project, data, access.member)
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 409))
+async def delete_project(access: ProjectManager, session: SessionDep, storage: Storage) -> None:
+    """Delete a project and everything in it: issues, knowledge, documents and their files, agent
+    conversations. It can't be undone (archive it instead to keep it). 409 while an agent run is
+    working or waiting for approval. Its audit history stays, in the workspace's log. Owners and admins."""
+    keys = await ProjectService(session).delete(access.project, access.member)
+    for key in keys if storage is not None else []:  # after the commit: a failed delete only leaves an orphaned file
+        try:
+            await storage.delete(key)
+        except Exception:  # noqa: BLE001 - the project is gone either way
+            logger.warning("couldn't delete %s from storage", key)
 
 
 @router.post("/{project_id}/move", responses=errors(403, 409, 422))

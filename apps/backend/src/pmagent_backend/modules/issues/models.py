@@ -142,6 +142,8 @@ class Issue(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Archived: off the board, lists, and agents' next picks, kept as it is; null while in use.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class IssueDependency(Base):
@@ -190,6 +192,9 @@ class IssueEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     body: Mapped[str | None] = mapped_column(Text)  # comment text
     changes: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)  # {field: [old, new]}
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Comments only: when its author last changed it, and reactions ({"👍": [user ids]}).
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reactions: Mapped[dict[str, list[str]]] = mapped_column(JSONB, default=dict, server_default="{}")
 
 
 class IssueAttachment(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):

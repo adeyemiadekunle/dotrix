@@ -119,6 +119,12 @@ def build_storage(settings: Settings) -> BlobStorage | None:
     )
 
 
+def optional_storage(request: Request) -> BlobStorage | None:
+    """Storage when it's configured: for deletes, which work without it when there are no files."""
+    storage: BlobStorage | None = request.app.state.storage
+    return storage
+
+
 def get_storage(request: Request) -> BlobStorage:
     storage: BlobStorage | None = request.app.state.storage
     if storage is None:

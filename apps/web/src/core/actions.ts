@@ -2,7 +2,7 @@
 // They change the seeded data through mutate(); wiring the API turns these into API calls.
 import { PR, PSTAT, ST, type ProjectStatusId } from "./constants";
 import { TODAY, addD, fmtDate, iso, parse, uid } from "./utils";
-import { isLive, loadComments, projectChanged, projectStarred, roleChanged, taskCreated, taskPatched } from "../data/live";
+import { isLive, loadComments, projectChanged, projectStarred, roleChanged, taskCreated, taskMoved, taskPatched } from "../data/live";
 import { D, S, canSee, logAct, mem, mutate, proj, render, save, task, visibleProjects, who } from "../data/store";
 import type { Project, Task } from "../data/types";
 import { toast } from "../ui/toast";
@@ -64,6 +64,11 @@ export function applyPatch(t: Task & { prevStatus?: Task["status"] }, patch: Par
     const old = t[k];
     const nv = patch[k];
     if (JSON.stringify(old) === JSON.stringify(nv)) continue;
+    // A real workspace moves an issue on the API (a new key there); the store follows its answer.
+    if (k === "project" && isLive()) {
+      void taskMoved(t, nv as string);
+      continue;
+    }
     changed.push(k);
     (t as unknown as Record<string, unknown>)[k] = nv;
     if (k === "status") {
