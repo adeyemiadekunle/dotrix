@@ -23,6 +23,24 @@ const isPane = (v: string): v is Pane => PANES.some(([p]) => p === v);
 export const panesOf = (v: string | null): Pane[] => [...new Set((v ?? "").split(",").filter(isPane))].slice(0, 3);
 const meta = (p: Pane) => PANES.find(([x]) => x === p)!;
 
+/** The panels' icons, top right: in the right column's head while panels are open, at the end of
+ * the session's header when none are. Each opens its panel below the others, or closes it. */
+export function PaneToolbar({ cs, panes, onToggle }: { cs: CodingSession; panes: Pane[]; onToggle: (p: Pane) => void }) {
+  return (
+    <div className="row cs-panes" role="toolbar" aria-label="Session panels">
+      {PANES.map(([p, icon, name]) => (
+        <button key={p} className={`ibtn ibtn-sm ${panes.includes(p) ? "on" : ""}`} onClick={() => onToggle(p)} aria-label={name} aria-pressed={panes.includes(p)} data-tip={name}>
+          <Ic n={icon} s={15} />
+          {p === "tasks" && (cs.tasks ?? []).some((x) => x.status === "running") && <span className="cs-live" aria-hidden />}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Opens a panel below the others (three at most), or closes it. */
+export const togglePane = (panes: Pane[], p: Pane): Pane[] => (panes.includes(p) ? panes.filter((x) => x !== p) : [...panes, p].slice(-3));
+
 /** The open panels, stacked; the handle between two moves the space between them. */
 export function SessionPanels({ cs, panes, onPanes }: { cs: CodingSession; panes: Pane[]; onPanes: (p: Pane[]) => void }) {
   const ref = useRef<HTMLDivElement>(null);

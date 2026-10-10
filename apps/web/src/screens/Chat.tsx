@@ -19,7 +19,7 @@ import { Av, Empty, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { useAtPicker } from "../components/AtPicker";
-import { PANES, SessionPanels, panesOf, type Pane } from "../components/SessionPanel";
+import { PaneToolbar, SessionPanels, panesOf, togglePane, type Pane } from "../components/SessionPanel";
 import { Splitter, useStoredSize } from "../ui/splitter";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
@@ -634,8 +634,7 @@ export const paneSearch = (session: string, panes: Pane[]) => `tab=coding&sessio
 
 function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
   const t = task(cs.task)!;
-  // A header icon opens its panel below the others (three at most) or closes it.
-  const togglePane = (p: Pane) => open(paneSearch(cs.id, panes.includes(p) ? panes.filter((x) => x !== p) : [...panes, p].slice(-3)));
+
   const p = proj(cs.project)!;
   const [ask, setAsk] = useState("");
   const [label, c] = STATUS[cs.status];
@@ -668,14 +667,7 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
           <Ic n="ellipsis-vertical" s={15} />
         </button>
         <span className="sp" />
-        <div className="row cs-panes" role="toolbar" aria-label="Session panel">
-          {PANES.map(([p, icon, name]) => (
-            <button key={p} className={`ibtn ibtn-sm ${panes.includes(p) ? "on" : ""}`} onClick={() => togglePane(p)} aria-label={name} aria-pressed={panes.includes(p)} data-tip={name}>
-              <Ic n={icon} s={15} />
-              {p === "tasks" && (cs.tasks ?? []).some((x) => x.status === "running") && <span className="cs-live" aria-hidden />}
-            </button>
-          ))}
-        </div>
+        {panes.length === 0 && <PaneToolbar cs={cs} panes={panes} onToggle={(p) => open(paneSearch(cs.id, togglePane(panes, p)))} />}
       </div>
       <div className="chat-scroll">
         <div className="chat-col">
@@ -979,6 +971,10 @@ export function Chat() {
         {withPanel && cs && (
           <aside className="cs-col" aria-label="Session panels">
             <Splitter dir="col" className="edge-l" label="Resize the panels" onDrag={(d) => setPanelW((w) => w - d)} />
+            <div className="row cs-col-h">
+              <span className="sp" />
+              <PaneToolbar cs={cs} panes={panes} onToggle={(p) => open(paneSearch(cs.id, togglePane(panes, p)))} />
+            </div>
             <SessionPanels cs={cs} panes={panes} onPanes={(next) => open(paneSearch(cs.id, next))} />
           </aside>
         )}

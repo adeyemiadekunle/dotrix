@@ -1211,3 +1211,11 @@ body.resizing-row * {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* The right column's head: the panels' icons, top right, above the open panels. */
+.cs-col-h {
+  height: 46px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
