@@ -1,4 +1,4 @@
-from pmagent_engine.knowledge_index import describe, find_section, sections
+from dotrix_engine.knowledge_index import describe, find_section, sections
 
 
 def test_title_summary_and_outline() -> None:

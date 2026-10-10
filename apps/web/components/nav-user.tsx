@@ -10,9 +10,9 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@pmagent/ui/components/dropdown-menu";
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@pmagent/ui/components/sidebar";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+} from "@dotrix/ui/components/dropdown-menu";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@dotrix/ui/components/sidebar";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import {
   ArrowLeftRightIcon,
   CheckIcon,

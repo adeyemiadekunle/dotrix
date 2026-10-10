@@ -4,8 +4,8 @@ import pytest
 from httpx import AsyncClient
 from langchain_core.messages import AIMessage
 
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ async def test_steer_only_answers_checkpoints_and_members_still_cant_approve(
     world, db_client: AsyncClient, agent_script
 ) -> None:
     ada, _, cat, _, _, base = await world()
-    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "Update the roadmap"}, headers=cat.headers)).json()
     assert run["status"] == "awaiting_approval"
     url = f"{base}/agent/runs/{run['id']}/decisions"

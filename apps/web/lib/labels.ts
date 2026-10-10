@@ -1,4 +1,4 @@
-import type { Schemas } from "@pmagent/api-client";
+import type { Schemas } from "@dotrix/api-client";
 
 export const ROLE_LABELS: Record<Schemas["Role"], string> = {
   owner: "Owner",

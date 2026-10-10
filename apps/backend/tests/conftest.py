@@ -1,9 +1,9 @@
 """Backend test fixtures.
 
-Integration tests run against a real Postgres database: PMAGENT_TEST_DATABASE_URL
-if set, otherwise PMAGENT_DATABASE_URL (from .env) with the database name
-swapped to `pmagent_test`. Each run creates its own database named after that one
-(`pmagent_test_<random>`) and drops it at the end, so runs in different checkouts (or
+Integration tests run against a real Postgres database: DOTRIX_TEST_DATABASE_URL
+if set, otherwise DOTRIX_DATABASE_URL (from .env) with the database name
+swapped to `dotrix_test`. Each run creates its own database named after that one
+(`dotrix_test_<random>`) and drops it at the end, so runs in different checkouts (or
 side by side in one) never drop each other's database mid-test. The schema is migrated
 once per session with Alembic, and each test runs inside a transaction that is rolled
 back, so tests never see each other's data. Service code may call commit(): the
@@ -30,18 +30,18 @@ from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import make_url, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
-from pmagent_backend.core.email import OutboxEmailSender, get_email_sender
-from pmagent_backend.core.jobs import InlineJobs, JobContext
-from pmagent_backend.core.settings import Settings, get_database_settings
-from pmagent_backend.core.storage import MemoryBlobStorage, get_storage, optional_storage
-from pmagent_backend.db.session import get_session
-from pmagent_backend.jobs import JOBS
-from pmagent_backend.main import create_app
-from pmagent_backend.modules.agents.llm import ModelChoice, ModelUnavailable
-from pmagent_backend.modules.agents.runner import AgentRunner
-from pmagent_backend.modules.code.checkouts import CodeCheckouts
-from pmagent_backend.modules.workspaces.models import Membership, Role
-from pmagent_engine.testing import ScriptedChatModel
+from dotrix_backend.core.email import OutboxEmailSender, get_email_sender
+from dotrix_backend.core.jobs import InlineJobs, JobContext
+from dotrix_backend.core.settings import Settings, get_database_settings
+from dotrix_backend.core.storage import MemoryBlobStorage, get_storage, optional_storage
+from dotrix_backend.db.session import get_session
+from dotrix_backend.jobs import JOBS
+from dotrix_backend.main import create_app
+from dotrix_backend.modules.agents.llm import ModelChoice, ModelUnavailable
+from dotrix_backend.modules.agents.runner import AgentRunner
+from dotrix_backend.modules.code.checkouts import CodeCheckouts
+from dotrix_backend.modules.workspaces.models import Membership, Role
+from dotrix_engine.testing import ScriptedChatModel
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # For tests that never open a connection; no credentials.
@@ -50,10 +50,10 @@ UNUSED_DATABASE_URL = "postgresql+asyncpg://localhost/unused"
 
 def resolve_test_database_url() -> str:
     """This run's own database: the configured test database's name plus a random suffix."""
-    if url := os.environ.get("PMAGENT_TEST_DATABASE_URL"):
+    if url := os.environ.get("DOTRIX_TEST_DATABASE_URL"):
         base = make_url(url)
     else:
-        base = make_url(get_database_settings().database_url).set(database="pmagent_test")
+        base = make_url(get_database_settings().database_url).set(database="dotrix_test")
     run_database = f"{base.database}_{uuid.uuid4().hex[:8]}"
     return base.set(database=run_database).render_as_string(hide_password=False)
 
@@ -138,12 +138,12 @@ async def client() -> AsyncIterator[AsyncClient]:
         yield c
 
 
-REDIS_URL = os.environ.get("PMAGENT_TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
+REDIS_URL = os.environ.get("DOTRIX_TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
 
 
 @pytest.fixture
 async def redis() -> AsyncIterator[Any]:
-    """An arq Redis pool on $PMAGENT_TEST_REDIS_URL (or local database 15); the test is
+    """An arq Redis pool on $DOTRIX_TEST_REDIS_URL (or local database 15); the test is
     skipped if Redis isn't reachable. Use unique key prefixes / queue names per test."""
     try:
         pool = await create_pool(RedisSettings.from_dsn(REDIS_URL), retry=0)

@@ -15,12 +15,12 @@ import yaml
 from deepagents.backends import CompositeBackend, StateBackend
 from langgraph.checkpoint.memory import InMemorySaver
 
-from pmagent_engine import approvals
-from pmagent_engine.agent import build_team
-from pmagent_engine.builtins import builtin_specs
-from pmagent_engine.contracts import AgentSpec
-from pmagent_engine.testing import ScriptedChatModel, tool_call
-from pmagent_engine.web import FakeSearch, PageFetcher, SearchHit, build_web_tools
+from dotrix_engine import approvals
+from dotrix_engine.agent import build_team
+from dotrix_engine.builtins import builtin_specs
+from dotrix_engine.contracts import AgentSpec
+from dotrix_engine.testing import ScriptedChatModel, tool_call
+from dotrix_engine.web import FakeSearch, PageFetcher, SearchHit, build_web_tools
 
 CASES = [
     pytest.param(case, id=f"{path.stem}: {case['name']}")
@@ -92,7 +92,7 @@ def test_eval(case: dict[str, Any]) -> None:
     results: list = []
     team = build_team(
         "Kunemi", "Logistics platform", model,
-        CompositeBackend(default=StateBackend(), routes={"/pmagent/": StateBackend()}),
+        CompositeBackend(default=StateBackend(), routes={"/dotrix/": StateBackend()}),
         checkpointer=InMemorySaver(),
         task_tools=(reads[:2], writes), subagent_task_tools=writes, knowledge_tools=reads[2:],
         web_search={"name": "web_search", "type": "web_search_20250305"},

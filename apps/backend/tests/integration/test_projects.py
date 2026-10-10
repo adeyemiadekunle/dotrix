@@ -1,13 +1,13 @@
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.modules.workspaces.models import Role
 
 
 def projects_url(team: dict) -> str:
     return f"/v1/workspaces/{team['id']}/projects"
 
 
-async def test_create_project_scaffolds_pmagent(signup, create_team, db_client: AsyncClient) -> None:
+async def test_create_project_scaffolds_dotrix(signup, create_team, db_client: AsyncClient) -> None:
     ada = await signup()
     team = await create_team(ada.headers)
     res = await db_client.post(
@@ -263,7 +263,7 @@ async def test_moving_needs_project_setup_rights_in_both_workspaces(
 async def test_moving_refuses_a_taken_key_or_repo_and_active_runs(
     signup, create_team, db_client: AsyncClient, agent_script
 ) -> None:
-    from pmagent_engine.testing import tool_call
+    from dotrix_engine.testing import tool_call
 
     ada = await signup()
     one = await create_team(ada.headers, "One")
@@ -283,7 +283,7 @@ async def test_moving_refuses_a_taken_key_or_repo_and_active_runs(
     assert res.status_code == 409 and res.json()["type"].endswith("/repo_taken")
 
     four = await create_team(ada.headers, "Four")
-    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
     run = (await db_client.post(f"{projects_url(one)}/{project['id']}/agent/runs", json={"message": "Plan"},
                                 headers=ada.headers)).json()
     assert run["status"] == "awaiting_approval"

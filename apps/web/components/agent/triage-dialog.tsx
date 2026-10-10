@@ -1,4 +1,4 @@
-import { Button } from "@pmagent/ui/components/button";
+import { Button } from "@dotrix/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -6,9 +6,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@pmagent/ui/components/dialog";
-import { Label } from "@pmagent/ui/components/label";
-import { Textarea } from "@pmagent/ui/components/textarea";
+} from "@dotrix/ui/components/dialog";
+import { Label } from "@dotrix/ui/components/label";
+import { Textarea } from "@dotrix/ui/components/textarea";
 import { useState, type FormEvent } from "react";
 
 import { SubmitButton } from "@/components/form";

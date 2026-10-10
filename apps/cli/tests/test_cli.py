@@ -1,6 +1,6 @@
 from typer.testing import CliRunner
 
-from pmagent_cli.cli import app
+from dotrix_cli.cli import app
 
 
 def test_help() -> None:

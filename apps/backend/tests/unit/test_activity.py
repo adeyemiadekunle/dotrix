@@ -1,13 +1,13 @@
 import asyncio
 import uuid
 
-from pmagent_backend.modules.agents.activity import activity_label
-from pmagent_backend.modules.agents.streams import RunStreams
+from dotrix_backend.modules.agents.activity import activity_label
+from dotrix_backend.modules.agents.streams import RunStreams
 
 
 def test_labels_say_what_the_pm_is_doing() -> None:
-    assert activity_label("read_file", {"file_path": "/pmagent/requirements/product.md"}) == "Reading requirements/product.md"
-    assert activity_label("edit_file", {"file_path": "/pmagent/roadmap.md", "old_string": "x"}) == "Drafting a change to roadmap.md"
+    assert activity_label("read_file", {"file_path": "/dotrix/requirements/product.md"}) == "Reading requirements/product.md"
+    assert activity_label("edit_file", {"file_path": "/dotrix/roadmap.md", "old_string": "x"}) == "Drafting a change to roadmap.md"
     assert activity_label("grep", {"pattern": "driver"}) == "Looking through the project files"
     assert activity_label("list_issues", {}) == "Checking the board"
     assert activity_label("get_issue", {"key": "kun-5"}) == "Looking at KUN-5"
@@ -56,9 +56,9 @@ async def test_in_process_streams_carry_activity() -> None:
 def test_only_the_models_own_steps_give_activity() -> None:
     from langchain_core.messages import AIMessage, ToolMessage
 
-    from pmagent_backend.modules.agents.runner import _activities
+    from dotrix_backend.modules.agents.runner import _activities
 
-    call = AIMessage(content="", tool_calls=[{"name": "write_file", "args": {"file_path": "/pmagent/roadmap.md"}, "id": "c1"}])
+    call = AIMessage(content="", tool_calls=[{"name": "write_file", "args": {"file_path": "/dotrix/roadmap.md"}, "id": "c1"}])
     assert _activities({"model": {"messages": [call]}}) == ["Drafting a change to roadmap.md"]
     # On resume, the approval middleware re-sends the call it decided (maybe rejected): no label.
     rejected = ToolMessage("rejected", tool_call_id="c1")

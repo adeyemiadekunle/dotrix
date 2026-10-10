@@ -1,4 +1,4 @@
-"""`pmagent triage` and `pmagent review`, and answering a checkpoint (the agent's plan before a
+"""`dotrix triage` and `dotrix review`, and answering a checkpoint (the agent's plan before a
 large job) inline."""
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from fake_platform import FakePlatform, approval  # noqa: E402
 
-from pmagent_cli import cli as cli_module  # noqa: E402
+from dotrix_cli import cli as cli_module  # noqa: E402
 
 PLAN = {"summary": "Three specialists, eight steps", "plan": ["Spec it", "Assess impact"]}
 

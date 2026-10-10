@@ -34,7 +34,7 @@
   message: review it
   script:
     - tool: write_file
-      args: {file_path: /pmagent/reviews/r.md, content: x}
+      args: {file_path: /dotrix/reviews/r.md, content: x}
     - text: I can't write; here's the review.
   expect:
     pending: []

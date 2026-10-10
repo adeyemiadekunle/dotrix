@@ -1,5 +1,5 @@
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -7,11 +7,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@pmagent/ui/components/dialog";
-import { Input } from "@pmagent/ui/components/input";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { Textarea } from "@pmagent/ui/components/textarea";
-import { cn } from "@pmagent/ui/lib/utils";
+} from "@dotrix/ui/components/dialog";
+import { Input } from "@dotrix/ui/components/input";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { Textarea } from "@dotrix/ui/components/textarea";
+import { cn } from "@dotrix/ui/lib/utils";
 import {
   BookOpenIcon,
   CodeIcon,
@@ -303,7 +303,7 @@ function NewFileDialog({
 }) {
   const write = useWriteFile(scope);
   const [path, setPath] = useState("");
-  const clean = path.trim().replace(/^\/+/, "").replace(/^\.pmagent\//, "");
+  const clean = path.trim().replace(/^\/+/, "").replace(/^\.dotrix\//, "");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">

@@ -3,7 +3,7 @@ per-agent rules decide who may create or edit what."""
 import pytest
 from httpx import AsyncClient
 
-from pmagent_engine.testing import tool_call
+from dotrix_engine.testing import tool_call
 
 
 @pytest.fixture
@@ -151,11 +151,11 @@ async def test_service_refuses_specialist_edits_even_without_the_tool(
     """Defence in depth: if a specialist were ever handed update_issue, the service still refuses."""
     import uuid
 
-    from pmagent_backend.core.errors import Forbidden
-    from pmagent_backend.modules.issues.schemas import IssueUpdate
-    from pmagent_backend.modules.issues.service import IssueActor, IssueService
-    from pmagent_backend.modules.projects.repository import ProjectRepository
-    from pmagent_backend.modules.workspaces.repository import MembershipRepository
+    from dotrix_backend.core.errors import Forbidden
+    from dotrix_backend.modules.issues.schemas import IssueUpdate
+    from dotrix_backend.modules.issues.service import IssueActor, IssueService
+    from dotrix_backend.modules.projects.repository import ProjectRepository
+    from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
     ada, team, base = await project()
     await db_client.post(f"{base}/issues", json={"title": "Hub model"}, headers=ada.headers)

@@ -3,16 +3,16 @@ import pytest
 from deepagents.backends import CompositeBackend, StateBackend
 from langgraph.checkpoint.memory import InMemorySaver
 
-from pmagent_engine import approvals
-from pmagent_engine.agent import build_team
-from pmagent_engine.builtins import builtin_specs
-from pmagent_engine.outputs import SCHEMAS
-from pmagent_engine.pipelines import DEFAULTS, MODES, PIPELINES, instructions
-from pmagent_engine.testing import ScriptedChatModel, tool_call
+from dotrix_engine import approvals
+from dotrix_engine.agent import build_team
+from dotrix_engine.builtins import builtin_specs
+from dotrix_engine.outputs import SCHEMAS
+from dotrix_engine.pipelines import DEFAULTS, MODES, PIPELINES, instructions
+from dotrix_engine.testing import ScriptedChatModel, tool_call
 
 
 def _team(model, **kwargs):
-    backend = CompositeBackend(default=StateBackend(), routes={"/pmagent/": StateBackend()})
+    backend = CompositeBackend(default=StateBackend(), routes={"/dotrix/": StateBackend()})
     return build_team("Kunemi", "x", model, backend, checkpointer=InMemorySaver(),
                       stage_sink=lambda handle, stage: None, result_sink=lambda schema, items: None, **kwargs)
 

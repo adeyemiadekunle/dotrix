@@ -2,9 +2,9 @@ from fastapi import APIRouter
 from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel
 
-from pmagent_backend.core.errors import NotFound
-from pmagent_backend.core.settings import Settings
-from pmagent_backend.main import create_app
+from dotrix_backend.core.errors import NotFound
+from dotrix_backend.core.settings import Settings
+from dotrix_backend.main import create_app
 
 router = APIRouter()
 

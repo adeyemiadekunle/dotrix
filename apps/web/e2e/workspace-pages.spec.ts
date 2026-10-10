@@ -74,7 +74,7 @@ test("the workspace's pages: overview, tasks, activity, projects, and search", a
   await page.keyboard.press("Escape");
   await userMenu.click();
   await page.getByRole("menuitem", { name: "Connect the CLI" }).click();
-  await expect(page.getByRole("dialog", { name: "Connect the CLI" })).toContainText("pmagent login");
+  await expect(page.getByRole("dialog", { name: "Connect the CLI" })).toContainText("dotrix login");
 });
 
 /** A day as YYYY-MM-DD, `offset` days from today (the browser and this test share a clock). */

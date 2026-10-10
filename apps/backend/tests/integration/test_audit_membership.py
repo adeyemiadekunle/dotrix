@@ -1,7 +1,7 @@
 """People and settings changes are recorded in the workspace's audit log, with who did them."""
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.modules.workspaces.models import Role
 
 
 async def audit(client: AsyncClient, workspace_id: str, headers) -> list[dict]:

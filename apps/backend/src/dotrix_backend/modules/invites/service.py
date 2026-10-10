@@ -1,0 +1,211 @@
+"""Invites by email and by shareable link (FR-4).
+
+Tokens are shown once (in the email, or in the create-link response) and
+stored only as SHA-256 hashes. Tokens travel in request bodies, never URL
+paths, so they don't end up in access logs.
+"""
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime, timedelta
+from urllib.parse import urlencode
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from dotrix_backend.core import email_templates, security
+from dotrix_backend.core.email import EmailSender
+from dotrix_backend.core.errors import Conflict, Forbidden, InvalidLink, NotFound
+from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.audit.service import AuditLog
+from dotrix_backend.modules.auth.models import User
+from dotrix_backend.modules.auth.repository import UserRepository
+from dotrix_backend.modules.knowledge.models import AuthorType
+from dotrix_backend.modules.workspaces.models import Membership, Role, WorkspaceKind
+from dotrix_backend.modules.workspaces.repository import MembershipRepository
+from dotrix_backend.modules.workspaces.schemas import WorkspaceWithRole
+
+from .models import Invite, InviteKind
+from .repository import InviteRepository
+from .schemas import (
+    EmailInviteCreate,
+    InvitePreview,
+    InviteRead,
+    LinkInviteCreate,
+    LinkInviteCreated,
+)
+
+EMAIL_INVITE_TTL = timedelta(days=7)
+
+
+class InvitesNeedOrganization(Conflict):
+    code = "invites_need_organization"
+
+
+def _check_can_invite(workspace: object) -> None:
+    """People join organisations; a personal workspace is just for its owner."""
+    if getattr(workspace, "kind", None) is not WorkspaceKind.ORGANIZATION:
+        raise InvitesNeedOrganization(
+            "A personal workspace is just for you. To work with others, create an organisation or turn this into one."
+        )
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+class InviteService:
+    def __init__(self, session: AsyncSession, settings: Settings, email: EmailSender) -> None:
+        self.session = session
+        self.settings = settings
+        self.email = email
+        self.invites = InviteRepository(session)
+        self.members = MembershipRepository(session)
+        self.users = UserRepository(session)
+
+    async def invite_by_email(
+        self, actor: Membership, inviter: User, data: EmailInviteCreate
+    ) -> InviteRead:
+        self._check_role_allowed(actor, data.role)
+        existing = await self.users.get_by_email(data.email)
+        if existing and await self.members.get(actor.workspace_id, existing.id):
+            raise Conflict("That person is already a member of this workspace")
+
+        now = _now()
+        await self.invites.revoke_pending_for_email(actor.workspace_id, data.email, now)
+        token = security.generate_token()
+        invite = Invite(
+            workspace_id=actor.workspace_id,
+            kind=InviteKind.EMAIL,
+            email=data.email,
+            role=data.role,
+            token_hash=security.hash_token(token),
+            invited_by_id=inviter.id,
+            created_at=now,
+            expires_at=now + EMAIL_INVITE_TTL,
+        )
+        self.invites.add(invite)
+        self._audit(actor, "invite.sent", data.email, role=data.role.value)
+        await self.session.commit()
+
+        await self.email.send(
+            email_templates.invite(
+                data.email,
+                inviter=inviter.display_name,
+                workspace=actor.workspace.name,
+                role=data.role.value,
+                link=self._accept_url(token),
+                ttl_days=EMAIL_INVITE_TTL.days,
+            )
+        )
+        return InviteRead.model_validate(invite)
+
+    async def create_link(
+        self, actor: Membership, inviter: User, data: LinkInviteCreate
+    ) -> LinkInviteCreated:
+        self._check_role_allowed(actor, data.role)
+        now = _now()
+        token = security.generate_token()
+        invite = Invite(
+            workspace_id=actor.workspace_id,
+            kind=InviteKind.LINK,
+            role=data.role,
+            token_hash=security.hash_token(token),
+            invited_by_id=inviter.id,
+            created_at=now,
+            expires_at=now + timedelta(days=data.expires_in_days),
+            max_uses=data.max_uses,
+        )
+        self.invites.add(invite)
+        self._audit(
+            actor, "invite.link_created", None, role=data.role.value, max_uses=data.max_uses,
+            expires_in_days=data.expires_in_days,
+        )
+        await self.session.commit()
+        return LinkInviteCreated(
+            **InviteRead.model_validate(invite).model_dump(), url=self._accept_url(token)
+        )
+
+    async def list_active(self, workspace_id: uuid.UUID) -> list[InviteRead]:
+        return [
+            InviteRead.model_validate(i) for i in await self.invites.list_active(workspace_id, _now())
+        ]
+
+    async def revoke(self, actor: Membership, invite_id: uuid.UUID) -> None:
+        invite = await self.invites.get(actor.workspace_id, invite_id)
+        if invite is None:
+            raise NotFound("Invite not found")
+        if invite.revoked_at is None:
+            self._audit(actor, "invite.revoked", invite.email or "invite link", kind=invite.kind.value)
+        invite.revoked_at = invite.revoked_at or _now()
+        await self.session.commit()
+
+    async def preview(self, token: str) -> InvitePreview:
+        invite = await self._usable(token)
+        inviter = await self.users.get(invite.invited_by_id) if invite.invited_by_id else None
+        return InvitePreview(
+            workspace_name=invite.workspace.name,
+            workspace_kind=invite.workspace.kind,
+            role=invite.role,
+            invited_by=inviter.display_name if inviter else None,
+            email=invite.email,
+            expires_at=invite.expires_at,
+        )
+
+    async def accept(self, user: User, token: str) -> WorkspaceWithRole:
+        now = _now()
+        invite = await self._usable(token, for_update=True)
+        # Also for invites sent before the rule, or before the workspace left its organisation.
+        _check_can_invite(invite.workspace)
+        if invite.kind is InviteKind.EMAIL:
+            if invite.email != user.email:
+                raise Forbidden(
+                    "This invite was sent to a different email address. "
+                    "Sign in with that address to accept it."
+                )
+            invite.accepted_at = now
+            # The token arrived in that inbox, which proves the address.
+            user.email_verified_at = user.email_verified_at or now
+
+        membership = await self.members.get(invite.workspace_id, user.id)
+        if membership is None:
+            membership = Membership(workspace_id=invite.workspace_id, user_id=user.id, role=invite.role)
+            self.members.add(membership)
+            if invite.kind is InviteKind.LINK:
+                invite.use_count += 1
+            AuditLog(self.session).record(
+                workspace_id=invite.workspace_id,
+                action="member.joined",
+                target=user.email,
+                actor_type=AuthorType.USER,
+                actor_user_id=user.id,
+                details={"role": invite.role.value, "via": f"{invite.kind.value} invite"},
+            )
+        # Already a member: keep the current role; an invite never changes it.
+        await self.session.commit()
+        return WorkspaceWithRole.of(invite.workspace, membership.role)
+
+    # -- helpers -----------------------------------------------------------------
+
+    def _audit(self, actor: Membership, action: str, target: str | None, **details: object) -> None:
+        AuditLog(self.session).record(
+            workspace_id=actor.workspace_id,
+            action=action,
+            target=target,
+            actor_type=AuthorType.USER,
+            actor_user_id=actor.user_id,
+            details=details,
+        )
+
+    def _check_role_allowed(self, actor: Membership, role: Role) -> None:
+        _check_can_invite(actor.workspace)
+        if role is Role.ADMIN and actor.role not in (Role.OWNER, Role.ADMIN):
+            raise Forbidden("Only owners and admins can invite admins")
+
+    async def _usable(self, token: str, *, for_update: bool = False) -> Invite:
+        invite = await self.invites.get_by_hash(security.hash_token(token), for_update=for_update)
+        if invite is None or not invite.is_usable(_now()):
+            raise InvalidLink()
+        return invite
+
+    def _accept_url(self, token: str) -> str:
+        return f"{self.settings.app_url.rstrip('/')}/invites/accept?{urlencode({'token': token})}"

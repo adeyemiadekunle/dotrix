@@ -1,4 +1,4 @@
-import { Button } from "@pmagent/ui/components/button";
+import { Button } from "@dotrix/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -6,7 +6,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@pmagent/ui/components/dialog";
+} from "@dotrix/ui/components/dialog";
 import { Loader2Icon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 

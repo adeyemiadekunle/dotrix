@@ -1,7 +1,7 @@
-import { Label } from "@pmagent/ui/components/label";
-import { RadioGroup, RadioGroupItem } from "@pmagent/ui/components/radio-group";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { cn } from "@pmagent/ui/lib/utils";
+import { Label } from "@dotrix/ui/components/label";
+import { RadioGroup, RadioGroupItem } from "@dotrix/ui/components/radio-group";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { cn } from "@dotrix/ui/lib/utils";
 import { CheckIcon, MonitorIcon, MoonIcon, SunIcon, type LucideIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";

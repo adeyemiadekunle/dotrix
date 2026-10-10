@@ -1,4 +1,4 @@
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { useParams } from "@/lib/navigation";
 
 import { AgentEditor } from "@/components/agents/agent-editor";

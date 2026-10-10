@@ -1,7 +1,7 @@
 # Coding runs: sandbox setup
 
 "Start coding" on an issue runs Claude Code (or Codex) on a copy of the project's repo in a
-sandbox. The worker then pushes a new branch and opens a PR through the pmagent GitHub App. This
+sandbox. The worker then pushes a new branch and opens a PR through the dotrix GitHub App. This
 folder holds what the sandbox needs: the image, and the OpenShell provider profiles for the model
 keys.
 
@@ -10,11 +10,11 @@ keys.
 - **No GitHub token in the sandbox.** The worker fetches the repo with an installation token
   scoped to that one repo, then gives the agent the tracked files and a fresh git history of
   their own, with no remote. Afterwards it reads the agent's changes back as a patch and checks
-  them: nothing under `.pmagent/`, `.github/workflows/`, or `.git`. Only then does it commit,
-  push a new branch (`pmagent/<key>-<title>-<id>`, never the default branch, never forced), and
+  them: nothing under `.dotrix/`, `.github/workflows/`, or `.git`. Only then does it commit,
+  push a new branch (`dotrix/<key>-<title>-<id>`, never the default branch, never forced), and
   open the PR. Merging is a person's job.
 - **Network.** The policy (`sandbox_policy()` in
-  `apps/backend/src/pmagent_backend/modules/coding/sandbox.py`) adds no network rules of its
+  `apps/backend/src/dotrix_backend/modules/coding/sandbox.py`) adds no network rules of its
   own. The provider attached to each run allows the model API only (api.anthropic.com or
   api.openai.com), and only for the coding tool's binaries. Everything else is blocked,
   including GitHub and package registries. To let the agent install dependencies, add rules for
@@ -25,8 +25,8 @@ keys.
 - **Credentials.** The model key becomes an OpenShell provider for the length of the run.
   OpenShell keeps the key and gives the sandbox a placeholder, which its proxy swaps for the key
   only on requests to the model API. The key never sits in the sandbox's filesystem.
-- **Limits.** Each run stops at `PMAGENT_CODING_TIMEOUT_MINUTES` (30 by default), at
-  `PMAGENT_CODING_TOKEN_BUDGET` tokens, or when someone presses Stop. The sandbox is deleted
+- **Limits.** Each run stops at `DOTRIX_CODING_TIMEOUT_MINUTES` (30 by default), at
+  `DOTRIX_CODING_TOKEN_BUDGET` tokens, or when someone presses Stop. The sandbox is deleted
   when the run ends, however it ends.
 - **Guarding the default branch.** The worker never pushes to the default branch. GitHub can
   enforce that as well: add a ruleset or branch protection to the default branch (require a pull
@@ -42,22 +42,22 @@ keys.
    The machine that runs agents also needs the `openshell` CLI, selected to that gateway, and
    an `ssh` client: uploads to a sandbox go over SSH.
 2. Build the image, which installs Claude Code, Codex, and git:
-   `docker build -t pmagent-coding:latest infra/coding`
+   `docker build -t dotrix-coding:latest infra/coding`
 3. Import the provider profiles:
    ```shell
-   openshell provider profile import -f infra/coding/pmagent-claude-code.yaml --global
-   openshell provider profile import -f infra/coding/pmagent-codex.yaml --global
+   openshell provider profile import -f infra/coding/dotrix-claude-code.yaml --global
+   openshell provider profile import -f infra/coding/dotrix-codex.yaml --global
    ```
 4. Add these to `.env` on the machine that runs agents: the worker, or the API in local mode.
    ```shell
-   PMAGENT_CODING_SANDBOX=openshell
-   PMAGENT_CODING_IMAGE=pmagent-coding:latest
+   DOTRIX_CODING_SANDBOX=openshell
+   DOTRIX_CODING_IMAGE=dotrix-coding:latest
    ANTHROPIC_API_KEY=...   # Claude Code; with only OPENAI_API_KEY, Codex codes instead
    ```
    You also need the GitHub App, with Contents (write) and Pull requests (write); see CLAUDE.md
    step 5.
 
-For development without OpenShell, `PMAGENT_CODING_SANDBOX=local` runs the agent in a
+For development without OpenShell, `DOTRIX_CODING_SANDBOX=local` runs the agent in a
 temporary folder on your machine. **It has no isolation**, and production refuses to start with
 it.
 
@@ -68,9 +68,9 @@ model, and nothing else.
 
 ```shell
 export ANTHROPIC_API_KEY=sk-ant-...
-openshell provider create --name check-claude --type pmagent-claude-code --credential ANTHROPIC_API_KEY
-python -c "from pmagent_backend.modules.coding.sandbox import sandbox_policy; import json; print(json.dumps(sandbox_policy()))" > /tmp/policy.yaml
-openshell sandbox create --name check --from pmagent-coding:latest --policy /tmp/policy.yaml \
+openshell provider create --name check-claude --type dotrix-claude-code --credential ANTHROPIC_API_KEY
+python -c "from dotrix_backend.modules.coding.sandbox import sandbox_policy; import json; print(json.dumps(sandbox_policy()))" > /tmp/policy.yaml
+openshell sandbox create --name check --from dotrix-coding:latest --policy /tmp/policy.yaml \
   --provider check-claude --detach -- sleep infinity
 mkdir -p /tmp/repo && echo 'x = 1' > /tmp/repo/a.py && git -C /tmp/repo init -q && git -C /tmp/repo add -A \
   && git -C /tmp/repo -c user.name=a -c user.email=a@b.c commit -qm base

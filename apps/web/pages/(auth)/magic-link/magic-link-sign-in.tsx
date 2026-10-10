@@ -1,4 +1,4 @@
-import { Button } from "@pmagent/ui/components/button";
+import { Button } from "@dotrix/ui/components/button";
 import { Loader2Icon } from "lucide-react";
 import { Link } from "@/lib/navigation";
 import { useState } from "react";

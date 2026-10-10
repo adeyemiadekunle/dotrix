@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from pmagent_backend.core.email import (
+from dotrix_backend.core.email import (
     ConsoleEmailSender,
     EmailMessage,
     EmailSendError,
@@ -12,11 +12,11 @@ from pmagent_backend.core.email import (
     build_email_sender,
     text_to_html,
 )
-from pmagent_backend.core.jobs import JobContext
-from pmagent_backend.core.settings import Settings
-from pmagent_backend.jobs import send_email
+from dotrix_backend.core.jobs import JobContext
+from dotrix_backend.core.settings import Settings
+from dotrix_backend.jobs import send_email
 
-MESSAGE = EmailMessage(to="ada@example.com", subject="Reset your pmagent password", body="Reset: http://app.test/reset?token=abc")
+MESSAGE = EmailMessage(to="ada@example.com", subject="Reset your dotrix password", body="Reset: http://app.test/reset?token=abc")
 
 
 def sendly(handler, **kwargs) -> tuple[SendlyEmailSender, list[httpx.Request]]:
@@ -39,7 +39,7 @@ async def test_sends_plain_text_without_click_tracking() -> None:
     assert json.loads(request.content) == {
         "channel": "email",
         "to": ["ada@example.com"],
-        "subject": "Reset your pmagent password",
+        "subject": "Reset your dotrix password",
         "text": "Reset: http://app.test/reset?token=abc",
         "html": '<p>Reset: <a href="http://app.test/reset?token=abc">http://app.test/reset?token=abc</a></p>',
         "tracking": False,  # the link carries a token: never through a click tracker
@@ -103,7 +103,7 @@ def _settings(**values) -> Settings:
 
 
 def test_the_backend_follows_the_key(monkeypatch) -> None:
-    for name in ("PMAGENT_SENDLY_API_KEY", "SENDLY_API_KEY", "SENDLY_EMAIL", "PMAGENT_EMAIL_BACKEND"):
+    for name in ("DOTRIX_SENDLY_API_KEY", "SENDLY_API_KEY", "SENDLY_EMAIL", "DOTRIX_EMAIL_BACKEND"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(Settings, "model_config", {**Settings.model_config, "env_file": None})
     assert _settings().email_backend == "console"
@@ -114,7 +114,7 @@ def test_the_backend_follows_the_key(monkeypatch) -> None:
     assert isinstance(build_email_sender(with_key), SendlyEmailSender)
     assert _settings(email_backend="console").email_backend == "console"  # can still be forced off
     monkeypatch.delenv("SENDLY_Email")
-    with pytest.raises(ValueError, match="needs PMAGENT_SENDLY_API_KEY"):
+    with pytest.raises(ValueError, match="needs DOTRIX_SENDLY_API_KEY"):
         _settings(email_backend="sendly")
 
 

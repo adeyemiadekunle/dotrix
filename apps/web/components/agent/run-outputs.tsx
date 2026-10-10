@@ -1,7 +1,7 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
-import { Input } from "@pmagent/ui/components/input";
+import type { Schemas } from "@dotrix/api-client";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
+import { Input } from "@dotrix/ui/components/input";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   CheckIcon,

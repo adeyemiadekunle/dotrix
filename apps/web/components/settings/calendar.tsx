@@ -1,8 +1,8 @@
-import { Button } from "@pmagent/ui/components/button";
-import { Input } from "@pmagent/ui/components/input";
-import { Label } from "@pmagent/ui/components/label";
-import { RadioGroup, RadioGroupItem } from "@pmagent/ui/components/radio-group";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Button } from "@dotrix/ui/components/button";
+import { Input } from "@dotrix/ui/components/input";
+import { Label } from "@dotrix/ui/components/label";
+import { RadioGroup, RadioGroupItem } from "@dotrix/ui/components/radio-group";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarPlusIcon, CopyIcon } from "lucide-react";
 import { useState } from "react";

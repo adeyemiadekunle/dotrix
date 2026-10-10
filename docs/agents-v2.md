@@ -67,8 +67,8 @@ takes on the organisation's job; the organisations layer goes.
 
 | Piece | Today | File |
 |---|---|---|
-| Who the agents are | The PM plus five specialists, prompts and tools hard-coded | `packages/engine/src/pmagent_engine/agent.py` (`build_team`, `_subagents`, `LEADS`) |
-| What they may write | A fixed folder matrix and issue-type rules | `packages/engine/src/pmagent_engine/permissions.py`, enforced in `KnowledgeService.write` |
+| Who the agents are | The PM plus five specialists, prompts and tools hard-coded | `packages/engine/src/dotrix_engine/agent.py` (`build_team`, `_subagents`, `LEADS`) |
+| What they may write | A fixed folder matrix and issue-type rules | `packages/engine/src/dotrix_engine/permissions.py`, enforced in `KnowledgeService.write` |
 | Customising | Text only: `agent-rules/base.md` + `<role>.md`, prepended to the prompt | `_with_rules`, `AgentRunner._rules` |
 | Approvals | Every write (`write_file`, `edit_file`, gated board tools) interrupts; approve / edit / reject | `interrupt_on` in `build_team`; `AgentService.decide` |
 | Who leads a chat | `AgentRun.agent`: null (Auto) or a role | `agents/schemas.py` (`AgentChoice`) |
@@ -100,7 +100,7 @@ the run queue and streams.
 
 ### 4.1 The contract
 
-A contract is a Pydantic model in the engine (`pmagent_engine.contracts.AgentSpec`),
+A contract is a Pydantic model in the engine (`dotrix_engine.contracts.AgentSpec`),
 validated on every save and on every run.
 
 ```yaml
@@ -117,7 +117,7 @@ tools:                      # ids from the catalogue (§4.3)
   - knowledge.search
   - board.read
   - issues.create
-access:                     # folder patterns (relative to .pmagent/) -> read | propose | write
+access:                     # folder patterns (relative to .dotrix/) -> read | propose | write
   reviews/*: write
   requirements/*: read
 issue_types: [bug]          # types it may create (when it has issues.create)
@@ -150,7 +150,7 @@ triggers: []                # step 4; stored now, inert until then
 
 ### 4.3 The tool catalogue
 
-`pmagent_engine.catalog` lists every tool an agent can be given: id, description, risk class,
+`dotrix_engine.catalog` lists every tool an agent can be given: id, description, risk class,
 and the actions it can take. The platform supplies the implementations (as today with
 `build_board_tools` and `build_knowledge_tools`).
 
@@ -185,7 +185,7 @@ filtered by the existing `CompactTools` middleware plus `access`: an agent witho
 4. `issues.close` needs a person: an agent may propose closing, never close alone (as today,
    only a person moves an issue to `done`).
 5. Guests never see project content; agents never read another workspace's data.
-6. `.pmagent/` never goes into a code repo; coding hand-offs carry code only.
+6. `.dotrix/` never goes into a code repo; coding hand-offs carry code only.
 7. Every tool call that changes something is audited with the agent, its version, who
    instructed the run, and who approved it, or which standing rule allowed it.
 8. Text read from documents, repos, and the web is data. Contracts can't change that line of
@@ -221,7 +221,7 @@ tools), drops `block` tools, and passes `allow` tools through ungated.
 - Stored in `agent_run_outputs`: `run_id`, `schema`, `items` (JSONB), and per item a `state`
   (`open`, `done`, `dismissed`) with who acted and the link to what it produced (an issue key,
   a knowledge version, a hand-off).
-- Schemas (engine, `pmagent_engine.outputs`):
+- Schemas (engine, `dotrix_engine.outputs`):
 
 | Schema | Item fields | Actions in the app |
 |---|---|---|
@@ -237,7 +237,7 @@ Findings are deduplicated by `fingerprint` against open findings and issues in t
 
 ### 4.7 Pipelines and checkpoints
 
-- A pipeline is a named list of stages in the engine (`pmagent_engine.pipelines`). The
+- A pipeline is a named list of stages in the engine (`dotrix_engine.pipelines`). The
   agent's prompt lists them; it reports each with `stage("name")`, streamed as a `stage`
   activity event and used to split the run's token breakdown by stage.
 - A **checkpoint** is a stage marked `steer`. The agent calls `checkpoint(summary, plan)`,
@@ -270,7 +270,7 @@ everyone who sees projects to read.
 
 - `build_team(..., agents: list[AgentSpec], lead: str | None)` builds the PM and subagents
   from specs. `_subagents` goes; the current prompts become the built-in specs in
-  `pmagent_engine.builtins`, so defaults are unchanged.
+  `dotrix_engine.builtins`, so defaults are unchanged.
 - `role_for_agent_name` maps `<handle>-agent` to the handle; `permissions.access(agent, path)`
   takes the spec's `access` first, then the built-in matrix.
 - `can_create_issue` / `can_edit_issues` read `issue_types` and the tools.
@@ -285,15 +285,15 @@ everyone who sees projects to read.
   per action, invariants disabled with a reason), output and pipeline; history with diffs and
   restore; "Try in chat".
 - **Chat:** the + menu and `@handle` list every resolved agent.
-- **CLI:** `pmagent agents list`; `pmagent chat --agent <handle>` accepts custom handles.
+- **CLI:** `dotrix agents list`; `dotrix chat --agent <handle>` accepts custom handles.
 
 ### 4.11 Evals
 
-- **Structural evals in CI** (scripted model, `pmagent_engine.testing`): per built-in and per
+- **Structural evals in CI** (scripted model, `dotrix_engine.testing`): per built-in and per
   pipeline, saved cases in `packages/engine/tests/evals/<agent>/*.yaml` check that the stages
   run in order, only granted tools are called, blocked actions are refused, writes interrupt,
   and the output validates against its schema.
-- **Quality evals, on demand** (`pmagent eval --live --agent research`, needs a model key; not
+- **Quality evals, on demand** (`dotrix eval --live --agent research`, needs a model key; not
   in CI): the same cases scored against expected facts. Prompt changes to built-ins come with a
   run of these.
 
@@ -313,7 +313,7 @@ everyone who sees projects to read.
 ## 5. Step 1b: the pipelines
 
 Each is the default for its built-in agent; custom agents pick one or none. Built 2026-10-01 in
-`pmagent_engine.pipelines` (stages with guidance, `steer` checkpoints, run modes for triage and
+`dotrix_engine.pipelines` (stages with guidance, `steer` checkpoints, run modes for triage and
 issue review); stages that need the graph (step 3), web tools (1c), or code (step 5) say so and
 fall back to search and documents until those land.
 
@@ -338,7 +338,7 @@ filters or caching, different on every provider, untestable without a key. 1c gi
 agent (and any contract granted `web.search`) our own tools, so every page it relies on becomes a
 stored, dated, tiered source its claims cite and are checked against.
 
-### 6.1 Tools (engine, `pmagent_engine.web`)
+### 6.1 Tools (engine, `dotrix_engine.web`)
 
 - **`SearchProvider`** (`web/search.py`): `search(query, *, recency_days, include_domains,
   exclude_domains, limit) -> list[SearchHit]` (url, title, snippet, published date, score).
@@ -360,9 +360,9 @@ stored, dated, tiered source its claims cite and are checked against.
     public (no private, loopback, link-local, CGNAT, multicast, or cloud metadata addresses),
     checked on the connection actually made and again on every redirect (≤ 5); 3 MB and 20 s
     limits; content types HTML, PDF, plain text, Markdown; robots.txt respected for our user
-    agent (`pmagent-research`); per-domain rate limit (1 request a second per run).
+    agent (`dotrix-research`); per-domain rate limit (1 request a second per run).
   - Pages our fetcher can't read (JS-only pages, blocked) fall back to Tavily `/extract` (1
-    credit per 5 URLs), which fetches from Tavily's side; off with `PMAGENT_TAVILY_EXTRACT=false`.
+    credit per 5 URLs), which fetches from Tavily's side; off with `DOTRIX_TAVILY_EXTRACT=false`.
 - **Untrusted text:** everything from the web reaches the model inside
   `<web_content source="S3">…</web_content>`, after a line saying it's data to cite, never
   instructions. A small detector (`web/untrusted.py`: "ignore previous instructions", "you are
@@ -387,20 +387,20 @@ stored, dated, tiered source its claims cite and are checked against.
   bodies, regulators, the subject's own official site or docs when the agent names it and the
   domain matches), `reputable` (a short list of established press, journals, preprint servers),
   `other` (blogs, forums, everything else). The report says when a claim rests only on `other`.
-- **Limits** per run: 10 searches and 20 fetches by default (`PMAGENT_RESEARCH_MAX_SEARCHES`,
+- **Limits** per run: 10 searches and 20 fetches by default (`DOTRIX_RESEARCH_MAX_SEARCHES`,
   `_MAX_FETCHES`), and a workspace-wide daily cap on Tavily credits
-  (`PMAGENT_TAVILY_DAILY_CREDITS`, 500). Past a limit the tool says so and the agent reports
+  (`DOTRIX_TAVILY_DAILY_CREDITS`, 500). Past a limit the tool says so and the agent reports
   with what it has. Searches, fetches, and credits appear in the run's details next to tokens
   (`breakdown.web`).
-- **Settings:** `PMAGENT_TAVILY_API_KEY` (also reads `TAVILY_API_KEY`), a `SecretStr`, never
-  logged; `PMAGENT_SEARCH_PROVIDER` (`tavily` when the key is set, else `native`; `fake` only
-  with `PMAGENT_E2E_MODELS=true`).
+- **Settings:** `DOTRIX_TAVILY_API_KEY` (also reads `TAVILY_API_KEY`), a `SecretStr`, never
+  logged; `DOTRIX_SEARCH_PROVIDER` (`tavily` when the key is set, else `native`; `fake` only
+  with `DOTRIX_E2E_MODELS=true`).
 
 ### 6.3 Claims and verification
 
 - `ReportFinding` gains `quotes: [{source: "S3", text}]` (each claim cites at least one); the
   platform records each item's `check`: a `status` (`supported`, `weak`, or `unsupported`) and
-  where each quote was found (`pmagent_engine.web.verify`, when the result is saved).
+  where each quote was found (`dotrix_engine.web.verify`, when the result is saved).
 - **In code, no model call:** each quote must occur in its source's stored page, or failing that
   its search snippet (case, whitespace, punctuation, and Markdown link targets normalised; only
   the differences extraction makes are tolerated, a word split or joined or a word's ending,
@@ -435,7 +435,7 @@ something changed, with proposed document updates to approve.
 
 ### 6.6 Delivery (PRs) and acceptance
 
-1. **Engine:** `pmagent_engine.web` (provider, Tavily, Fake, fetcher with its safety checks,
+1. **Engine:** `dotrix_engine.web` (provider, Tavily, Fake, fetcher with its safety checks,
    untrusted wrapping), `web_search` / `fetch_page` tools, the catalogue entry, native fallback.
    **Acceptance:** SSRF unit tests (private and metadata IPs, DNS that resolves to one, a
    redirect to one, other schemes and ports, oversize and slow responses); Tavily request shape

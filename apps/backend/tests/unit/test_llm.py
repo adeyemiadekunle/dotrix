@@ -1,13 +1,13 @@
 import pytest
 
-from pmagent_backend.core.settings import Settings
-from pmagent_backend.modules.agents.llm import (
+from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.agents.llm import (
     GeminiWithBuiltinTools,
     ModelUnavailable,
     build_chat_model,
     settings_model_factory,
 )
-from pmagent_backend.modules.projects.models import Project
+from dotrix_backend.modules.projects.models import Project
 
 
 def search_files(query: str) -> str:
@@ -61,6 +61,6 @@ def test_e2e_models_need_the_flag_and_never_run_in_production() -> None:
             jwt_secret="test-only-jwt-secret-not-used-anywhere-else",  # type: ignore[arg-type]
             env="production",
             email_backend="sendly",
-            PMAGENT_SENDLY_API_KEY="sk_test_not_a_real_key",
+            DOTRIX_SENDLY_API_KEY="sk_test_not_a_real_key",
             e2e_models=True,
         )

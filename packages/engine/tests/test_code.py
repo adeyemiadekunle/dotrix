@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from pmagent_engine.catalog import tool_id
-from pmagent_engine.code import build_code_tools
+from dotrix_engine.catalog import tool_id
+from dotrix_engine.code import build_code_tools
 
 
 def _git(root: Path, *args: str) -> None:

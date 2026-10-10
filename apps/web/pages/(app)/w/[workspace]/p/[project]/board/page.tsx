@@ -1,4 +1,4 @@
-import { Button } from "@pmagent/ui/components/button";
+import { Button } from "@dotrix/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,8 +7,8 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@pmagent/ui/components/dropdown-menu";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+} from "@dotrix/ui/components/dropdown-menu";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { ArrowUpDownIcon } from "lucide-react";
 import { Suspense, useMemo, useState } from "react";
 

@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import { ArrowUpIcon, Loader2Icon, SquareIcon } from "lucide-react"
-import { Button } from "@pmagent/ui/components/button"
-import { Textarea } from "@pmagent/ui/components/textarea"
+import { Button } from "@dotrix/ui/components/button"
+import { Textarea } from "@dotrix/ui/components/textarea"
 
 /**
  * - `ready`: can send (when there's text)

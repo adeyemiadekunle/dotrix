@@ -2032,10 +2032,10 @@ function LiveSessions() {
         <h2>Tokens</h2>
         <p className="muted" style={{ fontSize: 13 }}>
           Let something other than this browser act as you: the CLI gets one when you run{" "}
-          <button className="btn btn-ghost btn-sm mono" style={{ padding: "0 4px", height: "auto" }} onClick={() => void copy("pmagent login", "Command copied")}>
-            pmagent login
+          <button className="btn btn-ghost btn-sm mono" style={{ padding: "0 4px", height: "auto" }} onClick={() => void copy("dotrix login", "Command copied")}>
+            dotrix login
           </button>
-          , and a script or CI job uses one in <span className="mono">PMAGENT_TOKEN</span>. A token can do what you can, and expires after 90 days.
+          , and a script or CI job uses one in <span className="mono">DOTRIX_TOKEN</span>. A token can do what you can, and expires after 90 days.
         </p>
         {made && (
           <div className="alert ok" style={{ marginBottom: 12 }}>
@@ -2059,7 +2059,7 @@ function LiveSessions() {
             key={t.id}
             t={
               <span className="row" style={{ gap: 8 }}>
-                <Ic n={/cli|pmagent/i.test(t.name) ? "terminal" : "key-round"} s={15} />
+                <Ic n={/cli|dotrix/i.test(t.name) ? "terminal" : "key-round"} s={15} />
                 {t.name} <span className="faint mono">({t.display_prefix}…)</span>
               </span>
             }
@@ -2563,11 +2563,11 @@ function Body({ sec }: { sec: string }) {
           <div className="sblock">
             <h2>Tokens</h2>
             <p className="muted" style={{ fontSize: 13 }}>
-              Let something other than this browser act as you: the CLI after <span className="mono">pmagent login</span>, or a script or CI job.
+              Let something other than this browser act as you: the CLI after <span className="mono">dotrix login</span>, or a script or CI job.
             </p>
             {[
-              ["terminal", "pmagent CLI on MacBook Pro", "last used 2 hours ago · expires Jan 3"],
-              ["key-round", "CI (pmat_…7f3a)", "last used yesterday · expires Dec 11"],
+              ["terminal", "dotrix CLI on MacBook Pro", "last used 2 hours ago · expires Jan 3"],
+              ["key-round", "CI (dtx_…7f3a)", "last used yesterday · expires Dec 11"],
             ].map(([i, t, dd]) => (
               <SRow
                 key={t}

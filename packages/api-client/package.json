@@ -1,5 +1,5 @@
 {
-  "name": "@pmagent/api-client",
+  "name": "@dotrix/api-client",
   "version": "0.1.0",
   "private": true,
   "type": "module",

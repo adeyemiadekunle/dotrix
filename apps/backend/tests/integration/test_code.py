@@ -9,8 +9,8 @@ import pytest
 from httpx import AsyncClient
 from langchain_core.messages import ToolMessage
 
-from pmagent_backend.modules.code.checkouts import CodeCheckouts, RepoRef
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.code.checkouts import CodeCheckouts, RepoRef
+from dotrix_engine.testing import tool_call
 
 
 def _git(root: Path, *args: str) -> str:

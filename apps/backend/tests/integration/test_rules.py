@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from httpx import AsyncClient
 from sqlalchemy import update
 
-from pmagent_backend.modules.agents.models import AgentRun
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.modules.agents.models import AgentRun
+from dotrix_backend.modules.workspaces.models import Role
 
 
 async def _world(db_client: AsyncClient, signup, create_team, add_member):
@@ -83,7 +83,7 @@ async def test_automations_stop_at_the_workspace_s_daily_tokens(
 async def test_workspace_skills_are_shared_and_a_project_s_own_wins(
     db_client: AsyncClient, signup, create_team, add_member, agent_script
 ) -> None:
-    from pmagent_engine.testing import tool_call
+    from dotrix_engine.testing import tool_call
 
     ada, cat, ws, base = await _world(db_client, signup, create_team, add_member)
     note = {"content": "Description: Write the release note.\n\n1. List what changed.", "base_version": 0}

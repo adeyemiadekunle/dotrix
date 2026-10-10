@@ -1,7 +1,7 @@
 """The rule-based model that end-to-end tests run the agents on."""
 from langchain_core.messages import HumanMessage, ToolMessage
 
-from pmagent_engine.testing import RuleBasedChatModel
+from dotrix_engine.testing import RuleBasedChatModel
 
 
 def test_rules() -> None:
@@ -21,7 +21,7 @@ def test_rules() -> None:
 def test_the_rule_based_model_researches() -> None:
     from langchain_core.messages import HumanMessage, ToolMessage
 
-    from pmagent_engine.testing import RuleBasedChatModel
+    from dotrix_engine.testing import RuleBasedChatModel
 
     model = RuleBasedChatModel()
     search = model.invoke([HumanMessage("research: uk vat rate")])

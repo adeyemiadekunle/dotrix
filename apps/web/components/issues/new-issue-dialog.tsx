@@ -1,5 +1,5 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Button } from "@pmagent/ui/components/button";
+import type { Schemas } from "@dotrix/api-client";
+import { Button } from "@dotrix/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -7,10 +7,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@pmagent/ui/components/dialog";
-import { Label } from "@pmagent/ui/components/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
-import { Textarea } from "@pmagent/ui/components/textarea";
+} from "@dotrix/ui/components/dialog";
+import { Label } from "@dotrix/ui/components/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
+import { Textarea } from "@dotrix/ui/components/textarea";
 import { useState, type FormEvent } from "react";
 
 import { Field, FormError, SubmitButton } from "@/components/form";

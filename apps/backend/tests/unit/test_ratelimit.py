@@ -1,6 +1,6 @@
 from starlette.requests import Request
 
-from pmagent_backend.core.ratelimit import (
+from dotrix_backend.core.ratelimit import (
     Limit,
     MemoryRateLimiter,
     client_ip,

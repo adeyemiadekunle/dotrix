@@ -1,5 +1,5 @@
-import { CodeBlock } from "@pmagent/ui/components/code-block";
-import { cn } from "@pmagent/ui/lib/utils";
+import { CodeBlock } from "@dotrix/ui/components/code-block";
+import { cn } from "@dotrix/ui/lib/utils";
 import { Children, isValidElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";

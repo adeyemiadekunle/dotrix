@@ -9,10 +9,10 @@ import pytest
 from httpx import AsyncClient
 from pydantic import Field
 
-from pmagent_backend.modules.agents.llm import ModelChoice
-from pmagent_backend.modules.agents.runner import AgentRunner
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import ScriptedChatModel, tool_call
+from dotrix_backend.modules.agents.llm import ModelChoice
+from dotrix_backend.modules.agents.runner import AgentRunner
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import ScriptedChatModel, tool_call
 
 
 class GatedModel(ScriptedChatModel):
@@ -92,7 +92,7 @@ async def test_the_reply_streams_as_it_is_written(live, db_client: AsyncClient) 
 
 async def test_the_stream_says_what_the_pm_is_doing(live, db_client: AsyncClient) -> None:
     ada, _, base, model = await live(
-        tool_call("read_file", file_path="/pmagent/roadmap.md"), "The roadmap has three phases."
+        tool_call("read_file", file_path="/dotrix/roadmap.md"), "The roadmap has three phases."
     )
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "Summarise the roadmap"}, headers=ada.headers)).json()
     await asyncio.wait_for(model.started.wait(), 5)

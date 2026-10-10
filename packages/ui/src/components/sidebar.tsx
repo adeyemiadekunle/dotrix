@@ -2,28 +2,28 @@
 
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "@pmagent/ui/lib/utils"
+import { cn } from "@dotrix/ui/lib/utils"
 import { PanelLeftIcon } from "lucide-react"
 import { Slot } from "radix-ui"
 
-import { useIsMobile } from "@pmagent/ui/hooks/use-mobile"
-import { Button } from "@pmagent/ui/components/button"
-import { Input } from "@pmagent/ui/components/input"
-import { Separator } from "@pmagent/ui/components/separator"
+import { useIsMobile } from "@dotrix/ui/hooks/use-mobile"
+import { Button } from "@dotrix/ui/components/button"
+import { Input } from "@dotrix/ui/components/input"
+import { Separator } from "@dotrix/ui/components/separator"
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@pmagent/ui/components/sheet"
-import { Skeleton } from "@pmagent/ui/components/skeleton"
+} from "@dotrix/ui/components/sheet"
+import { Skeleton } from "@dotrix/ui/components/skeleton"
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@pmagent/ui/components/tooltip"
+} from "@dotrix/ui/components/tooltip"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7

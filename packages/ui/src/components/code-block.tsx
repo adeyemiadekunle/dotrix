@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import { CheckIcon, CopyIcon } from "lucide-react"
-import { cn } from "@pmagent/ui/lib/utils"
-import { Button } from "@pmagent/ui/components/button"
+import { cn } from "@dotrix/ui/lib/utils"
+import { Button } from "@dotrix/ui/components/button"
 
 const MAX_HIGHLIGHT_CHARS = 20_000 // longer blocks stay plain: highlighting them isn't worth it
 const HIGHLIGHT_DELAY_MS = 150 // while text streams in, wait for a pause before highlighting

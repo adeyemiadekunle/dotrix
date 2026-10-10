@@ -12,7 +12,7 @@ board, people approve every change, and Claude Code or Codex do the coding.
     Documentation.
   - Owners and admins can edit any of them, or create their own: instructions, model, tools,
     folder access, autonomy rules, budgets.
-- **One source of truth per project:** a versioned `.pmagent/` knowledge store (requirements,
+- **One source of truth per project:** a versioned `.dotrix/` knowledge store (requirements,
   architecture, decisions, research), a Jira-style board, and a project graph that links them.
 - **Approvals, always:** no agent changes anything without an approval. Either a person
   approves it at the time, or an owner has allowed one low-risk action (a comment or a link).
@@ -58,7 +58,7 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
   - The platform pushes a new branch and opens the PR. The issue moves to review, and the
     Reviewer reads the PR.
   - Guardrails: the agent never holds a GitHub token, and nothing is pushed to the default
-    branch. Changes to `.pmagent/` or CI workflows are refused, and a person merges.
+    branch. Changes to `.dotrix/` or CI workflows are refused, and a person merges.
   - Setup: [infra/coding/README.md](infra/coding/README.md).
 - **Notifications:**
   - What happens: approvals waiting, decisions, mentions, assignments, findings, and changes to
@@ -69,7 +69,7 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
   - Restricted projects.
   - Sign-in with a password, an email link, or GitHub.
   - Sessions per device.
-- **CLI and MCP:** `pmagent` chats, briefs, triages, reviews, and works the board from a
+- **CLI and MCP:** `dotrix` chats, briefs, triages, reviews, and works the board from a
   terminal. Its MCP server gives Claude Code and Codex the board, the documents, and the graph.
 
 ## What's next
@@ -91,7 +91,7 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
 apps/
   backend/      FastAPI platform API: accounts, workspaces, projects, knowledge, issues, agents,
                 approvals, automations, notifications, the graph, connectors (Python)
-  cli/          `pmagent` terminal client + MCP server for Claude Code / Codex (Python)
+  cli/          `dotrix` terminal client + MCP server for Claude Code / Codex (Python)
   web/          Web app (Vite + React)
   desktop/      Desktop shell around the web app (Electron)
 packages/
@@ -121,67 +121,67 @@ Run it:
 ```bash
 pnpm db:up && pnpm db:migrate   # Postgres, Redis, MinIO (localhost only), then the migrations
 pnpm dev:backend         # API on http://localhost:8000 (agents need a model key in .env)
-pnpm dev:worker          # only with PMAGENT_JOBS=worker: agent runs and jobs survive API restarts
+pnpm dev:worker          # only with DOTRIX_JOBS=worker: agent runs and jobs survive API restarts
 pnpm dev:web             # web on http://localhost:3000
 pnpm dev:desktop         # Electron window on the web app
-uv run pmagent --help    # CLI
+uv run dotrix --help    # CLI
 ```
 
 **Configuration** (all in `.env`, explained in [.env.example](.env.example)):
-- **Required:** a model key (Anthropic, OpenAI, or Google) and `PMAGENT_DEFAULT_MODEL`.
+- **Required:** a model key (Anthropic, OpenAI, or Google) and `DOTRIX_DEFAULT_MODEL`.
 - **Optional:**
-  - `PMAGENT_EMBEDDING_MODEL`: search by meaning; without it, search uses keywords only.
-  - `PMAGENT_TAVILY_API_KEY`: web research through Tavily.
-  - `PMAGENT_SENDLY_API_KEY`: real email delivery.
+  - `DOTRIX_EMBEDDING_MODEL`: search by meaning; without it, search uses keywords only.
+  - `DOTRIX_TAVILY_API_KEY`: web research through Tavily.
+  - `DOTRIX_SENDLY_API_KEY`: real email delivery.
   - The GitHub sign-in and GitHub App settings: sign-in with GitHub and connected repos.
-  - `PMAGENT_CODING_SANDBOX`: coding runs (`openshell`, or `local` for development only).
+  - `DOTRIX_CODING_SANDBOX`: coding runs (`openshell`, or `local` for development only).
 - **Limits:**
-  - `PMAGENT_RUN_TOKEN_BUDGET`: tokens per agent run.
-  - `PMAGENT_AUTOMATION_DAILY_RUNS` and `PMAGENT_AUTOMATION_DAILY_TOKENS`: automation runs and
+  - `DOTRIX_RUN_TOKEN_BUDGET`: tokens per agent run.
+  - `DOTRIX_AUTOMATION_DAILY_RUNS` and `DOTRIX_AUTOMATION_DAILY_TOKENS`: automation runs and
     tokens per workspace per day.
 
 ## Install the CLI
 
-The `pmagent` command installs on its own (Python 3.11+ and [uv](https://docs.astral.sh/uv/)):
+The `dotrix` command installs on its own (Python 3.11+ and [uv](https://docs.astral.sh/uv/)):
 
 ```bash
 uv tool install "git+https://github.com/adeyemiadekunle/multi-agent-pm#subdirectory=apps/cli"
 ```
 
-- On Windows, run `uv tool update-shell` once (then open a new terminal) so `pmagent` is on your PATH.
+- On Windows, run `uv tool update-shell` once (then open a new terminal) so `dotrix` is on your PATH.
 - Without uv: `pipx install "git+https://github.com/adeyemiadekunle/multi-agent-pm#subdirectory=apps/cli"`.
-- Point it at your server with `PMAGENT_API_URL` (or `--api-url` on `login`). The default is
+- Point it at your server with `DOTRIX_API_URL` (or `--api-url` on `login`). The default is
   `http://127.0.0.1:8000` until a hosted platform exists.
-- Upgrade with `uv tool upgrade pmagent`; remove with `uv tool uninstall pmagent`.
+- Upgrade with `uv tool upgrade dotrix`; remove with `uv tool uninstall dotrix`.
 
 ## The CLI with the platform
 
 ```bash
-pmagent login                                   # device login; the token goes to your OS keychain
-cd ~/code/kunemi && pmagent connect             # link this checkout to its project (found by the git remote)
-pmagent pull                                    # refresh the .pmagent/ mirror (only what changed)
-pmagent chat --agent research                   # talk to the team; approve or reject each change inline
-pmagent brief                                   # a summary of what changed (read-only)
-pmagent triage "Drivers see the wrong zone"     # the PM triages a report into an issue (waits for approval)
-pmagent review KUN-12                           # the Reviewer checks an issue against its acceptance criteria
-pmagent issue list --mine                       # your issues (or --as claude-code for an agent's)
-pmagent issue claim KUN-42 --as claude-code     # coding tools act as themselves and stop at review
-pmagent issue done KUN-42                       # only a person closes
-pmagent handoff install --register              # Claude Code / Codex via MCP: board, documents, graph
-pmagent logout
+dotrix login                                   # device login; the token goes to your OS keychain
+cd ~/code/kunemi && dotrix connect             # link this checkout to its project (found by the git remote)
+dotrix pull                                    # refresh the .dotrix/ mirror (only what changed)
+dotrix chat --agent research                   # talk to the team; approve or reject each change inline
+dotrix brief                                   # a summary of what changed (read-only)
+dotrix triage "Drivers see the wrong zone"     # the PM triages a report into an issue (waits for approval)
+dotrix review KUN-12                           # the Reviewer checks an issue against its acceptance criteria
+dotrix issue list --mine                       # your issues (or --as claude-code for an agent's)
+dotrix issue claim KUN-42 --as claude-code     # coding tools act as themselves and stop at review
+dotrix issue done KUN-42                       # only a person closes
+dotrix handoff install --register              # Claude Code / Codex via MCP: board, documents, graph
+dotrix logout
 ```
 
 **Setting a project up, and working in it.** Owners and admins set a project up once, on the
 web or with the CLI:
-- Create it (`pmagent connect`, or `pmagent init` for a new repo).
-- Add its documents (`pmagent docs-add <files>`).
-- Have the Architecture agent draft its overview (`pmagent architecture draft`).
+- Create it (`dotrix connect`, or `dotrix init` for a new repo).
+- Add its documents (`dotrix docs-add <files>`).
+- Have the Architecture agent draft its overview (`dotrix architecture draft`).
 
-Everyone else just runs `pmagent connect` in their own checkout: it links to the project by the
+Everyone else just runs `dotrix connect` in their own checkout: it links to the project by the
 git remote and changes nothing.
 
-`PMAGENT_TOKEN` overrides the keychain for CI. Unlinked repos keep working with local files
-(`--local`, `pmagent task …`).
+`DOTRIX_TOKEN` overrides the keychain for CI. Unlinked repos keep working with local files
+(`--local`, `dotrix task …`).
 
 ## API documentation
 
@@ -195,7 +195,7 @@ With the backend running (`pnpm dev:backend`):
 
 The TypeScript client in `packages/api-client` is generated from that schema. After changing
 any route or schema, run `pnpm openapi` and commit the result; CI fails if they're out of date.
-Set `PMAGENT_DOCS_ENABLED=false` to turn the docs off.
+Set `DOTRIX_DOCS_ENABLED=false` to turn the docs off.
 
 ## Checks
 
@@ -204,5 +204,5 @@ CI runs all of these:
 ```bash
 uv run ruff check apps packages && uv run pytest   # lint; unit and integration tests (need Postgres)
 pnpm build && pnpm typecheck
-pnpm --filter @pmagent/web e2e                     # browser tests on a rule-based model
+pnpm --filter @dotrix/web e2e                     # browser tests on a rule-based model
 ```

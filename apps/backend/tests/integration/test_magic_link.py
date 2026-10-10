@@ -3,8 +3,8 @@ from typing import Any
 
 from httpx import AsyncClient
 
-from pmagent_backend.core.email import OutboxEmailSender
-from pmagent_backend.core.ratelimit import MemoryRateLimiter
+from dotrix_backend.core.email import OutboxEmailSender
+from dotrix_backend.core.ratelimit import MemoryRateLimiter
 
 
 async def test_sign_in_with_an_emailed_link(db_client: AsyncClient, signup, outbox: OutboxEmailSender, email_token) -> None:

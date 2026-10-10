@@ -11,8 +11,8 @@ import json
 import sys
 from pathlib import Path
 
-from pmagent_backend.core.settings import Settings
-from pmagent_backend.main import create_app
+from dotrix_backend.core.settings import Settings
+from dotrix_backend.main import create_app
 
 OUT = Path(__file__).resolve().parents[3] / "packages" / "api-client" / "openapi.json"
 

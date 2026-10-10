@@ -1,4 +1,4 @@
-import { cn } from "@pmagent/ui/lib/utils";
+import { cn } from "@dotrix/ui/lib/utils";
 import type { ComponentProps } from "react";
 
 // A settings page is a column of sections: what the section is on the left, its controls on the

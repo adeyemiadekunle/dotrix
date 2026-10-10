@@ -1,4 +1,4 @@
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 
 import { GeneralCard } from "@/components/settings/workspace";
 import { useCurrentWorkspace } from "@/lib/queries";

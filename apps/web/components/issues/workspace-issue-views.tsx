@@ -1,4 +1,4 @@
-import { cn } from "@pmagent/ui/lib/utils";
+import { cn } from "@dotrix/ui/lib/utils";
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
 import { Link } from "@/lib/navigation";
 import { useMemo, useState } from "react";

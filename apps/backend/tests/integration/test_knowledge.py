@@ -6,10 +6,10 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pmagent_backend.core.errors import Forbidden
-from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
-from pmagent_backend.modules.projects.repository import ProjectRepository
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.core.errors import Forbidden
+from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
+from dotrix_backend.modules.projects.repository import ProjectRepository
+from dotrix_backend.modules.workspaces.models import Role
 
 
 @pytest.fixture
@@ -145,12 +145,12 @@ async def test_export_zip(signup, make_project, db_client: AsyncClient) -> None:
     await db_client.put(f"{kb}/files/vision.md", json={"content": "Our vision"}, headers=ada.headers)
     res = await db_client.get(f"{kb}/export", headers=ada.headers)
     assert res.status_code == 200 and res.headers["content-type"] == "application/zip"
-    assert 'filename="kun-pmagent.zip"' in res.headers["content-disposition"]
+    assert 'filename="kun-dotrix.zip"' in res.headers["content-disposition"]
     archive = zipfile.ZipFile(io.BytesIO(res.content))
     names = set(archive.namelist())
-    assert {".pmagent/config.yaml", ".pmagent/vision.md", ".pmagent/agent-rules/base.md"} <= names
-    assert archive.read(".pmagent/vision.md") == b"Our vision"
-    assert b"key: KUN" in archive.read(".pmagent/config.yaml")
+    assert {".dotrix/config.yaml", ".dotrix/vision.md", ".dotrix/agent-rules/base.md"} <= names
+    assert archive.read(".dotrix/vision.md") == b"Our vision"
+    assert b"key: KUN" in archive.read(".dotrix/config.yaml")
 
 
 # -- who may write --------------------------------------------------------------------

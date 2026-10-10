@@ -4,7 +4,7 @@ from typing import Any
 
 from httpx import AsyncClient
 
-from pmagent_backend.core.middleware import loggable_path
+from dotrix_backend.core.middleware import loggable_path
 
 TODAY = date.today()
 
@@ -62,7 +62,11 @@ async def test_turning_the_feed_on_gives_a_secret_url(db_client: AsyncClient, si
     assert (await db_client.get("/v1/me/calendar", headers=ada.headers)).json()["last_used_at"] is not None
     # Calendar apps subscribed before the web app moved to Vite keep polling /api/v1/calendar/...
     old = await db_client.get("/api" + _feed_path(created.json()))
-    assert old.status_code == 200 and old.text == body
+    # The same feed, apart from DTSTAMP (the second it was made, which may tick between the requests).
+    def unstamped(text: str) -> str:
+        return "".join(line for line in text.splitlines(keepends=True) if not line.startswith("DTSTAMP:"))
+
+    assert old.status_code == 200 and unstamped(old.text) == unstamped(body)
 
 
 async def test_mine_is_assigned_or_watched_and_all_is_every_dated_issue(

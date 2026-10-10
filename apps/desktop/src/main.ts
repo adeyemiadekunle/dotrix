@@ -3,7 +3,7 @@
 import { app, BrowserWindow, shell } from "electron";
 import path from "node:path";
 
-const WEB_URL = process.env.PMAGENT_WEB_URL ?? "http://localhost:3000";
+const WEB_URL = process.env.DOTRIX_WEB_URL ?? "http://localhost:3000";
 
 function createWindow(): void {
   const win = new BrowserWindow({

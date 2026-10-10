@@ -1,5 +1,5 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@pmagent/ui/components/avatar";
-import { cn } from "@pmagent/ui/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@dotrix/ui/components/avatar";
+import { cn } from "@dotrix/ui/lib/utils";
 
 import { initials } from "@/lib/labels";
 

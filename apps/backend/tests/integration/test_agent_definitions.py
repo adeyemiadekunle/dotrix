@@ -3,8 +3,8 @@ that use them (docs/agents-v2.md §4)."""
 import pytest
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 SECURITY = {
     "name": "Security reviewer",
@@ -96,8 +96,8 @@ async def test_a_custom_agent_leads_a_chat_and_writes_only_where_its_contract_al
     assert "security" in [a["handle"] for a in (await db_client.get(f"{base}/agents", headers=ada.headers)).json()]
 
     agent_script.say(
-        tool_call("write_file", file_path="/pmagent/reviews/security/auth.md", content="# Auth review\n"),
-        tool_call("write_file", file_path="/pmagent/requirements/auth.md", content="# Changed\n"),
+        tool_call("write_file", file_path="/dotrix/reviews/security/auth.md", content="# Auth review\n"),
+        tool_call("write_file", file_path="/dotrix/requirements/auth.md", content="# Changed\n"),
         "Review saved.",
     )
     paused = (await db_client.post(f"{base}/agent/runs", json={"message": "review auth", "agent": "security"},

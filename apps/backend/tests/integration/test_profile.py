@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pmagent_backend.modules.auth.models import OAuthAccount, User
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.modules.auth.models import OAuthAccount, User
+from dotrix_backend.modules.workspaces.models import Role
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 

@@ -1,7 +1,7 @@
 import pytest
 
-from pmagent_engine.layout import AGENTS
-from pmagent_engine.permissions import Access, access, can_create_issue, can_edit_issues, can_write
+from dotrix_engine.layout import AGENTS
+from dotrix_engine.permissions import Access, access, can_create_issue, can_edit_issues, can_write
 
 R, W, P, T = Access.READ, Access.WRITE, Access.PROPOSE, Access.TIDY
 AGENT_ORDER = ("project-manager", "product", "architecture", "research", "reviewer", "documentation", "coding")

@@ -1,7 +1,7 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import type { Schemas } from "@dotrix/api-client";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GlobeIcon, KeyRoundIcon, LaptopIcon, SmartphoneIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -136,7 +136,7 @@ function Tokens() {
       <SettingsHeader>
         <SettingsTitle>CLI and tools</SettingsTitle>
         <SettingsDescription>
-          The CLI, coding tools, and CI you&apos;ve signed in with <code className="font-mono">pmagent login</code>.
+          The CLI, coding tools, and CI you&apos;ve signed in with <code className="font-mono">dotrix login</code>.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent>

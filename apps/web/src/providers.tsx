@@ -1,5 +1,5 @@
-import { Toaster } from "@pmagent/ui/components/sonner";
-import { TooltipProvider } from "@pmagent/ui/components/tooltip";
+import { Toaster } from "@dotrix/ui/components/sonner";
+import { TooltipProvider } from "@dotrix/ui/components/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 

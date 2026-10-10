@@ -1,4 +1,4 @@
-import { cn } from "@pmagent/ui/lib/utils";
+import { cn } from "@dotrix/ui/lib/utils";
 import { ChevronDownIcon, ChevronRightIcon, FileTextIcon, FolderIcon, FolderOpenIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 
@@ -74,7 +74,7 @@ function Node({
   );
 }
 
-/** Folders of `.pmagent/`, expanded along the way to the selected file. */
+/** Folders of `.dotrix/`, expanded along the way to the selected file. */
 export function FileTree({
   nodes,
   selected,

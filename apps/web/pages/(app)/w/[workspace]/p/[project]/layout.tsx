@@ -1,5 +1,5 @@
-import { Button } from "@pmagent/ui/components/button";
-import { cn } from "@pmagent/ui/lib/utils";
+import { Button } from "@dotrix/ui/components/button";
+import { cn } from "@dotrix/ui/lib/utils";
 import { InboxIcon, MessageSquareIcon, PlusIcon, SettingsIcon, StarIcon } from "lucide-react";
 import { Link, usePathname } from "@/lib/navigation";
 import { Suspense, useEffect, useState, type ReactNode } from "react";

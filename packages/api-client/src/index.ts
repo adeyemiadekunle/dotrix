@@ -1,4 +1,4 @@
-// Typed client for the pmagent API (apps/backend), used by web and desktop.
+// Typed client for the dotrix API (apps/backend), used by web and desktop.
 //
 // `schema.ts` is generated from `openapi.json`, which is exported from the backend.
 // Never edit either by hand: run `pnpm openapi` at the repo root after changing the API.
@@ -34,4 +34,4 @@ export function createClient({ baseUrl, getToken, fetch }: ClientOptions) {
   return client;
 }
 
-export type PmagentClient = ReturnType<typeof createClient>;
+export type DotrixClient = ReturnType<typeof createClient>;

@@ -1,7 +1,7 @@
-import { Button } from "@pmagent/ui/components/button";
-import { Input } from "@pmagent/ui/components/input";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { cn } from "@pmagent/ui/lib/utils";
+import { Button } from "@dotrix/ui/components/button";
+import { Input } from "@dotrix/ui/components/input";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { cn } from "@dotrix/ui/lib/utils";
 import { CalendarIcon, FolderPlusIcon, LockIcon, PlusIcon, SearchIcon, StarIcon } from "lucide-react";
 import { Link } from "@/lib/navigation";
 import { Suspense, useMemo, useState } from "react";

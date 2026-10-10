@@ -9,10 +9,10 @@ from cryptography.fernet import Fernet
 from httpx import AsyncClient
 from sqlalchemy import update
 
-from pmagent_backend.core.crypto import Secrets
-from pmagent_backend.modules.agents.models import AgentRun
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import ScriptedChatModel, tool_call
+from dotrix_backend.core.crypto import Secrets
+from dotrix_backend.modules.agents.models import AgentRun
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import ScriptedChatModel, tool_call
 
 ANTHROPIC = "sk-ant-team-" + "t" * 30 + "TEAM"
 BOBS = "sk-ant-bob-" + "b" * 30 + "BOB1"
@@ -73,7 +73,7 @@ async def test_conversations_are_private_to_whoever_started_them(world, db_clien
     assert hijack.status_code == 404
 
     # A change Bob asks for waits for Ada: she opens the run while it waits, and decides it.
-    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
     paused = await _ask(db_client, base, bob.headers, "Write the roadmap")
     assert paused["status"] == "awaiting_approval"
     seen = await db_client.get(f"{base}/agent/runs/{paused['id']}", headers=ada.headers)

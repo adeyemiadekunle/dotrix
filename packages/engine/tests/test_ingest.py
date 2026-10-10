@@ -3,7 +3,7 @@ import zipfile
 
 import pytest
 
-from pmagent_engine.ingest import UnsupportedDocument, to_markdown
+from dotrix_engine.ingest import UnsupportedDocument, to_markdown
 
 
 def _docx(text: str) -> bytes:

@@ -1,8 +1,8 @@
 """A project's activity feed: issues, documents, runs, and decisions, newest first."""
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 
 async def test_project_activity(signup, create_team, add_member, db_client: AsyncClient) -> None:
@@ -84,7 +84,7 @@ async def test_only_what_agents_did(signup, create_team, add_member, db_client: 
     await db_client.post(f"{base}/issues", json={"title": "Ada's own work"}, headers=ada.headers)
 
     agent_script.say(
-        tool_call("write_file", file_path="/pmagent/roadmap.md", content="# Roadmap\n\nPhase 1.\n"),
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nPhase 1.\n"),
         "Updated the roadmap.",
     )
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan phase 1"}, headers=ada.headers)).json()

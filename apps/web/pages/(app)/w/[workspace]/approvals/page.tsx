@@ -1,7 +1,7 @@
-import { Avatar, AvatarFallback } from "@pmagent/ui/components/avatar";
-import { Button } from "@pmagent/ui/components/button";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { cn } from "@pmagent/ui/lib/utils";
+import { Avatar, AvatarFallback } from "@dotrix/ui/components/avatar";
+import { Button } from "@dotrix/ui/components/button";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { cn } from "@dotrix/ui/lib/utils";
 import {
   ArrowLeftIcon,
   AtSignIcon,

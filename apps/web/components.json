@@ -12,9 +12,9 @@
   "iconLibrary": "lucide",
   "aliases": {
     "components": "@/components",
-    "hooks": "@pmagent/ui/hooks",
+    "hooks": "@dotrix/ui/hooks",
     "lib": "@/lib",
-    "utils": "@pmagent/ui/lib/utils",
-    "ui": "@pmagent/ui/components"
+    "utils": "@dotrix/ui/lib/utils",
+    "ui": "@dotrix/ui/components"
   }
 }

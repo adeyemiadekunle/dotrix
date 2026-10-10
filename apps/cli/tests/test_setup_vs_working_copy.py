@@ -14,10 +14,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from fake_platform import PID, FakePlatform  # noqa: E402
 
-from pmagent_cli import cli as cli_module  # noqa: E402
-from pmagent_cli import repo as repo_facts  # noqa: E402
-from pmagent_cli.agent_client import PlatformAgent  # noqa: E402
-from pmagent_cli.sync import STATE_FILE, LinkState  # noqa: E402
+from dotrix_cli import cli as cli_module  # noqa: E402
+from dotrix_cli import repo as repo_facts  # noqa: E402
+from dotrix_cli.agent_client import PlatformAgent  # noqa: E402
+from dotrix_cli.sync import STATE_FILE, LinkState  # noqa: E402
 
 REMOTE = "https://ada:ghp_secret@github.com/acme/kunemi.git"
 
@@ -89,8 +89,8 @@ def test_member_connects_to_the_existing_project(checkout: Path, platform: FakeP
     assert result.exit_code == 0, result.output
     assert "This repo belongs to KUN (Kunemi) in Kunemi" in result.output
     assert not [r for r in platform.requests if r.method == "POST"]  # nothing created or run
-    state = LinkState.load(checkout / ".pmagent")
-    assert state.project_key == "KUN" and (checkout / ".pmagent" / "project.md").exists()
+    state = LinkState.load(checkout / ".dotrix")
+    assert state.project_key == "KUN" and (checkout / ".dotrix" / "project.md").exists()
     lookup = next(r for r in platform.requests if r.url.params.get("repo_url"))
     assert "ghp_secret" not in str(lookup.url)  # credentials never leave the machine
 
@@ -100,7 +100,7 @@ def test_member_without_a_project_is_sent_to_an_owner(checkout: Path, platform: 
     result = run("connect", str(checkout))
     assert result.exit_code == 1
     assert "owners and admins" in result.output
-    assert not (checkout / ".pmagent" / STATE_FILE).exists()
+    assert not (checkout / ".dotrix" / STATE_FILE).exists()
     assert not [r for r in platform.requests if r.method == "POST"]
 
 
@@ -111,9 +111,9 @@ def test_owner_sets_up_the_project_when_none_exists(checkout: Path, platform: Fa
     assert created["key"] == "KUN" and created["source"] == "existing_repo"
     assert created["repo_url"] == "https://github.com/acme/kunemi.git"  # stripped of credentials
     assert created["readme"].startswith("# Kunemi")
-    assert "pmagent architecture draft" in result.output  # next setup steps
+    assert "dotrix architecture draft" in result.output  # next setup steps
     assert platform.runs_started == []  # connecting never starts an architecture draft
-    assert LinkState.load(checkout / ".pmagent").project_id == PID
+    assert LinkState.load(checkout / ".dotrix").project_id == PID
 
 
 def test_connect_needs_a_git_repo(tmp_path: Path, platform: FakePlatform) -> None:
@@ -138,8 +138,8 @@ def test_docs_add_uploads_and_pulls(linked: Path, platform: FakePlatform, tmp_pa
     doc.write_bytes(b"PK fake docx")
     result = run("docs-add", str(doc), "--project", str(linked))
     assert result.exit_code == 0, result.output
-    assert "-> .pmagent/docs/normalized/spec.md" in result.output
-    assert (linked / ".pmagent" / "docs" / "normalized" / "spec.md").read_text() == "imported spec.docx"
+    assert "-> .dotrix/docs/normalized/spec.md" in result.output
+    assert (linked / ".dotrix" / "docs" / "normalized" / "spec.md").read_text() == "imported spec.docx"
 
 
 def test_docs_add_waits_for_the_background_conversion(
@@ -153,8 +153,8 @@ def test_docs_add_waits_for_the_background_conversion(
     result = run("docs-add", str(doc), "--project", str(linked))
     assert result.exit_code == 0, result.output
     assert len(naps) == 2  # it checked back until the platform had converted it
-    assert "-> .pmagent/docs/normalized/spec.md (v1)" in result.output
-    assert (linked / ".pmagent" / "docs" / "normalized" / "spec.md").read_text() == "imported spec.pdf"
+    assert "-> .dotrix/docs/normalized/spec.md (v1)" in result.output
+    assert (linked / ".dotrix" / "docs" / "normalized" / "spec.md").read_text() == "imported spec.pdf"
 
 
 def test_docs_add_reports_a_failed_conversion(linked: Path, platform: FakePlatform, tmp_path: Path, monkeypatch) -> None:

@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from pmagent_cli.platform import PlatformClient
+from dotrix_cli.platform import PlatformClient
 
 WS, PID = "ws-1", "proj-1"
 KB = f"/v1/workspaces/{WS}/projects/{PID}/knowledge"
@@ -69,7 +69,7 @@ class FakePlatform:
         self.files[path] = {"content": "", "revision": self.revision, "deleted": True}
 
     # -- HTTP ---------------------------------------------------------------------
-    def client(self, token: str | None = "pmat_test") -> PlatformClient:
+    def client(self, token: str | None = "dtx_test") -> PlatformClient:
         http = httpx.Client(base_url="http://fake", transport=httpx.MockTransport(self.handle))
         return PlatformClient("http://fake", token, http=http)
 
@@ -98,7 +98,7 @@ class FakePlatform:
         if path == "/v1/auth/device/token":
             answer = self.device_polls.pop(0)
             if answer == "ok":
-                return httpx.Response(200, json={"id": "tok-1", "token": "pmat_new"})
+                return httpx.Response(200, json={"id": "tok-1", "token": "dtx_new"})
             return self.problem(400, answer)
         if path == "/v1/me":
             return httpx.Response(200, json=self.me)
@@ -231,5 +231,5 @@ def issue(key: str, **fields: Any) -> dict[str, Any]:
             "assignee_user_id": None, "assignee_agent": None, "parent_key": None, **fields}
 
 
-def approval(approval_id: str, tool: str = "write_file", target: str = "/pmagent/roadmap.md", **extra: Any) -> dict:
+def approval(approval_id: str, tool: str = "write_file", target: str = "/dotrix/roadmap.md", **extra: Any) -> dict:
     return {"id": approval_id, "tool": tool, "target": target, "args": {}, "diff": None, "status": "pending", **extra}

@@ -14,10 +14,10 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from httpx import AsyncClient
 from pydantic import SecretStr
 
-from pmagent_backend.core.settings import Settings
-from pmagent_backend.modules.auth.github import GitHubOAuth, get_github
-from pmagent_backend.modules.connectors.github_app import GitHubAppClient, get_github_app
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.auth.github import GitHubOAuth, get_github
+from dotrix_backend.modules.connectors.github_app import GitHubAppClient, get_github_app
+from dotrix_backend.modules.workspaces.models import Role
 
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 PEM = KEY.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
@@ -101,7 +101,7 @@ def github(db_client: AsyncClient) -> FakeGitHub:
         github_client_id="gh-client",
         github_client_secret="gh-secret",  # type: ignore[arg-type]
         github_app_id="4242",
-        github_app_slug="pmagent-test",
+        github_app_slug="dotrix-test",
         github_app_private_key=PEM.decode(),  # type: ignore[arg-type]
     )
     transport = httpx.MockTransport(fake.handle)

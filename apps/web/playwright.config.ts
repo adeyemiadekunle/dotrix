@@ -1,5 +1,5 @@
 // End-to-end tests: the real web app against a real backend with a throwaway database and a
-// deterministic model (apps/backend/scripts/e2e_server.py). Run with `pnpm --filter @pmagent/web e2e`.
+// deterministic model (apps/backend/scripts/e2e_server.py). Run with `pnpm --filter @dotrix/web e2e`.
 import { defineConfig, devices } from "@playwright/test";
 
 const API = "http://127.0.0.1:8100";
@@ -36,7 +36,7 @@ export default defineConfig({
       timeout: 300_000,
       reuseExistingServer: !process.env.CI,
       // Its own build folder, so a `vite build` for :3000 doesn't overwrite it mid-run.
-      env: { PMAGENT_API_URL: API, PMAGENT_WEB_OUT_DIR: "dist-e2e" },
+      env: { DOTRIX_API_URL: API, DOTRIX_WEB_OUT_DIR: "dist-e2e" },
     },
   ],
 });

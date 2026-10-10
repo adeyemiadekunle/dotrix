@@ -1,7 +1,7 @@
-// The project's `.pmagent/` knowledge: files, their version history, edits, and restores.
+// The project's `.dotrix/` knowledge: files, their version history, edits, and restores.
 // Paths contain slashes (e.g. "architecture/overview.md"), so these calls build the URL
 // themselves rather than going through the typed client, which would encode them.
-import type { Schemas } from "@pmagent/api-client";
+import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 

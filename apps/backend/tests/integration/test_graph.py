@@ -2,7 +2,7 @@
 walked for neighbours, impact, paths, and stale documents."""
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.modules.workspaces.models import Role
 
 
 async def _world(db_client: AsyncClient, signup, create_team, add_member):
@@ -49,7 +49,7 @@ async def test_the_graph_follows_issues_and_documents(
         ("out", "part_of", epic), ("out", "implements", "requirements/auth.md"),
         ("out", "decided_by", "decisions/ADR-001.md"), ("in", "depends_on", task),
     }
-    adr = (await db_client.get(f"{graph}/neighbors", params={"ref": "/pmagent/decisions/ADR-001.md"},
+    adr = (await db_client.get(f"{graph}/neighbors", params={"ref": "/dotrix/decisions/ADR-001.md"},
                                headers=cat.headers)).json()
     assert {("out", "affects", "module:auth"), ("out", "affects", "module:web proxy"),
             ("out", "mentions", "requirements/auth.md")} <= _links(adr)
@@ -128,7 +128,7 @@ async def test_stale_documents_and_links_by_hand(
 async def test_agents_read_the_graph_and_link_with_approval(
     db_client: AsyncClient, signup, create_team, add_member, agent_script
 ) -> None:
-    from pmagent_engine.testing import tool_call
+    from dotrix_engine.testing import tool_call
 
     ada, _, _, base = await _world(db_client, signup, create_team, add_member)
     await _write(db_client, base, "requirements/auth.md", "# Sign-in\n", ada.headers)
@@ -160,10 +160,10 @@ async def test_a_big_project_s_pack_lists_the_documents_near_the_question(
     import uuid
     from datetime import UTC, datetime
 
-    from pmagent_backend.modules.agents.context import build_context_pack
-    from pmagent_backend.modules.agents.models import AgentRun, RunKind
-    from pmagent_backend.modules.knowledge.service import Actor, KnowledgeService
-    from pmagent_backend.modules.projects.models import Project
+    from dotrix_backend.modules.agents.context import build_context_pack
+    from dotrix_backend.modules.agents.models import AgentRun, RunKind
+    from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
+    from dotrix_backend.modules.projects.models import Project
 
     ada, _, _, base = await _world(db_client, signup, create_team, add_member)
     project = await db_session.get(Project, uuid.UUID(base.rsplit("/", 1)[1]))

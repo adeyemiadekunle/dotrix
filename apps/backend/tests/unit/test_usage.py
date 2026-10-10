@@ -5,8 +5,8 @@ import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 
-from pmagent_backend.modules.agents.usage import TokenBudgetExceeded, TokenUsage, merge_breakdown
-from pmagent_engine.testing import ScriptedChatModel, tool_call
+from dotrix_backend.modules.agents.usage import TokenBudgetExceeded, TokenUsage, merge_breakdown
+from dotrix_engine.testing import ScriptedChatModel, tool_call
 
 
 def usage(input_tokens: int, output_tokens: int) -> dict[str, int]:
@@ -40,7 +40,7 @@ def test_take_starts_again_from_zero() -> None:
 
 
 async def test_streamed_calls_are_counted_once() -> None:
-    reply = tool_call("read_file", file_path="/pmagent/x.md")
+    reply = tool_call("read_file", file_path="/dotrix/x.md")
     reply.usage_metadata = usage(20, 4)  # type: ignore[assignment]
     model = ScriptedChatModel.of(
         AIMessage(content="several words streamed one by one", usage_metadata=usage(10, 3)),
@@ -73,7 +73,7 @@ async def test_by_agent_tools_and_files_read() -> None:
     counter.on_llm_end(result, run_id=pm)
     counter.on_llm_end(result, run_id=pm)  # a call whose start wasn't seen goes to the PM
     read = uuid.uuid4()
-    counter.on_tool_start({"name": "read_file"}, "", run_id=read, inputs={"file_path": "/pmagent/roadmap.md"})
+    counter.on_tool_start({"name": "read_file"}, "", run_id=read, inputs={"file_path": "/dotrix/roadmap.md"})
     counter.on_tool_end("x" * 400, run_id=read)
     task = uuid.uuid4()
     counter.on_tool_start({"name": "task"}, "", run_id=task, inputs={"description": "research it"})
@@ -87,7 +87,7 @@ async def test_by_agent_tools_and_files_read() -> None:
         "read_file": {"calls": 1, "result_tokens": 100},
         "task": {"calls": 1, "result_tokens": 10},
     }
-    assert breakdown["files_read"] == {"/pmagent/roadmap.md": 1}
+    assert breakdown["files_read"] == {"/dotrix/roadmap.md": 1}
 
 
 async def test_the_budget_stops_the_next_model_call() -> None:
@@ -112,12 +112,12 @@ def test_no_budget_never_stops() -> None:
 
 def test_breakdowns_add_up_over_steps() -> None:
     first = {"by_agent": {"project-manager": {"input_tokens": 5, "output_tokens": 1, "model_calls": 1}},
-             "tools": {"read_file": {"calls": 1, "result_tokens": 50}}, "files_read": {"/pmagent/a.md": 1}}
+             "tools": {"read_file": {"calls": 1, "result_tokens": 50}}, "files_read": {"/dotrix/a.md": 1}}
     second = {"by_agent": {"project-manager": {"input_tokens": 7, "output_tokens": 2, "model_calls": 1},
                            "product": {"input_tokens": 3, "output_tokens": 1, "model_calls": 1}},
-              "tools": {"read_file": {"calls": 2, "result_tokens": 10}}, "files_read": {"/pmagent/a.md": 2, "/pmagent/b.md": 1}}
+              "tools": {"read_file": {"calls": 2, "result_tokens": 10}}, "files_read": {"/dotrix/a.md": 2, "/dotrix/b.md": 1}}
     merged = merge_breakdown(merge_breakdown({}, first), second)
     assert merged["by_agent"]["project-manager"] == {"input_tokens": 12, "output_tokens": 3, "model_calls": 2}
     assert merged["by_agent"]["product"]["model_calls"] == 1
     assert merged["tools"]["read_file"] == {"calls": 3, "result_tokens": 60}
-    assert merged["files_read"] == {"/pmagent/a.md": 3, "/pmagent/b.md": 1}
+    assert merged["files_read"] == {"/dotrix/a.md": 3, "/dotrix/b.md": 1}

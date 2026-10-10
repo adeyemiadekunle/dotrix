@@ -1,6 +1,6 @@
 import pytest
 
-from pmagent_backend.modules.agents.titles import title_from_message
+from dotrix_backend.modules.agents.titles import title_from_message
 
 
 @pytest.mark.parametrize(

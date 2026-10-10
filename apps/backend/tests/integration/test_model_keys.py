@@ -7,11 +7,11 @@ from cryptography.fernet import Fernet
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from pmagent_backend.core.crypto import Secrets
-from pmagent_backend.modules.agents.llm import available_models, key_for, limit_error
-from pmagent_backend.modules.model_keys.models import WorkspaceModelKey
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import ScriptedChatModel
+from dotrix_backend.core.crypto import Secrets
+from dotrix_backend.modules.agents.llm import available_models, key_for, limit_error
+from dotrix_backend.modules.model_keys.models import WorkspaceModelKey
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import ScriptedChatModel
 
 KEY = "sk-ant-test-" + "x" * 30 + "WXYZ"
 

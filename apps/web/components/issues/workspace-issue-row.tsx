@@ -1,4 +1,4 @@
-import { cn } from "@pmagent/ui/lib/utils";
+import { cn } from "@dotrix/ui/lib/utils";
 import { Link } from "@/lib/navigation";
 
 import { ProjectTile } from "@/components/project-tile";

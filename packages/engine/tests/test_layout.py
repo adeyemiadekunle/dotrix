@@ -1,6 +1,6 @@
 import pytest
 
-from pmagent_engine.layout import AGENTS, InvalidPath, normalize_path, skeleton
+from dotrix_engine.layout import AGENTS, InvalidPath, normalize_path, skeleton
 
 
 def test_skeleton_has_the_prd_structure() -> None:

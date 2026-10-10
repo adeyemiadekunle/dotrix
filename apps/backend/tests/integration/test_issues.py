@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.modules.workspaces.models import Role
 
 
 @pytest.fixture
@@ -365,11 +365,11 @@ async def test_issues_are_in_the_export(project, db_client: AsyncClient) -> None
     await patch(db_client, url, story["key"], ada.headers, status="in_progress", note="Started")
     export = await db_client.get(url.replace("/issues", "/knowledge/export"), headers=ada.headers)
     archive = zipfile.ZipFile(io.BytesIO(export.content))
-    text = archive.read(f".pmagent/issues/{story['key']}.md").decode()
+    text = archive.read(f".dotrix/issues/{story['key']}.md").decode()
     assert text.startswith("---\nkey: KUN-2\ntype: story\ntitle: Book a slot\nstatus: in_progress")
     assert f"parent: {epic['key']}" in text and "Acceptance: merchant picks a slot." in text
     assert "## Log" in text and "updated: Started" in text
-    assert f".pmagent/issues/{epic['key']}.md" in archive.namelist()
+    assert f".dotrix/issues/{epic['key']}.md" in archive.namelist()
 
 
 # -- across projects (My issues, Tasks) ---------------------------------------------------
@@ -474,8 +474,8 @@ async def test_stopping_a_repeat_stops_the_next_one(project, db_client: AsyncCli
 
 
 def test_next_due_keeps_the_day_and_clamps_to_short_months() -> None:
-    from pmagent_backend.modules.issues.models import Recurrence
-    from pmagent_backend.modules.issues.service import next_due
+    from dotrix_backend.modules.issues.models import Recurrence
+    from dotrix_backend.modules.issues.service import next_due
 
     assert next_due(date(2026, 1, 31), Recurrence.MONTHLY) == date(2026, 2, 28)
     assert next_due(date(2026, 12, 15), Recurrence.MONTHLY) == date(2027, 1, 15)

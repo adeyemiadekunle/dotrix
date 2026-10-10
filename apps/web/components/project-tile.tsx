@@ -1,4 +1,4 @@
-import { cn } from "@pmagent/ui/lib/utils";
+import { cn } from "@dotrix/ui/lib/utils";
 import type { CSSProperties } from "react";
 
 import { PROJECT_ICONS, projectColor } from "@/lib/project-look";

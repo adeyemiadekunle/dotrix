@@ -33,7 +33,7 @@ Vite instead of Next.js.
 
 | # | Decision | Recommendation |
 | --- | --- | --- |
-| D1 | React on Vite, or Gr8r's vanilla JS architecture? | **React + Vite.** Keep `@pmagent/ui` (shadcn), restyled with Gr8r's tokens. Rewriting the agent surfaces (chat streaming, approvals, diffs, the graph) without React is a far bigger job, for nothing gained. |
+| D1 | React on Vite, or Gr8r's vanilla JS architecture? | **React + Vite.** Keep `@dotrix/ui` (shadcn), restyled with Gr8r's tokens. Rewriting the agent surfaces (chat streaming, approvals, diffs, the graph) without React is a far bigger job, for nothing gained. |
 | D2 | Router | **TanStack Router** (file-based, type-safe search params). It fits the URL-state convention (`useSearchParam`) and TanStack Query, which is already used. React Router 7 in library mode is the alternative. |
 | D3 | Where the session lives without Next's server | **The backend sets httpOnly cookies itself** (cookie mode on `/v1/auth/*`), served from the **same origin** as the SPA: Vite's dev proxy locally, and a reverse proxy (or FastAPI serving `dist/`) in production. This keeps "tokens never reach the browser" without adding a separate server. The alternative is a small Node BFF (Hono), which is one more service to run. |
 | D4 | Naming: Gr8r's or Dotrix's? (Tasks vs Issues, My Tasks vs My issues, Inbox) | Gr8r's labels in the UI ("Tasks", "My Tasks"), Dotrix's model in the API (issues with types). Dotrix's copy rule (sentence case) still applies: "My tasks". |
@@ -49,9 +49,9 @@ What Dotrix's web app uses from Next.js today (counted in `apps/web`):
 | --- | --- | --- |
 | `next/link` (37 files), `next/navigation` (29) | everywhere | Router `Link`, `useNavigate`, `useSearch`, `useParams`. Mechanical, but touches ~66 files. |
 | App Router pages (77 route files, `(auth)` and `(app)` groups, layouts) | `app/` | File-based routes under `src/routes/`, with the same URLs (`/w/$workspace/p/$project/board`). Layouts become layout routes. |
-| Route handlers (10) | `app/api/auth/{login,signup,logout,magic-link,signup-link,github,github/callback}`, `app/api/github/{install,setup}`, `app/api/v1/[...path]` | **Moved to the backend** (D3): `POST /v1/auth/login` etc. set `pm_access` / `pm_refresh` httpOnly cookies when asked (`?session=cookie`), the API accepts the access cookie as well as a Bearer token, and the GitHub sign-in and app-setup redirects finish on the backend. The `/api/v1` proxy disappears: the SPA calls `/v1/*` on the same origin. |
+| Route handlers (10) | `app/api/auth/{login,signup,logout,magic-link,signup-link,github,github/callback}`, `app/api/github/{install,setup}`, `app/api/v1/[...path]` | **Moved to the backend** (D3): `POST /v1/auth/login` etc. set `dx_access` / `dx_refresh` httpOnly cookies when asked (`?session=cookie`), the API accepts the access cookie as well as a Bearer token, and the GitHub sign-in and app-setup redirects finish on the backend. The `/api/v1` proxy disappears: the SPA calls `/v1/*` on the same origin. |
 | Refresh on 401, shared per token (`lib/session.ts`) | proxy | `POST /v1/auth/refresh` with the cookie. **Refresh rotation and reuse detection must survive several tabs refreshing at once**: either keep a short grace window for the just-rotated token on the backend, or a single in-flight refresh per tab plus a `BroadcastChannel` lock across tabs. Today this works because the Next server serialises it. |
-| `clientHeaders` (browser User-Agent and address for sessions) | route handlers | Not needed: the browser calls the API directly, so the backend reads them. Keep `PMAGENT_TRUSTED_PROXIES` for the reverse proxy. |
+| `clientHeaders` (browser User-Agent and address for sessions) | route handlers | Not needed: the browser calls the API directly, so the backend reads them. Keep `DOTRIX_TRUSTED_PROXIES` for the reverse proxy. |
 | `proxy.ts` (redirect to `/login?next=` without a cookie) | root | A router `beforeLoad` guard on the `(app)` layout: no session (`GET /v1/me` 401) → `/login?next=…`. |
 | Server components that redirect (8 pages: `/agents`, `/audit`, `/p/[KEY]`, `/backlog`, `/docs`, `/chat`, `/briefing`) | `app/(app)` | Router redirects in route definitions. |
 | `cookies()` / `headers()` / `server-only` | `lib/session.ts`, route handlers | Gone (backend owns cookies). |
@@ -59,15 +59,15 @@ What Dotrix's web app uses from Next.js today (counted in `apps/web`):
 | `components/after-hydration.tsx` and the hydration rules in CLAUDE.md | project layout | Not needed in an SPA (no server markup to match). Delete it, and the CLAUDE.md section. |
 | Streaming (SSE `.../stream`) through the proxy | chat | Same-origin `EventSource` straight to `/v1/...`; check the reverse proxy doesn't buffer (`X-Accel-Buffering: no`). |
 | Playwright e2e (`next dev` on :3100) | `apps/web/e2e` | `vite preview` on :3100 behind the same proxy rules; `scripts/e2e_server.py` unchanged. |
-| Desktop (Electron loads `PMAGENT_WEB_URL`) | `apps/desktop` | Unchanged if it keeps loading the served app. Loading `dist/` from disk would break same-origin cookies, so don't. |
+| Desktop (Electron loads `DOTRIX_WEB_URL`) | `apps/desktop` | Unchanged if it keeps loading the served app. Loading `dist/` from disk would break same-origin cookies, so don't. |
 | Deploy | — | Static `dist/` + rewrites `/v1/*` → API on the same domain (Vercel rewrites, or nginx/Caddy), so cookies stay first-party and `SameSite=Lax` works. |
 
 **Security checks for Phase 0** (CLAUDE.md rules):
-- Cookies: `HttpOnly; Secure` (in production); `SameSite=Lax`; `pm_refresh` scoped to `Path=/v1/auth`.
+- Cookies: `HttpOnly; Secure` (in production); `SameSite=Lax`; `dx_refresh` scoped to `Path=/v1/auth`.
 - **CSRF** becomes the backend's job once it accepts cookies. Require a custom header on
   state-changing requests (e.g. `X-Requested-With`, sent by the API client; browsers can't send it
   cross-site without CORS), or use a double-submit token. Keep CORS closed.
-- Bearer tokens (CLI, `pmat_…`) keep working unchanged.
+- Bearer tokens (CLI, `dtx_…`) keep working unchanged.
 - The isolation suite and the auth tests gain cookie-mode cases.
 
 **Done when:** every route renders the same as on Next.js, `pnpm build && pnpm typecheck` pass, the

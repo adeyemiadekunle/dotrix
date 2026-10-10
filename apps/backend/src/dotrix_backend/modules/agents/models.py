@@ -1,0 +1,152 @@
+"""Agent runs and their approvals (FR-35, FR-36).
+
+A run is one message to the Project Manager on a conversation thread. The
+agent team runs in the background; its state is checkpointed per thread (LangGraph),
+so a paused run resumes exactly where it stopped. When an agent wants to write,
+the run pauses with one approval per pending action; a permitted person decides
+them all, and the run resumes.
+"""
+from __future__ import annotations
+
+import enum
+import uuid
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from dotrix_backend.db.base import Base, UUIDPrimaryKeyMixin, WorkspaceScopedMixin, str_enum
+
+if TYPE_CHECKING:
+    from dotrix_backend.modules.research.models import ResearchSource
+
+
+class RunKind(enum.StrEnum):
+    CHAT = "chat"
+    BRIEFING = "briefing"  # read-only: any write is rejected automatically
+
+
+class RunStatus(enum.StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+ACTIVE_STATUSES = (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_APPROVAL)
+
+
+class ApprovalStatus(enum.StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    __tablename__ = "agent_runs"
+
+    # The project it's about; null for a conversation across projects (or about none), which
+    # lists its projects in `project_ids` and is read-only (workspace_runs.py).
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    project_ids: Mapped[list[uuid.UUID] | None] = mapped_column(ARRAY(Uuid))
+    thread_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    kind: Mapped[RunKind] = mapped_column(str_enum(RunKind, 16))
+    status: Mapped[RunStatus] = mapped_column(str_enum(RunStatus, 24))
+    message: Mapped[str] = mapped_column(Text)
+    # The conversation's title, on its first run only (a placeholder, then the model's title).
+    title: Mapped[str | None] = mapped_column(String(120))
+    reply: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    # Why it failed, when that's something to act on: "model_limit" (a provider refused for its
+    # rate limit, quota, or credit). Such a run can be continued from where it stopped.
+    error_kind: Mapped[str | None] = mapped_column(String(32))
+    resumes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # when the limit resets, if said
+    continue_at_reset: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # The person who instructed the run; recorded as "instructed by" on every write.
+    requested_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    # Who leads the run: None for Auto (the Project Manager), or a specialist's role.
+    agent: Mapped[str | None] = mapped_column(String(32))
+    # The version of that agent's definition the run used; null for an unchanged built-in.
+    agent_version: Mapped[int | None] = mapped_column(Integer)
+    # A pipeline the leading agent follows for this run instead of its own
+    # (dotrix_engine.pipelines.MODES: triaging a report, reviewing an issue); null: its own.
+    mode: Mapped[str | None] = mapped_column(String(32))
+    # Started by an automation (modules/automations), not a person at the time; still instructed
+    # by the person who set the automation up (requested_by_id).
+    automation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("automations.id", ondelete="SET NULL"), index=True
+    )
+    # The conversation's model, fixed when it starts (every run of a thread has the same one).
+    # Null only on conversations from before models were chosen: they use the project's.
+    conversation_model: Mapped[str | None] = mapped_column(String(100))
+    # The project's model when the run last worked, and the tokens it used over all its steps
+    # (start, then resuming after approvals), the title included.
+    model: Mapped[str | None] = mapped_column(String(100))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cached_input_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    model_calls: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Where the tokens went (usage.merge_breakdown): by agent, tool results, files read.
+    usage: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
+    # The run's token budget when it last worked (null: no limit).
+    token_budget: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    approvals: Mapped[list[AgentApproval]] = relationship(
+        back_populates="run", order_by="AgentApproval.created_at, AgentApproval.position", lazy="raise"
+    )
+    # (Not named `outputs`: AgentRunRead builds its `outputs` from these, with each item's index.)
+    output_rows: Mapped[list[AgentRunOutput]] = relationship(order_by="AgentRunOutput.created_at", lazy="raise")
+    # The web pages its agents found or read (research/models.py), by id: S1, S2, ...
+    source_rows: Mapped[list[ResearchSource]] = relationship(order_by="ResearchSource.number", lazy="raise")
+
+
+class AgentApproval(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    __tablename__ = "agent_approvals"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    # Order within one pause; decisions are sent back in this order.
+    position: Mapped[int]
+    interrupt_id: Mapped[str | None] = mapped_column(String(128))
+    tool: Mapped[str] = mapped_column(String(64))
+    # The handle of the agent whose change this is (null before agents said so, and checkpoints).
+    agent: Mapped[str | None] = mapped_column(String(32))
+    args: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    target: Mapped[str | None] = mapped_column(String(400))  # e.g. the file path
+    diff: Mapped[str | None] = mapped_column(Text)  # for file writes: what would change
+    status: Mapped[ApprovalStatus] = mapped_column(str_enum(ApprovalStatus, 16))
+    reason: Mapped[str | None] = mapped_column(String(500))
+    decided_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    run: Mapped[AgentRun] = relationship(back_populates="approvals", lazy="raise")
+
+
+class AgentRunOutput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """A run's structured result (docs/agents-v2.md §4.6): the items the leading agent recorded
+    with `submit_result`, in its contract's output schema, each with what people did with it."""
+
+    __tablename__ = "agent_run_outputs"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    agent: Mapped[str] = mapped_column(String(32))  # the handle that recorded it
+    schema_name: Mapped[str] = mapped_column("schema", String(32))  # finding, plan, report, ...
+    # [{"data": {...}, "state": "open" | "done" | "dismissed", "reason", "link", "acted_by_id", "acted_at"}]
+    items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    # A report saved as a research note: the note's path in `.dotrix/` (null: not saved).
+    note: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

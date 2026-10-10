@@ -1,7 +1,7 @@
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { BotIcon, CogIcon, ScrollTextIcon, UserIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 

@@ -5,11 +5,11 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pmagent_backend.core.jobs import JobContext
-from pmagent_backend.jobs import cleanup_expired
-from pmagent_backend.modules.api_tokens.models import DeviceAuthorization
-from pmagent_backend.modules.auth.models import ActionToken, AuthSession, RefreshToken
-from pmagent_backend.modules.invites.models import Invite
+from dotrix_backend.core.jobs import JobContext
+from dotrix_backend.jobs import cleanup_expired
+from dotrix_backend.modules.api_tokens.models import DeviceAuthorization
+from dotrix_backend.modules.auth.models import ActionToken, AuthSession, RefreshToken
+from dotrix_backend.modules.invites.models import Invite
 
 
 async def _counts(session: AsyncSession) -> dict[str, int]:
@@ -27,7 +27,7 @@ async def test_cleanup_deletes_only_what_is_finished(
         f"/v1/workspaces/{team['id']}/invites", json={"email": "bob@example.com", "role": "member"}, headers=ada.headers
     )
     assert invite.status_code == 201  # valid 7 days
-    device = await db_client.post("/v1/auth/device/code", json={"client_name": "pmagent CLI"})
+    device = await db_client.post("/v1/auth/device/code", json={"client_name": "dotrix CLI"})
     assert device.status_code == 200  # valid minutes
     before = await _counts(db_session)
     assert before == {"refresh_tokens": 1, "auth_sessions": 1, "action_tokens": 1, "device_authorizations": 1, "invites": 1}

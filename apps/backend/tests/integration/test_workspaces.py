@@ -2,7 +2,7 @@ import uuid
 
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.modules.workspaces.models import Role
 
 
 async def test_create_and_list_workspaces(signup, create_team, db_client: AsyncClient) -> None:

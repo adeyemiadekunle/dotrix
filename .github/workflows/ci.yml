@@ -12,12 +12,12 @@ jobs:
         image: pgvector/pgvector:pg17-trixie  # Postgres 17 + pgvector, like infra/docker-compose.yml
         # Throwaway container reachable only from this runner: trust auth, no password.
         env:
-          POSTGRES_USER: pmagent
-          POSTGRES_DB: pmagent
+          POSTGRES_USER: dotrix
+          POSTGRES_DB: dotrix
           POSTGRES_HOST_AUTH_METHOD: trust
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U pmagent"
+          --health-cmd "pg_isready -U dotrix"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -30,9 +30,9 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      PMAGENT_DATABASE_URL: postgresql+asyncpg://pmagent@localhost:5432/pmagent
-      PMAGENT_TEST_DATABASE_URL: postgresql+asyncpg://pmagent@localhost:5432/pmagent_test
-      PMAGENT_TEST_REDIS_URL: redis://localhost:6379/15
+      DOTRIX_DATABASE_URL: postgresql+asyncpg://dotrix@localhost:5432/dotrix
+      DOTRIX_TEST_DATABASE_URL: postgresql+asyncpg://dotrix@localhost:5432/dotrix_test
+      DOTRIX_TEST_REDIS_URL: redis://localhost:6379/15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -68,9 +68,9 @@ jobs:
           # Git Bash on Windows needs a /c/... path: "C:/..." would split PATH at the colon.
           if command -v cygpath > /dev/null; then bin="$(cygpath -u "$bin")"; fi
           export PATH="$bin:$PATH"
-          pmagent --help
-          pmagent issue --help > /dev/null
-          out="$(pmagent whoami 2>&1 || true)"
+          dotrix --help
+          dotrix issue --help > /dev/null
+          out="$(dotrix whoami 2>&1 || true)"
           echo "$out"
           echo "$out" | grep -q "Not signed in"
 
@@ -86,7 +86,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: API client matches the schema (run `pnpm openapi` if this fails)
         run: |
-          pnpm --filter @pmagent/api-client generate
+          pnpm --filter @dotrix/api-client generate
           git diff --exit-code packages/api-client/src/schema.ts
       - run: pnpm build
       - run: pnpm typecheck
@@ -99,18 +99,18 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg17-trixie  # Postgres 17 + pgvector, like infra/docker-compose.yml
         env:
-          POSTGRES_USER: pmagent
-          POSTGRES_DB: pmagent
+          POSTGRES_USER: dotrix
+          POSTGRES_DB: dotrix
           POSTGRES_HOST_AUTH_METHOD: trust
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U pmagent"
+          --health-cmd "pg_isready -U dotrix"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      PMAGENT_DATABASE_URL: postgresql+asyncpg://pmagent@localhost:5432/pmagent
-      PMAGENT_E2E_DATABASE_URL: postgresql+asyncpg://pmagent@localhost:5432/pmagent_e2e
+      DOTRIX_DATABASE_URL: postgresql+asyncpg://dotrix@localhost:5432/dotrix
+      DOTRIX_E2E_DATABASE_URL: postgresql+asyncpg://dotrix@localhost:5432/dotrix_e2e
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -121,9 +121,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @pmagent/api-client build
-      - run: pnpm --filter @pmagent/web exec playwright install --with-deps chromium
-      - run: pnpm --filter @pmagent/web e2e
+      - run: pnpm --filter @dotrix/api-client build
+      - run: pnpm --filter @dotrix/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @dotrix/web e2e
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

@@ -1,4 +1,4 @@
-# Our web tools (pmagent_engine.web, docs/agents-v2.md §6): `web: true` gives the team our
+# Our web tools (dotrix_engine.web, docs/agents-v2.md §6): `web: true` gives the team our
 # web_search and fetch_page over a fake search and a fake site, in place of the model's own.
 
 - name: research searches, reads the page, and cites it

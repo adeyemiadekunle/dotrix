@@ -1,6 +1,6 @@
 // Issue queries and mutations. Every key starts with ["issues", projectId] so one invalidation
 // refreshes the board, backlog, epics, and any open issue after a change.
-import type { Schemas } from "@pmagent/api-client";
+import type { Schemas } from "@dotrix/api-client";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";

@@ -2,7 +2,7 @@
 // to the agent picked (Auto: the project manager with the specialists it needs) and its outcome
 // (a reply, a failure, or actions waiting for approval). A conversation runs on one model, fixed
 // when it starts. Runs work in the background, so active ones are polled until they finish or pause.
-import type { Schemas } from "@pmagent/api-client";
+import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";

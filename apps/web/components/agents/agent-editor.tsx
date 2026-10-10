@@ -1,11 +1,11 @@
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
-import { Checkbox } from "@pmagent/ui/components/checkbox";
-import { Input } from "@pmagent/ui/components/input";
-import { Label } from "@pmagent/ui/components/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { Textarea } from "@pmagent/ui/components/textarea";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
+import { Checkbox } from "@dotrix/ui/components/checkbox";
+import { Input } from "@dotrix/ui/components/input";
+import { Label } from "@dotrix/ui/components/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { Textarea } from "@dotrix/ui/components/textarea";
 import { HistoryIcon, PlusIcon, RotateCcwIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useRouter } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";
@@ -302,7 +302,7 @@ function Editor({
         <SettingsHeader>
           <SettingsTitle>Folder access</SettingsTitle>
           <SettingsDescription>
-            Which parts of <code className="font-mono">.pmagent/</code> it may change. Anything not listed is read-only.
+            Which parts of <code className="font-mono">.dotrix/</code> it may change. Anything not listed is read-only.
             Propose means it drafts the change for the folder&apos;s owner; <code className="font-mono">agent-rules/</code> is
             always people only.
           </SettingsDescription>

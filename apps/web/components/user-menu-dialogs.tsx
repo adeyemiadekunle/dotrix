@@ -1,5 +1,5 @@
-import { CodeBlock } from "@pmagent/ui/components/code-block";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@pmagent/ui/components/dialog";
+import { CodeBlock } from "@dotrix/ui/components/code-block";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@dotrix/ui/components/dialog";
 import { Link } from "@/lib/navigation";
 import { Fragment, useEffect, useState } from "react";
 
@@ -92,7 +92,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: { open: boolean;
 
 const INSTALL = 'uv tool install "git+https://github.com/adeyemiadekunle/multi-agent-pm#subdirectory=apps/cli"';
 
-/** How to install the `pmagent` CLI, sign it in, and link a checkout to a project here. */
+/** How to install the `dotrix` CLI, sign it in, and link a checkout to a project here. */
 export function ConnectCliDialog({
   open,
   onOpenChange,
@@ -126,20 +126,20 @@ export function ConnectCliDialog({
             <span>
               <span className="font-medium">2. Sign in.</span> It shows a code to confirm here in the browser.
             </span>
-            <CodeBlock code="pmagent login" language="bash" />
+            <CodeBlock code="dotrix login" language="bash" />
           </li>
           <li className="grid gap-2">
             <span>
               <span className="font-medium">3. Link a checkout</span> to its project, found by its git remote.
-              Or name the project: <code className="font-mono text-xs">pmagent link . --workspace {workspaceSlug ?? "<slug>"} --project KEY</code>.
+              Or name the project: <code className="font-mono text-xs">dotrix link . --workspace {workspaceSlug ?? "<slug>"} --project KEY</code>.
             </span>
-            <CodeBlock code="cd path/to/your/repo && pmagent connect" language="bash" />
+            <CodeBlock code="cd path/to/your/repo && dotrix connect" language="bash" />
           </li>
           <li className="grid gap-2">
             <span>
               <span className="font-medium">4. Then</span> chat with the agents and work the board.
             </span>
-            <CodeBlock code={"pmagent chat\npmagent issue list --mine"} language="bash" />
+            <CodeBlock code={"dotrix chat\ndotrix issue list --mine"} language="bash" />
           </li>
         </ol>
         {workspaceSlug && (

@@ -1,7 +1,7 @@
 """A research note rendered from a report and its sources (docs/agents-v2.md §6.4)."""
 from datetime import UTC, date, datetime
 
-from pmagent_engine.web.note import note_path, render_note
+from dotrix_engine.web.note import note_path, render_note
 
 ITEMS = [
     {"data": {"claim": "VAT is 20%", "sources": ["S1"], "quotes": [{"source": "S1", "text": "x"}],

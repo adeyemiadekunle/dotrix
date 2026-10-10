@@ -6,11 +6,11 @@ import sys
 
 from pydantic import SecretStr
 
-from pmagent_backend.core.settings import Settings
-from pmagent_backend.modules.coding import guard
-from pmagent_backend.modules.coding.models import CodingAgent
-from pmagent_backend.modules.coding.sandbox import run_process, sandbox_policy
-from pmagent_backend.modules.coding.tools import ClaudeCode, Codex, Usage, choose_agent
+from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.coding import guard
+from dotrix_backend.modules.coding.models import CodingAgent
+from dotrix_backend.modules.coding.sandbox import run_process, sandbox_policy
+from dotrix_backend.modules.coding.tools import ClaudeCode, Codex, Usage, choose_agent
 
 
 def _settings(**values) -> Settings:
@@ -82,9 +82,9 @@ def test_the_tool_follows_the_key_the_server_has() -> None:
 
 
 def test_what_a_run_may_not_change() -> None:
-    assert guard.check(["src/a.py", "docs/pmagent.md", ".github/CODEOWNERS"]) == []
-    reasons = guard.check([".pmagent/x.md", "app/.pmagent/y.md", ".github/workflows/ci.yml", "lib/.git/config"])
-    assert len(reasons) == 4 and ".pmagent/ stays on the platform" in reasons[0] and "CI workflows" in reasons[2]
+    assert guard.check(["src/a.py", "docs/dotrix.md", ".github/CODEOWNERS"]) == []
+    reasons = guard.check([".dotrix/x.md", "app/.dotrix/y.md", ".github/workflows/ci.yml", "lib/.git/config"])
+    assert len(reasons) == 4 and ".dotrix/ stays on the platform" in reasons[0] and "CI workflows" in reasons[2]
     assert guard.check([f"f{i}" for i in range(guard.MAX_FILES + 1)])[-1].endswith(f"more than {guard.MAX_FILES}")
 
 

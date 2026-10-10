@@ -5,7 +5,7 @@ import asyncio
 import httpx
 import pytest
 
-from pmagent_engine.web.fetch import (
+from dotrix_engine.web.fetch import (
     BlockedAddress,
     FetchError,
     PageFetcher,

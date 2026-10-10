@@ -19,8 +19,8 @@ __pycache__/
 !.env.example
 .DS_Store
 
-# pmagent: project knowledge never goes into a code repo
-.pmagent/
+# dotrix: project knowledge never goes into a code repo
+.dotrix/
 
 # Original engine drop (source now lives in packages/engine and apps/cli)
 docs/files/
@@ -35,5 +35,5 @@ playwright-report/
 test-results/
 .next-e2e/
 
-# The GitHub App private key (PMAGENT_GITHUB_APP_PRIVATE_KEY_PATH)
+# The GitHub App private key (DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH)
 *.pem
