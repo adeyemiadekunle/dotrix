@@ -201,6 +201,44 @@ const CODING: CodingSession[] = [
       { path: "src/lib/slug.ts", added: 6, removed: 2, status: "modified" },
       { path: "src/lib/slug.test.ts", added: 24, removed: 0, status: "added" },
     ],
+    diffs: {
+      "src/pages/pricing.tsx": `@@ -12,9 +12,10 @@ export function Pricing() {
+   return (
+     <main>
+-      <a href="#Plans">Plans</a>
+-      <a href="#FAQ">FAQ</a>
++      <a href={\`#\${slug("Plans")}\`}>Plans</a>
++      <a href={\`#\${slug("FAQ")}\`}>FAQ</a>
+       <section>
+-        <h2 id="plans ">Plans</h2>
++        <h2 id={slug("Plans")}>Plans</h2>`,
+      "src/lib/slug.ts": `@@ -1,4 +1,8 @@
+-export const slug = (s: string) => s.toLowerCase();
++/** A heading's id: lower case, words joined by "-", nothing else. */
++export const slug = (s: string) =>
++  s
++    .toLowerCase()
++    .trim()
++    .replace(/[^a-z0-9]+/g, "-");`,
+      "src/lib/slug.test.ts": `@@ -0,0 +1,6 @@
++import { slug } from "./slug";
++
++test("heading ids match their links", () => {
++  expect(slug("Plans")).toBe("plans");
++  expect(slug(" FAQ & help ")).toBe("faq-help");
++});`,
+    },
+    tree: ["package.json", "README.md", "src/main.tsx", "src/pages/home.tsx", "src/pages/pricing.tsx", "src/lib/slug.ts", "src/lib/slug.test.ts", "src/components/Nav.tsx"],
+    terminal: [
+      { cmd: "pnpm install --frozen-lockfile", out: "Packages: +412\nDone in 9.8s" },
+      { cmd: "rg -n 'href=\"#' src/pages", out: "src/pages/pricing.tsx:15:      <a href=\"#Plans\">Plans</a>\nsrc/pages/pricing.tsx:16:      <a href=\"#FAQ\">FAQ</a>" },
+      { cmd: "pnpm test src/lib", out: " ✓ src/lib/slug.test.ts (1 test) 4ms\n\n Test Files  1 passed (1)\n      Tests  48 passed (48)" },
+    ],
+    tasks: [
+      { id: "bg1", name: "Dev server", cmd: "pnpm dev --port 3000", status: "stopped", port: 3000 },
+      { id: "bg2", name: "Tests", cmd: "pnpm test", status: "done" },
+    ],
+    preview: { path: "/pricing" },
     pr: { number: 42, state: "merged", url: "https://github.com/dotrix/site/pull/42" },
     turns: [{ at: minsAgo(2900), ask: "Fix the anchor links on the pricing page.", summary: "Fixed 4 anchors and added a test for heading ids.", events: ["Read pricing.tsx", "Edited 2 files", "Ran the tests: 48 passed"] }],
   },
@@ -228,6 +266,28 @@ const CODING: CodingSession[] = [
     base: { branch: "main", sha: "5b02c7e" },
     branch: "dotrix/mob-118-biometric-sign-in",
     files: [{ path: "src/auth/biometric.ts", added: 31, removed: 4, status: "modified" }],
+    diffs: {
+      "src/auth/biometric.ts": `@@ -40,7 +40,12 @@ export async function unlock() {
+   const supported = await Biometrics.isAvailable();
+-  if (!supported) throw new Error("Biometrics unavailable");
++  if (!supported) return unlockWithPasscode();
+   const ok = await Biometrics.prompt({ reason: "Unlock the app" });
+-  return ok;
++  if (ok) return true;
++  // Android 12: a cancelled prompt falls back to the passcode instead of failing.
++  return Platform.OS === "android" ? unlockWithPasscode() : false;
+ }`,
+    },
+    tree: ["app.json", "package.json", "src/App.tsx", "src/auth/biometric.ts", "src/auth/passcode.ts", "src/screens/Unlock.tsx"],
+    terminal: [
+      { cmd: "npm ci", out: "added 1021 packages in 21s" },
+      { cmd: "npx jest src/auth", out: " PASS  src/auth/passcode.test.ts\n RUNS  src/auth/biometric.test.ts" },
+    ],
+    tasks: [
+      { id: "bg1", name: "Expo web", cmd: "npx expo start --web --port 8081", status: "running", port: 8081 },
+      { id: "bg2", name: "Jest watch", cmd: "npx jest --watch src/auth", status: "running" },
+    ],
+    preview: { path: "/unlock" },
     turns: [{ at: minsAgo(12), ask: "Add the Android fallback to passcode.", events: ["Read auth/biometric.ts", "Editing auth/biometric.ts"] }],
   },
 ];

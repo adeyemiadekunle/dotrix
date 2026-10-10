@@ -888,3 +888,241 @@
 .cs-bar i.a {
   background: var(--green);
 }
+
+/* A coding session's side panel (components/SessionPanel.tsx): beside the turns, like the app's. */
+/* The panel takes the list's place (the session's back arrow returns to it); very wide windows keep all three. */
+.chat-grid.with-panel {
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 50%);
+}
+.chat-grid.with-panel .chat-side {
+  display: none;
+}
+@media (min-width: 1700px) {
+  .chat-grid.with-panel {
+    grid-template-columns: minmax(0, 280px) minmax(0, 1fr) minmax(420px, 44%);
+  }
+  .chat-grid.with-panel .chat-side {
+    display: flex;
+  }
+}
+.cs-panes {
+  gap: 2px;
+}
+.cs-panes .ibtn {
+  position: relative;
+}
+.cs-panel {
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg);
+}
+.cs-panel-h {
+  gap: 8px;
+  height: 46px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.cs-panel-b {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+.cs-live {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.cs-note {
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cs-term {
+  margin: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm, 6px);
+  background: #141413;
+  color: #e7e5df;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  min-height: 180px;
+}
+.cs-term pre {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  color: #a8a59d;
+  font: inherit;
+}
+.cs-prompt {
+  color: #7fbf8f;
+}
+.cs-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  background: #e7e5df;
+  vertical-align: text-bottom;
+  animation: csblink 1s steps(1) infinite;
+}
+@keyframes csblink {
+  50% {
+    opacity: 0;
+  }
+}
+.cs-branch {
+  gap: 6px;
+  padding: 10px 14px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.cs-dfile {
+  border-bottom: 1px solid var(--border);
+}
+.cs-dfile-h {
+  width: 100%;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.cs-dfile-h:hover {
+  background: var(--surface-2);
+}
+.cs-diff {
+  margin: 0;
+  padding: 6px 0;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.55;
+  overflow-x: auto;
+  background: var(--surface);
+}
+.cs-diff span {
+  display: block;
+  padding: 0 12px;
+  white-space: pre;
+}
+.cs-diff .a {
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+}
+.cs-diff .d {
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
+.cs-diff .h {
+  color: var(--text-3, var(--text-2));
+}
+.cs-url {
+  gap: 6px;
+  margin: 10px;
+  padding: 0 6px 0 10px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+}
+.cs-url input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.cs-preview {
+  margin: 0 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface);
+  font-size: 11.5px;
+}
+.cs-preview-bar {
+  height: 10px;
+  width: 40%;
+  border-radius: 4px;
+  background: var(--surface-3, var(--surface-2));
+}
+.cs-preview-hero {
+  height: 110px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--accent-soft, var(--surface-2)), var(--surface-2));
+}
+.cs-preview-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.cs-preview-row i {
+  height: 54px;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+.cs-files {
+  padding: 6px 0;
+}
+.cs-fnode {
+  gap: 6px;
+  height: 26px;
+  padding-right: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.cs-fnode:hover {
+  background: var(--surface-2);
+}
+.cs-fchanged {
+  color: var(--text);
+  font-weight: 500;
+}
+.cs-task {
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.cs-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-3, var(--text-2));
+  flex-shrink: 0;
+}
+.cs-dot.running {
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 25%, transparent);
+}
+.cs-dot.failed {
+  background: var(--red);
+}
+.linkbtn {
+  color: var(--acc);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+@media (max-width: 900px) {
+  /* Phones and narrow windows: the panel covers the session; its close button goes back. */
+  .chat-grid.with-panel {
+    grid-template-columns: minmax(0, 1fr);
+    position: relative;
+  }
+  .chat-grid.with-panel .cs-panel {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border-left: 0;
+  }
+}

@@ -252,6 +252,13 @@ export interface CodingSession {
   /** What its turns committed, newest first, and the working tree: each changed file. */
   commits?: { sha: string; message: string; at: number }[];
   files?: { path: string; added: number; removed: number; status?: "added" | "modified" | "deleted" }[];
+  /** The side panel: each changed file's diff, the repo's tracked paths, what the agent ran, the
+   * background tasks the supervisor runs (dev servers, watchers), and where the preview opens. */
+  diffs?: Record<string, string>;
+  tree?: string[];
+  terminal?: { cmd: string; out?: string }[];
+  tasks?: { id: string; name: string; cmd: string; status: "running" | "done" | "failed" | "stopped"; port?: number }[];
+  preview?: { path: string };
   pr?: { number: number; state: "open" | "merged" | "closed"; url: string };
   turns: { at: number; ask: string; summary?: string; events: string[] }[];
 }

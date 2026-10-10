@@ -19,6 +19,7 @@ import { Av, Empty, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { useAtPicker } from "../components/AtPicker";
+import { PANES, SessionPanel, paneOf, type Pane } from "../components/SessionPanel";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const MODELS = ["Gemini 3.8 Flash", "Claude Sonnet 5.5", "Claude Opus 5.5", "GPT-5.5"];
@@ -627,8 +628,9 @@ function WorkingTree({ cs }: { cs: CodingSession }) {
   );
 }
 
-function Session({ cs }: { cs: CodingSession }) {
+function Session({ cs, pane }: { cs: CodingSession; pane: Pane | null }) {
   const t = task(cs.task)!;
+  const setPane = (p: Pane | null) => open(`tab=coding&session=${cs.id}${p && p !== pane ? `&pane=${p}` : ""}`);
   const p = proj(cs.project)!;
   const [ask, setAsk] = useState("");
   const [label, c] = STATUS[cs.status];
@@ -640,11 +642,11 @@ function Session({ cs }: { cs: CodingSession }) {
   useEffect(() => setInfo(fromIssue || justStarted), [cs.id]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
-      <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
+      <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0, minWidth: 0, overflow: "hidden" }}>
         <button className="ibtn ibtn-sm" onClick={() => open("tab=coding")} aria-label="Back to sessions">
           <Ic n="arrow-left" s={15} />
         </button>
-        <span className="mono faint" style={{ fontSize: 12 }}>
+        <span className="mono faint" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
           {t.key}
         </span>
         <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
@@ -661,9 +663,17 @@ function Session({ cs }: { cs: CodingSession }) {
           <Ic n="ellipsis-vertical" s={15} />
         </button>
         <span className="sp" />
-        <button className="btn btn-sm btn-ghost" onClick={() => openTask(t.id)}>
+        <div className="row cs-panes" role="toolbar" aria-label="Session panel">
+          {PANES.map(([p, icon, name]) => (
+            <button key={p} className={`ibtn ibtn-sm ${pane === p ? "on" : ""}`} onClick={() => setPane(p)} aria-label={name} aria-pressed={pane === p} data-tip={name}>
+              <Ic n={icon} s={15} />
+              {p === "tasks" && (cs.tasks ?? []).some((x) => x.status === "running") && <span className="cs-live" aria-hidden />}
+            </button>
+          ))}
+        </div>
+        <button className="btn btn-sm btn-ghost" onClick={() => openTask(t.id)} aria-label="Open task" data-tip={pane ? "Open task" : undefined}>
           <Ic n="panel-right-open" s={14} />
-          Open task
+          {!pane && <span className="hide-m">Open task</span>}
         </button>
       </div>
       <div className="chat-scroll">
@@ -868,9 +878,10 @@ export function Chat() {
     .sort((a, b) => b.at - a.at);
   const waitingCoding = D().coding.filter((c) => c.status === "awaiting_approval").length;
   const hasSel = Boolean(th || cs || projectKey || across || search.get("q") || search.get("new"));
+  const pane = paneOf(search.get("pane"));
   return (
     <div className="page flush">
-      <div className={`chat-grid ${hasSel ? "has-sel" : ""}`}>
+      <div className={`chat-grid ${hasSel ? "has-sel" : ""} ${coding && cs && pane ? "with-panel" : ""}`}>
         <aside className="chat-side">
           <div style={{ padding: "18px 14px 8px" }} className="row">
             <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>{coding ? "Code" : "Chat"}</h1>
@@ -949,7 +960,7 @@ export function Chat() {
         <section className="chat-main">
           {coding ? (
             cs ? (
-              <Session key={cs.id} cs={cs} />
+              <Session key={cs.id} cs={cs} pane={pane} />
             ) : (
               <NewSession key={search.get("issue") ?? ""} issue0={search.get("issue")} />
             )
@@ -959,6 +970,7 @@ export function Chat() {
             <NewChat key={`${projectKey}-${across}-${search.get("q")}`} projectKey={projectKey} across={across} q={search.get("q") ?? ""} agent0={search.get("agent")} />
           )}
         </section>
+        {coding && cs && pane && <SessionPanel cs={cs} pane={pane} onPane={(p) => open(`tab=coding&session=${cs.id}${p ? `&pane=${p}` : ""}`)} />}
       </div>
     </div>
   );
