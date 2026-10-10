@@ -2,11 +2,12 @@
 @layer components {
   .chat-grid {
     display: grid;
-    grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, var(--list-w, 300px)) minmax(0, 1fr);
     flex: 1;
     min-height: 0;
   }
   .chat-side {
+    position: relative;
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
@@ -890,20 +891,90 @@
 }
 
 /* A coding session's side panel (components/SessionPanel.tsx): beside the turns, like the app's. */
-/* The panel takes the list's place (the session's back arrow returns to it); very wide windows keep all three. */
+/* List, session, and panels side by side, each edge draggable (--list-w, --panel-w); below 1200px the
+   panels take the list's place (the session's back arrow returns to it). */
 .chat-grid.with-panel {
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 50%);
+  grid-template-columns: minmax(0, var(--list-w, 300px)) minmax(280px, 1fr) minmax(0, min(var(--panel-w, 560px), 70vw));
 }
-.chat-grid.with-panel .chat-side {
-  display: none;
-}
-@media (min-width: 1700px) {
+@media (max-width: 1200px) {
   .chat-grid.with-panel {
-    grid-template-columns: minmax(0, 280px) minmax(0, 1fr) minmax(420px, 44%);
+    grid-template-columns: minmax(280px, 1fr) minmax(0, min(var(--panel-w, 560px), 65vw));
   }
   .chat-grid.with-panel .chat-side {
-    display: flex;
+    display: none;
   }
+}
+.cs-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+}
+.cs-stack {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* Drag handles (ui/splitter.tsx): thin and invisible until hovered or focused. */
+.splitter {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 4;
+  touch-action: none;
+  outline: none;
+}
+.splitter::after {
+  content: "";
+  position: absolute;
+  background: transparent;
+  transition: background 0.12s;
+}
+.splitter:hover::after,
+.splitter:focus-visible::after {
+  background: var(--acc);
+}
+.splitter.col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  cursor: col-resize;
+}
+.splitter.col::after {
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+}
+.splitter.edge-r {
+  right: -5px;
+}
+.splitter.edge-l {
+  left: -5px;
+}
+.splitter.row {
+  height: 7px;
+  margin: -3px 0;
+  cursor: row-resize;
+}
+.splitter.row::after {
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 2px;
+}
+body.resizing-col,
+body.resizing-col * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+body.resizing-row,
+body.resizing-row * {
+  cursor: row-resize !important;
+  user-select: none;
 }
 .cs-panes {
   gap: 2px;
@@ -912,7 +983,6 @@
   position: relative;
 }
 .cs-panel {
-  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1119,10 +1189,19 @@
     grid-template-columns: minmax(0, 1fr);
     position: relative;
   }
-  .chat-grid.with-panel .cs-panel {
+  .chat-grid.with-panel .cs-col {
     position: absolute;
     inset: 0;
     z-index: 3;
     border-left: 0;
   }
+  .chat-grid.with-panel .cs-col > .splitter,
+  .chat-side > .splitter {
+    display: none;
+  }
+}
+
+.cs-panel + .splitter.row,
+.splitter.row + .cs-panel {
+  border-top: 1px solid var(--border);
 }

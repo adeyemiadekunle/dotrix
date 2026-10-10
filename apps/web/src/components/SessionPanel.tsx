@@ -1,10 +1,12 @@
-// A coding session's side panel, beside its turns (like the Claude desktop app's): the terminal,
-// the changes, the app's preview, the repo's files, and background tasks. The open tab is `?pane=`.
-import { useState } from "react";
+// A coding session's side panels, beside its turns (like the Claude desktop app's): the terminal,
+// the changes, the app's preview, the repo's files, and background tasks. Several can be open at once,
+// stacked and resizable against each other; the open ones are `?pane=` (comma-separated).
+import { Fragment, useRef, useState } from "react";
 
 import { Ic } from "../core/icons";
 import { D, mutate } from "../data/store";
 import type { CodingSession } from "../data/types";
+import { Splitter } from "../ui/splitter";
 
 export type Pane = "terminal" | "changes" | "browser" | "files" | "tasks";
 
@@ -16,31 +18,56 @@ export const PANES: [Pane, string, string][] = [
   ["tasks", "list-checks", "Background tasks"],
 ];
 
-const isPane = (v: string | null): v is Pane => PANES.some(([p]) => p === v);
-export const paneOf = (v: string | null): Pane | null => (isPane(v) ? v : null);
+const isPane = (v: string): v is Pane => PANES.some(([p]) => p === v);
+/** The open panels from `?pane=`, in the order they were opened, at most three. */
+export const panesOf = (v: string | null): Pane[] => [...new Set((v ?? "").split(",").filter(isPane))].slice(0, 3);
+const meta = (p: Pane) => PANES.find(([x]) => x === p)!;
 
-export function SessionPanel({ cs, pane, onPane }: { cs: CodingSession; pane: Pane; onPane: (p: Pane | null) => void }) {
-  const name = PANES.find(([p]) => p === pane)?.[2];
+/** The open panels, stacked; the handle between two moves the space between them. */
+export function SessionPanels({ cs, panes, onPanes }: { cs: CodingSession; panes: Pane[]; onPanes: (p: Pane[]) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [weights, setWeights] = useState<Partial<Record<Pane, number>>>({});
+  const resize = (i: number, delta: number) => {
+    const a = panes[i]!;
+    const b = panes[i + 1]!;
+    const height = ref.current?.clientHeight || 600;
+    setWeights((prev) => {
+      const total = panes.reduce((n, p) => n + (prev[p] ?? 1), 0);
+      const step = (delta / height) * total;
+      const wa = (prev[a] ?? 1) + step;
+      const wb = (prev[b] ?? 1) - step;
+      const min = total * 0.12;
+      return wa < min || wb < min ? prev : { ...prev, [a]: wa, [b]: wb };
+    });
+  };
+  const open = (p: Pane) => onPanes(panes.includes(p) ? panes : [...panes, p].slice(-3));
   return (
-    <aside className="cs-panel" aria-label={name}>
-      <div className="row cs-panel-h">
-        <Ic n={PANES.find(([p]) => p === pane)?.[1] ?? "panel-right"} s={14} />
-        <b className="trunc" style={{ fontSize: 12.5, fontWeight: 600 }}>
-          {name}
-        </b>
-        <span className="sp" />
-        <button className="ibtn ibtn-sm" onClick={() => onPane(null)} aria-label="Close the panel">
-          <Ic n="x" s={15} />
-        </button>
-      </div>
-      <div className="cs-panel-b">
-        {pane === "terminal" && <Terminal cs={cs} />}
-        {pane === "changes" && <Changes cs={cs} />}
-        {pane === "browser" && <Browser cs={cs} onPane={onPane} />}
-        {pane === "files" && <Files cs={cs} />}
-        {pane === "tasks" && <Tasks cs={cs} />}
-      </div>
-    </aside>
+    <div ref={ref} className="cs-stack">
+      {panes.map((p, i) => (
+        <Fragment key={p}>
+          {i > 0 && <Splitter dir="row" label={`Resize ${meta(panes[i - 1]!)[2]} and ${meta(p)[2]}`} onDrag={(d) => resize(i - 1, d)} />}
+          <section className="cs-panel" style={{ flex: `${weights[p] ?? 1} 1 0` }} aria-label={meta(p)[2]}>
+            <div className="row cs-panel-h">
+              <Ic n={meta(p)[1]} s={14} />
+              <b className="trunc" style={{ fontSize: 12.5, fontWeight: 600 }}>
+                {meta(p)[2]}
+              </b>
+              <span className="sp" />
+              <button className="ibtn ibtn-sm" onClick={() => onPanes(panes.filter((x) => x !== p))} aria-label={`Close ${meta(p)[2]}`}>
+                <Ic n="x" s={15} />
+              </button>
+            </div>
+            <div className="cs-panel-b">
+              {p === "terminal" && <Terminal cs={cs} />}
+              {p === "changes" && <Changes cs={cs} />}
+              {p === "browser" && <Browser cs={cs} onOpen={open} />}
+              {p === "files" && <Files cs={cs} />}
+              {p === "tasks" && <Tasks cs={cs} />}
+            </div>
+          </section>
+        </Fragment>
+      ))}
+    </div>
   );
 }
 
@@ -119,7 +146,7 @@ function Changes({ cs }: { cs: CodingSession }) {
 }
 
 /** The app as the sandbox serves it: a dev server the supervisor started, through the platform. */
-function Browser({ cs, onPane }: { cs: CodingSession; onPane: (p: Pane) => void }) {
+function Browser({ cs, onOpen }: { cs: CodingSession; onOpen: (p: Pane) => void }) {
   const server = (cs.tasks ?? []).find((t) => t.port && t.status === "running");
   const [path, setPath] = useState(cs.preview?.path ?? "/");
   return (
@@ -147,7 +174,7 @@ function Browser({ cs, onPane }: { cs: CodingSession; onPane: (p: Pane) => void 
       ) : (
         <Note>
           The agent's app shows here once a dev server runs in the sandbox.{" "}
-          <button className="linkbtn" onClick={() => onPane("tasks")}>
+          <button className="linkbtn" onClick={() => onOpen("tasks")}>
             Background tasks
           </button>{" "}
           start and stop it.

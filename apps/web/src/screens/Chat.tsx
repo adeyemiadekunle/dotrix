@@ -19,7 +19,8 @@ import { Av, Empty, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { useAtPicker } from "../components/AtPicker";
-import { PANES, SessionPanel, paneOf, type Pane } from "../components/SessionPanel";
+import { PANES, SessionPanels, panesOf, type Pane } from "../components/SessionPanel";
+import { Splitter, useStoredSize } from "../ui/splitter";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const MODELS = ["Gemini 3.8 Flash", "Claude Sonnet 5.5", "Claude Opus 5.5", "GPT-5.5"];
@@ -628,9 +629,14 @@ function WorkingTree({ cs }: { cs: CodingSession }) {
   );
 }
 
-function Session({ cs, pane }: { cs: CodingSession; pane: Pane | null }) {
+/** `?pane=` for these panels (none: the session alone). */
+export const paneSearch = (session: string, panes: Pane[]) => `tab=coding&session=${session}${panes.length ? `&pane=${panes.join(",")}` : ""}`;
+
+function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
   const t = task(cs.task)!;
-  const setPane = (p: Pane | null) => open(`tab=coding&session=${cs.id}${p && p !== pane ? `&pane=${p}` : ""}`);
+  const pane = panes.length > 0;
+  // A header icon opens its panel below the others (three at most) or closes it.
+  const togglePane = (p: Pane) => open(paneSearch(cs.id, panes.includes(p) ? panes.filter((x) => x !== p) : [...panes, p].slice(-3)));
   const p = proj(cs.project)!;
   const [ask, setAsk] = useState("");
   const [label, c] = STATUS[cs.status];
@@ -665,7 +671,7 @@ function Session({ cs, pane }: { cs: CodingSession; pane: Pane | null }) {
         <span className="sp" />
         <div className="row cs-panes" role="toolbar" aria-label="Session panel">
           {PANES.map(([p, icon, name]) => (
-            <button key={p} className={`ibtn ibtn-sm ${pane === p ? "on" : ""}`} onClick={() => setPane(p)} aria-label={name} aria-pressed={pane === p} data-tip={name}>
+            <button key={p} className={`ibtn ibtn-sm ${panes.includes(p) ? "on" : ""}`} onClick={() => togglePane(p)} aria-label={name} aria-pressed={panes.includes(p)} data-tip={name}>
               <Ic n={icon} s={15} />
               {p === "tasks" && (cs.tasks ?? []).some((x) => x.status === "running") && <span className="cs-live" aria-hidden />}
             </button>
@@ -878,11 +884,16 @@ export function Chat() {
     .sort((a, b) => b.at - a.at);
   const waitingCoding = D().coding.filter((c) => c.status === "awaiting_approval").length;
   const hasSel = Boolean(th || cs || projectKey || across || search.get("q") || search.get("new"));
-  const pane = paneOf(search.get("pane"));
+  const panes = panesOf(search.get("pane"));
+  const withPanel = Boolean(coding && cs && panes.length);
+  // Column widths, dragged by their edges and kept in this browser.
+  const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 300, 220, 480);
+  const [panelW, setPanelW] = useStoredSize("dotrix.chat.panelWidth", 560, 320, 1100);
   return (
     <div className="page flush">
-      <div className={`chat-grid ${hasSel ? "has-sel" : ""} ${coding && cs && pane ? "with-panel" : ""}`}>
+      <div className={`chat-grid ${hasSel ? "has-sel" : ""} ${withPanel ? "with-panel" : ""}`} style={css({ "--list-w": `${listW}px`, "--panel-w": `${panelW}px` })}>
         <aside className="chat-side">
+          <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(d) => setListW((w) => w + d)} />
           <div style={{ padding: "18px 14px 8px" }} className="row">
             <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>{coding ? "Code" : "Chat"}</h1>
             <span className="sp" />
@@ -960,7 +971,7 @@ export function Chat() {
         <section className="chat-main">
           {coding ? (
             cs ? (
-              <Session key={cs.id} cs={cs} pane={pane} />
+              <Session key={cs.id} cs={cs} panes={panes} />
             ) : (
               <NewSession key={search.get("issue") ?? ""} issue0={search.get("issue")} />
             )
@@ -970,7 +981,12 @@ export function Chat() {
             <NewChat key={`${projectKey}-${across}-${search.get("q")}`} projectKey={projectKey} across={across} q={search.get("q") ?? ""} agent0={search.get("agent")} />
           )}
         </section>
-        {coding && cs && pane && <SessionPanel cs={cs} pane={pane} onPane={(p) => open(`tab=coding&session=${cs.id}${p ? `&pane=${p}` : ""}`)} />}
+        {withPanel && cs && (
+          <aside className="cs-col" aria-label="Session panels">
+            <Splitter dir="col" className="edge-l" label="Resize the panels" onDrag={(d) => setPanelW((w) => w - d)} />
+            <SessionPanels cs={cs} panes={panes} onPanes={(next) => open(paneSearch(cs.id, next))} />
+          </aside>
+        )}
       </div>
     </div>
   );
