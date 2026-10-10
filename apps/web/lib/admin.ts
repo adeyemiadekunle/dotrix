@@ -37,10 +37,7 @@ export function useRenameWorkspace(workspaceId: string) {
  * empty personal workspace. */
 export function useConvertToOrganization(workspaceId: string) {
   return useAdminMutation(
-    (name: string | null) =>
-      unwrap(
-        api.POST("/v1/workspaces/{workspace_id}/convert-to-organization", { ...ws(workspaceId), body: { name } }),
-      ),
+    (name: string | null) => unwrap(api.POST("/v1/workspaces/{workspace_id}/convert-to-organization", { ...ws(workspaceId), body: { name } })),
     [["workspaces"]],
     "It's an organisation now; you have a new personal workspace too",
   );
@@ -50,9 +47,7 @@ export function useConvertToOrganization(workspaceId: string) {
 export function useMemberPermissions(workspaceId: string) {
   return useAdminMutation(
     (permissions: Schemas["Permission"][]) =>
-      unwrap(
-        api.PATCH("/v1/workspaces/{workspace_id}", { ...ws(workspaceId), body: { member_permissions: permissions } }),
-      ),
+      unwrap(api.PATCH("/v1/workspaces/{workspace_id}", { ...ws(workspaceId), body: { member_permissions: permissions } })),
     [["workspaces"]],
     "Member permissions saved",
   );
@@ -86,10 +81,7 @@ export function useRemoveMember(workspaceId: string) {
 
 export function useTransferOwnership(workspaceId: string) {
   return useAdminMutation(
-    (userId: string) =>
-      unwrap(
-        api.POST("/v1/workspaces/{workspace_id}/transfer-ownership", { ...ws(workspaceId), body: { user_id: userId } }),
-      ),
+    (userId: string) => unwrap(api.POST("/v1/workspaces/{workspace_id}/transfer-ownership", { ...ws(workspaceId), body: { user_id: userId } })),
     [["members", workspaceId], ["workspaces"]],
     "Ownership transferred",
   );
@@ -105,8 +97,7 @@ export function useInvites(workspaceId: string | undefined, enabled: boolean) {
 
 export function useInviteByEmail(workspaceId: string) {
   return useAdminMutation(
-    (body: Schemas["EmailInviteCreate"]) =>
-      unwrap(api.POST("/v1/workspaces/{workspace_id}/invites", { ...ws(workspaceId), body })),
+    (body: Schemas["EmailInviteCreate"]) => unwrap(api.POST("/v1/workspaces/{workspace_id}/invites", { ...ws(workspaceId), body })),
     [["invites", workspaceId]],
     "Invite sent",
   );
@@ -114,8 +105,7 @@ export function useInviteByEmail(workspaceId: string) {
 
 export function useCreateInviteLink(workspaceId: string) {
   return useAdminMutation(
-    (body: Schemas["LinkInviteCreate"]) =>
-      unwrap(api.POST("/v1/workspaces/{workspace_id}/invites/links", { ...ws(workspaceId), body })),
+    (body: Schemas["LinkInviteCreate"]) => unwrap(api.POST("/v1/workspaces/{workspace_id}/invites/links", { ...ws(workspaceId), body })),
     [["invites", workspaceId]],
   );
 }
@@ -190,15 +180,14 @@ export function useProjectMember(workspaceId: string, projectId: string) {
   const path = (userId: string) => ({
     params: { path: { workspace_id: workspaceId, project_id: projectId, user_id: userId } },
   });
-  const refresh = [["project-members", projectId], ["projects", workspaceId]];
+  const refresh = [
+    ["project-members", projectId],
+    ["projects", workspaceId],
+  ];
   return {
-    add: useAdminMutation(
-      (userId: string) => unwrap(api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}", path(userId))),
-      refresh,
-    ),
+    add: useAdminMutation((userId: string) => unwrap(api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}", path(userId))), refresh),
     remove: useAdminMutation(
-      (userId: string) =>
-        unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}", path(userId))),
+      (userId: string) => unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}", path(userId))),
       refresh,
     ),
   };

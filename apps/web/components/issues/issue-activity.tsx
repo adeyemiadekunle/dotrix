@@ -147,10 +147,7 @@ export function IssueActivity({
         ))}
       </ol>
       {canComment && (
-        <form
-          onSubmit={submit}
-          className="focus-within:ring-ring/50 bg-background relative grid gap-1 rounded-xl border p-2 shadow-xs focus-within:ring-2"
-        >
+        <form onSubmit={submit} className="focus-within:ring-ring/50 bg-background relative grid gap-1 rounded-xl border p-2 shadow-xs focus-within:ring-2">
           {mentions.list}
           <Textarea
             ref={input}

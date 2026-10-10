@@ -5,13 +5,7 @@ import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 import { api, errorMessage, unwrap } from "@/lib/api";
 
 type Settings = Schemas["NotificationSettings"];
@@ -55,8 +49,7 @@ export function NotificationSettings() {
       <SettingsHeader>
         <SettingsTitle>Notifications</SettingsTitle>
         <SettingsDescription>
-          What shows in Notifications and on the bell, in every workspace, and how it reaches your inbox. Turning one off
-          hides earlier ones too.
+          What shows in Notifications and on the bell, in every workspace, and how it reaches your inbox. Turning one off hides earlier ones too.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="p-0">
@@ -83,9 +76,7 @@ export function NotificationSettings() {
                 <Checkbox checked disabled aria-label={`${kind.label} (always on)`} className="mt-0.5" />
                 <span className="grid gap-0.5 text-sm">
                   <span className="font-medium">{kind.label}</span>
-                  <span className="text-muted-foreground text-xs">
-                    {kind.description}. Always on: the agent waits until someone decides.
-                  </span>
+                  <span className="text-muted-foreground text-xs">{kind.description}. Always on: the agent waits until someone decides.</span>
                 </span>
               </li>
             ))}
@@ -106,9 +97,7 @@ export function NotificationSettings() {
               <option value="daily">A daily digest (08:00 UTC)</option>
               <option value="off">Never</option>
             </select>
-            <p className="text-muted-foreground text-xs">
-              Only what you haven&apos;t read or decided yet, and only to a verified address.
-            </p>
+            <p className="text-muted-foreground text-xs">Only what you haven&apos;t read or decided yet, and only to a verified address.</p>
           </div>
         )}
       </SettingsContent>

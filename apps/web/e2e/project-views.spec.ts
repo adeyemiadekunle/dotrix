@@ -62,9 +62,7 @@ test("a project's views: overview, list, table, activity, and My issues", async 
   await page.getByRole("menuitemradio", { name: "Newest" }).click();
   await expect(page).toHaveURL(/sort=created/);
   const inProgress = page.locator("section").filter({ has: page.getByText("In progress", { exact: true }) });
-  await expect(inProgress.getByText(/Record the demo video|Write the onboarding docs/).first()).toHaveText(
-    "Record the demo video",
-  );
+  await expect(inProgress.getByText(/Record the demo video|Write the onboarding docs/).first()).toHaveText("Record the demo video");
 
   // Activity: who did what.
   await tabs.getByRole("link", { name: "Activity", exact: true }).click();

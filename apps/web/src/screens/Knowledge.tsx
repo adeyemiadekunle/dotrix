@@ -59,7 +59,15 @@ export function Knowledge({ p }: { p: Project }) {
       cur.version += 1;
       cur.by = D().me;
       cur.at = Date.now();
-      D().activity.unshift({ id: uid("a"), by: D().me, verb: "updated", task: null, project: p.id, at: Date.now(), extra: cur.path + (note ? ` — ${note}` : "") });
+      D().activity.unshift({
+        id: uid("a"),
+        by: D().me,
+        verb: "updated",
+        task: null,
+        project: p.id,
+        at: Date.now(),
+        extra: cur.path + (note ? ` — ${note}` : ""),
+      });
     });
     open.editing = false;
     setNote("");
@@ -75,13 +83,24 @@ export function Knowledge({ p }: { p: Project }) {
   return (
     <div className="page wide" style={{ paddingTop: 16 }}>
       {!D().knowledge.some((f) => f.project === p.id) ? (
-        <Empty icon="book-open" title="No documents yet" text="The project's requirements, decisions, and research live here, kept current by the agents. Upload documents in Files, or ask in Chat." />
+        <Empty
+          icon="book-open"
+          title="No documents yet"
+          text="The project's requirements, decisions, and research live here, kept current by the agents. Upload documents in Files, or ask in Chat."
+        />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "240px minmax(0,1fr)", gap: 16, alignItems: "start" }} className="kn-grid">
           <aside className="panel" style={{ padding: 6 }}>
             <div className="inwrap" style={{ margin: "2px 2px 6px" }}>
               <Ic n="search" s={13} />
-              <input className="input search-sm" style={{ width: "100%" }} placeholder="Find a document" value={open.q} onChange={(e) => ((open.q = e.target.value), render())} aria-label="Find a document" />
+              <input
+                className="input search-sm"
+                style={{ width: "100%" }}
+                placeholder="Find a document"
+                value={open.q}
+                onChange={(e) => ((open.q = e.target.value), render())}
+                aria-label="Find a document"
+              />
             </div>
             {t.files.map((f) => (
               <Item key={f.path} f={f} />
@@ -108,7 +127,7 @@ export function Knowledge({ p }: { p: Project }) {
                   </h2>
                   <div className="row faint" style={{ gap: 6, fontSize: 12, marginTop: 4 }}>
                     {cur.by && <Av id={cur.by} cls="sm" tip={false} />}v{cur.version}
-                  {cur.by && ` · ${who(cur.by)?.name}`} · {ago(cur.at)}
+                    {cur.by && ` · ${who(cur.by)?.name}`} · {ago(cur.at)}
                   </div>
                 </div>
                 <div className="acts">
@@ -146,8 +165,21 @@ export function Knowledge({ p }: { p: Project }) {
               <div className="panel-b" style={{ paddingTop: 14 }}>
                 {open.editing ? (
                   <div className="col" style={{ gap: 10 }}>
-                    <textarea className="textarea mono" rows={18} value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Document" style={{ fontSize: 12.5 }} />
-                    <input className="input" placeholder="What changed? (optional)" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Change note" />
+                    <textarea
+                      className="textarea mono"
+                      rows={18}
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      aria-label="Document"
+                      style={{ fontSize: 12.5 }}
+                    />
+                    <input
+                      className="input"
+                      placeholder="What changed? (optional)"
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      aria-label="Change note"
+                    />
                   </div>
                 ) : (
                   <Markdown>{cur.content}</Markdown>

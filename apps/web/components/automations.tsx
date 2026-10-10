@@ -2,7 +2,14 @@ import { Badge } from "@dotrix/ui/components/badge";
 import { Button } from "@dotrix/ui/components/button";
 import { Checkbox } from "@dotrix/ui/components/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@dotrix/ui/components/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@dotrix/ui/components/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@dotrix/ui/components/dropdown-menu";
 import { Input } from "@dotrix/ui/components/input";
 import { Label } from "@dotrix/ui/components/label";
 import { Skeleton } from "@dotrix/ui/components/skeleton";
@@ -15,13 +22,7 @@ import { toast } from "sonner";
 import { useConfirm } from "@/components/confirm-dialog";
 import { FormError } from "@/components/form";
 import { timeAgo } from "@/components/issues/issue-activity";
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 import { useChatAgents } from "@/lib/agents";
 import { errorMessage } from "@/lib/api";
 import {
@@ -41,17 +42,7 @@ import {
 import type { Scope } from "@/lib/issues";
 
 /** Project settings → Automations: agents that run on a schedule or when something happens. */
-export function Automations({
-  scope,
-  canEdit,
-  workspaceSlug,
-  projectKey,
-}: {
-  scope: Scope;
-  canEdit: boolean;
-  workspaceSlug: string;
-  projectKey: string;
-}) {
+export function Automations({ scope, canEdit, workspaceSlug, projectKey }: { scope: Scope; canEdit: boolean; workspaceSlug: string; projectKey: string }) {
   const automations = useAutomations(scope);
   const toggle = useToggleAutomation(scope);
   const run = useRunAutomation(scope);
@@ -67,9 +58,8 @@ export function Automations({
       <SettingsHeader>
         <SettingsTitle>Automations</SettingsTitle>
         <SettingsDescription>
-          Agents that run on their own: on a schedule, or when people change issues or documents, approve agent
-          changes, or push code (an agent&apos;s own changes never set them off). Each run is instructed by whoever set it
-          up, and its changes wait for approval like anyone&apos;s.
+          Agents that run on their own: on a schedule, or when people change issues or documents, approve agent changes, or push code (an agent&apos;s own
+          changes never set them off). Each run is instructed by whoever set it up, and its changes wait for approval like anyone&apos;s.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="p-0">
@@ -81,8 +71,8 @@ export function Automations({
               <div className="bg-brand-muted/50 flex flex-wrap items-center gap-3 border-b p-4 text-sm">
                 <ZapIcon className="text-primary size-4 shrink-0" />
                 <p className="min-w-0 flex-1">
-                  <span className="font-medium">Keep documents current:</span> after approved changes or finished issues,
-                  the Documentation agent proposes the updates to the current state and roadmap.
+                  <span className="font-medium">Keep documents current:</span> after approved changes or finished issues, the Documentation agent proposes the
+                  updates to the current state and roadmap.
                 </p>
                 <Button size="sm" variant="outline" onClick={() => setEditing({ body: PRESETS[0].body })}>
                   Set it up
@@ -117,10 +107,7 @@ export function Automations({
                             {a.thread_id && (
                               <>
                                 {" · "}
-                                <Link
-                                  href={`/w/${workspaceSlug}/chat?project=${projectKey}&thread=${a.thread_id}`}
-                                  className="underline underline-offset-4"
-                                >
+                                <Link href={`/w/${workspaceSlug}/chat?project=${projectKey}&thread=${a.thread_id}`} className="underline underline-offset-4">
                                   open in Chat
                                 </Link>
                               </>
@@ -135,13 +122,7 @@ export function Automations({
                     </div>
                     {canEdit && (
                       <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={run.isPending}
-                          onClick={() => run.mutate(a.id)}
-                          aria-label={`Run ${a.name} now`}
-                        >
+                        <Button size="sm" variant="outline" disabled={run.isPending} onClick={() => run.mutate(a.id)} aria-label={`Run ${a.name} now`}>
                           <PlayIcon />
                           Run now
                         </Button>
@@ -189,7 +170,16 @@ export function Automations({
                     <DropdownMenuItem
                       onSelect={() =>
                         setEditing({
-                          body: { name: "", agent: "auto", instructions: "", events: [], schedule_hour: 7, enabled: true, max_runs_per_day: null, unattended: false },
+                          body: {
+                            name: "",
+                            agent: "auto",
+                            instructions: "",
+                            events: [],
+                            schedule_hour: 7,
+                            enabled: true,
+                            max_runs_per_day: null,
+                            unattended: false,
+                          },
                         })
                       }
                     >
@@ -201,9 +191,7 @@ export function Automations({
             )}
           </>
         )}
-        {editing && (
-          <AutomationDialog key={editing.id ?? editing.body.name} scope={scope} initial={editing} onClose={() => setEditing(null)} />
-        )}
+        {editing && <AutomationDialog key={editing.id ?? editing.body.name} scope={scope} initial={editing} onClose={() => setEditing(null)} />}
         {confirmDialog}
       </SettingsContent>
     </SettingsSection>
@@ -226,15 +214,7 @@ function toBody(a: Automation): AutomationCreate {
 
 type Schedule = "none" | "daily" | "weekly";
 
-function AutomationDialog({
-  scope,
-  initial,
-  onClose,
-}: {
-  scope: Scope;
-  initial: { id?: string; body: AutomationCreate };
-  onClose: () => void;
-}) {
+function AutomationDialog({ scope, initial, onClose }: { scope: Scope; initial: { id?: string; body: AutomationCreate }; onClose: () => void }) {
   const save = useSaveAutomation(scope);
   const agents = useChatAgents(scope);
   const [body, setBody] = useState<AutomationCreate>(initial.body);

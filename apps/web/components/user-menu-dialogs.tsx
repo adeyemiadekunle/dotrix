@@ -107,9 +107,7 @@ export function ConnectCliDialog({
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Connect the CLI</DialogTitle>
-          <DialogDescription>
-            Use the agents and the board from your terminal, and from Claude Code or Codex.
-          </DialogDescription>
+          <DialogDescription>Use the agents and the board from your terminal, and from Claude Code or Codex.</DialogDescription>
         </DialogHeader>
         <ol className="grid gap-4 text-sm">
           <li className="grid gap-2">
@@ -130,8 +128,8 @@ export function ConnectCliDialog({
           </li>
           <li className="grid gap-2">
             <span>
-              <span className="font-medium">3. Link a checkout</span> to its project, found by its git remote.
-              Or name the project: <code className="font-mono text-xs">dotrix link . --workspace {workspaceSlug ?? "<slug>"} --project KEY</code>.
+              <span className="font-medium">3. Link a checkout</span> to its project, found by its git remote. Or name the project:{" "}
+              <code className="font-mono text-xs">dotrix link . --workspace {workspaceSlug ?? "<slug>"} --project KEY</code>.
             </span>
             <CodeBlock code="cd path/to/your/repo && dotrix connect" language="bash" />
           </li>

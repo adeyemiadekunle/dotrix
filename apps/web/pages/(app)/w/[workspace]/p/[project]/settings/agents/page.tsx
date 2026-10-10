@@ -11,11 +11,7 @@ export default function ProjectAgentsPage() {
   return (
     <div className="grid max-w-5xl content-start gap-4 p-4 md:p-8">
       <h1 className="text-lg font-semibold">Agents for {project.name}</h1>
-      <AgentList
-        scope={scope}
-        base={`/w/${workspace.slug}/p/${project.key}/settings/agents`}
-        canEdit={canManageProjects(workspace.role)}
-      />
+      <AgentList scope={scope} base={`/w/${workspace.slug}/p/${project.key}/settings/agents`} canEdit={canManageProjects(workspace.role)} />
     </div>
   );
 }

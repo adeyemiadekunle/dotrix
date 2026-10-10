@@ -10,15 +10,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { timeAgo } from "@/components/issues/issue-activity";
 import { ProjectTile } from "@/components/project-tile";
-import {
-  AGENT_NAMES,
-  PR_LABELS,
-  STATUS_LABELS,
-  isActive,
-  useCodingSession,
-  useFollowUp,
-  type CodingSession,
-} from "@/lib/coding";
+import { AGENT_NAMES, PR_LABELS, STATUS_LABELS, isActive, useCodingSession, useFollowUp, type CodingSession } from "@/lib/coding";
 import type { Scope } from "@/lib/issues";
 import { can } from "@/lib/labels";
 
@@ -43,14 +35,12 @@ export function CodingSessionList({
   onOpen: (session: CodingSession) => void;
 }) {
   const byProject = new Map<string, CodingSession[]>();
-  for (const session of sessions)
-    byProject.set(session.project_id, [...(byProject.get(session.project_id) ?? []), session]);
+  for (const session of sessions) byProject.set(session.project_id, [...(byProject.get(session.project_id) ?? []), session]);
   const withSessions = projects.filter((p) => byProject.has(p.id));
   if (withSessions.length === 0) {
     return (
       <p className="text-muted-foreground px-2 text-xs">
-        No coding sessions yet. Start one from an issue (&ldquo;Start coding&rdquo;), or assign an issue to Claude Code
-        or Codex.
+        No coding sessions yet. Start one from an issue (&ldquo;Start coding&rdquo;), or assign an issue to Claude Code or Codex.
       </p>
     );
   }
@@ -68,24 +58,17 @@ export function CodingSessionList({
               type="button"
               onClick={() => onOpen(s)}
               aria-current={s.session_id === selected ? "true" : undefined}
-              className={cn(
-                "hover:bg-muted grid w-full gap-0.5 rounded-md py-1.5 pr-2 pl-7 text-left text-sm",
-                s.session_id === selected && "bg-muted",
-              )}
+              className={cn("hover:bg-muted grid w-full gap-0.5 rounded-md py-1.5 pr-2 pl-7 text-left text-sm", s.session_id === selected && "bg-muted")}
             >
               <span className="flex items-center gap-1.5">
                 {s.status === "awaiting_approval" && <ShieldAlertIcon className="text-warning size-3.5 shrink-0" />}
-                {(s.status === "running" || s.status === "queued") && (
-                  <Loader2Icon className="size-3.5 shrink-0 animate-spin" />
-                )}
+                {(s.status === "running" || s.status === "queued") && <Loader2Icon className="size-3.5 shrink-0 animate-spin" />}
                 <span className="text-muted-foreground shrink-0 font-mono text-xs">{s.issue_key}</span>
                 <span className="truncate">{s.issue_title}</span>
               </span>
               <span className="text-muted-foreground truncate text-xs">
                 {STATUS_LABELS[s.status]}
-                {s.pr_number
-                  ? ` · PR #${s.pr_number}${s.pr_state && s.pr_state !== "open" ? ` ${PR_LABELS[s.pr_state].toLowerCase()}` : ""}`
-                  : ""}
+                {s.pr_number ? ` · PR #${s.pr_number}${s.pr_state && s.pr_state !== "open" ? ` ${PR_LABELS[s.pr_state].toLowerCase()}` : ""}` : ""}
                 {s.turns > 1 ? ` · ${s.turns} turns` : ""} · {timeAgo(s.updated_at)}
               </span>
             </button>
@@ -139,11 +122,7 @@ export function CodingSessionView({
     );
   }
   if (!turns.data?.length || !latest) {
-    return (
-      <p className="text-muted-foreground p-4 text-sm">
-        This session doesn&apos;t exist, or you can&apos;t see its project.
-      </p>
-    );
+    return <p className="text-muted-foreground p-4 text-sm">This session doesn&apos;t exist, or you can&apos;t see its project.</p>;
   }
   const pr = [...turns.data].reverse().find((t) => t.pr_url);
   const busy = turns.data.some(isActive);
@@ -182,11 +161,7 @@ export function CodingSessionView({
         <div className="mx-auto grid max-w-3xl gap-4 p-4">
           {turns.data.map((turn) => (
             <section key={turn.id} className="grid gap-2" aria-label={`Turn ${turn.turn}`}>
-              {turn.note && (
-                <div className="bg-muted ml-auto max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap">
-                  {turn.note}
-                </div>
-              )}
+              {turn.note && <div className="bg-muted ml-auto max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap">{turn.note}</div>}
               <RunCard
                 run={turn}
                 issueKey={turn.issue_key}
@@ -221,12 +196,7 @@ export function CodingSessionView({
               <span className="text-muted-foreground text-xs">
                 {pr ? `Pushes to PR #${pr.pr_number}.` : "Opens a PR when it changes something."} Ctrl+Enter to send
               </span>
-              <Button
-                type="submit"
-                size="sm"
-                className="ml-auto"
-                disabled={busy || !message.trim() || followUp.isPending}
-              >
+              <Button type="submit" size="sm" className="ml-auto" disabled={busy || !message.trim() || followUp.isPending}>
                 {followUp.isPending ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
                 Follow up
               </Button>
@@ -291,9 +261,8 @@ export function CodingPane({
         <div className="grid flex-1 content-center justify-items-center gap-2 p-6 text-center">
           <p className="font-medium">Coding sessions</p>
           <p className="text-muted-foreground max-w-md text-sm">
-            Each &ldquo;Start coding&rdquo; on an issue, or assigning an issue to Claude Code or Codex, starts a
-            session: the agent codes it in a sandbox and the platform opens a PR. Open one to follow it, approve it, or
-            ask for more on the same branch.
+            Each &ldquo;Start coding&rdquo; on an issue, or assigning an issue to Claude Code or Codex, starts a session: the agent codes it in a sandbox and
+            the platform opens a PR. Open one to follow it, approve it, or ask for more on the same branch.
           </p>
         </div>
       )}

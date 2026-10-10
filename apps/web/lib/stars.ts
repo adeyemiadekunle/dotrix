@@ -7,10 +7,7 @@ import { api, errorMessage, unwrap } from "@/lib/api";
 export function useStarredProjects(workspaceId: string | undefined) {
   return useQuery({
     queryKey: ["projects", workspaceId, "starred"],
-    queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/projects/starred", { params: { path: { workspace_id: workspaceId! } } }),
-      ),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/starred", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: Boolean(workspaceId),
   });
 }

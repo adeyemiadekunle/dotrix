@@ -34,10 +34,7 @@ function ProjectsPage() {
   const sort: Sort = sortParam === "name" || sortParam === "progress" ? sortParam : "active";
 
   const stats = useMemo(() => {
-    const byProject = new Map<
-      string,
-      { total: number; done: number; overdue: number; lastActive: string; people: Set<string> }
-    >();
+    const byProject = new Map<string, { total: number; done: number; overdue: number; lastActive: string; people: Set<string> }>();
     for (const issue of issues.data ?? []) {
       if (issue.type === "epic") continue;
       const s = byProject.get(issue.project_id) ?? { total: 0, done: 0, overdue: 0, lastActive: "", people: new Set() };
@@ -53,9 +50,7 @@ function ProjectsPage() {
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const list = (projects.data ?? []).filter(
-      (p) => !needle || p.name.toLowerCase().includes(needle) || p.key.toLowerCase().includes(needle),
-    );
+    const list = (projects.data ?? []).filter((p) => !needle || p.name.toLowerCase().includes(needle) || p.key.toLowerCase().includes(needle));
     const percent = (id: string) => {
       const s = stats.get(id);
       return s?.total ? s.done / s.total : 0;
@@ -102,13 +97,7 @@ function ProjectsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative w-full max-w-60">
               <SearchIcon className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search projects"
-                aria-label="Search projects"
-                className="h-8 pl-8"
-              />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search projects" aria-label="Search projects" className="h-8 pl-8" />
             </div>
             <select
               aria-label="Sort"
@@ -132,10 +121,7 @@ function ProjectsPage() {
                     type="button"
                     aria-pressed={on}
                     onClick={() => setView(id === "list" ? "list" : null)}
-                    className={cn(
-                      "rounded-md px-2.5 py-1",
-                      on ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                    )}
+                    className={cn("rounded-md px-2.5 py-1", on ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
                   >
                     {label}
                   </button>
@@ -180,9 +166,7 @@ function ProjectsPage() {
               const restricted = project.access === "restricted";
               const isStarred = starred.data?.includes(project.id) ?? false;
               const late = project.target_date && project.target_date < today() && percent < 100;
-              const people = [...s.people]
-                .map((id) => members.data?.find((m) => m.user_id === id))
-                .filter((m) => m !== undefined);
+              const people = [...s.people].map((id) => members.data?.find((m) => m.user_id === id)).filter((m) => m !== undefined);
               return (
                 // The whole card opens the project (a stretched link), with the star button above it.
                 <div
@@ -194,10 +178,7 @@ function ProjectsPage() {
                 >
                   <span className="flex items-center gap-2">
                     <ProjectTile projectKey={project.key} />
-                    <Link
-                      href={`/w/${workspace.slug}/p/${project.key}`}
-                      className="min-w-0 truncate font-semibold after:absolute after:inset-0"
-                    >
+                    <Link href={`/w/${workspace.slug}/p/${project.key}`} className="min-w-0 truncate font-semibold after:absolute after:inset-0">
                       {project.name}
                     </Link>
                     {restricted && <LockIcon className="text-muted-foreground size-3.5 shrink-0" aria-label="Only people added" />}
@@ -215,9 +196,7 @@ function ProjectsPage() {
                     </button>
                   </span>
                   {!asList && (
-                    <span className="text-muted-foreground line-clamp-2 text-sm">
-                      {project.description || PROJECT_SOURCE_LABELS[project.source]}
-                    </span>
+                    <span className="text-muted-foreground line-clamp-2 text-sm">{project.description || PROJECT_SOURCE_LABELS[project.source]}</span>
                   )}
                   <span className="flex items-center gap-2">
                     <span className="bg-muted h-1.5 flex-1 overflow-hidden rounded-full">
@@ -238,10 +217,7 @@ function ProjectsPage() {
                     )}
                     {restricted && <span>Only people added</span>}
                     {people.length > 0 && (
-                      <span
-                        className="ml-auto flex -space-x-1.5"
-                        aria-label={`Working on it: ${people.map((m) => m.display_name).join(", ")}`}
-                      >
+                      <span className="ml-auto flex -space-x-1.5" aria-label={`Working on it: ${people.map((m) => m.display_name).join(", ")}`}>
                         {people.slice(0, 4).map((m) => (
                           <UserAvatar
                             key={m.user_id}

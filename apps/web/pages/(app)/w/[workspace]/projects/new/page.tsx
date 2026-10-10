@@ -5,15 +5,8 @@ import { Checkbox } from "@dotrix/ui/components/checkbox";
 import { Label } from "@dotrix/ui/components/label";
 import { RadioGroup, RadioGroupItem } from "@dotrix/ui/components/radio-group";
 import { Textarea } from "@dotrix/ui/components/textarea";
-import { cn } from "@dotrix/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  CircleAlertIcon,
-  FilesIcon,
-  FolderGit2Icon,
-  GitBranchPlusIcon,
-  type LucideIcon,
-} from "lucide-react";
+import { CircleAlertIcon, FilesIcon, FolderGit2Icon, GitBranchPlusIcon, type LucideIcon } from "lucide-react";
 import { Link, useRouter } from "@/lib/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -103,8 +96,8 @@ export default function NewProjectPage() {
       <>
         <PageHeader title="New project" parent={workspace.name} />
         <p className="text-muted-foreground p-6 text-sm">
-          Only owners and admins set up projects. To work on an existing project from your machine, run{" "}
-          <code className="font-mono">dotrix connect</code> in its repo.
+          Only owners and admins set up projects. To work on an existing project from your machine, run <code className="font-mono">dotrix connect</code> in its
+          repo.
         </p>
       </>
     );
@@ -206,12 +199,7 @@ export default function NewProjectPage() {
             <CardTitle>Where does it start?</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <RadioGroup
-              value={source}
-              onValueChange={(v) => setSource(v as Source)}
-              className="grid gap-2 sm:grid-cols-3"
-              disabled={busy || Boolean(created)}
-            >
+            <RadioGroup value={source} onValueChange={(v) => setSource(v as Source)} className="grid gap-2 sm:grid-cols-3" disabled={busy || Boolean(created)}>
               {SOURCES.map(({ value, label, description: text, icon: Icon }) => (
                 <Label
                   key={value}
@@ -255,12 +243,7 @@ export default function NewProjectPage() {
                     {created ? (
                       <p className="text-sm">{picked?.full_name ?? repoUrl}</p>
                     ) : (
-                      <RepoPicker
-                        workspaceId={workspace.id}
-                        value={picked}
-                        onPick={pick}
-                        settingsHref={`/w/${workspace.slug}/settings/github`}
-                      />
+                      <RepoPicker workspaceId={workspace.id} value={picked} onPick={pick} settingsHref={`/w/${workspace.slug}/settings/github`} />
                     )}
                   </div>
                 )}
@@ -333,8 +316,8 @@ export default function NewProjectPage() {
           <CardHeader>
             <CardTitle>Project documents</CardTitle>
             <CardDescription>
-              The agents read these. Each is converted to Markdown in the project&apos;s knowledge; the original is kept
-              too. You can add more later from the Docs tab.
+              The agents read these. Each is converted to Markdown in the project&apos;s knowledge; the original is kept too. You can add more later from the
+              Docs tab.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
@@ -380,7 +363,6 @@ export default function NewProjectPage() {
     </>
   );
 }
-
 
 /** A repo name from a project name: "Kunemi web app" → "kunemi-web-app". */
 function slugify(text: string): string {
@@ -458,11 +440,7 @@ function NewRepoFields(props: {
         hint={org ? `github.com/${org.account_login}/${props.name || "…"} · created with a README` : undefined}
       />
       <Label className="flex items-center gap-2 font-normal sm:col-span-2">
-        <Checkbox
-          checked={props.isPrivate}
-          onCheckedChange={(checked) => props.onPrivate(checked === true)}
-          disabled={props.disabled}
-        />
+        <Checkbox checked={props.isPrivate} onCheckedChange={(checked) => props.onPrivate(checked === true)} disabled={props.disabled} />
         Private repository
       </Label>
     </div>

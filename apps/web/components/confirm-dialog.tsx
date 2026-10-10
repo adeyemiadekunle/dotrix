@@ -1,12 +1,5 @@
 import { Button } from "@dotrix/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@dotrix/ui/components/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@dotrix/ui/components/dialog";
 import { Loader2Icon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 

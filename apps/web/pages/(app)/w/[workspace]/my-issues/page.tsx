@@ -131,21 +131,15 @@ function MyIssues() {
             }
           />
         )}
-        {workspace && issues.data && issues.data.length > 0 && view === "board" && (
-          <WorkspaceIssueBoard issues={current} workspaceSlug={workspace.slug} />
-        )}
-        {workspace && issues.data && issues.data.length > 0 && view === "table" && (
-          <WorkspaceIssueTable issues={current} workspaceSlug={workspace.slug} />
-        )}
+        {workspace && issues.data && issues.data.length > 0 && view === "board" && <WorkspaceIssueBoard issues={current} workspaceSlug={workspace.slug} />}
+        {workspace && issues.data && issues.data.length > 0 && view === "table" && <WorkspaceIssueTable issues={current} workspaceSlug={workspace.slug} />}
         {workspace && issues.data && issues.data.length > 0 && view === "timeline" && (
           <IssueTimeline
             issues={current}
             href={(i) => issueHref(workspace.slug, i as WorkspaceIssue)}
             zoom={zoom}
             groupByProject
-            onReschedule={(i, changes) =>
-              update.mutate({ projectId: (i as WorkspaceIssue).project_id, key: i.key, changes })
-            }
+            onReschedule={(i, changes) => update.mutate({ projectId: (i as WorkspaceIssue).project_id, key: i.key, changes })}
           />
         )}
         {workspace &&

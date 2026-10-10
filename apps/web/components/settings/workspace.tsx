@@ -4,22 +4,9 @@ import { Label } from "@dotrix/ui/components/label";
 import { useState, type FormEvent } from "react";
 
 import { Field, SaveBar } from "@/components/form";
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 import { useMemberPermissions, useRenameWorkspace } from "@/lib/admin";
-import {
-  MEMBER_GRANTS,
-  ROLE_LABELS,
-  WORKSPACE_KIND_LABELS,
-  canManageProjects,
-  withArticle,
-  type Permission,
-} from "@/lib/labels";
+import { MEMBER_GRANTS, ROLE_LABELS, WORKSPACE_KIND_LABELS, canManageProjects, withArticle, type Permission } from "@/lib/labels";
 
 // The workspace's own settings: its name, and what members may do.
 
@@ -43,18 +30,9 @@ export function GeneralCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
             rename.mutate(name.trim());
           }}
         >
-          <Field
-            label="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            maxLength={100}
-            disabled={!canEdit}
-          />
+          <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} disabled={!canEdit} />
           <p className="text-muted-foreground text-xs">Its address stays /w/{workspace.slug}.</p>
-          {canEdit && (
-            <SaveBar dirty={name.trim() !== workspace.name} pending={rename.isPending} onDiscard={() => setName(workspace.name)} />
-          )}
+          {canEdit && <SaveBar dirty={name.trim() !== workspace.name} pending={rename.isPending} onDiscard={() => setName(workspace.name)} />}
         </form>
       </SettingsContent>
     </SettingsSection>
@@ -78,8 +56,8 @@ export function MemberPermissionsCard({ workspace }: { workspace: Schemas["Works
       <SettingsHeader>
         <SettingsTitle>What members can do</SettingsTitle>
         <SettingsDescription>
-          Members always chat, brainstorm, and work the board. Changes to the project&apos;s documents are for owners and
-          admins: a change a member asks the agents for waits for one of you to review it. You can let members do more.
+          Members always chat, brainstorm, and work the board. Changes to the project&apos;s documents are for owners and admins: a change a member asks the
+          agents for waits for one of you to review it. You can let members do more.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="grid gap-3">

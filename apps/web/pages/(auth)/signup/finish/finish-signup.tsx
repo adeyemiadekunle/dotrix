@@ -50,12 +50,13 @@ export function FinishSignup({ token }: { token: string }) {
   return (
     <AuthCard
       title="Create your account"
-      description={
-        address.data ? `For ${address.data.email}. No password needed: you sign in with a link.` : "Checking your link…"
-      }
+      description={address.data ? `For ${address.data.email}. No password needed: you sign in with a link.` : "Checking your link…"}
       footer={
         <span>
-          Already have an account? <Link href="/login" className="text-foreground underline underline-offset-4">Sign in</Link>
+          Already have an account?{" "}
+          <Link href="/login" className="text-foreground underline underline-offset-4">
+            Sign in
+          </Link>
         </span>
       }
     >

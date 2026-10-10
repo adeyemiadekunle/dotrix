@@ -32,11 +32,17 @@ export function installKeyboard() {
     }
     // Keep Tab inside whichever surface is modal right now.
     if (e.key === "Tab" && !pl) {
-      const box = S.ui.modals.length ? [...document.querySelectorAll<HTMLElement>(".modal")].pop() : S.ui.drawer && S.ui.drawerFull ? document.querySelector<HTMLElement>(".drawer") : null;
+      const box = S.ui.modals.length
+        ? [...document.querySelectorAll<HTMLElement>(".modal")].pop()
+        : S.ui.drawer && S.ui.drawerFull
+          ? document.querySelector<HTMLElement>(".drawer")
+          : null;
       if (box) {
-        const f = [...box.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([type=hidden]):not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"]),[contenteditable="true"]')].filter(
-          (x) => x.offsetParent !== null,
-        );
+        const f = [
+          ...box.querySelectorAll<HTMLElement>(
+            'a[href],button:not([disabled]),input:not([type=hidden]):not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"]),[contenteditable="true"]',
+          ),
+        ].filter((x) => x.offsetParent !== null);
         if (f.length) {
           const i = f.indexOf(document.activeElement as HTMLElement);
           if (e.shiftKey && i <= 0) {
@@ -54,11 +60,14 @@ export function installKeyboard() {
     }
     // Arrow keys move through open menus and pickers.
     if (S.ui.pop && !pl && ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
-      const items = [...document.querySelectorAll<HTMLElement>(".pop.floating .mi:not(:disabled), .pop.floating .valbtn")].filter((x) => x.offsetParent !== null);
+      const items = [...document.querySelectorAll<HTMLElement>(".pop.floating .mi:not(:disabled), .pop.floating .valbtn")].filter(
+        (x) => x.offsetParent !== null,
+      );
       if (items.length) {
         e.preventDefault();
         const i = items.indexOf(document.activeElement as HTMLElement);
-        const n = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : e.key === "ArrowDown" ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+        const n =
+          e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : e.key === "ArrowDown" ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
         items[n]!.focus();
         return;
       }
@@ -124,7 +133,17 @@ export function installKeyboard() {
     const k = e.key;
     if (gPending && Date.now() - gPending < 1200) {
       gPending = 0;
-      const map: Record<string, Route> = { h: "home", t: "mytasks", p: "projects", i: "inbox", c: "calendar", s: "settings", n: "notifications", a: "chat", m: "members" };
+      const map: Record<string, Route> = {
+        h: "home",
+        t: "mytasks",
+        p: "projects",
+        i: "inbox",
+        c: "calendar",
+        s: "settings",
+        n: "notifications",
+        a: "chat",
+        m: "members",
+      };
       const r = map[k.toLowerCase()];
       if (r) {
         e.preventDefault();

@@ -82,11 +82,7 @@ export function LoginForm({
   return (
     <AuthCard
       title={mode === "link" ? "Sign in or sign up by email" : "Welcome back"}
-      description={
-        mode === "link"
-          ? "We'll email you a link: it signs you in, or creates your account if you're new."
-          : "Sign in to your dotrix account."
-      }
+      description={mode === "link" ? "We'll email you a link: it signs you in, or creates your account if you're new." : "Sign in to your dotrix account."}
       footer={footer}
     >
       <form onSubmit={onSubmit} className="grid gap-4">

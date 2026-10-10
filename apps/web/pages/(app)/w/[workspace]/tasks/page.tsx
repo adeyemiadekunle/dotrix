@@ -26,9 +26,7 @@ function Tasks() {
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const shown = (issues.data ?? []).filter(
-      (i) =>
-        (!project || i.project_key === project) &&
-        (!needle || i.title.toLowerCase().includes(needle) || i.key.toLowerCase().includes(needle)),
+      (i) => (!project || i.project_key === project) && (!needle || i.title.toLowerCase().includes(needle) || i.key.toLowerCase().includes(needle)),
     );
     return STATUSES.map((status) => ({ status, issues: shown.filter((i) => i.status === status) }));
   }, [issues.data, project, query]);
@@ -42,13 +40,7 @@ function Tasks() {
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full max-w-60">
             <SearchIcon className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search issues"
-              aria-label="Search issues"
-              className="h-8 pl-8"
-            />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search issues" aria-label="Search issues" className="h-8 pl-8" />
           </div>
           <select
             aria-label="Project"

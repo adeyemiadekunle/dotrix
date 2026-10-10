@@ -18,8 +18,7 @@ const keys = {
 export function useCrossConversations(workspaceId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: keys.list(workspaceId),
-    queryFn: () =>
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/conversations", { params: { path: { workspace_id: workspaceId! } } })),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/conversations", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: Boolean(workspaceId) && enabled,
     refetchInterval: 20_000,
   });

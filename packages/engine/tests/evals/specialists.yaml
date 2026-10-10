@@ -3,7 +3,7 @@
   message: draft stories
   script:
     - tool: create_issue
-      args: {type: story, title: Multi-zone, description: "As a dispatcher..."}
+      args: { type: story, title: Multi-zone, description: "As a dispatcher..." }
   expect:
     tools_include: [list_issues, create_issue, comment_issue, task]
     tools_exclude: [update_issue, web_search]
@@ -34,7 +34,7 @@
   message: review it
   script:
     - tool: write_file
-      args: {file_path: /dotrix/reviews/r.md, content: x}
+      args: { file_path: /dotrix/reviews/r.md, content: x }
     - text: I can't write; here's the review.
   expect:
     pending: []

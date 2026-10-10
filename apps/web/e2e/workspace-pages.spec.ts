@@ -134,7 +134,11 @@ test("stars, a project's status, My issues as a board and table, and the timelin
   await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
   await sidebar.getByRole("link", { name: "Projects", exact: true }).click();
   await expect(page).toHaveURL(/\/projects$/);
-  const card = page.getByRole("main").locator("div").filter({ has: page.getByRole("link", { name: "Kumove", exact: true }) }).last();
+  const card = page
+    .getByRole("main")
+    .locator("div")
+    .filter({ has: page.getByRole("link", { name: "Kumove", exact: true }) })
+    .last();
   await expect(card.getByText("At risk")).toBeVisible();
   await expect(card.getByText(/^Due /)).toBeVisible();
 

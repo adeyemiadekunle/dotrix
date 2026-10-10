@@ -54,9 +54,7 @@ function ConvertedView({
   const file = useQuery({
     queryKey: ["knowledge-file", scope.projectId, document?.knowledge_path],
     queryFn: async () => {
-      const response = await apiFetch(
-        `/v1/workspaces/${scope.workspaceId}/projects/${scope.projectId}/knowledge/files/${document!.knowledge_path}`,
-      );
+      const response = await apiFetch(`/v1/workspaces/${scope.workspaceId}/projects/${scope.projectId}/knowledge/files/${document!.knowledge_path}`);
       if (!response.ok) throw new ApiError(response.status, await response.json().catch(() => undefined));
       return (await response.json()) as Schemas["FileRead"];
     },
@@ -105,10 +103,7 @@ export default function FilesPage() {
   const chat = useChat();
   const [kind, setKind] = useState("all");
   const [sort, setSort] = useState<"newest" | "name" | "size">("newest");
-  const kinds = useMemo(
-    () => [...new Set((documents.data ?? []).map((d) => fileKind(d.filename)))].sort(),
-    [documents.data],
-  );
+  const kinds = useMemo(() => [...new Set((documents.data ?? []).map((d) => fileKind(d.filename)))].sort(), [documents.data]);
   const shown = useMemo(() => {
     const list = (documents.data ?? []).filter((d) => kind === "all" || fileKind(d.filename) === kind);
     if (sort === "name") return [...list].sort((a, b) => a.filename.localeCompare(b.filename));
@@ -131,8 +126,8 @@ export default function FilesPage() {
           <CardHeader>
             <CardTitle>Add files</CardTitle>
             <CardDescription>
-              Each is converted to Markdown under <code className="font-mono">docs/normalized/</code>, where the agents
-              read it. Uploading a file with the same name again adds a new version.
+              Each is converted to Markdown under <code className="font-mono">docs/normalized/</code>, where the agents read it. Uploading a file with the same
+              name again adds a new version.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
@@ -147,9 +142,8 @@ export default function FilesPage() {
           <CardHeader>
             <CardTitle>Architecture overview</CardTitle>
             <CardDescription>
-              Have the Architecture agent draft <code className="font-mono">architecture/overview.md</code> from these
-              documents (and the linked repo&apos;s README). It&apos;s setup work: you review the draft and approve it in
-              the chat before anything is written.
+              Have the Architecture agent draft <code className="font-mono">architecture/overview.md</code> from these documents (and the linked repo&apos;s
+              README). It&apos;s setup work: you review the draft and approve it in the chat before anything is written.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -164,9 +158,7 @@ export default function FilesPage() {
               {draft.isPending ? <Loader2Icon className="animate-spin" /> : <LayersIcon />}
               Draft architecture overview
             </Button>
-            {converting && (
-              <p className="text-muted-foreground mt-2 text-xs">Waiting for the documents to finish converting…</p>
-            )}
+            {converting && <p className="text-muted-foreground mt-2 text-xs">Waiting for the documents to finish converting…</p>}
           </CardContent>
         </Card>
       )}
@@ -175,12 +167,7 @@ export default function FilesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="flex-1 font-medium">Files</h2>
           {kinds.length > 1 && (
-            <select
-              aria-label="File type"
-              value={kind}
-              onChange={(e) => setKind(e.target.value)}
-              className="bg-background h-8 rounded-md border px-2 text-sm"
-            >
+            <select aria-label="File type" value={kind} onChange={(e) => setKind(e.target.value)} className="bg-background h-8 rounded-md border px-2 text-sm">
               <option value="all">All types</option>
               {kinds.map((k) => (
                 <option key={k} value={k}>
@@ -208,9 +195,7 @@ export default function FilesPage() {
             icon={FilesIcon}
             title="No documents yet"
             description={
-              canUpload
-                ? "Add the project's specs, PRDs, and research so the agents work from them."
-                : "An owner or admin adds the project's documents."
+              canUpload ? "Add the project's specs, PRDs, and research so the agents work from them." : "An owner or admin adds the project's documents."
             }
           />
         )}
@@ -264,12 +249,14 @@ export default function FilesPage() {
           </ul>
         )}
       </section>
-      {scope && <ConvertedView
+      {scope && (
+        <ConvertedView
           scope={scope}
           document={viewing}
           onClose={() => setViewing(null)}
           knowledgeHref={workspace && project ? `/w/${workspace.slug}/p/${project.key}/knowledge` : undefined}
-        />}
+        />
+      )}
     </div>
   );
 }

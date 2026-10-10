@@ -47,7 +47,15 @@ export function Logo({ h = 22 }: { h?: number }) {
   return (
     <svg className="logo" height={h} width={Math.round((h * 92) / 24)} viewBox="0 0 92 24" role="img" aria-label="dotrix">
       <Dots />
-      <text x="31" y="18.2" fill="currentColor" fontSize="19" fontWeight="650" letterSpacing="-0.6" style={{ fontFamily: "var(--font-sans, 'Geist Variable', sans-serif)" }}>
+      <text
+        x="31"
+        y="18.2"
+        fill="currentColor"
+        fontSize="19"
+        fontWeight="650"
+        letterSpacing="-0.6"
+        style={{ fontFamily: "var(--font-sans, 'Geist Variable', sans-serif)" }}
+      >
         dotrix
       </text>
     </svg>
@@ -66,10 +74,7 @@ export function WsLogo({ w, px = 22 }: { w: Pick<Workspace, "name" | "c" | "bran
       <Mark px={px} />
     </span>
   ) : (
-    <span
-      className="ws-logo"
-      style={{ "--c": w.c, width: px, height: px, fontSize: Math.max(9, Math.round(px * 0.46)) } as CSSProperties}
-    >
+    <span className="ws-logo" style={{ "--c": w.c, width: px, height: px, fontSize: Math.max(9, Math.round(px * 0.46)) } as CSSProperties}>
       {w.name[0]}
     </span>
   );

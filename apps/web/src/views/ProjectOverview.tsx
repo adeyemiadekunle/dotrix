@@ -71,7 +71,9 @@ export function ProjectOverview({ p }: { p: Project }) {
                 <span style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-.03em" }} className="num">
                   {pr}%
                 </span>
-                <span className="muted">{daysLeft === null ? "No target date" : daysLeft >= 0 ? `${daysLeft} days until ${fmtDate(p.due)}` : `Ended ${fmtDate(p.due)}`}</span>
+                <span className="muted">
+                  {daysLeft === null ? "No target date" : daysLeft >= 0 ? `${daysLeft} days until ${fmtDate(p.due)}` : `Ended ${fmtDate(p.due)}`}
+                </span>
                 {over.length > 0 && (
                   <span className="badge red">
                     <Ic n="clock-alert" s={11} />
@@ -81,7 +83,11 @@ export function ProjectOverview({ p }: { p: Project }) {
               </div>
               <div className="stackbar" style={{ height: 8, marginBottom: 12 }}>
                 {cnt.map((c) => (
-                  <i key={c.s.id} style={{ width: `${(c.n / Math.max(ts.length, 1)) * 100}%`, background: `var(--st-${c.s.id})` }} title={`${c.s.name}: ${c.n}`} />
+                  <i
+                    key={c.s.id}
+                    style={{ width: `${(c.n / Math.max(ts.length, 1)) * 100}%`, background: `var(--st-${c.s.id})` }}
+                    title={`${c.s.name}: ${c.n}`}
+                  />
                 ))}
               </div>
               <div className="row" style={{ flexWrap: "wrap", gap: 14, fontSize: 12.5 }}>
@@ -106,7 +112,11 @@ export function ProjectOverview({ p }: { p: Project }) {
                 </button>
               </div>
             </div>
-            {soon.length ? soon.map((t) => <MiniRow key={t.id} t={t} noProj />) : <Empty icon="circle-check" title="Nothing scheduled" text="Tasks with due dates will show up here." cls="sm" />}
+            {soon.length ? (
+              soon.map((t) => <MiniRow key={t.id} t={t} noProj />)
+            ) : (
+              <Empty icon="circle-check" title="Nothing scheduled" text="Tasks with due dates will show up here." cls="sm" />
+            )}
           </section>
         </div>
         <div className="stack">
@@ -185,7 +195,12 @@ export function ProjectOverview({ p }: { p: Project }) {
             <div className="panel-b">
               {threads.length ? (
                 threads.map((t) => (
-                  <div key={t.id} className="row" style={{ height: 32, fontSize: 13, cursor: "pointer" }} onClick={() => go("chat", {}, { search: `thread=${t.id}` })}>
+                  <div
+                    key={t.id}
+                    className="row"
+                    style={{ height: 32, fontSize: 13, cursor: "pointer" }}
+                    onClick={() => go("chat", {}, { search: `thread=${t.id}` })}
+                  >
                     <Ic n="message-square" s={13} />
                     <span className="grow trunc">{t.title}</span>
                     <span className="faint" style={{ fontSize: 11.5 }}>
@@ -208,7 +223,17 @@ export function ProjectOverview({ p }: { p: Project }) {
                   const n = diffD(parse(m.date)!, TODAY);
                   return (
                     <div key={m.name} className="row" style={{ height: 32, fontSize: 13 }}>
-                      <span style={{ width: 9, height: 9, transform: "rotate(45deg)", borderRadius: 2, flexShrink: 0, margin: "0 3px", background: n < 0 ? "var(--green)" : pColor(p) }} />
+                      <span
+                        style={{
+                          width: 9,
+                          height: 9,
+                          transform: "rotate(45deg)",
+                          borderRadius: 2,
+                          flexShrink: 0,
+                          margin: "0 3px",
+                          background: n < 0 ? "var(--green)" : pColor(p),
+                        }}
+                      />
                       <span className={`grow trunc ${n < 0 ? "faint" : ""}`}>{m.name}</span>
                       <span className="num muted">{fmtDate(m.date)}</span>
                     </div>

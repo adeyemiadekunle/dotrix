@@ -38,7 +38,21 @@ export function restoreProject(id: string) {
   toast(`Restored ${p.name}`);
 }
 
-function Row({ lead, title, sub, when, onRestore, onDelete }: { lead: ReactNode; title: string; sub: ReactNode; when: string; onRestore: () => void; onDelete: () => void }) {
+function Row({
+  lead,
+  title,
+  sub,
+  when,
+  onRestore,
+  onDelete,
+}: {
+  lead: ReactNode;
+  title: string;
+  sub: ReactNode;
+  when: string;
+  onRestore: () => void;
+  onDelete: () => void;
+}) {
   return (
     <div className="mini" style={{ minHeight: 52, cursor: "default", gap: 12 }}>
       {lead}
@@ -113,7 +127,11 @@ export function Archive() {
           </div>
         ) : (
           <div className="panel">
-            <Empty icon="archive" title="No archived tasks" text="Archive finished or abandoned tasks to keep boards focused. They wait here until you restore them." />
+            <Empty
+              icon="archive"
+              title="No archived tasks"
+              text="Archive finished or abandoned tasks to keep boards focused. They wait here until you restore them."
+            />
           </div>
         )
       ) : ps.length ? (
@@ -132,7 +150,11 @@ export function Archive() {
         </div>
       ) : (
         <div className="panel">
-          <Empty icon="archive" title="No archived projects" text="Archived projects disappear from the sidebar and project lists but keep every task, file, and comment." />
+          <Empty
+            icon="archive"
+            title="No archived projects"
+            text="Archived projects disappear from the sidebar and project lists but keep every task, file, and comment."
+          />
         </div>
       )}
     </div>

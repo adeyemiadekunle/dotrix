@@ -79,13 +79,23 @@ function Item({ n, on, select }: { n: Notif; on: boolean; select: (id: string) =
   return (
     <div
       className="row"
-      style={{ alignItems: "flex-start", gap: 10, padding: "12px var(--gutter)", borderBottom: "1px solid var(--divider)", cursor: "pointer", position: "relative", background: on ? "var(--surface-2)" : undefined }}
+      style={{
+        alignItems: "flex-start",
+        gap: 10,
+        padding: "12px var(--gutter)",
+        borderBottom: "1px solid var(--divider)",
+        cursor: "pointer",
+        position: "relative",
+        background: on ? "var(--surface-2)" : undefined,
+      }}
       onClick={() => select(n.id)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === "Enter" && select(n.id)}
     >
-      {!n.read && <span style={{ position: "absolute", left: 6, top: 22, width: 6, height: 6, borderRadius: "50%", background: "var(--acc)" }} aria-label="Unread" />}
+      {!n.read && (
+        <span style={{ position: "absolute", left: 6, top: 22, width: 6, height: 6, borderRadius: "50%", background: "var(--acc)" }} aria-label="Unread" />
+      )}
       <NotifIcon n={n} />
       <div className="grow" style={{ fontSize: 13, lineHeight: 1.45, minWidth: 0 }}>
         <div>
@@ -252,12 +262,21 @@ export function Inbox() {
             {ns.length ? (
               ns.map((n) => <Item key={n.id} n={n} on={sel?.id === n.id} select={select} />)
             ) : (
-              <Empty icon="inbox" title="You're all caught up." text={S.ui.inboxUnread ? "No unread notifications in this category." : "New mentions, assignments, and comments will show up here."} cls="sm" />
+              <Empty
+                icon="inbox"
+                title="You're all caught up."
+                text={S.ui.inboxUnread ? "No unread notifications in this category." : "New mentions, assignments, and comments will show up here."}
+                cls="sm"
+              />
             )}
           </div>
         </div>
         <div className="inbox-prev" style={{ display: "flex", flexDirection: "column", minHeight: 0, overflowY: "auto" }}>
-          {sel ? <TaskPreview n={sel} onBack={() => ((S.ui.inboxSel = null), render())} /> : <SelectPrompt icon="mail-open" title="Select a notification" text="Read the conversation and reply without leaving your inbox." />}
+          {sel ? (
+            <TaskPreview n={sel} onBack={() => ((S.ui.inboxSel = null), render())} />
+          ) : (
+            <SelectPrompt icon="mail-open" title="Select a notification" text="Read the conversation and reply without leaving your inbox." />
+          )}
         </div>
       </div>
     </div>
@@ -441,16 +460,31 @@ export function Notifications() {
                 </button>
               ))}
             </div>
-            <button className="ibtn ibtn-sm" onClick={() => markAllRead(["finding", "decided", "update"])} data-tip="Mark all as read (approvals stay until decided)" aria-label="Mark all as read">
+            <button
+              className="ibtn ibtn-sm"
+              onClick={() => markAllRead(["finding", "decided", "update"])}
+              data-tip="Mark all as read (approvals stay until decided)"
+              aria-label="Mark all as read"
+            >
               <Ic n="check-check" s={15} />
             </button>
-            <button className="ibtn ibtn-sm" onClick={() => go("settings", { sec: "notif-email" })} data-tip="Notification preferences" aria-label="Notification preferences">
+            <button
+              className="ibtn ibtn-sm"
+              onClick={() => go("settings", { sec: "notif-email" })}
+              data-tip="Notification preferences"
+              aria-label="Notification preferences"
+            >
               <Ic n="settings-2" s={15} />
             </button>
           </div>
           <div className="tabs inbox-tabs" role="tablist">
             {tabs.map(([k, n]) => (
-              <button key={k} role="tab" className={`tab ${tab === k ? "on" : ""}`} onClick={() => ((S.ui.notifTab = k!), go("notifications", {}, { replace: true, search: k === "all" ? "" : `tab=${k}` }))}>
+              <button
+                key={k}
+                role="tab"
+                className={`tab ${tab === k ? "on" : ""}`}
+                onClick={() => ((S.ui.notifTab = k!), go("notifications", {}, { replace: true, search: k === "all" ? "" : `tab=${k}` }))}
+              >
                 {n}
                 {count(k!) > 0 && <span className="cnt">{count(k!)}</span>}
               </button>
@@ -469,7 +503,12 @@ export function Notifications() {
                 </div>
               ))
             ) : (
-              <Empty icon="bell-off" title="You're all caught up." text="Nothing waits for you. When an agent wants to change something, it shows up here." cls="sm">
+              <Empty
+                icon="bell-off"
+                title="You're all caught up."
+                text="Nothing waits for you. When an agent wants to change something, it shows up here."
+                cls="sm"
+              >
                 {f === "unread" && (
                   <button className="btn btn-secondary btn-sm" onClick={() => ((S.ui.notifFilter = "all"), render())}>
                     Show all
@@ -481,9 +520,16 @@ export function Notifications() {
         </div>
         <div className="inbox-prev" style={{ display: "flex", flexDirection: "column", minHeight: 0, overflowY: "auto" }}>
           {sel ? (
-            <AgentDetail n={sel} onBack={() => ((S.ui.notifSel = null), go("notifications", {}, { replace: true, search: tab !== "all" ? `tab=${tab}` : "" }))} />
+            <AgentDetail
+              n={sel}
+              onBack={() => ((S.ui.notifSel = null), go("notifications", {}, { replace: true, search: tab !== "all" ? `tab=${tab}` : "" }))}
+            />
           ) : (
-            <SelectPrompt icon="shield-check" title="Select a notification" text="Approve or reject an agent's changes, steer its plan, or follow up on a finding." />
+            <SelectPrompt
+              icon="shield-check"
+              title="Select a notification"
+              text="Approve or reject an agent's changes, steer its plan, or follow up on a finding."
+            />
           )}
         </div>
       </div>

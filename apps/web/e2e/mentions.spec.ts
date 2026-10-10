@@ -44,7 +44,10 @@ test("@mention a colleague in a comment, and they find it in Notifications", asy
   // Bob sees it under Mentions, with what was said and a way to the issue.
   await bob.getByRole("link", { name: "Notifications", exact: true }).click();
   await bob.getByRole("tab", { name: /Mentions/ }).click();
-  await bob.getByRole("navigation", { name: "Notifications" }).getByRole("button", { name: new RegExp(`Ada Tester mentioned you on ${key}-1`) }).click();
+  await bob
+    .getByRole("navigation", { name: "Notifications" })
+    .getByRole("button", { name: new RegExp(`Ada Tester mentioned you on ${key}-1`) })
+    .click();
   await expect(bob.getByRole("blockquote")).toHaveText("Can you take this, @Bob Builder ?");
   await bob.getByRole("link", { name: `Open ${key}-1` }).click();
   await expect(bob).toHaveURL(new RegExp(`/p/${key}/board\\?issue=${key}-1`));

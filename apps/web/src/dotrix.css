@@ -336,7 +336,7 @@
 
 /* A collapsed sidebar's labels (shell/Shell.tsx SideTip): fixed over the page, since the sidebar
    clips what overflows it. Same look as Gr8r's [data-tip] tooltips. */
-.side [data-tip-pos='right']::after {
+.side [data-tip-pos="right"]::after {
   display: none !important;
 }
 .side-tip {
@@ -484,15 +484,21 @@
   height: 2px;
   margin-top: 6px;
   border-radius: 2px;
-  background: linear-gradient(90deg, transparent, var(--acc), transparent) 0 0 / 40% 100% no-repeat, var(--accent-soft);
+  background:
+    linear-gradient(90deg, transparent, var(--acc), transparent) 0 0 / 40% 100% no-repeat,
+    var(--accent-soft);
   animation: apbar 1.4s linear infinite;
 }
 @keyframes apbar {
   from {
-    background-position: -40% 0, 0 0;
+    background-position:
+      -40% 0,
+      0 0;
   }
   to {
-    background-position: 140% 0, 0 0;
+    background-position:
+      140% 0,
+      0 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -620,7 +626,9 @@
   animation: noticein 0.22s var(--ease) both;
 }
 .notice.blocked {
-  box-shadow: var(--shadow-pop), inset 3px 0 0 var(--red);
+  box-shadow:
+    var(--shadow-pop),
+    inset 3px 0 0 var(--red);
 }
 .notice-t {
   flex: 1;
@@ -740,11 +748,21 @@
   transform-origin: center;
   animation: faceblink 5.5s infinite;
 }
-.ask-orbit .s0 .face-eyes { animation-delay: -1.2s; }
-.ask-orbit .s1 .face-eyes { animation-delay: -3.7s; }
-.ask-orbit .s2 .face-eyes { animation-delay: -2.3s; }
-.ask-orbit .s3 .face-eyes { animation-delay: -4.6s; }
-.ask-orbit .s4 .face-eyes { animation-delay: -0.6s; }
+.ask-orbit .s0 .face-eyes {
+  animation-delay: -1.2s;
+}
+.ask-orbit .s1 .face-eyes {
+  animation-delay: -3.7s;
+}
+.ask-orbit .s2 .face-eyes {
+  animation-delay: -2.3s;
+}
+.ask-orbit .s3 .face-eyes {
+  animation-delay: -4.6s;
+}
+.ask-orbit .s4 .face-eyes {
+  animation-delay: -0.6s;
+}
 @keyframes faceblink {
   0%,
   93%,
@@ -755,11 +773,32 @@
     transform: scaleY(0.12);
   }
 }
-.ask-orbit .s0 { left: 14%; top: 34%; animation-delay: -1s; }
-.ask-orbit .s1 { left: 32%; top: 2%; animation-delay: -2.4s; }
-.ask-orbit .s2 { right: 31%; top: 0; animation-delay: -3.1s; }
-.ask-orbit .s3 { right: 13%; top: 32%; animation-delay: -0.4s; }
-.ask-orbit .s4 { left: 50%; bottom: -6px; transform: translateX(calc(-50% + 70px)); animation-delay: -4s; }
+.ask-orbit .s0 {
+  left: 14%;
+  top: 34%;
+  animation-delay: -1s;
+}
+.ask-orbit .s1 {
+  left: 32%;
+  top: 2%;
+  animation-delay: -2.4s;
+}
+.ask-orbit .s2 {
+  right: 31%;
+  top: 0;
+  animation-delay: -3.1s;
+}
+.ask-orbit .s3 {
+  right: 13%;
+  top: 32%;
+  animation-delay: -0.4s;
+}
+.ask-orbit .s4 {
+  left: 50%;
+  bottom: -6px;
+  transform: translateX(calc(-50% + 70px));
+  animation-delay: -4s;
+}
 @keyframes askfloat {
   50% {
     translate: 0 -4px;

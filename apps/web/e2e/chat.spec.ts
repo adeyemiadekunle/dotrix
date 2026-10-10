@@ -124,9 +124,7 @@ test("an owner creates an agent, and it answers in the chat when picked", async 
   await expect(page.getByText("Security reviewer", { exact: true }).first()).toBeVisible();
 });
 
-test("ask across projects: the agents read every project picked, and the conversation is listed apart", async ({
-  page,
-}) => {
+test("ask across projects: the agents read every project picked, and the conversation is listed apart", async ({ page }) => {
   await signUpWithProject(page, "Kumove", "KUM");
   await page.getByRole("link", { name: "New project" }).first().click();
   await page.getByText("Documents only", { exact: true }).click();

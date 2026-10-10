@@ -8,10 +8,11 @@ import { today } from "@/components/issues/workspace-issue-row";
 import { ProjectTile } from "@/components/project-tile";
 
 /** What a timeline needs from an issue (a project's rows and the rows across projects both fit). */
-export type TimelineIssue = Pick<
-  Schemas["IssueSummary"],
-  "key" | "title" | "status" | "type" | "due" | "scheduled" | "created_at"
-> & { project_key?: string; project_name?: string; depends_on?: string[] };
+export type TimelineIssue = Pick<Schemas["IssueSummary"], "key" | "title" | "status" | "type" | "due" | "scheduled" | "created_at"> & {
+  project_key?: string;
+  project_name?: string;
+  depends_on?: string[];
+};
 
 /** New dates for an issue dragged on the timeline, as the API takes them. */
 export type Reschedule = { scheduled?: string | null; due?: string | null };
@@ -171,10 +172,7 @@ export function IssueTimeline({
         const x2 = (placed.start - first) * dayWidth;
         const y2 = index * ROW + ROW / 2;
         const turn = y2 > y1 ? y2 - ROW / 2 + 4 : y2 + ROW / 2 - 4;
-        const d =
-          x2 - x1 >= 14
-            ? `M${x1} ${y1} H${x1 + 6} V${y2} H${x2 - 2}`
-            : `M${x1} ${y1} H${x1 + 6} V${turn} H${x2 - 8} V${y2} H${x2 - 2}`;
+        const d = x2 - x1 >= 14 ? `M${x1} ${y1} H${x1 + 6} V${y2} H${x2 - 2}` : `M${x1} ${y1} H${x1 + 6} V${turn} H${x2 - 8} V${y2} H${x2 - 2}`;
         found.push({ id: `${key}-${placed.issue.key}`, d, late: from.placed.end >= placed.start });
       }
     }
@@ -188,26 +186,16 @@ export function IssueTimeline({
           <div className="relative" style={{ width: width + 260 }}>
             {/* Header */}
             <div className="bg-card sticky top-0 z-20 flex border-b">
-              <div className="bg-card sticky left-0 z-10 w-[260px] shrink-0 border-r px-3 py-2 text-xs font-medium">
-                Issue
-              </div>
+              <div className="bg-card sticky left-0 z-10 w-[260px] shrink-0 border-r px-3 py-2 text-xs font-medium">Issue</div>
               <div className="relative h-12" style={{ width }}>
                 {months.map((m) => (
-                  <span
-                    key={m.left}
-                    className="text-foreground absolute top-1 border-l pl-1.5 text-xs font-medium whitespace-nowrap"
-                    style={{ left: m.left }}
-                  >
+                  <span key={m.left} className="text-foreground absolute top-1 border-l pl-1.5 text-xs font-medium whitespace-nowrap" style={{ left: m.left }}>
                     {m.label}
                   </span>
                 ))}
                 {zoom === "weeks" &&
                   weeks.map((w) => (
-                    <span
-                      key={w.left}
-                      className="text-muted-foreground absolute bottom-1 pl-1 text-[10px]"
-                      style={{ left: w.left }}
-                    >
+                    <span key={w.left} className="text-muted-foreground absolute bottom-1 pl-1 text-[10px]" style={{ left: w.left }}>
                       {w.label}
                     </span>
                   ))}
@@ -216,11 +204,7 @@ export function IssueTimeline({
             {/* Rows */}
             <div className="relative">
               {arrows.length > 0 && (
-                <svg
-                  aria-hidden
-                  className="pointer-events-none absolute top-0"
-                  style={{ left: 260, width, height: rows.length * ROW }}
-                >
+                <svg aria-hidden className="pointer-events-none absolute top-0" style={{ left: 260, width, height: rows.length * ROW }}>
                   <defs>
                     <marker id="timeline-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="6" markerHeight="6" orient="auto">
                       <path d="M0,0 L6,3 L0,6 z" className="fill-muted-foreground" />
@@ -241,11 +225,7 @@ export function IssueTimeline({
                   ))}
                 </svg>
               )}
-              <div
-                aria-hidden
-                className="bg-primary pointer-events-none absolute top-0 bottom-0 z-10 w-px"
-                style={{ left: 260 + todayLeft + dayWidth / 2 }}
-              />
+              <div aria-hidden className="bg-primary pointer-events-none absolute top-0 bottom-0 z-10 w-px" style={{ left: 260 + todayLeft + dayWidth / 2 }} />
               {rows.map((row) =>
                 row.kind === "group" ? (
                   <div key={`g-${row.key}`} className="bg-muted/50 flex border-b" style={{ height: ROW }}>
@@ -278,8 +258,8 @@ export function IssueTimeline({
       </div>
       {onReschedule && rows.length > 0 && (
         <p className="text-muted-foreground text-xs">
-          Drag a bar to move it, or its right end to change the due date (Alt+arrows on a focused bar; add Shift for the
-          end). Arrows run from what an issue waits for; red ones start before it ends.
+          Drag a bar to move it, or its right end to change the due date (Alt+arrows on a focused bar; add Shift for the end). Arrows run from what an issue
+          waits for; red ones start before it ends.
         </p>
       )}
       {undated > 0 && (
@@ -349,10 +329,7 @@ function TimelineRow({
   }`;
   return (
     <div className="group flex border-b last:border-b-0" style={{ height: ROW }}>
-      <Link
-        href={href}
-        className="bg-card group-hover:bg-muted sticky left-0 z-10 flex w-[260px] shrink-0 items-center gap-2 border-r px-3 text-sm"
-      >
+      <Link href={href} className="bg-card group-hover:bg-muted sticky left-0 z-10 flex w-[260px] shrink-0 items-center gap-2 border-r px-3 text-sm">
         <StatusIcon status={issue.status} />
         <span className="text-muted-foreground w-14 shrink-0 font-mono text-xs">{issue.key}</span>
         <span className="truncate">{issue.title}</span>
@@ -413,10 +390,7 @@ export function ZoomToggle({ zoom, onZoom }: { zoom: TimelineZoom; onZoom: (zoom
           type="button"
           aria-pressed={zoom === id}
           onClick={() => onZoom(id)}
-          className={cn(
-            "rounded-md px-2.5 py-1",
-            zoom === id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-          )}
+          className={cn("rounded-md px-2.5 py-1", zoom === id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
         >
           {id === "weeks" ? "Weeks" : "Months"}
         </button>

@@ -19,34 +19,13 @@ import { Markdown } from "@/components/markdown";
 import { useMentionable } from "@/components/mentions";
 import { useReviewIssue } from "@/lib/agent";
 import { sessionHref } from "@/lib/coding";
-import {
-  useComment,
-  useEpics,
-  useIssue,
-  useMembers,
-  useUpdateIssue,
-  useWatch,
-  type Issue,
-  type Scope,
-} from "@/lib/issues";
+import { useComment, useEpics, useIssue, useMembers, useUpdateIssue, useWatch, type Issue, type Scope } from "@/lib/issues";
 import { can } from "@/lib/labels";
 import { useMe, useProjectScope } from "@/lib/queries";
 import { useSearchParam } from "@/lib/url-state";
 
 import { IssueActivity, timeAgo } from "./issue-activity";
-import {
-  AGENTS,
-  AGENT_LABELS,
-  ISSUE_TYPES,
-  PRIORITIES,
-  PRIORITY_META,
-  STATUSES,
-  STATUS_META,
-  StatusIcon,
-  TYPE_META,
-  TypeIcon,
-  type MemberMap,
-} from "./meta";
+import { AGENTS, AGENT_LABELS, ISSUE_TYPES, PRIORITIES, PRIORITY_META, STATUSES, STATUS_META, StatusIcon, TYPE_META, TypeIcon, type MemberMap } from "./meta";
 
 const NONE = "__none";
 
@@ -75,10 +54,7 @@ function SaveOnBlur({
   onSave,
   disabled,
   ...props
-}: { value: string; onSave: (value: string) => void; disabled?: boolean } & Omit<
-  React.ComponentProps<typeof Input>,
-  "value" | "defaultValue" | "onBlur"
->) {
+}: { value: string; onSave: (value: string) => void; disabled?: boolean } & Omit<React.ComponentProps<typeof Input>, "value" | "defaultValue" | "onBlur">) {
   return (
     <Input
       key={value} // reset to the saved value when the issue refreshes
@@ -115,15 +91,7 @@ function KeyChips({ keys, onOpen }: { keys: string[]; onOpen: (key: string) => v
   );
 }
 
-function Description({
-  issue,
-  canEdit,
-  onSave,
-}: {
-  issue: Issue;
-  canEdit: boolean;
-  onSave: (description: string) => Promise<unknown>;
-}) {
+function Description({ issue, canEdit, onSave }: { issue: Issue; canEdit: boolean; onSave: (description: string) => Promise<unknown> }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(issue.description);
   const [saving, setSaving] = useState(false);
@@ -229,10 +197,7 @@ function IssueDetails({
         />
       </div>
 
-      <aside
-        aria-label="Properties"
-        className="bg-muted/30 grid content-start gap-0.5 border-y px-3 py-3 [grid-area:props] md:border-y-0 md:border-l md:py-4"
-      >
+      <aside aria-label="Properties" className="bg-muted/30 grid content-start gap-0.5 border-y px-3 py-3 [grid-area:props] md:border-y-0 md:border-l md:py-4">
         <p className="text-muted-foreground px-1 pb-2 text-xs font-medium">Properties</p>
         <Field label="Status">
           <Select value={issue.status} disabled={!canEdit} onValueChange={(v) => void save({ status: v as Issue["status"] })}>
@@ -331,11 +296,7 @@ function IssueDetails({
                 className={cn(GHOST, "font-mono uppercase")}
               />
             ) : (
-              <Select
-                value={issue.parent_key ?? NONE}
-                disabled={!canEdit}
-                onValueChange={(v) => void save({ parent: v === NONE ? null : v })}
-              >
+              <Select value={issue.parent_key ?? NONE} disabled={!canEdit} onValueChange={(v) => void save({ parent: v === NONE ? null : v })}>
                 <SelectTrigger aria-label="Epic" size="sm" className={GHOST}>
                   <SelectValue />
                 </SelectTrigger>
@@ -357,7 +318,14 @@ function IssueDetails({
             disabled={!canEdit}
             placeholder="frontend, payments"
             className={GHOST}
-            onSave={(v) => void save({ labels: v.split(",").map((l) => l.trim()).filter(Boolean) })}
+            onSave={(v) =>
+              void save({
+                labels: v
+                  .split(",")
+                  .map((l) => l.trim())
+                  .filter(Boolean),
+              })
+            }
           />
         </Field>
         <Field label="Estimate">
@@ -401,7 +369,12 @@ function IssueDetails({
                 placeholder="KEY-3, KEY-7"
                 className={cn(GHOST, "font-mono uppercase")}
                 onSave={(v) =>
-                  void save({ depends_on: v.split(",").map((k) => k.trim().toUpperCase()).filter(Boolean) })
+                  void save({
+                    depends_on: v
+                      .split(",")
+                      .map((k) => k.trim().toUpperCase())
+                      .filter(Boolean),
+                  })
                 }
               />
               {(issue.depends_on?.length ?? 0) > 0 && <KeyChips keys={issue.depends_on ?? []} onOpen={onOpen} />}
@@ -430,14 +403,11 @@ function IssueDetails({
           <span className="px-2" title={new Date(issue.created_at).toLocaleString()}>
             {timeAgo(issue.created_at)}
           </span>
-          {issue.resolved_at && (
-            <span className="text-muted-foreground"> · resolved {timeAgo(issue.resolved_at)}</span>
-          )}
+          {issue.resolved_at && <span className="text-muted-foreground"> · resolved {timeAgo(issue.resolved_at)}</span>}
         </Field>
       </aside>
 
       <div className="grid content-start gap-6 px-4 pt-4 pb-8 [grid-area:body] md:px-6 md:pt-0">
-
         <Description key={issue.updated_at} issue={issue} canEdit={canEdit} onSave={(description) => save({ description })} />
 
         {workspace && project && (
@@ -450,11 +420,7 @@ function IssueDetails({
           />
         )}
 
-        <CodingRuns
-          issue={issue}
-          scope={scope}
-          sessionLink={workspace && project ? (id) => sessionHref(workspace.slug, project.key, id) : undefined}
-        />
+        <CodingRuns issue={issue} scope={scope} sessionLink={workspace && project ? (id) => sessionHref(workspace.slug, project.key, id) : undefined} />
 
         <Separator />
 
@@ -543,9 +509,7 @@ export function IssueDrawer() {
             )}
             {issue.data && scope && <ImplementedIn issue={issue.data} scope={scope} />}
           </SheetTitle>
-          {issue.data && scope && (
-            <IssueActions issue={issue.data} scope={scope} canCode={can(workspace, "agents:code")} />
-          )}
+          {issue.data && scope && <IssueActions issue={issue.data} scope={scope} canCode={can(workspace, "agents:code")} />}
           <SheetDescription className="sr-only">Issue details</SheetDescription>
         </SheetHeader>
         {issue.isLoading && (
@@ -554,11 +518,7 @@ export function IssueDrawer() {
             <Skeleton className="h-64" />
           </div>
         )}
-        {issue.isError && (
-          <p className="text-muted-foreground p-4 text-sm md:px-6">
-            This issue doesn&apos;t exist, or it was moved. Check the key.
-          </p>
-        )}
+        {issue.isError && <p className="text-muted-foreground p-4 text-sm md:px-6">This issue doesn&apos;t exist, or it was moved. Check the key.</p>}
         {issue.data && scope && (
           <IssueDetails
             issue={issue.data}

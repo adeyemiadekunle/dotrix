@@ -4,12 +4,7 @@ import { Label } from "@dotrix/ui/components/label";
 import { AlertCircleIcon, Loader2Icon } from "lucide-react";
 import { useId, type ComponentProps, type ReactNode } from "react";
 
-export function Field({
-  label,
-  hint,
-  action,
-  ...input
-}: ComponentProps<typeof Input> & { label: string; hint?: ReactNode; action?: ReactNode }) {
+export function Field({ label, hint, action, ...input }: ComponentProps<typeof Input> & { label: string; hint?: ReactNode; action?: ReactNode }) {
   const id = useId();
   return (
     <div className="field">
@@ -49,17 +44,7 @@ export function FormError({ message }: { message?: string | null }) {
  * The save controls of a form with changes: a compact bar at the form's bottom right that stays
  * in view while you scroll (sticky), and isn't there at all while nothing has changed.
  */
-export function SaveBar({
-  dirty,
-  pending,
-  onDiscard,
-  label = "Save changes",
-}: {
-  dirty: boolean;
-  pending: boolean;
-  onDiscard: () => void;
-  label?: string;
-}) {
+export function SaveBar({ dirty, pending, onDiscard, label = "Save changes" }: { dirty: boolean; pending: boolean; onDiscard: () => void; label?: string }) {
   if (!dirty) return null;
   return (
     <div

@@ -16,6 +16,6 @@
   message: log the decision
   script:
     - tool: write_file
-      args: {file_path: /dotrix/decisions/ADR-001.md, content: "# ADR-001"}
+      args: { file_path: /dotrix/decisions/ADR-001.md, content: "# ADR-001" }
   expect:
     pending: [write_file]

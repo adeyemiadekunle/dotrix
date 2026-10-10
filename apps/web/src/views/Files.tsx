@@ -31,9 +31,21 @@ export function Files({ pid }: { pid: string }) {
       <div className="toolbar">
         <div className="inwrap">
           <Ic n="search" s={13} />
-          <input className="input search-sm" placeholder="Search files" value={u.fileQ} onChange={(e) => set("fileQ", e.target.value)} aria-label="Search files" />
+          <input
+            className="input search-sm"
+            placeholder="Search files"
+            value={u.fileQ}
+            onChange={(e) => set("fileQ", e.target.value)}
+            aria-label="Search files"
+          />
         </div>
-        <select className="select" style={{ height: 26, width: "auto", fontSize: 12 }} value={ft} onChange={(e) => set("fileType", e.target.value)} aria-label="Filter by type">
+        <select
+          className="select"
+          style={{ height: 26, width: "auto", fontSize: 12 }}
+          value={ft}
+          onChange={(e) => set("fileType", e.target.value)}
+          aria-label="Filter by type"
+        >
           <option value="all">All types</option>
           {Object.entries(FT)
             .filter(([k]) => k !== "other")
@@ -43,7 +55,13 @@ export function Files({ pid }: { pid: string }) {
               </option>
             ))}
         </select>
-        <select className="select" style={{ height: 26, width: "auto", fontSize: 12 }} value={sort} onChange={(e) => set("fileSort", e.target.value)} aria-label="Sort">
+        <select
+          className="select"
+          style={{ height: 26, width: "auto", fontSize: 12 }}
+          value={sort}
+          onChange={(e) => set("fileSort", e.target.value)}
+          aria-label="Sort"
+        >
           {[
             ["date", "Newest"],
             ["name", "Name"],
@@ -130,7 +148,11 @@ export function Files({ pid }: { pid: string }) {
                     {f.size} · {mem(f.by)?.name.split(" ")[0]} · {ago(f.at)}
                   </span>
                 </div>
-                <button className="ibtn ibtn-xs more" onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "ctx", { ctx: "file", id: f.id }))} aria-label="File options">
+                <button
+                  className="ibtn ibtn-xs more"
+                  onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "ctx", { ctx: "file", id: f.id }))}
+                  aria-label="File options"
+                >
                   <Ic n="ellipsis" s={13} />
                 </button>
               </div>

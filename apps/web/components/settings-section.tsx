@@ -5,12 +5,7 @@ import type { ComponentProps } from "react";
 // right (stacked when the section itself is narrow, e.g. beside the settings nav on a laptop).
 // The parts mirror Card's, so a card converts by renaming.
 
-export function SettingsSection({
-  className,
-  children,
-  stacked = false,
-  ...props
-}: ComponentProps<"section"> & { stacked?: boolean }) {
+export function SettingsSection({ className, children, stacked = false, ...props }: ComponentProps<"section"> & { stacked?: boolean }) {
   return (
     <section className={cn("@container scroll-mt-6 border-t pt-8 first:border-t-0 first:pt-0", className)} {...props}>
       {/* `stacked`: the title above, for content that needs the whole width (a list of people). */}

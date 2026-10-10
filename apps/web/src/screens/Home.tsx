@@ -80,7 +80,9 @@ function AskHero() {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
   const lead = D().agents.find((a) => a.handle === "auto") ?? D().agents[0];
-  const others = D().agents.filter((a) => a !== lead).slice(0, 5);
+  const others = D()
+    .agents.filter((a) => a !== lead)
+    .slice(0, 5);
   // "@" picks the project the agents read ("" for all of them) and who to ask.
   const ps = visibleProjects().filter((x) => canSee(x) && !x.archived);
   const [pid, setPid] = useState(ps[0]?.id ?? "");
@@ -115,48 +117,48 @@ function AskHero() {
         ))}
       </div>
       <div className="ask-wrap">
-      <form
-        className="cbox ask-box"
-        onSubmit={(e) => {
-          e.preventDefault();
-          ask(text);
-        }}
-      >
-        <textarea
-          ref={ref}
-          rows={2}
-          value={text}
-          placeholder={`Ask ${ag?.name ?? "the agents"} anything, or type @ to pick a project or an agent`}
-          onChange={(e) => at.onChange(e.target)}
-          onKeyDown={(e) => {
-            if (at.onKeyDown(e)) return;
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              ask(text);
-            }
+        <form
+          className="cbox ask-box"
+          onSubmit={(e) => {
+            e.preventDefault();
+            ask(text);
           }}
-          aria-label={`Ask ${ag?.name ?? "the agents"}`}
-          aria-expanded={at.open}
-        />
-        <div className="cbox-row">
-          <button type="button" className="cpill pick" onClick={at.start} data-tip="Type @ to pick another project">
-            <Ic n={pid ? "at-sign" : "layers"} s={12} />
-            <span className="trunc">{projects.find(([v]) => v === pid)?.[1]}</span>
-          </button>
-          <button type="button" className="cpill pick" onClick={at.start} data-tip="Type @ to ask another agent">
-            {ag && <Face c={ag.c} size={16} mood="idle" />}
-            {ag?.name} · {ag?.role}
-          </button>
-          <span className="sp" />
-          <span className="faint hide-m" style={{ fontSize: 11 }}>
-            ↵ to start
-          </span>
-          <button className="cbox-send" type="submit" disabled={!text.trim()} aria-label="Start">
-            <Ic n="arrow-up" s={14} />
-          </button>
-        </div>
-      </form>
-      {at.menu}
+        >
+          <textarea
+            ref={ref}
+            rows={2}
+            value={text}
+            placeholder={`Ask ${ag?.name ?? "the agents"} anything, or type @ to pick a project or an agent`}
+            onChange={(e) => at.onChange(e.target)}
+            onKeyDown={(e) => {
+              if (at.onKeyDown(e)) return;
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                ask(text);
+              }
+            }}
+            aria-label={`Ask ${ag?.name ?? "the agents"}`}
+            aria-expanded={at.open}
+          />
+          <div className="cbox-row">
+            <button type="button" className="cpill pick" onClick={at.start} data-tip="Type @ to pick another project">
+              <Ic n={pid ? "at-sign" : "layers"} s={12} />
+              <span className="trunc">{projects.find(([v]) => v === pid)?.[1]}</span>
+            </button>
+            <button type="button" className="cpill pick" onClick={at.start} data-tip="Type @ to ask another agent">
+              {ag && <Face c={ag.c} size={16} mood="idle" />}
+              {ag?.name} · {ag?.role}
+            </button>
+            <span className="sp" />
+            <span className="faint hide-m" style={{ fontSize: 11 }}>
+              ↵ to start
+            </span>
+            <button className="cbox-send" type="submit" disabled={!text.trim()} aria-label="Start">
+              <Ic n="arrow-up" s={14} />
+            </button>
+          </div>
+        </form>
+        {at.menu}
       </div>
       <div className="ask-sugg">
         {ASKS.map(([i, q]) => (
@@ -220,10 +222,12 @@ export function Home() {
               Invite member
             </button>
           )}
-          {allowed("projects:manage") && <button className="btn btn-secondary hide-m" onClick={newProject}>
-            <Ic n="folder-plus" s={14} />
-            New project
-          </button>}
+          {allowed("projects:manage") && (
+            <button className="btn btn-secondary hide-m" onClick={newProject}>
+              <Ic n="folder-plus" s={14} />
+              New project
+            </button>
+          )}
           <button className="btn btn-primary" onClick={() => newTask()}>
             <Ic n="plus" s={14} />
             New task

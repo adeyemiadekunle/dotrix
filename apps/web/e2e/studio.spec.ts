@@ -91,7 +91,10 @@ test("the agents panel shows who needs you, and approving from it settles the ch
   await expect(panel).toBeHidden();
   const notices = page.getByRole("region", { name: "Waiting for you" });
   await expect(notices.getByText("needs your approval").first()).toBeVisible();
-  await notices.getByRole("button", { name: /Close the notice/ }).first().click();
+  await notices
+    .getByRole("button", { name: /Close the notice/ })
+    .first()
+    .click();
 });
 
 test("Home's ask box starts a conversation with Nova", async ({ page }) => {

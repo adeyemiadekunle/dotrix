@@ -32,11 +32,7 @@ function Node({
           style={pad}
         >
           {isOpen ? <ChevronDownIcon className="size-3.5 shrink-0" /> : <ChevronRightIcon className="size-3.5 shrink-0" />}
-          {isOpen ? (
-            <FolderOpenIcon className="text-muted-foreground size-4 shrink-0" />
-          ) : (
-            <FolderIcon className="text-muted-foreground size-4 shrink-0" />
-          )}
+          {isOpen ? <FolderOpenIcon className="text-muted-foreground size-4 shrink-0" /> : <FolderIcon className="text-muted-foreground size-4 shrink-0" />}
           <span className="truncate">{node.name}</span>
         </button>
         {isOpen && (
@@ -63,11 +59,7 @@ function Node({
         )}
         style={{ paddingLeft: `${depth * 12 + 8 + 18}px` }}
       >
-        {deleted ? (
-          <Trash2Icon className="size-4 shrink-0" />
-        ) : (
-          <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
-        )}
+        {deleted ? <Trash2Icon className="size-4 shrink-0" /> : <FileTextIcon className="text-muted-foreground size-4 shrink-0" />}
         <span className="truncate">{node.name}</span>
       </button>
     </li>
@@ -116,15 +108,7 @@ export function FileTree({
   return (
     <ul className="grid gap-px">
       {nodes.map((node) => (
-        <Node
-          key={node.path}
-          node={node}
-          depth={0}
-          selected={selected}
-          onSelect={onSelect}
-          open={filtering ? allOpen : open}
-          toggle={toggle}
-        />
+        <Node key={node.path} node={node} depth={0} selected={selected} onSelect={onSelect} open={filtering ? allOpen : open} toggle={toggle} />
       ))}
     </ul>
   );

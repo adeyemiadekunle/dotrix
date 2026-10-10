@@ -10,13 +10,7 @@ import { toast } from "sonner";
 import { useConfirm } from "@/components/confirm-dialog";
 import { GitHubMark } from "@/components/github-sign-in";
 import { InstallGitHubButton } from "@/components/github-repos";
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 import { api, errorMessage, unwrap } from "@/lib/api";
 import { useGitHubRepos, useGitHubStatus } from "@/lib/github";
 import { useSetSearchParams } from "@/lib/url-state";
@@ -70,9 +64,8 @@ export function GitHubSettings({ workspace }: { workspace: Workspace }) {
       <SettingsHeader>
         <SettingsTitle>GitHub</SettingsTitle>
         <SettingsDescription>
-          The dotrix GitHub App reads the repos you give it, so each project can connect to its code, private repos
-          included. Agents use it to understand the codebase, and later to open pull requests. You choose which repos
-          on GitHub.
+          The dotrix GitHub App reads the repos you give it, so each project can connect to its code, private repos included. Agents use it to understand the
+          codebase, and later to open pull requests. You choose which repos on GitHub.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="p-0">

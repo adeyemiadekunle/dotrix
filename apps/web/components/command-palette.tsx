@@ -123,8 +123,7 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: b
     const out: Result[] = [];
     if (!workspace) return out;
     const matches = (text: string) => !q || text.toLowerCase().includes(q);
-    const chatWith = (text: string) =>
-      `${base}/chat?${new URLSearchParams({ ...(projectKey ? { project: projectKey } : {}), q: text })}`;
+    const chatWith = (text: string) => `${base}/chat?${new URLSearchParams({ ...(projectKey ? { project: projectKey } : {}), q: text })}`;
     for (const issue of (issues.data ?? []).filter((i) => q && (matches(i.title) || matches(i.key))).slice(0, 6)) {
       out.push({
         id: `issue:${issue.key}`,
@@ -181,9 +180,7 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: b
       }
     }
     if (q) {
-      const people = (members.data ?? []).filter(
-        (m) => matches(m.display_name) || matches(m.email) || (m.title ? matches(m.title) : false),
-      );
+      const people = (members.data ?? []).filter((m) => matches(m.display_name) || matches(m.email) || (m.title ? matches(m.title) : false));
       for (const member of people.slice(0, 5)) {
         out.push({
           id: `person:${member.user_id}`,
@@ -268,21 +265,14 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: b
             lastGroup = result.group;
             return (
               <li key={result.id} role="presentation">
-                {heading && (
-                  <p className="text-muted-foreground px-2 pt-2 pb-1 text-[11px] font-semibold tracking-wider uppercase">
-                    {result.group}
-                  </p>
-                )}
+                {heading && <p className="text-muted-foreground px-2 pt-2 pb-1 text-[11px] font-semibold tracking-wider uppercase">{result.group}</p>}
                 <div
                   id={`palette-${index}`}
                   role="option"
                   aria-selected={index === active}
                   onMouseMove={() => setActive(index)}
                   onClick={() => go(result)}
-                  className={cn(
-                    "flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-sm",
-                    index === active && "bg-muted",
-                  )}
+                  className={cn("flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-sm", index === active && "bg-muted")}
                 >
                   {result.icon}
                   <span className="flex min-w-0 flex-1 items-center gap-2">{result.label}</span>

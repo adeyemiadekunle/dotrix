@@ -2,27 +2,72 @@
 // decision), each project's knowledge (.dotrix/), coding sessions, the audit log, automations;
 // and on Gr8r's data, issue types and the agents' notifications and activity.
 import { minsAgo } from "../core/utils";
-import type {
-  Activity,
-  Agent,
-  AuditEvent,
-  Automation,
-  CodingSession,
-  KnowledgeFile,
-  Notif,
-  Task,
-  Thread,
-} from "./types";
+import type { Activity, Agent, AuditEvent, Automation, CodingSession, KnowledgeFile, Notif, Task, Thread } from "./types";
 
 type Base = { tasks: Task[]; notifs: Notif[]; activity: Activity[] };
 
 export const AGENTS: Agent[] = [
-  { handle: "auto", name: "Nova", role: "Lead", desc: "Plans the work, hands it to the right agent, and brings it together.", icon: "sparkles", c: "#E0A92E", builtIn: true, tools: ["knowledge.read", "board.write", "graph.read", "code.read"] },
-  { handle: "product", name: "Lyra", role: "Product", desc: "Requirements, user stories, acceptance criteria.", icon: "target", c: "#3D9E6A", builtIn: true, tools: ["knowledge.write", "board.write"] },
-  { handle: "architecture", name: "Orion", role: "Architecture", desc: "Impact of a change, options, decisions (ADRs).", icon: "layers", c: "#3B82C4", builtIn: true, tools: ["knowledge.write", "code.read", "graph.read"] },
-  { handle: "research", name: "Vega", role: "Research", desc: "Reads the web and our documents; claims with sources.", icon: "search", c: "#5AA9D6", builtIn: true, tools: ["web.search", "knowledge.read"] },
-  { handle: "reviewer", name: "Juno", role: "Review", desc: "Checks work against requirements; read-only.", icon: "shield-check", c: "#D0628B", builtIn: true, customised: true, tools: ["knowledge.read", "code.read"] },
-  { handle: "documentation", name: "Echo", role: "Documentation", desc: "Keeps documents current after changes.", icon: "file-text", c: "#8C6FD6", builtIn: true, tools: ["knowledge.write"] },
+  {
+    handle: "auto",
+    name: "Nova",
+    role: "Lead",
+    desc: "Plans the work, hands it to the right agent, and brings it together.",
+    icon: "sparkles",
+    c: "#E0A92E",
+    builtIn: true,
+    tools: ["knowledge.read", "board.write", "graph.read", "code.read"],
+  },
+  {
+    handle: "product",
+    name: "Lyra",
+    role: "Product",
+    desc: "Requirements, user stories, acceptance criteria.",
+    icon: "target",
+    c: "#3D9E6A",
+    builtIn: true,
+    tools: ["knowledge.write", "board.write"],
+  },
+  {
+    handle: "architecture",
+    name: "Orion",
+    role: "Architecture",
+    desc: "Impact of a change, options, decisions (ADRs).",
+    icon: "layers",
+    c: "#3B82C4",
+    builtIn: true,
+    tools: ["knowledge.write", "code.read", "graph.read"],
+  },
+  {
+    handle: "research",
+    name: "Vega",
+    role: "Research",
+    desc: "Reads the web and our documents; claims with sources.",
+    icon: "search",
+    c: "#5AA9D6",
+    builtIn: true,
+    tools: ["web.search", "knowledge.read"],
+  },
+  {
+    handle: "reviewer",
+    name: "Juno",
+    role: "Review",
+    desc: "Checks work against requirements; read-only.",
+    icon: "shield-check",
+    c: "#D0628B",
+    builtIn: true,
+    customised: true,
+    tools: ["knowledge.read", "code.read"],
+  },
+  {
+    handle: "documentation",
+    name: "Echo",
+    role: "Documentation",
+    desc: "Keeps documents current after changes.",
+    icon: "file-text",
+    c: "#8C6FD6",
+    builtIn: true,
+    tools: ["knowledge.write"],
+  },
 ];
 /** Coding tools: assignable like people, they open pull requests. */
 export const CODING_TOOLS = [
@@ -170,17 +215,109 @@ const THREADS: Thread[] = [
 
 const md = (title: string, body: string) => `# ${title}\n\n${body}\n`;
 const KNOWLEDGE: KnowledgeFile[] = [
-  { path: "project.md", project: "p1", version: 3, by: "m2", at: minsAgo(9000), content: md("Website Redesign", "Rebuild dotrix.app with a clearer information architecture, a responsive component library, and a faster CMS-driven blog.\n\n## Goals\n- Visitors find pricing in one click\n- Pages load under 1.5 s on 4G\n- Marketing publishes without engineering") },
-  { path: "current-state.md", project: "p1", version: 7, by: "documentation", at: minsAgo(400), content: md("Current state", "Wireframes are in review; navigation is due today. Dev handoff in 14 days.\n\n**Blocked:** mobile onboarding permission prompts (legal).") },
-  { path: "roadmap.md", project: "p1", version: 4, by: "m1", at: minsAgo(3000), content: md("Roadmap", "| Milestone | Date |\n| --- | --- |\n| Wireframes signed off | in 2 days |\n| Dev handoff | in 14 days |\n| Public launch | in 24 days |") },
-  { path: "requirements/navigation.md", project: "p1", version: 2, by: "product", at: minsAgo(8000), content: md("Navigation", "The site has five top-level sections.\nProducts, Solutions, Pricing, Resources, Company.") },
-  { path: "requirements/homepage.md", project: "p1", version: 1, by: "m2", at: minsAgo(12000), content: md("Homepage", "## Acceptance criteria\n- Hero states the value proposition in one sentence\n- Customer logos under the hero\n- Feature overview links to product pages") },
-  { path: "decisions/0001-headless-cms.md", project: "p1", version: 1, by: "architecture", at: minsAgo(20000), content: md("ADR 0001: Headless CMS", "**Status:** accepted\n\nWe move the blog to a headless CMS so marketing publishes without a deploy.\n\nAffected modules: blog, build") },
-  { path: "research/2026-09-cms-options.md", project: "p1", version: 1, by: "research", at: minsAgo(21000), content: md("CMS options", "Compared three headless CMSs on price, editor experience, and image handling. [S1] [S2]") },
-  { path: "agent-rules/base.md", project: "p1", version: 1, by: "m1", at: minsAgo(30000), content: md("Rules for every agent", "- Write in plain English.\n- Link issues by key.") },
-  { path: "project.md", project: "p2", version: 2, by: "m3", at: minsAgo(15000), content: md("Mobile App", "Native iOS and Android client for field teams with offline sync, push notifications, and biometric sign-in.") },
-  { path: "architecture/overview.md", project: "p2", version: 3, by: "architecture", at: minsAgo(9000), content: md("Architecture overview", "React Native app, a sync service, and the existing REST API.") },
-  { path: "project.md", project: "p4", version: 1, by: "m1", at: minsAgo(30000), content: md("Product Launch", "Coordinate the Workflows 2.0 launch: pricing, docs, press, and sales enablement across teams.") },
+  {
+    path: "project.md",
+    project: "p1",
+    version: 3,
+    by: "m2",
+    at: minsAgo(9000),
+    content: md(
+      "Website Redesign",
+      "Rebuild dotrix.app with a clearer information architecture, a responsive component library, and a faster CMS-driven blog.\n\n## Goals\n- Visitors find pricing in one click\n- Pages load under 1.5 s on 4G\n- Marketing publishes without engineering",
+    ),
+  },
+  {
+    path: "current-state.md",
+    project: "p1",
+    version: 7,
+    by: "documentation",
+    at: minsAgo(400),
+    content: md(
+      "Current state",
+      "Wireframes are in review; navigation is due today. Dev handoff in 14 days.\n\n**Blocked:** mobile onboarding permission prompts (legal).",
+    ),
+  },
+  {
+    path: "roadmap.md",
+    project: "p1",
+    version: 4,
+    by: "m1",
+    at: minsAgo(3000),
+    content: md(
+      "Roadmap",
+      "| Milestone | Date |\n| --- | --- |\n| Wireframes signed off | in 2 days |\n| Dev handoff | in 14 days |\n| Public launch | in 24 days |",
+    ),
+  },
+  {
+    path: "requirements/navigation.md",
+    project: "p1",
+    version: 2,
+    by: "product",
+    at: minsAgo(8000),
+    content: md("Navigation", "The site has five top-level sections.\nProducts, Solutions, Pricing, Resources, Company."),
+  },
+  {
+    path: "requirements/homepage.md",
+    project: "p1",
+    version: 1,
+    by: "m2",
+    at: minsAgo(12000),
+    content: md(
+      "Homepage",
+      "## Acceptance criteria\n- Hero states the value proposition in one sentence\n- Customer logos under the hero\n- Feature overview links to product pages",
+    ),
+  },
+  {
+    path: "decisions/0001-headless-cms.md",
+    project: "p1",
+    version: 1,
+    by: "architecture",
+    at: minsAgo(20000),
+    content: md(
+      "ADR 0001: Headless CMS",
+      "**Status:** accepted\n\nWe move the blog to a headless CMS so marketing publishes without a deploy.\n\nAffected modules: blog, build",
+    ),
+  },
+  {
+    path: "research/2026-09-cms-options.md",
+    project: "p1",
+    version: 1,
+    by: "research",
+    at: minsAgo(21000),
+    content: md("CMS options", "Compared three headless CMSs on price, editor experience, and image handling. [S1] [S2]"),
+  },
+  {
+    path: "agent-rules/base.md",
+    project: "p1",
+    version: 1,
+    by: "m1",
+    at: minsAgo(30000),
+    content: md("Rules for every agent", "- Write in plain English.\n- Link issues by key."),
+  },
+  {
+    path: "project.md",
+    project: "p2",
+    version: 2,
+    by: "m3",
+    at: minsAgo(15000),
+    content: md("Mobile App", "Native iOS and Android client for field teams with offline sync, push notifications, and biometric sign-in."),
+  },
+  {
+    path: "architecture/overview.md",
+    project: "p2",
+    version: 3,
+    by: "architecture",
+    at: minsAgo(9000),
+    content: md("Architecture overview", "React Native app, a sync service, and the existing REST API."),
+  },
+  {
+    path: "project.md",
+    project: "p4",
+    version: 1,
+    by: "m1",
+    at: minsAgo(30000),
+    content: md("Product Launch", "Coordinate the Workflows 2.0 launch: pricing, docs, press, and sales enablement across teams."),
+  },
 ];
 
 const CODING: CodingSession[] = [
@@ -228,10 +365,22 @@ const CODING: CodingSession[] = [
 +  expect(slug(" FAQ & help ")).toBe("faq-help");
 +});`,
     },
-    tree: ["package.json", "README.md", "src/main.tsx", "src/pages/home.tsx", "src/pages/pricing.tsx", "src/lib/slug.ts", "src/lib/slug.test.ts", "src/components/Nav.tsx"],
+    tree: [
+      "package.json",
+      "README.md",
+      "src/main.tsx",
+      "src/pages/home.tsx",
+      "src/pages/pricing.tsx",
+      "src/lib/slug.ts",
+      "src/lib/slug.test.ts",
+      "src/components/Nav.tsx",
+    ],
     terminal: [
       { cmd: "pnpm install --frozen-lockfile", out: "Packages: +412\nDone in 9.8s" },
-      { cmd: "rg -n 'href=\"#' src/pages", out: "src/pages/pricing.tsx:15:      <a href=\"#Plans\">Plans</a>\nsrc/pages/pricing.tsx:16:      <a href=\"#FAQ\">FAQ</a>" },
+      {
+        cmd: "rg -n 'href=\"#' src/pages",
+        out: 'src/pages/pricing.tsx:15:      <a href="#Plans">Plans</a>\nsrc/pages/pricing.tsx:16:      <a href="#FAQ">FAQ</a>',
+      },
       { cmd: "pnpm test src/lib", out: " ✓ src/lib/slug.test.ts (1 test) 4ms\n\n Test Files  1 passed (1)\n      Tests  48 passed (48)" },
     ],
     tasks: [
@@ -240,7 +389,14 @@ const CODING: CodingSession[] = [
     ],
     preview: { path: "/pricing" },
     pr: { number: 42, state: "merged", url: "https://github.com/dotrix/site/pull/42" },
-    turns: [{ at: minsAgo(2900), ask: "Fix the anchor links on the pricing page.", summary: "Fixed 4 anchors and added a test for heading ids.", events: ["Read pricing.tsx", "Edited 2 files", "Ran the tests: 48 passed"] }],
+    turns: [
+      {
+        at: minsAgo(2900),
+        ask: "Fix the anchor links on the pricing page.",
+        summary: "Fixed 4 anchors and added a test for heading ids.",
+        events: ["Read pricing.tsx", "Edited 2 files", "Ran the tests: 48 passed"],
+      },
+    ],
   },
   {
     id: "cs2",
@@ -325,11 +481,61 @@ export function seedDotrix(base: Base) {
   }
   // Agents' items in the inbox: changes waiting, a plan to steer, a finding.
   const notifs: Notif[] = [
-    { id: "na1", type: "approval", by: "auto", project: "p1", thread: "th1", text: "wants to change", snippet: "requirements/navigation.md, and 1 more change", at: minsAgo(30), read: false },
-    { id: "na2", type: "checkpoint", by: "architecture", project: "p2", thread: "th2", text: "shared a plan for", snippet: "Offline sync: map, compare, recommend", at: minsAgo(305), read: false },
-    { id: "na3", type: "finding", by: "reviewer", task: "t3", text: "found an issue in", snippet: "Mobile layout has no acceptance criteria for the logo strip", at: minsAgo(700), read: true },
-    { id: "na5", type: "limit", by: "auto", project: "p1", thread: "th5", run: "run-th5", text: "stopped at its model's limit in", snippet: "Anthropic: rate limit reached, resets in about 4 minutes", at: minsAgo(3), read: false },
-    { id: "na4", type: "approval", by: "agent:claude-code", project: "p1", task: "t13", text: "is waiting to start coding", snippet: "WEB-139 Build hero component", at: minsAgo(45), read: false },
+    {
+      id: "na1",
+      type: "approval",
+      by: "auto",
+      project: "p1",
+      thread: "th1",
+      text: "wants to change",
+      snippet: "requirements/navigation.md, and 1 more change",
+      at: minsAgo(30),
+      read: false,
+    },
+    {
+      id: "na2",
+      type: "checkpoint",
+      by: "architecture",
+      project: "p2",
+      thread: "th2",
+      text: "shared a plan for",
+      snippet: "Offline sync: map, compare, recommend",
+      at: minsAgo(305),
+      read: false,
+    },
+    {
+      id: "na3",
+      type: "finding",
+      by: "reviewer",
+      task: "t3",
+      text: "found an issue in",
+      snippet: "Mobile layout has no acceptance criteria for the logo strip",
+      at: minsAgo(700),
+      read: true,
+    },
+    {
+      id: "na5",
+      type: "limit",
+      by: "auto",
+      project: "p1",
+      thread: "th5",
+      run: "run-th5",
+      text: "stopped at its model's limit in",
+      snippet: "Anthropic: rate limit reached, resets in about 4 minutes",
+      at: minsAgo(3),
+      read: false,
+    },
+    {
+      id: "na4",
+      type: "approval",
+      by: "agent:claude-code",
+      project: "p1",
+      task: "t13",
+      text: "is waiting to start coding",
+      snippet: "WEB-139 Build hero component",
+      at: minsAgo(45),
+      read: false,
+    },
   ];
   const activity: Activity[] = [
     { id: "aa1", by: "auto", verb: "answered", task: null, project: "p1", at: minsAgo(30), extra: "What's left before dev handoff?" },

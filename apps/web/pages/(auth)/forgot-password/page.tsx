@@ -34,8 +34,8 @@ export default function ForgotPasswordPage() {
     return (
       <AuthCard title="Check your email" footer={back}>
         <p className="text-muted-foreground text-sm">
-          If there&apos;s an account for <span className="text-foreground font-medium">{sentTo}</span>, we&apos;ve sent
-          it a link to reset the password. The link works once and expires in an hour.
+          If there&apos;s an account for <span className="text-foreground font-medium">{sentTo}</span>, we&apos;ve sent it a link to reset the password. The
+          link works once and expires in an hour.
         </p>
       </AuthCard>
     );

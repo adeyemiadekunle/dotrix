@@ -231,7 +231,19 @@ const SORT_NAMES: Record<string, string> = {
 };
 const GROUP_NAMES: Record<string, string> = { status: "Status", priority: "Priority", assignee: "Assignee", project: "Project", due: "Due date", none: "None" };
 
-export function ViewToolbar({ k, group = true, cols = false, extra, right }: { k: string; group?: boolean; cols?: boolean; extra?: ReactNode; right?: ReactNode }) {
+export function ViewToolbar({
+  k,
+  group = true,
+  cols = false,
+  extra,
+  right,
+}: {
+  k: string;
+  group?: boolean;
+  cols?: boolean;
+  extra?: ReactNode;
+  right?: ReactNode;
+}) {
   const v = viewOf(k);
   return (
     <>

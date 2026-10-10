@@ -3,19 +3,7 @@
 // closes it. Picks apply to a task, or to the open New task form ("__form").
 import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 
-import {
-  closePop,
-  copy,
-  openTask,
-  projMove,
-  setPref,
-  setProjectStatus,
-  setRole,
-  toggleDone,
-  toggleFavProj,
-  toggleFavTask,
-  updateTask,
-} from "../core/actions";
+import { closePop, copy, openTask, projMove, setPref, setProjectStatus, setRole, toggleDone, toggleFavProj, toggleFavTask, updateTask } from "../core/actions";
 import { LABELS, PRIOS, PSTAT, STATUSES, type ProjectStatusId } from "../core/constants";
 import { allowed, canInvite } from "../core/can";
 import { Ic, WsLogo } from "../core/icons";
@@ -246,8 +234,12 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             search="Assign subtask to…"
             items={[
               { id: "", name: "Unassigned", html: <Av id={null} cls="sm" tip={false} />, on: !sb.assignee },
-              ...people()
-                .map((m) => ({ id: m.id, name: m.name + (m.id === D().me ? " (you)" : ""), html: <Av id={m.id} cls="sm" tip={false} />, on: sb.assignee === m.id })),
+              ...people().map((m) => ({
+                id: m.id,
+                name: m.name + (m.id === D().me ? " (you)" : ""),
+                html: <Av id={m.id} cls="sm" tip={false} />,
+                on: sb.assignee === m.id,
+              })),
             ]}
             onPick={(v) => {
               S.ui.pop = null;
@@ -261,9 +253,25 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
       };
     }
     case "status":
-      return { inner: <PopList p={p} items={STATUSES.map((s, i) => ({ id: s.id, name: s.name, html: <StIcon st={s.id} />, on: t?.status === s.id, kbd: i + 1 }))} onPick={pick("status")} /> };
+      return {
+        inner: (
+          <PopList
+            p={p}
+            items={STATUSES.map((s, i) => ({ id: s.id, name: s.name, html: <StIcon st={s.id} />, on: t?.status === s.id, kbd: i + 1 }))}
+            onPick={pick("status")}
+          />
+        ),
+      };
     case "priority":
-      return { inner: <PopList p={p} items={PRIOS.map((x) => ({ id: x.id, name: x.name, html: <PrIcon p={x.id} />, on: t?.priority === x.id }))} onPick={pick("priority")} /> };
+      return {
+        inner: (
+          <PopList
+            p={p}
+            items={PRIOS.map((x) => ({ id: x.id, name: x.name, html: <PrIcon p={x.id} />, on: t?.priority === x.id }))}
+            onPick={pick("priority")}
+          />
+        ),
+      };
     case "assignee":
       return {
         inner: (
@@ -272,10 +280,19 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             search="Assign to…"
             items={[
               { id: "", name: "Unassigned", html: <Av id={null} cls="sm" tip={false} />, on: !t?.assignee },
-              ...people()
-                .map((m) => ({ id: m.id, name: m.name + (m.id === D().me ? " (you)" : ""), html: <Av id={m.id} cls="sm" tip={false} />, on: t?.assignee === m.id })),
+              ...people().map((m) => ({
+                id: m.id,
+                name: m.name + (m.id === D().me ? " (you)" : ""),
+                html: <Av id={m.id} cls="sm" tip={false} />,
+                on: t?.assignee === m.id,
+              })),
               // dotrix: coding tools are assignable; assigning one starts a coding session (with approval)
-              { id: "agent:claude-code", name: "Claude Code", html: <Av id="agent:claude-code" cls="sm" tip={false} />, on: t?.assignee === "agent:claude-code" },
+              {
+                id: "agent:claude-code",
+                name: "Claude Code",
+                html: <Av id="agent:claude-code" cls="sm" tip={false} />,
+                on: t?.assignee === "agent:claude-code",
+              },
               { id: "agent:codex", name: "Codex", html: <Av id="agent:codex" cls="sm" tip={false} />, on: t?.assignee === "agent:codex" },
             ]}
             onPick={pick("assignee")}
@@ -319,7 +336,12 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         inner: (
           <PopList
             p={p}
-            items={["Does not repeat", "Daily", "Weekly", "Every 2 weeks", "Monthly"].map((x) => ({ id: x, name: x, html: <Ic n="repeat" s={14} />, on: ((t?.recur as string) || "Does not repeat") === x }))}
+            items={["Does not repeat", "Daily", "Weekly", "Every 2 weeks", "Monthly"].map((x) => ({
+              id: x,
+              name: x,
+              html: <Ic n="repeat" s={14} />,
+              on: ((t?.recur as string) || "Does not repeat") === x,
+            }))}
             onPick={pick("recur")}
           />
         ),
@@ -400,7 +422,12 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         inner: (
           <PopList
             p={p}
-            items={Object.entries(PSTAT).map(([k, v]) => ({ id: k, name: v.name, html: <span className="pdot" style={css({ "--c": v.c, borderRadius: "50%" })} />, on: pr.status === k }))}
+            items={Object.entries(PSTAT).map(([k, v]) => ({
+              id: k,
+              name: v.name,
+              html: <span className="pdot" style={css({ "--c": v.c, borderRadius: "50%" })} />,
+              on: pr.status === k,
+            }))}
             onPick={(v) => setProjectStatus(pr.id, v as ProjectStatusId)}
           />
         ),
@@ -459,7 +486,9 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             ))}
             <Sep />
             <Mi icon="plus" label="Create workspace" onClick={() => (closePop(), window.location.assign("/onboarding"))} />
-            {allowed("workspace:manage") && <Mi icon="settings" label="Workspace settings" onClick={() => (closePop(), go("settings", { sec: "workspace" }))} />}
+            {allowed("workspace:manage") && (
+              <Mi icon="settings" label="Workspace settings" onClick={() => (closePop(), go("settings", { sec: "workspace" }))} />
+            )}
             {canInvite() && <Mi icon="user-plus" label="Invite members" onClick={invite} />}
             <Sep />
             <Mi icon="log-out" label="Sign out" onClick={signOut} />
@@ -558,11 +587,19 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             <Sep />
             <div style={{ padding: "4px 6px" }}>
               <div className="seg" style={{ width: "100%" }}>
-                <button className={v.sort.dir > 0 ? "on" : ""} style={{ flex: 1, justifyContent: "center" }} onClick={() => viewChange(k, (vv) => (vv.sort.dir = 1))}>
+                <button
+                  className={v.sort.dir > 0 ? "on" : ""}
+                  style={{ flex: 1, justifyContent: "center" }}
+                  onClick={() => viewChange(k, (vv) => (vv.sort.dir = 1))}
+                >
                   <Ic n="arrow-up" s={12} />
                   Ascending
                 </button>
-                <button className={v.sort.dir < 0 ? "on" : ""} style={{ flex: 1, justifyContent: "center" }} onClick={() => viewChange(k, (vv) => (vv.sort.dir = -1))}>
+                <button
+                  className={v.sort.dir < 0 ? "on" : ""}
+                  style={{ flex: 1, justifyContent: "center" }}
+                  onClick={() => viewChange(k, (vv) => (vv.sort.dir = -1))}
+                >
                   <Ic n="arrow-down" s={12} />
                   Descending
                 </button>
@@ -641,7 +678,12 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             </div>
             {FIELDS[f.f]!.opts().map((o) => (
               <label key={o.id} className="mi" style={{ cursor: "pointer" }}>
-                <input type="checkbox" className="check" checked={f.v.includes(o.id)} onChange={() => viewChange(k, () => (f.v = f.v.includes(o.id) ? f.v.filter((x) => x !== o.id) : [...f.v, o.id]))} />
+                <input
+                  type="checkbox"
+                  className="check"
+                  checked={f.v.includes(o.id)}
+                  onChange={() => viewChange(k, () => (f.v = f.v.includes(o.id) ? f.v.filter((x) => x !== o.id) : [...f.v, o.id]))}
+                />
                 {o.html}
                 {o.name}
               </label>
@@ -797,7 +839,11 @@ function CtxMenu({ p }: { p: P }) {
       <>
         <Mi icon="panel-right-open" label="Open" onClick={() => openTask(id)} />
         <Mi icon="pencil" label="Edit" onClick={() => editTask(id)} r="E" />
-        <Mi icon={t.status === "done" ? "rotate-ccw" : "circle-check"} label={t.status === "done" ? "Reopen" : "Mark complete"} onClick={() => toggleDone(id)} />
+        <Mi
+          icon={t.status === "done" ? "rotate-ccw" : "circle-check"}
+          label={t.status === "done" ? "Reopen" : "Mark complete"}
+          onClick={() => toggleDone(id)}
+        />
         <Sep />
         <Mi icon="circle-dot" label="Status…" onClick={to("status")} />
         <Mi icon="user" label="Assign to…" onClick={to("assignee")} />
@@ -805,7 +851,11 @@ function CtxMenu({ p }: { p: P }) {
         <Mi icon="folder-input" label="Move to project…" onClick={to("project")} />
         <Sep />
         <Mi icon="star" label={t.fav ? "Remove from favorites" : "Add to favorites"} onClick={() => toggleFavTask(id)} />
-        <Mi icon="link" label="Copy link" onClick={() => (closePop(), void copy(`${location.origin}/w/${currentSlug()}/p/${proj(t.project)!.key}/board?task=${t.key}`))} />
+        <Mi
+          icon="link"
+          label="Copy link"
+          onClick={() => (closePop(), void copy(`${location.origin}/w/${currentSlug()}/p/${proj(t.project)!.key}/board?task=${t.key}`))}
+        />
         <Mi icon="copy" label="Duplicate" onClick={() => dupTask(id)} />
         <Mi icon="archive" label="Archive" onClick={() => archiveTask(id)} />
         <Sep />
@@ -841,7 +891,11 @@ function CtxMenu({ p }: { p: P }) {
         <div className="mh">{STATUSES.find((s) => s.id === id)?.name}</div>
         <Mi icon="plus" label="Add task" onClick={() => colAdd(k, id)} />
         <Mi icon="fold-horizontal" label="Collapse column" onClick={() => colCollapse(k, id)} />
-        {id !== "done" ? <Mi icon="check-check" label="Mark all as done" onClick={() => colDoneAll(k, id)} /> : <Mi icon="archive" label="Archive completed" onClick={() => colArchive(k)} />}
+        {id !== "done" ? (
+          <Mi icon="check-check" label="Mark all as done" onClick={() => colDoneAll(k, id)} />
+        ) : (
+          <Mi icon="archive" label="Archive completed" onClick={() => colArchive(k)} />
+        )}
         <Mi icon="arrow-down-wide-narrow" label="Sort by priority" onClick={() => colSortPrio(k, id)} />
       </>
     );
@@ -937,7 +991,12 @@ function FilterBuilder({ p }: { p: P }) {
                   <div style={{ marginLeft: 50, border: "1px solid var(--border)", borderRadius: "var(--r)", padding: 4, maxHeight: 200, overflow: "auto" }}>
                     {opts.map((o) => (
                       <label key={o.id} className="mi" style={{ cursor: "pointer", minHeight: 28 }}>
-                        <input type="checkbox" className="check" checked={f.v.includes(o.id)} onChange={() => viewChange(k, () => (f.v = f.v.includes(o.id) ? f.v.filter((x) => x !== o.id) : [...f.v, o.id]))} />
+                        <input
+                          type="checkbox"
+                          className="check"
+                          checked={f.v.includes(o.id)}
+                          onChange={() => viewChange(k, () => (f.v = f.v.includes(o.id) ? f.v.filter((x) => x !== o.id) : [...f.v, o.id]))}
+                        />
                         {o.html}
                         {o.name}
                       </label>

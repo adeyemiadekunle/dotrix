@@ -30,9 +30,7 @@ function Reply({ run, workspaceId }: { run: Run; workspaceId: string }) {
       <ChatMessageMeta>The agents</ChatMessageMeta>
       {active && live.text && <Markdown>{live.text}</Markdown>}
       {active && (
-        <ChatNotice tone="progress">
-          {run.status === "queued" ? "Waiting to start…" : live.activity ? `${live.activity}…` : "Reading the projects…"}
-        </ChatNotice>
+        <ChatNotice tone="progress">{run.status === "queued" ? "Waiting to start…" : live.activity ? `${live.activity}…` : "Reading the projects…"}</ChatNotice>
       )}
       {wasStopped(run) && <ChatNotice icon={<CircleStopIcon />}>{run.error}.</ChatNotice>}
       {run.status === "failed" && !wasStopped(run) && (
@@ -83,9 +81,7 @@ export function CrossConversation({
 
   async function submit(text: string) {
     if (status !== "ready" || !text.trim()) return;
-    const run = await send
-      .mutateAsync({ message: text, thread_id: threadId, project_ids: threadId ? [] : chosen, agent: "auto" })
-      .catch(() => null);
+    const run = await send.mutateAsync({ message: text, thread_id: threadId, project_ids: threadId ? [] : chosen, agent: "auto" }).catch(() => null);
     if (run) {
       setDraft("");
       if (run.thread_id !== threadId) onThread(run.thread_id);
@@ -93,7 +89,12 @@ export function CrossConversation({
   }
 
   const label = (ids: string[]) =>
-    ids.length === 0 ? "no particular project" : projects.filter((p) => ids.includes(p.id)).map((p) => p.key).join(", ");
+    ids.length === 0
+      ? "no particular project"
+      : projects
+          .filter((p) => ids.includes(p.id))
+          .map((p) => p.key)
+          .join(", ");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -111,9 +112,8 @@ export function CrossConversation({
               <LayersIcon className="text-brand mx-auto size-6" />
               <p className="font-medium">Ask across projects</p>
               <p className="text-muted-foreground text-sm">
-                The agents read every project you pick and answer, comparing and summarising them. Nothing is changed
-                here: for a change, they&apos;ll say which project&apos;s conversation to ask in. Only you see this
-                conversation.
+                The agents read every project you pick and answer, comparing and summarising them. Nothing is changed here: for a change, they&apos;ll say which
+                project&apos;s conversation to ask in. Only you see this conversation.
               </p>
             </div>
             <fieldset className="grid gap-2 rounded-lg border p-3">
@@ -131,9 +131,7 @@ export function CrossConversation({
                 ))}
               </div>
               {chosen.length > 10 && <p className="text-destructive text-xs">Pick 10 projects at most.</p>}
-              {chosen.length === 0 && (
-                <p className="text-muted-foreground text-xs">None picked: a general question about the workspace.</p>
-              )}
+              {chosen.length === 0 && <p className="text-muted-foreground text-xs">None picked: a general question about the workspace.</p>}
             </fieldset>
             {canChat && (
               <div className="grid gap-2">

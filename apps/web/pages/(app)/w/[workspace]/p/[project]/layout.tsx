@@ -88,10 +88,7 @@ function ProjectFrame({ children }: { children: ReactNode }) {
           }
         />
         <div className="relative shrink-0 border-b">
-          <nav
-            className="flex items-center gap-1 overflow-x-auto px-2 text-sm [scrollbar-width:none] md:px-4"
-            aria-label="Project"
-          >
+          <nav className="flex items-center gap-1 overflow-x-auto px-2 text-sm [scrollbar-width:none] md:px-4" aria-label="Project">
             {TABS.map((tab) => {
               const active = pathname.endsWith(`/${tab.href}`);
               return (
@@ -116,9 +113,7 @@ function ProjectFrame({ children }: { children: ReactNode }) {
               title="Project settings"
               className={cn(
                 "-mb-px flex shrink-0 items-center gap-1.5 border-b-2 border-transparent px-2 py-2.5 transition-colors",
-                pathname.endsWith("/settings")
-                  ? "border-primary text-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground",
+                pathname.endsWith("/settings") ? "border-primary text-foreground font-medium" : "text-muted-foreground hover:text-foreground",
               )}
             >
               <SettingsIcon className="size-4" />

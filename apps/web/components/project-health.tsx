@@ -18,9 +18,7 @@ const HEALTH_STYLES: Record<ProjectHealth, string> = {
 /** How the project is going, as its owners and admins say. */
 export function HealthBadge({ health, className }: { health: ProjectHealth; className?: string }) {
   return (
-    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap", HEALTH_STYLES[health], className)}>
-      {HEALTH_LABELS[health]}
-    </span>
+    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap", HEALTH_STYLES[health], className)}>{HEALTH_LABELS[health]}</span>
   );
 }
 

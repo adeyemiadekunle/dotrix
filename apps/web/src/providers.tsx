@@ -19,11 +19,11 @@ export function Providers({ children }: { children: ReactNode }) {
       }),
   );
   return (
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider delayDuration={300}>
-          {children}
-          <Toaster position="bottom-right" />
-        </TooltipProvider>
-      </QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider delayDuration={300}>
+        {children}
+        <Toaster position="bottom-right" />
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 }

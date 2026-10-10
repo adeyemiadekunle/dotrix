@@ -46,30 +46,38 @@ const NEEDS: Record<string, () => boolean> = {
 };
 
 function commands(): (Item & { id: string })[] {
-  return ([
-    { id: "c-task", name: "Create task", icon: "plus", kbd: "N", run: () => newTask() },
-    { id: "c-proj", name: "Create project", icon: "folder-plus", kbd: "P", run: newProject },
-    { id: "c-chat", name: "Ask the agents in Chat", icon: "message-square", run: () => go("chat", {}, { search: "new=1" }) },
-    { id: "c-search", name: "Search workspace", icon: "search", kbd: "/", run: () => openPalette("search") },
-    { id: "c-home", name: "Go to Home", icon: "house", kbd: "G H", run: () => go("home") },
-    { id: "c-inbox", name: "Go to Inbox", icon: "inbox", kbd: "G I", run: () => go("inbox") },
-    { id: "c-notif", name: "Go to Notifications", icon: "bell", kbd: "G N", run: () => go("notifications") },
-    { id: "c-my", name: "Go to My Tasks", icon: "circle-check", kbd: "G T", run: () => go("mytasks") },
-    { id: "c-chatgo", name: "Go to Chat", icon: "message-square", kbd: "G A", run: () => go("chat") },
-    { id: "c-projs", name: "Go to Projects", icon: "folder-kanban", kbd: "G P", run: () => go("projects") },
-    { id: "c-cal", name: "Go to Calendar", icon: "calendar", kbd: "G C", run: () => go("calendar") },
-    { id: "c-tl", name: "Go to Timeline", icon: "chart-gantt", run: () => go("timeline") },
-    { id: "c-mem", name: "Go to Members", icon: "users", kbd: "G M", run: () => go("members") },
-    { id: "c-set", name: "Open settings", icon: "settings", kbd: "G S", run: () => go("settings") },
-    { id: "c-agents", name: "Agents settings", icon: "bot", run: () => go("settings", { sec: "agents" }) },
-    { id: "c-app", name: "Appearance settings", icon: "palette", run: () => go("settings", { sec: "appearance" }) },
-    { id: "c-ws", name: "Switch workspace…", icon: "arrow-left-right", run: () => ((S.ui.palette = { q: "", mode: "ws", scope: "all", hl: 0 }), render()) },
-    { id: "c-dark", name: effectiveDark() ? "Switch to light mode" : "Switch to dark mode", icon: effectiveDark() ? "sun" : "moon", kbd: MOD + " ⇧ L", run: toggleDark },
-    { id: "c-inv", name: "Invite member", icon: "user-plus", run: invite },
-    { id: "c-side", name: "Toggle sidebar", icon: "panel-left", kbd: "[", run: toggleSide },
-    { id: "c-keys", name: "Keyboard shortcuts", icon: "keyboard", kbd: "?", run: shortcuts },
-    { id: "c-out", name: "Sign out", icon: "log-out", run: signOut },
-  ] as (Item & { id: string })[]).filter((c) => NEEDS[c.id]?.() ?? true);
+  return (
+    [
+      { id: "c-task", name: "Create task", icon: "plus", kbd: "N", run: () => newTask() },
+      { id: "c-proj", name: "Create project", icon: "folder-plus", kbd: "P", run: newProject },
+      { id: "c-chat", name: "Ask the agents in Chat", icon: "message-square", run: () => go("chat", {}, { search: "new=1" }) },
+      { id: "c-search", name: "Search workspace", icon: "search", kbd: "/", run: () => openPalette("search") },
+      { id: "c-home", name: "Go to Home", icon: "house", kbd: "G H", run: () => go("home") },
+      { id: "c-inbox", name: "Go to Inbox", icon: "inbox", kbd: "G I", run: () => go("inbox") },
+      { id: "c-notif", name: "Go to Notifications", icon: "bell", kbd: "G N", run: () => go("notifications") },
+      { id: "c-my", name: "Go to My Tasks", icon: "circle-check", kbd: "G T", run: () => go("mytasks") },
+      { id: "c-chatgo", name: "Go to Chat", icon: "message-square", kbd: "G A", run: () => go("chat") },
+      { id: "c-projs", name: "Go to Projects", icon: "folder-kanban", kbd: "G P", run: () => go("projects") },
+      { id: "c-cal", name: "Go to Calendar", icon: "calendar", kbd: "G C", run: () => go("calendar") },
+      { id: "c-tl", name: "Go to Timeline", icon: "chart-gantt", run: () => go("timeline") },
+      { id: "c-mem", name: "Go to Members", icon: "users", kbd: "G M", run: () => go("members") },
+      { id: "c-set", name: "Open settings", icon: "settings", kbd: "G S", run: () => go("settings") },
+      { id: "c-agents", name: "Agents settings", icon: "bot", run: () => go("settings", { sec: "agents" }) },
+      { id: "c-app", name: "Appearance settings", icon: "palette", run: () => go("settings", { sec: "appearance" }) },
+      { id: "c-ws", name: "Switch workspace…", icon: "arrow-left-right", run: () => ((S.ui.palette = { q: "", mode: "ws", scope: "all", hl: 0 }), render()) },
+      {
+        id: "c-dark",
+        name: effectiveDark() ? "Switch to light mode" : "Switch to dark mode",
+        icon: effectiveDark() ? "sun" : "moon",
+        kbd: MOD + " ⇧ L",
+        run: toggleDark,
+      },
+      { id: "c-inv", name: "Invite member", icon: "user-plus", run: invite },
+      { id: "c-side", name: "Toggle sidebar", icon: "panel-left", kbd: "[", run: toggleSide },
+      { id: "c-keys", name: "Keyboard shortcuts", icon: "keyboard", kbd: "?", run: shortcuts },
+      { id: "c-out", name: "Sign out", icon: "log-out", run: signOut },
+    ] as (Item & { id: string })[]
+  ).filter((c) => NEEDS[c.id]?.() ?? true);
 }
 
 const agentIcon = (c: string) => <Face c={c} size={20} />;
@@ -96,13 +104,25 @@ function items(): Group[] {
         allTasks().filter((t) => t.assignee === D().me || t.fav),
         { f: "updated", dir: 1 },
       ).slice(0, 4);
-      groups.push({ name: "Recent tasks", items: recent.map((t) => ({ html: <StIcon st={t.status} />, name: t.title, sub: proj(t.project)?.name, r: t.key, run: () => openTask(t.id) })) });
+      groups.push({
+        name: "Recent tasks",
+        items: recent.map((t) => ({ html: <StIcon st={t.status} />, name: t.title, sub: proj(t.project)?.name, r: t.key, run: () => openTask(t.id) })),
+      });
       groups.push({ name: "Navigation", items: cmds.filter((c) => c.name.startsWith("Go to")) });
       return groups;
     }
     if (cmds.length) groups.push({ name: "Commands", items: cmds.slice(0, 5) });
     const ags = D().agents.filter((a) => a.name.toLowerCase().includes(ql) || a.handle.includes(ql) || "agent".startsWith(ql));
-    if (ags.length) groups.push({ name: "Agents", items: ags.map((a) => ({ html: agentIcon(a.c), name: a.name, sub: `${a.role} · ${a.desc}`, run: () => go("chat", {}, { search: `new=1&agent=${a.handle}` }) })) });
+    if (ags.length)
+      groups.push({
+        name: "Agents",
+        items: ags.map((a) => ({
+          html: agentIcon(a.c),
+          name: a.name,
+          sub: `${a.role} · ${a.desc}`,
+          run: () => go("chat", {}, { search: `new=1&agent=${a.handle}` }),
+        })),
+      });
   }
   const r = searchAll(q);
   const sc = pl.mode === "search" ? pl.scope : "all";
@@ -131,25 +151,58 @@ function items(): Group[] {
     return groups;
   }
   if (!q) return groups;
-  if (sc === "all" || sc === "tasks") groups.push({ name: "Tasks", items: r.tasks.slice(0, lim).map((t) => ({ html: <StIcon st={t.status} />, name: t.title, sub: proj(t.project)?.name, r: t.key, run: () => openTask(t.id) })) });
+  if (sc === "all" || sc === "tasks")
+    groups.push({
+      name: "Tasks",
+      items: r.tasks
+        .slice(0, lim)
+        .map((t) => ({ html: <StIcon st={t.status} />, name: t.title, sub: proj(t.project)?.name, r: t.key, run: () => openTask(t.id) })),
+    });
   if (sc === "all" || sc === "projects")
     groups.push({
       name: "Projects",
-      items: r.projects.slice(0, lim).map((p) => ({ html: <span className="pdot" style={{ "--c": pColor(p) } as CSSProperties} />, name: p.name, sub: PSTAT[p.status].name, run: () => go("project", { id: p.key }) })),
+      items: r.projects.slice(0, lim).map((p) => ({
+        html: <span className="pdot" style={{ "--c": pColor(p) } as CSSProperties} />,
+        name: p.name,
+        sub: PSTAT[p.status].name,
+        run: () => go("project", { id: p.key }),
+      })),
     });
   if (sc === "all" || sc === "documents")
     groups.push({
       name: "Documents",
-      items: r.documents.slice(0, lim).map((f) => ({ icon: "book-open", name: f.path, sub: proj(f.project)?.name, run: () => go("project", { id: proj(f.project)!.key, tab: "knowledge" }) })),
+      items: r.documents.slice(0, lim).map((f) => ({
+        icon: "book-open",
+        name: f.path,
+        sub: proj(f.project)?.name,
+        run: () => go("project", { id: proj(f.project)!.key, tab: "knowledge" }),
+      })),
     });
-  if (sc === "all" || sc === "people") groups.push({ name: "People", items: r.people.slice(0, lim).map((m) => ({ html: <Av id={m.id} cls="sm" tip={false} />, name: m.name, sub: m.title, run: () => go("member", { id: m.id }) })) });
+  if (sc === "all" || sc === "people")
+    groups.push({
+      name: "People",
+      items: r.people
+        .slice(0, lim)
+        .map((m) => ({ html: <Av id={m.id} cls="sm" tip={false} />, name: m.name, sub: m.title, run: () => go("member", { id: m.id }) })),
+    });
   if (sc === "all" || sc === "files")
     groups.push({
       name: "Files",
-      items: r.files.slice(0, lim).map((f) => ({ icon: (FT[f.type] || FT.other!).i, name: f.name, sub: proj(f.project)?.name, r: f.size, run: () => openModal({ type: "filePreview", file: f, tid: f.task }) })),
+      items: r.files.slice(0, lim).map((f) => ({
+        icon: (FT[f.type] || FT.other!).i,
+        name: f.name,
+        sub: proj(f.project)?.name,
+        r: f.size,
+        run: () => openModal({ type: "filePreview", file: f, tid: f.task }),
+      })),
     });
   if (sc === "all" || sc === "comments")
-    groups.push({ name: "Comments", items: r.comments.slice(0, lim).map((c) => ({ html: <Av id={c.by} cls="sm" tip={false} />, name: c.text, sub: "on " + task(c.task)?.title, run: () => openTask(c.task) })) });
+    groups.push({
+      name: "Comments",
+      items: r.comments
+        .slice(0, lim)
+        .map((c) => ({ html: <Av id={c.by} cls="sm" tip={false} />, name: c.text, sub: "on " + task(c.task)?.title, run: () => openTask(c.task) })),
+    });
   const out = groups.filter((g) => g.items.length);
   out.push({
     name: "",
@@ -198,7 +251,8 @@ export function Palette() {
   flat = groups.flatMap((g) => g.items);
   pl.hl = clamp(pl.hl, 0, Math.max(flat.length - 1, 0));
   let idx = 0;
-  const ph = pl.mode === "search" ? "Search tasks, projects, documents, people, files, comments…" : pl.mode === "ws" ? "Find a workspace…" : "Type a command or search…";
+  const ph =
+    pl.mode === "search" ? "Search tasks, projects, documents, people, files, comments…" : pl.mode === "ws" ? "Find a workspace…" : "Type a command or search…";
   return (
     <>
       <div className="scrim" onClick={closePalette} style={{ zIndex: 89 }} />

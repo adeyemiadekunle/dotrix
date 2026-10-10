@@ -6,13 +6,7 @@ import { Link } from "@/lib/navigation";
 import { useState } from "react";
 
 import { timeAgo } from "@/components/issues/issue-activity";
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 import type { Scope } from "@/lib/issues";
 import { useDecideLesson, useLessons, type Lesson } from "@/lib/lessons";
 
@@ -26,8 +20,8 @@ export function Lessons({ scope, knowledgeHref }: { scope: Scope; knowledgeHref:
       <SettingsHeader>
         <SettingsTitle>Lessons</SettingsTitle>
         <SettingsDescription>
-          When you reject an agent&apos;s change or dismiss what it found, with a reason, the agent could learn from it.
-          Accept a lesson (in your words if you like) and it joins that agent&apos;s rules in{" "}
+          When you reject an agent&apos;s change or dismiss what it found, with a reason, the agent could learn from it. Accept a lesson (in your words if you
+          like) and it joins that agent&apos;s rules in{" "}
           <Link href={knowledgeHref} className="underline underline-offset-4">
             agent-rules/lessons/
           </Link>
@@ -38,9 +32,7 @@ export function Lessons({ scope, knowledgeHref }: { scope: Scope; knowledgeHref:
         {!lessons.data ? (
           <Skeleton className="m-5 h-20" />
         ) : proposed.length === 0 && decided.length === 0 ? (
-          <p className="text-muted-foreground p-5 text-sm">
-            Nothing to learn yet. Give a reason when you reject a change or dismiss a finding.
-          </p>
+          <p className="text-muted-foreground p-5 text-sm">Nothing to learn yet. Give a reason when you reject a change or dismiss a finding.</p>
         ) : (
           <ul className="divide-y" aria-label="Lessons">
             {proposed.map((l) => (
@@ -50,9 +42,7 @@ export function Lessons({ scope, knowledgeHref }: { scope: Scope; knowledgeHref:
               <li key={l.id} className="flex flex-wrap items-center gap-2 p-4 text-sm">
                 <Badge variant="outline">@{l.agent}</Badge>
                 <span className="text-muted-foreground min-w-0 flex-1 truncate">{l.text}</span>
-                <Badge variant={l.status === "accepted" ? "secondary" : "outline"}>
-                  {l.status === "accepted" ? "Accepted" : "Declined"}
-                </Badge>
+                <Badge variant={l.status === "accepted" ? "secondary" : "outline"}>{l.status === "accepted" ? "Accepted" : "Declined"}</Badge>
               </li>
             ))}
           </ul>
@@ -71,27 +61,12 @@ function ProposedLesson({ lesson, scope }: { lesson: Lesson; scope: Scope }) {
         <Badge variant="outline">@{lesson.agent}</Badge>
         From a {lesson.source === "rejection" ? "rejected change" : "dismissed result"} {timeAgo(lesson.created_at)}
       </p>
-      <Textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        maxLength={600}
-        rows={2}
-        aria-label="The lesson"
-      />
+      <Textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={600} rows={2} aria-label="The lesson" />
       <div className="flex justify-end gap-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={decide.isPending}
-          onClick={() => decide.mutate({ id: lesson.id, accept: false })}
-        >
+        <Button size="sm" variant="ghost" disabled={decide.isPending} onClick={() => decide.mutate({ id: lesson.id, accept: false })}>
           Decline
         </Button>
-        <Button
-          size="sm"
-          disabled={decide.isPending || !text.trim()}
-          onClick={() => decide.mutate({ id: lesson.id, accept: true, text: text.trim() })}
-        >
+        <Button size="sm" disabled={decide.isPending || !text.trim()} onClick={() => decide.mutate({ id: lesson.id, accept: true, text: text.trim() })}>
           Accept
         </Button>
       </div>

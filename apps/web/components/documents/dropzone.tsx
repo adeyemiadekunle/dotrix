@@ -46,19 +46,11 @@ export function Dropzone({ onFiles, disabled }: { onFiles: (files: File[]) => vo
         <UploadIcon className="text-muted-foreground size-6" />
         <p className="text-sm">
           Drop specs, PRDs, or notes here, or{" "}
-          <Button
-            type="button"
-            variant="link"
-            className="h-auto p-0"
-            disabled={disabled}
-            onClick={() => input.current?.click()}
-          >
+          <Button type="button" variant="link" className="h-auto p-0" disabled={disabled} onClick={() => input.current?.click()}>
             choose files
           </Button>
         </p>
-        <p className="text-muted-foreground text-xs">
-          PDF, Word, PowerPoint, Excel, HTML, CSV, JSON, XML, Markdown, or text · up to {MAX_UPLOAD_MB} MB each
-        </p>
+        <p className="text-muted-foreground text-xs">PDF, Word, PowerPoint, Excel, HTML, CSV, JSON, XML, Markdown, or text · up to {MAX_UPLOAD_MB} MB each</p>
         <input
           ref={input}
           type="file"
@@ -113,13 +105,7 @@ export function UploadProgress({ uploads }: { uploads: UploadState[] }) {
           {u.status === "queued" && <FileTextIcon className="text-muted-foreground size-4 shrink-0" />}
           <span className="min-w-0 flex-1 truncate">{u.file.name}</span>
           <span className={cn("text-xs", u.status === "error" ? "text-destructive" : "text-muted-foreground")}>
-            {u.status === "uploading"
-              ? "Converting…"
-              : u.status === "done"
-                ? "Added"
-                : u.status === "error"
-                  ? u.error
-                  : "Waiting"}
+            {u.status === "uploading" ? "Converting…" : u.status === "done" ? "Added" : u.status === "error" ? u.error : "Waiting"}
           </span>
         </li>
       ))}

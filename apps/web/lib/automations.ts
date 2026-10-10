@@ -29,7 +29,17 @@ export function describeWhen(a: Pick<Automation, "events" | "schedule_hour" | "s
     const at = `${String(a.schedule_hour).padStart(2, "0")}:00 UTC`;
     parts.push(a.schedule_weekday !== null && a.schedule_weekday !== undefined ? `Every ${WEEKDAYS[a.schedule_weekday]} at ${at}` : `Every day at ${at}`);
   }
-  if (a.events.length) parts.push(`when ${a.events.map((e) => EVENT_LABELS[e].replace(/^Someone /, "someone ").replace(/^An /, "an ").replace(/^Code /, "code ")).join(", or ")}`);
+  if (a.events.length)
+    parts.push(
+      `when ${a.events
+        .map((e) =>
+          EVENT_LABELS[e]
+            .replace(/^Someone /, "someone ")
+            .replace(/^An /, "an ")
+            .replace(/^Code /, "code "),
+        )
+        .join(", or ")}`,
+    );
   const text = parts.join(", and ");
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -190,8 +200,7 @@ export function useRunAutomation(scope: Scope) {
           params: { path: { ...path(scope), automation_id: id } },
         }),
       ),
-    onSuccess: (a) =>
-      a.last_error ? toast.error(a.last_error) : toast.success(`${a.name} is running; its replies are in Chat`),
+    onSuccess: (a) => (a.last_error ? toast.error(a.last_error) : toast.success(`${a.name} is running; its replies are in Chat`)),
     onError: (e) => toast.error(errorMessage(e)),
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: key(scope) });

@@ -13,20 +13,8 @@ import { useConfirm } from "@/components/confirm-dialog";
 import { SubmitButton } from "@/components/form";
 import { timeAgo } from "@/components/issues/issue-activity";
 import { CreateOrganizationDialog } from "@/components/create-organization-dialog";
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
-import {
-  useConvertToOrganization,
-  useCreateInviteLink,
-  useInviteByEmail,
-  useInvites,
-  useRevokeInvite,
-} from "@/lib/admin";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
+import { useConvertToOrganization, useCreateInviteLink, useInviteByEmail, useInvites, useRevokeInvite } from "@/lib/admin";
 import { ROLE_LABELS } from "@/lib/labels";
 
 type EmailRole = Schemas["EmailInviteCreate"]["role"];
@@ -127,9 +115,7 @@ function LinkInvite({ workspaceId, roles }: { workspaceId: string; roles: NonNul
           className="h-9"
           disabled={create.isPending}
           onClick={async () => {
-            const link = await create
-              .mutateAsync({ role, max_uses: maxUses ? Number(maxUses) : null, expires_in_days: 7 })
-              .catch(() => null);
+            const link = await create.mutateAsync({ role, max_uses: maxUses ? Number(maxUses) : null, expires_in_days: 7 }).catch(() => null);
             if (link) {
               setUrl(link.url);
               await copy(link.url).catch(() => undefined);
@@ -172,8 +158,8 @@ function NoInvites({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
       </SettingsHeader>
       <SettingsContent className="grid gap-3">
         <p className="text-muted-foreground text-sm">
-          To work with others, turn it into an organisation: its projects stay, you can invite people, and you get a
-          new, empty personal workspace. Or create a new organisation and move projects into it from their settings.
+          To work with others, turn it into an organisation: its projects stay, you can invite people, and you get a new, empty personal workspace. Or create a
+          new organisation and move projects into it from their settings.
         </p>
         {workspace.role === "owner" && (
           <form
@@ -182,8 +168,7 @@ function NoInvites({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
               e.preventDefault();
               ask({
                 title: "Turn this into an organisation?",
-                description:
-                  "It keeps its projects and can invite people, and you get a new, empty personal workspace. This can't be undone.",
+                description: "It keeps its projects and can invite people, and you get a new, empty personal workspace. This can't be undone.",
                 confirm: "Turn into an organisation",
                 action: () => convert.mutateAsync(name.trim() || null),
               });
@@ -191,14 +176,7 @@ function NoInvites({ workspace }: { workspace: Schemas["WorkspaceWithRole"] }) {
           >
             <div className="grid gap-1.5">
               <Label htmlFor="org-name">Organisation name</Label>
-              <Input
-                id="org-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Kunemi Ltd"
-                maxLength={100}
-                className="w-64"
-              />
+              <Input id="org-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Kunemi Ltd" maxLength={100} className="w-64" />
             </div>
             <SubmitButton pending={convert.isPending}>Turn into an organisation</SubmitButton>
           </form>
@@ -241,11 +219,7 @@ function OrgInvitesCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"]
             <ul className="divide-y rounded-md border">
               {invites.data.map((i) => (
                 <li key={i.id} className="flex flex-wrap items-center gap-3 p-3 text-sm">
-                  {i.kind === "email" ? (
-                    <MailIcon className="text-muted-foreground size-4" />
-                  ) : (
-                    <LinkIcon className="text-muted-foreground size-4" />
-                  )}
+                  {i.kind === "email" ? <MailIcon className="text-muted-foreground size-4" /> : <LinkIcon className="text-muted-foreground size-4" />}
                   <div className="grid min-w-0 flex-1 gap-0.5">
                     <span className="truncate">{i.kind === "email" ? i.email : "Invite link"}</span>
                     <span className="text-muted-foreground text-xs">
@@ -254,12 +228,7 @@ function OrgInvitesCard({ workspace }: { workspace: Schemas["WorkspaceWithRole"]
                     </span>
                   </div>
                   <Badge variant="outline">{ROLE_LABELS[i.role]}</Badge>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={revoke.isPending && revoke.variables === i.id}
-                    onClick={() => revoke.mutate(i.id)}
-                  >
+                  <Button size="sm" variant="ghost" disabled={revoke.isPending && revoke.variables === i.id} onClick={() => revoke.mutate(i.id)}>
                     <XIcon />
                     Revoke
                   </Button>

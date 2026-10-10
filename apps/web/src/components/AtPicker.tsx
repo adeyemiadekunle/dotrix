@@ -35,7 +35,9 @@ export function useAtPicker({
     q === null
       ? []
       : [
-          ...(projects && onProject ? projects.filter(([, l]) => l.toLowerCase().includes(ql)).map(([id, l]) => ({ kind: "project" as const, id, label: l })) : []),
+          ...(projects && onProject
+            ? projects.filter(([, l]) => l.toLowerCase().includes(ql)).map(([id, l]) => ({ kind: "project" as const, id, label: l }))
+            : []),
           ...D()
             .agents.filter((x) => `${x.name} ${x.handle} ${x.role}`.toLowerCase().includes(ql))
             .map((x) => ({ kind: "agent" as const, id: x.handle, label: x.name, sub: x.role, c: x.c })),
@@ -85,7 +87,12 @@ export function useAtPicker({
     },
     menu:
       q === null ? null : (
-        <div className="pop" role="listbox" aria-label={onProject ? "Projects and agents" : "Agents"} style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 260, maxHeight: 300, overflowY: "auto", zIndex: 5, textAlign: "left" }}>
+        <div
+          className="pop"
+          role="listbox"
+          aria-label={onProject ? "Projects and agents" : "Agents"}
+          style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 260, maxHeight: 300, overflowY: "auto", zIndex: 5, textAlign: "left" }}
+        >
           {items.length ? (
             items.map((it, i) => (
               <div key={it.kind + it.id}>
@@ -94,7 +101,15 @@ export function useAtPicker({
                     {it.kind === "project" ? "Project" : "Agent"}
                   </div>
                 )}
-                <button role="option" aria-selected={i === hl} className={`mi ${i === hl ? "hl" : ""}`} style={{ width: "100%" }} onMouseEnter={() => setHl(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(it)}>
+                <button
+                  role="option"
+                  aria-selected={i === hl}
+                  className={`mi ${i === hl ? "hl" : ""}`}
+                  style={{ width: "100%" }}
+                  onMouseEnter={() => setHl(i)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => choose(it)}
+                >
                   {it.kind === "agent" ? <Face c={it.c!} size={16} mood="idle" /> : it.id ? <PIcon p={proj(it.id)!} s={12} /> : <Ic n="layers" s={13} />}
                   <span className="trunc" style={{ flex: 1 }}>
                     {it.label}

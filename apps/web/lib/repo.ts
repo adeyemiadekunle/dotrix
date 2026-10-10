@@ -2,9 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 /** owner/name from a GitHub URL in any usual form (https, ssh, with or without .git). */
 export function parseGithub(url: string): { owner: string; name: string } | null {
-  const match = url
-    .trim()
-    .match(/^(?:https?:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
+  const match = url.trim().match(/^(?:https?:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
   return match ? { owner: match[1]!, name: match[2]! } : null;
 }
 

@@ -35,5 +35,10 @@ test("research a question: claims checked against the page, sources, and a saved
   await expect(saved).toBeVisible();
   await saved.click();
   await expect(page).toHaveURL(/knowledge\?file=research/);
-  await expect(page.getByText("## Sources").or(page.getByRole("heading", { name: "Sources" })).first()).toBeVisible();
+  await expect(
+    page
+      .getByText("## Sources")
+      .or(page.getByRole("heading", { name: "Sources" }))
+      .first(),
+  ).toBeVisible();
 });

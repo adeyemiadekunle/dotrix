@@ -66,17 +66,7 @@ function RunRequest({ run, who }: { run: Run; who: string }) {
   );
 }
 
-function RunView({
-  run,
-  scope,
-  names,
-  canDecide,
-}: {
-  run: Run;
-  scope: Scope;
-  names: Map<string, string>;
-  canDecide: boolean;
-}) {
+function RunView({ run, scope, names, canDecide }: { run: Run; scope: Scope; names: Map<string, string>; canDecide: boolean }) {
   const who = run.requested_by_id ? (names.get(run.requested_by_id) ?? "Someone") : "Someone";
   return (
     <div className="grid gap-3">
@@ -155,15 +145,7 @@ export function Conversation({
     }
   }
 
-  const status: PromptStatus = stop.isPending
-    ? "stopping"
-    : working
-      ? "working"
-      : send.isPending
-        ? "sending"
-        : waiting
-          ? "waiting"
-          : "ready";
+  const status: PromptStatus = stop.isPending ? "stopping" : working ? "working" : send.isPending ? "sending" : waiting ? "waiting" : "ready";
 
   async function submit(text: string) {
     if (status !== "ready") return;
@@ -209,20 +191,14 @@ export function Conversation({
             <div className="grid gap-1">
               <p className="font-medium">Chat with the project&apos;s agents</p>
               <p className="text-muted-foreground text-sm">
-                They read the whole project and answer without changing anything. Use + to pick who answers (Auto brings
-                in the specialists it needs) and the model. When you ask for a change, each one waits for approval here.
+                They read the whole project and answer without changing anything. Use + to pick who answers (Auto brings in the specialists it needs) and the
+                model. When you ask for a change, each one waits for approval here.
               </p>
             </div>
             {canChat && (
               <div className="grid gap-2">
                 {SUGGESTIONS.map((s) => (
-                  <Button
-                    key={s}
-                    variant="outline"
-                    size="sm"
-                    className="h-auto justify-start py-2 text-left whitespace-normal"
-                    onClick={() => void submit(s)}
-                  >
+                  <Button key={s} variant="outline" size="sm" className="h-auto justify-start py-2 text-left whitespace-normal" onClick={() => void submit(s)}>
                     {s}
                   </Button>
                 ))}

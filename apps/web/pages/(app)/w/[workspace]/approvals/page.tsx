@@ -2,17 +2,7 @@ import { Avatar, AvatarFallback } from "@dotrix/ui/components/avatar";
 import { Button } from "@dotrix/ui/components/button";
 import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { cn } from "@dotrix/ui/lib/utils";
-import {
-  ArrowLeftIcon,
-  AtSignIcon,
-  BellIcon,
-  BotIcon,
-  CheckCheckIcon,
-  CircleCheckIcon,
-  CircleUserIcon,
-  EyeIcon,
-  ListChecksIcon,
-} from "lucide-react";
+import { ArrowLeftIcon, AtSignIcon, BellIcon, BotIcon, CheckCheckIcon, CircleCheckIcon, CircleUserIcon, EyeIcon, ListChecksIcon } from "lucide-react";
 import { Link } from "@/lib/navigation";
 import { useEffect, useMemo } from "react";
 
@@ -28,13 +18,7 @@ import { useWorkspaceApprovals, type Run } from "@/lib/agent";
 import { sessionHref, useCodingRun } from "@/lib/coding";
 import { useMembers } from "@/lib/issues";
 import { can } from "@/lib/labels";
-import {
-  useMarkRead,
-  useNotificationCounts,
-  useNotifications,
-  type Notification,
-  type NotificationKind,
-} from "@/lib/notifications";
+import { useMarkRead, useNotificationCounts, useNotifications, type Notification, type NotificationKind } from "@/lib/notifications";
 import { useCurrentWorkspace } from "@/lib/queries";
 import { useSearchParam, useSetSearchParams } from "@/lib/url-state";
 
@@ -93,7 +77,17 @@ function conversationHref(slug: string, n: Notification): string {
 
 function NotificationIcon({ n }: { n: Notification }) {
   const Icon =
-    n.kind === "assigned" ? CircleUserIcon : n.kind === "watching" ? EyeIcon : n.kind === "finding" ? ListChecksIcon : n.kind === "mention" ? AtSignIcon : n.kind === "decided" ? CircleCheckIcon : BotIcon;
+    n.kind === "assigned"
+      ? CircleUserIcon
+      : n.kind === "watching"
+        ? EyeIcon
+        : n.kind === "finding"
+          ? ListChecksIcon
+          : n.kind === "mention"
+            ? AtSignIcon
+            : n.kind === "decided"
+              ? CircleCheckIcon
+              : BotIcon;
   return (
     <Avatar className="size-7 rounded-lg">
       <AvatarFallback className="bg-brand-muted text-brand-muted-foreground rounded-lg">
@@ -103,27 +97,14 @@ function NotificationIcon({ n }: { n: Notification }) {
   );
 }
 
-function Row({
-  n,
-  members,
-  selected,
-  onSelect,
-}: {
-  n: Notification;
-  members: MemberMap;
-  selected: boolean;
-  onSelect: () => void;
-}) {
+function Row({ n, members, selected, onSelect }: { n: Notification; members: MemberMap; selected: boolean; onSelect: () => void }) {
   const unread = needsYou(n);
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-current={selected || undefined}
-      className={cn(
-        "flex w-full items-start gap-3 border-b px-4 py-3 text-left text-sm last:border-b-0",
-        selected ? "bg-muted" : "hover:bg-muted/60",
-      )}
+      className={cn("flex w-full items-start gap-3 border-b px-4 py-3 text-left text-sm last:border-b-0", selected ? "bg-muted" : "hover:bg-muted/60")}
     >
       <NotificationIcon n={n} />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -177,9 +158,7 @@ function Detail({
         <blockquote className="bg-muted/60 rounded-lg border-l-2 px-3 py-2 text-sm whitespace-pre-wrap">{n.excerpt}</blockquote>
       )}
 
-      {n.coding_run_id && n.kind === "approval" && (
-        <CodingApproval runId={n.coding_run_id} scope={{ workspaceId: workspace.id, projectId: n.project_id }} />
-      )}
+      {n.coding_run_id && n.kind === "approval" && <CodingApproval runId={n.coding_run_id} scope={{ workspaceId: workspace.id, projectId: n.project_id }} />}
       {decision && n.resolved && !n.coding_run_id && (
         <p className="bg-muted rounded-lg px-3 py-2 text-sm">Decided. Nothing is waiting from this request now.</p>
       )}
@@ -240,10 +219,7 @@ export default function NotificationsPage() {
   const members = useMembers(workspace?.id);
   const memberMap: MemberMap = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m])), [members.data]);
 
-  const shown = useMemo(
-    () => (notifications.data ?? []).filter((n) => !tab.kinds || tab.kinds.includes(n.kind)),
-    [notifications.data, tab],
-  );
+  const shown = useMemo(() => (notifications.data ?? []).filter((n) => !tab.kinds || tab.kinds.includes(n.kind)), [notifications.data, tab]);
   const selected = shown.find((n) => n.id === selectedId) ?? null;
 
   // Opening one marks it read.
@@ -311,18 +287,9 @@ export default function NotificationsPage() {
         )}
         {workspace && shown.length > 0 && (
           <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-            <nav
-              aria-label="Notifications"
-              className={cn("bg-card overflow-hidden rounded-xl border", selected && "hidden lg:block")}
-            >
+            <nav aria-label="Notifications" className={cn("bg-card overflow-hidden rounded-xl border", selected && "hidden lg:block")}>
               {shown.map((n) => (
-                <Row
-                  key={n.id}
-                  n={n}
-                  members={memberMap}
-                  selected={n.id === selected?.id}
-                  onSelect={() => setParams({ n: n.id })}
-                />
+                <Row key={n.id} n={n} members={memberMap} selected={n.id === selected?.id} onSelect={() => setParams({ n: n.id })} />
               ))}
             </nav>
             <section className={cn("bg-card min-h-48 rounded-xl border", !selected && "hidden lg:block")}>

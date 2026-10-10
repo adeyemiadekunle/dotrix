@@ -6,13 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GlobeIcon, KeyRoundIcon, LaptopIcon, SmartphoneIcon } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 import { timeAgo } from "@/components/issues/issue-activity";
 import { api, authPost, errorMessage, unwrap } from "@/lib/api";
 
@@ -23,8 +17,7 @@ function when(iso: string | null | undefined): string {
 type Session = Schemas["SessionRead"];
 
 function SessionIcon({ session }: { session: Session }) {
-  const Icon =
-    session.client === "desktop" ? LaptopIcon : /iOS|Android/.test(session.device) ? SmartphoneIcon : GlobeIcon;
+  const Icon = session.client === "desktop" ? LaptopIcon : /iOS|Android/.test(session.device) ? SmartphoneIcon : GlobeIcon;
   return <Icon className="text-muted-foreground size-4 shrink-0" />;
 }
 
@@ -42,8 +35,7 @@ function Sessions() {
     return queryClient.invalidateQueries({ queryKey: ["sessions"] });
   };
   const signOut = useMutation({
-    mutationFn: (session_id: string) =>
-      unwrap(api.DELETE("/v1/me/sessions/{session_id}", { params: { path: { session_id } } })),
+    mutationFn: (session_id: string) => unwrap(api.DELETE("/v1/me/sessions/{session_id}", { params: { path: { session_id } } })),
     onSuccess: () => done("Signed out"),
     onError: (e) => toast.error(errorMessage(e)),
   });
@@ -58,9 +50,7 @@ function Sessions() {
     <SettingsSection>
       <SettingsHeader>
         <SettingsTitle>Browsers and apps</SettingsTitle>
-        <SettingsDescription>
-          Where you&apos;re signed in to the web app and the desktop app. Sign out any you don&apos;t recognise.
-        </SettingsDescription>
+        <SettingsDescription>Where you&apos;re signed in to the web app and the desktop app. Sign out any you don&apos;t recognise.</SettingsDescription>
       </SettingsHeader>
       <SettingsContent>
         {sessions.isLoading && <Skeleton className="h-16" />}
@@ -93,13 +83,7 @@ function Sessions() {
           </ul>
         )}
         {others.length > 0 && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="justify-self-start"
-            disabled={signOutOthers.isPending}
-            onClick={() => signOutOthers.mutate()}
-          >
+          <Button size="sm" variant="outline" className="justify-self-start" disabled={signOutOthers.isPending} onClick={() => signOutOthers.mutate()}>
             Sign out all other sessions
           </Button>
         )}
@@ -157,17 +141,11 @@ function Tokens() {
                     ))}
                   </div>
                   <span className="text-muted-foreground text-xs">
-                    <code className="font-mono">{token.display_prefix}…</code> · created {when(token.created_at)} · last
-                    used {when(token.last_used_at)}
+                    <code className="font-mono">{token.display_prefix}…</code> · created {when(token.created_at)} · last used {when(token.last_used_at)}
                     {token.expires_at && ` · expires ${when(token.expires_at)}`}
                   </span>
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={revoke.isPending && revoke.variables === token.id}
-                  onClick={() => revoke.mutate(token.id)}
-                >
+                <Button size="sm" variant="outline" disabled={revoke.isPending && revoke.variables === token.id} onClick={() => revoke.mutate(token.id)}>
                   Revoke
                 </Button>
               </li>

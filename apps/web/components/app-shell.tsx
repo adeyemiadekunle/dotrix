@@ -1,10 +1,5 @@
 import { Button } from "@dotrix/ui/components/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@dotrix/ui/components/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@dotrix/ui/components/dropdown-menu";
 import { Separator } from "@dotrix/ui/components/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@dotrix/ui/components/sidebar";
 import { cn } from "@dotrix/ui/lib/utils";
@@ -59,9 +54,7 @@ function VerifyEmailBanner() {
   return (
     <div className="bg-warning-muted text-warning-foreground flex min-h-9 shrink-0 items-center gap-2 border-b py-1 pr-2 pl-4 text-[13px]">
       <MailWarningIcon className="size-4 shrink-0" />
-      <span className="min-w-0 flex-1 truncate">
-        Confirm your email address using the link we sent to {me.data.email}.
-      </span>
+      <span className="min-w-0 flex-1 truncate">Confirm your email address using the link we sent to {me.data.email}.</span>
       <Button
         size="xs"
         variant="ghost"
@@ -132,10 +125,16 @@ function usePageEnter(pathname: string) {
       return;
     }
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    ref.current?.animate([{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }], {
-      duration: 220,
-      easing: "cubic-bezier(0.23, 1, 0.32, 1)",
-    });
+    ref.current?.animate(
+      [
+        { opacity: 0, transform: "translateY(4px)" },
+        { opacity: 1, transform: "none" },
+      ],
+      {
+        duration: 220,
+        easing: "cubic-bezier(0.23, 1, 0.32, 1)",
+      },
+    );
   }, [pathname]);
   return ref;
 }
@@ -162,10 +161,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           ref={main}
           id="main-content"
           tabIndex={-1}
-          className={cn(
-            "min-w-0 pb-14 outline-none md:pb-0",
-            FILL_WINDOW.test(pathname) && "h-svh min-h-0 overflow-hidden",
-          )}
+          className={cn("min-w-0 pb-14 outline-none md:pb-0", FILL_WINDOW.test(pathname) && "h-svh min-h-0 overflow-hidden")}
         >
           <ConnectionErrorBanner />
           <VerifyEmailBanner />
@@ -319,17 +315,7 @@ function TopBarTools() {
 }
 
 /** Each page's top bar: sidebar toggle, title (with optional breadcrumb before it), and actions. */
-export function PageHeader({
-  title,
-  parent,
-  actions,
-  icon,
-}: {
-  title: ReactNode;
-  parent?: ReactNode;
-  actions?: ReactNode;
-  icon?: ReactNode;
-}) {
+export function PageHeader({ title, parent, actions, icon }: { title: ReactNode; parent?: ReactNode; actions?: ReactNode; icon?: ReactNode }) {
   return (
     <header className="bg-background/95 sticky top-0 z-10 flex h-[46px] shrink-0 items-center gap-2 border-b px-4 backdrop-blur md:px-gutter">
       <SidebarTrigger className="-ml-1.5" />

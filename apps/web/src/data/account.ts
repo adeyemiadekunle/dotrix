@@ -52,7 +52,8 @@ export function linkGitHub() {
   location.assign(`/api/auth/github?link=1&next=${encodeURIComponent(location.pathname)}`);
 }
 
-export const passwordChanged = (current: string | null, next: string) => unwrap(api.PUT("/v1/me/password", { body: { current_password: current, new_password: next } }));
+export const passwordChanged = (current: string | null, next: string) =>
+  unwrap(api.PUT("/v1/me/password", { body: { current_password: current, new_password: next } }));
 export async function passwordResetRequested(email: string) {
   await unwrap(api.POST("/v1/auth/password-reset/request", { body: { email } }));
 }
@@ -66,7 +67,8 @@ export const sessionSignedOut = (id: string) => unwrap(api.DELETE("/v1/me/sessio
 export const otherSessionsSignedOut = () => unwrap(api.POST("/v1/me/sessions/sign-out-others"));
 
 export const tokens = () => unwrap(api.GET("/v1/me/tokens"));
-export const tokenCreated = (name: string, days: number | null) => unwrap(api.POST("/v1/me/tokens", { body: { name, scopes: ["read", "write"], expires_in_days: days } }));
+export const tokenCreated = (name: string, days: number | null) =>
+  unwrap(api.POST("/v1/me/tokens", { body: { name, scopes: ["read", "write"], expires_in_days: days } }));
 export const tokenRevoked = (id: string) => unwrap(api.DELETE("/v1/me/tokens/{token_id}", { params: { path: { token_id: id } } }));
 
 /* ---------- the workspace ---------- */
@@ -137,7 +139,18 @@ const ROLE_IN: Record<string, Member["role"]> = { owner: "Owner", admin: "Admin"
 
 function toInvited(i: Schemas["InviteRead"]): Member {
   const email = i.email ?? "";
-  return { id: INVITE_ID + i.id, name: nameFromEmail(email), email, role: ROLE_IN[i.role] ?? "Member", team: "", title: "", c: "#6B7280", status: "invited", last: null, tz: "" };
+  return {
+    id: INVITE_ID + i.id,
+    name: nameFromEmail(email),
+    email,
+    role: ROLE_IN[i.role] ?? "Member",
+    team: "",
+    title: "",
+    c: "#6B7280",
+    status: "invited",
+    last: null,
+    tz: "",
+  };
 }
 
 /** Pending email invites, shown with the members as "Invite pending" (owners and admins see them). */
@@ -158,7 +171,9 @@ export async function invitesSent(emails: string[], role: Member["role"]): Promi
   let sent = 0;
   for (const email of emails) {
     try {
-      const i = await unwrap(api.POST("/v1/workspaces/{workspace_id}/invites", { ...wsPath(), body: { email, role: role.toLowerCase() as Schemas["EmailInviteCreate"]["role"] } }));
+      const i = await unwrap(
+        api.POST("/v1/workspaces/{workspace_id}/invites", { ...wsPath(), body: { email, role: role.toLowerCase() as Schemas["EmailInviteCreate"]["role"] } }),
+      );
       D().members = [...D().members.filter((m) => m.email.toLowerCase() !== email.toLowerCase() || !isInvite(m.id)), toInvited(i)];
       sent++;
     } catch (e) {
@@ -178,7 +193,11 @@ export async function inviteLinkCreated(role: Member["role"]): Promise<string> {
 }
 
 export async function inviteRevoked(m: Member) {
-  await unwrap(api.DELETE("/v1/workspaces/{workspace_id}/invites/{invite_id}", { params: { path: { workspace_id: live.ws!.id, invite_id: m.id.slice(INVITE_ID.length) } } }));
+  await unwrap(
+    api.DELETE("/v1/workspaces/{workspace_id}/invites/{invite_id}", {
+      params: { path: { workspace_id: live.ws!.id, invite_id: m.id.slice(INVITE_ID.length) } },
+    }),
+  );
   D().members = D().members.filter((x) => x.id !== m.id);
   render();
 }
@@ -202,17 +221,23 @@ export async function ownershipTransferred(m: Member) {
 }
 
 /** Who sees a project, and why (everyone, their role, or added to a restricted one). */
-export const projectMembers = (pid: string) => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/members", { params: { path: { workspace_id: live.ws!.id, project_id: pid } } }));
+export const projectMembers = (pid: string) =>
+  unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/members", { params: { path: { workspace_id: live.ws!.id, project_id: pid } } }));
 export async function projectMemberSet(pid: string, userId: string, on: boolean) {
   const params = { params: { path: { workspace_id: live.ws!.id, project_id: pid, user_id: userId } } };
-  await unwrap(on ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}", params) : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}", params));
+  await unwrap(
+    on
+      ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}", params)
+      : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/members/{user_id}", params),
+  );
 }
 
 /* ---------- agents ---------- */
 
 /** The API's handle for one the store names "auto". */
 export const apiHandle = (h: string) => (h === "auto" ? "project-manager" : h);
-export const agentDetail = (handle: string) => unwrap(api.GET("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }));
+export const agentDetail = (handle: string) =>
+  unwrap(api.GET("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }));
 export const agentCatalog = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/agents/catalog", wsPath()));
 export const models = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/models", wsPath()));
 
@@ -223,19 +248,31 @@ export function fieldsOf(a: Schemas["AgentRead"]): AgentFields {
   return { name, description, instructions, model, budget_tokens, tools, access, issue_types, can_call, autonomy, output, pipeline, triggers };
 }
 export const agentSaved = (handle: string, agent: AgentFields, base: number | null, note = "") =>
-  unwrap(api.PUT("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } }, body: { agent, note, base_version: base } }));
+  unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/agents/{handle}", {
+      params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } },
+      body: { agent, note, base_version: base },
+    }),
+  );
 /** A built-in back to its default, or a custom agent removed. */
-export const agentReset = (handle: string) => unwrap(api.DELETE("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }));
+export const agentReset = (handle: string) =>
+  unwrap(api.DELETE("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }));
 
 /* ---------- models: the organisation's own keys, your own, and each agent's model ---------- */
 
 export const myModels = () => unwrap(api.GET("/v1/me/models"));
 export const myDefaultModelSaved = (model: string | null) => unwrap(api.PUT("/v1/me/models", { body: { default_model: model } }));
-export const myKeySaved = (provider: string, apiKey: string) => unwrap(api.PUT("/v1/me/model-keys/{provider}", { params: { path: { provider } }, body: { api_key: apiKey } }));
+export const myKeySaved = (provider: string, apiKey: string) =>
+  unwrap(api.PUT("/v1/me/model-keys/{provider}", { params: { path: { provider } }, body: { api_key: apiKey } }));
 export const myKeyRemoved = (provider: string) => unwrap(api.DELETE("/v1/me/model-keys/{provider}", { params: { path: { provider } } }));
 export const myAgents = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/my-agents", wsPath()));
 export const myAgentSaved = (handle: string, instructions: string, model: string | null) =>
-  unwrap(api.PUT("/v1/workspaces/{workspace_id}/my-agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } }, body: { instructions, model } }));
+  unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/my-agents/{handle}", {
+      params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } },
+      body: { instructions, model },
+    }),
+  );
 
 /** Let people's own keys run what they start here, or not (owners and admins). */
 export async function personalKeysAllowed(on: boolean) {
@@ -246,25 +283,43 @@ export async function personalKeysAllowed(on: boolean) {
 
 /** A run that stopped at its model's limit goes on: now, or once the limit resets. */
 export const runContinued = (projectId: string, runId: string, whenReset: boolean) =>
-  unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/continue", { params: { path: { workspace_id: live.ws!.id, project_id: projectId, run_id: runId } }, body: { when_reset: whenReset } }));
+  unwrap(
+    api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/continue", {
+      params: { path: { workspace_id: live.ws!.id, project_id: projectId, run_id: runId } },
+      body: { when_reset: whenReset },
+    }),
+  );
 
 export const modelKeys = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/model-keys", wsPath()));
 export const modelKeySaved = (provider: string, apiKey: string) =>
-  unwrap(api.PUT("/v1/workspaces/{workspace_id}/model-keys/{provider}", { params: { path: { workspace_id: live.ws!.id, provider } }, body: { api_key: apiKey } }));
+  unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/model-keys/{provider}", { params: { path: { workspace_id: live.ws!.id, provider } }, body: { api_key: apiKey } }),
+  );
 export const modelKeyRemoved = (provider: string) =>
   unwrap(api.DELETE("/v1/workspaces/{workspace_id}/model-keys/{provider}", { params: { path: { workspace_id: live.ws!.id, provider } } }));
 export const agentList = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", wsPath()));
 
 export const rules = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/rules", wsPath()));
-export const ruleSaved = (handle: string, content: string, base: number) => unwrap(api.PUT("/v1/workspaces/{workspace_id}/rules/{handle}", { params: { path: { workspace_id: live.ws!.id, handle } }, body: { content, base_version: base } }));
+export const ruleSaved = (handle: string, content: string, base: number) =>
+  unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/rules/{handle}", { params: { path: { workspace_id: live.ws!.id, handle } }, body: { content, base_version: base } }),
+  );
 export const skills = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/skills", wsPath()));
-export const skillSaved = (name: string, content: string, base: number) => unwrap(api.PUT("/v1/workspaces/{workspace_id}/skills/{name}", { params: { path: { workspace_id: live.ws!.id, name } }, body: { content, base_version: base } }));
+export const skillSaved = (name: string, content: string, base: number) =>
+  unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/skills/{name}", { params: { path: { workspace_id: live.ws!.id, name } }, body: { content, base_version: base } }),
+  );
 
 /* ---------- GitHub ---------- */
 
 export const githubStatus = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/github", wsPath()));
 export const githubRepos = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/github/repos", wsPath()));
-export const installationRemoved = (ref: string) => unwrap(api.DELETE("/v1/workspaces/{workspace_id}/github/installations/{installation_ref}", { params: { path: { workspace_id: live.ws!.id, installation_ref: ref } } }));
+export const installationRemoved = (ref: string) =>
+  unwrap(
+    api.DELETE("/v1/workspaces/{workspace_id}/github/installations/{installation_ref}", {
+      params: { path: { workspace_id: live.ws!.id, installation_ref: ref } },
+    }),
+  );
 export function installGitHub(status: Schemas["GitHubStatus"]) {
   if (!status.install_url) return;
   const params = new URLSearchParams({ workspace: live.ws!.id, install_url: status.install_url, next: location.pathname });
@@ -276,5 +331,10 @@ export async function repoConnected(pid: string, r: Schemas["RepoOption"] | null
     await unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/repository", params));
     return null;
   }
-  return unwrap(api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/repository", { ...params, body: { installation_ref: r.installation_ref, github_repo_id: r.github_repo_id } }));
+  return unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/repository", {
+      ...params,
+      body: { installation_ref: r.installation_ref, github_repo_id: r.github_repo_id },
+    }),
+  );
 }

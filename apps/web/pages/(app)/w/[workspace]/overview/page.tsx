@@ -103,16 +103,18 @@ export default function WorkspaceOverviewPage() {
           <Stat label="Projects" value={projects.data?.length ?? "–"} hint="you can see" />
           <Stat label="Open issues" value={data.open} hint={`${data.overdue} overdue`} tone={data.overdue ? "" : ""} />
           <Stat label="Done this week" value={data.doneThisWeek} hint="across every project" />
-          <Stat
-            label="Waiting for a decision"
-            value={waitingRuns}
-            hint="agent requests"
-            tone={waitingRuns ? "text-primary" : ""}
-          />
+          <Stat label="Waiting for a decision" value={waitingRuns} hint="agent requests" tone={waitingRuns ? "text-primary" : ""} />
         </div>
 
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
-          <Card title="Portfolio" aside={<Link href={`${base}/projects`} className="text-primary text-xs font-medium hover:underline">All projects</Link>}>
+          <Card
+            title="Portfolio"
+            aside={
+              <Link href={`${base}/projects`} className="text-primary text-xs font-medium hover:underline">
+                All projects
+              </Link>
+            }
+          >
             {(projects.isLoading || issues.isLoading) && <Skeleton className="m-4 h-32" />}
             {projects.data && issues.data && (
               <div className="overflow-x-auto">
@@ -183,7 +185,11 @@ export default function WorkspaceOverviewPage() {
             <div className="flex flex-col gap-2.5 px-4 py-4 text-sm">
               {issues.data && data.workload.length === 0 && <p className="text-muted-foreground">Nobody has open issues assigned.</p>}
               {data.workload.map(([userId, count]) => (
-                <Link key={userId} href={`${base}/tasks?assignee=${userId}`} className="grid grid-cols-[8rem_minmax(0,1fr)_2rem] items-center gap-3 hover:underline">
+                <Link
+                  key={userId}
+                  href={`${base}/tasks?assignee=${userId}`}
+                  className="grid grid-cols-[8rem_minmax(0,1fr)_2rem] items-center gap-3 hover:underline"
+                >
                   <span className="truncate">{names.get(userId) ?? "Former member"}</span>
                   <span className="bg-muted h-1.5 overflow-hidden rounded-full">
                     <span className="bg-primary block h-full" style={{ width: `${(count / maxLoad) * 100}%` }} />

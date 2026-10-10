@@ -169,10 +169,7 @@ export function useIssue(scope: Scope | undefined, key: string | null) {
 export function useMembers(workspaceId: string | undefined) {
   return useQuery({
     queryKey: ["members", workspaceId],
-    queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/members", { params: { path: { workspace_id: workspaceId! } } }),
-      ),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/members", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: Boolean(workspaceId),
     staleTime: 5 * 60_000,
   });
@@ -258,20 +255,13 @@ export type RankTarget = { before: string } | { after: string };
 
 /** Move an issue (optionally to another status) and put it next to a neighbour in rank order. */
 export function useMoveIssue(scope: Scope | undefined) {
-  return useIssueMutation(
-    scope,
-    async (s, { key, status, rank }: { key: string; status?: IssueStatus; rank?: RankTarget }) => {
-      const params = { path: { ...path(s), key } };
-      if (status) {
-        await unwrap(
-          api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params, body: { status } }),
-        );
-      }
-      if (rank) {
-        await unwrap(
-          api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/rank", { params, body: rank }),
-        );
-      }
-    },
-  );
+  return useIssueMutation(scope, async (s, { key, status, rank }: { key: string; status?: IssueStatus; rank?: RankTarget }) => {
+    const params = { path: { ...path(s), key } };
+    if (status) {
+      await unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params, body: { status } }));
+    }
+    if (rank) {
+      await unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/rank", { params, body: rank }));
+    }
+  });
 }

@@ -66,10 +66,7 @@ export function NavUser() {
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
+            <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
               {who}
               <ChevronsUpDownIcon className="ml-auto size-4" />
             </SidebarMenuButton>
@@ -146,11 +143,7 @@ export function NavUser() {
           </DropdownMenuContent>
         </DropdownMenu>
         <KeyboardShortcutsDialog open={dialog === "shortcuts"} onOpenChange={(open) => !open && setDialog(null)} />
-        <ConnectCliDialog
-          open={dialog === "cli"}
-          onOpenChange={(open) => !open && setDialog(null)}
-          workspaceSlug={workspace?.slug}
-        />
+        <ConnectCliDialog open={dialog === "cli"} onOpenChange={(open) => !open && setDialog(null)} workspaceSlug={workspace?.slug} />
       </SidebarMenuItem>
     </SidebarMenu>
   );

@@ -183,19 +183,7 @@ export function ProgBar({ v, cls = "" }: { v: number; cls?: string }) {
     </span>
   );
 }
-export function Empty({
-  icon,
-  title,
-  text,
-  children,
-  cls = "",
-}: {
-  icon: string;
-  title: string;
-  text: string;
-  children?: ReactNode;
-  cls?: string;
-}) {
+export function Empty({ icon, title, text, children, cls = "" }: { icon: string; title: string; text: string; children?: ReactNode; cls?: string }) {
   return (
     <div className={`empty-state ${cls}`}>
       <div className="glyph">
@@ -233,7 +221,12 @@ export function CommentText({ text }: { text: string }) {
       break;
     }
     const [i, n] = hits.sort((a, b) => a[0] - b[0])[0]!;
-    parts.push(rest.slice(0, i), <span key={k++} className="mention">{n}</span>);
+    parts.push(
+      rest.slice(0, i),
+      <span key={k++} className="mention">
+        {n}
+      </span>,
+    );
     rest = rest.slice(i + n.length);
   }
   return (

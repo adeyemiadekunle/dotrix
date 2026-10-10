@@ -9,7 +9,19 @@ function resetsIn(at: number | null): string {
   return min <= 0 ? " The limit should have reset by now." : ` It resets in about ${min} minute${min === 1 ? "" : "s"}.`;
 }
 
-export function LimitNotice({ provider, said, resetsAt, whenReset, onContinue }: { provider?: string; said?: string; resetsAt: number | null; whenReset?: boolean; onContinue: (whenReset: boolean) => void }) {
+export function LimitNotice({
+  provider,
+  said,
+  resetsAt,
+  whenReset,
+  onContinue,
+}: {
+  provider?: string;
+  said?: string;
+  resetsAt: number | null;
+  whenReset?: boolean;
+  onContinue: (whenReset: boolean) => void;
+}) {
   const later = resetsAt != null && resetsAt > Date.now();
   return (
     <div className="alert warn" role="status" style={{ marginTop: 8 }}>

@@ -3,17 +3,7 @@ import { Button } from "@dotrix/ui/components/button";
 import { Input } from "@dotrix/ui/components/input";
 import { Textarea } from "@dotrix/ui/components/textarea";
 import { cn } from "@dotrix/ui/lib/utils";
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CircleStopIcon,
-  ListChecksIcon,
-  Loader2Icon,
-  PencilIcon,
-  ShieldCheckIcon,
-  XIcon,
-} from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, ListChecksIcon, Loader2Icon, PencilIcon, ShieldCheckIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 
 import { useDecide, type Approval, type Decision, type Run } from "@/lib/agent";
@@ -71,9 +61,7 @@ function ArgsView({ args }: { args: Record<string, unknown> }) {
       {entries.map(([key, value]) => (
         <div key={key} className="grid grid-cols-[6.5rem_1fr] gap-2">
           <dt className="text-muted-foreground">{key.replaceAll("_", " ")}</dt>
-          <dd className="break-words whitespace-pre-wrap">
-            {typeof value === "string" ? value : JSON.stringify(value)}
-          </dd>
+          <dd className="break-words whitespace-pre-wrap">{typeof value === "string" ? value : JSON.stringify(value)}</dd>
         </div>
       ))}
     </dl>
@@ -116,9 +104,7 @@ function ApprovalCard({
         {approval.status === "rejected" && <Badge variant="outline">Rejected</Badge>}
       </button>
       {expanded && (approval.diff ? <DiffView diff={approval.diff} /> : <ArgsView args={approval.args} />)}
-      {approval.status === "rejected" && approval.reason && (
-        <p className="text-muted-foreground text-xs">Reason: {approval.reason}</p>
-      )}
+      {approval.status === "rejected" && approval.reason && <p className="text-muted-foreground text-xs">Reason: {approval.reason}</p>}
       {pending && canDecide && (
         <div className="grid gap-2">
           <div className="flex gap-2">

@@ -3,17 +3,7 @@ import { Badge } from "@dotrix/ui/components/badge";
 import { Button } from "@dotrix/ui/components/button";
 import { Input } from "@dotrix/ui/components/input";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  CheckIcon,
-  CircleDotIcon,
-  ExternalLinkIcon,
-  FileTextIcon,
-  GavelIcon,
-  ListChecksIcon,
-  TriangleAlertIcon,
-  UndoIcon,
-  XIcon,
-} from "lucide-react";
+import { CheckIcon, CircleDotIcon, ExternalLinkIcon, FileTextIcon, GavelIcon, ListChecksIcon, TriangleAlertIcon, UndoIcon, XIcon } from "lucide-react";
 import { Link } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -77,7 +67,12 @@ function describe(kind: string, data: Record<string, unknown>): { title: string;
   const list = (key: string) => (Array.isArray(data[key]) ? (data[key] as unknown[]).map(String) : []);
   switch (kind) {
     case "finding":
-      return { title: s("title"), body: [s("detail"), s("suggested_fix") && `Fix: ${s("suggested_fix")}`].filter(Boolean).join("\n\n"), tag: s("severity"), refs: list("refs") };
+      return {
+        title: s("title"),
+        body: [s("detail"), s("suggested_fix") && `Fix: ${s("suggested_fix")}`].filter(Boolean).join("\n\n"),
+        tag: s("severity"),
+        refs: list("refs"),
+      };
     case "impact":
       return { title: s("ref"), body: s("why"), tag: s("severity") };
     case "report": {
@@ -269,9 +264,7 @@ function ItemView({ run, output, item, scope, canAct }: { run: Run; output: Outp
         <span className="font-medium">{title}</span>
       </div>
       {body && <p className="text-muted-foreground text-sm whitespace-pre-line">{body}</p>}
-      {refs && refs.length > 0 && (
-        <p className="text-muted-foreground font-mono text-xs break-all">{refs.join(" · ")}</p>
-      )}
+      {refs && refs.length > 0 && <p className="text-muted-foreground font-mono text-xs break-all">{refs.join(" · ")}</p>}
       {item.state === "done" && (
         <p className="flex items-center gap-1 text-xs">
           <CheckIcon className="size-3.5" /> Done{item.link ? `: ${item.link}` : ""}
@@ -290,9 +283,7 @@ function ItemView({ run, output, item, scope, canAct }: { run: Run; output: Outp
               variant="outline"
               disabled={createIssue.isPending || update.isPending}
               onClick={async () => {
-                const issue = (await createIssue
-                  .mutateAsync(issueFrom(output.kind, item.data, output.agent))
-                  .catch(() => null)) as Schemas["IssueRead"] | null;
+                const issue = (await createIssue.mutateAsync(issueFrom(output.kind, item.data, output.agent)).catch(() => null)) as Schemas["IssueRead"] | null;
                 if (issue) {
                   update.mutate({ state: "done", link: issue.key });
                   toast.success(`Created ${issue.key}`);
@@ -313,9 +304,7 @@ function ItemView({ run, output, item, scope, canAct }: { run: Run; output: Outp
                 disabled={send.isPending || update.isPending}
                 onClick={async () => {
                   const cites = refs?.length ? ` (sources ${refs.join(", ")}, from @${output.agent}'s report)` : "";
-                  const sent = await send
-                    .mutateAsync({ message: ask.message(title, cites), threadId: run.thread_id, agent: ask.agent })
-                    .catch(() => null);
+                  const sent = await send.mutateAsync({ message: ask.message(title, cites), threadId: run.thread_id, agent: ask.agent }).catch(() => null);
                   if (sent) update.mutate({ state: "done", link: `Asked @${ask.agent}` });
                 }}
               >

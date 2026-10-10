@@ -98,7 +98,12 @@ export function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
             {ac}
           </span>
         )}
-        <button className="m" onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "assignee", { id: t.id }))} style={{ marginLeft: "auto" }} aria-label="Assignee">
+        <button
+          className="m"
+          onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "assignee", { id: t.id }))}
+          style={{ marginLeft: "auto" }}
+          aria-label="Assignee"
+        >
           <Av id={t.assignee} cls="sm" />
         </button>
       </div>
@@ -197,7 +202,11 @@ export function Board({ ts, k, project }: { ts: Task[]; k: string; project?: str
                 <button className="ibtn ibtn-xs" onClick={() => startComposer(k, s.id, gb)} data-tip="Add task" aria-label={`Add task to ${s.name}`}>
                   <Ic n="plus" s={14} />
                 </button>
-                <button className="ibtn ibtn-xs" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "column", id: s.id, key: k })} aria-label="Column options">
+                <button
+                  className="ibtn ibtn-xs"
+                  onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "column", id: s.id, key: k })}
+                  aria-label="Column options"
+                >
                   <Ic n="ellipsis" s={14} />
                 </button>
               </span>

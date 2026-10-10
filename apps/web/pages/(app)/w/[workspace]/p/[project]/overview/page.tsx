@@ -76,7 +76,14 @@ export default function OverviewPage() {
           </p>
         </Card>
 
-        <Card title="Progress" action={<span className="text-muted-foreground text-xs">{done} of {total} issues done</span>}>
+        <Card
+          title="Progress"
+          action={
+            <span className="text-muted-foreground text-xs">
+              {done} of {total} issues done
+            </span>
+          }
+        >
           <div className="flex flex-col gap-3 px-4 py-4">
             {board.isLoading ? (
               <Skeleton className="h-16" />
@@ -84,9 +91,7 @@ export default function OverviewPage() {
               <>
                 <span className="text-3xl font-semibold tabular-nums">{percent}%</span>
                 <div className="bg-muted flex h-2 gap-0.5 overflow-hidden rounded-full" aria-hidden>
-                  {STATUSES.map((s) =>
-                    counts[s] ? <span key={s} className={BAR[s]} style={{ width: `${(counts[s] / total) * 100}%` }} /> : null,
-                  )}
+                  {STATUSES.map((s) => (counts[s] ? <span key={s} className={BAR[s]} style={{ width: `${(counts[s] / total) * 100}%` }} /> : null))}
                 </div>
                 <ul className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
                   {STATUSES.map((s) => (
@@ -131,9 +136,7 @@ export default function OverviewPage() {
         </Card>
 
         <Card title="Epics">
-          {epics.data?.length === 0 && (
-            <p className="text-muted-foreground px-4 py-6 text-sm">No epics yet. An epic groups the stories of one feature.</p>
-          )}
+          {epics.data?.length === 0 && <p className="text-muted-foreground px-4 py-6 text-sm">No epics yet. An epic groups the stories of one feature.</p>}
           {epics.data?.map((epic) => (
             <Link
               key={epic.key}
@@ -196,12 +199,8 @@ export default function OverviewPage() {
         >
           <div className="px-4">
             {activity.isLoading && <Skeleton className="my-3 h-24" />}
-            {activity.data && activity.data.pages[0]?.length === 0 && (
-              <p className="text-muted-foreground py-6 text-sm">Nothing yet.</p>
-            )}
-            {activity.data && workspace && (
-              <ActivityFeed items={activity.data.pages[0] ?? []} members={memberMap} workspaceSlug={workspace.slug} compact />
-            )}
+            {activity.data && activity.data.pages[0]?.length === 0 && <p className="text-muted-foreground py-6 text-sm">Nothing yet.</p>}
+            {activity.data && workspace && <ActivityFeed items={activity.data.pages[0] ?? []} members={memberMap} workspaceSlug={workspace.slug} compact />}
           </div>
         </Card>
       </div>

@@ -47,8 +47,7 @@ export const ROUTE_NAMES: Record<string, string> = {
 };
 
 /** A page's name; Chat is "Code" while its Code tab is open. */
-export const routeName = (route: string) =>
-  route === "chat" && new URLSearchParams(location.search).get("tab") === "coding" ? "Code" : ROUTE_NAMES[route];
+export const routeName = (route: string) => (route === "chat" && new URLSearchParams(location.search).get("tab") === "coding" ? "Code" : ROUTE_NAMES[route]);
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -100,7 +99,10 @@ export function Shell({ children }: { children: ReactNode }) {
   const { route: here, params: hereParams } = useRoute();
   const at = `${here}/${JSON.stringify(hereParams)}`;
   useEffect(() => {
-    if (S.ui.mnav) ((S.ui.mnav = false), render());
+    if (S.ui.mnav) {
+      S.ui.mnav = false;
+      render();
+    }
   }, [at]);
   // Crossing the narrow breakpoint changes what "collapsed" means: re-render.
   useEffect(() => {
@@ -186,7 +188,10 @@ function SItem({
         if (!route) return;
         go(route, params);
         // On a narrow window the sidebar is a drawer: picking a page closes it, the page you're on too.
-        if (narrow() && S.ui.mnav) ((S.ui.mnav = false), render());
+        if (narrow() && S.ui.mnav) {
+          S.ui.mnav = false;
+          render();
+        }
       }}
       data-tip={sideCollapsed() ? label : undefined}
       data-tip-pos="right"
@@ -264,9 +269,11 @@ function Sidebar() {
           <div className="sgroup-h">
             <span>Projects</span>
             <span className="sp" />
-            {allowed("projects:manage") && (<button className="ibtn ibtn-xs" onClick={newProject} data-tip="New project  P" aria-label="New project">
-              <Ic n="plus" s={14} />
-            </button>)}
+            {allowed("projects:manage") && (
+              <button className="ibtn ibtn-xs" onClick={newProject} data-tip="New project  P" aria-label="New project">
+                <Ic n="plus" s={14} />
+              </button>
+            )}
           </div>
           {projs.map((p) => {
             const open = Boolean(u.expanded[p.id]);
@@ -359,9 +366,11 @@ function Sidebar() {
           <div className="sgroup-h">
             <span>Teams</span>
             <span className="sp" />
-            {allowed("members:manage") && (<button className="ibtn ibtn-xs" onClick={newTeam} data-tip="New team" aria-label="New team">
-              <Ic n="plus" s={14} />
-            </button>)}
+            {allowed("members:manage") && (
+              <button className="ibtn ibtn-xs" onClick={newTeam} data-tip="New team" aria-label="New team">
+                <Ic n="plus" s={14} />
+              </button>
+            )}
           </div>
           {teamsList().map((t) => (
             <SItem key={t.id} route="team" label={t.name} icon={t.icon} params={{ id: t.id }} />
@@ -369,12 +378,7 @@ function Sidebar() {
         </div>
       </div>
       <div className="side-bot">
-        <button
-          className="sitem"
-          onClick={(e) => openPop(e.currentTarget, "help")}
-          data-tip={sideCollapsed() ? "Help" : undefined}
-          data-tip-pos="right"
-        >
+        <button className="sitem" onClick={(e) => openPop(e.currentTarget, "help")} data-tip={sideCollapsed() ? "Help" : undefined} data-tip-pos="right">
           <Ic n="circle-help" s={16} />
           <span>Help &amp; resources</span>
         </button>
@@ -442,7 +446,16 @@ function Crumbs() {
   } else out.push(c(routeName(route) || "Not found", undefined, true));
   return (
     <nav className="crumbs trunc" aria-label="Breadcrumb">
-      {out.flatMap((x, i) => (i ? [<span key={`s${i}`} className="sep">/</span>, x] : [x]))}
+      {out.flatMap((x, i) =>
+        i
+          ? [
+              <span key={`s${i}`} className="sep">
+                /
+              </span>,
+              x,
+            ]
+          : [x],
+      )}
     </nav>
   );
 }
@@ -463,7 +476,14 @@ function Topbar() {
         <span className="kbd">{MOD}K</span>
       </button>
       {!inCodeTab() && (
-        <button className={`ibtn ${agentsShown() ? "on" : ""}`} onClick={toggleAgents} data-tip="Agents" aria-label={agentsShown() ? "Hide the agents panel" : "Show the agents panel"} aria-pressed={agentsShown()} style={{ position: "relative" }}>
+        <button
+          className={`ibtn ${agentsShown() ? "on" : ""}`}
+          onClick={toggleAgents}
+          data-tip="Agents"
+          aria-label={agentsShown() ? "Hide the agents panel" : "Show the agents panel"}
+          aria-pressed={agentsShown()}
+          style={{ position: "relative" }}
+        >
           <Ic n="bot" s={16} />
           {waiting > 0 && !agentsShown() && <span className="top-dot" />}
         </button>

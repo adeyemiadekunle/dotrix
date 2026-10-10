@@ -67,7 +67,11 @@ test("tokens under Sessions: the CLI's sign-in is listed, a new one is shown onc
   await signUp(page);
   // What `dotrix login` leaves behind: a token named for the device.
   await page.evaluate(() =>
-    fetch("/v1/me/tokens", { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "e2e" }, body: JSON.stringify({ name: "dotrix CLI on laptop" }) }),
+    fetch("/v1/me/tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "e2e" },
+      body: JSON.stringify({ name: "dotrix CLI on laptop" }),
+    }),
   );
   await settings(page, "devices");
   await expect(page.locator(".set-in h1")).toHaveText("Sessions");

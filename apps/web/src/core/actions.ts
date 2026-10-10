@@ -126,8 +126,7 @@ export function toggleDone(id: string) {
   const wasDone = t.status === "done";
   S.ui.pop = null;
   updateTask(t.id, { status: wasDone ? (t.prevStatus && t.prevStatus !== "done" ? t.prevStatus : "todo") : "done" });
-  if (!wasDone && !S.ui.offline)
-    toast(`Completed “${t.title}”`, { action: "Undo", onAction: () => updateTask(t.id, { status: t.prevStatus || "todo" }) });
+  if (!wasDone && !S.ui.offline) toast(`Completed “${t.title}”`, { action: "Undo", onAction: () => updateTask(t.id, { status: t.prevStatus || "todo" }) });
 }
 export function toggleFavTask(id: string) {
   const t = task(id)!;
@@ -150,7 +149,15 @@ export function setProjectStatus(id: string, v: ProjectStatusId) {
   const pr = proj(id)!;
   mutate(() => {
     pr.status = v;
-    D().activity.unshift({ id: uid("a"), by: D().me, verb: "changed status of project", task: null, project: pr.id, at: Date.now(), extra: "to " + PSTAT[v].name });
+    D().activity.unshift({
+      id: uid("a"),
+      by: D().me,
+      verb: "changed status of project",
+      task: null,
+      project: pr.id,
+      at: Date.now(),
+      extra: "to " + PSTAT[v].name,
+    });
   });
   projectChanged(pr, ["status"]);
   S.ui.pop = null;

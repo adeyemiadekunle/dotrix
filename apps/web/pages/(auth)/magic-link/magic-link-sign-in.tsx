@@ -36,11 +36,7 @@ export function MagicLinkSignIn({ token }: { token: string }) {
     );
   }
   return (
-    <AuthCard
-      title="Sign in to dotrix"
-      description="You opened a sign-in link from your email."
-      footer={<Link href="/login">Sign in another way</Link>}
-    >
+    <AuthCard title="Sign in to dotrix" description="You opened a sign-in link from your email." footer={<Link href="/login">Sign in another way</Link>}>
       <div className="grid gap-4">
         <FormError message={error ? `${error.replace(/\.$/, "")}. Ask for a new link from the sign-in page.` : null} />
         <Button className="w-full" disabled={pending} onClick={() => void signIn()}>

@@ -51,8 +51,7 @@ export function mentionedAgent(text: string, options: AgentOption[] = AGENTS): [
 export function useModels(workspaceId: string | undefined) {
   return useQuery({
     queryKey: ["models", workspaceId],
-    queryFn: () =>
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/models", { params: { path: { workspace_id: workspaceId! } } })),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/models", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: Boolean(workspaceId),
     staleTime: 5 * 60_000,
   });
@@ -120,8 +119,7 @@ export type WorkspaceThread = Schemas["WorkspaceThread"];
 export function useWorkspaceThreads(workspaceId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["threads", workspaceId],
-    queryFn: () =>
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/threads", { params: { path: { workspace_id: workspaceId! } } })),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/threads", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: Boolean(workspaceId) && enabled,
     refetchInterval: 20_000,
   });
@@ -251,8 +249,7 @@ export function useDecide(scope: Scope | undefined) {
 export function useWorkspaceApprovals(workspaceId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: workspaceId ? agentKeys.workspaceApprovals(workspaceId) : ["approvals", "none"],
-    queryFn: () =>
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/approvals", { params: { path: { workspace_id: workspaceId! } } })),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/approvals", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: Boolean(workspaceId) && enabled,
     refetchInterval: 20_000,
   });
@@ -337,8 +334,7 @@ export function useRenameThread(scope: Scope | undefined) {
 }
 
 /** A run someone stopped (it's recorded as failed with "Stopped by …"). */
-export const wasStopped = (run: Pick<Run, "status" | "error">) =>
-  run.status === "failed" && (run.error ?? "").startsWith("Stopped");
+export const wasStopped = (run: Pick<Run, "status" | "error">) => run.status === "failed" && (run.error ?? "").startsWith("Stopped");
 
 /** What the agents did across the workspace in the last `days` days (owners and admins). */
 export function useWorkspaceAgentUsage(workspaceId: string | undefined, enabled: boolean, days = 7) {

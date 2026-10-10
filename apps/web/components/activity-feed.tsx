@@ -65,7 +65,13 @@ function describe(item: ActivityItem, members: MemberMap, base: string): { text:
         };
       }
       const fields = [...new Set(changes.map(([field]) => FIELD_LABELS[field] ?? field.replace(/_/g, " ")))];
-      return { text: <>changed {fields.join(", ") || "details"} on {issue}</> };
+      return {
+        text: (
+          <>
+            changed {fields.join(", ") || "details"} on {issue}
+          </>
+        ),
+      };
     }
     case "document.changed":
     case "document.deleted": {
@@ -136,19 +142,11 @@ export function ActivityFeed({
         const { text, detail } = describe(item, members, `/w/${workspaceSlug}/p/${item.project_key}`);
         return (
           <li key={`${item.at}-${index}`} className="flex flex-col">
-            {heading && (
-              <h3 className="text-muted-foreground pt-5 pb-1 text-[11px] font-semibold tracking-wider uppercase first:pt-0">
-                {day}
-              </h3>
-            )}
+            {heading && <h3 className="text-muted-foreground pt-5 pb-1 text-[11px] font-semibold tracking-wider uppercase first:pt-0">{day}</h3>}
             <div className="flex items-start gap-3 border-b py-3 last:border-b-0">
               <Avatar className="size-7 rounded-lg">
-                {!agent && item.actor_user_id && (
-                  <ActorPhoto member={members.get(item.actor_user_id)} />
-                )}
-                <AvatarFallback
-                  className={agent ? "bg-brand-muted text-brand-muted-foreground rounded-lg" : "rounded-lg text-[10px]"}
-                >
+                {!agent && item.actor_user_id && <ActorPhoto member={members.get(item.actor_user_id)} />}
+                <AvatarFallback className={agent ? "bg-brand-muted text-brand-muted-foreground rounded-lg" : "rounded-lg text-[10px]"}>
                   {agent ? <BotIcon className="size-4" /> : initials(actor)}
                 </AvatarFallback>
               </Avatar>
@@ -158,10 +156,7 @@ export function ActivityFeed({
                 </p>
                 {detail && <p className="text-muted-foreground line-clamp-2 text-xs">{detail}</p>}
                 {showProject && (
-                  <Link
-                    href={`/w/${workspaceSlug}/p/${item.project_key}`}
-                    className="text-muted-foreground flex items-center gap-1.5 text-xs hover:underline"
-                  >
+                  <Link href={`/w/${workspaceSlug}/p/${item.project_key}`} className="text-muted-foreground flex items-center gap-1.5 text-xs hover:underline">
                     <ProjectTile projectKey={item.project_key} className="size-3.5 text-[7px]" />
                     {item.project_name}
                   </Link>

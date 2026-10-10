@@ -6,9 +6,9 @@
   message: plan the multi-zone launch
   script:
     - tool: stage
-      args: {current: plan}
+      args: { current: plan }
     - tool: checkpoint
-      args: {summary: "Three specialists, eight steps", plan: ["Product: spec", "Architecture: impact"]}
+      args: { summary: "Three specialists, eight steps", plan: ["Product: spec", "Architecture: impact"] }
   expect:
     tools_include: [stage, checkpoint]
     tools_exclude: [submit_result]
@@ -29,7 +29,7 @@
   message: spec multi-zone
   script:
     - tool: submit_result
-      args: {items: [{path: requirements/multi-zone.md, summary: Zones per depot}]}
+      args: { items: [{ path: requirements/multi-zone.md, summary: Zones per depot }] }
     - text: Here's the spec.
   expect:
     tools_include: [stage, submit_result]
@@ -52,9 +52,9 @@
   message: review KUN-1
   script:
     - tool: stage
-      args: {current: criteria}
+      args: { current: criteria }
     - tool: submit_result
-      args: {items: [{severity: medium, title: No retry test, detail: "Criterion 2 isn't shown"}]}
+      args: { items: [{ severity: medium, title: No retry test, detail: "Criterion 2 isn't shown" }] }
     - text: Send it back.
   expect:
     tools_exclude: [checkpoint]
@@ -69,9 +69,9 @@
   message: "Report: drivers see the wrong zone"
   script:
     - tool: stage
-      args: {current: duplicates}
+      args: { current: duplicates }
     - tool: create_issue
-      args: {type: bug, title: Wrong zone shown, description: Drivers see the wrong zone}
+      args: { type: bug, title: Wrong zone shown, description: Drivers see the wrong zone }
   expect:
     tools_exclude: [checkpoint, submit_result]
     pending: [create_issue]

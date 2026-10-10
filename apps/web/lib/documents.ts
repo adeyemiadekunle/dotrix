@@ -8,22 +8,7 @@ import { ApiError, api, apiFetch, errorMessage, unwrap } from "./api";
 export type Document = Schemas["DocumentRead"];
 
 /** What the backend converts to Markdown (dotrix_engine.ingest.SUPPORTED_EXTENSIONS). */
-export const DOCUMENT_EXTENSIONS = [
-  ".pdf",
-  ".docx",
-  ".pptx",
-  ".xlsx",
-  ".xls",
-  ".html",
-  ".htm",
-  ".csv",
-  ".json",
-  ".xml",
-  ".md",
-  ".markdown",
-  ".txt",
-  ".rst",
-];
+export const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx", ".xlsx", ".xls", ".html", ".htm", ".csv", ".json", ".xml", ".md", ".markdown", ".txt", ".rst"];
 /** The backend's default limit (DOTRIX_MAX_UPLOAD_MB); it has the final say. */
 export const MAX_UPLOAD_MB = 25;
 
@@ -41,8 +26,7 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1_000_000).toFixed(1)} MB`;
 }
 
-const documentsPath = (workspaceId: string, projectId: string) =>
-  `/v1/workspaces/${workspaceId}/projects/${projectId}/documents`;
+const documentsPath = (workspaceId: string, projectId: string) => `/v1/workspaces/${workspaceId}/projects/${projectId}/documents`;
 
 export function originalUrl(workspaceId: string, projectId: string, documentId: string): string {
   return `${documentsPath(workspaceId, projectId)}/${documentId}/original`;
@@ -85,8 +69,7 @@ export function useUploads() {
     async (workspaceId: string, projectId: string, files: File[]) => {
       const start = files.map((file): UploadState => ({ file, status: "queued" }));
       setUploads(start);
-      const set = (i: number, patch: Partial<UploadState>) =>
-        setUploads((all) => all.map((u, j) => (j === i ? { ...u, ...patch } : u)));
+      const set = (i: number, patch: Partial<UploadState>) => setUploads((all) => all.map((u, j) => (j === i ? { ...u, ...patch } : u)));
       let failed = 0;
       for (const [i, file] of files.entries()) {
         set(i, { status: "uploading" });

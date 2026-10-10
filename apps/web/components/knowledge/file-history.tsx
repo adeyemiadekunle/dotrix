@@ -69,10 +69,7 @@ export function FileHistory({
                 type="button"
                 onClick={() => onSelect(isSelected ? null : v.version)}
                 aria-pressed={isSelected}
-                className={cn(
-                  "hover:bg-muted grid w-full gap-0.5 rounded-md border px-3 py-2 text-left text-sm",
-                  isSelected && "border-primary bg-muted",
-                )}
+                className={cn("hover:bg-muted grid w-full gap-0.5 rounded-md border px-3 py-2 text-left text-sm", isSelected && "border-primary bg-muted")}
               >
                 <span className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline" className="font-mono text-[10px]">
@@ -84,21 +81,13 @@ export function FileHistory({
                   {v.version === currentVersion && <Badge variant="secondary">Current</Badge>}
                   <span className="text-muted-foreground ml-auto text-xs">{timeAgo(v.created_at)}</span>
                 </span>
-                {(a.detail || v.message) && (
-                  <span className="text-muted-foreground text-xs">
-                    {[v.message, a.detail].filter(Boolean).join(" · ")}
-                  </span>
-                )}
+                {(a.detail || v.message) && <span className="text-muted-foreground text-xs">{[v.message, a.detail].filter(Boolean).join(" · ")}</span>}
               </button>
               {isSelected && (
                 <div className="grid gap-2 py-2">
                   {diff.isLoading && <Skeleton className="h-24" />}
                   {diff.data &&
-                    (diff.data.diff ? (
-                      <DiffView diff={diff.data.diff} />
-                    ) : (
-                      <p className="text-muted-foreground text-xs">No text changes in this version.</p>
-                    ))}
+                    (diff.data.diff ? <DiffView diff={diff.data.diff} /> : <p className="text-muted-foreground text-xs">No text changes in this version.</p>)}
                   {canRestore && !v.deleted && v.version !== currentVersion && (
                     <Button
                       size="sm"
@@ -106,10 +95,7 @@ export function FileHistory({
                       className="justify-self-start"
                       disabled={restore.isPending}
                       onClick={() =>
-                        restore.mutate(
-                          { path, version: v.version, baseVersion: deleted ? 0 : currentVersion },
-                          { onSuccess: () => onSelect(null) },
-                        )
+                        restore.mutate({ path, version: v.version, baseVersion: deleted ? 0 : currentVersion }, { onSuccess: () => onSelect(null) })
                       }
                     >
                       <RotateCcwIcon />

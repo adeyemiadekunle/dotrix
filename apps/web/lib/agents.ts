@@ -55,9 +55,11 @@ export function useAgents(scope: AgentScope | undefined) {
     queryKey: scope ? agentsKey(scope) : ["agents", "none"],
     queryFn: () =>
       scope!.projectId
-        ? unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agents", {
-            params: { path: { workspace_id: scope!.workspaceId, project_id: scope!.projectId } },
-          }))
+        ? unwrap(
+            api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agents", {
+              params: { path: { workspace_id: scope!.workspaceId, project_id: scope!.projectId } },
+            }),
+          )
         : unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", { params: { path: { workspace_id: scope!.workspaceId } } })),
     enabled: Boolean(scope),
     staleTime: 60_000,
@@ -67,8 +69,7 @@ export function useAgents(scope: AgentScope | undefined) {
 export function useAgentCatalog(workspaceId: string | undefined) {
   return useQuery({
     queryKey: ["agent-catalog", workspaceId],
-    queryFn: () =>
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/agents/catalog", { params: { path: { workspace_id: workspaceId! } } })),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/agents/catalog", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: Boolean(workspaceId),
     staleTime: 10 * 60_000,
   });
@@ -79,12 +80,16 @@ export function useAgentVersions(scope: AgentScope | undefined, handle: string |
     queryKey: ["agent-versions", scope?.workspaceId, scope?.projectId ?? null, handle],
     queryFn: () =>
       scope!.projectId
-        ? unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agents/{handle}/versions", {
-            params: { path: { workspace_id: scope!.workspaceId, project_id: scope!.projectId, handle: handle! } },
-          }))
-        : unwrap(api.GET("/v1/workspaces/{workspace_id}/agents/{handle}/versions", {
-            params: { path: { workspace_id: scope!.workspaceId, handle: handle! } },
-          })),
+        ? unwrap(
+            api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agents/{handle}/versions", {
+              params: { path: { workspace_id: scope!.workspaceId, project_id: scope!.projectId, handle: handle! } },
+            }),
+          )
+        : unwrap(
+            api.GET("/v1/workspaces/{workspace_id}/agents/{handle}/versions", {
+              params: { path: { workspace_id: scope!.workspaceId, handle: handle! } },
+            }),
+          ),
     enabled: Boolean(scope && handle && enabled),
   });
 }
@@ -111,14 +116,18 @@ export function useSaveAgent(scope: AgentScope) {
     scope,
     ({ handle, body }: { handle: string; body: Schemas["AgentSave"] }) =>
       scope.projectId
-        ? unwrap(api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/agents/{handle}", {
-            params: { path: { ...(path(scope) as { workspace_id: string; project_id: string }), handle } },
-            body,
-          }))
-        : unwrap(api.PUT("/v1/workspaces/{workspace_id}/agents/{handle}", {
-            params: { path: { workspace_id: scope.workspaceId, handle } },
-            body,
-          })),
+        ? unwrap(
+            api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/agents/{handle}", {
+              params: { path: { ...(path(scope) as { workspace_id: string; project_id: string }), handle } },
+              body,
+            }),
+          )
+        : unwrap(
+            api.PUT("/v1/workspaces/{workspace_id}/agents/{handle}", {
+              params: { path: { workspace_id: scope.workspaceId, handle } },
+              body,
+            }),
+          ),
     "Agent saved",
   );
 }
@@ -126,12 +135,16 @@ export function useSaveAgent(scope: AgentScope) {
 export function useDeleteAgent(scope: AgentScope) {
   return useAgentMutation(scope, (handle: string) =>
     scope.projectId
-      ? unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/agents/{handle}", {
-          params: { path: { ...(path(scope) as { workspace_id: string; project_id: string }), handle } },
-        }))
-      : unwrap(api.DELETE("/v1/workspaces/{workspace_id}/agents/{handle}", {
-          params: { path: { workspace_id: scope.workspaceId, handle } },
-        })),
+      ? unwrap(
+          api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/agents/{handle}", {
+            params: { path: { ...(path(scope) as { workspace_id: string; project_id: string }), handle } },
+          }),
+        )
+      : unwrap(
+          api.DELETE("/v1/workspaces/{workspace_id}/agents/{handle}", {
+            params: { path: { workspace_id: scope.workspaceId, handle } },
+          }),
+        ),
   );
 }
 
@@ -140,12 +153,16 @@ export function useRestoreAgentVersion(scope: AgentScope) {
     scope,
     ({ handle, version }: { handle: string; version: number }) =>
       scope.projectId
-        ? unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agents/{handle}/versions/{version}/restore", {
-            params: { path: { ...(path(scope) as { workspace_id: string; project_id: string }), handle, version } },
-          }))
-        : unwrap(api.POST("/v1/workspaces/{workspace_id}/agents/{handle}/versions/{version}/restore", {
-            params: { path: { workspace_id: scope.workspaceId, handle, version } },
-          })),
+        ? unwrap(
+            api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agents/{handle}/versions/{version}/restore", {
+              params: { path: { ...(path(scope) as { workspace_id: string; project_id: string }), handle, version } },
+            }),
+          )
+        : unwrap(
+            api.POST("/v1/workspaces/{workspace_id}/agents/{handle}/versions/{version}/restore", {
+              params: { path: { workspace_id: scope.workspaceId, handle, version } },
+            }),
+          ),
     "Version restored",
   );
 }
@@ -159,12 +176,7 @@ export function useChatAgents(scope: Scope | undefined): AgentOption[] {
   return useMemo(
     () =>
       data
-        ? [
-            AGENTS[0],
-            ...data
-              .filter((a) => a.handle !== PM_HANDLE)
-              .map((a) => ({ id: a.handle, name: displayName(a), description: a.description || a.name })),
-          ]
+        ? [AGENTS[0], ...data.filter((a) => a.handle !== PM_HANDLE).map((a) => ({ id: a.handle, name: displayName(a), description: a.description || a.name }))]
         : AGENTS,
     [data],
   );

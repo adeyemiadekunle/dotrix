@@ -27,10 +27,7 @@ export function useNotifications(workspaceId: string | undefined, kind?: Notific
 export function useNotificationCounts(workspaceId: string | undefined) {
   return useQuery({
     queryKey: ["notifications", workspaceId, "counts"],
-    queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/notifications/counts", { params: { path: { workspace_id: workspaceId! } } }),
-      ),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/notifications/counts", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: Boolean(workspaceId),
     refetchInterval: 20_000,
   });

@@ -19,13 +19,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@dotrix/ui/components/sidebar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@dotrix/ui/components/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@dotrix/ui/components/dropdown-menu";
 import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { cn } from "@dotrix/ui/lib/utils";
 import {
@@ -289,22 +283,19 @@ export function AppSidebar() {
                   <SidebarMenuItem key={project.id}>
                     <SidebarMenuButton asChild isActive={open} tooltip={project.name}>
                       <Link href={href}>
-                        <ProjectTile projectKey={project.key} className="-ml-0.5 group-data-[collapsible=icon]:ml-0 group-data-[collapsible=icon]:size-4 group-data-[collapsible=icon]:text-[9px]" />
+                        <ProjectTile
+                          projectKey={project.key}
+                          className="-ml-0.5 group-data-[collapsible=icon]:ml-0 group-data-[collapsible=icon]:size-4 group-data-[collapsible=icon]:text-[9px]"
+                        />
                         <span className="flex-1 truncate">{project.name}</span>
                         {starred.data?.includes(project.id) && (
-                          <StarIcon
-                            className="size-3.5! fill-warning text-warning group-data-[collapsible=icon]:hidden"
-                            aria-label="Starred"
-                          />
+                          <StarIcon className="size-3.5! fill-warning text-warning group-data-[collapsible=icon]:hidden" aria-label="Starred" />
                         )}
                         {project.access === "restricted" && (
                           <LockIcon className="text-muted-foreground size-3.5! group-data-[collapsible=icon]:hidden" aria-label="Only people added" />
                         )}
                         <span
-                          className={cn(
-                            "mr-5 size-1.5 shrink-0 rounded-full group-hover/menu-item:opacity-0 group-data-[collapsible=icon]:hidden",
-                            dot.dot,
-                          )}
+                          className={cn("mr-5 size-1.5 shrink-0 rounded-full group-hover/menu-item:opacity-0 group-data-[collapsible=icon]:hidden", dot.dot)}
                           title={dot.label}
                           aria-label={dot.label}
                         />
@@ -338,11 +329,7 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
-              {projects.data?.length === 0 && (
-                <p className="text-muted-foreground px-2 py-1 text-xs group-data-[collapsible=icon]:hidden">
-                  No projects yet.
-                </p>
-              )}
+              {projects.data?.length === 0 && <p className="text-muted-foreground px-2 py-1 text-xs group-data-[collapsible=icon]:hidden">No projects yet.</p>}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -450,11 +437,7 @@ function HelpMenu({ workspaceSlug }: { workspaceSlug: string }) {
         </DropdownMenuContent>
       </DropdownMenu>
       <KeyboardShortcutsDialog open={dialog === "shortcuts"} onOpenChange={(open) => !open && setDialog(null)} />
-      <ConnectCliDialog
-        open={dialog === "cli"}
-        onOpenChange={(open) => !open && setDialog(null)}
-        workspaceSlug={workspaceSlug}
-      />
+      <ConnectCliDialog open={dialog === "cli"} onOpenChange={(open) => !open && setDialog(null)} workspaceSlug={workspaceSlug} />
     </SidebarMenuItem>
   );
 }

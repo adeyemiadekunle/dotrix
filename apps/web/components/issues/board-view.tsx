@@ -125,14 +125,7 @@ function Column({
           )}
         >
           {issues.map((issue) => (
-            <SortableIssueCard
-              key={issue.key}
-              issue={issue}
-              members={members}
-              epics={epics}
-              onOpen={onOpen}
-              disabled={!canEdit}
-            />
+            <SortableIssueCard key={issue.key} issue={issue} members={members} epics={epics} onOpen={onOpen} disabled={!canEdit} />
           ))}
           {issues.length === 0 && (
             <p className="text-muted-foreground border-foreground/15 rounded-lg border border-dashed p-2 text-center text-xs @2xl:p-4">

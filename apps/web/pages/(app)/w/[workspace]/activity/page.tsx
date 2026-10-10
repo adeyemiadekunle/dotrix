@@ -14,12 +14,7 @@ function WorkspaceActivity() {
   return (
     <>
       <PageHeader title="Activity" parent={workspace?.name} />
-      <ActivityView
-        activity={activity}
-        workspace={workspace}
-        intro="What people and agents did in the projects you can see."
-        showProject
-      />
+      <ActivityView activity={activity} workspace={workspace} intro="What people and agents did in the projects you can see." showProject />
     </>
   );
 }

@@ -35,10 +35,7 @@ export function AgentList({ scope, base, canEdit }: { scope: AgentScope; base: s
         <ul className="bg-card divide-y rounded-xl border">
           {(agents.data ?? []).map((agent) => (
             <li key={agent.handle}>
-              <Link
-                href={`${base}/${agent.handle}`}
-                className="hover:bg-muted/60 flex items-center gap-3 px-4 py-3 first:rounded-t-xl last:rounded-b-xl"
-              >
+              <Link href={`${base}/${agent.handle}`} className="hover:bg-muted/60 flex items-center gap-3 px-4 py-3 first:rounded-t-xl last:rounded-b-xl">
                 <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-lg">
                   <BotIcon className="size-4" />
                 </span>

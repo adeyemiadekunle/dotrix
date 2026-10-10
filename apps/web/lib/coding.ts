@@ -40,8 +40,7 @@ export const isActive = (run: Pick<CodingRun, "status">) => ACTIVE.includes(run.
 export function useCodingAvailability(scope: Scope | undefined) {
   return useQuery({
     queryKey: ["coding", scope?.projectId],
-    queryFn: () =>
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding", { params: { path: path(scope!) } })),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding", { params: { path: path(scope!) } })),
     enabled: Boolean(scope),
     staleTime: 60_000,
   });
@@ -92,16 +91,13 @@ export function useStartCoding(scope: Scope | undefined, issueKey: string) {
 }
 
 export function useDecideCoding(scope: Scope | undefined, issueKey: string) {
-  return useCodingMutation(
-    scope,
-    issueKey,
-    (s, { runId, decision, reason }: { runId: string; decision: "approve" | "reject"; reason?: string | null }) =>
-      unwrap(
-        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision", {
-          params: { path: { ...path(s), coding_run_id: runId } },
-          body: { decision, reason: reason || null },
-        }),
-      ),
+  return useCodingMutation(scope, issueKey, (s, { runId, decision, reason }: { runId: string; decision: "approve" | "reject"; reason?: string | null }) =>
+    unwrap(
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision", {
+        params: { path: { ...path(s), coding_run_id: runId } },
+        body: { decision, reason: reason || null },
+      }),
+    ),
   );
 }
 
@@ -125,8 +121,7 @@ function pace(runs: Pick<CodingRun, "status">[] | undefined): number | false {
 export function useCodingSessions(workspaceId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["coding-sessions", workspaceId],
-    queryFn: () =>
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/coding/sessions", { params: { path: { workspace_id: workspaceId! } } })),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/coding/sessions", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: Boolean(workspaceId) && enabled,
     refetchOnMount: "always",
     refetchInterval: (query) => (query.state.data?.some(isActive) ? 5_000 : false),

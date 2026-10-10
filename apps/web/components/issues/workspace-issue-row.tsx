@@ -21,15 +21,7 @@ export function formatDue(due: string): string {
 }
 
 /** An issue from any project: opens in its project's board with the issue drawer. */
-export function WorkspaceIssueRow({
-  issue,
-  workspaceSlug,
-  showStatus = false,
-}: {
-  issue: WorkspaceIssue;
-  workspaceSlug: string;
-  showStatus?: boolean;
-}) {
+export function WorkspaceIssueRow({ issue, workspaceSlug, showStatus = false }: { issue: WorkspaceIssue; workspaceSlug: string; showStatus?: boolean }) {
   const overdue = issue.due !== null && issue.status !== "done" && issue.due < today();
   return (
     <Link
@@ -43,16 +35,9 @@ export function WorkspaceIssueRow({
         <ProjectTile projectKey={issue.project_key} className="size-4 text-[8px]" />
         <span className="max-w-36 truncate">{issue.project_name}</span>
       </span>
-      {showStatus && (
-        <span className="text-muted-foreground hidden w-24 text-xs md:inline">{STATUS_META[issue.status].label}</span>
-      )}
+      {showStatus && <span className="text-muted-foreground hidden w-24 text-xs md:inline">{STATUS_META[issue.status].label}</span>}
       <PriorityIcon priority={issue.priority} className="hidden sm:block" />
-      <span
-        className={cn(
-          "w-14 shrink-0 text-right text-xs",
-          overdue ? "font-medium text-red-600 dark:text-red-400" : "text-muted-foreground",
-        )}
-      >
+      <span className={cn("w-14 shrink-0 text-right text-xs", overdue ? "font-medium text-red-600 dark:text-red-400" : "text-muted-foreground")}>
         {issue.due ? formatDue(issue.due) : ""}
       </span>
     </Link>

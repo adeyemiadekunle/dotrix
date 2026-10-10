@@ -46,7 +46,11 @@ function open(search: string) {
 function ThreadRow({ th, on }: { th: Thread; on: boolean }) {
   const waiting = th.messages.some((m) => m.changes?.some((c) => c.status === "pending"));
   return (
-    <button className={`sitem ${on ? "on" : ""}`} style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start" }} onClick={() => open(`thread=${th.id}`)}>
+    <button
+      className={`sitem ${on ? "on" : ""}`}
+      style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start" }}
+      onClick={() => open(`thread=${th.id}`)}
+    >
       <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
         <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
           {th.title}
@@ -60,7 +64,19 @@ function ThreadRow({ th, on }: { th: Thread; on: boolean }) {
   );
 }
 
-function Group({ title, icon, color, children, onNew }: { title: string; icon?: React.ReactNode; color?: string; children: React.ReactNode; onNew: () => void }) {
+function Group({
+  title,
+  icon,
+  color,
+  children,
+  onNew,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  color?: string;
+  children: React.ReactNode;
+  onNew: () => void;
+}) {
   return (
     <div className="chat-group">
       <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
@@ -91,7 +107,11 @@ function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
   const t = task(cs.task);
   const [label, c] = STATUS[cs.status];
   return (
-    <button className={`sitem ${on ? "on" : ""}`} style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start" }} onClick={() => open(`tab=coding&session=${cs.id}`)}>
+    <button
+      className={`sitem ${on ? "on" : ""}`}
+      style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start" }}
+      onClick={() => open(`tab=coding&session=${cs.id}`)}
+    >
       <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
         <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
           <span className="mono faint" style={{ fontSize: 11 }}>
@@ -189,7 +209,12 @@ function Message({ th, i }: { th: Thread; i: number }) {
         )}
         <Changes msg={m} />
         {m.limit && !m.limit.continued && (
-          <LimitNotice provider={m.limit.provider} resetsAt={m.limit.resetsAt} whenReset={m.limit.whenReset} onContinue={(w) => continueLimited({ thread: th.id, project: th.project ?? undefined }, w)} />
+          <LimitNotice
+            provider={m.limit.provider}
+            resetsAt={m.limit.resetsAt}
+            whenReset={m.limit.whenReset}
+            onContinue={(w) => continueLimited({ thread: th.id, project: th.project ?? undefined }, w)}
+          />
         )}
       </div>
     </div>
@@ -198,7 +223,19 @@ function Message({ th, i }: { th: Thread; i: number }) {
 
 const MODELS_ICON = "cpu";
 
-function Pick({ value, onChange, options, label, lead }: { value: string; onChange: (v: string) => void; options: [string, string][]; label: string; lead?: React.ReactNode }) {
+function Pick({
+  value,
+  onChange,
+  options,
+  label,
+  lead,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: [string, string][];
+  label: string;
+  lead?: React.ReactNode;
+}) {
   return (
     <label className="cpill pick">
       {lead}
@@ -215,7 +252,31 @@ function Pick({ value, onChange, options, label, lead }: { value: string; onChan
   );
 }
 
-function Composer({ placeholder, onSend, agent, setAgent, model, setModel, autoFocus, initial = "", context, contexts, setContext }: { placeholder: string; onSend: (text: string, agent: string) => void; agent: string; setAgent: (a: string) => void; model?: string; setModel?: (m: string) => void; autoFocus?: boolean; initial?: string; context?: string; contexts?: [string, string][]; setContext?: (v: string) => void }) {
+function Composer({
+  placeholder,
+  onSend,
+  agent,
+  setAgent,
+  model,
+  setModel,
+  autoFocus,
+  initial = "",
+  context,
+  contexts,
+  setContext,
+}: {
+  placeholder: string;
+  onSend: (text: string, agent: string) => void;
+  agent: string;
+  setAgent: (a: string) => void;
+  model?: string;
+  setModel?: (m: string) => void;
+  autoFocus?: boolean;
+  initial?: string;
+  context?: string;
+  contexts?: [string, string][];
+  setContext?: (v: string) => void;
+}) {
   const [text, setText] = useState(initial);
   const ref = useRef<HTMLTextAreaElement>(null);
   const a = D().agents.find((x) => x.handle === agent);
@@ -241,55 +302,66 @@ function Composer({ placeholder, onSend, agent, setAgent, model, setModel, autoF
   };
   return (
     <div style={{ position: "relative" }}>
-    <div className="cbox">
-      <textarea
-        ref={ref}
-        rows={2}
-        placeholder={placeholder}
-        value={text}
-        onChange={(e) => at.onChange(e.target)}
-        onKeyDown={(e) => {
-          if (at.onKeyDown(e)) return;
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            send();
-          }
-        }}
-        aria-label="Message"
-        aria-expanded={at.open}
-      />
-      <div className="cbox-row">
-        {contexts && setContext && context !== undefined ? (
-          <button className="cpill pick" onClick={at.start} aria-label={`Project: ${contexts.find(([v]) => v === context)?.[1]}. Type @ to change it`} data-tip="Type @ to pick another project">
-            <Ic n={context ? "at-sign" : "layers"} s={12} />
-            <span className="trunc">{contexts.find(([v]) => v === context)?.[1]}</span>
+      <div className="cbox">
+        <textarea
+          ref={ref}
+          rows={2}
+          placeholder={placeholder}
+          value={text}
+          onChange={(e) => at.onChange(e.target)}
+          onKeyDown={(e) => {
+            if (at.onKeyDown(e)) return;
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          aria-label="Message"
+          aria-expanded={at.open}
+        />
+        <div className="cbox-row">
+          {contexts && setContext && context !== undefined ? (
+            <button
+              className="cpill pick"
+              onClick={at.start}
+              aria-label={`Project: ${contexts.find(([v]) => v === context)?.[1]}. Type @ to change it`}
+              data-tip="Type @ to pick another project"
+            >
+              <Ic n={context ? "at-sign" : "layers"} s={12} />
+              <span className="trunc">{contexts.find(([v]) => v === context)?.[1]}</span>
+            </button>
+          ) : (
+            context && (
+              <span className="cpill" data-tip="What the agents read: the project's documents and board">
+                <Ic n="at-sign" s={12} />
+                {context}
+              </span>
+            )
+          )}
+          <Pick
+            value={agent}
+            onChange={setAgent}
+            options={D().agents.map((x) => [x.handle, `${x.name} · ${x.role}`])}
+            label="Agent"
+            lead={a && <Face c={a.c} size={16} mood="idle" />}
+          />
+          {setModel ? (
+            <Pick value={model ?? MODELS[0]!} onChange={setModel} options={MODELS.map((x) => [x, x])} label="Model" lead={<Ic n={MODELS_ICON} s={12} />} />
+          ) : (
+            model && (
+              <span className="cpill" data-tip="The model is fixed once a conversation starts">
+                <Ic n={MODELS_ICON} s={12} />
+                {model}
+              </span>
+            )
+          )}
+          <span className="sp" />
+          <button className="cbox-send" onClick={send} disabled={!text.trim() || S.ui.offline} aria-label="Send">
+            <Ic n="arrow-up" s={14} />
           </button>
-        ) : (
-          context && (
-            <span className="cpill" data-tip="What the agents read: the project's documents and board">
-              <Ic n="at-sign" s={12} />
-              {context}
-            </span>
-          )
-        )}
-        <Pick value={agent} onChange={setAgent} options={D().agents.map((x) => [x.handle, `${x.name} · ${x.role}`])} label="Agent" lead={a && <Face c={a.c} size={16} mood="idle" />} />
-        {setModel ? (
-          <Pick value={model ?? MODELS[0]!} onChange={setModel} options={MODELS.map((x) => [x, x])} label="Model" lead={<Ic n={MODELS_ICON} s={12} />} />
-        ) : (
-          model && (
-            <span className="cpill" data-tip="The model is fixed once a conversation starts">
-              <Ic n={MODELS_ICON} s={12} />
-              {model}
-            </span>
-          )
-        )}
-        <span className="sp" />
-        <button className="cbox-send" onClick={send} disabled={!text.trim() || S.ui.offline} aria-label="Send">
-          <Ic n="arrow-up" s={14} />
-        </button>
+        </div>
       </div>
-    </div>
-    {at.menu}
+      {at.menu}
     </div>
   );
 }
@@ -362,7 +434,15 @@ function Conversation({ th }: { th: Thread }) {
         </div>
       </div>
       <div className="chat-input">
-        <Composer placeholder={`Ask ${agentName(agent)}, or type @ to pick an agent`} agent={agent} setAgent={setAgent} model={th.model} context={p?.name ?? "All projects"} onSend={(q, a) => sendChat(th, q, a)} autoFocus />
+        <Composer
+          placeholder={`Ask ${agentName(agent)}, or type @ to pick an agent`}
+          agent={agent}
+          setAgent={setAgent}
+          model={th.model}
+          context={p?.name ?? "All projects"}
+          onSend={(q, a) => sendChat(th, q, a)}
+          autoFocus
+        />
         {!th.project && (
           <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
             <Ic n="lock" s={11} /> In all projects the agents only read; for a change they'll say which project's chat to ask in.
@@ -396,17 +476,21 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           Ask the agents about a project: they read its documents and board, and propose changes for you to approve.
         </p>
         {!pid && (
-        <div className="row" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap", justifyContent: "center" }}>
-          <span className="faint" style={{ fontSize: 12 }}>
-            Projects
-          </span>
-          {ps.map((p) => (
+          <div className="row" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap", justifyContent: "center" }}>
+            <span className="faint" style={{ fontSize: 12 }}>
+              Projects
+            </span>
+            {ps.map((p) => (
               <label key={p.id} className="badge" style={{ cursor: "pointer", gap: 5 }}>
-                <input type="checkbox" checked={picked.includes(p.id)} onChange={() => setPicked(picked.includes(p.id) ? picked.filter((x) => x !== p.id) : [...picked, p.id])} />
+                <input
+                  type="checkbox"
+                  checked={picked.includes(p.id)}
+                  onChange={() => setPicked(picked.includes(p.id) ? picked.filter((x) => x !== p.id) : [...picked, p.id])}
+                />
                 {p.name}
               </label>
             ))}
-        </div>
+          </div>
         )}
         <Composer
           key={q}
@@ -444,7 +528,11 @@ const TOOLS: ["claude-code" | "codex", string][] = [
 
 function NewSession({ issue0 }: { issue0: string | null }) {
   // Issues a tool could work on: open ones in the projects you see, and in an organisation only yours.
-  const ps = new Set(visibleProjects().filter((p) => canSee(p) && !p.archived).map((p) => p.id));
+  const ps = new Set(
+    visibleProjects()
+      .filter((p) => canSee(p) && !p.archived)
+      .map((p) => p.id),
+  );
   const personal = D().ws.kind === "personal";
   const mine = D().tasks.filter((t) => ps.has(t.project) && !t.archived && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me));
   const [tid, setTid] = useState(issue0 ? (D().tasks.find((t) => t.key === issue0)?.id ?? "") : "");
@@ -454,10 +542,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
   const [hl, setHl] = useState(0);
   const ref = useRef<HTMLTextAreaElement>(null);
   const t = task(tid);
-  const found =
-    menu === null
-      ? []
-      : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes(menu.toLowerCase())).slice(0, 8);
+  const found = menu === null ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes(menu.toLowerCase())).slice(0, 8);
   const go_ = () => {
     if (!t) return;
     const id = startCoding(t, tool, note);
@@ -489,93 +574,111 @@ function NewSession({ issue0 }: { issue0: string | null }) {
           A coding tool works on an issue on its own branch and opens a pull request. It starts once someone who may approve agent changes says yes.
         </p>
         <div style={{ position: "relative" }}>
-        <div className="cbox">
-          <textarea
-            ref={ref}
-            rows={3}
-            value={note}
-            autoFocus
-            placeholder={t ? `What should it do? It gets ${t.key}'s description and acceptance criteria either way` : `Type @ or / to pick ${personal ? "an issue" : "one of your issues"}, then say what to do`}
-            onChange={(e) => onText(e.target)}
-            onKeyDown={(e) => {
-              if (menu !== null && found.length) {
-                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setHl((hl + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
-                  return;
-                }
-                if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
-                  e.preventDefault();
-                  pick(found[hl]!.id);
-                  return;
-                }
+          <div className="cbox">
+            <textarea
+              ref={ref}
+              rows={3}
+              value={note}
+              autoFocus
+              placeholder={
+                t
+                  ? `What should it do? It gets ${t.key}'s description and acceptance criteria either way`
+                  : `Type @ or / to pick ${personal ? "an issue" : "one of your issues"}, then say what to do`
               }
-              if (e.key === "Escape" && menu !== null) {
-                e.stopPropagation();
-                setMenu(null);
-              }
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) go_();
-            }}
-            aria-label="What should it do"
-            aria-expanded={menu !== null}
-            aria-controls="cs-issues"
-          />
-          <div className="cbox-row">
-            {t ? (
-              <span className="cpill" style={{ color: "var(--text)" }}>
-                <Ic n="square-check" s={12} />
-                <span className="trunc">
-                  {t.key} {t.title}
+              onChange={(e) => onText(e.target)}
+              onKeyDown={(e) => {
+                if (menu !== null && found.length) {
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setHl((hl + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
+                    return;
+                  }
+                  if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
+                    e.preventDefault();
+                    pick(found[hl]!.id);
+                    return;
+                  }
+                }
+                if (e.key === "Escape" && menu !== null) {
+                  e.stopPropagation();
+                  setMenu(null);
+                }
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) go_();
+              }}
+              aria-label="What should it do"
+              aria-expanded={menu !== null}
+              aria-controls="cs-issues"
+            />
+            <div className="cbox-row">
+              {t ? (
+                <span className="cpill" style={{ color: "var(--text)" }}>
+                  <Ic n="square-check" s={12} />
+                  <span className="trunc">
+                    {t.key} {t.title}
+                  </span>
+                  <button className="ibtn ibtn-xs" style={{ width: 16, height: 16, marginRight: -4 }} onClick={() => setTid("")} aria-label={`Remove ${t.key}`}>
+                    <Ic n="x" s={11} />
+                  </button>
                 </span>
-                <button className="ibtn ibtn-xs" style={{ width: 16, height: 16, marginRight: -4 }} onClick={() => setTid("")} aria-label={`Remove ${t.key}`}>
-                  <Ic n="x" s={11} />
+              ) : (
+                <button className="cpill pick" onClick={ask} aria-label="Pick an issue">
+                  <Ic n="at-sign" s={12} />
+                  Issue
                 </button>
-              </span>
-            ) : (
-              <button className="cpill pick" onClick={ask} aria-label="Pick an issue">
-                <Ic n="at-sign" s={12} />
-                Issue
-              </button>
-            )}
-            <div className="seg" role="radiogroup" aria-label="Tool">
-              {TOOLS.map(([id, name]) => (
-                <button key={id} role="radio" aria-checked={tool === id} className={tool === id ? "on" : ""} onClick={() => setTool(id)}>
-                  <Face c={who(`agent:${id}`)?.c ?? "var(--acc)"} size={14} />
-                  {name}
-                </button>
-              ))}
-            </div>
-            <span className="sp" />
-            <span className="faint hide-m" style={{ fontSize: 11 }}>
-              {MOD}+Enter to start
-            </span>
-            <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t}>
-              <Ic n="code" s={13} />
-              Start coding
-            </button>
-          </div>
-        </div>
-        {menu !== null && (
-          <div className="pop" id="cs-issues" role="listbox" aria-label="Issues" style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, maxWidth: 520 }}>
-            {found.length ? (
-              found.map((x, i) => (
-                <button key={x.id} role="option" aria-selected={i === hl} className={`mi ${i === hl ? "hl" : ""}`} onMouseEnter={() => setHl(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(x.id)}>
-                  <span className="faint" style={{ fontSize: 12, width: 64, flexShrink: 0 }}>
-                    {x.key}
-                  </span>
-                  <span className="trunc" style={{ flex: 1 }}>
-                    {x.title}
-                  </span>
-                  <span className="r">{proj(x.project)?.name}</span>
-                </button>
-              ))
-            ) : (
-              <div className="faint" style={{ padding: "8px 10px", fontSize: 12.5 }}>
-                {mine.length ? "No issue matches." : personal ? "No open issues." : "No open issues are assigned to you."}
+              )}
+              <div className="seg" role="radiogroup" aria-label="Tool">
+                {TOOLS.map(([id, name]) => (
+                  <button key={id} role="radio" aria-checked={tool === id} className={tool === id ? "on" : ""} onClick={() => setTool(id)}>
+                    <Face c={who(`agent:${id}`)?.c ?? "var(--acc)"} size={14} />
+                    {name}
+                  </button>
+                ))}
               </div>
-            )}
+              <span className="sp" />
+              <span className="faint hide-m" style={{ fontSize: 11 }}>
+                {MOD}+Enter to start
+              </span>
+              <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t}>
+                <Ic n="code" s={13} />
+                Start coding
+              </button>
+            </div>
           </div>
-        )}
+          {menu !== null && (
+            <div
+              className="pop"
+              id="cs-issues"
+              role="listbox"
+              aria-label="Issues"
+              style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, maxWidth: 520 }}
+            >
+              {found.length ? (
+                found.map((x, i) => (
+                  <button
+                    key={x.id}
+                    role="option"
+                    aria-selected={i === hl}
+                    className={`mi ${i === hl ? "hl" : ""}`}
+                    onMouseEnter={() => setHl(i)}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pick(x.id)}
+                  >
+                    <span className="faint" style={{ fontSize: 12, width: 64, flexShrink: 0 }}>
+                      {x.key}
+                    </span>
+                    <span className="trunc" style={{ flex: 1 }}>
+                      {x.title}
+                    </span>
+                    <span className="r">{proj(x.project)?.name}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="faint" style={{ padding: "8px 10px", fontSize: 12.5 }}>
+                  {mine.length ? "No issue matches." : personal ? "No open issues." : "No open issues are assigned to you."}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -673,7 +776,13 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
         <button className="ibtn ibtn-sm" onClick={() => open("tab=coding")} aria-label="Back to sessions">
           <Ic n="arrow-left" s={15} />
         </button>
-        <button className="mono faint cs-key" style={{ fontSize: 12, whiteSpace: "nowrap" }} onClick={() => openTask(t.id)} data-tip="Open the issue" aria-label={`Open ${t.key}`}>
+        <button
+          className="mono faint cs-key"
+          style={{ fontSize: 12, whiteSpace: "nowrap" }}
+          onClick={() => openTask(t.id)}
+          data-tip="Open the issue"
+          aria-label={`Open ${t.key}`}
+        >
           {t.key}
         </button>
         <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
@@ -862,7 +971,15 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
       </div>
       <div className="chat-input">
         <div className="cbox">
-          <textarea rows={2} placeholder={busy ? "A turn is waiting or working…" : `Ask ${toolName(cs.tool)} for a follow-up on the same branch`} value={ask} disabled={busy} onChange={(e) => setAsk(e.target.value)} aria-label="Follow-up" onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && (followUp(cs, ask), setAsk(""))} />
+          <textarea
+            rows={2}
+            placeholder={busy ? "A turn is waiting or working…" : `Ask ${toolName(cs.tool)} for a follow-up on the same branch`}
+            value={ask}
+            disabled={busy}
+            onChange={(e) => setAsk(e.target.value)}
+            aria-label="Follow-up"
+            onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && (followUp(cs, ask), setAsk(""))}
+          />
           <div className="row">
             <span className="faint" style={{ fontSize: 11.5 }}>
               {MOD}+Enter to send · approved like the first turn
@@ -916,104 +1033,150 @@ export function Chat() {
   const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;
   return (
     <div className="page flush">
-      <div className={`chat-grid ${hasSel ? "has-sel" : ""} ${withPanel ? "with-panel" : ""}`} style={css({ "--list-w": listMin ? "52px" : `${listW}px`, "--panel-w": `${panelW}px` })}>
+      <div
+        className={`chat-grid ${hasSel ? "has-sel" : ""} ${withPanel ? "with-panel" : ""}`}
+        style={css({ "--list-w": listMin ? "52px" : `${listW}px`, "--panel-w": `${panelW}px` })}
+      >
         <aside className={`chat-side ${listMin ? "min" : ""}`}>
           {listMin ? (
             <div className="chat-rail">
               <button className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
                 <Ic n="panel-left-open" s={16} />
               </button>
-              <button className={`ibtn ${!coding ? "on" : ""}`} onClick={() => open("")} aria-label="Chat" aria-pressed={!coding} data-tip="Chat" data-tip-pos="right">
+              <button
+                className={`ibtn ${!coding ? "on" : ""}`}
+                onClick={() => open("")}
+                aria-label="Chat"
+                aria-pressed={!coding}
+                data-tip="Chat"
+                data-tip-pos="right"
+              >
                 <Ic n="message-square" s={15} />
               </button>
-              <button className={`ibtn ${coding ? "on" : ""}`} onClick={() => open("tab=coding")} aria-label={waitingCoding ? `Code, ${waitingCoding} waiting for approval` : "Code"} aria-pressed={coding} data-tip="Code" data-tip-pos="right" style={{ position: "relative" }}>
+              <button
+                className={`ibtn ${coding ? "on" : ""}`}
+                onClick={() => open("tab=coding")}
+                aria-label={waitingCoding ? `Code, ${waitingCoding} waiting for approval` : "Code"}
+                aria-pressed={coding}
+                data-tip="Code"
+                data-tip-pos="right"
+                style={{ position: "relative" }}
+              >
                 <Ic n="code" s={15} />
                 {waitingCoding > 0 && <span className="badge amber seg-n">{waitingCoding}</span>}
               </button>
-              <button className="ibtn" onClick={() => open(coding ? "tab=coding" : "new=1")} aria-label={coding ? "New session" : "New chat"} data-tip={coding ? "New session" : "New chat"} data-tip-pos="right">
+              <button
+                className="ibtn"
+                onClick={() => open(coding ? "tab=coding" : "new=1")}
+                aria-label={coding ? "New session" : "New chat"}
+                data-tip={coding ? "New session" : "New chat"}
+                data-tip-pos="right"
+              >
                 <Ic n="square-pen" s={15} />
               </button>
             </div>
           ) : (
-          <>
-          <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(d) => setListW((w) => w + d)} />
-          <div style={{ padding: "18px 14px 8px" }} className="row">
-            <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>{coding ? "Code" : "Chat"}</h1>
-            <span className="sp" />
-            <div className="seg seg-icons" role="tablist" aria-label="Chat or code">
-              <button role="tab" aria-selected={!coding} className={!coding ? "on" : ""} onClick={() => open("")} aria-label="Chat" data-tip="Chat">
-                <Ic n="message-square" s={14} />
-              </button>
-              <button
-                role="tab"
-                aria-selected={coding}
-                className={coding ? "on" : ""}
-                onClick={() => open("tab=coding")}
-                aria-label={waitingCoding ? `Code, ${waitingCoding} waiting for approval` : "Code"}
-                data-tip="Code"
-              >
-                <Ic n="code" s={14} />
-                {waitingCoding > 0 && <span className="badge amber seg-n">{waitingCoding}</span>}
-              </button>
-            </div>
-            <button className="ibtn ibtn-sm chat-fold" onClick={() => setListMin(true)} aria-label="Hide the list" data-tip="Hide the list" style={{ marginLeft: 6 }}>
-              <Ic n="panel-left-close" s={15} />
-            </button>
-          </div>
-          <div style={{ padding: "0 14px 8px" }}>
-            <div className="inwrap">
-              <Ic n="search" s={13} />
-              <input className="input search-sm" style={{ width: "100%" }} placeholder={coding ? "Find a session" : "Find a conversation"} value={S.ui.chatQ} onChange={(e) => ((S.ui.chatQ = e.target.value), render())} aria-label="Find" />
-            </div>
-            {/* Start something new, under the search: a conversation, or a coding session on the Code tab. */}
-            <button className={`sitem chat-new ${(coding ? !cs : !th && !projectKey && !across) ? "on" : ""}`} onClick={() => open(coding ? "tab=coding" : "new=1")}>
-              <Ic n={coding ? "code" : "square-pen"} s={15} />
-              <span className="trunc">{coding ? "New session" : "New chat"}</span>
-            </button>
-          </div>
-          <div className="chat-list">
-            {coding ? (
-              sessions.length ? (
-                ps
-                  .filter((p) => sessions.some((c) => c.project === p.id))
-                  .map((p) => (
-                    <div key={p.id} className="chat-group">
-                      <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
-                        <span className="pdot" style={css({ "--c": pColor(p), width: 7, height: 7 })} />
-                        {p.name}
-                      </div>
-                      {sessions
-                        .filter((c) => c.project === p.id)
-                        .map((c) => (
-                          <SessionRow key={c.id} cs={c} on={cs?.id === c.id} />
+            <>
+              <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(d) => setListW((w) => w + d)} />
+              <div style={{ padding: "18px 14px 8px" }} className="row">
+                <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>{coding ? "Code" : "Chat"}</h1>
+                <span className="sp" />
+                <div className="seg seg-icons" role="tablist" aria-label="Chat or code">
+                  <button role="tab" aria-selected={!coding} className={!coding ? "on" : ""} onClick={() => open("")} aria-label="Chat" data-tip="Chat">
+                    <Ic n="message-square" s={14} />
+                  </button>
+                  <button
+                    role="tab"
+                    aria-selected={coding}
+                    className={coding ? "on" : ""}
+                    onClick={() => open("tab=coding")}
+                    aria-label={waitingCoding ? `Code, ${waitingCoding} waiting for approval` : "Code"}
+                    data-tip="Code"
+                  >
+                    <Ic n="code" s={14} />
+                    {waitingCoding > 0 && <span className="badge amber seg-n">{waitingCoding}</span>}
+                  </button>
+                </div>
+                <button
+                  className="ibtn ibtn-sm chat-fold"
+                  onClick={() => setListMin(true)}
+                  aria-label="Hide the list"
+                  data-tip="Hide the list"
+                  style={{ marginLeft: 6 }}
+                >
+                  <Ic n="panel-left-close" s={15} />
+                </button>
+              </div>
+              <div style={{ padding: "0 14px 8px" }}>
+                <div className="inwrap">
+                  <Ic n="search" s={13} />
+                  <input
+                    className="input search-sm"
+                    style={{ width: "100%" }}
+                    placeholder={coding ? "Find a session" : "Find a conversation"}
+                    value={S.ui.chatQ}
+                    onChange={(e) => ((S.ui.chatQ = e.target.value), render())}
+                    aria-label="Find"
+                  />
+                </div>
+                {/* Start something new, under the search: a conversation, or a coding session on the Code tab. */}
+                <button
+                  className={`sitem chat-new ${(coding ? !cs : !th && !projectKey && !across) ? "on" : ""}`}
+                  onClick={() => open(coding ? "tab=coding" : "new=1")}
+                >
+                  <Ic n={coding ? "code" : "square-pen"} s={15} />
+                  <span className="trunc">{coding ? "New session" : "New chat"}</span>
+                </button>
+              </div>
+              <div className="chat-list">
+                {coding ? (
+                  sessions.length ? (
+                    ps
+                      .filter((p) => sessions.some((c) => c.project === p.id))
+                      .map((p) => (
+                        <div key={p.id} className="chat-group">
+                          <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
+                            <span className="pdot" style={css({ "--c": pColor(p), width: 7, height: 7 })} />
+                            {p.name}
+                          </div>
+                          {sessions
+                            .filter((c) => c.project === p.id)
+                            .map((c) => (
+                              <SessionRow key={c.id} cs={c} on={cs?.id === c.id} />
+                            ))}
+                        </div>
+                      ))
+                  ) : (
+                    <Empty icon="code" title="No coding sessions" text="Use “Start coding” on a task, or assign it to Claude Code or Codex." cls="sm" />
+                  )
+                ) : (
+                  <>
+                    {ps.map((p) => {
+                      const list = threads.filter((t) => t.project === p.id);
+                      if (!list.length && q) return null;
+                      return (
+                        <Group key={p.id} title={p.name} color={pColor(p)} onNew={() => open(`project=${p.key}`)}>
+                          {list.length ? (
+                            list.map((t) => <ThreadRow key={t.id} th={t} on={th?.id === t.id} />)
+                          ) : (
+                            <div className="faint" style={{ fontSize: 12, padding: "2px 8px 4px" }}>
+                              No conversations yet
+                            </div>
+                          )}
+                        </Group>
+                      );
+                    })}
+                    <Group title="Conversations" icon={<Ic n="layers" s={12} />} onNew={() => open("across=1")}>
+                      {threads
+                        .filter((t) => !t.project)
+                        .map((t) => (
+                          <ThreadRow key={t.id} th={t} on={th?.id === t.id} />
                         ))}
-                    </div>
-                  ))
-              ) : (
-                <Empty icon="code" title="No coding sessions" text="Use “Start coding” on a task, or assign it to Claude Code or Codex." cls="sm" />
-              )
-            ) : (
-              <>
-                {ps.map((p) => {
-                  const list = threads.filter((t) => t.project === p.id);
-                  if (!list.length && q) return null;
-                  return (
-                    <Group key={p.id} title={p.name} color={pColor(p)} onNew={() => open(`project=${p.key}`)}>
-                      {list.length ? list.map((t) => <ThreadRow key={t.id} th={t} on={th?.id === t.id} />) : <div className="faint" style={{ fontSize: 12, padding: "2px 8px 4px" }}>No conversations yet</div>}
                     </Group>
-                  );
-                })}
-                <Group title="Conversations" icon={<Ic n="layers" s={12} />} onNew={() => open("across=1")}>
-                  {threads
-                    .filter((t) => !t.project)
-                    .map((t) => (
-                      <ThreadRow key={t.id} th={t} on={th?.id === t.id} />
-                    ))}
-                </Group>
-              </>
-            )}
-          </div>
-          </>
+                  </>
+                )}
+              </div>
+            </>
           )}
         </aside>
         <section className="chat-main">
@@ -1026,7 +1189,13 @@ export function Chat() {
           ) : th ? (
             <Conversation key={th.id} th={th} />
           ) : (
-            <NewChat key={`${projectKey}-${across}-${search.get("q")}`} projectKey={projectKey} across={across} q={search.get("q") ?? ""} agent0={search.get("agent")} />
+            <NewChat
+              key={`${projectKey}-${across}-${search.get("q")}`}
+              projectKey={projectKey}
+              across={across}
+              q={search.get("q") ?? ""}
+              agent0={search.get("agent")}
+            />
           )}
         </section>
         {withPanel && cs && (

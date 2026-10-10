@@ -59,18 +59,14 @@ function WorkspaceTimeline() {
           <ZoomToggle zoom={zoom} onZoom={(z) => setParams({ zoom: z === "weeks" ? null : z })} />
         </div>
         {!issues.data && canSee && <Skeleton className="h-64" />}
-        {!canSee && workspace && (
-          <EmptyState icon={ChartGanttIcon} title="Nothing to show" description="Guests don't see the projects' issues." />
-        )}
+        {!canSee && workspace && <EmptyState icon={ChartGanttIcon} title="Nothing to show" description="Guests don't see the projects' issues." />}
         {workspace && issues.data && (
           <IssueTimeline
             issues={shown}
             zoom={zoom}
             groupByProject={!project}
             href={(issue) => issueHref(workspace.slug, issue as WorkspaceIssue)}
-            onReschedule={(issue, changes) =>
-              update.mutate({ projectId: (issue as WorkspaceIssue).project_id, key: issue.key, changes })
-            }
+            onReschedule={(issue, changes) => update.mutate({ projectId: (issue as WorkspaceIssue).project_id, key: issue.key, changes })}
           />
         )}
       </div>

@@ -15,9 +15,7 @@ export function myAvatarSrc(me: Pick<Me, "avatar_updated_at"> | undefined): stri
 }
 
 export function memberAvatarSrc(workspaceId: string, member: Pick<Member, "user_id" | "avatar_updated_at">): string | undefined {
-  return member.avatar_updated_at
-    ? `/v1/workspaces/${workspaceId}/members/${member.user_id}/avatar?v=${Date.parse(member.avatar_updated_at)}`
-    : undefined;
+  return member.avatar_updated_at ? `/v1/workspaces/${workspaceId}/members/${member.user_id}/avatar?v=${Date.parse(member.avatar_updated_at)}` : undefined;
 }
 
 /** A colleague's photo in the workspace you're in (undefined without one, or outside a workspace). */
@@ -58,7 +56,10 @@ async function squarePhoto(file: File): Promise<Blob> {
   bitmap.close();
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
   // Browsers that can't write WebP fall back to PNG.
-  return blob ?? (await new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Couldn't read that picture"))), "image/png")));
+  return (
+    blob ??
+    (await new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Couldn't read that picture"))), "image/png")))
+  );
 }
 
 export function useSetAvatar() {
@@ -96,8 +97,7 @@ export function useSignInMethods() {
 export function useUnlink() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (provider: string) =>
-      unwrap(api.DELETE("/v1/me/sign-in-methods/{provider}", { params: { path: { provider } } })),
+    mutationFn: (provider: string) => unwrap(api.DELETE("/v1/me/sign-in-methods/{provider}", { params: { path: { provider } } })),
     onSuccess: () => toast.success("GitHub unlinked"),
     onError: (e) => toast.error(errorMessage(e)),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["sign-in-methods"] }),

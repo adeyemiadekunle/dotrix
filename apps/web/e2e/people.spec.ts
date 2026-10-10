@@ -50,7 +50,11 @@ test("join by link, see a restricted project once added, then become the owner; 
     const h = { "Content-Type": "application/json", "X-Requested-With": "e2e" };
     const ws = (await (await fetch("/v1/workspaces", { headers: h })).json()) as { id: string; slug: string }[];
     const w = ws.find((x) => x.slug === s)!;
-    await fetch(`/v1/workspaces/${w.id}/projects`, { method: "POST", headers: h, body: JSON.stringify({ key: "SEC", name: "Secret", source: "docs_only", description: "", access: "workspace" }) });
+    await fetch(`/v1/workspaces/${w.id}/projects`, {
+      method: "POST",
+      headers: h,
+      body: JSON.stringify({ key: "SEC", name: "Secret", source: "docs_only", description: "", access: "workspace" }),
+    });
   }, slug);
 
   // The invite link, from the invite dialog.
@@ -81,7 +85,8 @@ test("join by link, see a restricted project once added, then become the owner; 
   await bob.goto(`/w/${slug}/settings/profile`);
   const nav = bob.getByRole("navigation", { name: "Settings" });
   await expect(nav.getByRole("button", { name: "Profile" })).toBeVisible();
-  for (const name of ["Models", "Rules and skills", "Audit log", "Permissions", "Plan"]) await expect(nav.getByRole("button", { name, exact: true })).toHaveCount(0);
+  for (const name of ["Models", "Rules and skills", "Audit log", "Permissions", "Plan"])
+    await expect(nav.getByRole("button", { name, exact: true })).toHaveCount(0);
 
   // Restrict the project and add Bob.
   await page.goto(`/w/${slug}/p/SEC/overview`);

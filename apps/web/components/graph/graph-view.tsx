@@ -31,15 +31,7 @@ function short(text: string, max = 24): string {
  * way) on the first ring, and their links on the second, each near what it was reached from.
  * Click a node to centre on it.
  */
-export function GraphView({
-  scope,
-  initialRef,
-  projectBase,
-}: {
-  scope: Scope;
-  initialRef: string;
-  projectBase: string;
-}) {
+export function GraphView({ scope, initialRef, projectBase }: { scope: Scope; initialRef: string; projectBase: string }) {
   const [center, setCenter] = useState(initialRef);
   const [depth, setDepth] = useState(2);
   const [hovered, setHovered] = useState<string | null>(null);
@@ -118,10 +110,7 @@ export function GraphView({
               type="button"
               aria-pressed={depth === d}
               onClick={() => setDepth(d)}
-              className={cn(
-                "rounded-md px-2.5 py-1",
-                depth === d ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-              )}
+              className={cn("rounded-md px-2.5 py-1", depth === d ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
             >
               {d === 1 ? "Direct links" : "Two steps"}
             </button>
