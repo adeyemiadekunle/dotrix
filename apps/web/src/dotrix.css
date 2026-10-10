@@ -1428,3 +1428,34 @@ body.resizing-row * {
   border-radius: 8px;
   background: #fff;
 }
+
+/* A coding session's row: its ⋮ shows on hover, focus, or while it's open. */
+.cs-row {
+  position: relative;
+}
+.cs-row > .sitem {
+  padding-right: 30px !important; /* room for the menu: the status stays in sight */
+}
+.cs-row .cs-more {
+  position: absolute;
+  top: 7px;
+  right: 4px;
+  opacity: 0;
+}
+.cs-row:hover .cs-more,
+.cs-row.on .cs-more,
+.cs-row .cs-more:focus-visible,
+.cs-row .cs-more[aria-expanded="true"] {
+  opacity: 1;
+}
+.cs-pin {
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: -1px;
+  color: var(--text-3);
+}
+.cs-archived {
+  display: block;
+  margin: 10px 8px 0;
+  font-size: 12px;
+}

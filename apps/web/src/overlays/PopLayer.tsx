@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode 
 
 import { closePop, copy, openTask, projMove, setPref, setProjectStatus, setRole, toggleDone, toggleFavProj, toggleFavTask, updateTask } from "../core/actions";
 import { LABELS, PRIOS, PSTAT, STATUSES, type ProjectStatusId } from "../core/constants";
+import { closeSession, deleteSession, renameSession, toggleArchiveSession, togglePinSession } from "../core/agents";
 import { allowed, canInvite } from "../core/can";
 import { Ic, WsLogo } from "../core/icons";
 import {
@@ -495,6 +496,33 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
           </>
         ),
       };
+    case "session": {
+      // A coding session's ⋮ (Chat's Code tab).
+      const cs = D().coding.find((c) => c.id === p.id);
+      if (!cs) return null;
+      const it = task(cs.task);
+      const github = cs.repo ? `https://github.com/${cs.repo}` : null;
+      const act = (f: () => void) => () => (closePop(), f());
+      return {
+        style: { width: 230 },
+        inner: (
+          <>
+            {cs.pr && <Mi icon="git-pull-request" label="Open PR" onClick={act(() => window.open(cs.pr!.url, "_blank", "noopener"))} />}
+            {it && <Mi icon="panel-right-open" label="Open issue" onClick={act(() => openTask(it.id))} />}
+            {github && cs.branch && (
+              <Mi icon="external-link" label="Open branch on GitHub" onClick={act(() => window.open(`${github}/tree/${cs.branch}`, "_blank", "noopener"))} />
+            )}
+            <Sep />
+            <Mi icon={cs.pinned ? "pin-off" : "pin"} label={cs.pinned ? "Unpin" : "Pin"} onClick={act(() => togglePinSession(cs.id))} />
+            <Mi icon="pencil" label="Rename" onClick={act(() => renameSession(cs.id))} />
+            <Sep />
+            {cs.state !== "closed" && <Mi icon="power" label="Close session" onClick={act(() => closeSession(cs.id))} />}
+            <Mi icon="archive" label={cs.archived ? "Unarchive" : "Archive"} onClick={act(() => toggleArchiveSession(cs.id))} />
+            <Mi icon="trash-2" label="Delete" danger onClick={act(() => deleteSession(cs.id))} />
+          </>
+        ),
+      };
+    }
     case "user":
       return {
         style: { width: 260 },

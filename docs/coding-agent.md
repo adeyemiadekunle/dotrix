@@ -286,8 +286,8 @@ Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
   its pid, Stop sends SIGINT there and SIGKILL to it and its children after 5 seconds; the time limit
   kills it inside too. Checked on Claude Code (WIR-6): stopped 5.2 s after the request, its final result
   arrived (cost recorded), nothing pushed.
-- [ ] Cost as per-turn deltas: each turn is still its own `claude` process, so its reported total is the
-  turn's; the deltas matter once turns resume one session (Phase B).
+- [x] Cost as per-turn deltas: done in Phase B (a resumed session reports its running total; the turn's
+  cost is what it adds).
 
 **Phase A2: turns in git, and approval modes.**
 - The sandbox gets the session branch with history; one commit per turn; the bundle back through the
@@ -297,10 +297,28 @@ Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
   pushed turn; the mode on each turn and in the audit log.
 - Sessions private like conversations (the visibility rules above).
 
-**Phase B: session lifecycle.**
-- `coding_sessions`; warm, idle, and closed states; the transcript saved and restored (`--resume`);
-  idle timeout and the warm-sandbox cap.
-- Approvals for start and accept wired to Notifications (one item per turn waiting).
+**Phase B: session lifecycle.** Done 2026-10-10, except the accept step (A2).
+- [x] `coding_sessions` (one per session, its id the first turn's): `warm` / `idle` / `closed`, Claude Code's
+  conversation id, the saved transcript's key, Claude's running cost. The migration made one for every
+  existing session.
+- [x] Warm sandboxes (`coding/warm.py`): after a turn the worker keeps the session's sandbox, up to
+  `DOTRIX_CODING_WARM_MAX` per workspace (3; the least recently used closes), closed after
+  `DOTRIX_CODING_IDLE_MINUTES` unused (30). A turn reuses it when its files still match the branch (else a
+  fresh one), and each turn commits in the sandbox so the next diff is its own.
+- [x] Resume: the first turn starts Claude Code with `--session-id`, later ones `--resume`; the transcript
+  (`~/.claude`) is saved after every turn, encrypted, and restored into a fresh sandbox, so a restart or
+  the idle timeout doesn't lose the conversation. Without storage or an encryption key it falls back to
+  the brief with earlier turns' summaries.
+- [x] A session stays open when its PR is merged or closed: more work can start from there, and the next
+  turn starts a new branch and PR from the default branch. Closing is by hand
+  (`POST .../coding/sessions/{id}/close`): the worker drops the sandbox; the transcript, branch, and PR
+  stay, and a new turn resumes. Deleting (`DELETE .../coding/sessions/{id}`) removes its turns, their
+  screenshots, and the transcript; the PR stays on GitHub. Sessions can be renamed, pinned (first in
+  the list), and archived (`PATCH`, `?archived=`); the web's ⋮ on each session row does all of it.
+- [x] Checked on Claude Code (WIR-7 on `dotrix-test`, PR #4): turn 2 ran in the same container, resumed
+  (it named the button it added in turn 1 unprompted), diffed only its own change, cost $0.0013 of its
+  own; closing removed the container.
+- [ ] Approvals for start and accept in Notifications per turn (with A2's accept step).
 
 **Phase C: the workspace view.**
 - The side panel's Terminal (read-only), Changes, and Files from real sessions; subagent events nested;

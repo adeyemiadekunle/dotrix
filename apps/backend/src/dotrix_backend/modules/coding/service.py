@@ -1,6 +1,7 @@
 """Asking for, approving, and stopping coding runs; the work itself is `runner.py`."""
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -11,7 +12,7 @@ from uuid_utils.compat import uuid7
 from dotrix_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from dotrix_backend.core.jobs import Jobs
 from dotrix_backend.core.settings import Settings
-from dotrix_backend.core.storage import BlobStorage
+from dotrix_backend.core.storage import BlobStorage, StorageUnavailable
 from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.connectors.github_app import GitHubAppClient
@@ -27,7 +28,16 @@ from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 
 from .brief import build_brief
-from .models import ACTIVE, CodingOrigin, CodingRun, CodingRunEvent, CodingRunStatus
+from .models import (
+    ACTIVE,
+    CodingOrigin,
+    CodingRun,
+    CodingRunEvent,
+    CodingRunStatus,
+    CodingSession,
+    CodingSessionState,
+    PrState,
+)
 from .schemas import (
     CodingAvailability,
     CodingDecision,
@@ -39,10 +49,12 @@ from .schemas import (
     CodingRunRead,
     CodingScreenshot,
     CodingSessionRead,
+    CodingSessionUpdate,
 )
 from .tools import choose_agent, model_for
 
 MAX_LISTED = 50
+logger = logging.getLogger(__name__)
 MAX_SESSION_RUNS = 500  # recent runs read to list a workspace's sessions
 CODING_AGENTS = frozenset({AgentAssignee.CODING_AGENT, AgentAssignee.CLAUDE_CODE, AgentAssignee.CODEX})
 
@@ -110,6 +122,8 @@ class CodingService:
         latest = turns[-1]
         issue = await self._codable(access.project, latest.issue_key, busy_ok=False)
         with_branch = next((t for t in reversed(turns) if t.branch and t.pr_number), None)
+        if with_branch is not None and with_branch.pr_state in (PrState.MERGED, PrState.CLOSED):
+            with_branch = None  # its PR is merged or closed: this turn starts a new branch and PR from the default branch
         earlier = [(t.turn, t.summary or t.error or STATUS_WORDS[t.status]) for t in turns
                    if t.status not in (CodingRunStatus.REJECTED, CodingRunStatus.STOPPED) or t.summary]
         run = await self._create(
@@ -244,6 +258,63 @@ class CodingService:
             next=page[-1].seq if len(rows) > limit else None,
         )
 
+    async def close_session(self, access: ProjectAccess, session_id: uuid.UUID) -> None:
+        """Close a session: its sandbox kept between turns goes (the worker drops it); its transcript,
+        branch, and PR stay, and a new turn opens it again and resumes. Whoever started it, or owners and admins."""
+        turns = await self._turns(access.project, session_id)
+        if not self._can_stop(turns[0], access):
+            raise Forbidden("Only whoever started the session, or owners and admins, can close it")
+        if any(t.status in ACTIVE for t in turns):
+            raise CodingBusy("A turn is waiting or working: stop it first")
+        row = await self.session.get(CodingSession, session_id)
+        if row is not None and row.workspace_id == access.project.workspace_id and row.state is not CodingSessionState.CLOSED:
+            row.state, row.closed_at = CodingSessionState.CLOSED, datetime.now(UTC)
+            self._audit(access.project, access, "coding.session_closed", turns[-1])
+            await self.session.commit()
+
+    async def update_session(self, access: ProjectAccess, session_id: uuid.UUID, data: CodingSessionUpdate) -> None:
+        """Rename, pin, or archive a session. Whoever started it, or owners and admins."""
+        row = await self._own_session(access, session_id)
+        now = datetime.now(UTC)
+        if data.title is not None:
+            row.title = data.title.strip() or None
+        if data.pinned is not None:
+            row.pinned_at = now if data.pinned else None
+        if data.archived is not None:
+            row.archived_at = now if data.archived else None
+        await self.session.commit()
+
+    async def delete_session(self, access: ProjectAccess, session_id: uuid.UUID, storage: BlobStorage | None) -> None:
+        """Delete a session: its turns, their events and screenshots, and its saved transcript. Its
+        branch and PR stay on GitHub, and the audit log keeps what happened. Whoever started it, or
+        owners and admins; not while a turn waits or works."""
+        row = await self._own_session(access, session_id)
+        turns = await self._turns(access.project, session_id)
+        if any(t.status in ACTIVE for t in turns):
+            raise CodingBusy("A turn is waiting or working: stop it first")
+        keys = [s["key"] for t in turns for s in (t.screenshots or [])] + ([row.transcript_key] if row.transcript_key else [])
+        if keys and storage is None:
+            raise StorageUnavailable("File storage isn't configured, so its files can't be deleted")
+        self._audit(access.project, access, "coding.session_deleted", turns[-1])
+        for turn in turns:
+            await self.session.delete(turn)
+        await self.session.delete(row)
+        await self.session.commit()
+        for key in keys:  # after the commit: a file left behind is harmless, a session pointing at a gone one isn't
+            try:
+                await storage.delete(key)  # type: ignore[union-attr]
+            except Exception:
+                logger.warning("couldn't delete a coding session's file", exc_info=True)
+
+    async def _own_session(self, access: ProjectAccess, session_id: uuid.UUID) -> CodingSession:
+        turns = await self._turns(access.project, session_id)
+        if not self._can_stop(turns[0], access):
+            raise Forbidden("Only whoever started the session, or owners and admins, can change it")
+        row = await self.session.get(CodingSession, session_id)
+        if row is None or row.workspace_id != access.project.workspace_id:
+            raise NotFound("Coding session not found")
+        return row
+
     async def screenshot(self, access: ProjectAccess, run_id: uuid.UUID, index: int, storage: BlobStorage) -> tuple[bytes, str]:
         """One of the screenshots the agent's browser captured in a turn: its bytes and type."""
         run = await self._get(access.project, run_id)
@@ -256,7 +327,7 @@ class CodingService:
         """A session's turns, first to latest."""
         return [self._read(run, access) for run in await self._turns(access.project, session_id)]
 
-    async def sessions(self, member: Membership) -> list[CodingSessionRead]:
+    async def sessions(self, member: Membership, archived: bool | None = False) -> list[CodingSessionRead]:
         """The workspace's coding sessions across the projects you can see, latest activity first."""
         rows = (await self.session.execute(
             select(CodingRun, Project.key, Project.name, Issue.title)
@@ -268,6 +339,11 @@ class CodingService:
             .limit(MAX_SESSION_RUNS)
         )).all()
         sessions: dict[uuid.UUID, CodingSessionRead] = {}
+        rows_by_id = {
+            r.id: r for r in await self.session.scalars(select(CodingSession).where(
+                CodingSession.workspace_id == member.workspace_id, CodingSession.id.in_({r[0].session_id for r in rows})
+            ))
+        }
         for run, project_key, project_name, issue_title in rows:  # newest first: the first seen is the latest turn
             found = sessions.get(run.session_id)
             if found is None:
@@ -280,7 +356,16 @@ class CodingService:
                 )
             else:
                 found.started_at = run.created_at
-        return sorted(sessions.values(), key=lambda s: s.updated_at, reverse=True)
+        for sid, read in sessions.items():
+            row = rows_by_id.get(sid)
+            if row is not None:
+                read.state, read.pinned, read.archived = row.state, row.pinned_at is not None, row.archived_at is not None
+                read.title = row.title or read.issue_title
+            else:
+                read.title = read.issue_title
+        shown = [s for s in sessions.values() if s.archived == archived] if archived is not None else list(sessions.values())
+        # Pinned first, then the latest activity.
+        return sorted(shown, key=lambda s: (s.pinned, s.updated_at), reverse=True)
 
     # -- helpers -------------------------------------------------------------------------
 

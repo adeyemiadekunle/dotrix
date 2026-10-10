@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { continueLimited, decideCoding, followUp, newThread, sendChat, startCoding, stopCoding } from "../core/agents";
 import { LimitNotice } from "../components/LimitNotice";
-import { openTask } from "../core/actions";
+import { openPop, openTask } from "../core/actions";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { MOD, ago, greeting } from "../core/utils";
@@ -107,27 +107,38 @@ function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
   const t = task(cs.task);
   const [label, c] = STATUS[cs.status];
   return (
-    <button
-      className={`sitem ${on ? "on" : ""}`}
-      style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start" }}
-      onClick={() => open(`tab=coding&session=${cs.id}`)}
-    >
-      <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-        <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
-          <span className="mono faint" style={{ fontSize: 11 }}>
-            {t?.key}
-          </span>{" "}
-          {t?.title}
+    <div className={`cs-row ${on ? "on" : ""}`}>
+      <button
+        className={`sitem ${on ? "on" : ""}`}
+        style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start", width: "100%" }}
+        onClick={() => open(`tab=coding&session=${cs.id}`)}
+      >
+        <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+          <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
+            {cs.pinned && <Ic n="pin" s={11} cls="cs-pin" />}
+            <span className="mono faint" style={{ fontSize: 11 }}>
+              {t?.key}
+            </span>{" "}
+            {cs.title ?? t?.title}
+          </span>
+          <span className="row faint" style={{ fontSize: 11.5, gap: 6 }}>
+            {toolName(cs.tool)} · {ago(cs.at)}
+            {cs.pr && <span>· PR #{cs.pr.number}</span>}
+          </span>
         </span>
-        <span className="row faint" style={{ fontSize: 11.5, gap: 6 }}>
-          {toolName(cs.tool)} · {ago(cs.at)}
-          {cs.pr && <span>· PR #{cs.pr.number}</span>}
+        <span className={`badge ${c}`} style={{ marginTop: 2 }}>
+          {label}
         </span>
-      </span>
-      <span className={`badge ${c}`} style={{ marginTop: 2 }}>
-        {label}
-      </span>
-    </button>
+      </button>
+      <button
+        className="ibtn ibtn-xs cs-more"
+        onClick={(e) => openPop(e.currentTarget, "session", { id: cs.id })}
+        aria-label={`More for ${t?.key ?? "this session"}`}
+        aria-haspopup="menu"
+      >
+        <Ic n="ellipsis-vertical" s={14} />
+      </button>
+    </div>
   );
 }
 
@@ -1041,10 +1052,14 @@ export function Chat() {
     .threads.filter((t) => (t.project ? canSee(proj(t.project)) : t.by === D().me))
     .filter((t) => !q || t.title.toLowerCase().includes(q))
     .sort((a, b) => b.at - a.at);
-  const sessions = D()
+  const visibleSessions = D()
     .coding.filter((c) => canSee(proj(c.project)))
-    .filter((c) => !q || `${task(c.task)?.key} ${task(c.task)?.title}`.toLowerCase().includes(q))
-    .sort((a, b) => b.at - a.at);
+    .filter((c) => !q || `${task(c.task)?.key} ${c.title ?? task(c.task)?.title}`.toLowerCase().includes(q));
+  const archivedCount = visibleSessions.filter((c) => c.archived).length;
+  // Archived ones only on request; pinned first, then the latest.
+  const sessions = visibleSessions
+    .filter((c) => Boolean(c.archived) === Boolean(S.ui.showArchivedSessions))
+    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.at - a.at);
   const waitingCoding = D().coding.filter((c) => c.status === "awaiting_approval").length;
   const hasSel = Boolean(th || cs || projectKey || across || search.get("q") || search.get("new"));
   const panes = panesOf(search.get("pane"));
@@ -1171,7 +1186,12 @@ export function Chat() {
                         </div>
                       ))
                   ) : (
-                    <Empty icon="code" title="No coding sessions" text="Use “Start coding” on a task, or assign it to Claude Code or Codex." cls="sm" />
+                    <Empty
+                      icon="code"
+                      title={S.ui.showArchivedSessions ? "No archived sessions" : "No coding sessions"}
+                      text={S.ui.showArchivedSessions ? "Archived sessions show here." : "Use “Start coding” on a task, or assign it to Claude Code or Codex."}
+                      cls="sm"
+                    />
                   )
                 ) : (
                   <>
@@ -1198,6 +1218,11 @@ export function Chat() {
                         ))}
                     </Group>
                   </>
+                )}
+                {coding && (archivedCount > 0 || S.ui.showArchivedSessions) && (
+                  <button className="linkbtn cs-archived" onClick={() => ((S.ui.showArchivedSessions = !S.ui.showArchivedSessions), render())}>
+                    {S.ui.showArchivedSessions ? "Back to sessions" : `Show archived (${archivedCount})`}
+                  </button>
                 )}
               </div>
             </>
