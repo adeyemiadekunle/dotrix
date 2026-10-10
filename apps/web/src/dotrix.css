@@ -1285,3 +1285,7 @@ body.resizing-row * {
   max-height: min(480px, 70vh);
   padding: 12px 14px;
 }
+/* Room between the sessions (and conversations) of one project. */
+.chat-group .sitem + .sitem {
+  margin-top: 4px;
+}
