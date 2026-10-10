@@ -141,3 +141,23 @@ def test_processes_run_on_a_selector_loop_too(tmp_path) -> None:
         loop.run_until_complete(check())
     finally:
         loop.close()
+
+
+def test_the_agent_gets_files_exactly_as_committed(tmp_path) -> None:
+    """No line-ending conversion on the way to the sandbox, whatever this machine's git does
+    (Git for Windows sets core.autocrlf=true): otherwise every line of an edited file changes."""
+    from dotrix_backend.modules.code.checkouts import run_git
+    from dotrix_backend.modules.coding.runner import _export
+
+    async def check() -> None:
+        repo = tmp_path / "host"
+        repo.mkdir()
+        await run_git(repo, "init", "-q")
+        (repo / "a.py").write_bytes(b"x = 1\ny = 2\n")
+        await run_git(repo, "add", "-A")
+        await run_git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
+        await run_git(repo, "config", "core.autocrlf", "true")  # a CRLF-minded machine, on any OS
+        await _export(repo, tmp_path / "copy")
+        assert (tmp_path / "copy" / "a.py").read_bytes() == b"x = 1\ny = 2\n"
+
+    asyncio.run(check())

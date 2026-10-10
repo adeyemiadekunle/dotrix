@@ -1,6 +1,5 @@
 """Checkouts of connected repos and agents reading them (agents v2 step 5b). GitHub's API is
 faked (conftest.FakeGitHub); the repo is fetched from a local git repo instead of github.com."""
-import shutil
 import subprocess
 import uuid
 from pathlib import Path
@@ -9,7 +8,7 @@ import pytest
 from httpx import AsyncClient
 from langchain_core.messages import ToolMessage
 
-from dotrix_backend.modules.code.checkouts import CodeCheckouts, RepoRef
+from dotrix_backend.modules.code.checkouts import CodeCheckouts, RepoRef, remove_tree
 from dotrix_engine.testing import tool_call
 
 
@@ -108,7 +107,7 @@ async def test_agents_read_the_code(
     ada, _, ws, kun, mob = await github_world()
     await _connect(db_client, ws, kun, ada.headers)
     # This machine lost its checkout (e.g. another worker): the run checks it out again first.
-    shutil.rmtree(checkouts.path(uuid.UUID(kun["workspace_id"]), uuid.UUID(kun["id"])))
+    remove_tree(checkouts.path(uuid.UUID(kun["workspace_id"]), uuid.UUID(kun["id"])))
 
     model = agent_script.say(tool_call("code_search", pattern="PaymentProvider"), "PaymentProvider is in src/payments.py.")
     run = (await db_client.post(f"{ws}/projects/{kun['id']}/agent/runs", json={"message": "Where are payments?"},
