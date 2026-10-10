@@ -269,6 +269,54 @@ def _kill(process: asyncio.subprocess.Process) -> None:
             pass
 
 
+# -- Stopping inside a sandbox ---------------------------------------------------------
+
+TURN_PID = "/tmp/dotrix-turn.pid"  # the command a stoppable exec runs, so Stop can signal it in the sandbox
+STOP_GRACE = 5.0  # seconds between SIGINT (finish cleanly) and SIGKILL
+
+Exec = Callable[..., Awaitable[ExecResult]]
+
+
+async def interruptible(
+    run: Exec, argv: list[str], *, stdin: bytes | None, on_line: LineHandler | None, timeout: float,
+    cancel: asyncio.Event | None,
+) -> ExecResult:
+    """Run `argv` in a sandbox (with `run`, an exec that goes through the sandbox's CLI) so that Stop
+    reaches it there: interrupting the CLI client leaves the command running in the sandbox. On
+    `cancel`, SIGINT inside (Claude Code ends its turn cleanly, with its final result), then SIGKILL
+    to it and its children after a grace; on the time limit, SIGKILL inside too."""
+    if cancel is None:
+        return await run(argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=None)
+
+    async def signal_inside(sig: str) -> None:
+        script = (f'p=$(cat {TURN_PID} 2>/dev/null) && kill -INT "$p"' if sig == "INT"
+                  else f'p=$(cat {TURN_PID} 2>/dev/null) && {{ pkill -KILL -P "$p"; kill -KILL "$p"; }}')
+        try:
+            await run(["sh", "-c", script], stdin=None, on_line=None, timeout=30, cancel=None)
+        except SandboxError as exc:
+            logger.warning("couldn't signal the sandbox (%s): %s", sig, exc)
+
+    inner = asyncio.Event()  # stops the CLI client: only after the command inside has had its chance
+    wrapped = ["sh", "-c", f'echo $$ > {TURN_PID}; exec "$@"', "sh", *argv]
+    work = asyncio.ensure_future(run(wrapped, stdin=stdin, on_line=on_line, timeout=timeout, cancel=inner))
+    stopper = asyncio.ensure_future(cancel.wait())
+    done, _ = await asyncio.wait({work, stopper}, return_when=asyncio.FIRST_COMPLETED)
+    if work in done:
+        stopper.cancel()
+        result = work.result()
+        if result.timed_out:
+            await signal_inside("KILL")
+        return result
+    await signal_inside("INT")
+    try:
+        result = await asyncio.wait_for(asyncio.shield(work), STOP_GRACE)
+    except TimeoutError:
+        await signal_inside("KILL")
+        inner.set()
+        result = await work
+    return dataclasses.replace(result, cancelled=True)
+
+
 # -- OpenShell -------------------------------------------------------------------------
 
 
@@ -277,6 +325,12 @@ class OpenShellSession:
         self.sandbox, self.name, self.provider, self.scratch = sandbox, name, provider, scratch
 
     async def exec(
+        self, argv: list[str], *, stdin: bytes | None = None, on_line: LineHandler | None = None,
+        timeout: float, cancel: asyncio.Event | None = None,
+    ) -> ExecResult:
+        return await interruptible(self._exec, argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=cancel)
+
+    async def _exec(
         self, argv: list[str], *, stdin: bytes | None = None, on_line: LineHandler | None = None,
         timeout: float, cancel: asyncio.Event | None = None,
     ) -> ExecResult:
@@ -374,7 +428,12 @@ class DockerSession:
         self, argv: list[str], *, stdin: bytes | None = None, on_line: LineHandler | None = None,
         timeout: float, cancel: asyncio.Event | None = None,
     ) -> ExecResult:
-        # Stopping `docker exec` leaves the command running in the container; close() removes it.
+        return await interruptible(self._exec, argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=cancel)
+
+    async def _exec(
+        self, argv: list[str], *, stdin: bytes | None = None, on_line: LineHandler | None = None,
+        timeout: float, cancel: asyncio.Event | None = None,
+    ) -> ExecResult:
         cli = [self.sandbox.bin, "exec", *(["-i"] if stdin is not None else []), "-w", f"{DOCKER_HOME}/repo",
                self.name, *argv]
         return await run_process(cli, env=self.sandbox.cli_env(), stdin=stdin, on_line=on_line, timeout=timeout,

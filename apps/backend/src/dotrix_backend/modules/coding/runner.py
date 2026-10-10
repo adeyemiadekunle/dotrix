@@ -55,13 +55,13 @@ from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
 from . import guard
-from .models import CodingAgent, CodingRun, CodingRunStatus, PrState
+from .models import CodingAgent, CodingRun, CodingRunEvent, CodingRunStatus, PrState
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
 from .tools import BROWSER_RULE, TOOLS, Usage, model_for, model_key
 
 logger = logging.getLogger(__name__)
 
-MAX_EVENTS = 300
+MAX_EVENTS = 300  # kept on the run for quick reads; coding_events has every one
 # The agent's screenshots kept per turn: the newest images it left under /tmp (Playwright MCP's
 # output folder, or where it saved one), each at most this many bytes.
 SHOTS_MAX = 8
@@ -379,6 +379,13 @@ class CodingWorker:
             if step:
                 added.append({"at": datetime.now(UTC).isoformat(), "kind": "step", "text": step})
             if added:
+                # All of them in coding_events, in order; the run keeps the latest for quick reads.
+                for event in added:
+                    session.add(CodingRunEvent(
+                        workspace_id=run.workspace_id, run_id=run.id, session_id=run.session_id, seq=run.event_count,
+                        at=datetime.fromisoformat(event["at"]), kind=event["kind"], text=event["text"],
+                    ))
+                    run.event_count += 1
                 run.events = (list(run.events) + added)[-MAX_EVENTS:]
             if usage is not None:
                 run.input_tokens, run.output_tokens, run.cost_usd = usage.input_tokens, usage.output_tokens, usage.cost_usd

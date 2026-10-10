@@ -21,6 +21,7 @@ from dotrix_backend.modules.workspaces.permissions import Permission
 from .schemas import (
     CodingAvailability,
     CodingDecision,
+    CodingEventPage,
     CodingFollowUp,
     CodingRunCreate,
     CodingRunRead,
@@ -77,6 +78,17 @@ async def list_coding_runs(
 async def get_coding_run(coding_run_id: uuid.UUID, access: ProjectViewer, coding: Coding) -> CodingRunRead:
     """A coding run with what the agent has done so far (poll it while it runs)."""
     return await coding.get(access, coding_run_id)
+
+
+@router.get("/runs/{coding_run_id}/events")
+async def list_coding_run_events(
+    coding_run_id: uuid.UUID, access: ProjectViewer, coding: Coding,
+    after: Annotated[int, Query(ge=-1, description="Events after this `seq` (-1: from the start)")] = -1,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 500,
+) -> CodingEventPage:
+    """Every event of a coding run, oldest first, a page at a time (the run itself keeps only the
+    latest). Poll with `after` set to the last `seq` you have. Anyone who sees the project."""
+    return await coding.events(access, coding_run_id, after, limit)
 
 
 @router.get(

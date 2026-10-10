@@ -3408,6 +3408,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Coding Run Events
+         * @description Every event of a coding run, oldest first, a page at a time (the run itself keeps only the
+         *     latest). Poll with `after` set to the last `seq` you have. Anyone who sees the project.
+         */
+        get: operations["list_coding_run_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/screenshots/{index}": {
         parameters: {
             query?: never;
@@ -4837,6 +4858,36 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** CodingEventPage */
+        CodingEventPage: {
+            /** Events */
+            events: components["schemas"]["CodingEventRead"][];
+            /**
+             * Next
+             * @description Pass as `after` for the next page; null when there's no more yet
+             */
+            next: number | null;
+        };
+        /** CodingEventRead */
+        CodingEventRead: {
+            /**
+             * Seq
+             * @description Its place in the run, from 0
+             */
+            seq: number;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Kind
+             * @description `step`, `text` (the agent's words), `tool` (what it did), `error`
+             */
+            kind: string;
+            /** Text */
+            text: string;
+        };
         /** CodingFollowUp */
         CodingFollowUp: {
             /**
@@ -4918,8 +4969,17 @@ export interface components {
              * @description What the agent's browser captured in this turn
              */
             screenshots?: components["schemas"]["CodingScreenshot"][];
-            /** Events */
+            /**
+             * Events
+             * @description The latest events (up to 300); every one is at GET .../events
+             */
             events: components["schemas"]["CodingEvent"][];
+            /**
+             * Event Count
+             * @description How many events the run has in all
+             * @default 0
+             */
+            event_count: number;
             /**
              * Summary
              * @description The agent's last message
@@ -18968,6 +19028,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CodingRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_coding_run_events: {
+        parameters: {
+            query?: {
+                /** @description Events after this `seq` (-1: from the start) */
+                after?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                coding_run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingEventPage"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
