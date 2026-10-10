@@ -271,8 +271,11 @@ Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
   an edited file showed as changed (the platform's git now runs with `core.autocrlf=false`); a killed
   command lingered as a zombie (the sandbox now runs with `--init`); checkouts couldn't be deleted on
   Windows because git's objects are read-only (`remove_tree`).
-- [ ] The rest of today's flow on a real repo: branch, push, PR, the Reviewer (needs a connected repo
-  to push to).
+- [x] The whole flow on a real repo (2026-10-10, `kunemi-group/dotrix-test`, Haiku, about $0.001):
+  connect the repo, an issue, Start coding, approve, the Docker sandbox, one commit pushed to
+  `dotrix/wir-3-add-subtract-to-the-calculator-…`, PR #1 opened, the issue moved to review, the Reviewer
+  started on the PR. The diff was exactly the change (+4 in `calc.py`), so the CRLF fix holds. The
+  Reviewer's run stopped at once on the project's Gemini key (out of credit), not on the flow.
 - [ ] Codex's `exec --json` flags, events, and resume (needs an OpenAI key).
 
 **Phase A1: events and Stop.**

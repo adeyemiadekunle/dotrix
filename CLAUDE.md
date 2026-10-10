@@ -226,7 +226,7 @@ approve agent changes go above Manual); sessions are **private like conversation
 while it waits on them; owners and admins see automations'); the first accepted turn opens the PR.
 Each phase is usable on its own.
 
-- [ ] **0. Verify first:** done on Claude Haiku 5.5 in the Docker sandbox (a real turn, `--resume` with `--bare` across two containers, SIGINT inside the container, cumulative cost; fixed CRLF checkouts on Windows, zombies with `--init`, deleting read-only git objects); left: a run that pushes and opens a PR on a connected repo, and Codex (needs an OpenAI key)
+- [ ] **0. Verify first:** done on Claude Haiku 5.5 in the Docker sandbox (a real turn, `--resume` with `--bare` across two containers, SIGINT inside the container, cumulative cost; fixed CRLF checkouts on Windows, zombies with `--init`, deleting read-only git objects); and the whole flow on `kunemi-group/dotrix-test` (push, PR #1, issue to review, the Reviewer started); left: Codex (needs an OpenAI key)
 - [ ] **A1. Events and Stop:** `coding_events` instead of the capped `events`; cost and tokens as per-turn deltas; Stop by signal inside the sandbox (SIGINT, then SIGKILL)
 - [ ] **A2. Turns in git, and approval modes:** the session branch with history in the sandbox; one commit per turn; the bundle back through the guard; accept (Manual) or straight through; push, never forced; the first accepted turn opens the PR; the modes with the workspace's and the person's limits, reverts for a rejected pushed turn; sessions private like conversations
 - [ ] **B. Session lifecycle:** `coding_sessions` with warm, idle, and closed states; the transcript saved (encrypted) and restored with `--resume`; idle timeout and a warm-sandbox cap; start and accept approvals in Notifications
