@@ -98,7 +98,7 @@ apps/backend/
 │   │   ├── rules/               workspace rules layered under each project's agent-rules/, and skills shared by every project
 │   │   ├── audit/               append-only audit log
 │   │   ├── research/            web research for agent runs: sources per run (S1, S2, …), the page cache per workspace, web limits and Tavily credits, report claims checked against what was read
-│   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
+│   │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
 │   │   ├── code/                connected repos' checkouts for agents (checkouts.py: shallow fetch with the installation token, swap, size cap, prune; service.py: sync and record, a run's checkout), the sync_repository job
 │   │   ├── coding/              coding runs: "Start coding" (service.py: ask, approve, stop), the brief (brief.py), Claude Code and Codex headless (tools.py: commands, JSON events), the sandbox (sandbox.py: OpenShell or local, the policy), the worker (runner.py: clone, run, patch, guard.py, push, PR, Reviewer), the run_coding job
 │   │   └── connectors/          the GitHub App (github_app.py: app JWT, installation tokens), installations per workspace, each project's connected repo, the webhook (FR-10); GitLab and doc sources planned (FR-12)
@@ -157,56 +157,48 @@ The CLI works in two modes: **linked** to a platform project (after `pmagent con
 
 ## Web app (`apps/web`)
 
-Vite, React 19, TanStack Router (routes in code, `src/router.tsx`), Tailwind CSS 4, shadcn/ui, TanStack Query, and the typed `@pmagent/api-client`. A static single-page app served on the API's origin: Vite's server forwards `/v1`, `/api`, and `/health` to the API locally (`vite.config.ts`), a reverse proxy does the same in production, so the session cookies the API sets are first-party.
+Vite, React 19, TanStack Router and the typed `@pmagent/api-client`. The app is `src/`, a port of Gr8r Studio (each file names the Gr8r file it copies) that runs on seeded data at `/w/dotrix` and against the API in a real workspace. It is a static single-page app served on the API's origin: Vite's server forwards `/v1`, `/api` and `/health` to the API locally (`vite.config.ts`), and a reverse proxy does the same in production, so the session cookies the API sets are first-party.
 
 ```
 apps/web/
 ├── index.html, vite.config.ts
-├── src/
-│   ├── main.tsx, providers.tsx  fonts, theme (next-themes, default "system"), React Query, tooltips, toasts
-│   ├── router.tsx               every URL: the sign-in pages, /onboarding, and /w/{ws}/… (all one `Studio`, the screen picked from the path)
+├── src/                         the app
+│   ├── main.tsx, providers.tsx  fonts, Gr8r's preferences applied before the first paint, tooltips, toasts
+│   ├── router.tsx               every URL: the sign-in pages (from pages/(auth)), /onboarding, and /w/{ws}/… (all one `Studio`, the screen picked from the path)
 │   ├── root.tsx                 the browser tab's title (a route's `staticData.title`), the not-found page
-│   ├── dotrix.css               Dotrix's surfaces Gr8r lacks (chat, proposed changes, diffs) on Gr8r's tokens
-│   │   (the seeded Gr8r port; each file names the Gr8r file it copies)
-│   ├── core/                    utils, constants, icons (`Ic`, a lucide subset from `icons-plugin.ts`), nav (`go`, `useRoute`, `href`), actions + more (Gr8r's actions), agents (decisions, checkpoints, chat replies, coding), theme, dragdrop, keyboard
-│   ├── data/                    types, seed (Gr8r's) + seed-dotrix (agents, threads, knowledge, coding, audit, automations), store (`S`, `mutate`, `useStudio`, lookups; saved in localStorage `dotrix.studio.v1`)
-│   ├── shell/                   Shell (sidebar, top bar), Studio (screens by route, overlays), viewEngine (filters, sort, group, toolbar)
+│   ├── dotrix.css               Dotrix's surfaces Gr8r lacks (chat, proposed changes, diffs), on Gr8r's tokens
+│   ├── core/                    utils, constants, icons (`Ic`, a lucide subset from `icons-plugin.ts`), nav (`Route`, `href`, `go`, `useRoute`), actions + more (Gr8r's actions), can (what you may do), agents (decisions, checkpoints, chat replies, coding, Continue after a limit), presence (what each agent is doing now), theme, dragdrop, keyboard
+│   ├── data/                    types, store (`S`, `D()`, `mutate`, `useStudio`, lookups; saved in localStorage `dotrix.studio.v2`), seed (Gr8r's) + seed-dotrix (agents, threads, knowledge, coding, audit, automations), live.ts (a real workspace from the API into the store's shapes, writes sent as they happen), account.ts (Settings and Members: your account, the workspace, its people, agents, models; `useApi`)
+│   ├── shell/                   Shell (sidebar, top bar), Studio (screens by route, overlays), AgentsPanel (who needs you, who is working), Notices (corner notices), viewEngine (filters, sort, group, toolbar)
 │   ├── overlays/                PopLayer (every popover and context menu), Modals, Drawer (the task), Palette (⌘K)
-│   ├── views/, components/, ui/ Board, List, Table, Calendar, Timeline, Files, project Overview; TaskList, Changes (proposed changes, checkpoints); helpers, toast
+│   ├── views/                   Board, Table, Calendar, Timeline, Files, project Overview
+│   ├── components/              TaskList, Changes (proposed changes, checkpoints), LimitNotice
+│   ├── ui/                      helpers (Gr8r's small render helpers), toast, face (an agent's face)
 │   └── screens/                 one module per page (Home, Inbox + Notifications, Chat, Projects + Overview, Project, Knowledge, TaskPages, Members, Settings, Archive, Search, DesignSystem, Onboarding)
-├── pages/                       one module per page (default export), laid out like the URLs; layouts take `children`
-│   ├── (auth)/                  centred-card pages: login, signup, forgot/reset password, verify-email, device, invites/accept
-│   └── (app)/                   signed-in shell (sidebar): /w/[workspace] (Home), /w/[workspace]/{chat,overview,tasks,timeline,activity,approvals (Notifications),my-issues,projects,projects/new}, /w/[workspace]/settings/{profile,appearance,devices,calendar (your account), (General),members,invites,permissions,agents,audit} (/agents and /audit redirect there), /w/[workspace]/p/[KEY]/{overview,board,list,table,timeline,files,knowledge,activity,settings} (the project root redirects to overview; /backlog to list, /docs to files, /chat and /briefing to the workspace Chat), /settings (opens your profile in the workspace you were last in)
-├── components/                  app components (sidebar, switcher, dialogs, form helpers, markdown, repo preview, empty/not-found states)
-│   ├── issues/                  board, cards, filters, issue drawer, activity, new-issue dialog, type/status/priority meta
-│   ├── documents/               dropzone, queued files, upload progress
-│   ├── agent/                   chat context (opens conversations in the workspace Chat), conversation, approvals (diff view, decisions, plan checkpoints), run results, triage dialog
-│   ├── agents/                  Settings → Agents: the list and the contract editor (workspace and project scope)
-│   ├── coding/                  "Start coding" and a run in the issue drawer (status, what the agent did, PR, approve / reject / stop)
-│   ├── knowledge/               file tree, file history (authorship, diffs, restore)
-│   ├── settings/                Settings' pages: profile, appearance, devices, calendar, the workspace (general, what members can do), members (search, roles, projects they see), invites and "turn into an organisation"
-└── lib/                         api.ts (browser client, `apiFetch`, errors), navigation.tsx (`Link`, `useRouter`, `usePathname`, `useSearchParams`, `useParams` over TanStack Router), queries.ts, issues.ts, agent.ts, agents.ts (agent contracts, the chat's agent list), knowledge.ts, admin.ts, documents.ts, repo.ts, coding.ts, url-state.ts, labels.ts
+├── pages/(auth)/                the sign-in pages: login, signup (+ finish), forgot/reset password, verify-email, magic link, device, invites/accept
+├── pages/(app)/, components/, lib/   the older API-backed app, no longer routed; kept for reference until Chat and coding are wired (then deleted), except what `src/` still imports: `lib/api.ts` (`api`, `apiFetch`, `authPost`, `unwrap`, errors), `lib/navigation.tsx`, `components/markdown.tsx` and `components/states.tsx`
+└── e2e/                         Playwright: studio, settings, people (and auth) run; the rest are parked (`test.fixme(true, NOT_WIRED)`) until rewritten
 packages/ui/src/                 consumed as source (no build step), by path: `@pmagent/ui/components/*`, `/lib/*`, `/hooks/*`, `/globals.css`
-├── components/                  shadcn/ui components (add with `pnpm dlx shadcn@latest add <name>` in apps/web)
-│                                plus our own chat kit: chat-scroller (follows new content unless you scroll up), chat-message (message, bubble, meta, notice), prompt-input (send / stop), code-block (copy, lazy Shiki highlighting)
-└── styles/globals.css           Tailwind entry + theme tokens (light and .dark)
+├── components/                  shadcn/ui components (used by the sign-in pages), plus a chat kit (chat-scroller, chat-message, prompt-input, code-block)
+└── styles/                      globals.css (Tailwind entry and tokens, imports gr8r.css), gr8r.css (Gr8r Studio's design, copied and owned here)
 ```
 
-**Conventions** (the app is `src/`: the seeded Gr8r port, wired to the API through `src/data/live.ts` and `account.ts`; `pages/` is the older API-backed app, of which only the sign-in pages are still routed, kept for reference until Chat and coding are wired)
+**Conventions**
 
-- **Tokens never reach the browser.** The API keeps the session in httpOnly cookies (`modules/web`: `pm_access`, `pm_refresh` scoped to `/api/auth`, and a readable `pm_session` marker). Pages call the API only through `api` / `apiFetch` (`lib/api.ts`), on the same origin (`/v1/*`): they send `X-Requested-With`, which the API requires on cookie-authenticated changes (CSRF), and on a 401 refresh once (`/api/auth/refresh`, one at a time per browser with a Web Lock, because the backend treats a reused refresh token as theft) and retry. Sign in, sign up, and sign out go to `/api/auth/*` (`authPost`); GitHub sign-in and the app's install are top-level redirects through `/api/auth/github` and `/api/github/*`.
-- **Data:** TanStack Query with `unwrap(api.GET(...))`. Keys start with the resource (`["projects", workspaceId]`); invalidate those keys after mutations.
-- **URL state:** filters, the open issue, the open file are search params (`useSearchParam`); change several at once with `useSetSearchParams`, since separate updates in a row undo each other.
-- **URLs use slugs and keys, never UUIDs:** `/w/{workspace slug}/p/{PROJECT KEY}`. Resolve them from the cached lists (`useCurrentWorkspace`, `useCurrentProject`).
+- **Tokens never reach the browser.** The API keeps the session in httpOnly cookies (`modules/web`: `pm_access`, `pm_refresh` scoped to `/api/auth`, and a readable `pm_session` marker). The app calls the API only through `api` / `apiFetch` (`lib/api.ts`), on the same origin (`/v1/*`). These send `X-Requested-With`, which the API requires on cookie-authenticated changes (CSRF). On a 401 they refresh once (`/api/auth/refresh`, one at a time per browser with a Web Lock, because the backend treats a reused refresh token as theft) and retry. Sign in, sign up and sign out go to `/api/auth/*` (`authPost`). GitHub sign-in and the app's install are top-level redirects through `/api/auth/github` and `/api/github/*`.
+- **Data:** screens read the store (`useStudio()`, `D()`) and change it with `mutate()` or an action in `core/actions.ts` / `more.ts`.
+  - In a real workspace `data/live.ts` loads it from the API. Writes change the store first, so the screen answers at once, then go to the API; a refused write puts the item back and says why in a toast.
+  - Settings and Members call the API directly through `data/account.ts` (`useApi`, then a function per change).
+  - The seeded workspace stays in this browser. Keep both working: a screen shouldn't know which one it is showing.
+- **URLs use slugs and keys, never UUIDs:** `/w/{workspace slug}/p/{PROJECT KEY}/{view}`.
+  - Build and follow them with `href` / `go` and read them with `useRoute()` (`core/nav.ts`). The open task and similar state go in the search string.
+  - A new page is a `Route` in `core/nav.ts` (with its path in `href` / `routeOf`), a screen in `screens/`, a case in `shell/Studio.tsx`, and a title in `src/router.tsx`.
 - **UI:**
-  - The design is Gr8r Studio's (`packages/ui` globals.css): warm paper neutrals, one accent (`primary`: indigo, or the one picked in Settings → Appearance, `data-accent` on `<html>`), 13.5px base text, 30px controls (26px `sm`), soft elevation (`shadow-card`, `shadow-pop`). Use shadcn components from `@pmagent/ui/components/*` and the tokens, never raw colours, so light and dark mode both work: `bg-muted`, `text-muted-foreground`, `bg-brand-muted`, `bg-warning-muted`, `text-success` / `bg-success-muted`, `bg-danger-muted`, `text-info`, `text-label-{violet,teal,rose,orange,gray}`, `text-status-{backlog,todo,progress,blocked,review,done}`. Page edges use `px-gutter` (the top bar, headers, toolbars line up). Badges have soft variants (`brand`, `success`, `warning`, `danger`); Tabs are Gr8r's segmented control (`default`) or underlined tabs (`line`).
-  - A project's look (`lib/project-look.ts`): `ProjectTile` takes only the key and finds the icon and colour in the cached project list; `projectDot` is its sidebar dot (red when at risk or off track, else its status).
-  - The shell (`components/app-shell.tsx`): a skip link, the top bar (`PageHeader`: breadcrumb, the page's actions, Search or jump to…, the bell, New ▾), the page fading in on arrival (not with reduced motion), and a bottom bar on phones (Home, My issues, Projects, Notifications, More). New ▾ → New issue asks the open project's layout with a window event (`NEW_ISSUE_EVENT`). Browser tab titles come from each route's `staticData.title` (`src/router.tsx`).
-  - Shared pieces: issue status and priority look (`StatusIcon`, `StatusBadge`, `PriorityIcon` in `components/issues/meta.tsx`), `ProjectTile`, `EmptyState` (compact, at the top of the content), `SaveBar` (`components/form.tsx`: a form's Discard / Save, only while it has changes), and `SettingsSection` (`components/settings-section.tsx`: settings pages as sections, what it is on the left and its controls on the right; parts named like Card's).
+  - The design is Gr8r Studio's (`packages/ui/src/styles/gr8r.css`): warm paper neutrals and one accent (indigo, or the one picked in Settings → Appearance, `data-accent` on `<html>`). Build with its classes and CSS variables (`row`, `grow`, `muted`, `btn`, `--acc`, `--bg`…) and the helpers in `ui/helpers.tsx`, never raw colours, so light and dark mode both work. Dotrix's own surfaces go in `dotrix.css` on the same tokens.
+  - Icons are `Ic` (`core/icons.tsx`). Toasts are `toast()` (`ui/toast.tsx`). Agents' faces are `ui/face.tsx`, and what each agent is doing comes from `core/presence.ts`.
   - Write copy in sentence case.
-  - Show people only what they can do: hide a control they can't use (`allowed(...)` / `canInvite()` in `src/core/can.ts`, from the permissions the API reports for them), never leave it to fail; the API is what enforces access.
-- **Theme:** Settings → Appearance (System / Light / Dark, and the accent: indigo, blue, violet, teal, rose, graphite). Both are stored in the browser; the accent is applied before the first paint (`lib/accent.ts`).
-- **Navigation:** links and hooks come from `@/lib/navigation` (plain hrefs: `/w/acme/p/KUN/board?issue=KUN-4`). A new page is a module in `pages/` plus a line in `src/router.tsx`.
+  - Show people only what they can do. Hide a control they can't use (`allowed(...)` / `canInvite()` in `src/core/can.ts`, from the permissions the API reports for them) rather than letting it fail; the API is what enforces access.
+- **Theme:** Settings → Appearance (System / Light / Dark, the accent, density, motion) is kept in the store's preferences in this browser and applied before the first paint (`applyPrefs` in `core/theme.ts`).
 - The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@pmagent/ui/lib/utils` and `@/hooks/…` → `@pmagent/ui/hooks/…`.
 
 ## Where things stand (2026-10-09)
