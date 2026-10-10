@@ -6,6 +6,7 @@ import base64
 import dataclasses
 import json
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -449,3 +450,34 @@ async def test_the_agent_s_screenshots_are_kept_and_shown(
     shot = await db_client.get(f"{base}/coding/runs/{run['id']}/screenshots/0", headers=cat.headers)
     assert shot.status_code == 200 and shot.content == PNG and shot.headers["content-type"] == "image/png"
     assert (await db_client.get(f"{base}/coding/runs/{run['id']}/screenshots/1", headers=cat.headers)).status_code == 404
+
+
+async def test_every_event_is_kept_and_read_a_page_at_a_time(
+    db_client: AsyncClient, coding, claude: ScriptedClaude, agent_script
+) -> None:
+    """The run keeps its latest 300 events for quick reads; coding_events keeps every one, in order."""
+    ada, cat, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    worker = app.state.jobs.ctx.coding
+    base = f"{ws}/projects/{kun['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"title": "Tidy payments"})).json()
+    run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={}, headers=ada.headers)).json()
+    claude.edits = {"src/payments.py": "# tidy\n"}
+    agent_script.say("Fine.")
+    assert (await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"},
+                                 headers=ada.headers)).status_code == 200
+    before = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).json()["event_count"]
+    await worker._update(uuid.UUID(run["id"]), events=[{"at": "2026-10-10T12:00:00+00:00", "kind": "tool", "text": f"Step {i}"} for i in range(350)])
+
+    read = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).json()
+    assert read["event_count"] == before + 350 and len(read["events"]) == 300 and read["events"][-1]["text"] == "Step 349"
+    first = (await db_client.get(f"{base}/coding/runs/{run['id']}/events", params={"limit": 100}, headers=cat.headers)).json()
+    assert [e["seq"] for e in first["events"]] == list(range(100)) and first["next"] == 99
+    seen, after = list(first["events"]), first["next"]
+    while after is not None:
+        page = (await db_client.get(f"{base}/coding/runs/{run['id']}/events", params={"after": after, "limit": 1000},
+                                    headers=cat.headers)).json()
+        seen += page["events"]
+        after = page["next"]
+    assert len(seen) == before + 350 and [e["seq"] for e in seen] == list(range(before + 350))
+    assert seen[before]["text"] == "Step 0" and seen[-1]["text"] == "Step 349"

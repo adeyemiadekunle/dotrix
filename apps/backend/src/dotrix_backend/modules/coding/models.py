@@ -13,7 +13,17 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -85,7 +95,9 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # What the agent's browser captured in this turn: {key (in storage), name, size, content_type}.
     screenshots: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, server_default="[]")
     # What the agent did, as it happened: [{"at", "kind": "text"|"tool"|"step"|"error", "text"}].
+    # The latest events, for quick reads; every one is kept in coding_events (`event_count` of them).
     events: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, server_default="[]")
+    event_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     summary: Mapped[str | None] = mapped_column(Text)  # the agent's last message
     error: Mapped[str | None] = mapped_column(String(1000))
 
@@ -104,3 +116,18 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CodingRunEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """Everything a coding run did, in order (`seq` from 0): what the agent said and did, steps,
+    errors. The run keeps only its latest few; this keeps them all, for the session's view."""
+
+    __tablename__ = "coding_events"
+    __table_args__ = (UniqueConstraint("run_id", "seq"),)
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("coding_runs.id", ondelete="CASCADE"), index=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    kind: Mapped[str] = mapped_column(String(16))  # step, text, tool, error
+    text: Mapped[str] = mapped_column(Text)

@@ -261,7 +261,7 @@ export interface CodingSession {
   preview?: { path: string };
   pr?: { number: number; state: "open" | "merged" | "closed"; url: string };
   /** Each turn: what was asked, what the agent did, and what its browser captured (screenshots). */
-  turns: { at: number; ask: string; summary?: string; events: string[]; shots?: { src: string; name: string }[] }[];
+  turns: { at: number; ask: string; summary?: string; events: string[]; shots?: { src: string; name: string; url?: string }[] }[];
 }
 export interface AuditEvent {
   id: string;

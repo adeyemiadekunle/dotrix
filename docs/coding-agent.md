@@ -278,9 +278,16 @@ Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
   Reviewer's run stopped at once on the project's Gemini key (out of credit), not on the flow.
 - [ ] Codex's `exec --json` flags, events, and resume (needs an OpenAI key).
 
-**Phase A1: events and Stop.**
-- `coding_events` instead of the capped `events`; cost and tokens as per-turn deltas.
-- Stop by signal inside the sandbox (SIGINT, then SIGKILL).
+**Phase A1: events and Stop.** Done 2026-10-10.
+- [x] `coding_events` keeps every event of a run in order (`seq`); the run keeps its latest 300 for quick
+  reads (`events`, `event_count`), and `GET .../coding/runs/{id}/events?after=` pages through all of them.
+  Existing runs' events were moved over by the migration.
+- [x] Stop by signal inside the sandbox (`sandbox.interruptible`, Docker and OpenShell): the command records
+  its pid, Stop sends SIGINT there and SIGKILL to it and its children after 5 seconds; the time limit
+  kills it inside too. Checked on Claude Code (WIR-6): stopped 5.2 s after the request, its final result
+  arrived (cost recorded), nothing pushed.
+- [ ] Cost as per-turn deltas: each turn is still its own `claude` process, so its reported total is the
+  turn's; the deltas matter once turns resume one session (Phase B).
 
 **Phase A2: turns in git, and approval modes.**
 - The sandbox gets the session branch with history; one commit per turn; the bundle back through the

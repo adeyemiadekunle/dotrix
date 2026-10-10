@@ -77,3 +77,35 @@ async def test_a_docker_sandbox_edits_the_repo_and_reaches_nothing_else(tmp_path
     nets = subprocess.run(["docker", "network", "ls", "--filter", f"name={name}", "--format", "{{.Name}}"],
                           capture_output=True, text=True, check=False)
     assert nets.stdout.strip() == ""
+
+
+@pytest.mark.skipif(not _docker_ready(), reason=f"needs Docker and {IMAGE} (docker build -t {IMAGE} infra/coding)")
+async def test_stop_reaches_the_command_inside_the_sandbox(tmp_path: Path) -> None:
+    """Interrupting `docker exec` would leave the command running in the container: Stop sends
+    SIGINT inside, so the command ends cleanly (Claude Code writes its final result), well inside the grace."""
+    import asyncio
+    import time
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    settings = Settings(database_url="postgresql+asyncpg://localhost/unused", jwt_secret="x" * 40,  # type: ignore[arg-type]
+                        coding_sandbox="docker", coding_image=IMAGE)
+    box = await DockerSandbox(settings).open(uuid.uuid4(), repo, ClaudeCode(), "not-a-key")
+    try:
+        lines: list[str] = []
+
+        async def on_line(line: str) -> None:
+            lines.append(line.strip())
+
+        cancel = asyncio.Event()
+        asyncio.get_running_loop().call_later(2, cancel.set)
+        started = time.monotonic()
+        result = await box.exec(["sh", "-c", 'trap "echo finished cleanly; exit 0" INT; echo working; while :; do sleep 0.2; done'],
+                                on_line=on_line, timeout=60, cancel=cancel)
+        took = time.monotonic() - started
+        assert result.cancelled and lines == ["working", "finished cleanly"] and took < 5
+        left = await box.exec(["sh", "-c", 'ps -eo args | grep -c "[w]hile :" || true'], timeout=30)
+        assert left.stdout.strip() == "0"
+    finally:
+        await box.close()

@@ -35,6 +35,18 @@ class CodingEvent(BaseModel):
     text: str
 
 
+class CodingEventRead(BaseModel):
+    seq: int = Field(description="Its place in the run, from 0")
+    at: datetime
+    kind: str = Field(description="`step`, `text` (the agent's words), `tool` (what it did), `error`")
+    text: str
+
+
+class CodingEventPage(BaseModel):
+    events: list[CodingEventRead]
+    next: int | None = Field(description="Pass as `after` for the next page; null when there's no more yet")
+
+
 class CodingScreenshot(BaseModel):
     index: int = Field(description="Its place in the run's list; GET .../screenshots/{index} returns the image")
     name: str
@@ -64,7 +76,8 @@ class CodingRunRead(BaseModel):
     pr_state: PrState | None = Field(description="`open`, `merged`, or `closed`, from GitHub")
     files_changed: list[dict[str, Any]]
     screenshots: list[CodingScreenshot] = Field(default_factory=list, description="What the agent's browser captured in this turn")
-    events: list[CodingEvent]
+    events: list[CodingEvent] = Field(description="The latest events (up to 300); every one is at GET .../events")
+    event_count: int = Field(default=0, description="How many events the run has in all")
     summary: str | None = Field(description="The agent's last message")
     error: str | None
     input_tokens: int | None = Field(description="Owners and admins (usage:view) only")

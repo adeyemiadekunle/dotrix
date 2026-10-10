@@ -402,7 +402,7 @@ const CODING: CodingSession[] = [
           "Clicked Plans",
           "Took a screenshot",
         ],
-        shots: [{ src: "/demo/pricing-plans.png", name: "pricing-plans.png" }],
+        shots: [{ src: "/demo/pricing-plans.png", name: "pricing-plans.png", url: "http://localhost:3000/pricing" }],
       },
     ],
   },

@@ -17231,6 +17231,120 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/events": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "List Coding Run Events",
+        "description": "Every event of a coding run, oldest first, a page at a time (the run itself keeps only the\nlatest). Poll with `after` set to the last `seq` you have. Anyone who sees the project.",
+        "operationId": "list_coding_run_events",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "coding_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Coding Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": -1,
+              "description": "Events after this `seq` (-1: from the start)",
+              "default": -1,
+              "title": "After"
+            },
+            "description": "Events after this `seq` (-1: from the start)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingEventPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/screenshots/{index}": {
       "get": {
         "tags": [
@@ -21962,6 +22076,66 @@
         ],
         "title": "CodingEvent"
       },
+      "CodingEventPage": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/CodingEventRead"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next",
+            "description": "Pass as `after` for the next page; null when there's no more yet"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events",
+          "next"
+        ],
+        "title": "CodingEventPage"
+      },
+      "CodingEventRead": {
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "description": "Its place in the run, from 0"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "`step`, `text` (the agent's words), `tool` (what it did), `error`"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seq",
+          "at",
+          "kind",
+          "text"
+        ],
+        "title": "CodingEventRead"
+      },
       "CodingFollowUp": {
         "properties": {
           "message": {
@@ -22164,7 +22338,14 @@
               "$ref": "#/components/schemas/CodingEvent"
             },
             "type": "array",
-            "title": "Events"
+            "title": "Events",
+            "description": "The latest events (up to 300); every one is at GET .../events"
+          },
+          "event_count": {
+            "type": "integer",
+            "title": "Event Count",
+            "description": "How many events the run has in all",
+            "default": 0
           },
           "summary": {
             "anyOf": [

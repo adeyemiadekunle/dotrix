@@ -27,11 +27,13 @@ from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 
 from .brief import build_brief
-from .models import ACTIVE, CodingOrigin, CodingRun, CodingRunStatus
+from .models import ACTIVE, CodingOrigin, CodingRun, CodingRunEvent, CodingRunStatus
 from .schemas import (
     CodingAvailability,
     CodingDecision,
     CodingEvent,
+    CodingEventPage,
+    CodingEventRead,
     CodingFollowUp,
     CodingRunCreate,
     CodingRunRead,
@@ -228,6 +230,20 @@ class CodingService:
     async def get(self, access: ProjectAccess, run_id: uuid.UUID) -> CodingRunRead:
         return self._read(await self._get(access.project, run_id), access)
 
+    async def events(self, access: ProjectAccess, run_id: uuid.UUID, after: int, limit: int) -> CodingEventPage:
+        """A run's events after `seq` `after` (-1: from the start), oldest first, a page at a time."""
+        run = await self._get(access.project, run_id)
+        rows = (await self.session.scalars(
+            select(CodingRunEvent)
+            .where(CodingRunEvent.workspace_id == run.workspace_id, CodingRunEvent.run_id == run.id, CodingRunEvent.seq > after)
+            .order_by(CodingRunEvent.seq).limit(limit + 1)
+        )).all()
+        page = rows[:limit]
+        return CodingEventPage(
+            events=[CodingEventRead(seq=e.seq, at=e.at, kind=e.kind, text=e.text) for e in page],
+            next=page[-1].seq if len(rows) > limit else None,
+        )
+
     async def screenshot(self, access: ProjectAccess, run_id: uuid.UUID, index: int, storage: BlobStorage) -> tuple[bytes, str]:
         """One of the screenshots the agent's browser captured in a turn: its bytes and type."""
         run = await self._get(access.project, run_id)
@@ -308,7 +324,8 @@ class CodingService:
                 CodingScreenshot(index=i, name=s["name"], size=s["size"], content_type=s["content_type"])
                 for i, s in enumerate(run.screenshots or [])
             ],
-            events=[CodingEvent.model_validate(e) for e in run.events or []], summary=run.summary, error=run.error,
+            events=[CodingEvent.model_validate(e) for e in run.events or []], event_count=run.event_count,
+            summary=run.summary, error=run.error,
             input_tokens=run.input_tokens if usage else None, output_tokens=run.output_tokens if usage else None,
             cost_usd=run.cost_usd if usage else None, requested_by_id=run.requested_by_id,
             decided_by_id=run.decided_by_id, decision_reason=run.decision_reason, review_run_id=run.review_run_id,

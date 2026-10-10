@@ -170,28 +170,104 @@ function Changes({ cs }: { cs: CodingSession }) {
   );
 }
 
-/** The app as the sandbox serves it: a dev server the supervisor started, through the platform. */
+type Tab = { id: number; url: string; draft: string };
+type Shot = { src: string; name: string; url?: string };
+
+/** "localhost:3000/pricing" → "http://localhost:3000/pricing"; blank stays blank. */
+const normalize = (raw: string) => {
+  const t = raw.trim();
+  if (!t) return "";
+  return /^[a-z]+:\/\//i.test(t) ? t : `http://${t}`;
+};
+const portOf = (url: string) => {
+  try {
+    const u = new URL(url);
+    return ["localhost", "127.0.0.1"].includes(u.hostname) ? Number(u.port || (u.protocol === "https:" ? 443 : 80)) : null;
+  } catch {
+    return null;
+  }
+};
+const samePage = (a: string, b?: string) => !!b && a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+
+/** A browser on the session's sandbox, with tabs: each tab's address shows the app live when a dev
+ * server answers there (a background task), or the screenshot the agent took of it. */
 function Browser({ cs, onOpen }: { cs: CodingSession; onOpen: (p: Pane) => void }) {
-  const server = (cs.tasks ?? []).find((t) => t.port && t.status === "running");
-  const [path, setPath] = useState(cs.preview?.path ?? "/");
-  const lastShot = cs.turns.flatMap((t) => t.shots ?? []).at(-1);
+  const servers = (cs.tasks ?? []).filter((t) => t.port && t.status === "running");
+  const shots: Shot[] = cs.turns.flatMap((t) => t.shots ?? []);
+  const last = shots.at(-1);
+  const first = servers[0] ? `http://localhost:${servers[0].port}${cs.preview?.path ?? "/"}` : (last?.url ?? "");
+  const [tabs, setTabs] = useState<Tab[]>([{ id: 1, url: first, draft: first }]);
+  const [active, setActive] = useState(1);
+  const tab = tabs.find((t) => t.id === active) ?? tabs[0]!;
+  const set = (id: number, change: Partial<Tab>) => setTabs((all) => all.map((t) => (t.id === id ? { ...t, ...change } : t)));
+  const open = () => {
+    const id = Math.max(...tabs.map((t) => t.id)) + 1;
+    setTabs([...tabs, { id, url: "", draft: "" }]);
+    setActive(id);
+  };
+  const close = (id: number) => {
+    const rest = tabs.filter((t) => t.id !== id);
+    const next = rest.length ? rest : [{ id: id + 1, url: "", draft: "" }];
+    setTabs(next);
+    if (id === active) setActive(next[Math.max(0, tabs.findIndex((t) => t.id === id) - 1)]?.id ?? next[0]!.id);
+  };
+  const server = servers.find((t) => t.port === portOf(tab.url));
+  const shot = !server ? [...shots].reverse().find((s) => samePage(tab.url, s.url)) : undefined;
+  const label = (t: Tab) => {
+    if (!t.url) return "New tab";
+    try {
+      const u = new URL(t.url);
+      return `${u.host}${u.pathname === "/" ? "" : u.pathname}`;
+    } catch {
+      return t.url;
+    }
+  };
   return (
-    <>
-      <div className="row cs-url">
-        <Ic n="lock" s={12} />
-        <input
-          className="mono"
-          value={server ? `preview · :${server.port}${path}` : "No app running"}
-          readOnly={!server}
-          onChange={(e) => setPath(e.target.value.replace(/^preview · :\d+/, "") || "/")}
-          aria-label="Address"
-        />
-        <button className="ibtn ibtn-xs" aria-label="Reload" disabled={!server}>
-          <Ic n="rotate-cw" s={13} />
+    <div className="cs-browser">
+      <div className="row cs-tabs" role="tablist" aria-label="Browser tabs">
+        {tabs.map((t) => (
+          <div key={t.id} className={`row cs-tab ${t.id === tab.id ? "on" : ""}`}>
+            <button role="tab" aria-selected={t.id === tab.id} className="trunc" onClick={() => setActive(t.id)}>
+              <Ic n="globe" s={12} />
+              <span className="trunc">{label(t)}</span>
+            </button>
+            <button className="ibtn ibtn-xs" onClick={() => close(t.id)} aria-label={`Close ${label(t)}`}>
+              <Ic n="x" s={11} />
+            </button>
+          </div>
+        ))}
+        <button className="ibtn ibtn-xs" onClick={open} aria-label="New tab" data-tip="New tab">
+          <Ic n="plus" s={13} />
         </button>
       </div>
+      <form
+        className="row cs-url"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const url = normalize(tab.draft);
+          set(tab.id, { url, draft: url });
+        }}
+      >
+        <Ic n={server ? "radio" : shot ? "image" : "globe"} s={12} />
+        <input
+          className="mono"
+          value={tab.draft}
+          placeholder="localhost:3000"
+          onChange={(e) => set(tab.id, { draft: e.target.value })}
+          aria-label="Address"
+          spellCheck={false}
+        />
+        {server && <span className="badge green">Live</span>}
+        {shot && <span className="badge">Screenshot</span>}
+        <button type="submit" className="ibtn ibtn-xs" aria-label="Go">
+          <Ic n="arrow-right" s={13} />
+        </button>
+        <button type="button" className="ibtn ibtn-xs" aria-label="Reload" disabled={!server} onClick={() => set(tab.id, { url: tab.url })}>
+          <Ic n="rotate-cw" s={13} />
+        </button>
+      </form>
       {server ? (
-        <div className="cs-preview" role="img" aria-label="The app's preview">
+        <div className="cs-preview" role="img" aria-label={`The app at ${tab.url}`}>
           <div className="cs-preview-bar" />
           <div className="cs-preview-hero" />
           <div className="cs-preview-row">
@@ -199,27 +275,21 @@ function Browser({ cs, onOpen }: { cs: CodingSession; onOpen: (p: Pane) => void 
             <i />
             <i />
           </div>
-          <span className="faint">
-            {server.name} on :{server.port}, served through the platform (never an open port)
-          </span>
         </div>
-      ) : lastShot ? (
-        <figure className="cs-lastshot">
-          <img src={lastShot.src} alt={`The agent's last screenshot: ${lastShot.name}`} />
-          <figcaption className="faint">
-            The agent's last screenshot ({lastShot.name}). The live app shows here once a dev server runs in a sandbox that stays up.
-          </figcaption>
-        </figure>
-      ) : (
+      ) : shot ? (
+        <img className="cs-shotview" src={shot.src} alt={`The agent's screenshot of ${tab.url}`} />
+      ) : tab.url ? (
         <Note>
-          The agent's app shows here once a dev server runs in the sandbox.{" "}
+          Nothing in this session answers at {tab.url}.{" "}
           <button className="linkbtn" onClick={() => onOpen("tasks")}>
             Background tasks
           </button>{" "}
-          start and stop it.
+          start the app's dev server.
         </Note>
+      ) : (
+        <Note>Type an address the session serves, like localhost:3000.</Note>
       )}
-    </>
+    </div>
   );
 }
 
