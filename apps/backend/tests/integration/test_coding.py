@@ -16,6 +16,7 @@ from pydantic import SecretStr
 
 from dotrix_backend.modules.coding.runner import SHOTS_LIST, CodingWorker
 from dotrix_backend.modules.coding.sandbox import ExecResult, LocalSandbox, LocalSession
+from dotrix_backend.modules.coding.warm import WarmPool
 from dotrix_backend.modules.connectors.github_app import get_github_app
 
 
@@ -122,6 +123,7 @@ async def coding(db_client: AsyncClient, github, github_world, origin: Path, cla
     jobs = app.state.jobs
     jobs.ctx = dataclasses.replace(jobs.ctx, coding=CodingWorker(
         jobs.ctx.session_factory, settings, sandbox, client, repo_url=repo_url, reviewer=app.state.runner,
+        pool=WarmPool(3600, 0),  # each turn starts fresh here; the warm sandbox has a test of its own
     ))
     yield ada, cat, ws, kun, mob, sandbox
 
@@ -404,6 +406,19 @@ async def test_a_merged_pr_is_recorded_on_the_session_and_the_issue(
     assert issue["status"] == "review"  # a person closes it
     assert any(e.get("body") == f"PR #{run['pr_number']} was merged on GitHub" for e in issue["log"])
 
+    # The session stays open: more work starts from the default branch, on a new branch and PR.
+    [listed] = (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
+    assert listed["state"] != "closed"
+    agent_script.say("Fine again.")
+    claude.edits = {"src/ship.py": "SHIP = True\nVERSION = 2\n"}
+    turns = f"{base}/coding/sessions/{run['session_id']}/turns"
+    more = (await db_client.post(turns, json={"message": "Add a version"}, headers=ada.headers)).json()
+    assert more["branch"] is None and more["pr_number"] is None
+    more = await _approve(db_client, base, more, ada.headers)
+    assert more["status"] == "pr_opened", more.get("error")
+    assert more["branch"] != run["branch"] and more["pr_number"] != run["pr_number"]
+    assert len(github.pulls) == 2 and github.pulls[-1]["base"] == "main"
+
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 40
 
@@ -512,7 +527,6 @@ async def test_a_session_keeps_its_sandbox_and_resumes_its_conversation(
     from cryptography.fernet import Fernet
 
     from dotrix_backend.core.crypto import Secrets
-    from dotrix_backend.modules.coding.warm import WarmPool
 
     ada, _, ws, kun, _, _ = coding
     app = db_client._transport.app  # type: ignore[attr-defined]
@@ -557,9 +571,36 @@ async def test_a_session_keeps_its_sandbox_and_resumes_its_conversation(
     assert claude.found_transcript[2] == "turn 1\nturn 2\n"  # restored from storage
     assert claude.argvs[2][claude.argvs[2].index("--resume") + 1] == conversation
 
-    # Closing the session: its sandbox and transcript go, its branch and PR stay.
+    # Closing it by hand: its sandbox goes; its transcript, branch, and PR stay.
     assert (await db_client.post(f"{base}/coding/sessions/{session_id}/close", headers=ada.headers)).status_code == 204
     await worker.reap()
-    assert worker.pool.sessions() == [] and not any(k.endswith("/transcript") for k in storage.objects)
+    assert worker.pool.sessions() == [] and any(k.endswith(f"/sessions/{session_id}/transcript") for k in storage.objects)
     [listed] = (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
     assert listed["state"] == "closed" and listed["pr_number"] == first["pr_number"]
+
+    # A new turn opens it again and resumes from the transcript.
+    agent_script.say("Once more.")
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    assert amount > 0, 'must be positive'\n    return amount\n"}
+    fourth = (await db_client.post(turns, json={"message": "Clearer message"}, headers=ada.headers)).json()
+    fourth = await _approve(db_client, base, fourth, ada.headers)
+    assert fourth["status"] == "pr_opened" and claude.found_transcript[3] == "turn 1\nturn 2\nturn 3\n"
+    [listed] = (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
+    assert listed["state"] == "warm"
+
+    # Renamed, pinned, archived (hidden from the list unless asked for).
+    patch = f"{base}/coding/sessions/{session_id}"
+    assert (await db_client.patch(patch, json={"title": "Refund rules", "pinned": True}, headers=ada.headers)).status_code == 204
+    [listed] = (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
+    assert listed["title"] == "Refund rules" and listed["pinned"] and listed["issue_title"] == "Refunds"
+    assert (await db_client.patch(patch, json={"archived": True}, headers=ada.headers)).status_code == 204
+    assert (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json() == []
+    [listed] = (await db_client.get(f"{ws}/coding/sessions", params={"archived": "only"}, headers=ada.headers)).json()
+    assert listed["archived"]
+
+    # Deleting it: its turns and transcript go (and its sandbox); the PR stays on GitHub.
+    assert (await db_client.delete(patch, headers=ada.headers)).status_code == 204
+    await worker.reap()
+    assert not any(k.endswith("/transcript") for k in storage.objects) and worker.pool.sessions() == []
+    assert (await db_client.get(f"{ws}/coding/sessions", params={"archived": "include"}, headers=ada.headers)).json() == []
+    assert (await db_client.get(f"{base}/coding/runs/{first['id']}", headers=ada.headers)).status_code == 404
+    assert len(github.pulls) == 1

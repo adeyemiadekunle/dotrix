@@ -245,6 +245,12 @@ export interface CodingSession {
   status: "awaiting_approval" | "queued" | "running" | "pr_opened" | "no_changes" | "failed" | "stopped" | "rejected";
   by: string;
   at: number;
+  /** A name of its own (else its issue's title), pinned first, archived out of the list. */
+  title?: string;
+  pinned?: boolean;
+  archived?: boolean;
+  /** Its sandbox: up between turns (warm), started on the next turn (idle), or closed by hand. */
+  state?: "warm" | "idle" | "closed";
   /** The project's repo when it started ("owner/name"), and what it branched from. */
   repo?: string;
   base?: { branch: string; sha: string };

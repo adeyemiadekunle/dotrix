@@ -57,7 +57,7 @@ class CodingOrigin(enum.StrEnum):
 class CodingSessionState(enum.StrEnum):
     WARM = "warm"  # its sandbox is up, between turns
     IDLE = "idle"  # no sandbox: the next turn starts one and resumes from the saved transcript
-    CLOSED = "closed"  # done (its PR merged or closed, or closed by hand): sandbox and transcript gone
+    CLOSED = "closed"  # closed by hand: its sandbox is gone, its transcript kept (a new turn resumes)
 
 
 class PrState(enum.StrEnum):
@@ -154,6 +154,9 @@ class CodingSession(WorkspaceScopedMixin, Base):
     claude_session: Mapped[uuid.UUID] = mapped_column(Uuid)  # Claude Code's --session-id / --resume
     transcript_key: Mapped[str | None] = mapped_column(String(300))  # in storage, encrypted
     cost_reported: Mapped[float | None] = mapped_column(Numeric(10, 4, asdecimal=False))  # Claude's running total
+    title: Mapped[str | None] = mapped_column(String(200))  # renamed; else its issue's title
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

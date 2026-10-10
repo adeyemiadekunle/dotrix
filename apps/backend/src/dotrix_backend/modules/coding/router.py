@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from dotrix_backend.api.deps import SessionDep, SettingsDep, require_permission
 from dotrix_backend.core.jobs import Jobs, get_jobs
 from dotrix_backend.core.openapi import errors
-from dotrix_backend.core.storage import BlobStorage, get_storage
+from dotrix_backend.core.storage import BlobStorage, get_storage, optional_storage
 from dotrix_backend.modules.projects.deps import (
     ProjectAccess,
     ProjectViewer,
@@ -26,6 +26,7 @@ from .schemas import (
     CodingRunCreate,
     CodingRunRead,
     CodingSessionRead,
+    CodingSessionUpdate,
 )
 from .service import CodingService
 
@@ -106,9 +107,25 @@ async def get_coding_screenshot(
 
 @router.post("/sessions/{session_id}/close", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 409))
 async def close_coding_session(session_id: uuid.UUID, access: ProjectViewer, coding: Coding) -> None:
-    """Close a coding session: its sandbox kept between turns and its saved transcript go; its
-    branch and PR stay, and a new turn opens it again. Whoever started it, or owners and admins."""
+    """Close a coding session: its sandbox kept between turns goes; its transcript, branch, and PR
+    stay, and a new turn opens it again and resumes. Whoever started it, or owners and admins."""
     await coding.close_session(access, session_id)
+
+
+@router.patch("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 422))
+async def update_coding_session(session_id: uuid.UUID, data: CodingSessionUpdate, access: ProjectViewer, coding: Coding) -> None:
+    """Rename, pin, or archive a coding session. Whoever started it, or owners and admins."""
+    await coding.update_session(access, session_id, data)
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 409, 503))
+async def delete_coding_session(
+    session_id: uuid.UUID, access: ProjectViewer, coding: Coding, storage: Annotated[BlobStorage | None, Depends(optional_storage)]
+) -> None:
+    """Delete a coding session: its turns, their events and screenshots, and its saved transcript.
+    Its branch and PR stay on GitHub, and the audit log keeps what happened. Whoever started it, or
+    owners and admins; 409 while a turn waits or works."""
+    await coding.delete_session(access, session_id, storage)
 
 
 @router.post("/runs/{coding_run_id}/decision", responses=errors(403, 409))
@@ -147,8 +164,9 @@ workspace_router = APIRouter(prefix="/workspaces/{workspace_id}/coding", tags=["
 
 @workspace_router.get("/sessions")
 async def list_coding_sessions(
-    member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], coding: Coding
+    member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], coding: Coding,
+    archived: Annotated[str, Query(pattern="^(exclude|include|only)$", description="Archived sessions: left out (default), included, or only them")] = "exclude",
 ) -> list[CodingSessionRead]:
-    """The workspace's coding sessions across the projects you can see, latest activity first (Chat's
-    Coding tab). Guests see none: they see no projects."""
-    return await coding.sessions(member)
+    """The workspace's coding sessions across the projects you can see, pinned first, then the latest
+    activity (Chat's Code tab). Guests see none: they see no projects."""
+    return await coding.sessions(member, {"exclude": False, "include": None, "only": True}[archived])

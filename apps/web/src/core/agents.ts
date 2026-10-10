@@ -7,6 +7,7 @@ import { runContinued } from "../data/account";
 import { isLive, live } from "../data/live";
 import { toast } from "../ui/toast";
 import { createTask } from "./actions";
+import { confirmDlg, promptDlg } from "./more";
 import { go } from "./nav";
 import { dOff, uid } from "./utils";
 
@@ -380,4 +381,60 @@ export function limitToasts() {
       ms: 10_000,
     });
   }
+}
+
+/* ---------- a coding session's menu ---------- */
+
+const sessionOf = (id: string) => D().coding.find((c) => c.id === id);
+
+export function renameSession(id: string) {
+  const cs = sessionOf(id);
+  if (!cs || agentsNotWired()) return;
+  promptDlg({
+    title: "Rename session",
+    label: "Name",
+    value: cs.title ?? task(cs.task)?.title ?? "",
+    run: (v) => mutate(() => void (sessionOf(id)!.title = v.trim() || undefined)),
+  });
+}
+export function togglePinSession(id: string) {
+  if (agentsNotWired()) return;
+  mutate(() => {
+    const cs = sessionOf(id);
+    if (cs) cs.pinned = !cs.pinned;
+  });
+}
+export function toggleArchiveSession(id: string) {
+  if (agentsNotWired()) return;
+  const archived = !sessionOf(id)?.archived;
+  mutate(() => {
+    const cs = sessionOf(id);
+    if (cs) cs.archived = archived;
+  });
+  toast(archived ? "Session archived" : "Session back in the list");
+}
+/** Its sandbox stops; its conversation, branch, and PR stay, and a new turn resumes it. */
+export function closeSession(id: string) {
+  if (agentsNotWired()) return;
+  mutate(() => {
+    const cs = sessionOf(id);
+    if (cs) cs.state = "closed";
+  });
+  toast("Session closed: its sandbox stopped. A new turn picks the conversation up again.");
+}
+/** Its turns, screenshots, and saved conversation go; the branch and PR stay on GitHub. */
+export function deleteSession(id: string) {
+  const cs = sessionOf(id);
+  if (!cs || agentsNotWired()) return;
+  confirmDlg({
+    title: "Delete this session?",
+    body: "Its turns, screenshots, and saved conversation are deleted. The branch and pull request stay on GitHub.",
+    ok: "Delete",
+    danger: true,
+    run: () => {
+      mutate(() => (D().coding = D().coding.filter((c) => c.id !== id)));
+      if (new URLSearchParams(location.search).get("session") === id) go("chat", {}, { search: "tab=coding" });
+      toast("Session deleted");
+    },
+  });
 }

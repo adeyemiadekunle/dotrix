@@ -267,7 +267,7 @@ class CodingWorker:
                 assert run is not None
                 if run.stop_requested:
                     raise _Stopped("Stopped before pushing")
-                issue_key, run_short, turn = run.issue_key, run.id.hex[:6], run.turn
+                issue_key, run_short, turn = run.issue_key, run.id.hex[-6:], run.turn  # the id's random end: its start is a timestamp shared for hours
                 title = await _issue_title(session, run)
             branch = session_branch or f"dotrix/{issue_key.lower()}-{_slug(title)}-{run_short}"
             if branch == ref.default_branch:
@@ -484,25 +484,22 @@ class CodingWorker:
                 logger.warning("closing idle coding sandboxes failed", exc_info=True)
 
     async def reap(self) -> None:
-        """Close warm sandboxes left unused past the idle time, and those whose session was closed
-        (its PR merged or closed, or closed by hand); delete closed sessions' transcripts."""
+        """Close warm sandboxes left unused past the idle time, and those whose session was closed by
+        hand or deleted. A closed session keeps its transcript (a new turn resumes); deleting a
+        session deletes it (the service does)."""
         for session_id in self.pool.idle():
             await self.pool.close(session_id)
             await self._session(session_id, state=CodingSessionState.IDLE)
+        pooled = self.pool.sessions()
+        if not pooled:
+            return
         async with self.session_factory() as session:
-            closed = list(await session.scalars(select(CodingSession).where(
-                CodingSession.state == CodingSessionState.CLOSED,
-                CodingSession.id.in_(self.pool.sessions()) | CodingSession.transcript_key.is_not(None),
-            )))
-            for row in closed:
-                await self.pool.close(row.id)
-                if row.transcript_key and self.storage is not None:
-                    try:
-                        await self.storage.delete(row.transcript_key)
-                    except Exception:
-                        logger.warning("couldn't delete a closed session's transcript", exc_info=True)
-                row.transcript_key = None
-            await session.commit()
+            live = dict((await session.execute(
+                select(CodingSession.id, CodingSession.state).where(CodingSession.id.in_(pooled))
+            )).all())
+        for session_id in pooled:
+            if live.get(session_id) in (None, CodingSessionState.CLOSED):  # deleted, or closed by hand
+                await self.pool.close(session_id)
 
     async def stop_requested(self, run_id: uuid.UUID) -> bool:
         async with self.session_factory() as session:

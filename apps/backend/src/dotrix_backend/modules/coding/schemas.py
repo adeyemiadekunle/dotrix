@@ -96,6 +96,12 @@ class CodingRunRead(BaseModel):
     can_stop: bool = Field(description="Whether you may stop it now")
 
 
+class CodingSessionUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=200, description="A name of its own; empty: back to the issue's title")
+    pinned: bool | None = None
+    archived: bool | None = None
+
+
 class CodingSessionRead(BaseModel):
     """A coding session: a run and its follow-ups, on one branch and one PR. Its status is its latest turn's."""
 
@@ -114,7 +120,10 @@ class CodingSessionRead(BaseModel):
     pr_state: PrState | None
     state: CodingSessionState = Field(
         default=CodingSessionState.IDLE,
-        description="`warm`: its sandbox is up between turns; `idle`: the next turn starts one and resumes; `closed`: done",
+        description="`warm`: its sandbox is up between turns; `idle`: the next turn starts one and resumes; `closed`: closed by hand",
     )
+    title: str = Field(default="", description="Its own name when renamed, else its issue's title")
+    pinned: bool = False
+    archived: bool = False
     started_at: datetime
     updated_at: datetime

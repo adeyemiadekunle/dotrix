@@ -309,8 +309,12 @@ Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
   (`~/.claude`) is saved after every turn, encrypted, and restored into a fresh sandbox, so a restart or
   the idle timeout doesn't lose the conversation. Without storage or an encryption key it falls back to
   the brief with earlier turns' summaries.
-- [x] Close: by hand (`POST .../coding/sessions/{id}/close`) or when the PR is merged or closed (the
-  webhook); the worker drops the sandbox and the transcript; a new turn opens it again.
+- [x] A session stays open when its PR is merged or closed: more work can start from there, and the next
+  turn starts a new branch and PR from the default branch. Closing is by hand
+  (`POST .../coding/sessions/{id}/close`): the worker drops the sandbox; the transcript, branch, and PR
+  stay, and a new turn resumes. Deleting (`DELETE .../coding/sessions/{id}`) removes its turns, their
+  screenshots, and the transcript; the PR stays on GitHub. Sessions can be renamed, pinned (first in
+  the list), and archived (`PATCH`, `?archived=`); the web's ⋮ on each session row does all of it.
 - [x] Checked on Claude Code (WIR-7 on `dotrix-test`, PR #4): turn 2 ran in the same container, resumed
   (it named the button it added in turn 1 unprompted), diffed only its own change, cost $0.0013 of its
   own; closing removed the container.
