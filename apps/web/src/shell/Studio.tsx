@@ -28,7 +28,7 @@ import { Overview, Projects } from "../screens/Projects";
 import { Search } from "../screens/Search";
 import { ActivityPage, CalendarPage, Favorites, MyTasks, Tasks, TimelinePage } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
-import { ROUTE_NAMES, Shell } from "./Shell";
+import { ROUTE_NAMES, Shell, routeName } from "./Shell";
 
 // A real workspace's pending invites join its members once it loads (Members, Settings).
 onLoaded.push(() => void loadInvites());
@@ -137,7 +137,7 @@ export function Studio() {
   }, [slug]);
   useEffect(() => {
     if (slug !== WS && live.mode !== "live") return void (document.title = "dotrix"); // still loading
-    let t = ROUTE_NAMES[route] || "Not found";
+    let t = routeName(route) || "Not found";
     if (route === "project") {
       const p = projByKey(params.id);
       if (p) t = `${params.tab ? params.tab[0]!.toUpperCase() + params.tab.slice(1) : "Board"} · ${p.name}`;

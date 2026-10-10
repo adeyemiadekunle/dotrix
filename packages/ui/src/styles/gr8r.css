@@ -1313,24 +1313,24 @@ svg.logo {
   padding: 6px 8px 8px;
   border-top: 1px solid var(--border);
 }
-.collapsed .sitem {
+.collapsed .side .sitem {
   justify-content: center;
   padding: 0;
 }
-.collapsed .sitem > span:not(.pico),
-.collapsed .sitem .ct,
-.collapsed .sgroup-h,
+.collapsed .side .sitem > span:not(.pico):not(.av),
+.collapsed .side .sitem .ct,
+.collapsed .side .sgroup-h,
 .collapsed .ws-name,
 .collapsed .ws .chev-d,
-.collapsed .sitem .sdot,
-.collapsed .sitem .fav,
-.collapsed .sitem .hov,
-.collapsed .sub,
+.collapsed .side .sitem .sdot,
+.collapsed .side .sitem .fav,
+.collapsed .side .sitem .hov,
+.collapsed .side .sub,
 .collapsed .side-search,
-.collapsed .sitem .chev {
+.collapsed .side .sitem .chev {
   display: none !important;
 }
-.collapsed .sgroup {
+.collapsed .side .sgroup {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--border);

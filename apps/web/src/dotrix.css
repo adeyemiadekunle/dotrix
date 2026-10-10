@@ -289,15 +289,20 @@
     background: var(--surface-3);
     color: var(--text);
   }
+  /* The select covers the whole pill, unseen, so a click anywhere on it opens the list. */
   .cpill.pick select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    opacity: 0;
     appearance: none;
     border: 0;
-    background: transparent;
-    color: inherit;
     font: inherit;
     cursor: pointer;
-    padding: 0;
-    outline: none;
+  }
+  .cpill.pick option {
+    background: var(--surface);
+    color: var(--text);
   }
   .cpill.pick:focus-within {
     box-shadow: 0 0 0 2px var(--accent-soft);
@@ -590,7 +595,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: min(380px, calc(100vw - 32px));
+  width: min(340px, calc(100vw - 32px));
 }
 .notices.in-panel {
   position: static;
@@ -644,8 +649,6 @@
 @media (max-width: 900px) {
   .notices {
     right: 16px;
-    left: 16px;
-    width: auto;
     bottom: 76px;
   }
   #toasts {
@@ -692,6 +695,64 @@
   font-style: normal;
   font-size: 10.5px;
   color: var(--text-3);
+  transition: color 0.2s var(--ease);
+}
+.ask-orbit .sat,
+.ask-orbit .lead {
+  transition: opacity 0.25s var(--ease);
+}
+/* Point at a face: it springs up and glows in its colour; the others step back. */
+.ask-orbit .sat .face,
+.ask-orbit .lead .face {
+  transition:
+    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 0.25s var(--ease);
+}
+.ask-orbit .sat:hover .face {
+  transform: translateY(-3px) scale(1.28);
+  filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--c, var(--acc)) 60%, transparent));
+}
+.ask-orbit .sat:hover em {
+  color: var(--text);
+}
+.ask-orbit:has(.sat:hover) .sat:not(:hover),
+.ask-orbit:has(.sat:hover) .lead {
+  opacity: 0.6;
+}
+.ask-orbit .lead:hover .face {
+  animation: leadwiggle 0.7s var(--ease);
+}
+@keyframes leadwiggle {
+  25% {
+    transform: rotate(-9deg) scale(1.06);
+  }
+  55% {
+    transform: rotate(7deg) scale(1.08);
+  }
+  80% {
+    transform: rotate(-3deg) scale(1.04);
+  }
+}
+/* Now and then each one blinks, never all at once. */
+.ask-orbit .face-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: faceblink 5.5s infinite;
+}
+.ask-orbit .s0 .face-eyes { animation-delay: -1.2s; }
+.ask-orbit .s1 .face-eyes { animation-delay: -3.7s; }
+.ask-orbit .s2 .face-eyes { animation-delay: -2.3s; }
+.ask-orbit .s3 .face-eyes { animation-delay: -4.6s; }
+.ask-orbit .s4 .face-eyes { animation-delay: -0.6s; }
+@keyframes faceblink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.12);
+  }
 }
 .ask-orbit .s0 { left: 14%; top: 34%; animation-delay: -1s; }
 .ask-orbit .s1 { left: 32%; top: 2%; animation-delay: -2.4s; }
@@ -704,13 +765,23 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ask-orbit .sat {
+  .ask-orbit .sat,
+  .ask-orbit .face-eyes,
+  .ask-orbit .lead:hover .face {
     animation: none;
   }
+  .ask-orbit .sat .face,
+  .ask-orbit .lead .face {
+    transition: none;
+  }
+}
+.ask-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
 }
 .ask-box {
   width: 100%;
-  max-width: 640px;
   background: var(--surface);
   box-shadow: var(--shadow-card);
 }
@@ -726,4 +797,29 @@
   height: 28px;
   border: 1px solid var(--border);
   background: var(--surface);
+}
+
+/* Chat's switch between conversations and coding sessions: icons beside the heading. */
+.seg-icons button {
+  position: relative;
+  padding: 0 8px;
+}
+.seg-n {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+.chat-new {
+  margin-top: 8px;
+  width: 100%;
+  font-weight: 500;
 }

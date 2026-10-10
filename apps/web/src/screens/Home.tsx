@@ -1,6 +1,6 @@
 // Gr8r's Home (gr8r-studio/src/pages/home.js), with dotrix's "Waiting for a decision": what the
 // agents ask you to approve or steer, first in the right column.
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 
 import { openTask } from "../core/actions";
 import { allowed, canInvite } from "../core/can";
@@ -15,6 +15,7 @@ import { newThread } from "../core/agents";
 import { moodOf } from "../core/presence";
 import { isLive } from "../data/live";
 import { Face } from "../ui/face";
+import { useAtPicker } from "../components/AtPicker";
 import { sortTasks, viewOf } from "../shell/viewEngine";
 import { Av, AvStack, Empty, PIcon, PStatus, PrIcon, ProgBar } from "../ui/helpers";
 
@@ -77,15 +78,25 @@ const ASKS: [string, string][] = [
  * starts a conversation with Nova, who brings in whoever the work needs. */
 function AskHero() {
   const [text, setText] = useState("");
+  const ref = useRef<HTMLTextAreaElement>(null);
   const lead = D().agents.find((a) => a.handle === "auto") ?? D().agents[0];
   const others = D().agents.filter((a) => a !== lead).slice(0, 5);
+  // "@" picks the project the agents read ("" for all of them) and who to ask.
+  const ps = visibleProjects().filter((x) => canSee(x) && !x.archived);
+  const [pid, setPid] = useState(ps[0]?.id ?? "");
+  const [agent, setAgent] = useState(lead?.handle ?? "auto");
+  const ag = D().agents.find((a) => a.handle === agent) ?? lead;
+  const projects: [string, string][] = [...ps.map((p): [string, string] => [p.id, p.name]), ["", "All projects"]];
+  const at = useAtPicker({ text, setText, ref, projects, project: pid, onProject: setPid, agent, onAgent: setAgent });
   const ask = (q: string) => {
     const t = q.trim();
     if (!t) return;
     // A real workspace's chat isn't wired yet: the question waits in a new chat there.
-    if (isLive()) return go("chat", {}, { search: `new=1&q=${encodeURIComponent(t)}` });
-    const p = visibleProjects().find((x) => canSee(x) && !x.archived);
-    const th = newThread(p?.id ?? null, "auto", S.ui.chatModel, t, p ? undefined : visibleProjects().map((x) => x.id));
+    if (isLive()) {
+      const where = pid ? `project=${proj(pid)?.key}` : "across=1";
+      return go("chat", {}, { search: `new=1&${where}&agent=${agent}&q=${encodeURIComponent(t)}` });
+    }
+    const th = newThread(pid || null, agent, S.ui.chatModel, t, pid ? undefined : ps.map((x) => x.id));
     if (th) go("chat", {}, { search: `thread=${th.id}` });
   };
   return (
@@ -97,12 +108,13 @@ function AskHero() {
           </span>
         )}
         {others.map((a, i) => (
-          <span key={a.handle} className={`sat s${i}`}>
+          <span key={a.handle} className={`sat s${i}`} style={{ "--c": a.c } as CSSProperties}>
             <Face c={a.c} size={24} mood={moodOf(a.handle)} />
             <em>{a.name}</em>
           </span>
         ))}
       </div>
+      <div className="ask-wrap">
       <form
         className="cbox ask-box"
         onSubmit={(e) => {
@@ -111,23 +123,30 @@ function AskHero() {
         }}
       >
         <textarea
+          ref={ref}
           rows={2}
           value={text}
-          placeholder={`Ask ${lead?.name ?? "the agents"} anything, or describe a task…`}
-          onChange={(e) => setText(e.target.value)}
+          placeholder={`Ask ${ag?.name ?? "the agents"} anything, or type @ to pick a project or an agent`}
+          onChange={(e) => at.onChange(e.target)}
           onKeyDown={(e) => {
+            if (at.onKeyDown(e)) return;
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               ask(text);
             }
           }}
-          aria-label={`Ask ${lead?.name ?? "the agents"}`}
+          aria-label={`Ask ${ag?.name ?? "the agents"}`}
+          aria-expanded={at.open}
         />
         <div className="cbox-row">
-          {lead && <Face c={lead.c} size={16} />}
-          <span className="muted" style={{ fontSize: 12 }}>
-            {lead?.name} sends it to the right agent
-          </span>
+          <button type="button" className="cpill pick" onClick={at.start} data-tip="Type @ to pick another project">
+            <Ic n={pid ? "at-sign" : "layers"} s={12} />
+            <span className="trunc">{projects.find(([v]) => v === pid)?.[1]}</span>
+          </button>
+          <button type="button" className="cpill pick" onClick={at.start} data-tip="Type @ to ask another agent">
+            {ag && <Face c={ag.c} size={16} mood="idle" />}
+            {ag?.name} · {ag?.role}
+          </button>
           <span className="sp" />
           <span className="faint hide-m" style={{ fontSize: 11 }}>
             ↵ to start
@@ -137,6 +156,8 @@ function AskHero() {
           </button>
         </div>
       </form>
+      {at.menu}
+      </div>
       <div className="ask-sugg">
         {ASKS.map(([i, q]) => (
           <button key={q} className="cpill pick" onClick={() => ask(q)}>

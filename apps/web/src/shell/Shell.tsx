@@ -46,6 +46,10 @@ export const ROUTE_NAMES: Record<string, string> = {
   states: "System states",
 };
 
+/** A page's name; Chat is "Code" while its Code tab is open. */
+export const routeName = (route: string) =>
+  route === "chat" && new URLSearchParams(location.search).get("tab") === "coding" ? "Code" : ROUTE_NAMES[route];
+
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
 // Below 900px the sidebar is a drawer (280px wide): always with its labels, whatever the
@@ -92,6 +96,12 @@ function SideTip() {
 export function Shell({ children }: { children: ReactNode }) {
   const s = useStudio();
   const u = s.ui;
+  // Going to another page from anywhere in the drawer (a project, a view) closes it too.
+  const { route: here, params: hereParams } = useRoute();
+  const at = `${here}/${JSON.stringify(hereParams)}`;
+  useEffect(() => {
+    if (S.ui.mnav) ((S.ui.mnav = false), render());
+  }, [at]);
   // Crossing the narrow breakpoint changes what "collapsed" means: re-render.
   useEffect(() => {
     const mqs = [window.matchMedia(NARROW), window.matchMedia("(min-width: 1200px)")];
@@ -171,7 +181,13 @@ function SItem({
   return (
     <button
       className={`sitem ${active ? "on" : ""}`}
-      onClick={onClick ?? (() => route && go(route, params))}
+      onClick={(e) => {
+        if (onClick) return onClick(e);
+        if (!route) return;
+        go(route, params);
+        // On a narrow window the sidebar is a drawer: picking a page closes it, the page you're on too.
+        if (narrow() && S.ui.mnav) ((S.ui.mnav = false), render());
+      }}
       data-tip={sideCollapsed() ? label : undefined}
       data-tip-pos="right"
       aria-current={active ? "page" : undefined}
@@ -210,7 +226,13 @@ function Sidebar() {
             </span>
           </button>
           {!sideCollapsed() && (
-            <button className="ibtn ibtn-sm hide-m" onClick={toggleSide} data-tip="Collapse sidebar  [" aria-label="Collapse sidebar">
+            // In the drawer (narrow screens) it closes the drawer; collapsing to icons is for wide screens.
+            <button
+              className="ibtn ibtn-sm hide-m"
+              onClick={() => (narrow() ? ((S.ui.mnav = false), render()) : toggleSide())}
+              data-tip={narrow() ? "Close menu" : "Collapse sidebar  ["}
+              aria-label={narrow() ? "Close menu" : "Collapse sidebar"}
+            >
               <Ic n="panel-left" s={15} />
             </button>
           )}
@@ -417,7 +439,7 @@ function Crumbs() {
   } else if (route === "team") {
     out.push(c("Teams", () => go("teams")));
     out.push(c(team(params.id)?.name || "Team", undefined, true));
-  } else out.push(c(ROUTE_NAMES[route] || "Not found", undefined, true));
+  } else out.push(c(routeName(route) || "Not found", undefined, true));
   return (
     <nav className="crumbs trunc" aria-label="Breadcrumb">
       {out.flatMap((x, i) => (i ? [<span key={`s${i}`} className="sep">/</span>, x] : [x]))}
