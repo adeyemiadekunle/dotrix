@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { applyPatch, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
-import { agentsNotWired, startCoding } from "../core/agents";
+import { startCoding } from "../core/agents";
 import { commentDeleted, commentEdited, commentPosted, commentReacted, documentUploaded, isLive, issueFileAttached } from "../data/live";
 import { TY, TYPES } from "../core/constants";
 import { Ic } from "../core/icons";
@@ -90,7 +90,13 @@ export function postComment(id: string) {
     S.ui.drawerTab = "comments";
   });
   // Who was @mentioned by name, so the API tells them.
-  commentPosted(t, txt, people().filter((m) => txt.includes(`@${m.name}`)).map((m) => m.id));
+  commentPosted(
+    t,
+    txt,
+    people()
+      .filter((m) => txt.includes(`@${m.name}`))
+      .map((m) => m.id),
+  );
 }
 /** Add or take back your reaction to a comment. */
 export function toggleReaction(c: Comment, e: string) {
@@ -208,7 +214,12 @@ export function CommentItem({ c }: { c: Comment }) {
                 <span className="num">{v.length}</span>
               </button>
             ))}
-          <button className="react" aria-label="Add reaction" style={{ color: "var(--text-3)" }} onClick={(e) => openPop(e.currentTarget, "emoji", { id: c.id })}>
+          <button
+            className="react"
+            aria-label="Add reaction"
+            style={{ color: "var(--text-3)" }}
+            onClick={(e) => openPop(e.currentTarget, "emoji", { id: c.id })}
+          >
             <Ic n="smile-plus" s={13} />
           </button>
         </div>
@@ -217,12 +228,23 @@ export function CommentItem({ c }: { c: Comment }) {
   );
 }
 /** The comment box with @mentions (the drawer and the Inbox's reply). */
-export function CommentBox({ t, id = "d-cmt", placeholder = "Leave a comment… type @ to mention", label = "Comment" }: { t: Task; id?: string; placeholder?: string; label?: string }) {
+export function CommentBox({
+  t,
+  id = "d-cmt",
+  placeholder = "Leave a comment… type @ to mention",
+  label = "Comment",
+}: {
+  t: Task;
+  id?: string;
+  placeholder?: string;
+  label?: string;
+}) {
   const draft = S.ui.drafts[t.id] || "";
   const ref = useRef<HTMLTextAreaElement>(null);
   const ment =
     S.ui.mention && S.ui.mention.tid === t.id
-      ? people().filter((m) => {
+      ? people()
+          .filter((m) => {
             const q = S.ui.mention!.q.toLowerCase();
             return m.name.toLowerCase().startsWith(q) || m.name.split(" ")[1]?.toLowerCase().startsWith(q);
           })
@@ -395,14 +417,25 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
   };
   return (
     <div className="subview">
-      <button className="pillbtn" onClick={() => ((S.ui.subOpen = null), render())} style={{ margin: "-4px 0 14px -7px", fontSize: 12.5, color: "var(--text-2)" }}>
+      <button
+        className="pillbtn"
+        onClick={() => ((S.ui.subOpen = null), render())}
+        style={{ margin: "-4px 0 14px -7px", fontSize: 12.5, color: "var(--text-2)" }}
+      >
         <Ic n="arrow-left" s={14} />
         <span className="trunc" style={{ maxWidth: 420 }}>
           {t.title}
         </span>
       </button>
       <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
-        <input type="checkbox" className="check round" style={{ marginTop: 9 }} checked={s.done} onChange={() => toggleSub(t, s)} aria-label={s.done ? "Mark subtask not done" : "Mark subtask done"} />
+        <input
+          type="checkbox"
+          className="check round"
+          style={{ marginTop: 9 }}
+          checked={s.done}
+          onChange={() => toggleSub(t, s)}
+          aria-label={s.done ? "Mark subtask not done" : "Mark subtask done"}
+        />
         <textarea
           className="ttl-edit"
           rows={1}
@@ -624,17 +657,38 @@ export function Drawer() {
             {t.key}
           </span>
           <span className="sp" />
-          <button className={`btn btn-sm ${t.status === "done" ? "btn-secondary" : "btn-ghost"}`} onClick={() => toggleDone(t.id)} style={t.status === "done" ? { color: "var(--green)" } : undefined}>
+          <button
+            className={`btn btn-sm ${t.status === "done" ? "btn-secondary" : "btn-ghost"}`}
+            onClick={() => toggleDone(t.id)}
+            style={t.status === "done" ? { color: "var(--green)" } : undefined}
+          >
             <Ic n={t.status === "done" ? "circle-check" : "circle"} s={14} />
             <span className="hide-m">{t.status === "done" ? "Completed" : "Mark complete"}</span>
           </button>
-          <button className="ibtn ibtn-sm" onClick={() => toggleFavTask(t.id)} data-tip={t.fav ? "Unfavorite" : "Favorite"} aria-pressed={t.fav} aria-label="Favorite" style={t.fav ? { color: "var(--amber)" } : undefined}>
+          <button
+            className="ibtn ibtn-sm"
+            onClick={() => toggleFavTask(t.id)}
+            data-tip={t.fav ? "Unfavorite" : "Favorite"}
+            aria-pressed={t.fav}
+            aria-label="Favorite"
+            style={t.fav ? { color: "var(--amber)" } : undefined}
+          >
             <Ic n="star" s={15} />
           </button>
-          <button className="ibtn ibtn-sm" onClick={() => void copy(`${location.origin}/w/${currentSlug()}/p/${p.key}/board?task=${t.key}`)} data-tip="Copy link" aria-label="Copy link">
+          <button
+            className="ibtn ibtn-sm"
+            onClick={() => void copy(`${location.origin}/w/${currentSlug()}/p/${p.key}/board?task=${t.key}`)}
+            data-tip="Copy link"
+            aria-label="Copy link"
+          >
             <Ic n="link" s={15} />
           </button>
-          <button className="ibtn ibtn-sm hide-m" onClick={() => ((u.drawerFull = !u.drawerFull), render())} data-tip={u.drawerFull ? "Side panel" : "Full page"} aria-label="Toggle full page">
+          <button
+            className="ibtn ibtn-sm hide-m"
+            onClick={() => ((u.drawerFull = !u.drawerFull), render())}
+            data-tip={u.drawerFull ? "Side panel" : "Full page"}
+            aria-label="Toggle full page"
+          >
             <Ic n={u.drawerFull ? "minimize-2" : "maximize-2"} s={15} />
           </button>
           <button className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id })} aria-label="More">
@@ -705,7 +759,11 @@ export function Drawer() {
                 {prop(
                   "tag",
                   "Labels",
-                  <button className={`pillbtn ${t.labels.length ? "" : "empty"}`} onClick={(e) => openPop(e.currentTarget, "labels", { id: t.id })} style={{ flexWrap: "wrap", height: "auto", minHeight: 26, padding: "3px 7px" }}>
+                  <button
+                    className={`pillbtn ${t.labels.length ? "" : "empty"}`}
+                    onClick={(e) => openPop(e.currentTarget, "labels", { id: t.id })}
+                    style={{ flexWrap: "wrap", height: "auto", minHeight: 26, padding: "3px 7px" }}
+                  >
                     {t.labels.length ? (
                       t.labels.map((l) => <Lbl key={l} id={l} />)
                     ) : (
@@ -735,7 +793,11 @@ export function Drawer() {
                 {prop(
                   "git-branch",
                   "Blocked by",
-                  <button className={`pillbtn ${t.deps.length ? "" : "empty"}`} onClick={(e) => openPop(e.currentTarget, "deps", { id: t.id })} style={{ height: "auto", minHeight: 26, flexWrap: "wrap" }}>
+                  <button
+                    className={`pillbtn ${t.deps.length ? "" : "empty"}`}
+                    onClick={(e) => openPop(e.currentTarget, "deps", { id: t.id })}
+                    style={{ height: "auto", minHeight: 26, flexWrap: "wrap" }}
+                  >
                     {t.deps.length ? (
                       t.deps.map((d) =>
                         task(d) ? (
@@ -942,7 +1004,13 @@ function Subtasks({ t, sd }: { t: Task; sd: number }) {
       </div>
       {t.subtasks.map((s) => (
         <div key={s.id} className={`subt ${s.done ? "done" : ""}`}>
-          <input type="checkbox" className="check" checked={s.done} onChange={() => toggleSub(t, s)} aria-label={`${s.done ? "Reopen" : "Complete"} subtask ${s.title}`} />
+          <input
+            type="checkbox"
+            className="check"
+            checked={s.done}
+            onChange={() => toggleSub(t, s)}
+            aria-label={`${s.done ? "Reopen" : "Complete"} subtask ${s.title}`}
+          />
           <button className="s" onClick={() => ((S.ui.subOpen = { tid: t.id, sid: s.id }), render())}>
             {s.title}
           </button>
@@ -953,7 +1021,12 @@ function Subtasks({ t, sd }: { t: Task; sd: number }) {
             </span>
           )}
           {s.assignee && <Av id={s.assignee} cls="sm" />}
-          <button className="ibtn ibtn-xs x" onClick={() => ((S.ui.subOpen = { tid: t.id, sid: s.id }), render())} aria-label="Open subtask details" tabIndex={-1}>
+          <button
+            className="ibtn ibtn-xs x"
+            onClick={() => ((S.ui.subOpen = { tid: t.id, sid: s.id }), render())}
+            aria-label="Open subtask details"
+            tabIndex={-1}
+          >
             <Ic n="chevron-right" s={14} />
           </button>
         </div>

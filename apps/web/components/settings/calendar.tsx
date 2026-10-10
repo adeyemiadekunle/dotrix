@@ -8,13 +8,7 @@ import { CalendarPlusIcon, CopyIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 import { ApiError, api, errorMessage, unwrap } from "@/lib/api";
 
 type Scope = "mine" | "all";
@@ -80,9 +74,7 @@ export function CalendarFeed() {
     <SettingsSection>
       <SettingsHeader>
         <SettingsTitle>Calendar</SettingsTitle>
-        <SettingsDescription>
-          Subscribe to your issues&apos; due and scheduled dates in Google Calendar, Apple Calendar, or Outlook.
-        </SettingsDescription>
+        <SettingsDescription>Subscribe to your issues&apos; due and scheduled dates in Google Calendar, Apple Calendar, or Outlook.</SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="grid gap-4">
         {feed.isLoading ? (
@@ -119,8 +111,8 @@ export function CalendarFeed() {
                   </Button>
                 </div>
                 <p className="text-muted-foreground text-xs">
-                  Copy it now: it&apos;s shown only once. In your calendar app, add a calendar &quot;from URL&quot; and
-                  paste it. Anyone with the link can see these issues&apos; keys, titles, and dates, so keep it private.
+                  Copy it now: it&apos;s shown only once. In your calendar app, add a calendar &quot;from URL&quot; and paste it. Anyone with the link can see
+                  these issues&apos; keys, titles, and dates, so keep it private.
                 </p>
                 <Button variant="outline" size="sm" className="w-fit" asChild>
                   <a href={url.replace(/^https?:/, "webcal:")}>

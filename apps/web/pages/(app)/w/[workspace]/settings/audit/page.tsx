@@ -60,8 +60,7 @@ function detailText(e: AuditEvent): string | null {
   const d = e.details as Record<string, unknown>;
   if (e.action === "member.role_changed" && d.from && d.to) return `${d.from} → ${d.to}`;
   if (e.action === "workspace.renamed" && d.from && d.to) return `“${d.from}” → “${d.to}”`;
-  if ((e.action === "invite.sent" || e.action === "member.joined") && d.role)
-    return `as ${d.role}${d.via ? ` (${d.via})` : ""}`;
+  if ((e.action === "invite.sent" || e.action === "member.joined") && d.role) return `as ${d.role}${d.via ? ` (${d.via})` : ""}`;
   if (e.action === "invite.link_created" && d.role) return `for ${d.role}s${d.max_uses ? `, up to ${d.max_uses} uses` : ""}`;
   if (e.action === "workspace.converted_to_organization" && d.to) return `named “${d.to}”`;
   if (e.action === "project.access_changed" && d.to) return d.to === "restricted" ? "only people added" : "every member";
@@ -87,15 +86,7 @@ function actorOf(e: AuditEvent, names: Map<string, string>): { who: string; kind
   return { who: (e.actor_user_id && names.get(e.actor_user_id)) || "Someone", kind: "user" };
 }
 
-function Event({
-  event,
-  names,
-  projectKeys,
-}: {
-  event: AuditEvent;
-  names: Map<string, string>;
-  projectKeys: Map<string, string>;
-}) {
+function Event({ event, names, projectKeys }: { event: AuditEvent; names: Map<string, string>; projectKeys: Map<string, string> }) {
   const actor = actorOf(event, names);
   const Icon = actor.kind === "agent" ? BotIcon : actor.kind === "system" ? CogIcon : UserIcon;
   const person = (id: string | null) => (id ? (names.get(id) ?? "a former member") : null);

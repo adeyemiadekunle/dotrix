@@ -160,9 +160,7 @@ export function IssueFilters({
                 key={t}
                 checked={filters.type.includes(t)}
                 onSelect={(e) => e.preventDefault()}
-                onCheckedChange={(on) =>
-                  filters.setType(on ? [...filters.type, t] : filters.type.filter((x) => x !== t))
-                }
+                onCheckedChange={(on) => filters.setType(on ? [...filters.type, t] : filters.type.filter((x) => x !== t))}
               >
                 <TypeIcon type={t} />
                 {TYPE_META[t].label}
@@ -170,10 +168,7 @@ export function IssueFilters({
             ))}
           </Sub>
           <Sub icon={UserIcon} label="Assignee">
-            <DropdownMenuRadioGroup
-              value={filters.assignee ?? ANY}
-              onValueChange={(v) => filters.setAssignee(v === ANY ? null : v)}
-            >
+            <DropdownMenuRadioGroup value={filters.assignee ?? ANY} onValueChange={(v) => filters.setAssignee(v === ANY ? null : v)}>
               <DropdownMenuRadioItem value={ANY}>Anyone</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="me">Assigned to me</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="none">Unassigned</DropdownMenuRadioItem>
@@ -226,11 +221,7 @@ export function IssueFilters({
       </DropdownMenu>
 
       {filters.type.length > 0 && (
-        <FilterChip
-          name="Type"
-          value={filters.type.map((t) => TYPE_META[t].label).join(", ")}
-          onRemove={() => filters.setType([])}
-        />
+        <FilterChip name="Type" value={filters.type.map((t) => TYPE_META[t].label).join(", ")} onRemove={() => filters.setType([])} />
       )}
       {filters.assignee && filters.assignee !== "me" && (
         <FilterChip name="Assignee" value={assigneeName(filters.assignee)} onRemove={() => filters.setAssignee(null)} />

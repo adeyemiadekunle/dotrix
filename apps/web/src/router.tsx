@@ -45,7 +45,12 @@ const authRoutes = [
   authPage("/magic-link", "Sign in", () => import("../pages/(auth)/magic-link/page")),
   authPage("/device", "Sign in a device", () => import("../pages/(auth)/device/page")),
   authPage("/invites/accept", "Join a workspace", () => import("../pages/(auth)/invites/accept/page")),
-  createRoute({ getParentRoute: () => auth, path: "/onboarding", staticData: { title: "Set up your workspace" }, component: page(() => import("./screens/Onboarding").then((m) => ({ default: m.Onboarding }))) }),
+  createRoute({
+    getParentRoute: () => auth,
+    path: "/onboarding",
+    staticData: { title: "Set up your workspace" },
+    component: page(() => import("./screens/Onboarding").then((m) => ({ default: m.Onboarding }))),
+  }),
 ];
 
 /** "/": your last (or first) workspace when signed in, else the demo. */

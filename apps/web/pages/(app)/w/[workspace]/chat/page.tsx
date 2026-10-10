@@ -1,14 +1,6 @@
 import { Button } from "@dotrix/ui/components/button";
 import { cn } from "@dotrix/ui/lib/utils";
-import {
-  ChevronDownIcon,
-  ChevronRightIcon,
-  LayersIcon,
-  LoaderCircleIcon,
-  MessageSquarePlusIcon,
-  PlusIcon,
-  ShieldAlertIcon,
-} from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, LayersIcon, LoaderCircleIcon, MessageSquarePlusIcon, PlusIcon, ShieldAlertIcon } from "lucide-react";
 import { Suspense, useMemo, useState } from "react";
 
 import { Conversation } from "@/components/agent/conversation";
@@ -72,8 +64,7 @@ function WorkspaceChat() {
   // Opening a conversation drops the starting message; picking a project keeps it for the new chat.
   const open = (key: string | null, thread: string | null) =>
     setParams({ project: key, thread, across: null, tab: null, session: null, ...(thread ? { q: null } : {}) });
-  const openAcross = (thread: string | null) =>
-    setParams({ project: null, thread, across: "1", tab: null, session: null, ...(thread ? { q: null } : {}) });
+  const openAcross = (thread: string | null) => setParams({ project: null, thread, across: "1", tab: null, session: null, ...(thread ? { q: null } : {}) });
   const openSession = (s: CodingSession | null) =>
     setParams({ tab: "coding", project: s?.project_key ?? null, session: s?.session_id ?? null, thread: null, across: null, q: null });
 
@@ -176,9 +167,7 @@ function WorkspaceChat() {
                         {isCollapsed ? <ChevronRightIcon className="size-3.5 shrink-0" /> : <ChevronDownIcon className="size-3.5 shrink-0" />}
                         <ProjectTile projectKey={p.key} className="size-4 text-[8px]" />
                         <span className="truncate">{p.name}</span>
-                        {isCollapsed && conversations.length > 0 && (
-                          <span className="text-muted-foreground text-xs font-normal">{conversations.length}</span>
-                        )}
+                        {isCollapsed && conversations.length > 0 && <span className="text-muted-foreground text-xs font-normal">{conversations.length}</span>}
                       </button>
                       {canChat && (
                         <Button
@@ -211,9 +200,7 @@ function WorkspaceChat() {
                           <span className="text-muted-foreground text-xs">{timeAgo(t.updated_at)}</span>
                         </button>
                       ))}
-                    {!isCollapsed && conversations.length === 0 && (
-                      <p className="text-muted-foreground py-1 pl-7 text-xs">No conversations yet.</p>
-                    )}
+                    {!isCollapsed && conversations.length === 0 && <p className="text-muted-foreground py-1 pl-7 text-xs">No conversations yet.</p>}
                   </div>
                 );
               })}
@@ -270,10 +257,10 @@ function WorkspaceChat() {
                   value={threadId ? `${across ? "x:" : ""}${threadId}` : ""}
                   onChange={(e) => {
                     if (e.target.value === "coding:") {
-                  openSession(null);
-                  return;
-                }
-                if (e.target.value.startsWith("x:")) {
+                      openSession(null);
+                      return;
+                    }
+                    if (e.target.value.startsWith("x:")) {
                       openAcross(e.target.value.slice(2) || null);
                       return;
                     }
@@ -283,7 +270,7 @@ function WorkspaceChat() {
                   className="bg-background h-7 max-w-36 rounded-md border px-1.5 text-xs md:hidden"
                 >
                   <option value="">New chat</option>
-              <option value="coding:">Code</option>
+                  <option value="coding:">Code</option>
                   {list.length > 1 && <option value="x:">New chat across projects</option>}
                   {crossThreads.data?.map((c) => (
                     <option key={c.thread_id} value={`x:${c.thread_id}`}>

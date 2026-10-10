@@ -109,14 +109,12 @@ export function useDeleteFile(scope: Scope | undefined) {
 }
 
 export function useRestoreVersion(scope: Scope | undefined) {
-  return useKnowledgeMutation(
-    scope,
-    (s, { path, version, baseVersion }: { path: string; version: number; baseVersion: number | null }) =>
-      call<FileRead>(`${base(s)}/files/${filePath(path)}/restore`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version, base_version: baseVersion }),
-      }),
+  return useKnowledgeMutation(scope, (s, { path, version, baseVersion }: { path: string; version: number; baseVersion: number | null }) =>
+    call<FileRead>(`${base(s)}/files/${filePath(path)}/restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version, base_version: baseVersion }),
+    }),
   );
 }
 

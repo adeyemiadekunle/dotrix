@@ -74,10 +74,7 @@ export function AgentPicker({
               <DropdownMenuLabel>
                 Model <span className="text-muted-foreground font-normal">(for this whole conversation)</span>
               </DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={model ?? defaultModel}
-                onValueChange={(v) => onModel(v === defaultModel ? null : v)}
-              >
+              <DropdownMenuRadioGroup value={model ?? defaultModel} onValueChange={(v) => onModel(v === defaultModel ? null : v)}>
                 {[defaultModel, ...models.filter((m) => m !== defaultModel)].map((m) => (
                   <DropdownMenuRadioItem key={m} value={m}>
                     <span className="font-mono text-xs">{modelName(m)}</span>
@@ -94,24 +91,12 @@ export function AgentPicker({
       ) : (
         <Chip label={agentLabel(agent, options)} onRemove={disabled ? undefined : () => onAgent("auto")} removeLabel="Back to Auto" />
       )}
-      {model && onModel && (
-        <Chip label={modelName(model)} mono onRemove={disabled ? undefined : () => onModel(null)} removeLabel="Use the project's model" />
-      )}
+      {model && onModel && <Chip label={modelName(model)} mono onRemove={disabled ? undefined : () => onModel(null)} removeLabel="Use the project's model" />}
     </>
   );
 }
 
-function Chip({
-  label,
-  mono,
-  onRemove,
-  removeLabel,
-}: {
-  label: string;
-  mono?: boolean;
-  onRemove?: () => void;
-  removeLabel: string;
-}) {
+function Chip({ label, mono, onRemove, removeLabel }: { label: string; mono?: boolean; onRemove?: () => void; removeLabel: string }) {
   return (
     <span className="bg-brand-muted text-brand-muted-foreground inline-flex h-6 max-w-40 items-center gap-1 rounded-full px-2 text-xs font-medium has-[button]:pr-1">
       <span className={mono ? "truncate font-mono" : "truncate"}>{label}</span>

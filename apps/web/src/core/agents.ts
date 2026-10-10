@@ -62,8 +62,24 @@ export function decideChange(changeId: string, approve: boolean, reason = "") {
       D().activity[0]!.by = msg.by; // created by the agent, on your approval
       ch.fields = { ...fl, Key: t.key };
     }
-    D().audit.unshift({ id: uid("au"), at: Date.now(), by: D().me, action: approve ? "approval.approved" : "approval.rejected", target: ch.title, project: pid ?? undefined });
-    if (pid) D().activity.unshift({ id: uid("a"), by: D().me, verb: approve ? "approved" : "rejected", task: null, project: pid, at: Date.now(), extra: `${who(msg.by)?.name}'s change to ${ch.title}` });
+    D().audit.unshift({
+      id: uid("au"),
+      at: Date.now(),
+      by: D().me,
+      action: approve ? "approval.approved" : "approval.rejected",
+      target: ch.title,
+      project: pid ?? undefined,
+    });
+    if (pid)
+      D().activity.unshift({
+        id: uid("a"),
+        by: D().me,
+        verb: approve ? "approved" : "rejected",
+        task: null,
+        project: pid,
+        at: Date.now(),
+        extra: `${who(msg.by)?.name}'s change to ${ch.title}`,
+      });
     settleNotifs(th);
   });
   toast(approve ? `Approved: ${ch.title}` : `Rejected: ${ch.title}`, { ms: 2200 });
@@ -93,7 +109,10 @@ export function alwaysAllow(changeId: string) {
     D().audit.unshift({ id: uid("au"), at: Date.now(), by: D().me, action: "agent.updated", target: `${agent.name}: always ${act[1]}` });
   });
   decideChange(changeId, true);
-  toast(`${agent.name} may now ${act[1]} without asking`, { action: "Settings", onAction: () => ((S.ui.agentSel = agent.handle), go("settings", { sec: "agents" })) });
+  toast(`${agent.name} may now ${act[1]} without asking`, {
+    action: "Settings",
+    onAction: () => ((S.ui.agentSel = agent.handle), go("settings", { sec: "agents" })),
+  });
 }
 
 export function decideAll(msg: ChatMessage, approve: boolean) {
@@ -152,7 +171,15 @@ function cannedAnswer(th: Thread, q: string): { text: string; activity: string[]
     return {
       activity: ["Read requirements/", "Searched the board for duplicates"],
       text: "I'd add one story for this. It waits for your approval:",
-      changes: [{ id: uid("pc"), kind: "create_issue", title: q.replace(/^.*?(add|create|write)\s+/i, "").slice(0, 80) || "New story", fields: { Type: "Story", Priority: "Medium" }, status: "pending" }],
+      changes: [
+        {
+          id: uid("pc"),
+          kind: "create_issue",
+          title: q.replace(/^.*?(add|create|write)\s+/i, "").slice(0, 80) || "New story",
+          fields: { Type: "Story", Priority: "Medium" },
+          status: "pending",
+        },
+      ],
     };
   return {
     activity: ["Read project.md", "Searched the project's documents"],
@@ -175,8 +202,28 @@ export function startCoding(t: { id: string; key: string; title: string; project
   const ask = note.trim() || t.title;
   mutate(() => {
     const repo = repoName(proj(t.project)?.repo);
-    D().coding.unshift({ id, project: t.project, task: t.id, tool, status: "awaiting_approval", by: D().me, at: Date.now(), ...(repo ? { repo } : {}), turns: [{ at: Date.now(), ask, events: [] }] });
-    D().notifs.unshift({ id: uid("n"), type: "approval", by: `agent:${tool}`, project: t.project, task: t.id, text: "is waiting to start coding", snippet: `${t.key} ${t.title}`, at: Date.now(), read: false });
+    D().coding.unshift({
+      id,
+      project: t.project,
+      task: t.id,
+      tool,
+      status: "awaiting_approval",
+      by: D().me,
+      at: Date.now(),
+      ...(repo ? { repo } : {}),
+      turns: [{ at: Date.now(), ask, events: [] }],
+    });
+    D().notifs.unshift({
+      id: uid("n"),
+      type: "approval",
+      by: `agent:${tool}`,
+      project: t.project,
+      task: t.id,
+      text: "is waiting to start coding",
+      snippet: `${t.key} ${t.title}`,
+      at: Date.now(),
+      read: false,
+    });
   });
   return id;
 }
@@ -201,8 +248,24 @@ export function sendChat(th: Thread, text: string, agent: string) {
 
 export function newThread(project: string | null, agent: string, model: string, first: string, projects?: string[]): Thread | null {
   if (agentsNotWired()) return null;
-  const title = first.replace(/^(hi|hello|hey)[,!.\s]+/i, "").replace(/^(can|could) you\s+|^please\s+/i, "").split(/[.?!\n]/)[0]!.split(" ").slice(0, 7).join(" ");
-  const th: Thread = { id: uid("th"), project, projects, title: title[0]?.toUpperCase() + title.slice(1) || "New chat", by: D().me, agent, model, at: Date.now(), messages: [] };
+  const title = first
+    .replace(/^(hi|hello|hey)[,!.\s]+/i, "")
+    .replace(/^(can|could) you\s+|^please\s+/i, "")
+    .split(/[.?!\n]/)[0]!
+    .split(" ")
+    .slice(0, 7)
+    .join(" ");
+  const th: Thread = {
+    id: uid("th"),
+    project,
+    projects,
+    title: title[0]?.toUpperCase() + title.slice(1) || "New chat",
+    by: D().me,
+    agent,
+    model,
+    at: Date.now(),
+    messages: [],
+  };
   mutate(() => D().threads.unshift(th));
   sendChat(th, first, agent);
   return th;
@@ -213,11 +276,22 @@ export function decideCoding(cs: CodingSession, approve: boolean, reason = "") {
   if (cs.status !== "awaiting_approval") return;
   mutate(() => {
     cs.status = approve ? "running" : "rejected";
-    if (approve) cs.branch = `dotrix/${task(cs.task)!.key.toLowerCase()}-${task(cs.task)!.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
+    if (approve)
+      cs.branch = `dotrix/${task(cs.task)!.key.toLowerCase()}-${task(cs.task)!
+        .title.toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .slice(0, 30)}`;
     if (approve) cs.turns.at(-1)!.events.push("Checked out the default branch", "Reading the code");
     else cs.turns.at(-1)!.summary = reason ? `Rejected: ${reason}` : "Rejected";
     D().notifs.forEach((n) => n.task === cs.task && n.type === "approval" && (n.read = true));
-    D().audit.unshift({ id: uid("au"), at: Date.now(), by: D().me, action: approve ? "coding.approved" : "coding.rejected", target: task(cs.task)!.key, project: cs.project });
+    D().audit.unshift({
+      id: uid("au"),
+      at: Date.now(),
+      by: D().me,
+      action: approve ? "coding.approved" : "coding.rejected",
+      target: task(cs.task)!.key,
+      project: cs.project,
+    });
   });
   toast(approve ? `${cs.tool === "codex" ? "Codex" : "Claude Code"} is coding ${task(cs.task)!.key}` : "Coding rejected", { ms: 2200 });
 }
@@ -235,7 +309,6 @@ export function followUp(cs: CodingSession, ask: string) {
     cs.at = Date.now();
   });
 }
-
 
 /* ---------- a run stopped at its model's limit ---------- */
 
@@ -257,7 +330,13 @@ export function continueLimited(at: { thread?: string; project?: string; run?: s
     void runContinued(at.project, at.run, whenReset)
       .then((r) => {
         done();
-        toast(r.continue_at_reset ? "It'll continue when the limit resets" : r.status === "failed" ? "Still at the limit; try again shortly" : "Continuing where it stopped");
+        toast(
+          r.continue_at_reset
+            ? "It'll continue when the limit resets"
+            : r.status === "failed"
+              ? "Still at the limit; try again shortly"
+              : "Continuing where it stopped",
+        );
       })
       .catch((e: unknown) => toast(e instanceof Error && e.message ? e.message : "It couldn't continue", { kind: "err" }));
     return;
@@ -284,7 +363,6 @@ export function continueLimited(at: { thread?: string; project?: string; run?: s
   done();
   toast("Continuing where it stopped");
 }
-
 
 const toasted = new Set<string>();
 

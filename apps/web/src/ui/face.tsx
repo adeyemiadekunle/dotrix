@@ -27,7 +27,15 @@ export function Face({ c, size = 20, mood = "idle", label }: { c: string; size?:
   const id = useId().replace(/:/g, "");
   const ink = "#2B2A27"; // the features stay dark on every colour, in both themes
   return (
-    <svg className={`face face-${mood}`} width={size} height={size} viewBox="0 0 32 32" role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+    <svg
+      className={`face face-${mood}`}
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      role={label ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+    >
       <defs>
         <radialGradient id={`g${id}`} cx="38%" cy="30%" r="75%">
           <stop offset="0" stopColor="#fff" stopOpacity={mood === "offline" ? 0.25 : 0.7} />
@@ -37,7 +45,15 @@ export function Face({ c, size = 20, mood = "idle", label }: { c: string; size?:
       </defs>
       <circle cx="16" cy="16" r="15" fill={`url(#g${id})`} />
       <circle cx="16" cy="16" r="14.5" fill="none" stroke="#000" strokeOpacity=".08" />
-      <path className="face-eyes" d={EYES[mood]} fill={mood === "needs" || mood === "thinking" ? ink : "none"} stroke={ink} strokeWidth="1.5" strokeLinecap="round" opacity=".85" />
+      <path
+        className="face-eyes"
+        d={EYES[mood]}
+        fill={mood === "needs" || mood === "thinking" ? ink : "none"}
+        stroke={ink}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity=".85"
+      />
       <path className="face-mouth" d={MOUTH[mood]} fill={mood === "needs" ? ink : "none"} stroke={ink} strokeWidth="1.4" strokeLinecap="round" opacity=".8" />
     </svg>
   );

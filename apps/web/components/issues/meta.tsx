@@ -3,17 +3,7 @@ import type { Schemas } from "@dotrix/api-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@dotrix/ui/components/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@dotrix/ui/components/tooltip";
 import { cn } from "@dotrix/ui/lib/utils";
-import {
-  BookmarkIcon,
-  BotIcon,
-  BugIcon,
-  FlaskConicalIcon,
-  ListTreeIcon,
-  SquareCheckIcon,
-  UserIcon,
-  ZapIcon,
-  type LucideIcon,
-} from "lucide-react";
+import { BookmarkIcon, BotIcon, BugIcon, FlaskConicalIcon, ListTreeIcon, SquareCheckIcon, UserIcon, ZapIcon, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
 import type { AgentAssignee, IssueStatus, IssueType, Priority } from "@/lib/issues";
@@ -70,14 +60,7 @@ const STATUS_SHAPES: Record<IssueStatus, ComponentType> = {
   done: () => (
     <>
       <circle cx="7" cy="7" r="6" fill="currentColor" />
-      <path
-        d="M4.3 7.2l1.9 1.9 3.6-4"
-        fill="none"
-        className="stroke-background"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M4.3 7.2l1.9 1.9 3.6-4" fill="none" className="stroke-background" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </>
   ),
 };
@@ -165,10 +148,7 @@ export function StatusBadge({ status, className }: { status: IssueStatus; classN
 
 export type MemberMap = Map<string, Schemas["MemberRead"]>;
 
-export function assigneeName(
-  issue: { assignee_user_id: string | null; assignee_agent: AgentAssignee | null },
-  members: MemberMap,
-): string | null {
+export function assigneeName(issue: { assignee_user_id: string | null; assignee_agent: AgentAssignee | null }, members: MemberMap): string | null {
   if (issue.assignee_agent) return AGENT_LABELS[issue.assignee_agent];
   if (issue.assignee_user_id) return members.get(issue.assignee_user_id)?.display_name ?? "Former member";
   return null;
@@ -195,19 +175,9 @@ export function AssigneeAvatar({
         <Avatar className={cn("size-6", className)}>
           {photo && <AvatarImage src={photo} alt="" className="object-cover" />}
           <AvatarFallback
-            className={cn(
-              "text-[10px]",
-              issue.assignee_agent && "bg-brand text-brand-foreground",
-              !name && "bg-transparent border border-dashed",
-            )}
+            className={cn("text-[10px]", issue.assignee_agent && "bg-brand text-brand-foreground", !name && "bg-transparent border border-dashed")}
           >
-            {issue.assignee_agent ? (
-              <BotIcon className="size-3.5" />
-            ) : name ? (
-              initials(name)
-            ) : (
-              <UserIcon className="text-muted-foreground size-3.5" />
-            )}
+            {issue.assignee_agent ? <BotIcon className="size-3.5" /> : name ? initials(name) : <UserIcon className="text-muted-foreground size-3.5" />}
           </AvatarFallback>
         </Avatar>
       </TooltipTrigger>

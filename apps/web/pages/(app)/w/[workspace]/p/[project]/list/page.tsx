@@ -1,20 +1,6 @@
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import {
-  SortableContext,
-  arrayMove,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Progress } from "@dotrix/ui/components/progress";
 import { Skeleton } from "@dotrix/ui/components/skeleton";
@@ -77,23 +63,10 @@ function Row({
         <span className="text-muted-foreground w-16 shrink-0 font-mono text-xs">{issue.key}</span>
         <TypeIcon type={issue.type} className="hidden sm:block" />
         <span className="min-w-0 flex-1 truncate">{issue.title}</span>
-        {issue.parent_key && (
-          <EpicTag
-            epicKey={issue.parent_key}
-            epics={epics}
-            className="text-muted-foreground hidden max-w-40 text-xs md:flex"
-          />
-        )}
-        {showStatus && (
-          <span className="text-muted-foreground hidden w-24 text-xs md:inline">{STATUS_META[issue.status].label}</span>
-        )}
+        {issue.parent_key && <EpicTag epicKey={issue.parent_key} epics={epics} className="text-muted-foreground hidden max-w-40 text-xs md:flex" />}
+        {showStatus && <span className="text-muted-foreground hidden w-24 text-xs md:inline">{STATUS_META[issue.status].label}</span>}
         <PriorityIcon priority={issue.priority} className="hidden sm:block" />
-        <span
-          className={cn(
-            "w-14 shrink-0 text-right text-xs",
-            overdue ? "font-medium text-red-600 dark:text-red-400" : "text-muted-foreground",
-          )}
-        >
+        <span className={cn("w-14 shrink-0 text-right text-xs", overdue ? "font-medium text-red-600 dark:text-red-400" : "text-muted-foreground")}>
           {issue.due ? formatDue(issue.due) : ""}
         </span>
       </button>
@@ -120,12 +93,7 @@ function Group({
 }) {
   return (
     <section className="bg-card overflow-hidden rounded-xl border">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={!collapsed}
-        className="flex h-11 w-full items-center gap-2 px-4 text-sm font-semibold"
-      >
+      <button type="button" onClick={onToggle} aria-expanded={!collapsed} className="flex h-11 w-full items-center gap-2 px-4 text-sm font-semibold">
         {collapsed ? <ChevronRightIcon className="size-4" /> : <ChevronDownIcon className="size-4" />}
         {icon}
         {label}
@@ -207,10 +175,7 @@ function ListPage() {
                   type="button"
                   aria-pressed={on}
                   onClick={() => setGroup(id === "status" ? "status" : null)}
-                  className={cn(
-                    "rounded-md px-2.5 py-1",
-                    on ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  )}
+                  className={cn("rounded-md px-2.5 py-1", on ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
                 >
                   {label}
                 </button>
@@ -235,15 +200,7 @@ function ListPage() {
                 <DndContext>
                   <SortableContext items={column.issues.map((i) => i.key)} strategy={verticalListSortingStrategy}>
                     {column.issues.map((issue) => (
-                      <Row
-                        key={issue.key}
-                        issue={issue}
-                        members={memberMap}
-                        epics={epicMap}
-                        onOpen={openIssue}
-                        draggable={false}
-                        showStatus={false}
-                      />
+                      <Row key={issue.key} issue={issue} members={memberMap} epics={epicMap} onOpen={openIssue} draggable={false} showStatus={false} />
                     ))}
                   </SortableContext>
                 </DndContext>
@@ -276,15 +233,7 @@ function ListPage() {
                 onToggle={() => toggle("ranked")}
               >
                 {visible.map((issue) => (
-                  <Row
-                    key={issue.key}
-                    issue={issue}
-                    members={memberMap}
-                    epics={epicMap}
-                    onOpen={openIssue}
-                    draggable={canEdit}
-                    showStatus
-                  />
+                  <Row key={issue.key} issue={issue} members={memberMap} epics={epicMap} onOpen={openIssue} draggable={canEdit} showStatus />
                 ))}
               </Group>
             </SortableContext>
@@ -294,9 +243,7 @@ function ListPage() {
 
       <aside className="grid content-start gap-3">
         <h2 className="font-medium">Epics</h2>
-        {epics.data?.length === 0 && (
-          <p className="text-muted-foreground text-sm">No epics yet. An epic groups the stories of one feature.</p>
-        )}
+        {epics.data?.length === 0 && <p className="text-muted-foreground text-sm">No epics yet. An epic groups the stories of one feature.</p>}
         <ul className="grid gap-2">
           {epics.data?.map((e) => (
             <li key={e.key}>

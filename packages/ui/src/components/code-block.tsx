@@ -1,14 +1,14 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { CheckIcon, CopyIcon } from "lucide-react"
-import { cn } from "@dotrix/ui/lib/utils"
-import { Button } from "@dotrix/ui/components/button"
+import * as React from "react";
+import { CheckIcon, CopyIcon } from "lucide-react";
+import { cn } from "@dotrix/ui/lib/utils";
+import { Button } from "@dotrix/ui/components/button";
 
-const MAX_HIGHLIGHT_CHARS = 20_000 // longer blocks stay plain: highlighting them isn't worth it
-const HIGHLIGHT_DELAY_MS = 150 // while text streams in, wait for a pause before highlighting
+const MAX_HIGHLIGHT_CHARS = 20_000; // longer blocks stay plain: highlighting them isn't worth it
+const HIGHLIGHT_DELAY_MS = 150; // while text streams in, wait for a pause before highlighting
 
-type Highlighted = { code: string; html: string }
+type Highlighted = { code: string; html: string };
 
 /**
  * A code block with its language and a copy button. Syntax highlighting (Shiki, light and dark
@@ -16,44 +16,44 @@ type Highlighted = { code: string; html: string }
  * until then, and for languages it doesn't know, the code shows as plain text.
  */
 function CodeBlock({ code, language, className }: { code: string; language?: string; className?: string }) {
-  const [highlighted, setHighlighted] = React.useState<Highlighted | null>(null)
-  const [copied, setCopied] = React.useState(false)
-  const lang = language?.toLowerCase()
+  const [highlighted, setHighlighted] = React.useState<Highlighted | null>(null);
+  const [copied, setCopied] = React.useState(false);
+  const lang = language?.toLowerCase();
 
   React.useEffect(() => {
-    if (!lang || code.length > MAX_HIGHLIGHT_CHARS) return
-    let cancelled = false
+    if (!lang || code.length > MAX_HIGHLIGHT_CHARS) return;
+    let cancelled = false;
     const timer = window.setTimeout(async () => {
       try {
-        const shiki = await import("shiki")
-        if (!(lang in shiki.bundledLanguages) && !(lang in shiki.bundledLanguagesAlias)) return
+        const shiki = await import("shiki");
+        if (!(lang in shiki.bundledLanguages) && !(lang in shiki.bundledLanguagesAlias)) return;
         // Shiki escapes the code itself; the HTML it returns is only its own markup.
         const html = await shiki.codeToHtml(code, {
           lang,
           themes: { light: "github-light", dark: "github-dark" },
           defaultColor: false,
-        })
-        if (!cancelled) setHighlighted({ code, html })
+        });
+        if (!cancelled) setHighlighted({ code, html });
       } catch {
         // Highlighting is a nicety: plain text stays.
       }
-    }, HIGHLIGHT_DELAY_MS)
+    }, HIGHLIGHT_DELAY_MS);
     return () => {
-      cancelled = true
-      window.clearTimeout(timer)
-    }
-  }, [code, lang])
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [code, lang]);
 
   React.useEffect(() => {
-    if (!copied) return
-    const timer = window.setTimeout(() => setCopied(false), 2000)
-    return () => window.clearTimeout(timer)
-  }, [copied])
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(code)
-      setCopied(true)
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
     } catch {
       // The clipboard can be unavailable (insecure context, permissions).
     }
@@ -86,7 +86,7 @@ function CodeBlock({ code, language, className }: { code: string; language?: str
         </pre>
       )}
     </div>
-  )
+  );
 }
 
-export { CodeBlock }
+export { CodeBlock };

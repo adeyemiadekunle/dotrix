@@ -34,7 +34,13 @@ export function MyTasks() {
       tasks: mine.filter(isOver),
       set: {},
     },
-    { key: "today", name: "Today", html: <Ic n="sun" s={14} />, tasks: mine.filter((t) => t.status !== "done" && t.due && diffD(parse(t.due)!, TODAY) === 0), set: { due: dOff(0) } },
+    {
+      key: "today",
+      name: "Today",
+      html: <Ic n="sun" s={14} />,
+      tasks: mine.filter((t) => t.status !== "done" && t.due && diffD(parse(t.due)!, TODAY) === 0),
+      set: { due: dOff(0) },
+    },
     {
       key: "upcoming",
       name: "Upcoming",
@@ -289,7 +295,13 @@ export function ActivityPage() {
             </button>
           ))}
         </div>
-        <select className="select" style={{ height: 26, width: "auto", fontSize: 12 }} value={whoF} onChange={(e) => ((S.ui.actWho = e.target.value), render())} aria-label="Filter by person">
+        <select
+          className="select"
+          style={{ height: 26, width: "auto", fontSize: 12 }}
+          value={whoF}
+          onChange={(e) => ((S.ui.actWho = e.target.value), render())}
+          aria-label="Filter by person"
+        >
           <option value="all">Everyone</option>
           {D().members.map((m) => (
             <option key={m.id} value={m.id}>

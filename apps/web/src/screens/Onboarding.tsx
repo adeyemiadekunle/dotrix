@@ -18,7 +18,16 @@ const N = 6;
 
 export function Onboarding() {
   const [st, setSt] = useState(0);
-  const [o, setO] = useState<Data>({ use: "product", ws: "", url: "", team: "kanban", size: "2-10", proj: "My first project", tmpl: "product", invites: ["", "", ""] });
+  const [o, setO] = useState<Data>({
+    use: "product",
+    ws: "",
+    url: "",
+    team: "kanban",
+    size: "2-10",
+    proj: "My first project",
+    tmpl: "product",
+    invites: ["", "", ""],
+  });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (p: Partial<Data>) => setO({ ...o, ...p });
@@ -52,9 +61,27 @@ export function Onboarding() {
       D().ws.url = o.url || "workspace";
       const tm = TEMPLATES.find((t) => t.id === o.tmpl);
       const p = createProject({ name: o.proj || "My first project", icon: tm?.icon || "folder", color: "indigo", team: me()!.team, lead: D().me }, o.tmpl);
-      D().knowledge.push({ path: "project.md", project: p.id, content: `# ${p.name}\n\nWhat this project is for, who it serves, and what done looks like.\n`, version: 1, by: D().me, at: Date.now() });
+      D().knowledge.push({
+        path: "project.md",
+        project: p.id,
+        content: `# ${p.name}\n\nWhat this project is for, who it serves, and what done looks like.\n`,
+        version: 1,
+        by: D().me,
+        at: Date.now(),
+      });
       for (const email of o.invites.filter((x) => x.includes("@")))
-        D().members.push({ id: uid("m"), name: email.split("@")[0]!, email, role: "Member", team: me()!.team, title: "", c: "#8A867E", status: "invited", last: null, tz: "" });
+        D().members.push({
+          id: uid("m"),
+          name: email.split("@")[0]!,
+          email,
+          role: "Member",
+          team: me()!.team,
+          title: "",
+          c: "#8A867E",
+          status: "invited",
+          last: null,
+          tz: "",
+        });
     });
     go("home");
   };
@@ -115,7 +142,14 @@ export function Onboarding() {
           <label className="label" htmlFor="o-ws">
             Workspace name
           </label>
-          <input className={`input input-lg ${err ? "is-error" : ""}`} id="o-ws" value={o.ws} onChange={(e) => set({ ws: e.target.value, url: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "") })} placeholder="e.g. Acme Studio" autoFocus />
+          <input
+            className={`input input-lg ${err ? "is-error" : ""}`}
+            id="o-ws"
+            value={o.ws}
+            onChange={(e) => set({ ws: e.target.value, url: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "") })}
+            placeholder="e.g. Acme Studio"
+            autoFocus
+          />
           {err && (
             <span className="err">
               <Ic n="circle-alert" s={12} />
@@ -128,10 +162,28 @@ export function Onboarding() {
             Workspace URL
           </label>
           <div className="row" style={{ gap: 0 }}>
-            <span className="input input-lg" style={{ width: "auto", background: "var(--surface-2)", borderRight: 0, borderRadius: "6px 0 0 6px", display: "flex", alignItems: "center", color: "var(--text-2)" }}>
+            <span
+              className="input input-lg"
+              style={{
+                width: "auto",
+                background: "var(--surface-2)",
+                borderRight: 0,
+                borderRadius: "6px 0 0 6px",
+                display: "flex",
+                alignItems: "center",
+                color: "var(--text-2)",
+              }}
+            >
               dotrix.app/w/
             </span>
-            <input className="input input-lg" id="o-url" value={o.url} onChange={(e) => set({ url: e.target.value })} style={{ borderRadius: "0 6px 6px 0" }} placeholder="acme" />
+            <input
+              className="input input-lg"
+              id="o-url"
+              value={o.url}
+              onChange={(e) => set({ url: e.target.value })}
+              style={{ borderRadius: "0 6px 6px 0" }}
+              placeholder="acme"
+            />
           </div>
           {o.url && (
             <span className="hint" style={{ color: "var(--green)", display: "flex", gap: 4, alignItems: "center" }}>
@@ -226,9 +278,17 @@ export function Onboarding() {
         <div className="panel">
           {[
             ["building-2", `Workspace “${o.ws || "My Workspace"}”`, "dotrix.app/w/" + (o.url || "workspace")],
-            [tm?.icon || "folder", `Project “${o.proj}”`, `${tm?.tasks.length || 0} starter tasks · ${{ kanban: "Board", list: "List", timeline: "Timeline", table: "Table" }[o.team]} view`],
+            [
+              tm?.icon || "folder",
+              `Project “${o.proj}”`,
+              `${tm?.tasks.length || 0} starter tasks · ${{ kanban: "Board", list: "List", timeline: "Timeline", table: "Table" }[o.team]} view`,
+            ],
             ["sparkles", "Six agents, ready in Chat", "They read your documents and propose changes for you to approve"],
-            ["user-plus", n ? `${n} invite${n > 1 ? "s" : ""} sent` : "No invites yet", n ? "They'll appear in Members once they join" : "Invite people any time from the sidebar"],
+            [
+              "user-plus",
+              n ? `${n} invite${n > 1 ? "s" : ""} sent` : "No invites yet",
+              n ? "They'll appear in Members once they join" : "Invite people any time from the sidebar",
+            ],
           ].map(([i, t, s]) => (
             <div key={t} className="row ready-row" style={{ padding: "12px 14px", borderTop: "1px solid var(--divider)", gap: 12 }}>
               <span className="ftype" style={{ "--c": "var(--acc)" } as React.CSSProperties}>

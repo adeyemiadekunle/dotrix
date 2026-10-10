@@ -15,10 +15,7 @@ export function useMentionable(workspaceId: string | undefined, projectId: strin
   return useMemo(
     () =>
       (members.data ?? []).filter(
-        (m) =>
-          m.role !== "guest" &&
-          m.user_id !== me.data?.id &&
-          (m.sees_all_projects || (projectId !== undefined && m.project_ids.includes(projectId))),
+        (m) => m.role !== "guest" && m.user_id !== me.data?.id && (m.sees_all_projects || (projectId !== undefined && m.project_ids.includes(projectId))),
       ),
     [members.data, me.data?.id, projectId],
   );
@@ -54,7 +51,12 @@ export function useMentions({
     if (!open) return [];
     // Any word of the name: "@lov" finds Ada Lovelace.
     return people
-      .filter((m) => m.display_name.toLowerCase().split(/\s+/).some((word) => word.startsWith(open.query)))
+      .filter((m) =>
+        m.display_name
+          .toLowerCase()
+          .split(/\s+/)
+          .some((word) => word.startsWith(open.query)),
+      )
       .slice(0, MAX_SHOWN);
   }, [open, people]);
 
@@ -115,25 +117,12 @@ export function useMentions({
     setOpen(null);
   }
 
-  const list =
-    open && matches.length > 0 ? (
-      <MentionList matches={matches} active={active} onPick={pick} onHover={setActive} />
-    ) : null;
+  const list = open && matches.length > 0 ? <MentionList matches={matches} active={active} onPick={pick} onHover={setActive} /> : null;
 
   return { list, track, onKeyDown, mentioned, reset };
 }
 
-function MentionOption({
-  member,
-  active,
-  onPick,
-  onHover,
-}: {
-  member: Member;
-  active: boolean;
-  onPick: () => void;
-  onHover: () => void;
-}) {
+function MentionOption({ member, active, onPick, onHover }: { member: Member; active: boolean; onPick: () => void; onHover: () => void }) {
   return (
     <li
       role="option"
@@ -172,13 +161,7 @@ function MentionList({
       className="bg-popover text-popover-foreground absolute bottom-full left-0 z-20 mb-1 w-64 rounded-lg border p-1 shadow-md"
     >
       {matches.map((member, index) => (
-        <MentionOption
-          key={member.user_id}
-          member={member}
-          active={index === active}
-          onPick={() => onPick(member)}
-          onHover={() => onHover(index)}
-        />
+        <MentionOption key={member.user_id} member={member} active={index === active} onPick={() => onPick(member)} onHover={() => onHover(index)} />
       ))}
     </ul>
   );

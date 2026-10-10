@@ -32,9 +32,8 @@ export function WorkspaceSkills({ workspaceId }: { workspaceId: string }) {
       <div className="grid gap-1">
         <h2 className="font-semibold">Skills for every project</h2>
         <p className="text-muted-foreground text-sm">
-          Procedures agents follow for a kind of work, like writing a release note. Agents see each skill&apos;s
-          description and read the steps when the work calls for it. A project&apos;s own skill of the same name, in
-          agent-rules/skills/, wins.
+          Procedures agents follow for a kind of work, like writing a release note. Agents see each skill&apos;s description and read the steps when the work
+          calls for it. A project&apos;s own skill of the same name, in agent-rules/skills/, wins.
         </p>
       </div>
       {skills.isLoading ? (
@@ -81,7 +80,13 @@ export function WorkspaceSkills({ workspaceId }: { workspaceId: string }) {
             </form>
           </div>
           {selected ? (
-            <SkillEditor key={`${selected}-${current?.version ?? 0}`} workspaceId={workspaceId} name={selected} skill={current} onRemoved={() => setSelected(null)} />
+            <SkillEditor
+              key={`${selected}-${current?.version ?? 0}`}
+              workspaceId={workspaceId}
+              name={selected}
+              skill={current}
+              onRemoved={() => setSelected(null)}
+            />
           ) : (
             <p className="text-muted-foreground text-sm">Pick a skill to edit it, or name a new one.</p>
           )}
@@ -91,17 +96,7 @@ export function WorkspaceSkills({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-function SkillEditor({
-  workspaceId,
-  name,
-  skill,
-  onRemoved,
-}: {
-  workspaceId: string;
-  name: string;
-  skill: Skill | undefined;
-  onRemoved: () => void;
-}) {
+function SkillEditor({ workspaceId, name, skill, onRemoved }: { workspaceId: string; name: string; skill: Skill | undefined; onRemoved: () => void }) {
   const queryClient = useQueryClient();
   const [content, setContent] = useState(skill?.content ?? NEW_SKILL);
   const save = useMutation({

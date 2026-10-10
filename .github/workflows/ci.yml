@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg17-trixie  # Postgres 17 + pgvector, like infra/docker-compose.yml
+        image: pgvector/pgvector:pg17-trixie # Postgres 17 + pgvector, like infra/docker-compose.yml
         # Throwaway container reachable only from this runner: trust auth, no password.
         env:
           POSTGRES_USER: dotrix
@@ -88,6 +88,10 @@ jobs:
         run: |
           pnpm --filter @dotrix/api-client generate
           git diff --exit-code packages/api-client/src/schema.ts
+      - name: Formatted with Prettier (run `pnpm format` if this fails)
+        run: pnpm format:check
+      - name: ESLint (run `pnpm lint:fix` for what it can fix)
+        run: pnpm exec eslint .
       - run: pnpm build
       - run: pnpm typecheck
 
@@ -97,7 +101,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg17-trixie  # Postgres 17 + pgvector, like infra/docker-compose.yml
+        image: pgvector/pgvector:pg17-trixie # Postgres 17 + pgvector, like infra/docker-compose.yml
         env:
           POSTGRES_USER: dotrix
           POSTGRES_DB: dotrix

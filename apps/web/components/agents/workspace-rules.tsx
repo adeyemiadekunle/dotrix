@@ -28,19 +28,13 @@ export function WorkspaceRules({ workspaceId }: { workspaceId: string }) {
       <div className="grid gap-1">
         <h2 className="font-semibold">Rules for every project</h2>
         <p className="text-muted-foreground text-sm">
-          Conventions every project&apos;s agents follow: how you write, what to always check, what never to do. Each
-          project&apos;s own rules in agent-rules/ come after these, so a project can be more specific. What agents may
-          never do is fixed in the platform and can&apos;t be changed here.
+          Conventions every project&apos;s agents follow: how you write, what to always check, what never to do. Each project&apos;s own rules in agent-rules/
+          come after these, so a project can be more specific. What agents may never do is fixed in the platform and can&apos;t be changed here.
         </p>
       </div>
       <div className="grid gap-2">
         <Label htmlFor="rules-for">For</Label>
-        <select
-          id="rules-for"
-          value={handle}
-          onChange={(e) => setHandle(e.target.value)}
-          className="bg-background h-9 w-fit rounded-md border px-2 text-sm"
-        >
+        <select id="rules-for" value={handle} onChange={(e) => setHandle(e.target.value)} className="bg-background h-9 w-fit rounded-md border px-2 text-sm">
           <option value="base">Every agent{configured.has("base") ? " (set)" : ""}</option>
           {agents.data?.map((a) => (
             <option key={a.handle} value={a.handle}>

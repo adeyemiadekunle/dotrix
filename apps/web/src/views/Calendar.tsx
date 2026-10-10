@@ -49,7 +49,15 @@ export function Calendar({ ts, k = "", project, events }: { ts: Task[]; k?: stri
     const t = it.t!;
     const p = proj(t.project);
     return (
-      <button key={t.id} className={`cev ${t.status === "done" ? "done" : ""}`} style={css({ "--c": pColor(p) })} draggable data-drag-cal={t.id} onClick={() => openTask(t.id)} title={t.title}>
+      <button
+        key={t.id}
+        className={`cev ${t.status === "done" ? "done" : ""}`}
+        style={css({ "--c": pColor(p) })}
+        draggable
+        data-drag-cal={t.id}
+        onClick={() => openTask(t.id)}
+        title={t.title}
+      >
         {t.status === "done" ? <StIcon st="done" s={11} /> : <PrIcon p={t.priority} s={11} />}
         <span className="trunc">{t.title}</span>
         <Av id={t.assignee} tip={false} />
@@ -123,7 +131,12 @@ export function Calendar({ ts, k = "", project, events }: { ts: Task[]; k?: stri
                     if (it.ev) {
                       const p = proj(it.ev.project)!;
                       return (
-                        <button key={it.ev.id} className="wcard event" style={css({ "--c": pColor(p) })} onClick={(e) => openPop(e.currentTarget, "event", { id: it.ev!.id })}>
+                        <button
+                          key={it.ev.id}
+                          className="wcard event"
+                          style={css({ "--c": pColor(p) })}
+                          onClick={(e) => openPop(e.currentTarget, "event", { id: it.ev!.id })}
+                        >
                           <span className="t">
                             <span className="pdot" style={css({ "--c": pColor(p), borderRadius: "50%" })} />
                             {it.ev.title}

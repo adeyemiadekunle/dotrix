@@ -62,8 +62,7 @@ export function RepoPicker({
   if (!status.data.configured) {
     return (
       <p className="text-muted-foreground text-sm">
-        Connecting private repos needs the GitHub App, which isn&apos;t set up on this server yet. Paste the address
-        instead.
+        Connecting private repos needs the GitHub App, which isn&apos;t set up on this server yet. Paste the address instead.
       </p>
     );
   }
@@ -113,9 +112,7 @@ export function RepoPicker({
           );
         })}
         {shown.length === 0 && (
-          <li className="text-muted-foreground px-3 py-4 text-center text-sm">
-            {repos.data.length ? "No repo matches." : "The app can't see any repos yet."}
-          </li>
+          <li className="text-muted-foreground px-3 py-4 text-center text-sm">{repos.data.length ? "No repo matches." : "The app can't see any repos yet."}</li>
         )}
       </ul>
       <p className="text-muted-foreground text-xs">

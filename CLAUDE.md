@@ -21,6 +21,8 @@ Engine notes: [docs/engine.md](docs/engine.md). Agents v2 spec: [docs/agents-v2.
 uv sync                                   # install all Python packages
 uv run pytest                             # Python tests
 uv run ruff check apps packages --fix     # lint (rules pinned in root pyproject.toml)
+pnpm lint                                 # ESLint (TypeScript) + Ruff; `pnpm lint:fix` fixes what it can
+pnpm format                               # Prettier (TS, CSS, JSON, YAML; printWidth 160); CI runs `pnpm format:check`
 pnpm install && pnpm build && pnpm typecheck
 pnpm dev:web                              # web app on :3000 (Vite; forwards /v1, /api, /health to the API, DOTRIX_API_URL in apps/web/.env.local)
 pnpm dev:backend                          # API on :8000, OpenAPI at /docs (python -m dotrix_backend.serve: selector loop on Windows)
@@ -31,7 +33,7 @@ pnpm openapi                              # after any API change: export openapi
 pnpm --filter @dotrix/web e2e            # browser tests: fresh dotrix_e2e DB + backend on :8100 + web on :3100, rule-based model
 ```
 
-CI runs Ruff and pytest, the pnpm build and typecheck, and the browser tests. Run them before pushing (the browser tests at least when you change web flows).
+A pre-commit hook (Husky + lint-staged) runs ESLint --fix and Prettier on staged TypeScript and JavaScript, Prettier on CSS, JSON, and YAML, and Ruff on staged Python. CI runs Ruff and pytest, Prettier and ESLint, the pnpm build and typecheck, and the browser tests. Run them before pushing (the browser tests at least when you change web flows).
 
 ## Rules that always apply
 

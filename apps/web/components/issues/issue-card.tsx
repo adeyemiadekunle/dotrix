@@ -38,14 +38,7 @@ export function EpicTag({ epicKey, epics, className }: { epicKey: string; epics:
 function DueTag({ due, done }: { due: string; done: boolean }) {
   const d = formatDue(due);
   const tone = done ? "plain" : d.overdue ? "overdue" : d.soon ? "soon" : "plain";
-  const text =
-    tone === "overdue"
-      ? `Overdue ${-d.days}d`
-      : tone === "soon"
-        ? d.days === 0
-          ? "Due today"
-          : `Due in ${d.days}d`
-        : d.text;
+  const text = tone === "overdue" ? `Overdue ${-d.days}d` : tone === "soon" ? (d.days === 0 ? "Due today" : `Due in ${d.days}d`) : d.text;
   return (
     <span
       title={`Due ${d.text}`}
@@ -82,16 +75,11 @@ export function IssueCard({
       )}
       {...props}
     >
-      <p className={cn("line-clamp-3 leading-snug font-medium break-words", done && "text-muted-foreground")}>
-        {issue.title}
-      </p>
+      <p className={cn("line-clamp-3 leading-snug font-medium break-words", done && "text-muted-foreground")}>{issue.title}</p>
       {(issue.labels.length > 0 || (issue.due && !done)) && (
         <div className="flex flex-wrap gap-1">
           {issue.labels.map((label) => (
-            <span
-              key={label}
-              className="text-foreground/80 inline-flex h-5 items-center rounded-full border px-2 text-[11px]"
-            >
+            <span key={label} className="text-foreground/80 inline-flex h-5 items-center rounded-full border px-2 text-[11px]">
               {label}
             </span>
           ))}
@@ -113,9 +101,7 @@ export function IssueCard({
         <span className="font-mono whitespace-nowrap">{issue.key}</span>
         {issue.parent_key && <EpicTag epicKey={issue.parent_key} epics={epics} />}
         <span className="flex-1" />
-        {issue.estimate != null && (
-          <span className="bg-muted rounded px-1.5 text-[11px] tabular-nums">{issue.estimate}</span>
-        )}
+        {issue.estimate != null && <span className="bg-muted rounded px-1.5 text-[11px] tabular-nums">{issue.estimate}</span>}
         {!done && <PriorityIcon priority={issue.priority} />}
         <AssigneeAvatar issue={issue} members={members} className="size-5" />
       </div>

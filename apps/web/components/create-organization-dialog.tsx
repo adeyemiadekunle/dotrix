@@ -1,12 +1,5 @@
 import { Button } from "@dotrix/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@dotrix/ui/components/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@dotrix/ui/components/dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";
@@ -40,21 +33,10 @@ export function CreateOrganizationDialog({ open, onOpenChange }: { open: boolean
         >
           <DialogHeader>
             <DialogTitle>Create an organisation</DialogTitle>
-            <DialogDescription>
-              A home for a team: invite people, give them roles, and run many projects together. You&apos;ll be its
-              owner.
-            </DialogDescription>
+            <DialogDescription>A home for a team: invite people, give them roles, and run many projects together. You&apos;ll be its owner.</DialogDescription>
           </DialogHeader>
           <FormError message={create.isError ? errorMessage(create.error) : null} />
-          <Field
-            label="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Kunemi Ltd"
-            required
-            maxLength={100}
-            autoFocus
-          />
+          <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Kunemi Ltd" required maxLength={100} autoFocus />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel

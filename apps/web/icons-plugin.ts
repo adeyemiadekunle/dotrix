@@ -31,9 +31,7 @@ export function lucideSubset(srcDir: string): Plugin {
       const text = walk(srcDir)
         .map((f) => fs.readFileSync(f, "utf8"))
         .join("\n");
-      const names = [...new Set([...text.matchAll(/['"`]([a-z][a-z0-9]*(?:-[a-z0-9]+)*)['"`]/g)].map((m) => m[1]!))]
-        .filter((n) => table[pascal(n)])
-        .sort();
+      const names = [...new Set([...text.matchAll(/['"`]([a-z][a-z0-9]*(?:-[a-z0-9]+)*)['"`]/g)].map((m) => m[1]!))].filter((n) => table[pascal(n)]).sort();
       const out: Record<string, string> = {};
       for (const n of names) {
         let node = table[pascal(n)]!;

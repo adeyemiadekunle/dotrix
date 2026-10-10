@@ -144,7 +144,12 @@ export function Project() {
           >
             <Ic n="star" s={15} />
           </button>
-          <button className="pillbtn bordered" onClick={(e) => openPop(e.currentTarget, "pstatus", { id: p.id })} aria-label="Project status" style={{ height: 24 }}>
+          <button
+            className="pillbtn bordered"
+            onClick={(e) => openPop(e.currentTarget, "pstatus", { id: p.id })}
+            aria-label="Project status"
+            style={{ height: 24 }}
+          >
             <span className="pdot" style={{ "--c": PSTAT[p.status].c, borderRadius: "50%", width: 7, height: 7 } as CSSProperties} />
             {PSTAT[p.status].name}
             <Ic n="chevron-down" s={12} />
@@ -175,7 +180,12 @@ export function Project() {
         </div>
         <nav className="tabs" aria-label="Project views">
           {PTABS.map(([k, n, i]) => (
-            <button key={k} aria-current={tab === k ? "page" : undefined} className={`tab ${tab === k ? "on" : ""}`} onClick={() => go("project", { id: p.key, tab: k })}>
+            <button
+              key={k}
+              aria-current={tab === k ? "page" : undefined}
+              className={`tab ${tab === k ? "on" : ""}`}
+              onClick={() => go("project", { id: p.key, tab: k })}
+            >
               <Ic n={i} s={14} />
               {n}
             </button>
@@ -192,7 +202,12 @@ export function Project() {
               {v.name}
             </button>
           ))}
-          <button className="tab" onClick={() => openModal({ type: "saveView", pid: p.id, nf: viewOf(key).filters.length })} data-tip="Save current filters as a view" aria-label="Save view">
+          <button
+            className="tab"
+            onClick={() => openModal({ type: "saveView", pid: p.id, nf: viewOf(key).filters.length })}
+            data-tip="Save current filters as a view"
+            aria-label="Save view"
+          >
             <Ic n="plus" s={14} />
           </button>
         </nav>

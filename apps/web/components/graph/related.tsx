@@ -9,17 +9,7 @@ import { Link } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";
 
 import type { Scope } from "@/lib/issues";
-import {
-  LINK_LABELS,
-  LINKABLE,
-  useAddLink,
-  useNeighbors,
-  useRemoveLink,
-  useStale,
-  type EdgeKind,
-  type GraphLink,
-  type GraphNode,
-} from "@/lib/graph";
+import { LINK_LABELS, LINKABLE, useAddLink, useNeighbors, useRemoveLink, useStale, type EdgeKind, type GraphLink, type GraphNode } from "@/lib/graph";
 
 const ICONS = { document: FileTextIcon, issue: TicketIcon, module: BoxIcon } as const;
 
@@ -101,8 +91,8 @@ export function Related({
         <p className="text-muted-foreground text-xs">Not linked to anything yet.</p>
       ) : groups.size === 0 ? (
         <p className="text-muted-foreground text-xs">
-          Not linked to anything yet. Links come from issue keys and document paths in the text, epics and
-          dependencies, and decisions&apos; &quot;Affected modules&quot; and &quot;Supersedes&quot;.
+          Not linked to anything yet. Links come from issue keys and document paths in the text, epics and dependencies, and decisions&apos; &quot;Affected
+          modules&quot; and &quot;Supersedes&quot;.
         </p>
       ) : (
         <dl className="grid gap-2">
@@ -123,15 +113,10 @@ export function Related({
                     ) : (
                       <span className="truncate text-xs">{name}</span>
                     )}
-                    {link.node.kind !== "module" && (
-                      <span className="text-muted-foreground min-w-0 truncate text-xs">{link.node.title}</span>
-                    )}
+                    {link.node.kind !== "module" && <span className="text-muted-foreground min-w-0 truncate text-xs">{link.node.title}</span>}
                     {link.node.status === "done" && <Badge variant="secondary">Done</Badge>}
                     {link.origin !== "derived" && (
-                      <span
-                        className="text-muted-foreground flex shrink-0 items-center gap-0.5 text-xs"
-                        title={link.reason ?? undefined}
-                      >
+                      <span className="text-muted-foreground flex shrink-0 items-center gap-0.5 text-xs" title={link.reason ?? undefined}>
                         {link.origin === "agent" ? <SparklesIcon className="size-3" /> : <LinkIcon className="size-3" />}
                         {link.origin === "agent" ? `@${link.agent}` : "added"}
                       </span>
@@ -168,10 +153,7 @@ function AddLinkDialog({ scope, source, onClose }: { scope: Scope; source: strin
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    add.mutate(
-      { source, target: target.trim(), kind, reason: reason.trim() || null },
-      { onSuccess: onClose },
-    );
+    add.mutate({ source, target: target.trim(), kind, reason: reason.trim() || null }, { onSuccess: onClose });
   }
 
   return (
@@ -181,8 +163,7 @@ function AddLinkDialog({ scope, source, onClose }: { scope: Scope; source: strin
           <DialogHeader>
             <DialogTitle>Link {source}</DialogTitle>
             <DialogDescription>
-              For connections the text doesn&apos;t make. Name a document by its path, an issue by its key, or a module as
-              module:name.
+              For connections the text doesn&apos;t make. Name a document by its path, an issue by its key, or a module as module:name.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">

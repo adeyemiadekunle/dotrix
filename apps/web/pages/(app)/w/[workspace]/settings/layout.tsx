@@ -74,15 +74,9 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
                 <p className="text-muted-foreground hidden truncate px-2 pb-1 text-xs font-semibold md:block">{group.title}</p>
                 {group.items.map((item) =>
                   item.path === null ? (
-                    <span
-                      key={item.label}
-                      aria-disabled
-                      className="text-muted-foreground flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm"
-                    >
+                    <span key={item.label} aria-disabled className="text-muted-foreground flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm">
                       {item.label}
-                      <span className="bg-warning-muted text-warning-foreground ml-auto rounded-full px-1.5 text-[10px] font-semibold">
-                        Later
-                      </span>
+                      <span className="bg-warning-muted text-warning-foreground ml-auto rounded-full px-1.5 text-[10px] font-semibold">Later</span>
                     </span>
                   ) : (
                     <Link
@@ -91,9 +85,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
                       aria-current={isActive(item.path) ? "page" : undefined}
                       className={cn(
                         "shrink-0 rounded-md px-2 py-1.5 text-sm whitespace-nowrap transition-colors",
-                        isActive(item.path)
-                          ? "bg-muted text-foreground font-medium"
-                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                        isActive(item.path) ? "bg-muted text-foreground font-medium" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                       )}
                     >
                       {item.label}

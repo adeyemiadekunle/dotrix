@@ -47,8 +47,7 @@ export function AcceptInvite({ token }: { token: string }) {
       title={`Join ${invite.workspace_name}`}
       description={
         <>
-          {invite.invited_by ? `${invite.invited_by} invited you` : "You've been invited"} as{" "}
-          {ROLE_LABELS[invite.role].toLowerCase()}.
+          {invite.invited_by ? `${invite.invited_by} invited you` : "You've been invited"} as {ROLE_LABELS[invite.role].toLowerCase()}.
         </>
       }
     >

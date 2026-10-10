@@ -1,13 +1,6 @@
 import type { Schemas } from "@dotrix/api-client";
 import { Button } from "@dotrix/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@dotrix/ui/components/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@dotrix/ui/components/dialog";
 import { Label } from "@dotrix/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
 import { Textarea } from "@dotrix/ui/components/textarea";
@@ -15,14 +8,7 @@ import { useState, type FormEvent } from "react";
 
 import { Field, FormError, SubmitButton } from "@/components/form";
 import { errorMessage } from "@/lib/api";
-import {
-  useCreateIssue,
-  useEpics,
-  useSimilarIssues,
-  type IssueStatus,
-  type IssueType,
-  type Priority,
-} from "@/lib/issues";
+import { useCreateIssue, useEpics, useSimilarIssues, type IssueStatus, type IssueType, type Priority } from "@/lib/issues";
 import { useProjectScope } from "@/lib/queries";
 import { useSearchParam } from "@/lib/url-state";
 
@@ -81,9 +67,7 @@ export function NewIssueDialog({
         <form onSubmit={onSubmit} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>New issue</DialogTitle>
-            <DialogDescription>
-              It starts in {STATUS_META[status].label}. You can set the rest once it&apos;s created.
-            </DialogDescription>
+            <DialogDescription>It starts in {STATUS_META[status].label}. You can set the rest once it&apos;s created.</DialogDescription>
           </DialogHeader>
           <FormError message={create.isError ? errorMessage(create.error) : null} />
           <Field

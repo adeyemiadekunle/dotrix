@@ -79,10 +79,7 @@ export function curProjectId(): string | null {
 }
 export function newTask(d: { project?: string; assignee?: string; due?: string; status?: Task["status"] } = {}) {
   const pid =
-    d.project ||
-    curProjectId() ||
-    (S.ui.drawer && task(S.ui.drawer)?.project) ||
-    visibleProjects().find((p) => canSee(p) && p.status !== "complete")?.id;
+    d.project || curProjectId() || (S.ui.drawer && task(S.ui.drawer)?.project) || visibleProjects().find((p) => canSee(p) && p.status !== "complete")?.id;
   openModal({
     type: "task",
     form: {
@@ -110,7 +107,10 @@ export function editTask(id: string) {
     edit: t.id,
     form: {
       title: t.title,
-      desc: (t.desc || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+      desc: (t.desc || "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim(),
       project: t.project,
       status: t.status,
       assignee: t.assignee,
@@ -127,12 +127,48 @@ export function editTask(id: string) {
 }
 export const TEMPLATES = [
   { id: "blank", name: "Blank project", icon: "file", desc: "Start from scratch", tasks: [] as string[] },
-  { id: "product", name: "Product Development", icon: "target", desc: "Discovery to launch", tasks: ["Define problem statement", "User research plan", "Write PRD", "Design exploration", "Build MVP", "Beta launch"] },
-  { id: "web", name: "Website", icon: "globe", desc: "IA, design, build, launch", tasks: ["Sitemap & information architecture", "Wireframes", "Visual design", "Build page templates", "Content migration", "QA & launch"] },
-  { id: "mkt", name: "Marketing Campaign", icon: "megaphone", desc: "Brief, assets, channels", tasks: ["Campaign brief", "Audience research", "Creative assets", "Channel plan", "Launch campaign", "Performance report"] },
-  { id: "design", name: "Design Project", icon: "palette", desc: "Discovery to handoff", tasks: ["Discovery workshop", "Moodboard", "Concept directions", "Refinement", "Developer handoff"] },
-  { id: "software", name: "Software Development", icon: "code", desc: "Spec, build, ship", tasks: ["Technical spec", "Set up repo & CI", "Implement core API", "Write tests", "Code review", "Deploy to staging"] },
-  { id: "personal", name: "Personal Project", icon: "heart", desc: "Plan your own goals", tasks: ["Brain dump ideas", "Pick top 3 priorities", "Schedule focus time", "Weekly review"] },
+  {
+    id: "product",
+    name: "Product Development",
+    icon: "target",
+    desc: "Discovery to launch",
+    tasks: ["Define problem statement", "User research plan", "Write PRD", "Design exploration", "Build MVP", "Beta launch"],
+  },
+  {
+    id: "web",
+    name: "Website",
+    icon: "globe",
+    desc: "IA, design, build, launch",
+    tasks: ["Sitemap & information architecture", "Wireframes", "Visual design", "Build page templates", "Content migration", "QA & launch"],
+  },
+  {
+    id: "mkt",
+    name: "Marketing Campaign",
+    icon: "megaphone",
+    desc: "Brief, assets, channels",
+    tasks: ["Campaign brief", "Audience research", "Creative assets", "Channel plan", "Launch campaign", "Performance report"],
+  },
+  {
+    id: "design",
+    name: "Design Project",
+    icon: "palette",
+    desc: "Discovery to handoff",
+    tasks: ["Discovery workshop", "Moodboard", "Concept directions", "Refinement", "Developer handoff"],
+  },
+  {
+    id: "software",
+    name: "Software Development",
+    icon: "code",
+    desc: "Spec, build, ship",
+    tasks: ["Technical spec", "Set up repo & CI", "Implement core API", "Write tests", "Code review", "Deploy to staging"],
+  },
+  {
+    id: "personal",
+    name: "Personal Project",
+    icon: "heart",
+    desc: "Plan your own goals",
+    tasks: ["Brain dump ideas", "Pick top 3 priorities", "Schedule focus time", "Weekly review"],
+  },
 ];
 export function makeKey(name: string) {
   const base =
@@ -149,7 +185,10 @@ export function makeKey(name: string) {
   while (D().projects.some((p) => p.key === key)) key = base + n++;
   return key;
 }
-export function createProject(f: { name: string; desc?: string; icon: string; color: string; team: string; lead: string; due?: string }, tmplId: string): Project {
+export function createProject(
+  f: { name: string; desc?: string; icon: string; color: string; team: string; lead: string; due?: string },
+  tmplId: string,
+): Project {
   const p: Project = {
     id: uid("p"),
     key: makeKey(f.name),
@@ -181,7 +220,11 @@ export function newProject() {
 }
 export function editProject(id: string) {
   const p = proj(id)!;
-  openModal({ type: "project", edit: p.id, form: { name: p.name, desc: p.desc, icon: p.icon, color: p.color, team: p.team, lead: p.lead, due: p.due, tmpl: "blank" } });
+  openModal({
+    type: "project",
+    edit: p.id,
+    form: { name: p.name, desc: p.desc, icon: p.icon, color: p.color, team: p.team, lead: p.lead, due: p.due, tmpl: "blank" },
+  });
 }
 export function share(id: string) {
   openModal({ type: "share", id });
@@ -313,7 +356,12 @@ export function delProject(id: string) {
       if (
         guarded(() => {
           // Deleting the project deletes its issues on the API: none are sent one by one.
-          deleteTasks(D().tasks.filter((t) => t.project === p.id).map((t) => t.id), { send: false });
+          deleteTasks(
+            D()
+              .tasks.filter((t) => t.project === p.id)
+              .map((t) => t.id),
+            { send: false },
+          );
           D().projects = D().projects.filter((x) => x !== p);
           D().projOrder = D().projOrder.filter((x) => x !== p.id);
           D().files = D().files.filter((f) => f.project !== p.id);
@@ -375,7 +423,8 @@ export function colDoneAll(key: string, st: string) {
   S.ui.pop = null;
   if (!ts.length) return render();
   const snap = snapshot();
-  if (guarded(() => ts.forEach((t) => applyPatch(t, { status: "done" })))) toast(`Marked ${ts.length} tasks as done`, { action: "Undo", onAction: () => restore(snap) });
+  if (guarded(() => ts.forEach((t) => applyPatch(t, { status: "done" }))))
+    toast(`Marked ${ts.length} tasks as done`, { action: "Undo", onAction: () => restore(snap) });
 }
 export function colArchive(key: string) {
   const ts = colTasks(key, "done");

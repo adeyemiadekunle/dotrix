@@ -31,7 +31,13 @@ export function TlControls() {
           </button>
         ))}
       </div>
-      <select className="select" style={{ height: 26, width: "auto", fontSize: 12, marginLeft: 4 }} value={S.ui.tlGroup} onChange={(e) => ((S.ui.tlGroup = e.target.value), render())} aria-label="Group by">
+      <select
+        className="select"
+        style={{ height: 26, width: "auto", fontSize: 12, marginLeft: 4 }}
+        value={S.ui.tlGroup}
+        onChange={(e) => ((S.ui.tlGroup = e.target.value), render())}
+        aria-label="Group by"
+      >
         {[
           ["status", "Group: Status"],
           ["assignee", "Group: Assignee"],
@@ -208,8 +214,21 @@ export function Timeline({ ts, k, p }: { ts: Task[]; k: string; p?: Project | nu
         const mx = Math.max(x1 + 10, x2 - 10);
         return (
           <g key={`${d}-${t.id}`}>
-            <path d={`M${x1} ${y1} C ${mx} ${y1}, ${Math.min(x1 + 10, x2 - 10)} ${y2}, ${x2 - 1} ${y2}`} fill="none" stroke="var(--text-3)" strokeWidth="1.3" strokeDasharray={x2 < x1 ? "3 3" : undefined} />
-            <path d={`M${x2 - 6} ${y2 - 3.5} L${x2 - 1} ${y2} L${x2 - 6} ${y2 + 3.5}`} fill="none" stroke="var(--text-3)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d={`M${x1} ${y1} C ${mx} ${y1}, ${Math.min(x1 + 10, x2 - 10)} ${y2}, ${x2 - 1} ${y2}`}
+              fill="none"
+              stroke="var(--text-3)"
+              strokeWidth="1.3"
+              strokeDasharray={x2 < x1 ? "3 3" : undefined}
+            />
+            <path
+              d={`M${x2 - 6} ${y2 - 3.5} L${x2 - 1} ${y2} L${x2 - 6} ${y2 + 3.5}`}
+              fill="none"
+              stroke="var(--text-3)"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </g>
         );
       }),

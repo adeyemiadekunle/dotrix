@@ -12,17 +12,7 @@ import {
 import { Input } from "@dotrix/ui/components/input";
 import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { cn } from "@dotrix/ui/lib/utils";
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  CircleDotIcon,
-  Columns3Icon,
-  DownloadIcon,
-  SearchIcon,
-  TableIcon,
-  UserIcon,
-  XIcon,
-} from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, CircleDotIcon, Columns3Icon, DownloadIcon, SearchIcon, TableIcon, UserIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -120,11 +110,7 @@ const COLUMNS: Column[] = [
     optional: true,
     value: (i) => i.due ?? "9999",
     cell: (i) =>
-      i.due ? (
-        <span className={i.status !== "done" && i.due < today() ? "font-medium text-red-600 dark:text-red-400" : ""}>
-          {formatDue(i.due)}
-        </span>
-      ) : null,
+      i.due ? <span className={i.status !== "done" && i.due < today() ? "font-medium text-red-600 dark:text-red-400" : ""}>{formatDue(i.due)}</span> : null,
   },
   { id: "parent", label: "Parent", optional: true, value: (i) => i.parent_key ?? "", cell: (i) => <span className="font-mono text-xs">{i.parent_key}</span> },
   {
@@ -207,9 +193,7 @@ function BulkBar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
-          <DropdownMenuItem onSelect={() => onApply({ assignee_user_id: null, assignee_agent: null }, "unassigned")}>
-            Unassigned
-          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onApply({ assignee_user_id: null, assignee_agent: null }, "unassigned")}>Unassigned</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>People</DropdownMenuLabel>
           {[...members.values()]
@@ -277,9 +261,7 @@ function TablePage() {
   const columns = COLUMNS.filter((c) => !hidden.includes(c.id));
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    let list = (issues.data ?? []).filter(
-      (i) => !needle || i.title.toLowerCase().includes(needle) || i.key.toLowerCase().includes(needle),
-    );
+    let list = (issues.data ?? []).filter((i) => !needle || i.title.toLowerCase().includes(needle) || i.key.toLowerCase().includes(needle));
     if (sort) {
       const column = COLUMNS.find((c) => c.id === sort.id)!;
       list = [...list].sort((a, b) => {
@@ -335,13 +317,7 @@ function TablePage() {
       <div className="flex flex-wrap items-center gap-2 px-4 py-3 md:px-6">
         <div className="relative w-full max-w-60">
           <SearchIcon className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search issues"
-            aria-label="Search issues"
-            className="h-8 pl-8"
-          />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search issues" aria-label="Search issues" className="h-8 pl-8" />
         </div>
         <span className="text-muted-foreground text-xs">{rows.length} issues</span>
         <span className="flex-1" />
@@ -425,11 +401,7 @@ function TablePage() {
                 >
                   {canEdit && (
                     <td className="w-10 pr-0 pl-4 md:pl-6" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        aria-label={`Select ${issue.key}`}
-                        checked={selected.has(issue.key)}
-                        onCheckedChange={() => toggle(issue.key)}
-                      />
+                      <Checkbox aria-label={`Select ${issue.key}`} checked={selected.has(issue.key)} onCheckedChange={() => toggle(issue.key)} />
                     </td>
                   )}
                   {columns.map((c) => (

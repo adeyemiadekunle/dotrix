@@ -125,7 +125,15 @@ export function DesignSystem() {
               </span>
               <span
                 className="grow trunc"
-                style={{ fontSize: s, fontWeight: w, ...(n === "Label" ? { letterSpacing: ".06em", color: "var(--text-3)" } : n === "Secondary" || n === "Metadata" ? { color: "var(--text-2)" } : {}) }}
+                style={{
+                  fontSize: s,
+                  fontWeight: w,
+                  ...(n === "Label"
+                    ? { letterSpacing: ".06em", color: "var(--text-3)" }
+                    : n === "Secondary" || n === "Metadata"
+                      ? { color: "var(--text-2)" }
+                      : {}),
+                }}
               >
                 {ex}
               </span>
@@ -159,7 +167,15 @@ export function DesignSystem() {
               ] as const
             ).map(([k, v]) => (
               <div key={v} className="col" style={{ alignItems: "center", gap: 6, fontSize: 11.5 }}>
-                <span style={{ width: 48, height: 48, border: "1.5px solid var(--border-strong)", borderRadius: `var(--r${k ? "-" + k : ""})`, background: "var(--surface-2)" }} />
+                <span
+                  style={{
+                    width: 48,
+                    height: 48,
+                    border: "1.5px solid var(--border-strong)",
+                    borderRadius: `var(--r${k ? "-" + k : ""})`,
+                    background: "var(--surface-2)",
+                  }}
+                />
                 <span className="faint">{v}px</span>
               </div>
             ))}
@@ -220,7 +236,15 @@ export function DesignSystem() {
           {(
             [
               ["Text", <input key="1" className="input" placeholder="Task name" />],
-              ["Focus", <input key="2" className="input" defaultValue="Homepage wireframes" style={{ borderColor: "var(--acc)", boxShadow: "0 0 0 3px var(--accent-soft)" }} />],
+              [
+                "Focus",
+                <input
+                  key="2"
+                  className="input"
+                  defaultValue="Homepage wireframes"
+                  style={{ borderColor: "var(--acc)", boxShadow: "0 0 0 3px var(--accent-soft)" }}
+                />,
+              ],
               [
                 "Error",
                 <>
@@ -420,8 +444,24 @@ export function DesignSystem() {
       </Sec>
       <Sec title="Agents" sub="Proposed changes and plans wait for a person">
         <div className="grid2" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          <ChangeCard ch={{ id: "ds-c1", kind: "write_file", title: "roadmap.md", diff: " ## Next\n-Launch in Q3\n+Launch on Oct 28\n+Beta for 20 customers first", status: "pending" }} />
-          <ChangeCard ch={{ id: "ds-c2", kind: "checkpoint", title: "Plan: pricing research", plan: ["Read our pricing notes", "Compare five competitors", "Recommend tiers, with sources"], status: "pending" }} />
+          <ChangeCard
+            ch={{
+              id: "ds-c1",
+              kind: "write_file",
+              title: "roadmap.md",
+              diff: " ## Next\n-Launch in Q3\n+Launch on Oct 28\n+Beta for 20 customers first",
+              status: "pending",
+            }}
+          />
+          <ChangeCard
+            ch={{
+              id: "ds-c2",
+              kind: "checkpoint",
+              title: "Plan: pricing research",
+              plan: ["Read our pricing notes", "Compare five competitors", "Recommend tiers, with sources"],
+              status: "pending",
+            }}
+          />
         </div>
         <div className="row muted" style={{ gap: 8, fontSize: 12.5, marginTop: 10 }}>
           <span className="chat-typing">
@@ -462,7 +502,10 @@ export function DesignSystem() {
           <button className="btn btn-secondary" onClick={() => toast("Task created", { action: "Undo", onAction: () => {} })}>
             Toast
           </button>
-          <button className="btn btn-secondary" onClick={() => toast("Your changes couldn't be saved.", { kind: "err", action: "Try again", onAction: () => {} })}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => toast("Your changes couldn't be saved.", { kind: "err", action: "Try again", onAction: () => {} })}
+          >
             Error toast
           </button>
           <button className="btn btn-secondary" data-tip="Tooltips pair with icon buttons">
@@ -474,7 +517,10 @@ export function DesignSystem() {
           <button className="btn btn-secondary" onClick={() => openTask("t3")}>
             Drawer
           </button>
-          <button className="btn btn-secondary" onClick={() => confirmDlg({ title: "Discard changes?", body: "Your edits to this task will be lost.", ok: "Discard", danger: true, run: () => {} })}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => confirmDlg({ title: "Discard changes?", body: "Your edits to this task will be lost.", ok: "Discard", danger: true, run: () => {} })}
+          >
             Confirmation
           </button>
           <button className="btn btn-secondary" onClick={() => openPalette()}>
@@ -483,8 +529,52 @@ export function DesignSystem() {
         </div>
       </Sec>
       <Sec title="Iconography" sub="Lucide · 1.8px stroke · 12–18px">
-        <div className="panel" style={{ padding: 14, display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(40px,1fr))", gap: 6, color: "var(--text-2)" }}>
-          {["house", "inbox", "circle-check", "star", "search", "bell", "folder-kanban", "list-checks", "calendar", "chart-gantt", "users", "activity", "settings", "plus", "list-filter", "arrow-up-down", "rows-3", "share-2", "ellipsis", "paperclip", "message-square", "tag", "link", "copy", "pencil", "trash-2", "archive", "upload", "repeat", "timer", "git-branch", "lock", "eye", "at-sign", "sun", "moon", "sparkles", "bot", "book-open", "shield-check"].map((i) => (
+        <div
+          className="panel"
+          style={{ padding: 14, display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(40px,1fr))", gap: 6, color: "var(--text-2)" }}
+        >
+          {[
+            "house",
+            "inbox",
+            "circle-check",
+            "star",
+            "search",
+            "bell",
+            "folder-kanban",
+            "list-checks",
+            "calendar",
+            "chart-gantt",
+            "users",
+            "activity",
+            "settings",
+            "plus",
+            "list-filter",
+            "arrow-up-down",
+            "rows-3",
+            "share-2",
+            "ellipsis",
+            "paperclip",
+            "message-square",
+            "tag",
+            "link",
+            "copy",
+            "pencil",
+            "trash-2",
+            "archive",
+            "upload",
+            "repeat",
+            "timer",
+            "git-branch",
+            "lock",
+            "eye",
+            "at-sign",
+            "sun",
+            "moon",
+            "sparkles",
+            "bot",
+            "book-open",
+            "shield-check",
+          ].map((i) => (
             <span key={i} style={{ height: 36, display: "grid", placeItems: "center" }} title={i}>
               <Ic n={i} s={17} />
             </span>
@@ -603,7 +693,17 @@ export function SystemStates() {
               <button className="btn btn-secondary is-loading">Loading</button>
             </div>
             <div className="row muted" style={{ fontSize: 13 }}>
-              <span style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid var(--border-strong)", borderTopColor: "var(--acc)", animation: "spin .7s linear infinite", display: "inline-block" }} />
+              <span
+                style={{
+                  width: 16,
+                  height: 16,
+                  borderRadius: "50%",
+                  border: "2px solid var(--border-strong)",
+                  borderTopColor: "var(--acc)",
+                  animation: "spin .7s linear infinite",
+                  display: "inline-block",
+                }}
+              />
               Loading project…
             </div>
           </div>

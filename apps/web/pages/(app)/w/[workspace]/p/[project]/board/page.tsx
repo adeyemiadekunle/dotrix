@@ -34,10 +34,7 @@ function BoardPage() {
   const [sortParam, setSort] = useSearchParam("sort");
   const sort: BoardSort = sortParam && sortParam in BOARD_SORTS ? (sortParam as BoardSort) : "rank";
   const memberMap: MemberMap = useMemo(() => new Map(members.data?.map((m) => [m.user_id, m])), [members.data]);
-  const labels = useMemo(
-    () => [...new Set(board.data?.columns.flatMap((c) => c.issues.flatMap((i) => i.labels)))].sort(),
-    [board.data],
-  );
+  const labels = useMemo(() => [...new Set(board.data?.columns.flatMap((c) => c.issues.flatMap((i) => i.labels)))].sort(), [board.data]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -66,9 +63,7 @@ function BoardPage() {
               {canEdit && (
                 <>
                   <DropdownMenuSeparator />
-                  <p className="text-muted-foreground max-w-56 px-2 py-1.5 text-xs">
-                    Drag cards to reorder or move them in Ranked order.
-                  </p>
+                  <p className="text-muted-foreground max-w-56 px-2 py-1.5 text-xs">Drag cards to reorder or move them in Ranked order.</p>
                 </>
               )}
             </DropdownMenuContent>

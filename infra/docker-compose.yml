@@ -8,11 +8,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-dotrix}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
       POSTGRES_DB: ${POSTGRES_DB:-dotrix}
-    ports: ["127.0.0.1:5432:5432"]  # localhost only
+    ports: ["127.0.0.1:5432:5432"] # localhost only
     volumes: [pgdata:/var/lib/postgresql/data]
   redis:
     image: redis:7
-    ports: ["127.0.0.1:6379:6379"]  # localhost only
+    ports: ["127.0.0.1:6379:6379"] # localhost only
   # S3-compatible object storage for document originals. Console: http://localhost:9001
   minio:
     image: minio/minio:latest
@@ -21,7 +21,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
-    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]  # localhost only
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"] # localhost only
     volumes: [miniodata:/data]
 volumes:
   pgdata:

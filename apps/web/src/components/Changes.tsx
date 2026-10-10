@@ -93,7 +93,16 @@ export function ChangeCard({ ch }: { ch: ProposedChange }) {
         <div className="change-f">
           {rejecting ? (
             <>
-              <input className="input" style={{ height: 28, flex: 1 }} placeholder="Why? The agent learns from it (optional)" value={reason} onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => e.key === "Enter" && decideChange(ch.id, false, reason)} autoFocus aria-label="Reason" />
+              <input
+                className="input"
+                style={{ height: 28, flex: 1 }}
+                placeholder="Why? The agent learns from it (optional)"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && decideChange(ch.id, false, reason)}
+                autoFocus
+                aria-label="Reason"
+              />
               <button className="btn btn-sm btn-ghost" onClick={() => setRejecting(false)}>
                 Cancel
               </button>
@@ -111,7 +120,11 @@ export function ChangeCard({ ch }: { ch: ProposedChange }) {
                 Reject
               </button>
               {allow && (
-                <button className="btn btn-sm btn-ghost" onClick={() => alwaysAllow(ch.id)} title={`Approve, and let ${allow.agent} ${allow.what} without asking from now on`}>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => alwaysAllow(ch.id)}
+                  title={`Approve, and let ${allow.agent} ${allow.what} without asking from now on`}
+                >
                   Always allow
                 </button>
               )}
@@ -145,13 +158,26 @@ function Checkpoint({ ch }: { ch: ProposedChange }) {
             <li key={s}>{s}</li>
           ))}
         </ol>
-        {!pending && ch.reason && <div className="muted" style={{ marginTop: 6 }}>Changed: {ch.reason}</div>}
+        {!pending && ch.reason && (
+          <div className="muted" style={{ marginTop: 6 }}>
+            Changed: {ch.reason}
+          </div>
+        )}
       </div>
       {pending && (
         <div className="change-f">
           {steering ? (
             <>
-              <input className="input" style={{ height: 28, flex: 1 }} placeholder="What should change?" value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && note.trim() && answerCheckpoint(ch.id, "steer", note)} autoFocus aria-label="Changes to the plan" />
+              <input
+                className="input"
+                style={{ height: 28, flex: 1 }}
+                placeholder="What should change?"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && note.trim() && answerCheckpoint(ch.id, "steer", note)}
+                autoFocus
+                aria-label="Changes to the plan"
+              />
               <button className="btn btn-sm btn-ghost" onClick={() => setSteering(false)}>
                 Cancel
               </button>

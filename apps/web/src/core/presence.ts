@@ -43,7 +43,8 @@ export interface Waiting {
 export function waitingChanges(): Waiting[] {
   const out: Waiting[] = [];
   for (const th of D().threads)
-    for (const msg of th.messages) if (msg.role === "agent") for (const ch of msg.changes ?? []) if (ch.status === "pending") out.push({ agent: msg.by, th, msg, ch });
+    for (const msg of th.messages)
+      if (msg.role === "agent") for (const ch of msg.changes ?? []) if (ch.status === "pending") out.push({ agent: msg.by, th, msg, ch });
   return out.sort((a, b) => b.msg.at - a.msg.at);
 }
 
@@ -67,7 +68,11 @@ export function presence(): Presence[] {
         ...base,
         state: "needs",
         mood: "needs",
-        now: steer ? `Waiting for you to steer · ${w.ch.title}` : others > 1 ? `Waiting for approval · ${others} changes` : `Waiting for approval · ${w.ch.title}`,
+        now: steer
+          ? `Waiting for you to steer · ${w.ch.title}`
+          : others > 1
+            ? `Waiting for approval · ${others} changes`
+            : `Waiting for approval · ${w.ch.title}`,
         thread: w.th.id,
         approve: !steer && others === 1 ? () => decideChange(w.ch.id, true) : undefined,
       };
@@ -83,7 +88,8 @@ export function presence(): Presence[] {
     if (!cs) continue;
     const key = task(cs.task)?.key ?? "";
     const base = { id: t.id, name: t.name, role: "Coding", c: t.c, session: cs.id };
-    if (cs.status === "awaiting_approval") tools.push({ ...base, state: "needs", mood: "needs", now: `Waiting for approval to code ${key}`, approve: () => decideCoding(cs, true) });
+    if (cs.status === "awaiting_approval")
+      tools.push({ ...base, state: "needs", mood: "needs", now: `Waiting for approval to code ${key}`, approve: () => decideCoding(cs, true) });
     else if (cs.status === "failed") tools.push({ ...base, state: "blocked", mood: "blocked", now: `Couldn't finish ${key}` });
     else tools.push({ ...base, state: "working", mood: "working", now: cs.status === "queued" ? `Queued to code ${key}` : `Coding ${key}` });
   }

@@ -20,8 +20,7 @@ export function useGitHubStatus(workspaceId: string | undefined, enabled = true)
 export function useGitHubRepos(workspaceId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["github", workspaceId, "repos"],
-    queryFn: () =>
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/github/repos", { params: { path: { workspace_id: workspaceId! } } })),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/github/repos", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: !!workspaceId && enabled,
   });
 }

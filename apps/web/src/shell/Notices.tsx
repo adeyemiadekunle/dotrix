@@ -54,7 +54,16 @@ function notices(): Notice[] {
       const a = D().agents.find((x) => x.handle === n.by);
       // the seeded workspace's notifications repeat its conversations' changes, shown above
       if (!a || (n.thread && D().threads.some((t) => t.id === n.thread))) continue;
-      out.push({ key: n.id, at: n.at, c: a.c, name: a.name, title: n.type === "checkpoint" ? "wants you to steer its plan" : "needs your approval", text: n.snippet || n.text, mood: "needs", open: () => go("notifications", {}, { search: `n=${n.id}` }) });
+      out.push({
+        key: n.id,
+        at: n.at,
+        c: a.c,
+        name: a.name,
+        title: n.type === "checkpoint" ? "wants you to steer its plan" : "needs your approval",
+        text: n.snippet || n.text,
+        mood: "needs",
+        open: () => go("notifications", {}, { search: `n=${n.id}` }),
+      });
     }
   for (const cs of D().coding) {
     const tool = CODING_TOOLS.find((t) => t.id === `agent:${cs.tool}`);
@@ -63,8 +72,27 @@ function notices(): Notice[] {
     const open = () => go("chat", {}, { search: `tab=coding&session=${cs.id}` });
     out.push(
       cs.status === "failed"
-        ? { key: `${cs.id}:failed`, at: cs.at, c: tool.c, name: tool.name, title: "couldn't finish", text: `${key} ${task(cs.task)?.title ?? ""}`, mood: "blocked", open }
-        : { key: cs.id, at: cs.at, c: tool.c, name: tool.name, title: "wants to start coding", text: `${key} ${task(cs.task)?.title ?? ""}`, mood: "needs", act: { label: "Approve", run: () => decideCoding(cs, true) }, open },
+        ? {
+            key: `${cs.id}:failed`,
+            at: cs.at,
+            c: tool.c,
+            name: tool.name,
+            title: "couldn't finish",
+            text: `${key} ${task(cs.task)?.title ?? ""}`,
+            mood: "blocked",
+            open,
+          }
+        : {
+            key: cs.id,
+            at: cs.at,
+            c: tool.c,
+            name: tool.name,
+            title: "wants to start coding",
+            text: `${key} ${task(cs.task)?.title ?? ""}`,
+            mood: "needs",
+            act: { label: "Approve", run: () => decideCoding(cs, true) },
+            open,
+          },
     );
   }
   return out.filter((n) => !S.ui.noticesShut.includes(n.key)).sort((a, b) => b.at - a.at);

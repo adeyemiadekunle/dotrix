@@ -80,7 +80,12 @@ export function ProjectCard({ p }: { p: Project }) {
         <span className="sp" />
         <AvStack ids={p.members} max={3} />
       </div>
-      <button className="ibtn ibtn-sm more" onClick={more(p)} aria-label="Project options" style={{ background: "var(--surface)", boxShadow: "0 0 0 1px var(--border)" }}>
+      <button
+        className="ibtn ibtn-sm more"
+        onClick={more(p)}
+        aria-label="Project options"
+        style={{ background: "var(--surface)", boxShadow: "0 0 0 1px var(--border)" }}
+      >
         <Ic n="ellipsis" s={14} />
       </button>
     </div>
@@ -93,7 +98,12 @@ export function Projects() {
   const st = u.projStatus;
   const sort = u.projSort;
   const ps = visibleProjects().filter((p) => (st === "all" || p.status === st) && (!q || p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)));
-  const sorter = ({ recent: (p: Project) => p.last, name: (p: Project) => p.name, due: (p: Project) => p.due, progress: (p: Project) => -progressOf(p.id) } as Record<string, (p: Project) => string | number>)[sort]!;
+  const sorter = (
+    { recent: (p: Project) => p.last, name: (p: Project) => p.name, due: (p: Project) => p.due, progress: (p: Project) => -progressOf(p.id) } as Record<
+      string,
+      (p: Project) => string | number
+    >
+  )[sort]!;
   ps.sort((a, b) => (sorter(a) > sorter(b) ? 1 : -1));
   const view = u.projView;
   const set = (k: "projQ" | "projStatus" | "projSort", v: string) => ((u[k] = v), render());
@@ -102,10 +112,12 @@ export function Projects() {
     body = (
       <div className="panel">
         <Empty icon="folder-kanban" title="No projects yet" text="Create your first project to start organizing your work.">
-          {allowed("projects:manage") && (<button className="btn btn-primary btn-sm" onClick={newProject}>
-            <Ic n="plus" s={14} />
-            Create project
-          </button>)}
+          {allowed("projects:manage") && (
+            <button className="btn btn-primary btn-sm" onClick={newProject}>
+              <Ic n="plus" s={14} />
+              Create project
+            </button>
+          )}
         </Empty>
       </div>
     );
@@ -242,22 +254,37 @@ export function Projects() {
         <div>
           <h1>Projects</h1>
           <p>
-            {visibleProjects().filter((p) => p.status !== "complete").length} active · {visibleProjects().filter((p) => p.status === "complete").length} completed
+            {visibleProjects().filter((p) => p.status !== "complete").length} active · {visibleProjects().filter((p) => p.status === "complete").length}{" "}
+            completed
           </p>
         </div>
         <div className="acts">
-          {allowed("projects:manage") && (<button className="btn btn-primary" onClick={newProject}>
-            <Ic n="plus" s={14} />
-            New project
-          </button>)}
+          {allowed("projects:manage") && (
+            <button className="btn btn-primary" onClick={newProject}>
+              <Ic n="plus" s={14} />
+              New project
+            </button>
+          )}
         </div>
       </div>
       <div className="row" style={{ marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <div className="inwrap">
           <Ic n="search" s={13} />
-          <input className="input search-sm" placeholder="Search projects" value={u.projQ} onChange={(e) => set("projQ", e.target.value)} aria-label="Search projects" />
+          <input
+            className="input search-sm"
+            placeholder="Search projects"
+            value={u.projQ}
+            onChange={(e) => set("projQ", e.target.value)}
+            aria-label="Search projects"
+          />
         </div>
-        <select className="select" style={{ height: 26, width: "auto", fontSize: 12 }} value={st} onChange={(e) => set("projStatus", e.target.value)} aria-label="Filter by status">
+        <select
+          className="select"
+          style={{ height: 26, width: "auto", fontSize: 12 }}
+          value={st}
+          onChange={(e) => set("projStatus", e.target.value)}
+          aria-label="Filter by status"
+        >
           <option value="all">All statuses</option>
           {Object.entries(PSTAT).map(([k, v]) => (
             <option key={k} value={k}>
@@ -265,7 +292,13 @@ export function Projects() {
             </option>
           ))}
         </select>
-        <select className="select" style={{ height: 26, width: "auto", fontSize: 12 }} value={sort} onChange={(e) => set("projSort", e.target.value)} aria-label="Sort">
+        <select
+          className="select"
+          style={{ height: 26, width: "auto", fontSize: 12 }}
+          value={sort}
+          onChange={(e) => set("projSort", e.target.value)}
+          aria-label="Sort"
+        >
           {[
             ["recent", "Recently active"],
             ["name", "Name"],
@@ -315,7 +348,9 @@ export function Overview() {
   const maxL = Math.max(...load.map((l) => l.ts.length), 1);
   // dotrix: the agents' week
   const agentActs = D().activity.filter((a) => !D().members.some((m) => m.id === a.by)).length;
-  const tokens = D().threads.flatMap((t) => t.messages).reduce((s, m) => s + (m.tokens ?? 0), 0);
+  const tokens = D()
+    .threads.flatMap((t) => t.messages)
+    .reduce((s, m) => s + (m.tokens ?? 0), 0);
   return (
     <div className="page">
       <div className="ph">
@@ -328,10 +363,12 @@ export function Overview() {
             <Ic n="chart-gantt" s={14} />
             Timeline
           </button>
-          {allowed("projects:manage") && (<button className="btn btn-primary" onClick={newProject}>
-            <Ic n="plus" s={14} />
-            New project
-          </button>)}
+          {allowed("projects:manage") && (
+            <button className="btn btn-primary" onClick={newProject}>
+              <Ic n="plus" s={14} />
+              New project
+            </button>
+          )}
         </div>
       </div>
       <div className="stats" style={{ marginBottom: 16 }}>
@@ -428,7 +465,11 @@ export function Overview() {
             <div className="panel-b">
               <div className="stackbar" style={{ height: 10, marginBottom: 12 }}>
                 {counts.map((c) => (
-                  <i key={c.s.id} style={{ width: `${(c.n / Math.max(all.length, 1)) * 100}%`, background: `var(--st-${c.s.id})` }} title={`${c.s.name}: ${c.n}`} />
+                  <i
+                    key={c.s.id}
+                    style={{ width: `${(c.n / Math.max(all.length, 1)) * 100}%`, background: `var(--st-${c.s.id})` }}
+                    title={`${c.s.name}: ${c.n}`}
+                  />
                 ))}
               </div>
               {counts.map((c) => (
@@ -481,8 +522,15 @@ export function Overview() {
             <div className="panel-b">
               {ms.length ? (
                 ms.map((m) => (
-                  <div key={m.p.id + m.name} className="row" style={{ height: 32, fontSize: 13, cursor: "pointer" }} onClick={() => go("project", { id: m.p.key, tab: "timeline" })}>
-                    <span style={{ width: 9, height: 9, transform: "rotate(45deg)", background: pColor(m.p), borderRadius: 2, flexShrink: 0, margin: "0 3px" }} />
+                  <div
+                    key={m.p.id + m.name}
+                    className="row"
+                    style={{ height: 32, fontSize: 13, cursor: "pointer" }}
+                    onClick={() => go("project", { id: m.p.key, tab: "timeline" })}
+                  >
+                    <span
+                      style={{ width: 9, height: 9, transform: "rotate(45deg)", background: pColor(m.p), borderRadius: 2, flexShrink: 0, margin: "0 3px" }}
+                    />
                     <span className="grow trunc">
                       {m.name} <span className="faint">· {m.p.name}</span>
                     </span>

@@ -16,10 +16,12 @@ import { Av, Due, Empty, Lbl, PrIcon, PrPill, StIcon, StPill, TypeIcon } from ".
 import { toast } from "../ui/toast";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
-const pop = (type: string, t: Task, extra: Record<string, unknown> = {}) => (e: MouseEvent<HTMLElement>) => {
-  e.stopPropagation();
-  openPop(e.currentTarget, type, { id: t.id, ...extra });
-};
+const pop =
+  (type: string, t: Task, extra: Record<string, unknown> = {}) =>
+  (e: MouseEvent<HTMLElement>) => {
+    e.stopPropagation();
+    openPop(e.currentTarget, type, { id: t.id, ...extra });
+  };
 
 export const LCOLS: Record<string, [string, string]> = {
   status: ["Status", "126px"],
@@ -189,7 +191,21 @@ function TitleCell({ t }: { t: Task }) {
     </div>
   );
 }
-export function TaskRow({ t, cols, tpl, group, complete, drag = true }: { t: Task; cols: string[]; tpl: string; group?: string; complete?: boolean; drag?: boolean }) {
+export function TaskRow({
+  t,
+  cols,
+  tpl,
+  group,
+  complete,
+  drag = true,
+}: {
+  t: Task;
+  cols: string[];
+  tpl: string;
+  group?: string;
+  complete?: boolean;
+  drag?: boolean;
+}) {
   const sel = S.ui.sel.has(t.id);
   return (
     <>
@@ -207,7 +223,13 @@ export function TaskRow({ t, cols, tpl, group, complete, drag = true }: { t: Tas
         </div>
         <div className="c-check">
           {complete ? (
-            <input type="checkbox" className="check round" checked={t.status === "done"} onChange={() => toggleDone(t.id)} aria-label={`Mark ${t.title} complete`} />
+            <input
+              type="checkbox"
+              className="check round"
+              checked={t.status === "done"}
+              onChange={() => toggleDone(t.id)}
+              aria-label={`Mark ${t.title} complete`}
+            />
           ) : (
             <input
               type="checkbox"
@@ -251,7 +273,7 @@ export function TaskRow({ t, cols, tpl, group, complete, drag = true }: { t: Tas
   );
 }
 
-function Composer({ k, g }: { k: string; g: Group }) {
+function Composer({ g }: { k: string; g: Group }) {
   const [v, setV] = useState("");
   return (
     <div className="addrow" style={{ background: "var(--surface-2)" }}>

@@ -67,17 +67,9 @@ export function ActivityView({
           description="Issue changes, document edits, agent requests, and decisions show up here as they happen."
         />
       )}
-      {items.length > 0 && workspace && (
-        <ActivityFeed items={items} members={memberMap} workspaceSlug={workspace.slug} showProject={showProject} />
-      )}
+      {items.length > 0 && workspace && <ActivityFeed items={items} members={memberMap} workspaceSlug={workspace.slug} showProject={showProject} />}
       {activity.hasNextPage && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="self-center"
-          disabled={activity.isFetchingNextPage}
-          onClick={() => void activity.fetchNextPage()}
-        >
+        <Button variant="outline" size="sm" className="self-center" disabled={activity.isFetchingNextPage} onClick={() => void activity.fetchNextPage()}>
           Show older
         </Button>
       )}

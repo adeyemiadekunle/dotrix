@@ -13,13 +13,7 @@ import { useState, type FormEvent } from "react";
 import { useConfirm } from "@/components/confirm-dialog";
 import { Field, SaveBar } from "@/components/form";
 import { timeAgo } from "@/components/issues/issue-activity";
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 import { NotFound } from "@/components/states";
 import { modelName, useModels } from "@/lib/agent";
 import {
@@ -242,11 +236,7 @@ function Editor({
         <SettingsContent className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
             <Label htmlFor="agent-model">Model when it&apos;s asked for help</Label>
-            <Select
-              value={fields.model ?? "__default"}
-              onValueChange={(v) => set("model", v === "__default" ? null : v)}
-              disabled={!canEdit}
-            >
+            <Select value={fields.model ?? "__default"} onValueChange={(v) => set("model", v === "__default" ? null : v)} disabled={!canEdit}>
               <SelectTrigger id="agent-model" className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -302,23 +292,16 @@ function Editor({
         <SettingsHeader>
           <SettingsTitle>Folder access</SettingsTitle>
           <SettingsDescription>
-            Which parts of <code className="font-mono">.dotrix/</code> it may change. Anything not listed is read-only.
-            Propose means it drafts the change for the folder&apos;s owner; <code className="font-mono">agent-rules/</code> is
-            always people only.
+            Which parts of <code className="font-mono">.dotrix/</code> it may change. Anything not listed is read-only. Propose means it drafts the change for
+            the folder&apos;s owner; <code className="font-mono">agent-rules/</code> is always people only.
           </SettingsDescription>
         </SettingsHeader>
         <SettingsContent className="grid gap-2">
-          {!has("knowledge.write") && (
-            <p className="text-muted-foreground text-xs">Without “Write documents” it can at most propose changes.</p>
-          )}
+          {!has("knowledge.write") && <p className="text-muted-foreground text-xs">Without “Write documents” it can at most propose changes.</p>}
           {Object.entries(fields.access).map(([pattern, level]) => (
             <div key={pattern} className="flex items-center gap-2">
               <code className="bg-muted flex-1 truncate rounded-md px-2 py-1.5 font-mono text-xs">{pattern}</code>
-              <Select
-                value={level}
-                onValueChange={(v) => set("access", { ...fields.access, [pattern]: v as Access })}
-                disabled={!canEdit}
-              >
+              <Select value={level} onValueChange={(v) => set("access", { ...fields.access, [pattern]: v as Access })} disabled={!canEdit}>
                 <SelectTrigger className="w-32" aria-label={`Access to ${pattern}`}>
                   <SelectValue />
                 </SelectTrigger>
@@ -387,9 +370,7 @@ function Editor({
                   <Checkbox
                     checked={fields.issue_types.includes(type)}
                     disabled={!canEdit || !has("issues.create")}
-                    onCheckedChange={(on) =>
-                      set("issue_types", on === true ? [...fields.issue_types, type] : fields.issue_types.filter((t) => t !== type))
-                    }
+                    onCheckedChange={(on) => set("issue_types", on === true ? [...fields.issue_types, type] : fields.issue_types.filter((t) => t !== type))}
                   />
                   {type}
                 </Label>
@@ -429,8 +410,8 @@ function Editor({
         <SettingsHeader>
           <SettingsTitle>How it works and what it returns</SettingsTitle>
           <SettingsDescription>
-            A pipeline is the stages it works through, shown while it works. A result is a list it records when it
-            leads a chat (findings, a plan, …), shown with actions such as creating an issue.
+            A pipeline is the stages it works through, shown while it works. A result is a list it records when it leads a chat (findings, a plan, …), shown
+            with actions such as creating an issue.
           </SettingsDescription>
         </SettingsHeader>
         <SettingsContent className="grid gap-4 sm:grid-cols-2">
@@ -473,8 +454,8 @@ function Editor({
         <SettingsHeader>
           <SettingsTitle>What it may do without asking</SettingsTitle>
           <SettingsDescription>
-            Every change waits for a person&apos;s approval unless an owner allows it here, and only low-risk actions can be
-            allowed. Block takes the action away entirely.
+            Every change waits for a person&apos;s approval unless an owner allows it here, and only low-risk actions can be allowed. Block takes the action
+            away entirely.
           </SettingsDescription>
         </SettingsHeader>
         <SettingsContent className="grid gap-2">
@@ -511,13 +492,7 @@ function Editor({
       </SettingsSection>
 
       {canEdit && dirty && (
-        <Field
-          label="What changed (optional)"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          maxLength={500}
-          placeholder="Shown in its history"
-        />
+        <Field label="What changed (optional)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Shown in its history" />
       )}
       {canEdit && (
         <SaveBar
@@ -573,17 +548,7 @@ function Editor({
   );
 }
 
-function History({
-  scope,
-  agent,
-  canEdit,
-  ownsDefinition,
-}: {
-  scope: AgentScope;
-  agent: AgentDef;
-  canEdit: boolean;
-  ownsDefinition: boolean;
-}) {
+function History({ scope, agent, canEdit, ownsDefinition }: { scope: AgentScope; agent: AgentDef; canEdit: boolean; ownsDefinition: boolean }) {
   const [open, setOpen] = useState(false);
   const versions = useAgentVersions(scope, agent.handle, open);
   const restore = useRestoreAgentVersion(scope);

@@ -8,17 +8,7 @@ import { runTitle, useRenameThread, useThread } from "@/lib/agent";
 import type { Scope } from "@/lib/issues";
 
 /** A conversation's title; click it (or the pencil) to rename. Nothing for a new conversation. */
-export function ThreadTitle({
-  scope,
-  threadId,
-  className,
-  fallback,
-}: {
-  scope: Scope;
-  threadId: string | null;
-  className?: string;
-  fallback?: string;
-}) {
+export function ThreadTitle({ scope, threadId, className, fallback }: { scope: Scope; threadId: string | null; className?: string; fallback?: string }) {
   const thread = useThread(scope, threadId);
   const rename = useRenameThread(scope);
   const [editing, setEditing] = useState(false);

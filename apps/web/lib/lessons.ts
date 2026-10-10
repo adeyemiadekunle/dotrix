@@ -15,8 +15,7 @@ export function useLessons(scope: Scope | undefined, enabled: boolean) {
   return useQuery({
     queryKey: key(scope),
     enabled: !!scope && enabled,
-    queryFn: () =>
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/lessons", { params: { path: path(scope!) } })),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/lessons", { params: { path: path(scope!) } })),
   });
 }
 

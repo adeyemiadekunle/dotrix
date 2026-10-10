@@ -102,9 +102,7 @@ function UsageDetails({ run, breakdown }: { run: Run; breakdown: NonNullable<Run
           <UsageRow label="Searches">{breakdown.web.searches}</UsageRow>
           <UsageRow label="Pages read">{breakdown.web.fetches}</UsageRow>
           {breakdown.web.credits > 0 && <UsageRow label="Tavily credits">{breakdown.web.credits}</UsageRow>}
-          {breakdown.web.flagged.length > 0 && (
-            <UsageRow label="Pages that addressed AI agents">{breakdown.web.flagged.join(", ")}</UsageRow>
-          )}
+          {breakdown.web.flagged.length > 0 && <UsageRow label="Pages that addressed AI agents">{breakdown.web.flagged.join(", ")}</UsageRow>}
         </UsageList>
       )}
       {breakdown.files_read.length > 0 && (
@@ -172,15 +170,16 @@ export function AgentReply({
         </ChatNotice>
       )}
       <RunApprovals run={run} scope={scope} canDecide={canDecide} />
-      {decided && <ChatNotice tone="progress">{speaker(run)} {run.agent && run.agent !== "auto" ? "is" : "are"} working on it…</ChatNotice>}
+      {decided && (
+        <ChatNotice tone="progress">
+          {speaker(run)} {run.agent && run.agent !== "auto" ? "is" : "are"} working on it…
+        </ChatNotice>
+      )}
       {run.reply && <Markdown>{run.reply}</Markdown>}
       {/* Anyone who sees the project works the board; the API checks it again. */}
       <RunOutputs run={run} scope={scope} canAct />
       {run.status === "completed" && !run.reply?.trim() && (run.approvals ?? []).length === 0 && (
-        <ChatNotice>
-          {speaker(run)} finished without a reply. Models occasionally do this; ask again if you expected an answer or a
-          change.
-        </ChatNotice>
+        <ChatNotice>{speaker(run)} finished without a reply. Models occasionally do this; ask again if you expected an answer or a change.</ChatNotice>
       )}
       <RunUsage run={run} />
     </ChatMessage>

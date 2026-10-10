@@ -89,11 +89,7 @@ function ModalBody({ m }: { m: Modal }) {
         </Wrap>
       );
     case "share":
-      return (
-        <Wrap m={m}>
-          {isLive() ? <LiveShareModal m={m} /> : <ShareModal m={m} />}
-        </Wrap>
-      );
+      return <Wrap m={m}>{isLive() ? <LiveShareModal m={m} /> : <ShareModal m={m} />}</Wrap>;
     case "invite":
       return (
         <Wrap m={m}>
@@ -200,7 +196,12 @@ function TaskModal({ m }: { m: Modal }) {
     if (m.edit) {
       const t = task(m.edit as string)!;
       mutate(() => {
-        const descChanged = f.desc !== (t.desc || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        const descChanged =
+          f.desc !==
+          (t.desc || "")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
         applyPatch(t, descChanged ? { ...base, desc: f.desc ? `<p>${escapeHtml(f.desc)}</p>` : "" } : base);
         if (!isLive()) t.attachments.push(...files);
       });
@@ -261,7 +262,14 @@ function TaskModal({ m }: { m: Modal }) {
           <label className="sr" htmlFor="f-desc">
             Description
           </label>
-          <textarea className="textarea" id="f-desc" value={f.desc} onChange={(e) => set("desc", e.target.value)} placeholder="Add a description… (optional)" rows={3} />
+          <textarea
+            className="textarea"
+            id="f-desc"
+            value={f.desc}
+            onChange={(e) => set("desc", e.target.value)}
+            placeholder="Add a description… (optional)"
+            rows={3}
+          />
         </div>
         <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
           <FormChip pop="project" label="Project">
@@ -413,7 +421,18 @@ function ProjectModal({ m }: { m: Modal }) {
     }
     if (m.edit) {
       const p = proj(m.edit as string)!;
-      mutate(() => Object.assign(p, { name: f.name, desc: f.desc, icon: f.icon, color: f.color, team: f.team, lead: f.lead, due: f.due, members: [...new Set([...p.members, f.lead])] }));
+      mutate(() =>
+        Object.assign(p, {
+          name: f.name,
+          desc: f.desc,
+          icon: f.icon,
+          color: f.color,
+          team: f.team,
+          lead: f.lead,
+          due: f.due,
+          members: [...new Set([...p.members, f.lead])],
+        }),
+      );
       projectChanged(p, ["name", "desc", "icon", "color", "due"]);
       closeModal();
       toast("Project updated");
@@ -428,7 +447,11 @@ function ProjectModal({ m }: { m: Modal }) {
   };
   return (
     <>
-      <H id="project" title={m.edit ? "Project settings" : "New project"} sub={m.edit ? undefined : "Projects hold tasks, files, and conversations for one body of work."} />
+      <H
+        id="project"
+        title={m.edit ? "Project settings" : "New project"}
+        sub={m.edit ? undefined : "Projects hold tasks, files, and conversations for one body of work."}
+      />
       <form
         className="modal-b"
         onSubmit={(e) => {
@@ -444,7 +467,15 @@ function ProjectModal({ m }: { m: Modal }) {
             <label className="label" htmlFor="p-name">
               Project name
             </label>
-            <input className={`input ${err ? "is-error" : ""}`} id="p-name" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Website Redesign" autoFocus aria-invalid={Boolean(err)} />
+            <input
+              className={`input ${err ? "is-error" : ""}`}
+              id="p-name"
+              value={f.name}
+              onChange={(e) => set("name", e.target.value)}
+              placeholder="e.g. Website Redesign"
+              autoFocus
+              aria-invalid={Boolean(err)}
+            />
             {err && (
               <span className="err">
                 <Ic n="circle-alert" s={12} />
@@ -457,14 +488,29 @@ function ProjectModal({ m }: { m: Modal }) {
           <label className="label" htmlFor="p-desc">
             Description
           </label>
-          <textarea className="textarea" id="p-desc" rows={2} value={f.desc} onChange={(e) => set("desc", e.target.value)} placeholder="What is this project about?" />
+          <textarea
+            className="textarea"
+            id="p-desc"
+            rows={2}
+            value={f.desc}
+            onChange={(e) => set("desc", e.target.value)}
+            placeholder="What is this project about?"
+          />
         </div>
         <div className="row" style={{ gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div className="field" style={{ flex: 1, minWidth: 220 }}>
             <span className="label">Icon</span>
             <div className="iconpick" role="radiogroup" aria-label="Icon">
               {PICONS.map((i) => (
-                <button key={i} type="button" role="radio" aria-checked={f.icon === i} className={f.icon === i ? "on" : ""} onClick={() => set("icon", i)} aria-label={i}>
+                <button
+                  key={i}
+                  type="button"
+                  role="radio"
+                  aria-checked={f.icon === i}
+                  className={f.icon === i ? "on" : ""}
+                  onClick={() => set("icon", i)}
+                  aria-label={i}
+                >
                   <Ic n={i} s={15} />
                 </button>
               ))}
@@ -529,7 +575,15 @@ function ProjectModal({ m }: { m: Modal }) {
             <span className="label">Template</span>
             <div className="tmpls" role="radiogroup">
               {TEMPLATES.map((t) => (
-                <button key={t.id} type="button" role="radio" aria-checked={f.tmpl === t.id} className={`opt ${f.tmpl === t.id ? "on" : ""}`} onClick={() => set("tmpl", t.id)} style={{ padding: 10 }}>
+                <button
+                  key={t.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={f.tmpl === t.id}
+                  className={`opt ${f.tmpl === t.id ? "on" : ""}`}
+                  onClick={() => set("tmpl", t.id)}
+                  style={{ padding: 10 }}
+                >
                   <Ic n={t.icon} s={16} />
                   <b style={{ fontSize: 12.5 }}>{t.name}</b>
                   <span>{t.tasks.length ? t.tasks.length + " starter tasks" : t.desc}</span>
@@ -609,7 +663,14 @@ function ShareModal({ m }: { m: Modal }) {
             <label className="sr" htmlFor="share-in">
               Invite by email
             </label>
-            <input className="input" id="share-in" placeholder="Add people by name or email" value={q} onChange={(e) => ((m.q = e.target.value), render())} autoFocus />
+            <input
+              className="input"
+              id="share-in"
+              placeholder="Add people by name or email"
+              value={q}
+              onChange={(e) => ((m.q = e.target.value), render())}
+              autoFocus
+            />
           </div>
           <select className="select" style={{ width: 132 }} aria-label="Permission" value={perm} onChange={(e) => setPerm(e.target.value)}>
             {PERMS.map((x) => (
@@ -780,7 +841,9 @@ function LiveShareModal({ m }: { m: Modal }) {
     void projectChanged(p, ["private"]).then(load);
   };
   const seeing = new Set((rows ?? []).map((r) => r.user_id));
-  const candidates = D().members.filter((x) => !seeing.has(x.id) && x.status !== "invited" && (x.name.toLowerCase().includes(q.toLowerCase()) || x.email.toLowerCase().includes(q.toLowerCase())));
+  const candidates = D().members.filter(
+    (x) => !seeing.has(x.id) && x.status !== "invited" && (x.name.toLowerCase().includes(q.toLowerCase()) || x.email.toLowerCase().includes(q.toLowerCase())),
+  );
   const VIA: Record<string, string> = { role: "Owners and admins see every project", workspace: "Everyone in the workspace", added: "Added to this project" };
   return (
     <>
@@ -791,11 +854,23 @@ function LiveShareModal({ m }: { m: Modal }) {
             <label className="sr" htmlFor="share-in">
               Add people
             </label>
-            <input className="input" id="share-in" placeholder="Add people in this workspace by name or email" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+            <input
+              className="input"
+              id="share-in"
+              placeholder="Add people in this workspace by name or email"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              autoFocus
+            />
             {q && (
               <div className="panel" style={{ padding: 4, marginTop: 6 }}>
                 {candidates.map((x) => (
-                  <button key={x.id} className="mi" disabled={busy} onClick={() => (setQ(""), act(() => projectMemberSet(p.id, x.id, true), `${x.name} can see ${p.name}`))}>
+                  <button
+                    key={x.id}
+                    className="mi"
+                    disabled={busy}
+                    onClick={() => (setQ(""), act(() => projectMemberSet(p.id, x.id, true), `${x.name} can see ${p.name}`))}
+                  >
                     <Av id={x.id} cls="sm" tip={false} />
                     {x.name}
                     <span className="r">{x.email}</span>
@@ -833,7 +908,11 @@ function LiveShareModal({ m }: { m: Modal }) {
                 </div>
               </div>
               {r.added && admin && (
-                <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => act(() => projectMemberSet(p.id, r.user_id, false), `${r.display_name} no longer sees ${p.name}`)}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  disabled={busy}
+                  onClick={() => act(() => projectMemberSet(p.id, r.user_id, false), `${r.display_name} no longer sees ${p.name}`)}
+                >
                   Remove
                 </button>
               )}
@@ -861,7 +940,9 @@ function LiveShareModal({ m }: { m: Modal }) {
                 <option value="workspace">Everyone at {D().ws.name}</option>
               </select>
               <div className="faint" style={{ fontSize: 11.5, paddingLeft: 4 }}>
-                {p.private ? "Owners, admins, and the people added. Taking someone off unassigns their issues here." : "Every member can open it; guests can't."}
+                {p.private
+                  ? "Owners, admins, and the people added. Taking someone off unassigns their issues here."
+                  : "Every member can open it; guests can't."}
               </div>
             </div>
           </div>
@@ -1195,7 +1276,8 @@ function TeamModal({ m }: { m: Modal }) {
     f.name = f.name.trim();
     f.desc = f.desc.trim();
     if (!f.name) return ((m.err = "Give the team a name"), render());
-    if (teamsList().some((t) => t.name.toLowerCase() === f.name.toLowerCase() && t.id !== m.edit)) return ((m.err = `A team called “${f.name}” already exists`), render());
+    if (teamsList().some((t) => t.name.toLowerCase() === f.name.toLowerCase() && t.id !== m.edit))
+      return ((m.err = `A team called “${f.name}” already exists`), render());
     let t = m.edit ? team(m.edit as string)! : null;
     mutate(() => {
       if (t) {
@@ -1237,7 +1319,15 @@ function TeamModal({ m }: { m: Modal }) {
             <label className="label" htmlFor="tm-name">
               Team name
             </label>
-            <input className={`input ${err ? "is-error" : ""}`} id="tm-name" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Growth" autoFocus aria-invalid={Boolean(err)} />
+            <input
+              className={`input ${err ? "is-error" : ""}`}
+              id="tm-name"
+              value={f.name}
+              onChange={(e) => set("name", e.target.value)}
+              placeholder="e.g. Growth"
+              autoFocus
+              aria-invalid={Boolean(err)}
+            />
             {err && (
               <span className="err" role="alert">
                 <Ic n="circle-alert" s={12} />
@@ -1250,14 +1340,28 @@ function TeamModal({ m }: { m: Modal }) {
           <label className="label" htmlFor="tm-desc">
             What does this team own?
           </label>
-          <input className="input" id="tm-desc" value={f.desc} onChange={(e) => set("desc", e.target.value)} placeholder="e.g. Acquisition experiments and lifecycle email" />
+          <input
+            className="input"
+            id="tm-desc"
+            value={f.desc}
+            onChange={(e) => set("desc", e.target.value)}
+            placeholder="e.g. Acquisition experiments and lifecycle email"
+          />
         </div>
         <div className="row" style={{ gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div className="field" style={{ flex: 1, minWidth: 220 }}>
             <span className="label">Icon</span>
             <div className="iconpick" role="radiogroup" aria-label="Icon">
               {PICONS.map((i) => (
-                <button key={i} type="button" role="radio" aria-checked={f.icon === i} className={f.icon === i ? "on" : ""} onClick={() => set("icon", i)} aria-label={i}>
+                <button
+                  key={i}
+                  type="button"
+                  role="radio"
+                  aria-checked={f.icon === i}
+                  className={f.icon === i ? "on" : ""}
+                  onClick={() => set("icon", i)}
+                  aria-label={i}
+                >
                   <Ic n={i} s={15} />
                 </button>
               ))}
@@ -1267,7 +1371,16 @@ function TeamModal({ m }: { m: Modal }) {
             <span className="label">Color</span>
             <div className="swatches" role="radiogroup" aria-label="Color" style={{ maxWidth: 140 }}>
               {Object.entries(PCOLORS).map(([k, v]) => (
-                <button key={k} type="button" role="radio" aria-checked={f.color === k} className={`sw ${f.color === k ? "on" : ""}`} style={css({ "--c": v, width: 22, height: 22 })} onClick={() => set("color", k)} aria-label={k}>
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={f.color === k}
+                  className={`sw ${f.color === k ? "on" : ""}`}
+                  style={css({ "--c": v, width: 22, height: 22 })}
+                  onClick={() => set("color", k)}
+                  aria-label={k}
+                >
                   {f.color === k && <Ic n="check" s={12} />}
                 </button>
               ))}

@@ -63,10 +63,7 @@ export function StartCoding({ issue, scope }: { issue: Issue; scope: Scope }) {
         size="sm"
         variant="outline"
         disabled={!availability.data.available || busy}
-        title={
-          availability.data.reason ??
-          (busy ? "A coding run is already waiting or working" : `${tool} codes it on a new branch and opens a PR`)
-        }
+        title={availability.data.reason ?? (busy ? "A coding run is already waiting or working" : `${tool} codes it on a new branch and opens a PR`)}
         aria-label="Start coding"
         onClick={() => setOpen(true)}
       >
@@ -79,9 +76,8 @@ export function StartCoding({ issue, scope }: { issue: Issue; scope: Scope }) {
             <DialogHeader>
               <DialogTitle>Start coding {issue.key}</DialogTitle>
               <DialogDescription>
-                {tool} works on a copy of the repository in a sandbox, from the issue, its acceptance criteria, and the
-                documents it links to. The platform then pushes a new branch and opens a pull request; a person merges
-                it. It starts once someone who may approve agent changes approves it.
+                {tool} works on a copy of the repository in a sandbox, from the issue, its acceptance criteria, and the documents it links to. The platform then
+                pushes a new branch and opens a pull request; a person merges it. It starts once someone who may approve agent changes approves it.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-2">
@@ -128,15 +124,7 @@ export function ImplementedIn({ issue, scope }: { issue: Issue; scope: Scope }) 
 }
 
 /** The issue's coding sessions: the latest turn in full, earlier sessions as a line each. */
-export function CodingRuns({
-  issue,
-  scope,
-  sessionLink,
-}: {
-  issue: Issue;
-  scope: Scope;
-  sessionLink?: (sessionId: string) => string;
-}) {
+export function CodingRuns({ issue, scope, sessionLink }: { issue: Issue; scope: Scope; sessionLink?: (sessionId: string) => string }) {
   const runs = useCodingRuns(scope, issue.key);
   const queryClient = useQueryClient();
   const latest = runs.data?.[0];
@@ -256,9 +244,7 @@ export function RunCard({ run, issueKey, scope, label }: { run: CodingRun; issue
         </p>
       )}
       {run.error && <p className="text-destructive text-xs">{run.error}</p>}
-      {run.decision_reason && run.status === "rejected" && (
-        <p className="text-muted-foreground text-xs">Rejected: {run.decision_reason}</p>
-      )}
+      {run.decision_reason && run.status === "rejected" && <p className="text-muted-foreground text-xs">Rejected: {run.decision_reason}</p>}
 
       {run.events.length > 0 && <RunEvents events={run.events} live={working} />}
       {run.summary && (
@@ -304,11 +290,7 @@ export function RunCard({ run, issueKey, scope, label }: { run: CodingRun; issue
             </form>
           ) : (
             <div className="flex gap-2">
-              <Button
-                size="sm"
-                disabled={decide.isPending}
-                onClick={() => decide.mutate({ runId: run.id, decision: "approve" })}
-              >
+              <Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate({ runId: run.id, decision: "approve" })}>
                 {decide.isPending && <Loader2Icon className="animate-spin" />}
                 Approve and start
               </Button>

@@ -34,7 +34,10 @@ function EditInput({ t, f, placeholder }: { t: Task; f: "title" | "estimate"; pl
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Enter") commit();
-        if (e.key === "Escape") ((S.ui.editCell = null), render());
+        if (e.key === "Escape") {
+          S.ui.editCell = null;
+          render();
+        }
       }}
       placeholder={placeholder}
       aria-label={f === "title" ? "Title" : "Estimate"}

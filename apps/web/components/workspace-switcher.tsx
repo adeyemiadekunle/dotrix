@@ -38,10 +38,7 @@ export function WorkspaceSwitcher() {
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
+            <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
               <span className="bg-brand text-brand-foreground flex aspect-square size-8 items-center justify-center rounded-lg text-xs font-semibold">
                 {initials(current.name)}
               </span>
@@ -67,9 +64,7 @@ export function WorkspaceSwitcher() {
                   <DropdownMenuLabel className="text-muted-foreground text-xs">{label}</DropdownMenuLabel>
                   {items.map((w) => (
                     <DropdownMenuItem key={w.id} onSelect={() => router.push(`/w/${w.slug}`)} className="gap-2 p-2">
-                      <span className="flex size-6 items-center justify-center rounded-md border text-[10px] font-medium">
-                        {initials(w.name)}
-                      </span>
+                      <span className="flex size-6 items-center justify-center rounded-md border text-[10px] font-medium">{initials(w.name)}</span>
                       <span className="flex-1 truncate">{w.name}</span>
                       {w.id === current.id && <CheckIcon className="size-4" />}
                     </DropdownMenuItem>

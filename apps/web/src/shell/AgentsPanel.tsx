@@ -36,7 +36,13 @@ function openWork(p: Presence) {
 
 function Row({ p }: { p: Presence }) {
   return (
-    <div className={`ap-row st-${p.state}`} role="button" tabIndex={0} onClick={() => openWork(p)} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), openWork(p))}>
+    <div
+      className={`ap-row st-${p.state}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => openWork(p)}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), openWork(p))}
+    >
       <Face c={p.c} size={26} mood={p.mood} />
       <span className="ap-main">
         <span className="ap-top">

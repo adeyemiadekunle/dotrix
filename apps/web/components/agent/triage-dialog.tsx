@@ -1,12 +1,5 @@
 import { Button } from "@dotrix/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@dotrix/ui/components/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@dotrix/ui/components/dialog";
 import { Label } from "@dotrix/ui/components/label";
 import { Textarea } from "@dotrix/ui/components/textarea";
 import { useState, type FormEvent } from "react";
@@ -19,15 +12,7 @@ import { useChat } from "./chat-context";
 
 /** Paste a bug report or request as it came in; the Project Manager checks for duplicates and
  * proposes the issue (or a comment on the existing one), which waits for approval. */
-export function TriageDialog({
-  scope,
-  open,
-  onOpenChange,
-}: {
-  scope: Scope;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+export function TriageDialog({ scope, open, onOpenChange }: { scope: Scope; open: boolean; onOpenChange: (open: boolean) => void }) {
   const triage = useTriage(scope);
   const chat = useChat();
   const [report, setReport] = useState("");
@@ -49,8 +34,8 @@ export function TriageDialog({
           <DialogHeader>
             <DialogTitle>Triage a report</DialogTitle>
             <DialogDescription>
-              Paste a bug report or request as it came in. The agents look for duplicates, then propose the issue
-              with its type and priority, or a comment on the one that exists. Nothing changes until it&apos;s approved.
+              Paste a bug report or request as it came in. The agents look for duplicates, then propose the issue with its type and priority, or a comment on
+              the one that exists. Nothing changes until it&apos;s approved.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">

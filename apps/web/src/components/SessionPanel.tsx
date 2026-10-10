@@ -29,7 +29,14 @@ export function PaneToolbar({ cs, panes, onToggle }: { cs: CodingSession; panes:
   return (
     <div className="row cs-panes" role="toolbar" aria-label="Session panels">
       {PANES.map(([p, icon, name]) => (
-        <button key={p} className={`ibtn ibtn-sm ${panes.includes(p) ? "on" : ""}`} onClick={() => onToggle(p)} aria-label={name} aria-pressed={panes.includes(p)} data-tip={name}>
+        <button
+          key={p}
+          className={`ibtn ibtn-sm ${panes.includes(p) ? "on" : ""}`}
+          onClick={() => onToggle(p)}
+          aria-label={name}
+          aria-pressed={panes.includes(p)}
+          data-tip={name}
+        >
           <Ic n={icon} s={15} />
           {p === "tasks" && (cs.tasks ?? []).some((x) => x.status === "running") && <span className="cs-live" aria-hidden />}
         </button>
@@ -171,7 +178,13 @@ function Browser({ cs, onOpen }: { cs: CodingSession; onOpen: (p: Pane) => void 
     <>
       <div className="row cs-url">
         <Ic n="lock" s={12} />
-        <input className="mono" value={server ? `preview · :${server.port}${path}` : "No app running"} readOnly={!server} onChange={(e) => setPath(e.target.value.replace(/^preview · :\d+/, "") || "/")} aria-label="Address" />
+        <input
+          className="mono"
+          value={server ? `preview · :${server.port}${path}` : "No app running"}
+          readOnly={!server}
+          onChange={(e) => setPath(e.target.value.replace(/^preview · :\d+/, "") || "/")}
+          aria-label="Address"
+        />
         <button className="ibtn ibtn-xs" aria-label="Reload" disabled={!server}>
           <Ic n="rotate-cw" s={13} />
         </button>
@@ -226,7 +239,9 @@ function Files({ cs }: { cs: CodingSession }) {
           <div className="row cs-fnode" style={{ paddingLeft: 10 + depth * 14 }}>
             <Ic n={k.file ? "file" : "folder"} s={13} />
             <span className={`mono trunc grow ${changed.has(k.path) ? "cs-fchanged" : ""}`}>{k.name}</span>
-            {changed.has(k.path) && <span className={`cs-st ${changed.get(k.path)}`}>{changed.get(k.path) === "added" ? "A" : changed.get(k.path) === "deleted" ? "D" : "M"}</span>}
+            {changed.has(k.path) && (
+              <span className={`cs-st ${changed.get(k.path)}`}>{changed.get(k.path) === "added" ? "A" : changed.get(k.path) === "deleted" ? "D" : "M"}</span>
+            )}
           </div>
           {!k.file && render(k, depth + 1)}
         </div>
@@ -239,7 +254,9 @@ function Tasks({ cs }: { cs: CodingSession }) {
   const tasks = cs.tasks ?? [];
   const stop = (id: string) =>
     mutate(() => {
-      const t = D().coding.find((x) => x.id === cs.id)?.tasks?.find((x) => x.id === id);
+      const t = D()
+        .coding.find((x) => x.id === cs.id)
+        ?.tasks?.find((x) => x.id === id);
       if (t) t.status = "stopped";
     });
   if (!tasks.length) return <Note>No background tasks. Dev servers and watchers the agent starts show here, run by the platform's supervisor.</Note>;

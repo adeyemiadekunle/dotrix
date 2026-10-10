@@ -54,8 +54,7 @@ export function useStale(scope: Scope | undefined) {
     queryKey: scope ? keys.stale(scope) : ["graph", "none"],
     enabled: !!scope,
     refetchOnMount: "always",
-    queryFn: () =>
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/graph/stale", { params: { path: path(scope!) } })),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/graph/stale", { params: { path: path(scope!) } })),
   });
 }
 

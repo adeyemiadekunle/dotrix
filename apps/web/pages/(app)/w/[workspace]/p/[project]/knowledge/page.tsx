@@ -1,29 +1,11 @@
 import { Badge } from "@dotrix/ui/components/badge";
 import { Button } from "@dotrix/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@dotrix/ui/components/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@dotrix/ui/components/dialog";
 import { Input } from "@dotrix/ui/components/input";
 import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { Textarea } from "@dotrix/ui/components/textarea";
 import { cn } from "@dotrix/ui/lib/utils";
-import {
-  BookOpenIcon,
-  CodeIcon,
-  DownloadIcon,
-  FilePlusIcon,
-  HistoryIcon,
-  LockIcon,
-  PencilIcon,
-  SearchIcon,
-  Trash2Icon,
-  WaypointsIcon,
-} from "lucide-react";
+import { BookOpenIcon, CodeIcon, DownloadIcon, FilePlusIcon, HistoryIcon, LockIcon, PencilIcon, SearchIcon, Trash2Icon, WaypointsIcon } from "lucide-react";
 import { Suspense, useMemo, useState, type FormEvent } from "react";
 
 import { Field, SubmitButton } from "@/components/form";
@@ -35,33 +17,12 @@ import { FileTree } from "@/components/knowledge/file-tree";
 import { Markdown } from "@/components/markdown";
 import { EmptyState } from "@/components/states";
 import { useMembers, type Scope } from "@/lib/issues";
-import {
-  buildTree,
-  exportUrl,
-  isAgentRules,
-  useDeleteFile,
-  useFile,
-  useManifest,
-  useWriteFile,
-  type FileEntry,
-} from "@/lib/knowledge";
+import { buildTree, exportUrl, isAgentRules, useDeleteFile, useFile, useManifest, useWriteFile, type FileEntry } from "@/lib/knowledge";
 import { can, canManageProjects } from "@/lib/labels";
 import { useProjectScope } from "@/lib/queries";
 import { useSearchParam, useSetSearchParams } from "@/lib/url-state";
 
-function Editor({
-  scope,
-  path,
-  content,
-  version,
-  onDone,
-}: {
-  scope: Scope;
-  path: string;
-  content: string;
-  version: number;
-  onDone: () => void;
-}) {
+function Editor({ scope, path, content, version, onDone }: { scope: Scope; path: string; content: string; version: number; onDone: () => void }) {
   const write = useWriteFile(scope);
   const [draft, setDraft] = useState(content);
   const [message, setMessage] = useState("");
@@ -73,9 +34,7 @@ function Editor({
         // base_version: if someone changed the file meanwhile, the API refuses (409) instead of
         // overwriting their change. Close from the promise, not a mutate callback: the saved
         // version remounts this editor (its key), which would drop the callback.
-        const saved = await write
-          .mutateAsync({ path, content: draft, baseVersion: version, message })
-          .catch(() => null);
+        const saved = await write.mutateAsync({ path, content: draft, baseVersion: version, message }).catch(() => null);
         if (saved) onDone();
       }}
     >
@@ -253,22 +212,13 @@ function FilePane({
       )}
 
       {entry.deleted ? (
-        <p className="text-muted-foreground text-sm">
-          This file was deleted. Pick an earlier version in the history to see it or restore it.
-        </p>
+        <p className="text-muted-foreground text-sm">This file was deleted. Pick an earlier version in the history to see it or restore it.</p>
       ) : file.isLoading ? (
         <Skeleton className="h-64" />
       ) : file.isError ? (
         <p className="text-muted-foreground text-sm">Couldn&apos;t load this file.</p>
       ) : file.data && editing ? (
-        <Editor
-          key={file.data.version}
-          scope={scope}
-          path={path}
-          content={file.data.content}
-          version={file.data.version}
-          onDone={() => setEditing(false)}
-        />
+        <Editor key={file.data.version} scope={scope} path={path} content={file.data.content} version={file.data.version} onDone={() => setEditing(false)} />
       ) : file.data && !showHistory ? (
         file.data.content.trim() === "" ? (
           <p className="text-muted-foreground text-sm">This file is empty.</p>
@@ -277,15 +227,11 @@ function FilePane({
             <Markdown>{file.data.content}</Markdown>
           </div>
         ) : (
-          <pre className="bg-muted/40 overflow-x-auto rounded-lg border p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap">
-            {file.data.content}
-          </pre>
+          <pre className="bg-muted/40 overflow-x-auto rounded-lg border p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap">{file.data.content}</pre>
         )
       ) : null}
 
-      {!rules && !entry.deleted && !editing && (
-        <Related key={entry.version} scope={scope} refName={path} projectBase={projectBase} canEdit={canLink} />
-      )}
+      {!rules && !entry.deleted && !editing && <Related key={entry.version} scope={scope} refName={path} projectBase={projectBase} canEdit={canLink} />}
     </div>
   );
 }
@@ -303,7 +249,10 @@ function NewFileDialog({
 }) {
   const write = useWriteFile(scope);
   const [path, setPath] = useState("");
-  const clean = path.trim().replace(/^\/+/, "").replace(/^\.dotrix\//, "");
+  const clean = path
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/^\.dotrix\//, "");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -366,9 +315,7 @@ function KnowledgePage() {
   const isAdmin = canManageProjects(role);
 
   const files = manifest.data?.files ?? [];
-  const visible = files.filter(
-    (f) => (showDeleted || !f.deleted) && (!query || f.path.toLowerCase().includes(query.toLowerCase())),
-  );
+  const visible = files.filter((f) => (showDeleted || !f.deleted) && (!query || f.path.toLowerCase().includes(query.toLowerCase())));
   const tree = useMemo(() => buildTree(visible), [visible]);
   // With no file in the URL, open the project's overview rather than an empty preview.
   const selected = picked ?? (files.some((f) => f.path === "project.md" && !f.deleted) ? "project.md" : null);
@@ -387,13 +334,7 @@ function KnowledgePage() {
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <SearchIcon className="text-muted-foreground absolute top-2.5 left-2.5 size-4" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Find a file"
-                className="h-9 pl-8"
-                aria-label="Find a file"
-              />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a file" className="h-9 pl-8" aria-label="Find a file" />
             </div>
             {canEditKnowledge && scope && (
               <Button size="icon" variant="outline" className="size-9" onClick={() => setCreating(true)} aria-label="New file">
@@ -443,12 +384,7 @@ function KnowledgePage() {
                   Close
                 </Button>
               </div>
-              <GraphView
-                key={graphRef}
-                scope={scope}
-                initialRef={graphRef}
-                projectBase={`/w/${workspace.slug}/p/${project.key}`}
-              />
+              <GraphView key={graphRef} scope={scope} initialRef={graphRef} projectBase={`/w/${workspace.slug}/p/${project.key}`} />
             </div>
           ) : scope && entry ? (
             <FilePane

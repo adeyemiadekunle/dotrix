@@ -19,22 +19,9 @@ import { Field, SaveBar } from "@/components/form";
 import { GitHubMark } from "@/components/github-sign-in";
 import { RepoPicker } from "@/components/github-repos";
 import { HEALTH_LABELS } from "@/components/project-health";
-import {
-  PROJECT_COLORS,
-  PROJECT_ICONS,
-  PROJECT_STATUSES,
-  projectColor,
-  type ProjectColor,
-  type ProjectStatus,
-} from "@/lib/project-look";
+import { PROJECT_COLORS, PROJECT_ICONS, PROJECT_STATUSES, projectColor, type ProjectColor, type ProjectStatus } from "@/lib/project-look";
 import { RepoPreview } from "@/components/repo-preview";
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 import { errorMessage } from "@/lib/api";
 import { useConnectRepository, useProjectRepository, useSyncRepository } from "@/lib/github";
 import { useMoveProject, useProjectMember, useProjectMembers, useUpdateProject } from "@/lib/admin";
@@ -47,12 +34,7 @@ type Project = Schemas["ProjectRead"];
 type Workspace = Schemas["WorkspaceWithRole"];
 
 // Models the backend can run (provider:model); the provider's API key must be set on the server.
-const MODEL_SUGGESTIONS = [
-  "google_genai:gemini-3.8-flash",
-  "anthropic:claude-opus-5-5",
-  "anthropic:claude-sonnet-5",
-  "anthropic:claude-haiku-4-5-20251001",
-];
+const MODEL_SUGGESTIONS = ["google_genai:gemini-3.8-flash", "anthropic:claude-opus-5-5", "anthropic:claude-sonnet-5", "anthropic:claude-haiku-4-5-20251001"];
 
 function General({ project, workspace, canEdit }: { project: Project; workspace: Workspace; canEdit: boolean }) {
   const update = useUpdateProject(workspace.id, project.id);
@@ -69,8 +51,8 @@ function General({ project, workspace, canEdit }: { project: Project; workspace:
           </Badge>
         </SettingsTitle>
         <SettingsDescription>
-          Started from {PROJECT_SOURCE_LABELS[project.source].toLowerCase()} on{" "}
-          {new Date(project.created_at).toLocaleDateString()}. The key prefixes issue keys and can&apos;t change.
+          Started from {PROJECT_SOURCE_LABELS[project.source].toLowerCase()} on {new Date(project.created_at).toLocaleDateString()}. The key prefixes issue keys
+          and can&apos;t change.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent>
@@ -133,8 +115,7 @@ function Status({ project, workspace, canEdit }: { project: Project; workspace: 
       <SettingsHeader>
         <SettingsTitle>Status</SettingsTitle>
         <SettingsDescription>
-          Where the project is, how it's going, and when it should be done, shown in the sidebar and on Projects. Its
-          icon and colour mark it everywhere.
+          Where the project is, how it's going, and when it should be done, shown in the sidebar and on Projects. Its icon and colour mark it everywhere.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent>
@@ -186,13 +167,7 @@ function Status({ project, workspace, canEdit }: { project: Project; workspace: 
             </div>
             <div className="grid gap-2">
               <Label htmlFor="project-target">Target date</Label>
-              <Input
-                id="project-target"
-                type="date"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                disabled={!canEdit}
-              />
+              <Input id="project-target" type="date" value={target} onChange={(e) => setTarget(e.target.value)} disabled={!canEdit} />
             </div>
           </div>
           <fieldset className="grid gap-2" disabled={!canEdit}>
@@ -288,8 +263,8 @@ function Repository({ project, workspace, canEdit }: { project: Project; workspa
       <SettingsHeader>
         <SettingsTitle>Repository</SettingsTitle>
         <SettingsDescription>
-          The code repo this project plans for. Connected through the GitHub App, agents read its code (a copy of the
-          default branch, refreshed on every push), private repos included. Teammates link their own checkouts with <code className="font-mono">dotrix connect</code>.
+          The code repo this project plans for. Connected through the GitHub App, agents read its code (a copy of the default branch, refreshed on every push),
+          private repos included. Teammates link their own checkouts with <code className="font-mono">dotrix connect</code>.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent>
@@ -373,9 +348,7 @@ function Repository({ project, workspace, canEdit }: { project: Project; workspa
               </p>
               <p className="text-muted-foreground text-xs">
                 Through the GitHub App on {repo.account_login} · {repo.default_branch}
-                {repo.last_push_at
-                  ? ` · last push ${new Date(repo.last_push_at).toLocaleString()} (${repo.last_push_sha?.slice(0, 7)})`
-                  : ""}
+                {repo.last_push_at ? ` · last push ${new Date(repo.last_push_at).toLocaleString()} (${repo.last_push_sha?.slice(0, 7)})` : ""}
               </p>
               <p className="text-muted-foreground text-xs" data-testid="checkout-status">
                 {repo.checkout_error ? (
@@ -475,17 +448,7 @@ function Repository({ project, workspace, canEdit }: { project: Project; workspa
   );
 }
 
-function Agents({
-  project,
-  workspace,
-  canEdit,
-  knowledgeHref,
-}: {
-  project: Project;
-  workspace: Workspace;
-  canEdit: boolean;
-  knowledgeHref: string;
-}) {
+function Agents({ project, workspace, canEdit, knowledgeHref }: { project: Project; workspace: Workspace; canEdit: boolean; knowledgeHref: string }) {
   const update = useUpdateProject(workspace.id, project.id);
   const manifest = useManifest({ workspaceId: workspace.id, projectId: project.id });
   const [model, setModel] = useState(project.model);
@@ -530,12 +493,10 @@ function Agents({
             </datalist>
           </div>
           <p className="text-muted-foreground text-xs">
-            <code className="font-mono">provider:model</code>, e.g. google_genai, anthropic, or openai. The provider&apos;s API
-            key must be configured on the server. New runs use it; running ones finish on the old model.
+            <code className="font-mono">provider:model</code>, e.g. google_genai, anthropic, or openai. The provider&apos;s API key must be configured on the
+            server. New runs use it; running ones finish on the old model.
           </p>
-          {canEdit && (
-            <SaveBar dirty={model.trim() !== project.model} pending={update.isPending} onDiscard={() => setModel(project.model)} />
-          )}
+          {canEdit && <SaveBar dirty={model.trim() !== project.model} pending={update.isPending} onDiscard={() => setModel(project.model)} />}
         </form>
 
         <form
@@ -562,9 +523,8 @@ function Agents({
               disabled={!canEdit}
             />
             <p className="text-muted-foreground text-xs">
-              A cheaper model for the product, architecture, research, reviewer, and documentation agents, and for
-              summarising long conversations. The project manager (Auto) and any agent you pick in Chat use the
-              conversation&apos;s model. Leave it empty to use the same model.
+              A cheaper model for the product, architecture, research, reviewer, and documentation agents, and for summarising long conversations. The project
+              manager (Auto) and any agent you pick in Chat use the conversation&apos;s model. Leave it empty to use the same model.
             </p>
           </div>
           <div className="grid gap-2">
@@ -583,8 +543,8 @@ function Agents({
               disabled={!canEdit}
             />
             <p className="text-muted-foreground text-xs">
-              The most tokens one request to the agents may use, including every specialist it asks and every step after
-              an approval. A request that reaches it stops and says so. Leave it empty for the server&apos;s default.
+              The most tokens one request to the agents may use, including every specialist it asks and every step after an approval. A request that reaches it
+              stops and says so. Leave it empty for the server&apos;s default.
             </p>
           </div>
           {canEdit && (
@@ -602,8 +562,8 @@ function Agents({
         <div className="grid gap-2">
           <h3 className="text-sm font-medium">Who the agents are</h3>
           <p className="text-muted-foreground text-xs">
-            Their instructions, tools, folder access, and what they may do without asking come from the workspace&apos;s
-            agents; this project can have its own versions and agents of its own.
+            Their instructions, tools, folder access, and what they may do without asking come from the workspace&apos;s agents; this project can have its own
+            versions and agents of its own.
           </p>
           <div>
             <Button variant="outline" size="sm" asChild>
@@ -618,8 +578,8 @@ function Agents({
         <div className="grid gap-2">
           <h3 className="text-sm font-medium">Agent rules</h3>
           <p className="text-muted-foreground text-xs">
-            Every agent reads <code className="font-mono">base.md</code> plus its role file. They live in the project&apos;s
-            knowledge, with full history{canEdit ? "" : "; owners and admins edit them"}.
+            Every agent reads <code className="font-mono">base.md</code> plus its role file. They live in the project&apos;s knowledge, with full history
+            {canEdit ? "" : "; owners and admins edit them"}.
           </p>
           {manifest.isLoading ? (
             <Skeleton className="h-20" />
@@ -627,10 +587,7 @@ function Agents({
             <ul className="grid gap-1 sm:grid-cols-2">
               {rules.map((f) => (
                 <li key={f.path}>
-                  <Link
-                    href={`${knowledgeHref}?file=${f.path}`}
-                    className="hover:bg-muted flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-                  >
+                  <Link href={`${knowledgeHref}?file=${f.path}`} className="hover:bg-muted flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
                     <FileTextIcon className="text-muted-foreground size-4" />
                     <span className="truncate">{f.path.replace("agent-rules/", "")}</span>
                     <span className="text-muted-foreground ml-auto text-xs">v{f.version}</span>
@@ -668,8 +625,8 @@ function Access({ project, workspace, canEdit }: { project: Project; workspace: 
       <SettingsHeader>
         <SettingsTitle>Who can see this project</SettingsTitle>
         <SettingsDescription>
-          Open to everyone in {workspace.name}, or restricted to owners, admins, and the people you add. To anyone else a
-          restricted project doesn&apos;t exist. Guests never see projects.
+          Open to everyone in {workspace.name}, or restricted to owners, admins, and the people you add. To anyone else a restricted project doesn&apos;t exist.
+          Guests never see projects.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="grid gap-4">
@@ -681,8 +638,7 @@ function Access({ project, workspace, canEdit }: { project: Project; workspace: 
             if (access === "restricted")
               ask({
                 title: `Restrict ${project.key}?`,
-                description:
-                  "Only owners, admins, and the people you add will see it. Others are unassigned from its issues and stop watching them.",
+                description: "Only owners, admins, and the people you add will see it. Others are unassigned from its issues and stop watching them.",
                 confirm: "Restrict",
                 action: () => update.mutateAsync({ access }),
               });
@@ -745,11 +701,7 @@ function Access({ project, workspace, canEdit }: { project: Project; workspace: 
                 ))}
               </SelectContent>
             </Select>
-            <Button
-              variant="outline"
-              disabled={!adding || add.isPending}
-              onClick={() => add.mutate(adding, { onSuccess: () => setAdding("") })}
-            >
+            <Button variant="outline" disabled={!adding || add.isPending} onClick={() => add.mutate(adding, { onSuccess: () => setAdding("") })}>
               Add
             </Button>
           </div>
@@ -775,16 +727,14 @@ function Move({ project, workspace }: { project: Project; workspace: Workspace }
       <SettingsHeader>
         <SettingsTitle>Move project</SettingsTitle>
         <SettingsDescription>
-          Move {project.name} to another workspace, for example from your personal workspace into an organisation&apos;s
-          so you can work on it with others. Its documents, issues, uploads, and conversations go with it; the people who
-          see it are the other workspace&apos;s (only those added, if it&apos;s restricted).
+          Move {project.name} to another workspace, for example from your personal workspace into an organisation&apos;s so you can work on it with others. Its
+          documents, issues, uploads, and conversations go with it; the people who see it are the other workspace&apos;s (only those added, if it&apos;s
+          restricted).
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="grid gap-3">
         {targets.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            There&apos;s no other workspace where you can add projects.
-          </p>
+          <p className="text-muted-foreground text-sm">There&apos;s no other workspace where you can add projects.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             <Select value={choice} onValueChange={setChoice}>
@@ -822,8 +772,8 @@ function Move({ project, workspace }: { project: Project; workspace: Workspace }
           </div>
         )}
         <p className="text-muted-foreground text-xs">
-          You need to be an owner or admin in both workspaces. It can&apos;t move while an agent is working or waiting for
-          approval, or if the other workspace already has a project with key {project.key} or the same repository.
+          You need to be an owner or admin in both workspaces. It can&apos;t move while an agent is working or waiting for approval, or if the other workspace
+          already has a project with key {project.key} or the same repository.
         </p>
         {confirmDialog}
       </SettingsContent>
@@ -851,7 +801,12 @@ export default function ProjectSettings() {
     ["automations", "Automations"],
     ...(canEdit ? [["lessons", "Lessons"]] : []),
     ["agents", "Agents"],
-    ...(canEdit ? [["export", "Export"], ["move", "Move project"]] : []),
+    ...(canEdit
+      ? [
+          ["export", "Export"],
+          ["move", "Move project"],
+        ]
+      : []),
   ];
   return (
     <div className="flex items-start gap-10 p-4 md:p-8">
@@ -874,8 +829,8 @@ export default function ProjectSettings() {
             <SettingsHeader>
               <SettingsTitle>Export</SettingsTitle>
               <SettingsDescription>
-                The whole <code className="font-mono">.dotrix/</code> as Markdown in a zip, with a config.yaml. Leaving the
-                platform loses nothing. Knowledge revision {project.knowledge_revision}.
+                The whole <code className="font-mono">.dotrix/</code> as Markdown in a zip, with a config.yaml. Leaving the platform loses nothing. Knowledge
+                revision {project.knowledge_revision}.
               </SettingsDescription>
             </SettingsHeader>
             <SettingsContent>

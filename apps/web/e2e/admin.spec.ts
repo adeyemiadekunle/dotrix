@@ -13,7 +13,10 @@ test("an organisation: invite link, revoke, and the audit log records both", asy
   await expect(page.getByText("Personal workspaces don't invite: this one is just for you.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Create link" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: /Personal/ }).first().click();
+  await page
+    .getByRole("button", { name: /Personal/ })
+    .first()
+    .click();
   await page.getByRole("menuitem", { name: /Create organisation/ }).click();
   await page.getByRole("dialog").getByLabel("Name").fill("E2E Ltd");
   await page.getByRole("button", { name: "Create organisation" }).click();
@@ -95,7 +98,10 @@ test("turn the personal workspace into an organisation, then restrict a project"
   await page.getByRole("dialog").getByRole("button", { name: "Turn into an organisation" }).click();
   // It can invite now, and keeps its project; a new personal workspace is in the switcher.
   await expect(page.getByRole("button", { name: "Create link" })).toBeVisible();
-  await page.getByRole("button", { name: /Kunemi Ltd/ }).first().click();
+  await page
+    .getByRole("button", { name: /Kunemi Ltd/ })
+    .first()
+    .click();
   await expect(page.getByRole("menuitem", { name: /Personal/ })).toBeVisible();
   await page.keyboard.press("Escape");
 
@@ -110,7 +116,10 @@ test("turn the personal workspace into an organisation, then restrict a project"
 test("move a project from the personal workspace into an organisation", async ({ page }) => {
   const { key } = await signUpWithProject(page, "Kumove", "KUM");
   const personalUrl = page.url().replace(/\/board.*$/, "/settings");
-  await page.getByRole("button", { name: /Personal/ }).first().click();
+  await page
+    .getByRole("button", { name: /Personal/ })
+    .first()
+    .click();
   await page.getByRole("menuitem", { name: /Create organisation/ }).click();
   await page.getByLabel("Name").fill("Kunemi Ltd");
   await page.getByRole("button", { name: "Create organisation" }).click();

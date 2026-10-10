@@ -16,7 +16,12 @@ const set = (k: "memQ" | "memRole" | "membersTab" | "memTab", v: string) => ((S.
 const ctx = (id: string) => (e: React.MouseEvent<HTMLElement>) => {
   e.preventDefault();
   e.stopPropagation();
-  openPop(e.currentTarget, "ctx", { ctx: "member", id, x: e.type === "contextmenu" ? e.clientX : undefined, y: e.type === "contextmenu" ? e.clientY : undefined });
+  openPop(e.currentTarget, "ctx", {
+    ctx: "member",
+    id,
+    x: e.type === "contextmenu" ? e.clientX : undefined,
+    y: e.type === "contextmenu" ? e.clientY : undefined,
+  });
 };
 
 function NotFound() {
@@ -141,10 +146,12 @@ export function Members() {
           </p>
         </div>
         <div className="acts">
-          {canInvite() && (<button className="btn btn-primary" onClick={invite}>
-            <Ic n="user-plus" s={14} />
-            Invite member
-          </button>)}
+          {canInvite() && (
+            <button className="btn btn-primary" onClick={invite}>
+              <Ic n="user-plus" s={14} />
+              Invite member
+            </button>
+          )}
         </div>
       </div>
       <div className="tabs" style={{ marginBottom: 14 }}>
@@ -165,10 +172,12 @@ export function Members() {
               {teamsList().length} teams
             </span>
             <span className="sp" />
-            {allowed("members:manage") && (<button className="btn btn-secondary btn-sm" onClick={newTeam}>
-              <Ic n="plus" s={13} />
-              New team
-            </button>)}
+            {allowed("members:manage") && (
+              <button className="btn btn-secondary btn-sm" onClick={newTeam}>
+                <Ic n="plus" s={13} />
+                New team
+              </button>
+            )}
           </div>
           <TeamsGrid />
         </>
@@ -179,7 +188,14 @@ export function Members() {
           <div className="row" style={{ marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
             <div className="inwrap">
               <Ic n="search" s={13} />
-              <input className="input search-sm" id="mem-q" placeholder="Search by name or email" value={u.memQ || ""} onChange={(e) => set("memQ", e.target.value)} aria-label="Search members" />
+              <input
+                className="input search-sm"
+                id="mem-q"
+                placeholder="Search by name or email"
+                value={u.memQ || ""}
+                onChange={(e) => set("memQ", e.target.value)}
+                aria-label="Search members"
+              />
             </div>
             <div className="seg">
               {["all", ...ROLES].map((r) => (
@@ -297,10 +313,12 @@ export function Teams() {
           <p>Groups of people who work on projects together.</p>
         </div>
         <div className="acts">
-          {allowed("members:manage") && (<button className="btn btn-primary" onClick={newTeam}>
-            <Ic n="plus" s={14} />
-            New team
-          </button>)}
+          {allowed("members:manage") && (
+            <button className="btn btn-primary" onClick={newTeam}>
+              <Ic n="plus" s={14} />
+              New team
+            </button>
+          )}
         </div>
       </div>
       {teamsList().length ? (
@@ -308,10 +326,12 @@ export function Teams() {
       ) : (
         <div className="panel">
           <Empty icon="users" title="No teams yet" text="Create a team to group people and give projects an owner.">
-            {allowed("members:manage") && (<button className="btn btn-primary btn-sm" onClick={newTeam}>
-              <Ic n="plus" s={14} />
-              New team
-            </button>)}
+            {allowed("members:manage") && (
+              <button className="btn btn-primary btn-sm" onClick={newTeam}>
+                <Ic n="plus" s={14} />
+                New team
+              </button>
+            )}
           </Empty>
         </div>
       )}
@@ -339,14 +359,18 @@ export function TeamPage() {
           </div>
         </div>
         <div className="acts">
-          {allowed("members:manage") && (<button className="btn btn-secondary" onClick={() => editTeam(t.id)}>
-            <Ic n="pencil" s={14} />
-            Edit team
-          </button>)}
-          {canInvite() && (<button className="btn btn-secondary" onClick={invite}>
-            <Ic n="user-plus" s={14} />
-            Invite to workspace
-          </button>)}
+          {allowed("members:manage") && (
+            <button className="btn btn-secondary" onClick={() => editTeam(t.id)}>
+              <Ic n="pencil" s={14} />
+              Edit team
+            </button>
+          )}
+          {canInvite() && (
+            <button className="btn btn-secondary" onClick={invite}>
+              <Ic n="user-plus" s={14} />
+              Invite to workspace
+            </button>
+          )}
         </div>
       </div>
       <div className="grid2">
@@ -496,7 +520,11 @@ export function MemberPage() {
               </button>
             ))}
           </div>
-          {list.length ? list.map((t) => <MiniRow key={t.id} t={t} av={false} />) : <Empty icon="list-checks" title="No tasks here" text="Nothing to show in this list." cls="sm" />}
+          {list.length ? (
+            list.map((t) => <MiniRow key={t.id} t={t} av={false} />)
+          ) : (
+            <Empty icon="list-checks" title="No tasks here" text="Nothing to show in this list." cls="sm" />
+          )}
         </section>
         <div className="stack">
           <section className="panel">
@@ -521,7 +549,9 @@ export function MemberPage() {
             <div className="panel-h">
               <h2>Recent activity</h2>
             </div>
-            <div className="panel-b feed">{acts.length ? acts.map((a) => <ActItem key={a.id} a={a} />) : <span className="faint">No recent activity</span>}</div>
+            <div className="panel-b feed">
+              {acts.length ? acts.map((a) => <ActItem key={a.id} a={a} />) : <span className="faint">No recent activity</span>}
+            </div>
           </section>
         </div>
       </div>

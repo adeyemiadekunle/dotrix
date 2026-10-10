@@ -12,23 +12,10 @@ import { toast } from "sonner";
 import { useConfirm } from "@/components/confirm-dialog";
 import { Field, SaveBar, SubmitButton } from "@/components/form";
 import { GitHubMark } from "@/components/github-sign-in";
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 import { UserAvatar } from "@/components/user-avatar";
 import { api, errorMessage, unwrap } from "@/lib/api";
-import {
-  myAvatarSrc,
-  useRemoveAvatar,
-  useSetAvatar,
-  useSignInMethods,
-  useUnlink,
-  useUpdateProfile,
-} from "@/lib/profile";
+import { myAvatarSrc, useRemoveAvatar, useSetAvatar, useSignInMethods, useUnlink, useUpdateProfile } from "@/lib/profile";
 import { useMe } from "@/lib/queries";
 import { useSetSearchParams } from "@/lib/url-state";
 
@@ -64,23 +51,11 @@ function AboutYou({ me }: { me: Me }) {
             <UserAvatar name={me.display_name} src={myAvatarSrc(me)} className="size-16 text-base" />
             <div className="grid gap-2">
               <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={setAvatar.isPending}
-                  onClick={() => picker.current?.click()}
-                >
+                <Button type="button" size="sm" variant="outline" disabled={setAvatar.isPending} onClick={() => picker.current?.click()}>
                   {me.avatar_updated_at ? "Change photo" : "Upload photo"}
                 </Button>
                 {me.avatar_updated_at && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={removeAvatar.isPending}
-                    onClick={() => removeAvatar.mutate()}
-                  >
+                  <Button type="button" size="sm" variant="ghost" disabled={removeAvatar.isPending} onClick={() => removeAvatar.mutate()}>
                     Remove
                   </Button>
                 )}
@@ -168,17 +143,7 @@ function Method({ icon, title, detail, action }: { icon: ReactNode; title: strin
 }
 
 /** Change your password (or set a first one) without leaving Settings; signs out your other sessions. */
-function PasswordDialog({
-  me,
-  hasPassword,
-  open,
-  onOpenChange,
-}: {
-  me: Me;
-  hasPassword: boolean;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+function PasswordDialog({ me, hasPassword, open, onOpenChange }: { me: Me; hasPassword: boolean; open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
   const [mismatch, setMismatch] = useState(false);
   const change = useMutation({
@@ -223,9 +188,7 @@ function PasswordDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{hasPassword ? "Change your password" : "Set a password"}</DialogTitle>
-          <DialogDescription>
-            Your other browsers and apps are signed out; this one stays signed in. The CLI&apos;s tokens keep working.
-          </DialogDescription>
+          <DialogDescription>Your other browsers and apps are signed out; this one stays signed in. The CLI&apos;s tokens keep working.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="grid gap-4">
           {hasPassword && (
@@ -236,18 +199,22 @@ function PasswordDialog({
               autoComplete="current-password"
               required
               action={
-                <button
-                  type="button"
-                  className="text-primary text-xs hover:underline"
-                  disabled={emailLink.isPending}
-                  onClick={() => emailLink.mutate()}
-                >
+                <button type="button" className="text-primary text-xs hover:underline" disabled={emailLink.isPending} onClick={() => emailLink.mutate()}>
                   Forgot it? Email me a link
                 </button>
               }
             />
           )}
-          <Field label="New password" name="new" type="password" autoComplete="new-password" minLength={10} maxLength={128} required hint="At least 10 characters" />
+          <Field
+            label="New password"
+            name="new"
+            type="password"
+            autoComplete="new-password"
+            minLength={10}
+            maxLength={128}
+            required
+            hint="At least 10 characters"
+          />
           <Field label="Confirm new password" name="confirm" type="password" autoComplete="new-password" required />
           {(mismatch || change.isError) && (
             <p role="alert" className="text-destructive text-sm">
@@ -318,11 +285,7 @@ function SignInMethods({ me }: { me: Me }) {
               <Method
                 icon={<GitHubMark />}
                 title="GitHub"
-                detail={
-                  github
-                    ? `Linked${github.login ? ` as @${github.login}` : ""} on ${dateFormat.format(new Date(github.linked_at))}`
-                    : "Not linked"
-                }
+                detail={github ? `Linked${github.login ? ` as @${github.login}` : ""} on ${dateFormat.format(new Date(github.linked_at))}` : "Not linked"}
                 action={
                   !github ? (
                     <Button size="sm" variant="outline" asChild>
@@ -351,9 +314,7 @@ function SignInMethods({ me }: { me: Me }) {
           </ul>
         )}
         {confirmDialog}
-        {methods.data && (
-          <PasswordDialog me={me} hasPassword={methods.data.password} open={changing} onOpenChange={setChanging} />
-        )}
+        {methods.data && <PasswordDialog me={me} hasPassword={methods.data.password} open={changing} onOpenChange={setChanging} />}
       </SettingsContent>
     </SettingsSection>
   );

@@ -140,12 +140,7 @@ export default function HomePage() {
             <Stat label="Waiting for a decision" value={runs.length} hint="agent requests" tone={runs.length ? "text-primary" : ""} />
             <Stat label="My open issues" value={stats.open} hint={`${stats.dueThisWeek} due this week`} />
             <Stat label="Done this week" value={stats.doneThisWeek} hint="assigned to you" />
-            <Stat
-              label="Overdue"
-              value={stats.overdue}
-              hint="assigned to you"
-              tone={stats.overdue ? "text-red-600 dark:text-red-400" : ""}
-            />
+            <Stat label="Overdue" value={stats.overdue} hint="assigned to you" tone={stats.overdue ? "text-red-600 dark:text-red-400" : ""} />
           </div>
         )}
 
@@ -161,9 +156,7 @@ export default function HomePage() {
                 }
               >
                 {approvals.isLoading && <Skeleton className="m-4 h-10" />}
-                {approvals.data && runs.length === 0 && (
-                  <p className="text-muted-foreground px-4 py-6 text-sm">No agent is waiting on anyone.</p>
-                )}
+                {approvals.data && runs.length === 0 && <p className="text-muted-foreground px-4 py-6 text-sm">No agent is waiting on anyone.</p>}
                 {runs.slice(0, 5).map((approval) => (
                   <Link
                     key={approval.run_id}
@@ -176,8 +169,7 @@ export default function HomePage() {
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate">{runTitle({ kind: "chat", message: approval.run_message })}</span>
                       <span className="text-muted-foreground truncate text-xs">
-                        {approval.project_name} · {waiting.filter((a) => a.run_id === approval.run_id).length} to decide ·{" "}
-                        {timeAgo(approval.created_at)}
+                        {approval.project_name} · {waiting.filter((a) => a.run_id === approval.run_id).length} to decide · {timeAgo(approval.created_at)}
                       </span>
                     </span>
                   </Link>
@@ -193,9 +185,7 @@ export default function HomePage() {
                 }
               >
                 {mine.isLoading && <Skeleton className="m-4 h-24" />}
-                {mine.data && stats.next.length === 0 && (
-                  <p className="text-muted-foreground px-4 py-6 text-sm">Nothing assigned to you.</p>
-                )}
+                {mine.data && stats.next.length === 0 && <p className="text-muted-foreground px-4 py-6 text-sm">Nothing assigned to you.</p>}
                 {workspace && stats.next.map((issue) => <WorkspaceIssueRow key={issue.key} issue={issue} workspaceSlug={workspace.slug} />)}
               </Section>
             </div>
@@ -250,13 +240,7 @@ export default function HomePage() {
                   )}
                   {workspace && recentAgentWork.length > 0 && (
                     <div className="px-4">
-                      <ActivityFeed
-                        items={recentAgentWork}
-                        members={memberMap}
-                        workspaceSlug={workspace.slug}
-                        compact
-                        showProject
-                      />
+                      <ActivityFeed items={recentAgentWork} members={memberMap} workspaceSlug={workspace.slug} compact showProject />
                     </div>
                   )}
                 </Section>

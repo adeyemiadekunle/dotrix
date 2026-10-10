@@ -170,10 +170,18 @@ function Tog({ on, set, label, disabled }: { on: boolean; set: (v: boolean) => v
   return <input type="checkbox" className="toggle" checked={on} onChange={(e) => set(e.target.checked)} aria-label={label} disabled={disabled} />;
 }
 const PTog = ({ k, def = true }: { k: string; def?: boolean }) => <Tog on={P()[k] === undefined ? def : Boolean(P()[k])} set={(v) => setP(k, v)} label={k} />;
-const NTog = ({ k, def = false }: { k: string; def?: boolean }) => <Tog on={NP()[k] === undefined ? def : Boolean(NP()[k])} set={(v) => setNP(k, v)} label={k} />;
+const NTog = ({ k, def = false }: { k: string; def?: boolean }) => (
+  <Tog on={NP()[k] === undefined ? def : Boolean(NP()[k])} set={(v) => setNP(k, v)} label={k} />
+);
 function Sel({ k, opts, v }: { k: string; opts: (string | [string, string])[]; v: unknown }) {
   return (
-    <select className="select" style={{ width: "auto", minWidth: 180 }} value={String(v)} onChange={(e) => setP(k, k === "weekStart" ? +e.target.value : e.target.value)} aria-label={k}>
+    <select
+      className="select"
+      style={{ width: "auto", minWidth: 180 }}
+      value={String(v)}
+      onChange={(e) => setP(k, k === "weekStart" ? +e.target.value : e.target.value)}
+      aria-label={k}
+    >
       {opts.map((o) => {
         const [val, n] = Array.isArray(o) ? o : [o, o];
         return (
@@ -234,7 +242,13 @@ function ThemeCards() {
           ["system", "System"],
         ] as const
       ).map(([k, n]) => (
-        <button key={k} className={`tcard ${S.prefs.theme === k ? "on" : ""}`} role="radio" aria-checked={S.prefs.theme === k} onClick={() => setPref("theme", k)}>
+        <button
+          key={k}
+          className={`tcard ${S.prefs.theme === k ? "on" : ""}`}
+          role="radio"
+          aria-checked={S.prefs.theme === k}
+          onClick={() => setPref("theme", k)}
+        >
           <div className="tprev" style={k === "system" ? { gridTemplateColumns: "1fr 1fr", display: "grid" } : undefined}>
             {k === "system" ? (
               <>
@@ -338,7 +352,14 @@ function Workspace() {
               </div>
               <div className="swatches">
                 {["#2F2E2A", "#5A67D8", "#3B82C4", "#23918A", "#C54B78", "#C48A1E"].map((c) => (
-                  <button key={c} type="button" className={`sw ${d.ws.c === c ? "on" : ""}`} style={css({ "--c": c, width: 22, height: 22 })} onClick={() => mutate(() => (d.ws.c = c))} aria-label={`Color ${c}`} />
+                  <button
+                    key={c}
+                    type="button"
+                    className={`sw ${d.ws.c === c ? "on" : ""}`}
+                    style={css({ "--c": c, width: 22, height: 22 })}
+                    onClick={() => mutate(() => (d.ws.c = c))}
+                    aria-label={`Color ${c}`}
+                  />
                 ))}
               </div>
             </div>
@@ -355,10 +376,28 @@ function Workspace() {
                 Workspace URL
               </label>
               <div className="row" style={{ gap: 0 }}>
-                <span className="input" style={{ width: "auto", background: "var(--surface-2)", borderRight: 0, borderRadius: "6px 0 0 6px", display: "flex", alignItems: "center", color: "var(--text-2)" }}>
+                <span
+                  className="input"
+                  style={{
+                    width: "auto",
+                    background: "var(--surface-2)",
+                    borderRight: 0,
+                    borderRadius: "6px 0 0 6px",
+                    display: "flex",
+                    alignItems: "center",
+                    color: "var(--text-2)",
+                  }}
+                >
                   dotrix.app/w/
                 </span>
-                <input className="input" id="ws-url" value={url} onChange={(e) => setUrl(e.target.value)} style={{ borderRadius: "0 6px 6px 0" }} disabled={isLive()} />
+                <input
+                  className="input"
+                  id="ws-url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  style={{ borderRadius: "0 6px 6px 0" }}
+                  disabled={isLive()}
+                />
               </div>
               <span className="hint">{isLive() ? "The address is fixed when the workspace is created." : "Changing the URL will break existing links."}</span>
             </div>
@@ -383,7 +422,11 @@ function Workspace() {
       <div className="sblock">
         <h2 style={{ color: "var(--red)" }}>Danger zone</h2>
         <SRow t="Delete workspace" d="Permanently delete this workspace, its projects, tasks, documents, and files. This cannot be undone.">
-          <button className="btn btn-danger-ghost" style={{ border: "1px solid color-mix(in srgb,var(--red) 35%,transparent)" }} onClick={() => toast("Deleting a workspace isn't available yet", { kind: "info" })}>
+          <button
+            className="btn btn-danger-ghost"
+            style={{ border: "1px solid color-mix(in srgb,var(--red) 35%,transparent)" }}
+            onClick={() => toast("Deleting a workspace isn't available yet", { kind: "info" })}
+          >
             Delete workspace
           </button>
         </SRow>
@@ -425,7 +468,10 @@ function LiveAgent({ handle }: { handle: string }) {
   const reset = () =>
     confirmDlg({
       title: ag.source === "custom" ? `Delete ${ag.name}?` : `Reset ${ag.name} to its default?`,
-      body: ag.source === "custom" ? "Projects stop using it. Its history is kept in the audit log." : "Your changes to its contract are replaced by the built-in one. Its history is kept.",
+      body:
+        ag.source === "custom"
+          ? "Projects stop using it. Its history is kept in the audit log."
+          : "Your changes to its contract are replaced by the built-in one. Its history is kept.",
       ok: ag.source === "custom" ? "Delete agent" : "Reset to default",
       danger: ag.source === "custom",
       icon: ag.source === "custom" ? "trash-2" : "rotate-ccw",
@@ -452,7 +498,10 @@ function LiveAgent({ handle }: { handle: string }) {
         <Face c={look?.c ?? "#57544E"} size={36} mood={moodOf(handle)} />
         <div className="grow" style={{ minWidth: 0 }}>
           <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>
-            {ag.name} <span className="faint mono" style={{ fontSize: 12, fontWeight: 400 }}>@{handle}</span>
+            {ag.name}{" "}
+            <span className="faint mono" style={{ fontSize: 12, fontWeight: 400 }}>
+              @{handle}
+            </span>
           </h2>
           <div className="muted">{ag.description}</div>
         </div>
@@ -466,7 +515,13 @@ function LiveAgent({ handle }: { handle: string }) {
         <input className="input" style={{ width: 320 }} value={v.description} onChange={(e) => set({ description: e.target.value })} aria-label="Description" />
       </SRow>
       <SRow t="Model" d="Which model this agent uses; the run's model when unset.">
-        <select className="select" style={{ width: "auto", minWidth: 180 }} value={v.model ?? ""} onChange={(e) => set({ model: e.target.value || null })} aria-label="Model">
+        <select
+          className="select"
+          style={{ width: "auto", minWidth: 180 }}
+          value={v.model ?? ""}
+          onChange={(e) => set({ model: e.target.value || null })}
+          aria-label="Model"
+        >
           <option value="">The run's model</option>
           {(ms.data ?? []).map((m) => (
             <option key={m.id} value={m.id}>
@@ -503,9 +558,14 @@ function LiveAgent({ handle }: { handle: string }) {
       <div className="sblock">
         <h2>Without asking</h2>
         <p className="muted" style={{ fontSize: 13 }}>
-          Only owners can let an agent act without asking; each change is recorded as approved by the owner who saved this version. Closing issues and coding always wait for a person, folder access still applies, and a run makes at most a few changes this way.
+          Only owners can let an agent act without asking; each change is recorded as approved by the owner who saved this version. Closing issues and coding
+          always wait for a person, folder access still applies, and a run makes at most a few changes this way.
         </p>
-        {live.ws?.unattended_paused && <div className="alert warn" style={{ marginBottom: 8 }}>Paused for this workspace: every change waits for approval until an owner resumes it.</div>}
+        {live.ws?.unattended_paused && (
+          <div className="alert warn" style={{ marginBottom: 8 }}>
+            Paused for this workspace: every change waits for approval until an owner resumes it.
+          </div>
+        )}
         {cat.data.tools
           .filter((t) => t.actions.length && v.tools.includes(t.id))
           .flatMap((t) => t.actions.map((act) => [t, act] as const))
@@ -530,11 +590,22 @@ function LiveAgent({ handle }: { handle: string }) {
               </SRow>
             );
           })}
-        {!owner && <p className="faint" style={{ fontSize: 12.5 }}>Only owners can allow an action, or save a version that allows more than comments and links.</p>}
+        {!owner && (
+          <p className="faint" style={{ fontSize: 12.5 }}>
+            Only owners can allow an action, or save a version that allows more than comments and links.
+          </p>
+        )}
       </div>
       <div className="sblock">
         <h2>Instructions</h2>
-        <textarea className="textarea" rows={10} value={v.instructions} onChange={(e) => set({ instructions: e.target.value })} style={{ marginTop: 10 }} aria-label="Instructions" />
+        <textarea
+          className="textarea"
+          rows={10}
+          value={v.instructions}
+          onChange={(e) => set({ instructions: e.target.value })}
+          style={{ marginTop: 10 }}
+          aria-label="Instructions"
+        />
         <div className="row" style={{ marginTop: 10, gap: 6 }}>
           <button className="btn btn-primary" onClick={save} disabled={busy || !f}>
             Save
@@ -565,7 +636,13 @@ function newLiveAgent() {
     run: (name: string) => {
       const n = name.trim();
       if (!n) return;
-      const handle = n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-agent$/, "").slice(0, 30) || "custom";
+      const handle =
+        n
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .replace(/-agent$/, "")
+          .slice(0, 30) || "custom";
       const body: AgentFields = {
         name: n,
         description: "",
@@ -607,7 +684,13 @@ function Agents() {
           <Face c={sel.c} size={36} />
           <div>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>
-              {sel.name} <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>{sel.role}</span> <span className="faint mono" style={{ fontSize: 12, fontWeight: 400 }}>@{sel.handle}</span>
+              {sel.name}{" "}
+              <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>
+                {sel.role}
+              </span>{" "}
+              <span className="faint mono" style={{ fontSize: 12, fontWeight: 400 }}>
+                @{sel.handle}
+              </span>
             </h2>
             <div className="muted">{sel.desc}</div>
           </div>
@@ -615,7 +698,12 @@ function Agents() {
           {sel.builtIn && <span className="badge">{sel.customised ? "Customised" : "Built-in"}</span>}
         </div>
         <SRow t="Model" d="Which model this agent uses; the project's model when unset.">
-          <select className="select" style={{ width: "auto", minWidth: 180 }} value={sel.model ?? ""} onChange={(e) => mutate(() => ((sel.model = e.target.value || undefined), (sel.customised = true)))}>
+          <select
+            className="select"
+            style={{ width: "auto", minWidth: 180 }}
+            value={sel.model ?? ""}
+            onChange={(e) => mutate(() => ((sel.model = e.target.value || undefined), (sel.customised = true)))}
+          >
             <option value="">Project default</option>
             {["Gemini 3.8 Flash", "Claude Sonnet 5.5", "Claude Opus 5.5", "GPT-5.5"].map((m) => (
               <option key={m}>{m}</option>
@@ -642,7 +730,14 @@ function Agents() {
                 className="select"
                 style={{ width: "auto" }}
                 value={sel.allows?.includes(act) ? "allow" : "ask"}
-                onChange={(e) => mutate(() => ((sel.allows = e.target.value === "allow" ? [...(sel.allows ?? []), act] : (sel.allows ?? []).filter((x) => x !== act)), (sel.customised = sel.builtIn || undefined)))}
+                onChange={(e) =>
+                  mutate(
+                    () => (
+                      (sel.allows = e.target.value === "allow" ? [...(sel.allows ?? []), act] : (sel.allows ?? []).filter((x) => x !== act)),
+                      (sel.customised = sel.builtIn || undefined)
+                    ),
+                  )
+                }
                 aria-label={`${what} without asking`}
               >
                 <option value="ask">Ask first</option>
@@ -653,13 +748,22 @@ function Agents() {
         </div>
         <div className="sblock">
           <h2>Instructions</h2>
-          <textarea className="textarea" rows={6} defaultValue={`You are ${sel.name}, the ${sel.role.toLowerCase()} agent. ${sel.desc}`} style={{ marginTop: 10 }} aria-label="Instructions" />
+          <textarea
+            className="textarea"
+            rows={6}
+            defaultValue={`You are ${sel.name}, the ${sel.role.toLowerCase()} agent. ${sel.desc}`}
+            style={{ marginTop: 10 }}
+            aria-label="Instructions"
+          />
           <div className="row" style={{ marginTop: 10, gap: 6 }}>
             <button className="btn btn-primary" onClick={() => (mutate(() => (sel.customised = true)), toast("Saved as a new version"))}>
               Save
             </button>
             {sel.customised && (
-              <button className="btn btn-secondary" onClick={() => (mutate(() => ((sel.customised = false), (sel.model = undefined))), toast("Reset to default"))}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => (mutate(() => ((sel.customised = false), (sel.model = undefined))), toast("Reset to default"))}
+              >
                 Reset to default
               </button>
             )}
@@ -679,7 +783,18 @@ function Agents() {
           onClick={() => {
             if (isLive()) return newLiveAgent();
             const h = "agent" + (D().agents.length + 1);
-            mutate(() => D().agents.push({ handle: h, name: "Custom", role: "Custom", desc: "A custom agent.", icon: "bot", c: "#57544E", builtIn: false, tools: ["knowledge.read"] }));
+            mutate(() =>
+              D().agents.push({
+                handle: h,
+                name: "Custom",
+                role: "Custom",
+                desc: "A custom agent.",
+                icon: "bot",
+                c: "#57544E",
+                builtIn: false,
+                tools: ["knowledge.read"],
+              }),
+            );
             S.ui.agentSel = h;
             render();
           }}
@@ -695,7 +810,13 @@ function Agents() {
             <Face c={a.c} size={26} mood={moodOf(a.handle)} />
             <div className="grow" style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 500 }}>
-                {a.name} <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{a.role}</span> <span className="faint mono" style={{ fontSize: 11.5, fontWeight: 400 }}>@{a.handle}</span>
+                {a.name}{" "}
+                <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}>
+                  {a.role}
+                </span>{" "}
+                <span className="faint mono" style={{ fontSize: 11.5, fontWeight: 400 }}>
+                  @{a.handle}
+                </span>
               </div>
               <div className="faint trunc" style={{ fontSize: 12 }}>
                 {a.desc}
@@ -718,7 +839,14 @@ function UnattendedPause() {
   const paused = isLive() ? !!live.ws?.unattended_paused : demo;
   return (
     <div className="panel" style={{ padding: "4px 14px", marginBottom: 12 }}>
-      <SRow t="Pause changes without approval" d={paused ? "Every agent asks before every change, whatever its contract allows." : "Agents make the changes their contracts allow without waiting. Pause to make every change ask."}>
+      <SRow
+        t="Pause changes without approval"
+        d={
+          paused
+            ? "Every agent asks before every change, whatever its contract allows."
+            : "Agents make the changes their contracts allow without waiting. Pause to make every change ask."
+        }
+      >
         <Tog
           on={paused}
           set={(on) => (isLive() ? void unattendedPaused(on) : setDemo(on))}
@@ -752,7 +880,11 @@ function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
-  const state = k.connected ? `Connected · key ending ${k.last4}${k.updated_at ? ` · added ${ago(Date.parse(k.updated_at))}` : ""}` : k.server_key ? "Not connected · runs use the server's key for now" : "Not connected · its models can't run here";
+  const state = k.connected
+    ? `Connected · key ending ${k.last4}${k.updated_at ? ` · added ${ago(Date.parse(k.updated_at))}` : ""}`
+    : k.server_key
+      ? "Not connected · runs use the server's key for now"
+      : "Not connected · its models can't run here";
   const save = () => {
     if (!value.trim()) return;
     setBusy(true);
@@ -778,7 +910,18 @@ function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean
       </SRow>
       {editing && (
         <div className="row" style={{ gap: 6, marginTop: 6 }}>
-          <input className="input" type="password" autoComplete="off" placeholder={`${k.label} API key`} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()} aria-label={`${k.label} API key`} autoFocus style={{ flex: 1 }} />
+          <input
+            className="input"
+            type="password"
+            autoComplete="off"
+            placeholder={`${k.label} API key`}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && save()}
+            aria-label={`${k.label} API key`}
+            autoFocus
+            style={{ flex: 1 }}
+          />
           <button className="btn btn-sm btn-ghost" onClick={() => (setEditing(false), setValue(""))}>
             Cancel
           </button>
@@ -791,7 +934,8 @@ function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean
         <div className="alert warn" style={{ marginTop: 6 }}>
           <Ic n="triangle-alert" s={15} />
           <div>
-            <b>Limit reached {ago(Date.parse(k.limit_reached_at))}.</b> {k.label} refused a run: {k.limit_message} Runs on its models stop until the limit resets; give some agents a smaller model below, or use a key with more room.
+            <b>Limit reached {ago(Date.parse(k.limit_reached_at))}.</b> {k.label} refused a run: {k.limit_message} Runs on its models stop until the limit
+            resets; give some agents a smaller model below, or use a key with more room.
           </div>
         </div>
       )}
@@ -853,19 +997,40 @@ function LiveModels() {
             onRemove={() => remove(k)}
           />
         ))}
-        <p className="faint" style={{ fontSize: 12.5 }}>{RUNS_NOTE}</p>
+        <p className="faint" style={{ fontSize: 12.5 }}>
+          {RUNS_NOTE}
+        </p>
         {live.ws?.kind === "organization" && (
-          <SRow t="People's own keys" d="Let each person's own key (Your models) run the conversations they start, instead of the workspace's. Automations always use the workspace's key.">
-            <Tog on={live.ws?.personal_keys ?? true} set={(v) => void personalKeysAllowed(v).then(() => toast(v ? "People's own keys run their conversations" : "The workspace's keys run everything"))} label="People's own keys" disabled={!canEdit} />
+          <SRow
+            t="People's own keys"
+            d="Let each person's own key (Your models) run the conversations they start, instead of the workspace's. Automations always use the workspace's key."
+          >
+            <Tog
+              on={live.ws?.personal_keys ?? true}
+              set={(v) =>
+                void personalKeysAllowed(v).then(() => toast(v ? "People's own keys run their conversations" : "The workspace's keys run everything"))
+              }
+              label="People's own keys"
+              disabled={!canEdit}
+            />
           </SRow>
         )}
       </div>
       <div className="sblock">
         <h2>Which model each agent uses</h2>
-        <p className="muted" style={{ fontSize: 13 }}>{MODEL_HINT}</p>
+        <p className="muted" style={{ fontSize: 13 }}>
+          {MODEL_HINT}
+        </p>
         {agents.data.map((a) => (
           <SRow key={a.handle} t={`${a.name}`} d={a.description || undefined}>
-            <select className="select" style={{ width: "auto", minWidth: 220 }} value={a.model ?? ""} onChange={(e) => void setModel(a, e.target.value)} disabled={!canEdit} aria-label={`${a.name}'s model`}>
+            <select
+              className="select"
+              style={{ width: "auto", minWidth: 220 }}
+              value={a.model ?? ""}
+              onChange={(e) => void setModel(a, e.target.value)}
+              disabled={!canEdit}
+              aria-label={`${a.name}'s model`}
+            >
               <option value="">Project&apos;s model</option>
               {[...new Set([...(a.model ? [a.model] : []), ...ms.data!.map((m) => m.id)])].map((m) => (
                 <option key={m} value={m}>
@@ -883,7 +1048,15 @@ function LiveModels() {
 const DEMO_KEYS: KeyLook[] = [
   { provider: "anthropic", label: "Anthropic", connected: true, last4: "7Qa2", server_key: false, limit_reached_at: null, limit_message: null },
   { provider: "openai", label: "OpenAI", connected: false, server_key: false },
-  { provider: "google_genai", label: "Google", connected: true, last4: "kP0e", server_key: false, limit_reached_at: new Date(Date.now() - 3_600_000 * 2).toISOString(), limit_message: "429 RESOURCE_EXHAUSTED: quota exceeded for requests per day." },
+  {
+    provider: "google_genai",
+    label: "Google",
+    connected: true,
+    last4: "kP0e",
+    server_key: false,
+    limit_reached_at: new Date(Date.now() - 3_600_000 * 2).toISOString(),
+    limit_message: "429 RESOURCE_EXHAUSTED: quota exceeded for requests per day.",
+  },
 ];
 const DEMO_MODELS = ["Claude Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Gemini 3.8 Flash"];
 
@@ -901,18 +1074,36 @@ function DemoModels() {
             key={k.provider}
             k={k}
             canEdit
-            onSave={async (v) => (setKeys(keys.map((x) => (x.provider === k.provider ? { ...x, connected: true, last4: v.slice(-4), limit_reached_at: null, limit_message: null } : x))), toast(`${k.label} key saved`))}
-            onRemove={() => (setKeys(keys.map((x) => (x.provider === k.provider ? { ...x, connected: false, last4: null } : x))), toast(`${k.label} key removed`))}
+            onSave={async (v) => (
+              setKeys(
+                keys.map((x) => (x.provider === k.provider ? { ...x, connected: true, last4: v.slice(-4), limit_reached_at: null, limit_message: null } : x)),
+              ),
+              toast(`${k.label} key saved`)
+            )}
+            onRemove={() => (
+              setKeys(keys.map((x) => (x.provider === k.provider ? { ...x, connected: false, last4: null } : x))),
+              toast(`${k.label} key removed`)
+            )}
           />
         ))}
-        <p className="faint" style={{ fontSize: 12.5 }}>{RUNS_NOTE}</p>
+        <p className="faint" style={{ fontSize: 12.5 }}>
+          {RUNS_NOTE}
+        </p>
       </div>
       <div className="sblock">
         <h2>Which model each agent uses</h2>
-        <p className="muted" style={{ fontSize: 13 }}>{MODEL_HINT}</p>
+        <p className="muted" style={{ fontSize: 13 }}>
+          {MODEL_HINT}
+        </p>
         {D().agents.map((a) => (
           <SRow key={a.handle} t={a.name} d={a.desc}>
-            <select className="select" style={{ width: "auto", minWidth: 220 }} value={a.model ?? ""} onChange={(e) => mutate(() => ((a.model = e.target.value || undefined), (a.customised = a.builtIn || undefined)))} aria-label={`${a.name}'s model`}>
+            <select
+              className="select"
+              style={{ width: "auto", minWidth: 220 }}
+              value={a.model ?? ""}
+              onChange={(e) => mutate(() => ((a.model = e.target.value || undefined), (a.customised = a.builtIn || undefined)))}
+              aria-label={`${a.name}'s model`}
+            >
               <option value="">Project&apos;s model</option>
               {DEMO_MODELS.map((m) => (
                 <option key={m}>{m}</option>
@@ -939,29 +1130,46 @@ function MyModels() {
   const d = data.data;
   const org = isLive() ? live.ws?.kind === "organization" : true;
   const off = isLive() && org && live.ws?.personal_keys === false;
-  const save = (p: Promise<unknown>, ok: string) => p.then(() => (toast(ok), data.reload())).catch((e: unknown) => toast(errText(e), { kind: "err", ms: 6000 }));
+  const save = (p: Promise<unknown>, ok: string) =>
+    p.then(() => (toast(ok), data.reload())).catch((e: unknown) => toast(errText(e), { kind: "err", ms: 6000 }));
   return (
     <>
       <div className="sblock" style={{ marginTop: 0 }}>
         <h2>Your keys</h2>
         <p className="muted" style={{ fontSize: 13 }}>
-          Your own provider keys run the conversations you start: always in your personal workspace{org ? ", and in an organisation that allows them" : ""}. Stored encrypted; only the last four characters are shown. With your own key you can pick any of its models.
+          Your own provider keys run the conversations you start: always in your personal workspace{org ? ", and in an organisation that allows them" : ""}.
+          Stored encrypted; only the last four characters are shown. With your own key you can pick any of its models.
         </p>
-        {off && <div className="alert info" style={{ marginBottom: 8 }}>This organisation runs everything on its own keys, so yours aren't used here.</div>}
+        {off && (
+          <div className="alert info" style={{ marginBottom: 8 }}>
+            This organisation runs everything on its own keys, so yours aren't used here.
+          </div>
+        )}
         {d.keys.map((k) => (
           <KeyRow
             key={k.provider}
             k={{ ...k, server_key: false }}
             canEdit
-            onSave={(v) => (isLive() ? save(myKeySaved(k.provider, v), `Your ${k.label} key is saved`) : Promise.resolve(toast(`Your ${k.label} key is saved`)))}
+            onSave={(v) =>
+              isLive() ? save(myKeySaved(k.provider, v), `Your ${k.label} key is saved`) : Promise.resolve(toast(`Your ${k.label} key is saved`))
+            }
             onRemove={() => (isLive() ? void save(myKeyRemoved(k.provider), `Your ${k.label} key is removed`) : toast(`Your ${k.label} key is removed`))}
           />
         ))}
       </div>
       <div className="sblock">
         <h2>Your default model</h2>
-        <SRow t="New conversations" d="The model your conversations start on. It's used where it can run for you: on your own key, or where the workspace lets people choose models.">
-          <select className="select" style={{ width: "auto", minWidth: 220 }} value={d.default_model ?? ""} onChange={(e) => (isLive() ? void save(myDefaultModelSaved(e.target.value || null), "Default model saved") : toast("Default model saved"))} aria-label="Your default model">
+        <SRow
+          t="New conversations"
+          d="The model your conversations start on. It's used where it can run for you: on your own key, or where the workspace lets people choose models."
+        >
+          <select
+            className="select"
+            style={{ width: "auto", minWidth: 220 }}
+            value={d.default_model ?? ""}
+            onChange={(e) => (isLive() ? void save(myDefaultModelSaved(e.target.value || null), "Default model saved") : toast("Default model saved"))}
+            aria-label="Your default model"
+          >
             <option value="">Each project&apos;s model</option>
             {d.models.map((m) => (
               <option key={m} value={m}>
@@ -976,7 +1184,17 @@ function MyModels() {
 }
 
 /** One agent's personal touches: instructions and a model, saved for you only. */
-function MyAgentRow({ a, pref, models, onSave }: { a: { handle: string; name: string; desc: string }; pref?: { instructions: string; model?: string | null }; models: string[]; onSave: (instructions: string, model: string | null) => Promise<unknown> }) {
+function MyAgentRow({
+  a,
+  pref,
+  models,
+  onSave,
+}: {
+  a: { handle: string; name: string; desc: string };
+  pref?: { instructions: string; model?: string | null };
+  models: string[];
+  onSave: (instructions: string, model: string | null) => Promise<unknown>;
+}) {
   const [text, setText] = useState(pref?.instructions ?? "");
   const [model, setModel] = useState(pref?.model ?? "");
   const [busy, setBusy] = useState(false);
@@ -984,12 +1202,31 @@ function MyAgentRow({ a, pref, models, onSave }: { a: { handle: string; name: st
   return (
     <div className="sblock">
       <h2>
-        {a.name} <span className="faint mono" style={{ fontSize: 12, fontWeight: 400 }}>@{a.handle}</span>
+        {a.name}{" "}
+        <span className="faint mono" style={{ fontSize: 12, fontWeight: 400 }}>
+          @{a.handle}
+        </span>
       </h2>
-      <p className="muted" style={{ fontSize: 13 }}>{a.desc}</p>
-      <textarea className="textarea" rows={3} maxLength={2000} placeholder="How you like it to work: tone, format, what to focus on" value={text} onChange={(e) => setText(e.target.value)} aria-label={`How you like ${a.name} to work`} />
+      <p className="muted" style={{ fontSize: 13 }}>
+        {a.desc}
+      </p>
+      <textarea
+        className="textarea"
+        rows={3}
+        maxLength={2000}
+        placeholder="How you like it to work: tone, format, what to focus on"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        aria-label={`How you like ${a.name} to work`}
+      />
       <div className="row" style={{ gap: 8, marginTop: 8 }}>
-        <select className="select" style={{ width: "auto", minWidth: 200 }} value={model} onChange={(e) => setModel(e.target.value)} aria-label={`${a.name}'s model for you`}>
+        <select
+          className="select"
+          style={{ width: "auto", minWidth: 200 }}
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          aria-label={`${a.name}'s model for you`}
+        >
           <option value="">As the workspace set it</option>
           {models.map((m) => (
             <option key={m} value={m}>
@@ -997,9 +1234,15 @@ function MyAgentRow({ a, pref, models, onSave }: { a: { handle: string; name: st
             </option>
           ))}
         </select>
-        <span className="faint" style={{ fontSize: 12 }}>{text.length}/2000</span>
+        <span className="faint" style={{ fontSize: 12 }}>
+          {text.length}/2000
+        </span>
         <span className="sp" />
-        <button className="btn btn-primary btn-sm" disabled={!changed || busy} onClick={() => (setBusy(true), void onSave(text, model || null).finally(() => setBusy(false)))}>
+        <button
+          className="btn btn-primary btn-sm"
+          disabled={!changed || busy}
+          onClick={() => (setBusy(true), void onSave(text, model || null).finally(() => setBusy(false)))}
+        >
           Save
         </button>
       </div>
@@ -1015,7 +1258,8 @@ function MyAgents() {
   return (
     <>
       <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
-        Within limits: your touches can&apos;t change what an agent may do, read, or change, and automations don&apos;t use them. A model of your own needs your key for it, or the workspace&apos;s permission to choose models.
+        Within limits: your touches can&apos;t change what an agent may do, read, or change, and automations don&apos;t use them. A model of your own needs your
+        key for it, or the workspace&apos;s permission to choose models.
       </p>
       {D().agents.map((a) => (
         <MyAgentRow
@@ -1037,7 +1281,19 @@ function MyAgents() {
 }
 
 /** One workspace rule or skill: edited in place, saved as a new version over the one it was based on. */
-function VersionedText({ title, content, version, save, rows = 7 }: { title: string; content: string; version: number; save: (text: string, base: number) => Promise<{ version: number }>; rows?: number }) {
+function VersionedText({
+  title,
+  content,
+  version,
+  save,
+  rows = 7,
+}: {
+  title: string;
+  content: string;
+  version: number;
+  save: (text: string, base: number) => Promise<{ version: number }>;
+  rows?: number;
+}) {
   const [text, setText] = useState(content);
   const [ver, setVer] = useState(version);
   const [busy, setBusy] = useState(false);
@@ -1062,7 +1318,11 @@ function VersionedText({ title, content, version, save, rows = 7 }: { title: str
         >
           Save
         </button>
-        {ver > 0 && <span className="faint mono" style={{ fontSize: 12 }}>v{ver}</span>}
+        {ver > 0 && (
+          <span className="faint mono" style={{ fontSize: 12 }}>
+            v{ver}
+          </span>
+        )}
       </div>
     </>
   );
@@ -1082,7 +1342,12 @@ function LiveRules() {
         <p className="muted" style={{ fontSize: 13 }}>
           Layered under each project's own <span className="mono">agent-rules/</span>, so a project's rules win.
         </p>
-        <VersionedText title="Rules" content={base?.content ?? ""} version={base?.version ?? 0} save={(t, b) => ruleSaved("base", t, b).then((x) => (r.reload(), x))} />
+        <VersionedText
+          title="Rules"
+          content={base?.content ?? ""}
+          version={base?.version ?? 0}
+          save={(t, b) => ruleSaved("base", t, b).then((x) => (r.reload(), x))}
+        />
       </div>
       <div className="sblock">
         <h2>Skills</h2>
@@ -1106,7 +1371,13 @@ function LiveRules() {
             </SRow>
             {open === x.name && (
               <div style={{ padding: "4px 0 14px" }}>
-                <VersionedText title={x.name} content={x.content} version={x.version} rows={12} save={(t, b) => skillSaved(x.name, t, b).then((y) => (sk.reload(), y))} />
+                <VersionedText
+                  title={x.name}
+                  content={x.content}
+                  version={x.version}
+                  rows={12}
+                  save={(t, b) => skillSaved(x.name, t, b).then((y) => (sk.reload(), y))}
+                />
               </div>
             )}
           </div>
@@ -1121,7 +1392,11 @@ function LiveRules() {
                 label: "Name (lowercase, with dashes)",
                 value: "",
                 run: (v: string) => {
-                  const name = v.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+                  const name = v
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, "-")
+                    .replace(/^-+|-+$/g, "");
                   if (!name) return;
                   skillSaved(name, `Description: what this skill is for.\n\n1. The first step.\n2. The next.`, 0)
                     .then(() => (sk.reload(), setOpen(name), toast(`Added ${name}: describe its steps`)))
@@ -1149,7 +1424,14 @@ function SeedRules() {
         <p className="muted" style={{ fontSize: 13 }}>
           Layered under each project's own <span className="mono">agent-rules/</span>, so a project's rules win.
         </p>
-        <textarea className="textarea mono" rows={7} value={base} onChange={(e) => setBase(e.target.value)} style={{ fontSize: 12.5 }} aria-label="Workspace rules" />
+        <textarea
+          className="textarea mono"
+          rows={7}
+          value={base}
+          onChange={(e) => setBase(e.target.value)}
+          style={{ fontSize: 12.5 }}
+          aria-label="Workspace rules"
+        />
         <div style={{ marginTop: 10 }}>
           <button className="btn btn-primary" onClick={() => toast("Rules saved (v4)")}>
             Save rules
@@ -1203,7 +1485,11 @@ function Automations() {
                     {a.last ? ` · last ran ${ago(a.last)}` : ""}
                   </div>
                 </div>
-                <label className="row faint" style={{ gap: 6, fontSize: 12.5, whiteSpace: "nowrap" }} title="Its runs may make the changes the agent's contract allows without approval; off: they ask">
+                <label
+                  className="row faint"
+                  style={{ gap: 6, fontSize: 12.5, whiteSpace: "nowrap" }}
+                  title="Its runs may make the changes the agent's contract allows without approval; off: they ask"
+                >
                   <input
                     type="checkbox"
                     checked={!!a.unattended}
@@ -1247,7 +1533,16 @@ function Automations() {
                   void automationAdded(visibleProjects()[0]!.id, n!);
                   return;
                 }
-                mutate(() => D().automations.push({ id: uid("am"), project: visibleProjects()[0]!.id, name: n!, agent: n!.startsWith("Watch") ? "research" : n!.startsWith("Triage") ? "auto" : "documentation", trigger: n!.startsWith("Triage") ? "When an issue is created" : "Weekly, Monday 08:00", enabled: true }));
+                mutate(() =>
+                  D().automations.push({
+                    id: uid("am"),
+                    project: visibleProjects()[0]!.id,
+                    name: n!,
+                    agent: n!.startsWith("Watch") ? "research" : n!.startsWith("Triage") ? "auto" : "documentation",
+                    trigger: n!.startsWith("Triage") ? "When an issue is created" : "Weekly, Monday 08:00",
+                    enabled: true,
+                  }),
+                );
                 toast(`Added “${n}”`);
               }}
             >
@@ -1271,7 +1566,7 @@ function LiveGitHub() {
   const s = st.data;
   const byProject = new Map((repos.data ?? []).filter((r) => r.project_key).map((r) => [r.project_key!, r]));
   const connect = (pid: string, key: string, id: string) => {
-    const r = id ? (repos.data ?? []).find((x) => `${x.installation_ref}:${x.github_repo_id}` === id) ?? null : null;
+    const r = id ? ((repos.data ?? []).find((x) => `${x.installation_ref}:${x.github_repo_id}` === id) ?? null) : null;
     setBusy(key);
     repoConnected(pid, r)
       .then((made) => {
@@ -1329,7 +1624,9 @@ function LiveGitHub() {
             )}
           </SRow>
         ))}
-        {!s.installations.length && <p className="faint">No GitHub accounts yet. Install the app on an account to connect its repositories, private ones too.</p>}
+        {!s.installations.length && (
+          <p className="faint">No GitHub accounts yet. Install the app on an account to connect its repositories, private ones too.</p>
+        )}
         {admin && s.install_url && (
           <div style={{ marginTop: 12 }}>
             <button className="btn btn-secondary" onClick={() => installGitHub(s)}>
@@ -1504,7 +1801,14 @@ function Profile() {
           </div>
           <div className="swatches">
             {["#5A67D8", "#C54B78", "#3B82C4", "#23918A", "#C48A1E", "#8662C9"].map((c) => (
-              <button key={c} type="button" className={`sw ${me()!.c === c ? "on" : ""}`} style={css({ "--c": c, width: 22, height: 22 })} onClick={() => mutate(() => (me()!.c = c))} aria-label="Color" />
+              <button
+                key={c}
+                type="button"
+                className={`sw ${me()!.c === c ? "on" : ""}`}
+                style={css({ "--c": c, width: 22, height: 22 })}
+                onClick={() => mutate(() => (me()!.c = c))}
+                aria-label="Color"
+              />
             ))}
           </div>
         </div>
@@ -1563,7 +1867,11 @@ function Profile() {
               Unlink
             </button>
           ) : (
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => (isLive() ? linkGitHub() : toast("Linking opens GitHub", { kind: "info" }))}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => (isLive() ? linkGitHub() : toast("Linking opens GitHub", { kind: "info" }))}
+            >
               Link
             </button>
           )}
@@ -1639,7 +1947,14 @@ function Password() {
             <label className="label" htmlFor="pw-cur">
               Current password
             </label>
-            <input type="password" className={`input ${errs.cur ? "is-error" : ""}`} id="pw-cur" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} />
+            <input
+              type="password"
+              className={`input ${errs.cur ? "is-error" : ""}`}
+              id="pw-cur"
+              autoComplete="current-password"
+              value={cur}
+              onChange={(e) => setCur(e.target.value)}
+            />
             <Err k="cur" />
           </div>
         ) : (
@@ -1652,7 +1967,14 @@ function Password() {
           <label className="label" htmlFor="pw-new">
             New password
           </label>
-          <input type="password" className={`input ${errs.pw ? "is-error" : ""}`} id="pw-new" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+          <input
+            type="password"
+            className={`input ${errs.pw ? "is-error" : ""}`}
+            id="pw-new"
+            autoComplete="new-password"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+          />
           <StrengthMeter pw={pw} />
           {errs.pw ? <Err k="pw" /> : <span className="hint">At least 10 characters with a number or symbol.</span>}
         </div>
@@ -1660,7 +1982,14 @@ function Password() {
           <label className="label" htmlFor="pw-conf">
             Confirm new password
           </label>
-          <input type="password" className={`input ${errs.conf ? "is-error" : ""}`} id="pw-conf" autoComplete="new-password" value={conf} onChange={(e) => setConf(e.target.value)} />
+          <input
+            type="password"
+            className={`input ${errs.conf ? "is-error" : ""}`}
+            id="pw-conf"
+            autoComplete="new-password"
+            value={conf}
+            onChange={(e) => setConf(e.target.value)}
+          />
           <Err k="conf" />
         </div>
         <div>
@@ -1706,7 +2035,20 @@ function SeedTwoFA() {
           <p className="muted" style={{ fontSize: 13 }}>
             Store these somewhere safe. Each code works once.
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,max-content)", gap: "6px 28px", fontFamily: "var(--mono)", fontSize: 13, padding: 14, border: "1px solid var(--border)", borderRadius: "var(--r)", background: "var(--sunken)", userSelect: "all" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2,max-content)",
+              gap: "6px 28px",
+              fontFamily: "var(--mono)",
+              fontSize: 13,
+              padding: 14,
+              border: "1px solid var(--border)",
+              borderRadius: "var(--r)",
+              background: "var(--sunken)",
+              userSelect: "all",
+            }}
+          >
             {["7KQ2-M8PX", "D4TN-9WRE", "HV3C-QZ6L", "P2YB-J7SK", "R9FG-4NUD", "X6MA-T3HE"].map((c) => (
               <span key={c}>{c}</span>
             ))}
@@ -1722,7 +2064,20 @@ function SeedTwoFA() {
   if (setup)
     return (
       <div className="panel" style={{ padding: 18, display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <div style={{ width: 132, height: 132, display: "grid", gridTemplateColumns: "repeat(11,1fr)", gap: 1, padding: 8, background: "#fff", borderRadius: 8, border: "1px solid var(--border)" }} aria-label="QR code">
+        <div
+          style={{
+            width: 132,
+            height: 132,
+            display: "grid",
+            gridTemplateColumns: "repeat(11,1fr)",
+            gap: 1,
+            padding: 8,
+            background: "#fff",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+          }}
+          aria-label="QR code"
+        >
           {Array.from({ length: 121 }, (_, i) => {
             const r = Math.floor(i / 11);
             const c = i % 11;
@@ -1750,7 +2105,17 @@ function SeedTwoFA() {
               toast("Two-factor authentication is on");
             }}
           >
-            <input className={`input mono ${err ? "is-error" : ""}`} inputMode="numeric" maxLength={6} placeholder="000000" style={{ width: 130, letterSpacing: ".2em", fontSize: 15 }} autoFocus value={code} onChange={(e) => setCode(e.target.value)} aria-label="Code" />
+            <input
+              className={`input mono ${err ? "is-error" : ""}`}
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="000000"
+              style={{ width: 130, letterSpacing: ".2em", fontSize: 15 }}
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              aria-label="Code"
+            />
             <button className="btn btn-primary" type="submit">
               Verify
             </button>
@@ -1874,7 +2239,10 @@ function Plan() {
                     Current plan
                   </button>
                 ) : (
-                  <button className={`btn ${n === "Business" ? "btn-primary" : "btn-secondary"} btn-block`} onClick={() => (mutate(() => (d.ws.plan = n)), toast(`Switched to ${n}`))}>
+                  <button
+                    className={`btn ${n === "Business" ? "btn-primary" : "btn-secondary"} btn-block`}
+                    onClick={() => (mutate(() => (d.ws.plan = n)), toast(`Switched to ${n}`))}
+                  >
                     {n === "Free" ? "Downgrade" : "Upgrade"}
                   </button>
                 )}
@@ -1910,8 +2278,17 @@ function LiveNotifs({ sec }: { sec: string }) {
     case "notif-email":
       return (
         <>
-          <SRow t="Email me" d="What you get in the app, by email too: as it happens (a run's changes together), a daily digest at 08:00 UTC of what's unread, or never.">
-            <select className="select" style={{ width: "auto", minWidth: 180 }} value={v.email} onChange={(e) => put({ email: e.target.value as NotifSettings["email"] })} aria-label="Email me">
+          <SRow
+            t="Email me"
+            d="What you get in the app, by email too: as it happens (a run's changes together), a daily digest at 08:00 UTC of what's unread, or never."
+          >
+            <select
+              className="select"
+              style={{ width: "auto", minWidth: 180 }}
+              value={v.email}
+              onChange={(e) => put({ email: e.target.value as NotifSettings["email"] })}
+              aria-label="Email me"
+            >
               <option value="immediately">As it happens</option>
               <option value="daily">Daily digest</option>
               <option value="off">Never</option>
@@ -2032,7 +2409,11 @@ function LiveSessions() {
         <h2>Tokens</h2>
         <p className="muted" style={{ fontSize: 13 }}>
           Let something other than this browser act as you: the CLI gets one when you run{" "}
-          <button className="btn btn-ghost btn-sm mono" style={{ padding: "0 4px", height: "auto" }} onClick={() => void copy("dotrix login", "Command copied")}>
+          <button
+            className="btn btn-ghost btn-sm mono"
+            style={{ padding: "0 4px", height: "auto" }}
+            onClick={() => void copy("dotrix login", "Command copied")}
+          >
             dotrix login
           </button>
           , and a script or CI job uses one in <span className="mono">DOTRIX_TOKEN</span>. A token can do what you can, and expires after 90 days.
@@ -2142,7 +2523,16 @@ function Body({ sec }: { sec: string }) {
             <SRow t="Accent" d="Used for primary buttons, focus rings, and selection.">
               <div className="swatches" role="radiogroup" aria-label="Accent color">
                 {ACCENTS.map(([k, c]) => (
-                  <button key={k} className={`sw ${Pr.accent === k ? "on" : ""}`} style={css({ "--c": c })} role="radio" aria-checked={Pr.accent === k} onClick={() => setPref("accent", k)} aria-label={k} data-tip={k[0]!.toUpperCase() + k.slice(1)}>
+                  <button
+                    key={k}
+                    className={`sw ${Pr.accent === k ? "on" : ""}`}
+                    style={css({ "--c": c })}
+                    role="radio"
+                    aria-checked={Pr.accent === k}
+                    onClick={() => setPref("accent", k)}
+                    aria-label={k}
+                    data-tip={k[0]!.toUpperCase() + k.slice(1)}
+                  >
                     {Pr.accent === k && <Ic n="check" s={13} />}
                   </button>
                 ))}
@@ -2185,7 +2575,18 @@ function Body({ sec }: { sec: string }) {
       return (
         <>
           <SRow t="Time zone" d="Used for due dates and reminders.">
-            <Sel k="tz" v={Pr.tz} opts={["(GMT-08:00) Pacific Time", "(GMT-07:00) Pacific Time", "(GMT-05:00) Eastern Time", "(GMT+00:00) London", "(GMT+01:00) Berlin", "(GMT+08:00) Singapore"]} />
+            <Sel
+              k="tz"
+              v={Pr.tz}
+              opts={[
+                "(GMT-08:00) Pacific Time",
+                "(GMT-07:00) Pacific Time",
+                "(GMT-05:00) Eastern Time",
+                "(GMT+00:00) London",
+                "(GMT+01:00) Berlin",
+                "(GMT+08:00) Singapore",
+              ]}
+            />
           </SRow>
           <SRow
             t="Date format"
@@ -2233,10 +2634,12 @@ function Body({ sec }: { sec: string }) {
       return (
         <>
           <div className="row" style={{ marginBottom: 12 }}>
-            {canInvite() && (<button className="btn btn-primary" onClick={invite}>
-              <Ic n="user-plus" s={14} />
-              Invite member
-            </button>)}
+            {canInvite() && (
+              <button className="btn btn-primary" onClick={invite}>
+                <Ic n="user-plus" s={14} />
+                Invite member
+              </button>
+            )}
             <button className="btn btn-secondary" onClick={() => go("members")}>
               Open member directory
             </button>
@@ -2549,14 +2952,21 @@ function Body({ sec }: { sec: string }) {
               d={`${s.loc} · ${s.at}`}
             >
               {!s.cur && (
-                <button className="btn btn-secondary btn-sm" onClick={() => (mutate(() => (d.sessions = d.sessions.filter((x) => x !== s))), toast("Signed out"))}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => (mutate(() => (d.sessions = d.sessions.filter((x) => x !== s))), toast("Signed out"))}
+                >
                   Sign out
                 </button>
               )}
             </SRow>
           ))}
           <div style={{ marginTop: 16 }}>
-            <button className="btn btn-danger-ghost" disabled={d.sessions.length < 2} onClick={() => (mutate(() => (d.sessions = d.sessions.filter((x) => x.cur))), toast("Signed out of all other sessions"))}>
+            <button
+              className="btn btn-danger-ghost"
+              disabled={d.sessions.length < 2}
+              onClick={() => (mutate(() => (d.sessions = d.sessions.filter((x) => x.cur))), toast("Signed out of all other sessions"))}
+            >
               Sign out of all other sessions
             </button>
           </div>
@@ -2719,12 +3129,18 @@ export function Settings() {
         {SET_NAV.filter(([, items, adminOnly]) => (!adminOnly || admin) && items.some(([k]) => shown(k))).map(([g, items]) => (
           <div key={g} style={{ display: "contents" }}>
             <div className="gh">{g}</div>
-            {items.filter(([k]) => shown(k)).map(([k, n, i]) => (
-              <button key={k} className={`sitem ${sec === k ? "on" : ""}`} onClick={() => ((S.ui.settings = k), (S.ui.agentSel = null), go("settings", { sec: k }))}>
-                <Ic n={i} s={15} />
-                <span>{n}</span>
-              </button>
-            ))}
+            {items
+              .filter(([k]) => shown(k))
+              .map(([k, n, i]) => (
+                <button
+                  key={k}
+                  className={`sitem ${sec === k ? "on" : ""}`}
+                  onClick={() => ((S.ui.settings = k), (S.ui.agentSel = null), go("settings", { sec: k }))}
+                >
+                  <Ic n={i} s={15} />
+                  <span>{n}</span>
+                </button>
+              ))}
           </div>
         ))}
       </nav>

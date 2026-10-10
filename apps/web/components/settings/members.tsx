@@ -1,12 +1,7 @@
 import type { Schemas } from "@dotrix/api-client";
 import { Badge } from "@dotrix/ui/components/badge";
 import { Button } from "@dotrix/ui/components/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@dotrix/ui/components/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@dotrix/ui/components/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
 import { Input } from "@dotrix/ui/components/input";
 import { Skeleton } from "@dotrix/ui/components/skeleton";
@@ -17,13 +12,7 @@ import { useMemo, useState } from "react";
 
 import { useConfirm } from "@/components/confirm-dialog";
 import { timeAgo } from "@/components/issues/issue-activity";
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 import { UserAvatar } from "@/components/user-avatar";
 import { useChangeRole, useRemoveMember, useTransferOwnership, type Member, type Role } from "@/lib/admin";
 import { useMembers } from "@/lib/issues";
@@ -66,9 +55,7 @@ export function MembersCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
   }, [members.data]);
   const q = query.trim().toLowerCase();
   const shown = (members.data ?? []).filter(
-    (m) =>
-      (!roleFilter || m.role === roleFilter) &&
-      (!q || [m.display_name, m.email, m.title ?? ""].some((text) => text.toLowerCase().includes(q))),
+    (m) => (!roleFilter || m.role === roleFilter) && (!q || [m.display_name, m.email, m.title ?? ""].some((text) => text.toLowerCase().includes(q))),
   );
   const changeRole = useChangeRole(workspace.id);
   const remove = useRemoveMember(workspace.id);
@@ -77,19 +64,14 @@ export function MembersCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
   const manage = canManageProjects(workspace.role);
   const iAmOwner = workspace.role === "owner";
   const personal = workspace.kind === "personal"; // only the owner and guests
-  const assignable: Role[] = personal
-    ? ["guest"]
-    : iAmOwner
-      ? ["owner", "admin", "member", "guest"]
-      : ["admin", "member", "guest"];
+  const assignable: Role[] = personal ? ["guest"] : iAmOwner ? ["owner", "admin", "member", "guest"] : ["admin", "member", "guest"];
 
   return (
     <SettingsSection stacked>
       <SettingsHeader>
         <SettingsTitle>Members</SettingsTitle>
         <SettingsDescription>
-          {members.data ? `${members.data.length} ${members.data.length === 1 ? "person" : "people"}` : "People"} in{" "}
-          {workspace.name}.
+          {members.data ? `${members.data.length} ${members.data.length === 1 ? "person" : "people"}` : "People"} in {workspace.name}.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent className="grid gap-3">
@@ -116,8 +98,7 @@ export function MembersCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
                   roleFilter === r ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted",
                 )}
               >
-                {r ? ROLE_PLURALS[r] : "All"}{" "}
-                <span className="tabular-nums opacity-70">{r ? counts.get(r) : members.data?.length ?? 0}</span>
+                {r ? ROLE_PLURALS[r] : "All"} <span className="tabular-nums opacity-70">{r ? counts.get(r) : (members.data?.length ?? 0)}</span>
               </button>
             ))}
           </div>
@@ -174,7 +155,7 @@ export function MembersCard({ workspace }: { workspace: Schemas["WorkspaceWithRo
                     <Badge variant={m.role === "owner" ? "default" : "outline"}>{ROLE_LABELS[m.role]}</Badge>
                   )}
                 </div>
-                {(isMe || (manage && m.role !== "owner")) ? (
+                {isMe || (manage && m.role !== "owner") ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button size="icon" variant="ghost" className="size-8" aria-label={`More for ${m.display_name}`}>

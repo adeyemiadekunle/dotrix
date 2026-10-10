@@ -6,11 +6,11 @@
     instructions: Comment on issues.
     tools: [board.read, issues.create, issues.comment]
     issue_types: [bug]
-    autonomy: {issues.comment: allow, issues.create: block}
+    autonomy: { issues.comment: allow, issues.create: block }
   message: triage KUN-1
   script:
     - tool: comment_issue
-      args: {key: KUN-1, text: Duplicate of KUN-2.}
+      args: { key: KUN-1, text: Duplicate of KUN-2. }
     - text: Commented.
   expect:
     tools_include: [comment_issue, list_issues]
@@ -28,9 +28,9 @@
   message: review
   script:
     - tool: submit_result
-      args: {items: [{title: No severity}]}
+      args: { items: [{ title: No severity }] }
     - tool: submit_result
-      args: {items: [{severity: low, title: Verbose errors, detail: Stack traces reach clients}]}
+      args: { items: [{ severity: low, title: Verbose errors, detail: Stack traces reach clients }] }
     - text: One finding.
   expect:
     tools_include: [submit_result]

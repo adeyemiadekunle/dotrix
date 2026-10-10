@@ -7,13 +7,7 @@ import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";
 
 import { ACCENTS, useAccent } from "@/lib/accent";
-import {
-  SettingsContent,
-  SettingsDescription,
-  SettingsHeader,
-  SettingsSection,
-  SettingsTitle,
-} from "@/components/settings-section";
+import { SettingsContent, SettingsDescription, SettingsHeader, SettingsSection, SettingsTitle } from "@/components/settings-section";
 
 const THEMES: { value: string; label: string; icon: LucideIcon; preview: string }[] = [
   { value: "system", label: "System", icon: MonitorIcon, preview: "bg-linear-to-r from-white from-50% to-neutral-900 to-50%" },
@@ -24,7 +18,11 @@ const THEMES: { value: string; label: string; icon: LucideIcon; preview: string 
 // The chosen theme is only known in the browser; render the picker after hydration.
 const subscribe = () => () => {};
 function useMounted() {
-  return useSyncExternalStore(subscribe, () => true, () => false);
+  return useSyncExternalStore(
+    subscribe,
+    () => true,
+    () => false,
+  );
 }
 
 export function Appearance() {

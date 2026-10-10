@@ -20,11 +20,7 @@ export function DeviceApproval({ initialCode }: { initialCode: string }) {
   const decide = useMutation({
     mutationFn: async (decision: Outcome) => {
       const body = { user_code: code };
-      await unwrap(
-        decision === "approved"
-          ? api.POST("/v1/auth/device/approve", { body })
-          : api.POST("/v1/auth/device/deny", { body }),
-      );
+      await unwrap(decision === "approved" ? api.POST("/v1/auth/device/approve", { body }) : api.POST("/v1/auth/device/deny", { body }));
       return decision;
     },
     onSuccess: setOutcome,

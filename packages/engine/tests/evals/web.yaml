@@ -7,9 +7,9 @@
   message: what's the UK VAT rate?
   script:
     - tool: web_search
-      args: {query: uk vat rate}
+      args: { query: uk vat rate }
     - tool: fetch_page
-      args: {url: "https://www.gov.uk/vat"}
+      args: { url: "https://www.gov.uk/vat" }
     - text: "20% [S1]."
   expect:
     tools_include: [web_search, fetch_page, search_knowledge]
@@ -40,7 +40,7 @@
   message: who sells multi-zone dispatch?
   script:
     - tool: fetch_page
-      args: {url: "http://169.254.169.254/latest/meta-data"}
+      args: { url: "http://169.254.169.254/latest/meta-data" }
     - text: I couldn't read that address.
   expect:
     tools_include: [web_search, fetch_page]
