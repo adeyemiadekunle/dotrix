@@ -195,7 +195,7 @@ class CodingWorker:
 
         # 3. Apply to our checkout and check, before anything leaves this machine.
         patch = work / "changes.patch"
-        patch.write_text(changes.stdout)
+        patch.write_bytes(changes.stdout.encode())  # bytes: text mode would add \r before each \n on Windows
         try:
             await run_git(host, "apply", "--index", "--binary", "--whitespace=nowarn", str(patch))
         except CheckoutError as exc:

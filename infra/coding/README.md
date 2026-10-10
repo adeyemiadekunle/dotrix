@@ -33,6 +33,35 @@ keys.
   request with one approval). The app's token can't add workflows, because the app has no
   Workflows permission.
 
+## Set up Docker (the simplest: once per machine that runs agents)
+
+1. Docker running (Docker Desktop on Windows and macOS).
+2. Build the image: `docker build -t dotrix-coding:latest infra/coding`
+3. Add these to `.env` on the machine that runs agents (the worker, or the API in local mode):
+   ```shell
+   DOTRIX_CODING_SANDBOX=docker
+   DOTRIX_CODING_IMAGE=dotrix-coding:latest
+   ANTHROPIC_API_KEY=...   # Claude Code; with only OPENAI_API_KEY, Codex codes instead
+   ```
+
+Each run gets:
+- **A network with no route out** (`docker network create --internal`), and on it the agent's
+  container and an **egress proxy** (`egress-proxy.mjs`, from the same image, also on the default
+  network). The agent's `HTTPS_PROXY` points at it; it tunnels to the tool's model API
+  (api.anthropic.com or api.openai.com, or the host of `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL`)
+  and refuses everything else, GitHub and package registries included.
+- **The agent's container:** a read-only system, `/tmp` and the repo's volume writable, all
+  capabilities dropped, `no-new-privileges`, the image's `sandbox` user (uid 1500), 4 GB of
+  memory, 2 CPUs, 512 processes. The repo is copied in as a tar extracted by that user.
+- **Cleanup:** both containers, the volume, and the network are removed when the run ends,
+  however it ends. Each carries the label `dotrix.run=<run id>`
+  (`docker ps -a --filter label=dotrix.run` finds any a crash left behind).
+
+Compared with OpenShell, the model key is in the agent's environment rather than swapped in by
+a proxy, and the proxy allows the model API to any process in the container, not only the
+tool's binary. The key can still only reach the model API. `tests/unit/test_coding_docker.py`
+checks all of this against a real container (it's skipped where the image isn't built).
+
 ## Set up OpenShell (once per machine that runs agents)
 
 1. Install OpenShell and start a gateway. See

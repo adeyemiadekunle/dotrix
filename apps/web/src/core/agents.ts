@@ -161,13 +161,21 @@ function cannedAnswer(th: Thread, q: string): { text: string; activity: string[]
 }
 
 /** Chat and coding run on the API in the next step; a real workspace says so instead of a canned reply. */
+/** "owner/name" from a repo's address (or the name as it is). */
+export function repoName(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const m = url.match(/github\.com[/:]([^/]+\/[^/.]+)/);
+  return m ? m[1] : url;
+}
+
 /** Ask a coding tool to work on an issue: a session waiting for someone to approve it. Its id, or null. */
 export function startCoding(t: { id: string; key: string; title: string; project: string }, tool: "claude-code" | "codex", note = ""): string | null {
   if (agentsNotWired()) return null;
   const id = uid("cs");
   const ask = note.trim() || t.title;
   mutate(() => {
-    D().coding.unshift({ id, project: t.project, task: t.id, tool, status: "awaiting_approval", by: D().me, at: Date.now(), turns: [{ at: Date.now(), ask, events: [] }] });
+    const repo = repoName(proj(t.project)?.repo);
+    D().coding.unshift({ id, project: t.project, task: t.id, tool, status: "awaiting_approval", by: D().me, at: Date.now(), ...(repo ? { repo } : {}), turns: [{ at: Date.now(), ask, events: [] }] });
     D().notifs.unshift({ id: uid("n"), type: "approval", by: `agent:${tool}`, project: t.project, task: t.id, text: "is waiting to start coding", snippet: `${t.key} ${t.title}`, at: Date.now(), read: false });
   });
   return id;

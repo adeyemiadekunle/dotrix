@@ -105,10 +105,13 @@ class Settings(DatabaseSettings):
     # Coding runs (step 5c): Claude Code or Codex editing a checkout in a sandbox.
     # - "openshell": an OpenShell sandbox per run (its gateway set up and selected with the
     #   OpenShell CLI; see infra/coding/README.md), with a policy and the model key injected
+    # - "docker": a container per run from the coding image, on a network whose only way out is
+    #   a proxy to the model API (Docker and the image built; see infra/coding/README.md)
     # - "local": a temporary folder on this machine, no isolation (development only)
     # - "off": "Start coding" is refused
-    coding_sandbox: Literal["off", "openshell", "local"] = "off"
+    coding_sandbox: Literal["off", "openshell", "docker", "local"] = "off"
     openshell_bin: str = "openshell"
+    docker_bin: str = "docker"
     coding_image: str = "dotrix-coding:latest"  # the sandbox image (infra/coding/Dockerfile)
     # Which tool codes: "auto" follows the key the server has (Anthropic: Claude Code, else
     # OpenAI: Codex); naming one needs its key.

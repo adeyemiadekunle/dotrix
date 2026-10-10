@@ -245,7 +245,13 @@ export interface CodingSession {
   status: "awaiting_approval" | "queued" | "running" | "pr_opened" | "no_changes" | "failed" | "stopped" | "rejected";
   by: string;
   at: number;
+  /** The project's repo when it started ("owner/name"), and what it branched from. */
+  repo?: string;
+  base?: { branch: string; sha: string };
   branch?: string;
+  /** What its turns committed, newest first, and the working tree: each changed file. */
+  commits?: { sha: string; message: string; at: number }[];
+  files?: { path: string; added: number; removed: number; status?: "added" | "modified" | "deleted" }[];
   pr?: { number: number; state: "open" | "merged" | "closed"; url: string };
   turns: { at: number; ask: string; summary?: string; events: string[] }[];
 }

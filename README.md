@@ -31,8 +31,9 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
 
 ## What you can do today
 
-- **Chat** with the project's agents, in one Chat for the workspace:
-  - Pick who answers (Auto brings in the specialists it needs) and the model.
+- **Chat** with the project's agents, in one Chat for the workspace (or from Home's ask box):
+  - Type @ to pick the project (or all projects) and who answers (Auto brings in the
+    specialists it needs); pick the model.
   - Follow what each agent is doing as it works.
   - Approve or reject each change, with diffs.
   - Ask across several projects at once; those conversations are read-only.
@@ -50,13 +51,16 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
   reports can be saved as research notes.
 - **Code awareness:** connect a repo through the dotrix GitHub App and agents read its code
   (read-only) when reviewing or planning.
-- **Coding:** "Start coding" on an issue hands it to Claude Code (or Codex, when the server has
-  only an OpenAI key).
-  - It runs headless in a sandbox (OpenShell), from a brief: the issue, its acceptance
-    criteria, and the documents it links to.
+- **Coding:** "Start coding" on an issue, or a new session in Chat's Code tab (type @ or / to
+  pick the issue), hands it to Claude Code (or Codex, when the server has only an OpenAI key).
+  - It runs headless in a sandbox from a brief: the issue, its acceptance criteria, and the
+    documents it links to. The sandbox is a Docker container per run whose only way out is the
+    model API, or an OpenShell sandbox.
   - Each run waits for an approval. You can follow it as it works, and stop it.
-  - The platform pushes a new branch and opens the PR. The issue moves to review, and the
-    Reviewer reads the PR.
+  - Every fix gets its own branch on the project's repo and a PR; follow-ups add commits to the
+    same branch and PR. The issue moves to review, and the Reviewer reads the PR.
+  - A session shows its repo, the branch it started from and its own, its commits, and its
+    working tree (each changed file, lines added and removed).
   - Guardrails: the agent never holds a GitHub token, and nothing is pushed to the default
     branch. Changes to `.dotrix/` or CI workflows are refused, and a person merges.
   - Setup: [infra/coding/README.md](infra/coding/README.md).
@@ -74,15 +78,17 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
 
 ## What's next
 
+- **Chat and coding in a real workspace:** the web app's Chat and Code tab run on demo data
+  today; wiring them to the API is next.
 - **Coding, next:**
+  - A full run on a real model (needs an Anthropic or OpenAI key).
   - Coding from the CLI or desktop, in your own checkout.
-  - PR events back on the board.
+  - PR checks back on the board.
   - The board and documents available to the coding agent inside its sandbox.
 - **Background commit review:** a code graph and the blast radius of each push.
 - **Space:** workspace-level knowledge, and ideas before a project exists.
 - **To do for whoever runs it:**
-  - Register the GitHub App.
-  - Verify a sending domain for email.
+  - A model key for coding runs (Anthropic for Claude Code, or OpenAI for Codex).
   - Production: a domain, HTTPS, and a secrets store.
 
 ## Monorepo layout
@@ -98,7 +104,8 @@ packages/
   engine/       UI-agnostic agent engine: agent contracts, pipelines, approvals, tools (Python)
   api-client/   Typed client for the backend API, generated from its OpenAPI schema
   ui/           shadcn/ui components, the chat kit, and the theme
-infra/          Local services: Postgres with pgvector, Redis, MinIO
+infra/          Local services (Postgres with pgvector, Redis, MinIO) and the coding sandbox's
+                image and egress proxy (infra/coding)
 docs/           The PRD, the engine, and the agents v2 spec
 ```
 
@@ -134,7 +141,9 @@ uv run dotrix --help    # CLI
   - `DOTRIX_TAVILY_API_KEY`: web research through Tavily.
   - `DOTRIX_SENDLY_API_KEY`: real email delivery.
   - The GitHub sign-in and GitHub App settings: sign-in with GitHub and connected repos.
-  - `DOTRIX_CODING_SANDBOX`: coding runs (`openshell`, or `local` for development only).
+  - `DOTRIX_CODING_SANDBOX`: coding runs: `docker` (build the image first:
+    `docker build -t dotrix-coding:latest infra/coding`), `openshell`, or `local` for
+    development only. See [infra/coding/README.md](infra/coding/README.md).
 - **Limits:**
   - `DOTRIX_RUN_TOKEN_BUDGET`: tokens per agent run.
   - `DOTRIX_AUTOMATION_DAILY_RUNS` and `DOTRIX_AUTOMATION_DAILY_TOKENS`: automation runs and
