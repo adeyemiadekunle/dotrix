@@ -1236,3 +1236,36 @@ body.resizing-row * {
   top: -4px;
   right: -4px;
 }
+
+/* A coding session's header; on phones the panels' icons wrap to a line of their own so the title keeps its room. */
+.cs-head {
+  height: 46px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+@media (max-width: 640px) {
+  .cs-head {
+    height: auto;
+    min-height: 46px;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    row-gap: 4px;
+  }
+  .cs-head > .sp {
+    display: none;
+  }
+  .cs-head > .cs-panes {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+/* The list only folds beside a conversation or session: not where it is the whole screen. */
+@media (max-width: 900px) {
+  .chat-fold {
+    display: none;
+  }
+}

@@ -20,37 +20,18 @@ export const PANES: [Pane, string, string][] = [
 
 const isPane = (v: string): v is Pane => PANES.some(([p]) => p === v);
 /** The open panels from `?pane=`, in the order they were opened, at most three. */
-export const panesOf = (v: string | null): Pane[] =>
-  [...new Set((v ?? "").split(",").filter(isPane))].slice(0, 3);
+export const panesOf = (v: string | null): Pane[] => [...new Set((v ?? "").split(",").filter(isPane))].slice(0, 3);
 const meta = (p: Pane) => PANES.find(([x]) => x === p)!;
 
 /** The panels' icons, top right: in the right column's head while panels are open, at the end of
  * the session's header when none are. Each opens its panel below the others, or closes it. */
-export function PaneToolbar({
-  cs,
-  panes,
-  onToggle,
-}: {
-  cs: CodingSession;
-  panes: Pane[];
-  onToggle: (p: Pane) => void;
-}) {
+export function PaneToolbar({ cs, panes, onToggle }: { cs: CodingSession; panes: Pane[]; onToggle: (p: Pane) => void }) {
   return (
     <div className="row cs-panes" role="toolbar" aria-label="Session panels">
       {PANES.map(([p, icon, name]) => (
-        <button
-          key={p}
-          className={`ibtn ibtn-sm ${panes.includes(p) ? "on" : ""}`}
-          onClick={() => onToggle(p)}
-          aria-label={name}
-          aria-pressed={panes.includes(p)}
-          data-tip={name}
-        >
+        <button key={p} className={`ibtn ibtn-sm ${panes.includes(p) ? "on" : ""}`} onClick={() => onToggle(p)} aria-label={name} aria-pressed={panes.includes(p)} data-tip={name}>
           <Ic n={icon} s={15} />
-          {p === "tasks" &&
-            (cs.tasks ?? []).some((x) => x.status === "running") && (
-              <span className="cs-live" aria-hidden />
-            )}
+          {p === "tasks" && (cs.tasks ?? []).some((x) => x.status === "running") && <span className="cs-live" aria-hidden />}
         </button>
       ))}
     </div>
@@ -58,19 +39,10 @@ export function PaneToolbar({
 }
 
 /** Opens a panel below the others (three at most), or closes it. */
-export const togglePane = (panes: Pane[], p: Pane): Pane[] =>
-  panes.includes(p) ? panes.filter((x) => x !== p) : [...panes, p].slice(-3);
+export const togglePane = (panes: Pane[], p: Pane): Pane[] => (panes.includes(p) ? panes.filter((x) => x !== p) : [...panes, p].slice(-3));
 
 /** The open panels, stacked; the handle between two moves the space between them. */
-export function SessionPanels({
-  cs,
-  panes,
-  onPanes,
-}: {
-  cs: CodingSession;
-  panes: Pane[];
-  onPanes: (p: Pane[]) => void;
-}) {
+export function SessionPanels({ cs, panes, onPanes }: { cs: CodingSession; panes: Pane[]; onPanes: (p: Pane[]) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [weights, setWeights] = useState<Partial<Record<Pane, number>>>({});
   const resize = (i: number, delta: number) => {
@@ -86,35 +58,20 @@ export function SessionPanels({
       return wa < min || wb < min ? prev : { ...prev, [a]: wa, [b]: wb };
     });
   };
-  const open = (p: Pane) =>
-    onPanes(panes.includes(p) ? panes : [...panes, p].slice(-3));
+  const open = (p: Pane) => onPanes(panes.includes(p) ? panes : [...panes, p].slice(-3));
   return (
     <div ref={ref} className="cs-stack">
       {panes.map((p, i) => (
         <Fragment key={p}>
-          {i > 0 && (
-            <Splitter
-              dir="row"
-              label={`Resize ${meta(panes[i - 1]!)[2]} and ${meta(p)[2]}`}
-              onDrag={(d) => resize(i - 1, d)}
-            />
-          )}
-          <section
-            className="cs-panel"
-            style={{ flex: `${weights[p] ?? 1} 1 0` }}
-            aria-label={meta(p)[2]}
-          >
+          {i > 0 && <Splitter dir="row" label={`Resize ${meta(panes[i - 1]!)[2]} and ${meta(p)[2]}`} onDrag={(d) => resize(i - 1, d)} />}
+          <section className="cs-panel" style={{ flex: `${weights[p] ?? 1} 1 0` }} aria-label={meta(p)[2]}>
             <div className="row cs-panel-h">
               <Ic n={meta(p)[1]} s={14} />
               <b className="trunc" style={{ fontSize: 12.5, fontWeight: 600 }}>
                 {meta(p)[2]}
               </b>
               <span className="sp" />
-              <button
-                className="ibtn ibtn-sm"
-                onClick={() => onPanes(panes.filter((x) => x !== p))}
-                aria-label={`Close ${meta(p)[2]}`}
-              >
+              <button className="ibtn ibtn-sm" onClick={() => onPanes(panes.filter((x) => x !== p))} aria-label={`Close ${meta(p)[2]}`}>
                 <Ic n="x" s={15} />
               </button>
             </div>
@@ -156,10 +113,7 @@ function Terminal({ cs }: { cs: CodingSession }) {
         )}
         {cs.status === "running" && <span className="cs-cursor" aria-hidden />}
       </div>
-      <Note>
-        Read-only: what the agent ran in its sandbox. Typing here comes later,
-        under the session's approval mode.
-      </Note>
+      <Note>Read-only: what the agent ran in its sandbox. Typing here comes later, under the session's approval mode.</Note>
     </>
   );
 }
@@ -167,15 +121,8 @@ function Terminal({ cs }: { cs: CodingSession }) {
 /** The branch against its base, a diff per file. */
 function Changes({ cs }: { cs: CodingSession }) {
   const files = cs.files ?? [];
-  const [open, setOpen] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(files.slice(0, 2).map((f) => [f.path, true])),
-  );
-  if (!files.length)
-    return (
-      <Note>
-        No changes yet. They show here when a turn ends, from its commit.
-      </Note>
-    );
+  const [open, setOpen] = useState<Record<string, boolean>>(() => Object.fromEntries(files.slice(0, 2).map((f) => [f.path, true])));
+  if (!files.length) return <Note>No changes yet. They show here when a turn ends, from its commit.</Note>;
   return (
     <>
       <div className="row cs-branch mono">
@@ -188,11 +135,7 @@ function Changes({ cs }: { cs: CodingSession }) {
         const on = open[f.path];
         return (
           <section key={f.path} className="cs-dfile">
-            <button
-              className="row cs-dfile-h"
-              onClick={() => setOpen({ ...open, [f.path]: !on })}
-              aria-expanded={on}
-            >
+            <button className="row cs-dfile-h" onClick={() => setOpen({ ...open, [f.path]: !on })} aria-expanded={on}>
               <Ic n={on ? "chevron-down" : "chevron-right"} s={13} />
               <span className="mono trunc grow" style={{ textAlign: "left" }}>
                 {f.path}
@@ -204,28 +147,14 @@ function Changes({ cs }: { cs: CodingSession }) {
               (diff ? (
                 <pre className="cs-diff">
                   {diff.split("\n").map((line, i) => (
-                    <span
-                      key={i}
-                      className={
-                        line.startsWith("+")
-                          ? "a"
-                          : line.startsWith("-")
-                            ? "d"
-                            : line.startsWith("@@")
-                              ? "h"
-                              : ""
-                      }
-                    >
+                    <span key={i} className={line.startsWith("+") ? "a" : line.startsWith("-") ? "d" : line.startsWith("@@") ? "h" : ""}>
                       {line || " "}
                       {"\n"}
                     </span>
                   ))}
                 </pre>
               ) : (
-                <Note>
-                  The diff comes from the turn's commit once the session is
-                  wired to the API.
-                </Note>
+                <Note>The diff comes from the turn's commit once the session is wired to the API.</Note>
               ))}
           </section>
         );
@@ -235,28 +164,14 @@ function Changes({ cs }: { cs: CodingSession }) {
 }
 
 /** The app as the sandbox serves it: a dev server the supervisor started, through the platform. */
-function Browser({
-  cs,
-  onOpen,
-}: {
-  cs: CodingSession;
-  onOpen: (p: Pane) => void;
-}) {
+function Browser({ cs, onOpen }: { cs: CodingSession; onOpen: (p: Pane) => void }) {
   const server = (cs.tasks ?? []).find((t) => t.port && t.status === "running");
   const [path, setPath] = useState(cs.preview?.path ?? "/");
   return (
     <>
       <div className="row cs-url">
         <Ic n="lock" s={12} />
-        <input
-          className="mono"
-          value={server ? `preview · :${server.port}${path}` : "No app running"}
-          readOnly={!server}
-          onChange={(e) =>
-            setPath(e.target.value.replace(/^preview · :\d+/, "") || "/")
-          }
-          aria-label="Address"
-        />
+        <input className="mono" value={server ? `preview · :${server.port}${path}` : "No app running"} readOnly={!server} onChange={(e) => setPath(e.target.value.replace(/^preview · :\d+/, "") || "/")} aria-label="Address" />
         <button className="ibtn ibtn-xs" aria-label="Reload" disabled={!server}>
           <Ic n="rotate-cw" s={13} />
         </button>
@@ -271,8 +186,7 @@ function Browser({
             <i />
           </div>
           <span className="faint">
-            {server.name} on :{server.port}, served through the platform (never
-            an open port)
+            {server.name} on :{server.port}, served through the platform (never an open port)
           </span>
         </div>
       ) : (
@@ -290,61 +204,29 @@ function Browser({
 
 /** The repo's tracked files, changed ones marked. */
 function Files({ cs }: { cs: CodingSession }) {
-  const changed = new Map(
-    (cs.files ?? []).map((f) => [f.path, f.status ?? "modified"]),
-  );
+  const changed = new Map((cs.files ?? []).map((f) => [f.path, f.status ?? "modified"]));
   const paths = [...new Set([...(cs.tree ?? []), ...changed.keys()])].sort();
-  if (!paths.length)
-    return <Note>The file tree shows once the sandbox has the repo.</Note>;
+  if (!paths.length) return <Note>The file tree shows once the sandbox has the repo.</Note>;
   // Folders first in each level, from the flat list of paths.
-  type Node = {
-    name: string;
-    path: string;
-    kids: Map<string, Node>;
-    file: boolean;
-  };
+  type Node = { name: string; path: string; kids: Map<string, Node>; file: boolean };
   const root: Node = { name: "", path: "", kids: new Map(), file: false };
   for (const p of paths) {
     let at = root;
     p.split("/").forEach((part, i, all) => {
       const path = all.slice(0, i + 1).join("/");
-      if (!at.kids.has(part))
-        at.kids.set(part, {
-          name: part,
-          path,
-          kids: new Map(),
-          file: i === all.length - 1,
-        });
+      if (!at.kids.has(part)) at.kids.set(part, { name: part, path, kids: new Map(), file: i === all.length - 1 });
       at = at.kids.get(part)!;
     });
   }
   const render = (n: Node, depth: number): React.ReactNode =>
     [...n.kids.values()]
-      .sort(
-        (a, b) =>
-          Number(a.file) - Number(b.file) || a.name.localeCompare(b.name),
-      )
+      .sort((a, b) => Number(a.file) - Number(b.file) || a.name.localeCompare(b.name))
       .map((k) => (
         <div key={k.path}>
-          <div
-            className="row cs-fnode"
-            style={{ paddingLeft: 10 + depth * 14 }}
-          >
+          <div className="row cs-fnode" style={{ paddingLeft: 10 + depth * 14 }}>
             <Ic n={k.file ? "file" : "folder"} s={13} />
-            <span
-              className={`mono trunc grow ${changed.has(k.path) ? "cs-fchanged" : ""}`}
-            >
-              {k.name}
-            </span>
-            {changed.has(k.path) && (
-              <span className={`cs-st ${changed.get(k.path)}`}>
-                {changed.get(k.path) === "added"
-                  ? "A"
-                  : changed.get(k.path) === "deleted"
-                    ? "D"
-                    : "M"}
-              </span>
-            )}
+            <span className={`mono trunc grow ${changed.has(k.path) ? "cs-fchanged" : ""}`}>{k.name}</span>
+            {changed.has(k.path) && <span className={`cs-st ${changed.get(k.path)}`}>{changed.get(k.path) === "added" ? "A" : changed.get(k.path) === "deleted" ? "D" : "M"}</span>}
           </div>
           {!k.file && render(k, depth + 1)}
         </div>
@@ -357,18 +239,10 @@ function Tasks({ cs }: { cs: CodingSession }) {
   const tasks = cs.tasks ?? [];
   const stop = (id: string) =>
     mutate(() => {
-      const t = D()
-        .coding.find((x) => x.id === cs.id)
-        ?.tasks?.find((x) => x.id === id);
+      const t = D().coding.find((x) => x.id === cs.id)?.tasks?.find((x) => x.id === id);
       if (t) t.status = "stopped";
     });
-  if (!tasks.length)
-    return (
-      <Note>
-        No background tasks. Dev servers and watchers the agent starts show
-        here, run by the platform's supervisor.
-      </Note>
-    );
+  if (!tasks.length) return <Note>No background tasks. Dev servers and watchers the agent starts show here, run by the platform's supervisor.</Note>;
   return (
     <>
       {tasks.map((t) => (
@@ -394,10 +268,7 @@ function Tasks({ cs }: { cs: CodingSession }) {
           )}
         </div>
       ))}
-      <Note>
-        Run by the platform's supervisor, not the agent, so they outlive a turn;
-        they stop when the sandbox goes idle.
-      </Note>
+      <Note>Run by the platform's supervisor, not the agent, so they outlive a turn; they stop when the sandbox goes idle.</Note>
     </>
   );
 }

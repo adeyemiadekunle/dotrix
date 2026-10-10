@@ -1,22 +1,8 @@
 // A drag handle between two areas: drag it, or focus it and use the arrow keys. Sizes a person sets
 // are kept in this browser (a convenience: they come back to the defaults when storage is gone).
-import {
-  useEffect,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 
-export function Splitter({
-  dir,
-  onDrag,
-  label,
-  className = "",
-}: {
-  dir: "col" | "row";
-  onDrag: (delta: number) => void;
-  label: string;
-  className?: string;
-}) {
+export function Splitter({ dir, onDrag, label, className = "" }: { dir: "col" | "row"; onDrag: (delta: number) => void; label: string; className?: string }) {
   const start = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -33,9 +19,7 @@ export function Splitter({
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
-    document.body.classList.add(
-      dir === "col" ? "resizing-col" : "resizing-row",
-    );
+    document.body.classList.add(dir === "col" ? "resizing-col" : "resizing-row");
   };
   return (
     <div
@@ -60,12 +44,7 @@ export function Splitter({
 
 /** A size kept in this browser, within limits. The setter takes a size or a change to the latest
  * one (a drag's handler keeps the render it started in, so it changes, never replaces). */
-export function useStoredSize(
-  key: string,
-  fallback: number,
-  min: number,
-  max: number,
-): [number, (n: number | ((prev: number) => number)) => void] {
+export function useStoredSize(key: string, fallback: number, min: number, max: number): [number, (n: number | ((prev: number) => number)) => void] {
   const clamp = (n: number) => Math.min(max, Math.max(min, Math.round(n)));
   const [size, setSize] = useState(() => {
     try {
@@ -82,10 +61,7 @@ export function useStoredSize(
       /* storage off: the size lasts until the page reloads */
     }
   }, [key, size]);
-  return [
-    size,
-    (n) => setSize((prev) => clamp(typeof n === "function" ? n(prev) : n)),
-  ];
+  return [size, (n) => setSize((prev) => clamp(typeof n === "function" ? n(prev) : n))];
 }
 
 /** An on/off kept in this browser (off when storage is gone). */
