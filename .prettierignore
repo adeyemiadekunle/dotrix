@@ -1,0 +1,22 @@
+# Generated
+packages/api-client/openapi.json
+packages/api-client/src/schema.ts
+pnpm-lock.yaml
+uv.lock
+# Copied verbatim from Gr8r Studio (keep it diffable against the original)
+packages/ui/src/styles/gr8r.css
+# Build output, caches, and tools' own folders
+**/dist/
+**/dist-*/
+**/build/
+**/.next/
+**/node_modules/
+**/.turbo/
+**/playwright-report/
+**/test-results/
+.venv/
+.claude/
+# Python is formatted by Ruff; Markdown and docs keep their own wrapping
+**/*.py
+**/*.md
+docs/
