@@ -1459,3 +1459,10 @@ body.resizing-row * {
   margin: 10px 8px 0;
   font-size: 12px;
 }
+
+/* Chat and Code have their own headers: no top bar there (on phones it stays, for the menu button). */
+@media (min-width: 641px) {
+  .shell.no-topbar .topbar {
+    display: none;
+  }
+}
