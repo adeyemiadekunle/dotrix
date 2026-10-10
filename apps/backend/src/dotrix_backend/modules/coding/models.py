@@ -82,6 +82,8 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     pr_url: Mapped[str | None] = mapped_column(String(300))
     pr_state: Mapped[PrState | None] = mapped_column(str_enum(PrState, 16))  # kept current by the webhook
     files_changed: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, server_default="[]")
+    # What the agent's browser captured in this turn: {key (in storage), name, size, content_type}.
+    screenshots: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, server_default="[]")
     # What the agent did, as it happened: [{"at", "kind": "text"|"tool"|"step"|"error", "text"}].
     events: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, server_default="[]")
     summary: Mapped[str | None] = mapped_column(Text)  # the agent's last message

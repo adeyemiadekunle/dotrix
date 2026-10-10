@@ -34,10 +34,12 @@ BROWSER_MCP = {
 }
 BROWSER_RULE = """\
 - You have a headless browser (the `browser` tools). When the change shows in a web page, start
-  the app's dev server in the background on localhost (for example `python3 -m http.server 8080 &`
-  for static files, or the project's dev script), open it, check the change works, and take a
-  screenshot of it. Save screenshots under /tmp, never in the repository, and stop the server when
-  you're done. Pages outside this machine can't be reached, and that's expected.
+  the app's dev server in the background on localhost and note its process id (for example
+  `python3 -m http.server 8080 >/tmp/server.log 2>&1 & echo $! >/tmp/server.pid` for static files,
+  or the project's dev script), open it, check the change works, and take a screenshot of it: the
+  browser saves screenshots in /tmp/playwright, never in the repository, and the person sees them.
+  When you're done, stop the server with `kill $(cat /tmp/server.pid)`. Pages outside this machine
+  can't be reached, and that's expected.
 """
 
 
@@ -107,6 +109,8 @@ def _describe_browser(action: str, args: dict[str, Any]) -> str:
             return "Read the browser console"
         case "browser_wait_for":
             return "Waited for the page"
+        case "browser_run_code" | "browser_run_code_unsafe" | "browser_evaluate":
+            return "Ran a script in the page"
         case "browser_find":
             looked = _clip(str(args.get("text") or args.get("query") or args.get("selector") or ""), 80)
             return f"Looked for {looked} in the page" if looked else "Looked through the page"

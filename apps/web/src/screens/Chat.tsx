@@ -745,6 +745,14 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
   // Its details (tool, project, repo, branches, commits, PR) float over the chat from the ⋮: on hover,
   // or pinned by a click until a click elsewhere or Escape.
   const [info, setInfo] = useState<null | "hover" | "pinned">(null);
+  // A screenshot opened large over everything; Escape or a click closes it.
+  const [shot, setShot] = useState<{ src: string; name: string } | null>(null);
+  useEffect(() => {
+    if (!shot) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setShot(null);
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [shot]);
   const infoBtn = useRef<HTMLButtonElement>(null);
   const leave = useRef<number>(0);
   useEffect(() => setInfo(null), [cs.id]);
@@ -804,6 +812,12 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
         <span className="sp" />
         {panes.length === 0 && <PaneToolbar cs={cs} panes={panes} onToggle={(p) => open(paneSearch(cs.id, togglePane(panes, p)))} />}
       </div>
+      {shot && (
+        <div className="cs-lightbox" role="dialog" aria-label={`Screenshot: ${shot.name}`} onClick={() => setShot(null)}>
+          <img src={shot.src} alt={`Screenshot: ${shot.name}`} />
+          <span>{shot.name}</span>
+        </div>
+      )}
       {info && at && (
         <div
           className="pop cs-info"
@@ -924,6 +938,16 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
                       ))}
                     </div>
                     {turn.summary && <div className="md">{turn.summary}</div>}
+                    {turn.shots && turn.shots.length > 0 && (
+                      <div className="cs-shots" aria-label="Screenshots from the browser">
+                        {turn.shots.map((s) => (
+                          <button key={s.src} className="cs-shot" onClick={() => setShot(s)} aria-label={`Open the screenshot ${s.name}`}>
+                            <img src={s.src} alt={`Screenshot: ${s.name}`} loading="lazy" />
+                            <span className="faint trunc">{s.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

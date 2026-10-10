@@ -4,11 +4,12 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from dotrix_backend.api.deps import SessionDep, SettingsDep, require_permission
 from dotrix_backend.core.jobs import Jobs, get_jobs
 from dotrix_backend.core.openapi import errors
+from dotrix_backend.core.storage import BlobStorage, get_storage
 from dotrix_backend.modules.projects.deps import (
     ProjectAccess,
     ProjectViewer,
@@ -76,6 +77,19 @@ async def list_coding_runs(
 async def get_coding_run(coding_run_id: uuid.UUID, access: ProjectViewer, coding: Coding) -> CodingRunRead:
     """A coding run with what the agent has done so far (poll it while it runs)."""
     return await coding.get(access, coding_run_id)
+
+
+@router.get(
+    "/runs/{coding_run_id}/screenshots/{index}",
+    responses={**errors(503), 200: {"content": {"image/png": {}, "image/jpeg": {}}, "description": "The image"}},
+    response_class=Response,
+)
+async def get_coding_screenshot(
+    coding_run_id: uuid.UUID, index: int, access: ProjectViewer, coding: Coding, storage: Annotated[BlobStorage, Depends(get_storage)]
+) -> Response:
+    """A screenshot the agent's browser captured in a coding run (the run lists them). Anyone who sees the project."""
+    data, content_type = await coding.screenshot(access, coding_run_id, index, storage)
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
 
 
 @router.post("/runs/{coding_run_id}/decision", responses=errors(403, 409))

@@ -77,3 +77,19 @@ async def test_search(repo: Path) -> None:
     assert "No lines match" in await search("untracked")
     many = await search("line")
     assert "…and" in many and "more" in many
+
+
+def test_git_runs_on_a_selector_loop_too(tmp_path) -> None:
+    """The platform runs on a selector loop on Windows (for psycopg), which can't start
+    subprocesses: the code tools' git still runs there, in a thread."""
+    import asyncio
+    import subprocess as sp
+
+    from dotrix_engine.code import git
+
+    sp.run(["git", "init", "-q", str(tmp_path)], check=True)
+    loop = asyncio.SelectorEventLoop()
+    try:
+        assert loop.run_until_complete(git(tmp_path, "rev-parse", "--is-inside-work-tree")).strip() == "true"
+    finally:
+        loop.close()

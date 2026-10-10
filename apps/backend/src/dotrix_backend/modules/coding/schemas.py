@@ -35,6 +35,13 @@ class CodingEvent(BaseModel):
     text: str
 
 
+class CodingScreenshot(BaseModel):
+    index: int = Field(description="Its place in the run's list; GET .../screenshots/{index} returns the image")
+    name: str
+    size: int
+    content_type: str
+
+
 class CodingRunRead(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
@@ -56,6 +63,7 @@ class CodingRunRead(BaseModel):
     pr_url: str | None
     pr_state: PrState | None = Field(description="`open`, `merged`, or `closed`, from GitHub")
     files_changed: list[dict[str, Any]]
+    screenshots: list[CodingScreenshot] = Field(default_factory=list, description="What the agent's browser captured in this turn")
     events: list[CodingEvent]
     summary: str | None = Field(description="The agent's last message")
     error: str | None

@@ -307,8 +307,12 @@ Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
   "Clicked …", "Took a screenshot"), a browser that didn't start said in the session. Checked on
   `kunemi-group/dotrix-test` with Haiku: the agent served the page, clicked through it, took a
   screenshot, and PR #2 opened ($0.004).
-- [ ] Screenshots to the person: copy `/tmp/playwright` out of the sandbox after a turn into storage, and
-  show them in the turn.
+- [x] Screenshots to the person (2026-10-10): after a turn the worker copies up to 8 images (PNG or JPEG
+  by their bytes, 3 MB each, each once) from `/tmp/playwright` and `/tmp` into storage (never from the
+  local sandbox), lists them on the run (`screenshots`), and serves each at
+  `GET .../coding/runs/{id}/screenshots/{index}` to anyone who sees the project. The web shows them under
+  their turn and, with no app running, the latest in the Browser panel. Checked on `dotrix-test` (WIR-5,
+  PR #3).
 - The dotrix MCP server through the proxy with a per-turn credential.
 - The supervisor and Background tasks; the Browser tab's preview through the platform.
 - Registries and the preview port: the Docker egress allowlist and OpenShell's policy.

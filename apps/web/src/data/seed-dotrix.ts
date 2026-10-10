@@ -393,8 +393,16 @@ const CODING: CodingSession[] = [
       {
         at: minsAgo(2900),
         ask: "Fix the anchor links on the pricing page.",
-        summary: "Fixed 4 anchors and added a test for heading ids.",
-        events: ["Read pricing.tsx", "Edited 2 files", "Ran the tests: 48 passed"],
+        summary: "Fixed 4 anchors and added a test for heading ids. Checked the page in the browser: Plans and FAQ scroll to their sections.",
+        events: [
+          "Read pricing.tsx",
+          "Edited 2 files",
+          "Ran the tests: 48 passed",
+          "Opened http://localhost:3000/pricing in the browser",
+          "Clicked Plans",
+          "Took a screenshot",
+        ],
+        shots: [{ src: "/demo/pricing-plans.png", name: "pricing-plans.png" }],
       },
     ],
   },

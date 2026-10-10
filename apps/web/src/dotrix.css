@@ -1326,3 +1326,70 @@ body.resizing-row * {
 .chat-group .sitem + .sitem {
   margin-top: 4px;
 }
+
+/* What a coding agent's browser captured: thumbnails under its turn, opened large on click. */
+.cs-shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cs-shot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: left;
+  font-size: 11.5px;
+}
+.cs-shot:hover {
+  border-color: var(--acc);
+}
+.cs-shot img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 5px;
+  background: var(--surface-2);
+}
+.cs-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px;
+  background: color-mix(in srgb, #000 72%, transparent);
+  color: #e7e5df;
+  font-size: 12.5px;
+  cursor: zoom-out;
+}
+.cs-lightbox img {
+  max-width: min(1200px, 100%);
+  max-height: calc(100vh - 120px);
+  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+  background: #fff;
+}
+.cs-lastshot {
+  margin: 0 10px 10px;
+}
+.cs-lastshot img {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+.cs-lastshot figcaption {
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
