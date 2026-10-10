@@ -17450,6 +17450,108 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/close": {
+      "post": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Close Coding Session",
+        "description": "Close a coding session: its sandbox kept between turns and its saved transcript go; its\nbranch and PR stay, and a new turn opens it again. Whoever started it, or owners and admins.",
+        "operationId": "close_coding_session",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision": {
       "post": {
         "tags": [
@@ -22683,6 +22785,11 @@
               }
             ]
           },
+          "state": {
+            "$ref": "#/components/schemas/CodingSessionState",
+            "description": "`warm`: its sandbox is up between turns; `idle`: the next turn starts one and resumes; `closed`: done",
+            "default": "idle"
+          },
           "started_at": {
             "type": "string",
             "format": "date-time",
@@ -22714,6 +22821,15 @@
         ],
         "title": "CodingSessionRead",
         "description": "A coding session: a run and its follow-ups, on one branch and one PR. Its status is its latest turn's."
+      },
+      "CodingSessionState": {
+        "type": "string",
+        "enum": [
+          "warm",
+          "idle",
+          "closed"
+        ],
+        "title": "CodingSessionState"
       },
       "CommentCreate": {
         "properties": {

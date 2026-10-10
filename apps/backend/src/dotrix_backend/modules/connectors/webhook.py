@@ -110,7 +110,12 @@ async def _repositories(session: AsyncSession, payload: dict[str, Any]) -> str:
 async def _pull_request(session: AsyncSession, payload: dict[str, Any]) -> str:
     """A coding session's PR was merged, closed, or reopened: record it on the session's turns and
     in its issue's log. The issue itself stays where it is: only a person closes it."""
-    from dotrix_backend.modules.coding.models import CodingRun, PrState
+    from dotrix_backend.modules.coding.models import (
+        CodingRun,
+        CodingSession,
+        CodingSessionState,
+        PrState,
+    )
     from dotrix_backend.modules.issues.models import IssueEvent, IssueEventKind
 
     action, pr = payload.get("action"), payload.get("pull_request") or {}
@@ -128,6 +133,13 @@ async def _pull_request(session: AsyncSession, payload: dict[str, Any]) -> str:
         run.pr_state = state
     latest = max(runs, key=lambda r: r.turn)
     now = datetime.now(UTC)
+    # Merged or closed: the session is done (its warm sandbox and saved transcript go); reopened: idle again.
+    for row in await session.scalars(select(CodingSession).where(CodingSession.id.in_({r.session_id for r in runs}))):
+        if state is PrState.OPEN:
+            if row.state is CodingSessionState.CLOSED:
+                row.state, row.closed_at = CodingSessionState.IDLE, None
+        elif row.state is not CodingSessionState.CLOSED:
+            row.state, row.closed_at = CodingSessionState.CLOSED, now
     said = {PrState.MERGED: "merged", PrState.CLOSED: "closed without merging", PrState.OPEN: "reopened"}[state]
     session.add(IssueEvent(
         workspace_id=latest.workspace_id, issue_id=latest.issue_id, kind=IssueEventKind.UPDATED,

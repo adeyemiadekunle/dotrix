@@ -24,7 +24,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -32,6 +32,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dotrix_backend.core.crypto import Secrets
 from dotrix_backend.core.errors import DomainError
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.core.storage import BlobStorage
@@ -55,9 +56,18 @@ from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
 from . import guard
-from .models import CodingAgent, CodingRun, CodingRunEvent, CodingRunStatus, PrState
+from .models import (
+    CodingAgent,
+    CodingRun,
+    CodingRunEvent,
+    CodingRunStatus,
+    CodingSession,
+    CodingSessionState,
+    PrState,
+)
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
 from .tools import BROWSER_RULE, TOOLS, Usage, model_for, model_key
+from .warm import WarmPool, close_quietly
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +78,7 @@ SHOTS_MAX = 8
 SHOT_BYTES = 3_000_000
 SHOTS_LIST = "ls -1t /tmp/playwright/*.png /tmp/playwright/*.jpg /tmp/playwright/*.jpeg /tmp/*.png /tmp/*.jpg 2>/dev/null | head -n 8"
 FLUSH_SECONDS = 2.0
+REAP_SECONDS = 30.0  # how often warm sandboxes are checked for the idle time and closed sessions
 STOP_POLL_SECONDS = 3.0
 FETCH_TIMEOUT = 300
 NAMES = {"claude-code": "Claude Code", "codex": "Codex"}
@@ -113,6 +124,9 @@ class CodingWorker:
     repo_url: RepoUrl = github_url
     reviewer: Any = None  # the agent runner, to have the Reviewer look at the PR
     storage: BlobStorage | None = None  # where the agent's screenshots go (none: they stay in the sandbox)
+    secrets: Secrets = field(default_factory=lambda: Secrets(None))  # encrypts saved transcripts
+    pool: WarmPool = field(default_factory=lambda: WarmPool(30 * 60, 3))  # sessions' sandboxes between turns
+    _reaper: asyncio.Task[None] | None = field(default=None, repr=False)
 
     async def execute(self, run_id: uuid.UUID) -> None:
         async with self.session_factory() as session:
@@ -158,6 +172,11 @@ class CodingWorker:
             ref = RepoRef(run.workspace_id, run.project_id, installation.installation_id, repo.full_name,
                           repo.default_branch)
             github_repo_id, agent, brief = repo.github_repo_id, run.agent, run.brief
+            workspace_id, session_id = run.workspace_id, run.session_id
+            sess = await _session_row(session, run)
+            claude_session, transcript_key, cost_before = sess.claude_session, sess.transcript_key, sess.cost_reported
+            sess.last_active_at = datetime.now(UTC)
+            await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
             session_branch, session_pr = run.branch, (run.pr_number, run.pr_url) if run.pr_number else None
             key = model_key(self.settings, agent)
@@ -181,87 +200,131 @@ class CodingWorker:
         await run_git(host, "checkout", "-q", "--detach", "FETCH_HEAD")
         base_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
 
-        # 2. The agent's copy: tracked files, and a history of its own to diff against.
-        copy = work / "upload" / "repo"
-        await _export(host, copy)
-        baseline = await _baseline(copy)
         await self._update(run_id, base_sha=base_sha, step=f"Checked out {session_branch}" if session_branch
                            else "Checked out the repository")
 
+        # 2. The agent's sandbox: the session's warm one when its files still match the branch (nobody
+        #    pushed in between), else a fresh one with the tracked files and a history of its own, and
+        #    the session's transcript restored so Claude Code resumes its conversation.
         tool = TOOLS[agent]
-        session_box: SandboxSession = await self.sandbox.open(run_id, copy, tool, key)
+        claude = agent is CodingAgent.CLAUDE_CODE
+        box = self.pool.take(session_id)
+        warm = False
+        if box is not None:
+            here = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=60)
+            warm = here.code == 0 and here.stdout.strip() == (await run_git(host, "rev-parse", "HEAD^{tree}")).strip()
+            if not warm:
+                await close_quietly(box)
+                box = None
+        resumed = warm and claude
+        if box is None:
+            copy = work / "upload" / "repo"
+            await _export(host, copy)
+            await _baseline(copy)
+            box = await self.sandbox.open(run_id, copy, tool, key)
+            if claude and transcript_key:
+                resumed = await self._restore_transcript(box, transcript_key)
+        keep = False
+        reported: float | None = None
         try:
-            await self._update(run_id, step=f"Sandbox ready ({self.sandbox.kind}); {NAMES[agent.value]} is working")
-            summary = await self._code(run_id, session_box, tool, brief)
-            await self._screenshots(run_id, session_box)
-            changes = await session_box.exec(
+            baseline = (await box.exec(["git", "rev-parse", "HEAD"], timeout=60)).stdout.strip()
+            where = "kept from the last turn" if warm else self.sandbox.kind
+            await self._update(run_id, step=f"Sandbox ready ({where}); {NAMES[agent.value]} is "
+                               + ("continuing the session" if resumed else "working"))
+            extra = (["--resume", str(claude_session)] if resumed else ["--session-id", str(claude_session)]) if claude else []
+            summary, reported = await self._code(run_id, box, tool, brief, extra, cost_before if resumed else None)
+            await self._screenshots(run_id, box)
+            changes = await box.exec(
                 ["sh", "-c", "git add -A && git -c core.quotepath=off diff --cached --binary --no-color "
                  f"--no-ext-diff --no-textconv --no-renames {baseline}"],
                 timeout=300,
             )
+            if changes.code != 0:
+                raise RunFailed("Couldn't read the agent's changes (did it remove the repository's git folder?)")
+            if changes.truncated or len(changes.stdout.encode()) > guard.MAX_PATCH_BYTES:
+                raise RunFailed(f"The changes are larger than {guard.MAX_PATCH_BYTES // 1_000_000} MB")
+            if not changes.stdout.strip():
+                await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=summary)
+                keep = True
+                return
+
+            # 3. Apply to our checkout and check, before anything leaves this machine.
+            patch = work / "changes.patch"
+            patch.write_bytes(changes.stdout.encode())  # bytes: text mode would add \r before each \n on Windows
+            try:
+                await run_git(host, "apply", "--index", "--binary", "--whitespace=nowarn", str(patch))
+            except CheckoutError as exc:
+                raise RunFailed(f"The agent's changes didn't apply: {exc}") from exc
+            paths = [p for p in (await run_git(host, "diff", "--cached", "--name-only", "--no-renames", "-z")).split("\0") if p]
+            reasons = guard.check(paths)
+            if reasons:
+                raise RunFailed("Not pushed: " + "; ".join(reasons[:5]))
+            files = _numstat(await run_git(host, "diff", "--cached", "--numstat", "--no-renames"))
+
+            # 4. Commit, push a new branch, open the PR.
+            async with self.session_factory() as session:
+                run = await session.get(CodingRun, run_id)
+                assert run is not None
+                if run.stop_requested:
+                    raise _Stopped("Stopped before pushing")
+                issue_key, run_short, turn = run.issue_key, run.id.hex[:6], run.turn
+                title = await _issue_title(session, run)
+            branch = session_branch or f"dotrix/{issue_key.lower()}-{_slug(title)}-{run_short}"
+            if branch == ref.default_branch:
+                raise RunFailed("Refusing to push to the default branch")
+            heading = f"{issue_key}: {title}" + (f" (turn {turn})" if turn > 1 else "")
+            message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({NAMES[agent.value]})"
+            await run_git(host, "-c", f"user.name={NAMES[agent.value]} via dotrix", "-c", f"user.email={BOT_EMAIL}",
+                          "commit", "-q", "--no-verify", "-m", message)
+            commit_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
+            await self._update(run_id, step=f"Pushing {branch}")
+            # Never forced: on the session's branch, this commit sits on top of what's there.
+            await run_git(host, "push", "-q", url, f"HEAD:refs/heads/{branch}", env=env, timeout=FETCH_TIMEOUT)
+            # The sandbox's own history moves on with the branch: the next turn's changes are its own.
+            committed = await box.exec(["git", "-c", "user.name=dotrix", "-c", f"user.email={BOT_EMAIL}", "commit", "-q",
+                                        "--no-verify", "--allow-empty", "-m", heading], timeout=120)
+            keep = committed.code == 0
+            if session_pr is not None:
+                pr = PullRequest(*session_pr)  # the session's PR shows the new commit
+            else:
+                pr = await self.app.create_pull_request(
+                    ref.installation_id, ref.full_name, head=branch, base=ref.default_branch,
+                    title=f"{issue_key}: {title}", body=_pr_body(summary, issue_key, run_id, agent.value, files),
+                    token=token,
+                )
+            async with self.session_factory() as session:
+                run = await session.get(CodingRun, run_id)
+                assert run is not None
+                run.branch, run.commit_sha, run.files_changed = branch, commit_sha, files
+                run.pr_number, run.pr_url = pr.number, pr.html_url
+                run.pr_state = run.pr_state or PrState.OPEN
+                await self._finish(session, run, CodingRunStatus.PR_OPENED, summary=summary)
+                await self._issue_to_review(session, run, title, opened=session_pr is None)
+            await self._review(run_id, title, files, changes.stdout)
         finally:
-            await session_box.close()
-        if changes.code != 0:
-            raise RunFailed("Couldn't read the agent's changes (did it remove the repository's git folder?)")
-        if changes.truncated or len(changes.stdout.encode()) > guard.MAX_PATCH_BYTES:
-            raise RunFailed(f"The changes are larger than {guard.MAX_PATCH_BYTES // 1_000_000} MB")
-        if not changes.stdout.strip():
-            await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=summary)
-            return
+            # The conversation moved on even when the turn didn't push: save it for the next turn.
+            if claude:
+                await self._save_transcript(box, session_id, workspace_id)
+            if reported is not None:
+                await self._session(session_id, cost_reported=reported)
+            if keep:
+                for closed in await self.pool.put(session_id, workspace_id, box):
+                    await self._session(closed, state=CodingSessionState.IDLE)
+                if session_id in self.pool.sessions():
+                    await self._session(session_id, state=CodingSessionState.WARM)
+                self._start_reaper()
+            else:
+                await close_quietly(box)
+                await self._session(session_id, state=CodingSessionState.IDLE)
 
-        # 3. Apply to our checkout and check, before anything leaves this machine.
-        patch = work / "changes.patch"
-        patch.write_bytes(changes.stdout.encode())  # bytes: text mode would add \r before each \n on Windows
-        try:
-            await run_git(host, "apply", "--index", "--binary", "--whitespace=nowarn", str(patch))
-        except CheckoutError as exc:
-            raise RunFailed(f"The agent's changes didn't apply: {exc}") from exc
-        paths = [p for p in (await run_git(host, "diff", "--cached", "--name-only", "--no-renames", "-z")).split("\0") if p]
-        reasons = guard.check(paths)
-        if reasons:
-            raise RunFailed("Not pushed: " + "; ".join(reasons[:5]))
-        files = _numstat(await run_git(host, "diff", "--cached", "--numstat", "--no-renames"))
-
-        # 4. Commit, push a new branch, open the PR.
-        async with self.session_factory() as session:
-            run = await session.get(CodingRun, run_id)
-            assert run is not None
-            if run.stop_requested:
-                raise _Stopped("Stopped before pushing")
-            issue_key, run_short, turn = run.issue_key, run.id.hex[:6], run.turn
-            title = await _issue_title(session, run)
-        branch = session_branch or f"dotrix/{issue_key.lower()}-{_slug(title)}-{run_short}"
-        if branch == ref.default_branch:
-            raise RunFailed("Refusing to push to the default branch")
-        heading = f"{issue_key}: {title}" + (f" (turn {turn})" if turn > 1 else "")
-        message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({NAMES[agent.value]})"
-        await run_git(host, "-c", f"user.name={NAMES[agent.value]} via dotrix", "-c", f"user.email={BOT_EMAIL}",
-                      "commit", "-q", "--no-verify", "-m", message)
-        commit_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
-        await self._update(run_id, step=f"Pushing {branch}")
-        # Never forced: on the session's branch, this commit sits on top of what's there.
-        await run_git(host, "push", "-q", url, f"HEAD:refs/heads/{branch}", env=env, timeout=FETCH_TIMEOUT)
-        if session_pr is not None:
-            pr = PullRequest(*session_pr)  # the session's PR shows the new commit
-        else:
-            pr = await self.app.create_pull_request(
-                ref.installation_id, ref.full_name, head=branch, base=ref.default_branch,
-                title=f"{issue_key}: {title}", body=_pr_body(summary, issue_key, run_id, agent.value, files),
-                token=token,
-            )
-        async with self.session_factory() as session:
-            run = await session.get(CodingRun, run_id)
-            assert run is not None
-            run.branch, run.commit_sha, run.files_changed = branch, commit_sha, files
-            run.pr_number, run.pr_url = pr.number, pr.html_url
-            run.pr_state = run.pr_state or PrState.OPEN
-            await self._finish(session, run, CodingRunStatus.PR_OPENED, summary=summary)
-            await self._issue_to_review(session, run, title, opened=session_pr is None)
-        await self._review(run_id, title, files, changes.stdout)
-
-    async def _code(self, run_id: uuid.UUID, box: SandboxSession, tool: Any, brief: str) -> str | None:
-        """Run the tool with the brief, streaming its events into the run; its final message."""
+    async def _code(
+        self, run_id: uuid.UUID, box: SandboxSession, tool: Any, brief: str, extra: list[str], cost_before: float | None,
+    ) -> tuple[str | None, float | None]:
+        """Run the tool with the brief, streaming its events into the run: its final message, and the
+        cost it reported. A resumed Claude Code session reports its running total, so the turn's own
+        cost is what it adds to `cost_before`."""
         usage, summary, failed = Usage(), None, None
+        reported: list[float] = []
         pending: list[dict[str, Any]] = []
         cancel = asyncio.Event()
         stop_reason: list[str] = []
@@ -276,7 +339,12 @@ class CodingWorker:
 
         async def on_line(line: str) -> None:
             nonlocal summary, failed
+            cost = usage.cost_usd
             parsed = tool.parse(line, usage)
+            if usage.cost_usd is not None and usage.cost_usd != cost:  # the result line: the running total
+                reported.append(usage.cost_usd)
+                if cost_before is not None:
+                    usage.cost_usd = max(0.0, usage.cost_usd - cost_before)
             now = datetime.now(UTC).isoformat()
             pending.extend({"at": now, "kind": s.kind, "text": s.text} for s in parsed.steps)
             summary = parsed.summary or summary
@@ -301,7 +369,7 @@ class CodingWorker:
         watcher = asyncio.create_task(watch_stop())
         try:
             result = await box.exec(
-                tool.command(model_for(self.settings, tool.agent), browser=browser),
+                tool.command(model_for(self.settings, tool.agent), browser=browser) + extra,
                 stdin=(brief + (BROWSER_RULE if browser else "")).encode(), on_line=on_line,
                 timeout=self.settings.coding_timeout_minutes * 60, cancel=cancel,
             )
@@ -317,7 +385,7 @@ class CodingWorker:
         if failed or result.code != 0:
             detail = failed or (result.stderr.strip().splitlines() or [f"exit code {result.code}"])[-1]
             raise RunFailed(f"{NAMES[tool.agent.value]} didn't finish: {detail[:500]}")
-        return summary
+        return summary, (reported[-1] if reported else None)
 
     async def _screenshots(self, run_id: uuid.UUID, box: SandboxSession) -> None:
         """Keep what the agent's browser captured: the newest images under /tmp in the sandbox, into
@@ -360,6 +428,81 @@ class CodingWorker:
                 await self._update(run_id, step=f"Kept {len(shots)} screenshot{'s' if len(shots) != 1 else ''} from the browser")
         except Exception:
             logger.warning("coding run %s: couldn't keep the screenshots", run_id, exc_info=True)
+
+    # -- sessions: their state, transcripts, and warm sandboxes ---------------------------------
+
+    async def _session(self, session_id: uuid.UUID, **fields: Any) -> None:
+        async with self.session_factory() as session:
+            row = await session.get(CodingSession, session_id)
+            if row is None:
+                return
+            for name, value in fields.items():
+                setattr(row, name, value)
+            if fields.get("state") is CodingSessionState.WARM or "cost_reported" in fields:
+                row.last_active_at = datetime.now(UTC)
+            await session.commit()
+
+    async def _save_transcript(self, box: SandboxSession, session_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
+        """Claude Code's transcript (its ~/.claude) into storage, encrypted: what a fresh sandbox
+        restores to resume the session. Skipped without storage or an encryption key."""
+        if self.storage is None or not self.secrets.configured:
+            return
+        try:
+            packed = await box.exec(["sh", "-c", 'cd "$HOME" && [ -d .claude ] && tar -cz .claude | base64 -w0'], timeout=120)
+            if packed.code != 0 or not packed.stdout.strip() or packed.truncated:
+                return
+            key = f"coding/{workspace_id}/sessions/{session_id}/transcript"
+            await self.storage.put(key, self.secrets.encrypt(packed.stdout.strip()).encode(), "application/octet-stream")
+            await self._session(session_id, transcript_key=key)
+        except Exception:
+            logger.warning("coding session %s: couldn't save the transcript", session_id, exc_info=True)
+
+    async def _restore_transcript(self, box: SandboxSession, key: str) -> bool:
+        """The session's saved transcript into a fresh sandbox; whether Claude Code can resume."""
+        if self.storage is None or not self.secrets.configured:
+            return False
+        try:
+            packed = self.secrets.decrypt((await self.storage.get(key)).decode())
+            if not packed:
+                return False
+            done = await box.exec(["sh", "-c", 'cd "$HOME" && base64 -d | tar -xz'], stdin=packed.encode(), timeout=120)
+            return done.code == 0
+        except Exception:
+            logger.warning("couldn't restore a coding transcript", exc_info=True)
+            return False
+
+    def _start_reaper(self) -> None:
+        if self._reaper is None or self._reaper.done():
+            self._reaper = asyncio.create_task(self._reap_forever())
+
+    async def _reap_forever(self) -> None:
+        while self.pool.sessions():
+            await asyncio.sleep(REAP_SECONDS)
+            try:
+                await self.reap()
+            except Exception:
+                logger.warning("closing idle coding sandboxes failed", exc_info=True)
+
+    async def reap(self) -> None:
+        """Close warm sandboxes left unused past the idle time, and those whose session was closed
+        (its PR merged or closed, or closed by hand); delete closed sessions' transcripts."""
+        for session_id in self.pool.idle():
+            await self.pool.close(session_id)
+            await self._session(session_id, state=CodingSessionState.IDLE)
+        async with self.session_factory() as session:
+            closed = list(await session.scalars(select(CodingSession).where(
+                CodingSession.state == CodingSessionState.CLOSED,
+                CodingSession.id.in_(self.pool.sessions()) | CodingSession.transcript_key.is_not(None),
+            )))
+            for row in closed:
+                await self.pool.close(row.id)
+                if row.transcript_key and self.storage is not None:
+                    try:
+                        await self.storage.delete(row.transcript_key)
+                    except Exception:
+                        logger.warning("couldn't delete a closed session's transcript", exc_info=True)
+                row.transcript_key = None
+            await session.commit()
 
     async def stop_requested(self, run_id: uuid.UUID) -> bool:
         async with self.session_factory() as session:
@@ -532,7 +675,10 @@ def build_coding_worker(
     if sandbox is None:
         return None
     app = GitHubAppClient(settings)
-    return CodingWorker(session_factory, settings, sandbox, app if app.configured else None, reviewer=reviewer, storage=storage)
+    return CodingWorker(
+        session_factory, settings, sandbox, app if app.configured else None, reviewer=reviewer, storage=storage,
+        secrets=Secrets.from_settings(settings), pool=WarmPool(settings.coding_idle_minutes * 60, settings.coding_warm_max),
+    )
 
 
 async def end_cut_off_runs(session: AsyncSession, settings: Settings, *, everything: bool = False) -> int:
@@ -550,3 +696,19 @@ async def end_cut_off_runs(session: AsyncSession, settings: Settings, *, everyth
         run.error = "Cut off by a server restart; nothing was pushed unless the run shows a PR"
     await session.commit()
     return len(runs)
+
+
+async def _session_row(session: AsyncSession, run: CodingRun) -> CodingSession:
+    """The run's session, made with its first turn (a Claude Code conversation id of its own)."""
+    row = await session.get(CodingSession, run.session_id)
+    if row is None:
+        now = datetime.now(UTC)
+        row = CodingSession(
+            id=run.session_id, workspace_id=run.workspace_id, project_id=run.project_id, issue_id=run.issue_id,
+            agent=run.agent, state=CodingSessionState.IDLE, claude_session=uuid.uuid4(), created_at=now, last_active_at=now,
+        )
+        session.add(row)
+        await session.flush()
+    elif row.state is CodingSessionState.CLOSED:  # a new turn on a closed session opens it again
+        row.state, row.closed_at = CodingSessionState.IDLE, None
+    return row

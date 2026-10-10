@@ -119,6 +119,10 @@ class Settings(DatabaseSettings):
     coding_claude_model: str | None = None  # Claude Code's default when unset
     coding_codex_model: str | None = None  # Codex's default when unset
     coding_timeout_minutes: int = Field(default=30, ge=1, le=240)
+    # A session's sandbox stays up between turns (Phase B) until it's unused this long, at most this
+    # many per workspace (0: never kept; each turn starts fresh and resumes from the saved transcript).
+    coding_idle_minutes: int = Field(default=30, ge=1, le=24 * 60)
+    coding_warm_max: int = Field(default=3, ge=0, le=50)
     # Tokens (input + output) one coding run may use before it's stopped; 0: no limit.
     coding_token_budget: int = Field(default=3_000_000, ge=0)
 

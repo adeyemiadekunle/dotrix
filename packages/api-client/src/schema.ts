@@ -3449,6 +3449,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Coding Session
+         * @description Close a coding session: its sandbox kept between turns and its saved transcript go; its
+         *     branch and PR stay, and a new turn opens it again. Whoever started it, or owners and admins.
+         */
+        post: operations["close_coding_session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision": {
         parameters: {
             query?: never;
@@ -5088,6 +5109,11 @@ export interface components {
             pr_url: string | null;
             pr_state: components["schemas"]["PrState"] | null;
             /**
+             * @description `warm`: its sandbox is up between turns; `idle`: the next turn starts one and resumes; `closed`: done
+             * @default idle
+             */
+            state: components["schemas"]["CodingSessionState"];
+            /**
              * Started At
              * Format: date-time
              */
@@ -5098,6 +5124,11 @@ export interface components {
              */
             updated_at: string;
         };
+        /**
+         * CodingSessionState
+         * @enum {string}
+         */
+        CodingSessionState: "warm" | "idle" | "closed";
         /** CommentCreate */
         CommentCreate: {
             /** Body */
@@ -19167,6 +19198,73 @@ export interface operations {
             };
             /** @description A dependency (such as file storage) is unavailable or not configured */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    close_coding_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

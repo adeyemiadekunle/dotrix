@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .models import CodingAgent, CodingOrigin, CodingRunStatus, PrState
+from .models import CodingAgent, CodingOrigin, CodingRunStatus, CodingSessionState, PrState
 
 
 class CodingAvailability(BaseModel):
@@ -112,5 +112,9 @@ class CodingSessionRead(BaseModel):
     pr_number: int | None
     pr_url: str | None
     pr_state: PrState | None
+    state: CodingSessionState = Field(
+        default=CodingSessionState.IDLE,
+        description="`warm`: its sandbox is up between turns; `idle`: the next turn starts one and resumes; `closed`: done",
+    )
     started_at: datetime
     updated_at: datetime

@@ -27,7 +27,15 @@ from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 
 from .brief import build_brief
-from .models import ACTIVE, CodingOrigin, CodingRun, CodingRunEvent, CodingRunStatus
+from .models import (
+    ACTIVE,
+    CodingOrigin,
+    CodingRun,
+    CodingRunEvent,
+    CodingRunStatus,
+    CodingSession,
+    CodingSessionState,
+)
 from .schemas import (
     CodingAvailability,
     CodingDecision,
@@ -244,6 +252,20 @@ class CodingService:
             next=page[-1].seq if len(rows) > limit else None,
         )
 
+    async def close_session(self, access: ProjectAccess, session_id: uuid.UUID) -> None:
+        """Close a session: its warm sandbox and saved transcript go (the worker drops them); its
+        branch and PR stay. A new turn opens it again. Whoever started it, or owners and admins."""
+        turns = await self._turns(access.project, session_id)
+        if not self._can_stop(turns[0], access):
+            raise Forbidden("Only whoever started the session, or owners and admins, can close it")
+        if any(t.status in ACTIVE for t in turns):
+            raise CodingBusy("A turn is waiting or working: stop it first")
+        row = await self.session.get(CodingSession, session_id)
+        if row is not None and row.workspace_id == access.project.workspace_id and row.state is not CodingSessionState.CLOSED:
+            row.state, row.closed_at = CodingSessionState.CLOSED, datetime.now(UTC)
+            self._audit(access.project, access, "coding.session_closed", turns[-1])
+            await self.session.commit()
+
     async def screenshot(self, access: ProjectAccess, run_id: uuid.UUID, index: int, storage: BlobStorage) -> tuple[bytes, str]:
         """One of the screenshots the agent's browser captured in a turn: its bytes and type."""
         run = await self._get(access.project, run_id)
@@ -268,6 +290,10 @@ class CodingService:
             .limit(MAX_SESSION_RUNS)
         )).all()
         sessions: dict[uuid.UUID, CodingSessionRead] = {}
+        states = dict((await self.session.execute(
+            select(CodingSession.id, CodingSession.state)
+            .where(CodingSession.workspace_id == member.workspace_id, CodingSession.id.in_({r[0].session_id for r in rows}))
+        )).all())
         for run, project_key, project_name, issue_title in rows:  # newest first: the first seen is the latest turn
             found = sessions.get(run.session_id)
             if found is None:
@@ -275,7 +301,8 @@ class CodingService:
                     session_id=run.session_id, project_id=run.project_id, project_key=project_key,
                     project_name=project_name, issue_key=run.issue_key, issue_title=issue_title, agent=run.agent,
                     status=run.status, turns=run.turn, branch=run.branch, pr_number=run.pr_number,
-                    pr_url=run.pr_url, pr_state=run.pr_state, started_at=run.created_at,
+                    pr_url=run.pr_url, pr_state=run.pr_state, state=states.get(run.session_id, CodingSessionState.IDLE),
+                    started_at=run.created_at,
                     updated_at=run.finished_at or run.started_at or run.created_at,
                 )
             else:

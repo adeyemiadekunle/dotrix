@@ -104,6 +104,13 @@ async def get_coding_screenshot(
     return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
 
 
+@router.post("/sessions/{session_id}/close", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 409))
+async def close_coding_session(session_id: uuid.UUID, access: ProjectViewer, coding: Coding) -> None:
+    """Close a coding session: its sandbox kept between turns and its saved transcript go; its
+    branch and PR stay, and a new turn opens it again. Whoever started it, or owners and admins."""
+    await coding.close_session(access, session_id)
+
+
 @router.post("/runs/{coding_run_id}/decision", responses=errors(403, 409))
 async def decide_coding_run(
     coding_run_id: uuid.UUID, data: CodingDecision, access: CodingApprover, coding: Coding

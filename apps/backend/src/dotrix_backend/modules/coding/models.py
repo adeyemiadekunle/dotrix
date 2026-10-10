@@ -54,6 +54,12 @@ class CodingOrigin(enum.StrEnum):
     FOLLOW_UP = "follow_up"  # a follow-up in an existing session
 
 
+class CodingSessionState(enum.StrEnum):
+    WARM = "warm"  # its sandbox is up, between turns
+    IDLE = "idle"  # no sandbox: the next turn starts one and resumes from the saved transcript
+    CLOSED = "closed"  # done (its PR merged or closed, or closed by hand): sandbox and transcript gone
+
+
 class PrState(enum.StrEnum):
     OPEN = "open"
     MERGED = "merged"
@@ -131,3 +137,23 @@ class CodingRunEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     kind: Mapped[str] = mapped_column(String(16))  # step, text, tool, error
     text: Mapped[str] = mapped_column(Text)
+
+
+class CodingSession(WorkspaceScopedMixin, Base):
+    """A coding session (Phase B): an issue's turns, on one branch and PR, with one Claude Code
+    conversation (`claude_session`, resumed each turn from its saved transcript). Its id is its first
+    turn's id, which every turn carries as `session_id`."""
+
+    __tablename__ = "coding_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    issue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
+    agent: Mapped[CodingAgent] = mapped_column(str_enum(CodingAgent, 16))
+    state: Mapped[CodingSessionState] = mapped_column(str_enum(CodingSessionState, 16), default=CodingSessionState.IDLE)
+    claude_session: Mapped[uuid.UUID] = mapped_column(Uuid)  # Claude Code's --session-id / --resume
+    transcript_key: Mapped[str | None] = mapped_column(String(300))  # in storage, encrypted
+    cost_reported: Mapped[float | None] = mapped_column(Numeric(10, 4, asdecimal=False))  # Claude's running total
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
