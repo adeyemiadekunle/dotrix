@@ -1,10 +1,10 @@
 // dotrix's workspace Chat in Gr8r's design (Gr8r has none): conversations grouped by project (and
-// "Across projects"), a new chat with project, agent, and model; replies with what the agent did
+// "All projects"), a new chat with project, agent, and model; replies with what the agent did
 // and the changes it proposes; and the Coding tab, coding sessions with their turns.
 // URL: ?project=KEY&thread=ID, ?tab=coding&session=ID, ?q= (start with a question), ?agent=.
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
-import { continueLimited, decideCoding, followUp, newThread, sendChat, stopCoding } from "../core/agents";
+import { continueLimited, decideCoding, followUp, newThread, sendChat, startCoding, stopCoding } from "../core/agents";
 import { LimitNotice } from "../components/LimitNotice";
 import { openTask } from "../core/actions";
 import { Ic } from "../core/icons";
@@ -18,6 +18,7 @@ import { openDocument } from "./Knowledge";
 import { Av, Empty, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
+import { useAtPicker } from "../components/AtPicker";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const MODELS = ["Gemini 3.8 Flash", "Claude Sonnet 5.5", "Claude Opus 5.5", "GPT-5.5"];
@@ -195,10 +196,29 @@ function Message({ th, i }: { th: Thread; i: number }) {
 
 const MODELS_ICON = "cpu";
 
-function Composer({ placeholder, onSend, agent, setAgent, model, setModel, autoFocus, initial = "", context }: { placeholder: string; onSend: (text: string, agent: string) => void; agent: string; setAgent: (a: string) => void; model?: string; setModel?: (m: string) => void; autoFocus?: boolean; initial?: string; context?: string }) {
+function Pick({ value, onChange, options, label, lead }: { value: string; onChange: (v: string) => void; options: [string, string][]; label: string; lead?: React.ReactNode }) {
+  return (
+    <label className="cpill pick">
+      {lead}
+      <span className="trunc">{options.find(([v]) => v === value)?.[1] ?? value}</span>
+      <Ic n="chevron-down" s={11} />
+      <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
+        {options.map(([v, l]) => (
+          <option key={v} value={v}>
+            {l}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function Composer({ placeholder, onSend, agent, setAgent, model, setModel, autoFocus, initial = "", context, contexts, setContext }: { placeholder: string; onSend: (text: string, agent: string) => void; agent: string; setAgent: (a: string) => void; model?: string; setModel?: (m: string) => void; autoFocus?: boolean; initial?: string; context?: string; contexts?: [string, string][]; setContext?: (v: string) => void }) {
   const [text, setText] = useState(initial);
   const ref = useRef<HTMLTextAreaElement>(null);
   const a = D().agents.find((x) => x.handle === agent);
+  // Typing "@" offers the projects (in a new chat) and the agents.
+  const at = useAtPicker({ text, setText, ref, projects: contexts, project: context, onProject: setContext, agent, onAgent: setAgent });
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
@@ -218,49 +238,41 @@ function Composer({ placeholder, onSend, agent, setAgent, model, setModel, autoF
     setText("");
   };
   return (
+    <div style={{ position: "relative" }}>
     <div className="cbox">
       <textarea
         ref={ref}
         rows={2}
         placeholder={placeholder}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => at.onChange(e.target)}
         onKeyDown={(e) => {
+          if (at.onKeyDown(e)) return;
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             send();
           }
         }}
         aria-label="Message"
+        aria-expanded={at.open}
       />
       <div className="cbox-row">
-        {context && (
-          <span className="cpill" data-tip="What the agents read: the project's documents and board">
-            <Ic n="at-sign" s={12} />
-            {context}
-          </span>
+        {contexts && setContext && context !== undefined ? (
+          <button className="cpill pick" onClick={at.start} aria-label={`Project: ${contexts.find(([v]) => v === context)?.[1]}. Type @ to change it`} data-tip="Type @ to pick another project">
+            <Ic n={context ? "at-sign" : "layers"} s={12} />
+            <span className="trunc">{contexts.find(([v]) => v === context)?.[1]}</span>
+          </button>
+        ) : (
+          context && (
+            <span className="cpill" data-tip="What the agents read: the project's documents and board">
+              <Ic n="at-sign" s={12} />
+              {context}
+            </span>
+          )
         )}
-        <label className="cpill pick">
-          {a && <Face c={a.c} size={16} mood="idle" />}
-          <select value={agent} onChange={(e) => setAgent(e.target.value)} aria-label="Agent">
-            {D().agents.map((x) => (
-              <option key={x.handle} value={x.handle}>
-                {x.name} · {x.role}
-              </option>
-            ))}
-          </select>
-          <Ic n="chevron-down" s={11} />
-        </label>
+        <Pick value={agent} onChange={setAgent} options={D().agents.map((x) => [x.handle, `${x.name} · ${x.role}`])} label="Agent" lead={a && <Face c={a.c} size={16} mood="idle" />} />
         {setModel ? (
-          <label className="cpill pick">
-            <Ic n={MODELS_ICON} s={12} />
-            <select value={model} onChange={(e) => setModel(e.target.value)} aria-label="Model">
-              {MODELS.map((x) => (
-                <option key={x}>{x}</option>
-              ))}
-            </select>
-            <Ic n="chevron-down" s={11} />
-          </label>
+          <Pick value={model ?? MODELS[0]!} onChange={setModel} options={MODELS.map((x) => [x, x])} label="Model" lead={<Ic n={MODELS_ICON} s={12} />} />
         ) : (
           model && (
             <span className="cpill" data-tip="The model is fixed once a conversation starts">
@@ -274,6 +286,8 @@ function Composer({ placeholder, onSend, agent, setAgent, model, setModel, autoF
           <Ic n="arrow-up" s={14} />
         </button>
       </div>
+    </div>
+    {at.menu}
     </div>
   );
 }
@@ -304,7 +318,7 @@ function Conversation({ th }: { th: Thread }) {
         ) : (
           <span className="pillbtn">
             <Ic n="layers" s={13} />
-            {(th.projects ?? []).map((id) => proj(id)?.name).join(", ") || "Across projects"}
+            {(th.projects ?? []).map((id) => proj(id)?.name).join(", ") || "All projects"}
           </span>
         )}
         <span className="chat-faces hide-m" aria-label="Agents in this conversation">
@@ -346,10 +360,10 @@ function Conversation({ th }: { th: Thread }) {
         </div>
       </div>
       <div className="chat-input">
-        <Composer placeholder={`Ask ${agentName(agent)}, or type @ to pick an agent`} agent={agent} setAgent={setAgent} model={th.model} context={p?.name ?? "Across projects"} onSend={(q, a) => sendChat(th, q, a)} autoFocus />
+        <Composer placeholder={`Ask ${agentName(agent)}, or type @ to pick an agent`} agent={agent} setAgent={setAgent} model={th.model} context={p?.name ?? "All projects"} onSend={(q, a) => sendChat(th, q, a)} autoFocus />
         {!th.project && (
           <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
-            <Ic n="lock" s={11} /> Across projects the agents only read; for a change they'll say which project's chat to ask in.
+            <Ic n="lock" s={11} /> In all projects the agents only read; for a change they'll say which project's chat to ask in.
           </div>
         )}
       </div>
@@ -371,36 +385,42 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   };
   const sugg = pid ? SUGGESTIONS : ACROSS;
   return (
-    <div className="chat-scroll" style={{ display: "flex", alignItems: "center" }}>
-      <div className="chat-col" style={{ paddingTop: 40 }}>
-        <h1 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px" }}>
+    <div className="chat-scroll" style={{ display: "flex" }}>
+      <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
+        <h1 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>
           {greeting()}, {me()?.name.split(" ")[0]}
         </h1>
-        <p className="muted" style={{ margin: "0 0 18px" }}>
+        <p className="muted" style={{ margin: "0 0 18px", textAlign: "center" }}>
           Ask the agents about a project: they read its documents and board, and propose changes for you to approve.
         </p>
-        <div className="row" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+        {!pid && (
+        <div className="row" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap", justifyContent: "center" }}>
           <span className="faint" style={{ fontSize: 12 }}>
-            About
+            Projects
           </span>
-          <select className="select" style={{ height: 26, width: "auto", fontSize: 12 }} value={pid} onChange={(e) => setPid(e.target.value)} aria-label="Project">
-            {ps.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-            <option value="">Across projects</option>
-          </select>
-          {!pid &&
-            ps.map((p) => (
+          {ps.map((p) => (
               <label key={p.id} className="badge" style={{ cursor: "pointer", gap: 5 }}>
                 <input type="checkbox" checked={picked.includes(p.id)} onChange={() => setPicked(picked.includes(p.id) ? picked.filter((x) => x !== p.id) : [...picked, p.id])} />
                 {p.name}
               </label>
             ))}
         </div>
-        <Composer key={q} placeholder="Ask anything, or type @ to pick an agent" agent={agent} setAgent={setAgent} model={model} setModel={setModel} context={proj(pid)?.name ?? "Across projects"} onSend={start} autoFocus initial={q} />
-        <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 14 }}>
+        )}
+        <Composer
+          key={q}
+          placeholder="Ask anything, or type @ to pick a project or an agent"
+          agent={agent}
+          setAgent={setAgent}
+          model={model}
+          setModel={setModel}
+          context={pid}
+          contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "All projects"]]}
+          setContext={setPid}
+          onSend={start}
+          autoFocus
+          initial={q}
+        />
+        <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 14, justifyContent: "center" }}>
           {sugg.map(([i, s]) => (
             <button key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={!pid && !picked.length}>
               <Ic n={i!} s={13} />
@@ -408,22 +428,152 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
             </button>
           ))}
         </div>
-        <div className="eyebrow" style={{ margin: "28px 0 6px" }}>
-          The agents
-        </div>
-        <div className="panel" style={{ overflow: "hidden" }}>
-          {D().agents.map((a) => (
-            <button key={a.handle} className="mini" style={{ width: "100%" }} onClick={() => setAgent(a.handle)}>
-              <Face c={a.c} size={26} mood={moodOf(a.handle)} />
-              <span className="tt" style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-                <b style={{ fontWeight: 500 }}>{a.name}</b> <span className="muted" style={{ fontSize: 12 }}>{a.role}</span>{" "}
-                <span className="faint" style={{ fontSize: 12 }}>
-                  {a.desc}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- a new coding session ---------- */
+
+const TOOLS: ["claude-code" | "codex", string][] = [
+  ["claude-code", "Claude Code"],
+  ["codex", "Codex"],
+];
+
+function NewSession({ issue0 }: { issue0: string | null }) {
+  // Issues a tool could work on: open ones in the projects you see, and in an organisation only yours.
+  const ps = new Set(visibleProjects().filter((p) => canSee(p) && !p.archived).map((p) => p.id));
+  const personal = D().ws.kind === "personal";
+  const mine = D().tasks.filter((t) => ps.has(t.project) && !t.archived && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me));
+  const [tid, setTid] = useState(issue0 ? (D().tasks.find((t) => t.key === issue0)?.id ?? "") : "");
+  const [tool, setTool] = useState<"claude-code" | "codex">("claude-code");
+  const [note, setNote] = useState("");
+  const [menu, setMenu] = useState<string | null>(null);
+  const [hl, setHl] = useState(0);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const t = task(tid);
+  const found =
+    menu === null
+      ? []
+      : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes(menu.toLowerCase())).slice(0, 8);
+  const go_ = () => {
+    if (!t) return;
+    const id = startCoding(t, tool, note);
+    if (id) open(`tab=coding&session=${id}`);
+  };
+  const onText = (el: HTMLTextAreaElement) => {
+    setNote(el.value);
+    const m = el.value.slice(0, el.selectionStart).match(/(?:^|\s)[@/]([\w-]*)$/);
+    setMenu(m ? m[1]! : null);
+    setHl(0);
+  };
+  const pick = (id: string) => {
+    setTid(id);
+    setNote(note.replace(/(^|\s)[@/][\w-]*$/, "$1").replace(/\s+$/, ""));
+    setMenu(null);
+    ref.current?.focus();
+  };
+  const ask = () => {
+    setNote(note + (note && !note.endsWith(" ") ? " @" : "@"));
+    setMenu("");
+    setHl(0);
+    ref.current?.focus();
+  };
+  return (
+    <div className="chat-scroll" style={{ display: "flex" }}>
+      <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
+        <h1 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>Start a coding session</h1>
+        <p className="muted" style={{ margin: "0 0 18px", textAlign: "center" }}>
+          A coding tool works on an issue on its own branch and opens a pull request. It starts once someone who may approve agent changes says yes.
+        </p>
+        <div style={{ position: "relative" }}>
+        <div className="cbox">
+          <textarea
+            ref={ref}
+            rows={3}
+            value={note}
+            autoFocus
+            placeholder={t ? `What should it do? It gets ${t.key}'s description and acceptance criteria either way` : `Type @ or / to pick ${personal ? "an issue" : "one of your issues"}, then say what to do`}
+            onChange={(e) => onText(e.target)}
+            onKeyDown={(e) => {
+              if (menu !== null && found.length) {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setHl((hl + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
+                  return;
+                }
+                if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
+                  e.preventDefault();
+                  pick(found[hl]!.id);
+                  return;
+                }
+              }
+              if (e.key === "Escape" && menu !== null) {
+                e.stopPropagation();
+                setMenu(null);
+              }
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) go_();
+            }}
+            aria-label="What should it do"
+            aria-expanded={menu !== null}
+            aria-controls="cs-issues"
+          />
+          <div className="cbox-row">
+            {t ? (
+              <span className="cpill" style={{ color: "var(--text)" }}>
+                <Ic n="square-check" s={12} />
+                <span className="trunc">
+                  {t.key} {t.title}
                 </span>
+                <button className="ibtn ibtn-xs" style={{ width: 16, height: 16, marginRight: -4 }} onClick={() => setTid("")} aria-label={`Remove ${t.key}`}>
+                  <Ic n="x" s={11} />
+                </button>
               </span>
-              {agent === a.handle && <Ic n="check" s={14} />}
+            ) : (
+              <button className="cpill pick" onClick={ask} aria-label="Pick an issue">
+                <Ic n="at-sign" s={12} />
+                Issue
+              </button>
+            )}
+            <div className="seg" role="radiogroup" aria-label="Tool">
+              {TOOLS.map(([id, name]) => (
+                <button key={id} role="radio" aria-checked={tool === id} className={tool === id ? "on" : ""} onClick={() => setTool(id)}>
+                  <Face c={who(`agent:${id}`)?.c ?? "var(--acc)"} size={14} />
+                  {name}
+                </button>
+              ))}
+            </div>
+            <span className="sp" />
+            <span className="faint hide-m" style={{ fontSize: 11 }}>
+              {MOD}+Enter to start
+            </span>
+            <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t}>
+              <Ic n="code" s={13} />
+              Start coding
             </button>
-          ))}
+          </div>
+        </div>
+        {menu !== null && (
+          <div className="pop" id="cs-issues" role="listbox" aria-label="Issues" style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, maxWidth: 520 }}>
+            {found.length ? (
+              found.map((x, i) => (
+                <button key={x.id} role="option" aria-selected={i === hl} className={`mi ${i === hl ? "hl" : ""}`} onMouseEnter={() => setHl(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(x.id)}>
+                  <span className="faint" style={{ fontSize: 12, width: 64, flexShrink: 0 }}>
+                    {x.key}
+                  </span>
+                  <span className="trunc" style={{ flex: 1 }}>
+                    {x.title}
+                  </span>
+                  <span className="r">{proj(x.project)?.name}</span>
+                </button>
+              ))
+            ) : (
+              <div className="faint" style={{ padding: "8px 10px", fontSize: 12.5 }}>
+                {mine.length ? "No issue matches." : personal ? "No open issues." : "No open issues are assigned to you."}
+              </div>
+            )}
+          </div>
+        )}
         </div>
       </div>
     </div>
@@ -438,6 +588,11 @@ function Session({ cs }: { cs: CodingSession }) {
   const [ask, setAsk] = useState("");
   const [label, c] = STATUS[cs.status];
   const busy = cs.status === "awaiting_approval" || cs.status === "running" || cs.status === "queued";
+  // Its details (tool, project, branch, PR) wait behind "⋯", unless you came from its issue or it just started.
+  const fromIssue = new URLSearchParams(location.search).get("from") === "issue";
+  const justStarted = cs.turns.length === 1 && Date.now() - cs.at < 2 * 60_000;
+  const [info, setInfo] = useState(fromIssue || justStarted);
+  useEffect(() => setInfo(fromIssue || justStarted), [cs.id]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
@@ -451,6 +606,15 @@ function Session({ cs }: { cs: CodingSession }) {
           {t.title}
         </b>
         <span className={`badge ${c}`}>{label}</span>
+        <button
+          className={`ibtn ibtn-sm ${info ? "on" : ""}`}
+          onClick={() => setInfo(!info)}
+          aria-label={info ? "Hide the session's details" : "Show the session's details"}
+          aria-expanded={info}
+          data-tip="Details"
+        >
+          <Ic n="ellipsis-vertical" s={15} />
+        </button>
         <span className="sp" />
         <button className="btn btn-sm btn-ghost" onClick={() => openTask(t.id)}>
           <Ic n="panel-right-open" s={14} />
@@ -459,6 +623,7 @@ function Session({ cs }: { cs: CodingSession }) {
       </div>
       <div className="chat-scroll">
         <div className="chat-col">
+          {info && (
           <dl className="kv" style={{ marginBottom: 16 }}>
             <dt>
               <Ic n="bot" s={14} />
@@ -497,6 +662,7 @@ function Session({ cs }: { cs: CodingSession }) {
               )}
             </dd>
           </dl>
+          )}
           {cs.turns.map((turn, i) => (
             <div key={i} style={{ marginBottom: 14 }}>
               <div className="chat-msg user">
@@ -623,29 +789,35 @@ export function Chat() {
       <div className={`chat-grid ${hasSel ? "has-sel" : ""}`}>
         <aside className="chat-side">
           <div style={{ padding: "18px 14px 8px" }} className="row">
-            <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Chat</h1>
+            <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>{coding ? "Code" : "Chat"}</h1>
             <span className="sp" />
-            <button className="btn btn-sm btn-primary" onClick={() => open(coding ? "tab=coding" : "new=1")} disabled={coding}>
-              <Ic n="plus" s={13} />
-              New chat
-            </button>
-          </div>
-          <div style={{ padding: "0 14px 8px" }}>
-            <div className="seg" style={{ width: "100%" }}>
-              <button className={!coding ? "on" : ""} style={{ flex: 1 }} onClick={() => open("")}>
-                <Ic n="message-square" s={13} />
-                Conversations
+            <div className="seg seg-icons" role="tablist" aria-label="Chat or code">
+              <button role="tab" aria-selected={!coding} className={!coding ? "on" : ""} onClick={() => open("")} aria-label="Chat" data-tip="Chat">
+                <Ic n="message-square" s={14} />
               </button>
-              <button className={coding ? "on" : ""} style={{ flex: 1 }} onClick={() => open("tab=coding")}>
-                <Ic n="code" s={13} />
-                Coding
-                {waitingCoding > 0 && <span className="badge amber" style={{ height: 16, padding: "0 5px" }}>{waitingCoding}</span>}
+              <button
+                role="tab"
+                aria-selected={coding}
+                className={coding ? "on" : ""}
+                onClick={() => open("tab=coding")}
+                aria-label={waitingCoding ? `Code, ${waitingCoding} waiting for approval` : "Code"}
+                data-tip="Code"
+              >
+                <Ic n="code" s={14} />
+                {waitingCoding > 0 && <span className="badge amber seg-n">{waitingCoding}</span>}
               </button>
             </div>
-            <div className="inwrap" style={{ marginTop: 8 }}>
+          </div>
+          <div style={{ padding: "0 14px 8px" }}>
+            <div className="inwrap">
               <Ic n="search" s={13} />
               <input className="input search-sm" style={{ width: "100%" }} placeholder={coding ? "Find a session" : "Find a conversation"} value={S.ui.chatQ} onChange={(e) => ((S.ui.chatQ = e.target.value), render())} aria-label="Find" />
             </div>
+            {/* Start something new, under the search: a conversation, or a coding session on the Code tab. */}
+            <button className={`sitem chat-new ${(coding ? !cs : !th && !projectKey && !across) ? "on" : ""}`} onClick={() => open(coding ? "tab=coding" : "new=1")}>
+              <Ic n={coding ? "code" : "square-pen"} s={15} />
+              <span className="trunc">{coding ? "New session" : "New chat"}</span>
+            </button>
           </div>
           <div className="chat-list">
             {coding ? (
@@ -679,7 +851,7 @@ export function Chat() {
                     </Group>
                   );
                 })}
-                <Group title="Across projects" icon={<Ic n="layers" s={12} />} onNew={() => open("across=1")}>
+                <Group title="Conversations" icon={<Ic n="layers" s={12} />} onNew={() => open("across=1")}>
                   {threads
                     .filter((t) => !t.project)
                     .map((t) => (
@@ -695,11 +867,7 @@ export function Chat() {
             cs ? (
               <Session key={cs.id} cs={cs} />
             ) : (
-              <div className="fullstate">
-                <div className="box">
-                  <Empty icon="code" title="Coding sessions" text="Each session is a coding tool working on a task: its turns, its branch, and its pull request. Pick one to follow it or ask for a follow-up." />
-                </div>
-              </div>
+              <NewSession key={search.get("issue") ?? ""} issue0={search.get("issue")} />
             )
           ) : th ? (
             <Conversation key={th.id} th={th} />

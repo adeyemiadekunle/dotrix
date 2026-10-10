@@ -37,8 +37,8 @@ export function Face({ c, size = 20, mood = "idle", label }: { c: string; size?:
       </defs>
       <circle cx="16" cy="16" r="15" fill={`url(#g${id})`} />
       <circle cx="16" cy="16" r="14.5" fill="none" stroke="#000" strokeOpacity=".08" />
-      <path d={EYES[mood]} fill={mood === "needs" || mood === "thinking" ? ink : "none"} stroke={ink} strokeWidth="1.5" strokeLinecap="round" opacity=".85" />
-      <path d={MOUTH[mood]} fill={mood === "needs" ? ink : "none"} stroke={ink} strokeWidth="1.4" strokeLinecap="round" opacity=".8" />
+      <path className="face-eyes" d={EYES[mood]} fill={mood === "needs" || mood === "thinking" ? ink : "none"} stroke={ink} strokeWidth="1.5" strokeLinecap="round" opacity=".85" />
+      <path className="face-mouth" d={MOUTH[mood]} fill={mood === "needs" ? ink : "none"} stroke={ink} strokeWidth="1.4" strokeLinecap="round" opacity=".8" />
     </svg>
   );
 }

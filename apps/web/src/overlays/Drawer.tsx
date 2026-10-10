@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { applyPatch, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
-import { agentsNotWired } from "../core/agents";
+import { agentsNotWired, startCoding } from "../core/agents";
 import { commentDeleted, commentEdited, commentPosted, commentReacted, documentUploaded, isLive, issueFileAttached } from "../data/live";
 import { TY, TYPES } from "../core/constants";
 import { Ic } from "../core/icons";
@@ -100,6 +100,11 @@ export function toggleReaction(c: Comment, e: string) {
     c.re[e] = on ? [...list, D().me] : list.filter((x) => x !== D().me);
   });
   commentReacted(c, e, on);
+}
+/** Leave the issue for Chat: the drawer closes so the session is in view at once. */
+function openInChat(search: string) {
+  closeDrawer();
+  go("chat", {}, { search });
 }
 export function CommentItem({ c }: { c: Comment }) {
   const w = who(c.by);
@@ -505,12 +510,8 @@ function CodingSection({ t }: { t: Task }) {
   const latest = sessions[0];
   const start = (tool: "claude-code" | "codex") => {
     S.ui.pop = null;
-    if (agentsNotWired()) return;
-    mutate(() => {
-      D().coding.unshift({ id: uid("cs"), project: t.project, task: t.id, tool, status: "awaiting_approval", by: D().me, at: Date.now(), turns: [{ at: Date.now(), ask: t.title, events: [] }] });
-      D().notifs.unshift({ id: uid("n"), type: "approval", by: `agent:${tool}`, project: t.project, task: t.id, text: "is waiting to start coding", snippet: `${t.key} ${t.title}`, at: Date.now(), read: false });
-    });
-    toast(`${tool === "codex" ? "Codex" : "Claude Code"} will start once someone approves`, { action: "Open Chat", onAction: () => go("chat", {}, { search: "tab=coding" }) });
+    if (!startCoding(t, tool)) return;
+    toast(`${tool === "codex" ? "Codex" : "Claude Code"} will start once someone approves`, { action: "Open Chat", onAction: () => openInChat("tab=coding") });
   };
   const label: Record<string, [string, string]> = {
     awaiting_approval: ["Waiting for approval", "amber"],
@@ -557,7 +558,7 @@ function CodingSection({ t }: { t: Task }) {
                 PR #{latest.pr.number} · {latest.pr.state}
               </a>
             )}
-            <button className="btn btn-sm btn-ghost" onClick={() => go("chat", {}, { search: `tab=coding&session=${latest.id}` })}>
+            <button className="btn btn-sm btn-ghost" onClick={() => openInChat(`tab=coding&session=${latest.id}&from=issue`)}>
               <Ic n="arrow-up-right" s={13} />
               Open the session
             </button>
