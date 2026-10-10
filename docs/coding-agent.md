@@ -301,7 +301,15 @@ Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
 - The web's Code tab wired to the API (with Chat).
 
 **Phase D: running apps and MCP.**
-- The dotrix MCP server through the proxy with a per-turn credential; Playwright MCP in the sandbox.
+- [x] The agent's browser (2026-10-10): Playwright MCP (`playwright-mcp`, Playwright's Chromium) in the
+  coding image, given with `--mcp-config` and `--strict-mcp-config` on the Docker and OpenShell
+  sandboxes (not the local one), its tools pre-allowed, its actions as steps ("Opened … in the browser",
+  "Clicked …", "Took a screenshot"), a browser that didn't start said in the session. Checked on
+  `kunemi-group/dotrix-test` with Haiku: the agent served the page, clicked through it, took a
+  screenshot, and PR #2 opened ($0.004).
+- [ ] Screenshots to the person: copy `/tmp/playwright` out of the sandbox after a turn into storage, and
+  show them in the turn.
+- The dotrix MCP server through the proxy with a per-turn credential.
 - The supervisor and Background tasks; the Browser tab's preview through the platform.
 - Registries and the preview port: the Docker egress allowlist and OpenShell's policy.
 

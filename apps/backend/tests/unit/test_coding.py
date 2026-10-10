@@ -161,3 +161,30 @@ def test_the_agent_gets_files_exactly_as_committed(tmp_path) -> None:
         assert (tmp_path / "copy" / "a.py").read_bytes() == b"x = 1\ny = 2\n"
 
     asyncio.run(check())
+
+
+def test_claude_code_gets_a_browser_only_from_the_platform() -> None:
+    plain = ClaudeCode().command("claude-haiku-5-5")
+    assert "--strict-mcp-config" in plain and "--mcp-config" not in plain  # never a repo's MCP servers
+    with_browser = ClaudeCode().command("claude-haiku-5-5", browser=True)
+    config = json.loads(with_browser[with_browser.index("--mcp-config") + 1])
+    assert list(config["mcpServers"]) == ["browser"] and config["mcpServers"]["browser"]["command"] == "playwright-mcp"
+    assert "--headless" in config["mcpServers"]["browser"]["args"]
+    assert "mcp__browser" in with_browser[with_browser.index("--allowedTools") + 1]
+
+
+def test_the_browser_s_steps_read_like_the_rest() -> None:
+    tool, usage = ClaudeCode(), Usage()
+    started = tool.parse(json.dumps({"type": "system", "subtype": "init", "model": "claude-haiku-5-5",
+                                     "mcp_servers": [{"name": "browser", "status": "failed"}]}), usage)
+    assert [s.text for s in started.steps] == ["Claude Code started (claude-haiku-5-5)", "The browser didn't start (failed)"]
+    calls = [
+        ("mcp__browser__browser_navigate", {"url": "http://localhost:8080/"}),
+        ("mcp__browser__browser_click", {"element": "Subtract button", "ref": "e4"}),
+        ("mcp__browser__browser_take_screenshot", {}),
+        ("mcp__browser__browser_resize", {"width": 400}),
+    ]
+    line = json.dumps({"type": "assistant", "message": {"id": "m1", "content": [
+        {"type": "tool_use", "name": name, "input": args} for name, args in calls]}})
+    assert [s.text for s in tool.parse(line, usage).steps] == [
+        "Opened http://localhost:8080/ in the browser", "Clicked Subtract button", "Took a screenshot", "Used the browser (resize)"]
