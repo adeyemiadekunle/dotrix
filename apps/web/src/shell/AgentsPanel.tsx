@@ -1,7 +1,7 @@
-// The agents panel (after Orbit's): on the right of every page, who needs you, who is working
-// and on what, and who is free, each with a face and a "now" line; today's replies and tokens
-// at the foot. Open by default on wide screens (Settings keep it per browser), a sheet on
-// narrower ones. A row opens where that agent's work is: its conversation, its coding
+// The agents panel (after Orbit's): who needs you, who is working and on what, and who is free,
+// each with a face and a "now" line; today's replies and tokens at the foot. On Home, on wide
+// screens, it is a full-height column (open by default, kept per browser); everywhere else it opens
+// shorter, at the bottom right, over the page. A row opens where that agent's work is: its conversation, its coding
 // session, or a new chat with it.
 import { Ic } from "../core/icons";
 import { go } from "../core/nav";
@@ -12,9 +12,14 @@ import { Face } from "../ui/face";
 const WIDE = "(min-width: 1200px)";
 export const panelWide = () => typeof window !== "undefined" && window.matchMedia(WIDE).matches;
 
-/** The top bar's button: the panel on wide screens (remembered), the sheet otherwise. */
+/** Home (`/w/{workspace}`): the only page where the panel is a column of its own. */
+const onHome = () => /^\/w\/[^/]+\/?$/.test(location.pathname);
+/** The panel as a full-height column (Home on a wide screen), not the short one at the bottom right. */
+export const panelColumn = () => panelWide() && onHome();
+
+/** The top bar's button: the column on Home (remembered), the short panel elsewhere. */
 export function toggleAgents() {
-  if (panelWide()) {
+  if (panelColumn()) {
     S.prefs.agentsPanel = !S.prefs.agentsPanel;
     save();
   } else S.ui.agentsSheet = !S.ui.agentsSheet;
@@ -23,7 +28,7 @@ export function toggleAgents() {
 /** Chat's Code tab: the right side holds the session's own panels, so no agents panel there
  * (the bell and the corner notices still say what needs you). */
 export const inCodeTab = () => /\/chat\/?$/.test(location.pathname) && new URLSearchParams(location.search).get("tab") === "coding";
-export const agentsShown = () => !inCodeTab() && (panelWide() ? S.prefs.agentsPanel : S.ui.agentsSheet);
+export const agentsShown = () => !inCodeTab() && (panelColumn() ? S.prefs.agentsPanel : S.ui.agentsSheet);
 
 const LABEL: Record<Presence["state"], string> = { needs: "Needs you", working: "Working", blocked: "Blocked", idle: "Idle" };
 
@@ -96,7 +101,7 @@ export function AgentsPanel() {
   const t = today();
   const admin = me()?.role === "Owner" || me()?.role === "Admin";
   return (
-    <aside className="agents-panel" aria-label="Agents">
+    <aside className={`agents-panel ${panelColumn() ? "" : "sheet"}`} aria-label="Agents">
       <div className="ap-h">
         <b>Agents</b>
         <span className="faint">

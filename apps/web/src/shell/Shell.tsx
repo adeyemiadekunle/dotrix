@@ -16,7 +16,7 @@ import type { NotifType } from "../data/types";
 import { Av } from "../ui/helpers";
 import { PopLayer } from "../overlays/PopLayer";
 import { Toasts } from "../ui/toast";
-import { AgentsPanel, agentsShown, inCodeTab, panelWide, toggleAgents } from "./AgentsPanel";
+import { AgentsPanel, agentsShown, inCodeTab, panelColumn, toggleAgents } from "./AgentsPanel";
 import { Notices } from "./Notices";
 
 export const PEOPLE_ITEMS: NotifType[] = ["mention", "assign", "comment"];
@@ -116,7 +116,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <a className="skip" href="#main-content">
         Skip to content
       </a>
-      <div className={`shell ${sideCollapsed() ? "collapsed" : ""} ${u.mnav ? "mnav" : ""} ${agentsShown() ? "with-agents" : ""}`}>
+      <div className={`shell ${sideCollapsed() ? "collapsed" : ""} ${u.mnav ? "mnav" : ""} ${agentsShown() && panelColumn() ? "with-agents" : ""}`}>
         <Sidebar />
         <SideTip />
         {u.mnav && <div className="side-scrim" onClick={() => ((S.ui.mnav = false), render())} />}
@@ -140,7 +140,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </main>
         {agentsShown() && (
           <>
-            {!panelWide() && <div className="agents-scrim" onClick={() => ((S.ui.agentsSheet = false), rerender())} />}
+            {!panelColumn() && <div className="agents-scrim" onClick={() => ((S.ui.agentsSheet = false), rerender())} />}
             <AgentsPanel />
           </>
         )}
