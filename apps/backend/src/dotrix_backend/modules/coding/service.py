@@ -11,6 +11,7 @@ from uuid_utils.compat import uuid7
 from dotrix_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from dotrix_backend.core.jobs import Jobs
 from dotrix_backend.core.settings import Settings
+from dotrix_backend.core.storage import BlobStorage
 from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.connectors.github_app import GitHubAppClient
@@ -34,6 +35,7 @@ from .schemas import (
     CodingFollowUp,
     CodingRunCreate,
     CodingRunRead,
+    CodingScreenshot,
     CodingSessionRead,
 )
 from .tools import choose_agent, model_for
@@ -226,6 +228,14 @@ class CodingService:
     async def get(self, access: ProjectAccess, run_id: uuid.UUID) -> CodingRunRead:
         return self._read(await self._get(access.project, run_id), access)
 
+    async def screenshot(self, access: ProjectAccess, run_id: uuid.UUID, index: int, storage: BlobStorage) -> tuple[bytes, str]:
+        """One of the screenshots the agent's browser captured in a turn: its bytes and type."""
+        run = await self._get(access.project, run_id)
+        shots = list(run.screenshots or [])
+        if not 0 <= index < len(shots):
+            raise NotFound("Screenshot not found")
+        return await storage.get(shots[index]["key"]), shots[index]["content_type"]
+
     async def session_turns(self, access: ProjectAccess, session_id: uuid.UUID) -> list[CodingRunRead]:
         """A session's turns, first to latest."""
         return [self._read(run, access) for run in await self._turns(access.project, session_id)]
@@ -294,6 +304,10 @@ class CodingService:
             status=run.status, brief=run.brief, note=run.note, repo_full_name=run.repo_full_name,
             base_branch=run.base_branch, base_sha=run.base_sha, branch=run.branch, commit_sha=run.commit_sha,
             pr_number=run.pr_number, pr_url=run.pr_url, files_changed=list(run.files_changed or []),
+            screenshots=[
+                CodingScreenshot(index=i, name=s["name"], size=s["size"], content_type=s["content_type"])
+                for i, s in enumerate(run.screenshots or [])
+            ],
             events=[CodingEvent.model_validate(e) for e in run.events or []], summary=run.summary, error=run.error,
             input_tokens=run.input_tokens if usage else None, output_tokens=run.output_tokens if usage else None,
             cost_usd=run.cost_usd if usage else None, requested_by_id=run.requested_by_id,

@@ -13,8 +13,11 @@ The sandbox and the temporary folders are deleted whatever happens.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import logging
 import re
+import shlex
 import tarfile
 import tempfile
 import time
@@ -23,7 +26,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from sqlalchemy import select
@@ -31,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.errors import DomainError
 from dotrix_backend.core.settings import Settings
+from dotrix_backend.core.storage import BlobStorage
 from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.auth.github import GitHubUnavailable
@@ -58,6 +62,11 @@ from .tools import BROWSER_RULE, TOOLS, Usage, model_for, model_key
 logger = logging.getLogger(__name__)
 
 MAX_EVENTS = 300
+# The agent's screenshots kept per turn: the newest images it left under /tmp (Playwright MCP's
+# output folder, or where it saved one), each at most this many bytes.
+SHOTS_MAX = 8
+SHOT_BYTES = 3_000_000
+SHOTS_LIST = "ls -1t /tmp/playwright/*.png /tmp/playwright/*.jpg /tmp/playwright/*.jpeg /tmp/*.png /tmp/*.jpg 2>/dev/null | head -n 8"
 FLUSH_SECONDS = 2.0
 STOP_POLL_SECONDS = 3.0
 FETCH_TIMEOUT = 300
@@ -103,6 +112,7 @@ class CodingWorker:
     app: GitHubApp | None
     repo_url: RepoUrl = github_url
     reviewer: Any = None  # the agent runner, to have the Reviewer look at the PR
+    storage: BlobStorage | None = None  # where the agent's screenshots go (none: they stay in the sandbox)
 
     async def execute(self, run_id: uuid.UUID) -> None:
         async with self.session_factory() as session:
@@ -183,6 +193,7 @@ class CodingWorker:
         try:
             await self._update(run_id, step=f"Sandbox ready ({self.sandbox.kind}); {NAMES[agent.value]} is working")
             summary = await self._code(run_id, session_box, tool, brief)
+            await self._screenshots(run_id, session_box)
             changes = await session_box.exec(
                 ["sh", "-c", "git add -A && git -c core.quotepath=off diff --cached --binary --no-color "
                  f"--no-ext-diff --no-textconv --no-renames {baseline}"],
@@ -307,6 +318,48 @@ class CodingWorker:
             detail = failed or (result.stderr.strip().splitlines() or [f"exit code {result.code}"])[-1]
             raise RunFailed(f"{NAMES[tool.agent.value]} didn't finish: {detail[:500]}")
         return summary
+
+    async def _screenshots(self, run_id: uuid.UUID, box: SandboxSession) -> None:
+        """Keep what the agent's browser captured: the newest images under /tmp in the sandbox, into
+        storage, listed on the run. Never on the local sandbox (its /tmp is this machine's). A failure
+        here never fails the run."""
+        if self.storage is None or self.sandbox is None or self.sandbox.kind == "local":
+            return
+        try:
+            listed = await box.exec(["sh", "-c", SHOTS_LIST], timeout=30)
+            paths = [line.strip() for line in listed.stdout.splitlines() if line.strip()][:SHOTS_MAX]
+            if not paths:
+                return
+            async with self.session_factory() as session:
+                run = await session.get(CodingRun, run_id)
+                workspace_id = run.workspace_id if run else None
+            if workspace_id is None:
+                return
+            shots: list[dict[str, Any]] = []
+            seen: set[str] = set()  # the same image saved twice (/tmp and /tmp/playwright) is kept once
+            for path in paths:
+                got = await box.exec(["sh", "-c", f"[ $(stat -c %s {shlex.quote(path)}) -le {SHOT_BYTES} ] && base64 -w0 {shlex.quote(path)}"],
+                                     timeout=60)
+                if got.code != 0 or not got.stdout.strip():
+                    continue
+                data = base64.b64decode(got.stdout.strip())
+                kind = "image/png" if data.startswith(b"\x89PNG") else "image/jpeg" if data.startswith(b"\xff\xd8") else None
+                digest = hashlib.sha256(data).hexdigest()
+                if kind is None or digest in seen:  # images only, whatever the name says; each once
+                    continue
+                seen.add(digest)
+                key = f"coding/{workspace_id}/{run_id}/{len(shots)}"
+                await self.storage.put(key, data, kind)
+                shots.append({"key": key, "name": PurePosixPath(path).name[:120], "size": len(data), "content_type": kind})
+            if shots:
+                async with self.session_factory() as session:
+                    run = await session.get(CodingRun, run_id)
+                    if run is not None:
+                        run.screenshots = shots
+                        await session.commit()
+                await self._update(run_id, step=f"Kept {len(shots)} screenshot{'s' if len(shots) != 1 else ''} from the browser")
+        except Exception:
+            logger.warning("coding run %s: couldn't keep the screenshots", run_id, exc_info=True)
 
     async def stop_requested(self, run_id: uuid.UUID) -> bool:
         async with self.session_factory() as session:
@@ -460,7 +513,8 @@ def _pr_body(summary: str | None, key: str, run_id: uuid.UUID, agent: str, files
 
 
 def build_coding_worker(
-    settings: Settings, session_factory: Callable[[], AbstractAsyncContextManager[AsyncSession]], reviewer: Any = None
+    settings: Settings, session_factory: Callable[[], AbstractAsyncContextManager[AsyncSession]], reviewer: Any = None,
+    storage: BlobStorage | None = None,
 ) -> CodingWorker | None:
     """The coding worker for the process that runs agents (None: coding runs are off)."""
     from dotrix_backend.modules.connectors.github_app import GitHubAppClient
@@ -471,7 +525,7 @@ def build_coding_worker(
     if sandbox is None:
         return None
     app = GitHubAppClient(settings)
-    return CodingWorker(session_factory, settings, sandbox, app if app.configured else None, reviewer=reviewer)
+    return CodingWorker(session_factory, settings, sandbox, app if app.configured else None, reviewer=reviewer, storage=storage)
 
 
 async def end_cut_off_runs(session: AsyncSession, settings: Settings, *, everything: bool = False) -> int:

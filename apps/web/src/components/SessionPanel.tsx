@@ -174,6 +174,7 @@ function Changes({ cs }: { cs: CodingSession }) {
 function Browser({ cs, onOpen }: { cs: CodingSession; onOpen: (p: Pane) => void }) {
   const server = (cs.tasks ?? []).find((t) => t.port && t.status === "running");
   const [path, setPath] = useState(cs.preview?.path ?? "/");
+  const lastShot = cs.turns.flatMap((t) => t.shots ?? []).at(-1);
   return (
     <>
       <div className="row cs-url">
@@ -202,6 +203,13 @@ function Browser({ cs, onOpen }: { cs: CodingSession; onOpen: (p: Pane) => void 
             {server.name} on :{server.port}, served through the platform (never an open port)
           </span>
         </div>
+      ) : lastShot ? (
+        <figure className="cs-lastshot">
+          <img src={lastShot.src} alt={`The agent's last screenshot: ${lastShot.name}`} />
+          <figcaption className="faint">
+            The agent's last screenshot ({lastShot.name}). The live app shows here once a dev server runs in a sandbox that stays up.
+          </figcaption>
+        </figure>
       ) : (
         <Note>
           The agent's app shows here once a dev server runs in the sandbox.{" "}

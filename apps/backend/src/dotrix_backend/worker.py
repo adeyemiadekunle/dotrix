@@ -62,9 +62,10 @@ async def startup(ctx: dict[str, Any]) -> None:
         session_factory=sessionmaker, checkpointer=checkpointer, model_factory=settings_model_factory(settings),
         queue=RunQueue(redis), secrets=Secrets.from_settings(settings),
     )
+    storage = build_storage(settings)
     ctx["jobs"] = JobContext(
-        sessionmaker, settings, build_email_sender(settings), build_storage(settings), embedder, checkouts,
-        runner=dispatcher, coding=build_coding_worker(settings, sessionmaker, dispatcher),
+        sessionmaker, settings, build_email_sender(settings), storage, embedder, checkouts,
+        runner=dispatcher, coding=build_coding_worker(settings, sessionmaker, dispatcher, storage),
     )
     ctx["runner"] = AgentRunner(
         session_factory=sessionmaker,

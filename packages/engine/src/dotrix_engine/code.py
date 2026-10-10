@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import subprocess
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
@@ -48,18 +49,26 @@ class CodeError(Exception):
 
 async def git(root: Path, *args: str, timeout: float = GIT_TIMEOUT) -> str:
     """Run a read-only git command in the checkout; its output as text."""
-    process = await asyncio.create_subprocess_exec(
-        "git", "-C", str(root), *args,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"},
-    )
+    argv = ["git", "-C", str(root), *args]
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"}
     try:
-        out, err = await asyncio.wait_for(process.communicate(), timeout)
-    except TimeoutError as exc:
-        process.kill()
-        raise CodeError("That took too long; narrow it down") from exc
+        process = await asyncio.create_subprocess_exec(*argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env)
+    except NotImplementedError:
+        # Windows' selector loop (the platform uses it there, for psycopg) can't start subprocesses: in a thread.
+        try:
+            done = await asyncio.to_thread(subprocess.run, argv, env=env, capture_output=True, timeout=timeout, check=False)
+        except subprocess.TimeoutExpired as exc:
+            raise CodeError("That took too long; narrow it down") from exc
+        returncode, out, err = done.returncode, done.stdout, done.stderr
+    else:
+        try:
+            out, err = await asyncio.wait_for(process.communicate(), timeout)
+        except TimeoutError as exc:
+            process.kill()
+            raise CodeError("That took too long; narrow it down") from exc
+        returncode = process.returncode
     # git grep exits 1 when nothing matches.
-    if process.returncode not in (0, 1):
+    if returncode not in (0, 1):
         raise CodeError(err.decode(errors="replace").strip().splitlines()[-1] if err else "git failed")
     return out.decode(errors="replace")
 

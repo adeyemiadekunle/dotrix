@@ -17231,6 +17231,111 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/screenshots/{index}": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Get Coding Screenshot",
+        "description": "A screenshot the agent's browser captured in a coding run (the run lists them). Anyone who sees the project.",
+        "operationId": "get_coding_screenshot",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "coding_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Coding Run Id"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Index"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The image",
+            "content": {
+              "image/png": {},
+              "image/jpeg": {}
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision": {
       "post": {
         "tags": [
@@ -22046,6 +22151,14 @@
             "type": "array",
             "title": "Files Changed"
           },
+          "screenshots": {
+            "items": {
+              "$ref": "#/components/schemas/CodingScreenshot"
+            },
+            "type": "array",
+            "title": "Screenshots",
+            "description": "What the agent's browser captured in this turn"
+          },
           "events": {
             "items": {
               "$ref": "#/components/schemas/CodingEvent"
@@ -22278,6 +22391,35 @@
           "stopped"
         ],
         "title": "CodingRunStatus"
+      },
+      "CodingScreenshot": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index",
+            "description": "Its place in the run's list; GET .../screenshots/{index} returns the image"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "name",
+          "size",
+          "content_type"
+        ],
+        "title": "CodingScreenshot"
       },
       "CodingSessionRead": {
         "properties": {

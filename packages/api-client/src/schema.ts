@@ -3408,6 +3408,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/screenshots/{index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coding Screenshot
+         * @description A screenshot the agent's browser captured in a coding run (the run lists them). Anyone who sees the project.
+         */
+        get: operations["get_coding_screenshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision": {
         parameters: {
             query?: never;
@@ -4893,6 +4913,11 @@ export interface components {
             files_changed: {
                 [key: string]: unknown;
             }[];
+            /**
+             * Screenshots
+             * @description What the agent's browser captured in this turn
+             */
+            screenshots?: components["schemas"]["CodingScreenshot"][];
             /** Events */
             events: components["schemas"]["CodingEvent"][];
             /**
@@ -4954,6 +4979,20 @@ export interface components {
          * @enum {string}
          */
         CodingRunStatus: "awaiting_approval" | "rejected" | "queued" | "running" | "pr_opened" | "no_changes" | "failed" | "stopped";
+        /** CodingScreenshot */
+        CodingScreenshot: {
+            /**
+             * Index
+             * @description Its place in the run's list; GET .../screenshots/{index} returns the image
+             */
+            index: number;
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
+            /** Content Type */
+            content_type: string;
+        };
         /**
          * CodingSessionRead
          * @description A coding session: a run and its follow-ups, on one branch and one PR. Its status is its latest turn's.
@@ -18951,6 +18990,68 @@ export interface operations {
             };
             /** @description Validation Error */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_coding_screenshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coding_run_id: string;
+                index: number;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                    "image/jpeg": unknown;
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

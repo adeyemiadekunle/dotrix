@@ -2,6 +2,7 @@
 opened as a PR. GitHub's API is faked (conftest.FakeGitHub), the repo is a local git repo, and the
 "sandbox" is the local one with a scripted Claude Code in place of the real CLI."""
 import asyncio
+import base64
 import dataclasses
 import json
 import subprocess
@@ -12,7 +13,7 @@ import pytest
 from httpx import AsyncClient
 from pydantic import SecretStr
 
-from dotrix_backend.modules.coding.runner import CodingWorker
+from dotrix_backend.modules.coding.runner import SHOTS_LIST, CodingWorker
 from dotrix_backend.modules.coding.sandbox import ExecResult, LocalSandbox, LocalSession
 from dotrix_backend.modules.connectors.github_app import get_github_app
 
@@ -401,3 +402,50 @@ async def test_a_merged_pr_is_recorded_on_the_session_and_the_issue(
     issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=ada.headers)).json()
     assert issue["status"] == "review"  # a person closes it
     assert any(e.get("body") == f"PR #{run['pr_number']} was merged on GitHub" for e in issue["log"])
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 40
+
+
+class ShootingSession(ScriptedSession):
+    """A sandbox where the agent's browser left a screenshot, a copy of it, and a file that only looks like one."""
+
+    async def exec(self, argv, *, stdin=None, on_line=None, timeout, cancel=None) -> ExecResult:
+        if argv[:2] == ["sh", "-c"] and argv[2] == SHOTS_LIST:
+            return ExecResult(code=0, stdout="/tmp/playwright/page-subtract.png\n/tmp/page-subtract.png\n/tmp/notes.png\n", stderr="")
+        if argv[:2] == ["sh", "-c"] and "base64 -w0" in argv[2]:
+            data = PNG if "page-subtract.png" in argv[2] else b"not an image at all"
+            return ExecResult(code=0, stdout=base64.b64encode(data).decode(), stderr="")
+        return await super().exec(argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=cancel)
+
+
+class ShootingSandbox(ScriptedSandbox):
+    kind = "docker"  # screenshots are kept from the coding image's sandboxes, never the local one
+
+    async def open(self, run_id, source, tool, model_key):
+        session = await super().open(run_id, source, tool, model_key)
+        return ShootingSession(session.root, session.env, self.agent)
+
+
+async def test_the_agent_s_screenshots_are_kept_and_shown(
+    db_client: AsyncClient, coding, claude: ScriptedClaude, agent_script, storage
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    jobs = app.state.jobs
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(jobs.ctx.coding, sandbox=ShootingSandbox(claude), storage=storage))
+    base = f"{ws}/projects/{kun['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"title": "Add a Subtract button"})).json()
+    run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={}, headers=ada.headers)).json()
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def subtract(self): ...\n"}
+    agent_script.say("Looks right.")
+    done = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    assert done.status_code == 200, done.text
+    run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).json()
+    assert run["status"] == "pr_opened", run.get("error")
+    # Images only, whatever the name says, and each once; listed on the run, served to anyone who sees the project.
+    assert run["screenshots"] == [{"index": 0, "name": "page-subtract.png", "size": len(PNG), "content_type": "image/png"}]
+    assert any(e["text"] == "Kept 1 screenshot from the browser" for e in run["events"])
+    shot = await db_client.get(f"{base}/coding/runs/{run['id']}/screenshots/0", headers=cat.headers)
+    assert shot.status_code == 200 and shot.content == PNG and shot.headers["content-type"] == "image/png"
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}/screenshots/1", headers=cat.headers)).status_code == 404

@@ -120,7 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # Jobs that start agent runs (automations, the Reviewer after a coding run) need the
                 # runner, made just above.
                 app.state.jobs.ctx = dataclasses.replace(
-                    job_context, runner=runner, coding=build_coding_worker(settings, sessionmaker, runner)
+                    job_context, runner=runner, coding=build_coding_worker(settings, sessionmaker, runner, app.state.storage)
                 )
             loops: list[asyncio.Task[None]] = []
             if local_jobs is not None:

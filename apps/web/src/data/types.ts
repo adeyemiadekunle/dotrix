@@ -260,7 +260,8 @@ export interface CodingSession {
   tasks?: { id: string; name: string; cmd: string; status: "running" | "done" | "failed" | "stopped"; port?: number }[];
   preview?: { path: string };
   pr?: { number: number; state: "open" | "merged" | "closed"; url: string };
-  turns: { at: number; ask: string; summary?: string; events: string[] }[];
+  /** Each turn: what was asked, what the agent did, and what its browser captured (screenshots). */
+  turns: { at: number; ask: string; summary?: string; events: string[]; shots?: { src: string; name: string }[] }[];
 }
 export interface AuditEvent {
   id: string;
