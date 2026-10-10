@@ -51,9 +51,9 @@ from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
 from . import guard
-from .models import CodingRun, CodingRunStatus, PrState
+from .models import CodingAgent, CodingRun, CodingRunStatus, PrState
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
-from .tools import TOOLS, Usage, model_for, model_key
+from .tools import BROWSER_RULE, TOOLS, Usage, model_for, model_key
 
 logger = logging.getLogger(__name__)
 
@@ -285,10 +285,13 @@ class CodingWorker:
                     stop_reason.append("Stopped by a person")
                     cancel.set()
 
+        # The browser comes with the coding image: the Docker and OpenShell sandboxes, not the local one.
+        browser = self.sandbox is not None and self.sandbox.kind != "local" and tool.agent == CodingAgent.CLAUDE_CODE
         watcher = asyncio.create_task(watch_stop())
         try:
             result = await box.exec(
-                tool.command(model_for(self.settings, tool.agent)), stdin=brief.encode(), on_line=on_line,
+                tool.command(model_for(self.settings, tool.agent), browser=browser),
+                stdin=(brief + (BROWSER_RULE if browser else "")).encode(), on_line=on_line,
                 timeout=self.settings.coding_timeout_minutes * 60, cancel=cancel,
             )
         finally:

@@ -429,8 +429,10 @@ class DockerSandbox:
             await self.cli("network", "connect", "--alias", "egress", name, f"{name}-egress")
             # The agent's environment: the proxy, and the key (passed by name from ours, never on argv).
             proxy = f"http://egress:{EGRESS_PORT}"
+            # localhost stays local: the agent's own dev server, opened by its browser.
             env = {tool.key_env: model_key, "HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "https_proxy": proxy,
-                   "http_proxy": proxy, "HOME": DOCKER_HOME, "LANG": "C.UTF-8"}
+                   "http_proxy": proxy, "NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1",
+                   "HOME": DOCKER_HOME, "LANG": "C.UTF-8"}
             if tool.key_env == "OPENAI_API_KEY":
                 env["CODEX_API_KEY"] = model_key  # what `codex exec` reads
             if os.environ.get(tool.base_url_env):

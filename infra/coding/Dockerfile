@@ -12,6 +12,15 @@ FROM node:22-bookworm
 # the model APIs (see dotrix-claude-code.yaml and dotrix-codex.yaml).
 RUN npm install -g @anthropic-ai/claude-code @openai/codex && claude --version && codex --version
 
+# A browser for the agent (the platform passes it as an MCP server, `playwright-mcp`): Playwright's
+# Chromium, headless, in a shared folder the unprivileged user can run. It opens the app the agent
+# serves on localhost inside the sandbox; the sandbox's network rules still apply to everything else.
+ARG PLAYWRIGHT_MCP_VERSION=0.0.83
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN npm install -g @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} \
+  && cd "$(npm root -g)/@playwright/mcp" && npx --no-install playwright install --with-deps chromium \
+  && chmod -R a+rX /opt/ms-playwright && playwright-mcp --version
+
 # The Docker sandbox's way out (DOTRIX_CODING_SANDBOX=docker): run from this image in a container
 # of its own, it lets the agent reach the model API and nothing else.
 COPY egress-proxy.mjs /opt/dotrix/egress-proxy.mjs

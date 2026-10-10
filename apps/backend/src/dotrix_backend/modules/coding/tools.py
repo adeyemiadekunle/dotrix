@@ -20,6 +20,26 @@ from .models import CodingAgent
 MAX_STEP = 300  # characters of one step shown on the run page
 CLAUDE_TOOLS = "Read,Edit,Write,MultiEdit,Glob,Grep,Bash,TodoWrite"
 
+# The agent's browser: Playwright MCP in the sandbox (infra/coding/Dockerfile), headless Chromium with
+# its profile in memory. It opens what the agent serves on localhost; the sandbox's network rules apply
+# to everything else. Only the platform's MCP servers load (--strict-mcp-config), never a repo's.
+BROWSER_SERVER = "browser"
+BROWSER_MCP = {
+    "mcpServers": {
+        BROWSER_SERVER: {
+            "command": "playwright-mcp",
+            "args": ["--headless", "--isolated", "--browser", "chromium", "--no-sandbox", "--output-dir", "/tmp/playwright"],
+        }
+    }
+}
+BROWSER_RULE = """\
+- You have a headless browser (the `browser` tools). When the change shows in a web page, start
+  the app's dev server in the background on localhost (for example `python3 -m http.server 8080 &`
+  for static files, or the project's dev script), open it, check the change works, and take a
+  screenshot of it. Save screenshots under /tmp, never in the repository, and stop the server when
+  you're done. Pages outside this machine can't be reached, and that's expected.
+"""
+
 
 @dataclass(frozen=True)
 class Step:
@@ -54,7 +74,7 @@ class CodingTool(Protocol):
     api_host: str  # where its model API is (the Docker sandbox lets it through, nothing else)
     base_url_env: str  # a proxy in front of the provider, when this is set
 
-    def command(self, model: str | None) -> list[str]: ...
+    def command(self, model: str | None, browser: bool = False) -> list[str]: ...
     def parse(self, line: str, usage: Usage) -> Parsed: ...
 
 
@@ -70,7 +90,33 @@ def _relative(path: str) -> str:
     return path.rsplit("/repo/", 1)[-1] if "/repo/" in path else path
 
 
+def _describe_browser(action: str, args: dict[str, Any]) -> str:
+    target = _clip(str(args.get("element") or args.get("ref") or ""), 80)
+    match action:
+        case "browser_navigate":
+            return f"Opened {_clip(str(args.get('url', '')), 120)} in the browser"
+        case "browser_take_screenshot":
+            return "Took a screenshot"
+        case "browser_snapshot":
+            return "Read the page"
+        case "browser_click":
+            return f"Clicked {target}" if target else "Clicked in the page"
+        case "browser_type" | "browser_fill_form" | "browser_select_option":
+            return f"Filled in {target}" if target else "Filled in the page"
+        case "browser_console_messages":
+            return "Read the browser console"
+        case "browser_wait_for":
+            return "Waited for the page"
+        case "browser_find":
+            looked = _clip(str(args.get("text") or args.get("query") or args.get("selector") or ""), 80)
+            return f"Looked for {looked} in the page" if looked else "Looked through the page"
+        case _:
+            return f"Used the browser ({action.removeprefix('browser_').replace('_', ' ')})"
+
+
 def _describe_claude_tool(name: str, args: dict[str, Any]) -> str | None:
+    if name.startswith(f"mcp__{BROWSER_SERVER}__"):
+        return _describe_browser(name.removeprefix(f"mcp__{BROWSER_SERVER}__"), args)
     path = _relative(str(args.get("file_path") or args.get("path") or ""))
     match name:
         case "Bash":
@@ -96,12 +142,16 @@ class ClaudeCode:
     api_host = "api.anthropic.com"
     base_url_env = "ANTHROPIC_BASE_URL"
 
-    def command(self, model: str | None) -> list[str]:
+    def command(self, model: str | None, browser: bool = False) -> list[str]:
+        """`browser`: give it the browser (a sandbox with the coding image; not the local one)."""
+        allowed = CLAUDE_TOOLS + (f",mcp__{BROWSER_SERVER}" if browser else "")
         argv = [
             "claude", "-p", "--bare", "--output-format", "stream-json", "--verbose",
-            "--permission-mode", "dontAsk", "--allowedTools", CLAUDE_TOOLS,
-            "--disallowedTools", "WebFetch,WebSearch",
+            "--permission-mode", "dontAsk", "--allowedTools", allowed,
+            "--disallowedTools", "WebFetch,WebSearch", "--strict-mcp-config",
         ]
+        if browser:
+            argv += ["--mcp-config", json.dumps(BROWSER_MCP)]
         return argv + (["--model", model] if model else [])
 
     def parse(self, line: str, usage: Usage) -> Parsed:
@@ -112,6 +162,9 @@ class ClaudeCode:
         kind = event.get("type")
         if kind == "system" and event.get("subtype") == "init":
             out.steps.append(Step("step", f"Claude Code started ({event.get('model') or 'default model'})"))
+            for server in event.get("mcp_servers") or []:  # a server that didn't start is said, not skipped
+                if server.get("name") == BROWSER_SERVER and server.get("status") != "connected":
+                    out.steps.append(Step("error", f"The browser didn't start ({server.get('status') or 'unknown'})"))
         elif kind == "system" and event.get("subtype") == "api_retry":
             error = str(event.get("error") or event.get("error_status") or "error")
             if event.get("error_status") in (401, 403):  # retrying won't help: stop now
@@ -159,7 +212,7 @@ class Codex:
     api_host = "api.openai.com"
     base_url_env = "OPENAI_BASE_URL"
 
-    def command(self, model: str | None) -> list[str]:
+    def command(self, model: str | None, browser: bool = False) -> list[str]:  # no browser for Codex yet
         argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral"]
         return argv + (["-c", f'model="{model}"'] if model else []) + ["-"]
 
