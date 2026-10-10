@@ -37,7 +37,7 @@ CI runs Ruff and pytest, the pnpm build and typecheck, and the browser tests. Ru
 
 - **The engine stays UI-agnostic.** `packages/engine` must never import from `apps/*`, FastAPI, or Typer.
 - **Every query is scoped by workspace.** No data, agent context, or connector token crosses workspaces.
-- **No agent write without instruction and approval.** Every agent write is approved, by a person at the time or by a standing rule an owner saved in the agent's contract (writing documents, opening and editing issues, comments, graph links; versioned, the owner recorded as approver, audited as `<action>.allowed`), and is recorded in the audit log. Closing issues, coding, merging, agent rules and contracts, and anything beyond what the instructing person may do always need a person.
+- **No agent write without instruction and approval.** Every agent write is approved, by a person at the time or by a standing rule an owner saved in the agent's contract (writing documents, opening and editing issues, comments, graph links; versioned, the owner recorded as approver, audited as `<action>.allowed`), and is recorded in the audit log. Closing issues, merging, agent rules and contracts, and anything beyond what the instructing person may do always need a person. Coding follows its session's approval mode: Manual (a person approves each turn and accepts its diff) by default; Accept edits and Auto only for people who may approve agent changes, and only as far as the workspace's owners allow ([docs/coding-agent.md](docs/coding-agent.md)).
 - **`.dotrix/` lives on the platform, never in a code repo.** Coding-agent PRs contain code only.
 - **An agent never exceeds the rights of the person it acts for.** A run is instructed by one person and acts with their permissions; agents never edit `agent-rules/` or contracts; guests never see content.
 - **A person's conversations are theirs.** Runs are visible only to whoever started them (`agents/privacy.py`), in personal workspaces and organisations alike; owners and admins also see automations' runs, and an approver opens a run only while it waits on their decision. What agents changed stays public (documents, issues, decisions, the audit log).
@@ -201,21 +201,6 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 - **Theme:** Settings → Appearance (System / Light / Dark, the accent, density, motion) is kept in the store's preferences in this browser and applied before the first paint (`applyPrefs` in `core/theme.ts`).
 - The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@dotrix/ui/lib/utils` and `@/hooks/…` → `@dotrix/ui/hooks/…`.
 
-## Plan: coding agent (design, 2026-10-10)
-
-Why: a person assigns an issue, and a coding agent (Claude Code or Codex) works on it in its own
-OpenShell sandbox, with a live view of the agent, terminal, file tree, diff, and a running app, and
-every change in git. Full design: [docs/coding-agent.md](docs/coding-agent.md). It replaces the one-shot
-model of the coding runs with a session per issue, and supersedes their unchecked session items. Each phase
-is usable on its own.
-
-- [ ] **A. Correct the loop:** sandbox clones the session branch with history and no credentials; turn commits are local; the worker pulls them as a bundle through the existing guard; accepted commits are pushed. Per-turn `claude -p --resume` with the transcript saved and restored; `--bare` with platform settings and MCP config; `CLAUDE.md` passed as text; Stop sends SIGINT, then SIGKILL; events in `coding_events`; cost as per-turn deltas
-- [ ] **B. Session lifecycle:** `coding_sessions` with warm, idle, and closed states; idle snapshot and restore; accept and reject per turn with the diff; per-turn approval in Notifications
-- [ ] **C. Workspace view:** read-only terminal, file tree, and diff in the session; subagent events nested; usage per session for owners and admins
-- [ ] **D. Running apps:** Playwright MCP in the sandbox; the supervisor starts dev servers; preview through the platform; network policy for registries and the preview port, tested on OpenShell
-- [ ] **E. Local-file projects and Codex:** a bare repo per local-file project at setup; Codex adapter once its protocol is verified
-- [ ] Open items to verify first (in the design doc): `--resume` across project paths, OpenShell snapshots, Codex's flags and events, idle and warm-sandbox limits
-
 ## Where things stand (2026-10-10)
 
 Built and in use (details live in the code and its docstrings; this list is only the map):
@@ -230,6 +215,26 @@ Built and in use (details live in the code and its docstrings; this list is only
 
 Not being extended (kept working only): the CLI's local engine, the calendar feed, the desktop app.
 
+## Plan: coding agent (design, 2026-10-10)
+
+Why: a person assigns an issue, and a coding agent (Claude Code or Codex) works on it in its own sandbox
+(Docker or OpenShell), with a live view of the agent, terminal, file tree, diff, and a running app, and
+every change in git. Full design: [docs/coding-agent.md](docs/coding-agent.md). It replaces the one-shot
+coding runs with a session per issue. Decided: each session has an **approval mode** (Manual, Accept
+edits, Auto, like Claude Code's permission modes; the workspace's owners cap it, and only people who may
+approve agent changes go above Manual); sessions are **private like conversations** (approvers open one
+while it waits on them; owners and admins see automations'); the first accepted turn opens the PR.
+Each phase is usable on its own.
+
+- [ ] **0. Verify first** (needs a model key): a real run end to end on the Docker sandbox; `--resume` with `--bare` across two containers at the same path; SIGINT inside the container; Codex's flags, events, and resume
+- [ ] **A1. Events and Stop:** `coding_events` instead of the capped `events`; cost and tokens as per-turn deltas; Stop by signal inside the sandbox (SIGINT, then SIGKILL)
+- [ ] **A2. Turns in git, and approval modes:** the session branch with history in the sandbox; one commit per turn; the bundle back through the guard; accept (Manual) or straight through; push, never forced; the first accepted turn opens the PR; the modes with the workspace's and the person's limits, reverts for a rejected pushed turn; sessions private like conversations
+- [ ] **B. Session lifecycle:** `coding_sessions` with warm, idle, and closed states; the transcript saved (encrypted) and restored with `--resume`; idle timeout and a warm-sandbox cap; start and accept approvals in Notifications
+- [ ] **C. Workspace view:** read-only terminal, file tree, and diff in the session; subagent events nested; usage per session; the web's Code tab wired to the API
+- [ ] **D. Running apps:** Playwright MCP and the dotrix MCP server (board, documents, graph; a run-scoped token) in the sandbox; the supervisor starts dev servers; preview through the platform; registries and the preview port in the Docker egress allowlist and OpenShell's policy
+- [ ] **E. Local-file projects and Codex:** a bare repo per local-file project at setup; the Codex adapter with resume once verified
+- [ ] Later: coding locally from the CLI or desktop (below); updating a repo's `AGENTS.md` / `CLAUDE.md` as a coding session
+
 ## Decisions to make
 
 - **Several people on one key at once.** A provider key has no seat limit; what's shared is its rate limit and quota. Proposed next: retry a run on a 429 with backoff before stopping it; a per-workspace limit on runs working at once, the rest queued ("Waiting for a free slot") rather than stopping; usage per person in Settings → Models.
@@ -238,7 +243,7 @@ Not being extended (kept working only): the CLI's local engine, the calendar fee
 ## Remaining work
 
 ### Web (`apps/web`)
-- [ ] Wire Chat and coding to the API: conversations and runs (streaming, Stop, rename), the limit notice with Continue under a stopped run, proposed changes with approve / reject / "Always allow", checkpoints, results with their actions, research sources, conversations across projects; the Code tab, sessions (with their repo, base, commits, and changed files from the run's `base_sha`, `commit_sha`, `files_changed`), follow-ups, "Start coding" in the drawer; Notifications' approvals with the change in the detail; the agents panel and corner notices from real runs
+- [ ] Wire Chat and coding to the API: conversations and runs (streaming, Stop, rename), the limit notice with Continue under a stopped run, proposed changes with approve / reject / "Always allow", checkpoints, results with their actions, research sources, conversations across projects; the Code tab, sessions (with their repo, base, commits, and changed files from the turn's `base_sha`, `head_sha`, `files_changed`; see Plan: coding agent), follow-ups, "Start coding" in the drawer; Notifications' approvals with the change in the detail; the agents panel and corner notices from real runs
 - [ ] Rewrite the parked browser tests for the new screens (`test.fixme(true, NOT_WIRED)`): board, project views, workspace pages, admin, mobile, mentions now; chat, research, pipelines after Chat is wired; the signed-out redirect in `auth.spec.ts`; document upload (needs MinIO in CI)
 - [ ] Delete `pages/(app)`, `components/` and `lib/` pieces only the old app uses, once Chat and coding are wired
 - [ ] Settings still "not available yet": two-factor authentication, push notifications, deleting a workspace, changing its address, billing (plan, payment, invoices), the calendar feed's settings
@@ -247,7 +252,7 @@ Not being extended (kept working only): the CLI's local engine, the calendar fee
 ### Backend (`apps/backend`)
 - [ ] Models: retry on a provider's 429 with backoff; a limit on runs working at once per workspace, with a queue; usage per person (above); continuing a conversation across projects that stopped at a limit (only a project's runs continue today); showing a person the tokens of runs on their own key
 - [ ] Coding runs (Claude Code, Codex) and search embeddings on the workspace's own keys, not only the server's
-- [ ] Coding: the dotrix MCP server and Playwright MCP inside the sandbox with a run-scoped token, and network rules for package registries (the Docker sandbox's egress allowlist, OpenShell's policy); a full run on a real model (checked in the Docker sandbox up to the model call: no Anthropic or OpenAI key here yet); the CLI resuming its own session between turns; a browser, a terminal, and a file diff inside a session; updating a repo's `AGENTS.md` / `CLAUDE.md` as a coding run
+- [ ] Coding sessions: tracked in Plan: coding agent (above), phase by phase
 - [ ] PRs on the board: checks shown on the issue; a PR check rejecting `.dotrix/` for PRs from elsewhere; the Reviewer's findings as a PR comment and in `reviews/` (FR-22), bugs proposed for critical ones
 - [ ] Code graph (Tree-sitter: files, symbols, imports, calls, tests; re-parse what each commit changed; linked to the project graph), `code.blast_radius`; then commit review in the background and the same for failing CI; blast radius and tests to run in coding briefs; the `coding.brief` pipeline
 - [ ] Automations on PR and CI events
@@ -272,4 +277,4 @@ Not being extended (kept working only): the CLI's local engine, the calendar fee
 - [x] The GitHub App registered with code permissions, its settings in `.env` (app id, slug, private key file, webhook secret)
 - [x] Sendly: the sending domain verified, a live key, and `DOTRIX_EMAIL_FROM` on that domain
 - [ ] Google sign-in: a Google Cloud OAuth client (scopes `openid email profile`, redirect `{api}/v1/auth/oauth/google/callback`) for `DOTRIX_GOOGLE_CLIENT_ID` / `_SECRET`
-- [ ] A model key to measure on real models and to try a coding run end to end
+- [ ] A model key (Anthropic for Claude Code, or OpenAI for Codex) to measure on real models and for the coding agent's Phase 0
