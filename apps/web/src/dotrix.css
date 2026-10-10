@@ -539,8 +539,28 @@
   background: var(--amber);
   box-shadow: 0 0 0 2px var(--surface);
 }
+/* The short panel: at the bottom right, over the page, as tall as its agents need (every page but
+   Home on a wide screen). A click outside closes it. */
+.agents-panel.sheet {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(560px, calc(100vh - 96px));
+  z-index: 72;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  transform-origin: bottom right;
+  animation: apin 0.2s var(--ease) both;
+}
 .agents-scrim {
-  display: none;
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 71;
 }
 @media (max-width: 1199px) {
   .shell.with-agents,
@@ -550,35 +570,13 @@
   .shell.collapsed.with-agents {
     grid-template-columns: 52px minmax(0, 1fr);
   }
-  /* A pop-up from the bottom right, as tall as its agents need. */
-  .agents-panel {
-    position: fixed;
-    right: 20px;
-    bottom: 20px;
-    width: min(340px, calc(100vw - 32px));
-    max-height: min(560px, calc(100vh - 96px));
-    z-index: 72;
-    border: 0;
-    border-radius: var(--r-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-pop);
-    overflow: hidden;
-    transform-origin: bottom right;
-    animation: apin 0.2s var(--ease) both;
-  }
-  .agents-scrim {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 71;
-  }
 }
 @media (max-width: 900px) {
   .shell.with-agents,
   .shell.collapsed.with-agents {
     grid-template-columns: minmax(0, 1fr);
   }
-  .agents-panel {
+  .agents-panel.sheet {
     right: 12px;
     left: 12px;
     width: auto;
