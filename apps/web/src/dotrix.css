@@ -1205,3 +1205,9 @@ body.resizing-row * {
 .splitter.row + .cs-panel {
   border-top: 1px solid var(--border);
 }
+
+.cs-key:hover {
+  color: var(--acc);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

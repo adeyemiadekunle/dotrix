@@ -634,7 +634,6 @@ export const paneSearch = (session: string, panes: Pane[]) => `tab=coding&sessio
 
 function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
   const t = task(cs.task)!;
-  const pane = panes.length > 0;
   // A header icon opens its panel below the others (three at most) or closes it.
   const togglePane = (p: Pane) => open(paneSearch(cs.id, panes.includes(p) ? panes.filter((x) => x !== p) : [...panes, p].slice(-3)));
   const p = proj(cs.project)!;
@@ -652,9 +651,9 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
         <button className="ibtn ibtn-sm" onClick={() => open("tab=coding")} aria-label="Back to sessions">
           <Ic n="arrow-left" s={15} />
         </button>
-        <span className="mono faint" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+        <button className="mono faint cs-key" style={{ fontSize: 12, whiteSpace: "nowrap" }} onClick={() => openTask(t.id)} data-tip="Open the issue" aria-label={`Open ${t.key}`}>
           {t.key}
-        </span>
+        </button>
         <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
           {t.title}
         </b>
@@ -677,10 +676,6 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
             </button>
           ))}
         </div>
-        <button className="btn btn-sm btn-ghost" onClick={() => openTask(t.id)} aria-label="Open task" data-tip={pane ? "Open task" : undefined}>
-          <Ic n="panel-right-open" s={14} />
-          {!pane && <span className="hide-m">Open task</span>}
-        </button>
       </div>
       <div className="chat-scroll">
         <div className="chat-col">
