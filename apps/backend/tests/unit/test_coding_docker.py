@@ -53,6 +53,8 @@ async def test_a_docker_sandbox_edits_the_repo_and_reaches_nothing_else(tmp_path
         assert edit.code == 0 and "+y = 2" in edit.stdout
         who = await box.exec(["id", "-u"], timeout=30)
         assert who.stdout.strip() == "1500"
+        init = await box.exec(["cat", "/proc/1/comm"], timeout=30)
+        assert init.stdout.strip() == "docker-init"  # reaps what a stopped turn leaves behind
         # The key is there for the tool; the proxy is the only way out.
         env = await box.exec(["sh", "-c", "echo $ANTHROPIC_API_KEY $HTTPS_PROXY"], timeout=30)
         assert env.stdout.split() == ["test-key-not-real", "http://egress:3128"]

@@ -38,6 +38,7 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.code.checkouts import remove_tree
 
 from .tools import CodingTool
 
@@ -295,7 +296,7 @@ class OpenShellSession:
                 await self.sandbox.cli(*args)
             except SandboxError as exc:
                 logger.warning("openshell %s %s: %s", args[0], args[1], exc)
-        shutil.rmtree(self.scratch, True)
+        remove_tree(self.scratch)
 
 
 class OpenShellSandbox:
@@ -434,7 +435,8 @@ class DockerSandbox:
                 env["CODEX_API_KEY"] = model_key  # what `codex exec` reads
             if os.environ.get(tool.base_url_env):
                 env[tool.base_url_env] = os.environ[tool.base_url_env]
-            await self.cli("run", "-d", "--name", name, "--label", label, "--network", name, "--read-only",
+            # --init: a reaper as PID 1, so what a stopped turn leaves behind doesn't linger as zombies.
+            await self.cli("run", "-d", "--init", "--name", name, "--label", label, "--network", name, "--read-only",
                            "--tmpfs", "/tmp:rw,exec,size=1g", "--mount", f"type=volume,dst={DOCKER_HOME}",
                            "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--user", DOCKER_UID,
                            "--memory", "4g", "--cpus", "2", "--pids-limit", "512",
@@ -463,7 +465,7 @@ class LocalSession:
                                  timeout=timeout, cancel=cancel)
 
     async def close(self) -> None:
-        await asyncio.to_thread(shutil.rmtree, self.root, True)
+        await asyncio.to_thread(remove_tree, self.root)
 
 
 class LocalSandbox:

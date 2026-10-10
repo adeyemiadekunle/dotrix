@@ -13,7 +13,9 @@ import base64
 import logging
 import os
 import shutil
+import stat
 import subprocess
+import sys
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -92,13 +94,13 @@ class CodeCheckouts:
                 sha = (await run_git(fresh, "rev-parse", "HEAD")).strip()
                 await asyncio.to_thread(_swap, fresh, target)
             except BaseException:
-                await asyncio.to_thread(shutil.rmtree, fresh, True)
+                await asyncio.to_thread(remove_tree, fresh)
                 raise
         logger.info("checked out %s at %s for project %s", ref.full_name, sha[:7], ref.project_id)
         return sha
 
     async def remove(self, workspace_id: uuid.UUID, project_id: uuid.UUID) -> None:
-        await asyncio.to_thread(shutil.rmtree, self.path(workspace_id, project_id), True)
+        await asyncio.to_thread(remove_tree, self.path(workspace_id, project_id))
 
     async def prune(self, keep: set[tuple[uuid.UUID, uuid.UUID]]) -> int:
         """Delete checkouts of projects no longer connected (or moved); returns how many."""
@@ -115,7 +117,7 @@ class CodeCheckouts:
                 if project.name.startswith("."):  # a sync in progress, or one cut off
                     continue
                 if (workspace.name, project.name) not in keep:
-                    shutil.rmtree(project, True)
+                    remove_tree(project)
                     removed += 1
         return removed
 
@@ -133,7 +135,9 @@ def auth_env(url: str, token: str | None) -> dict[str, str]:
 
 
 async def run_git(cwd: Path, *args: str, env: dict[str, str] | None = None, timeout: float = 60) -> str:
-    argv = ["git", "-c", "credential.helper=", "-c", "core.hooksPath=/dev/null", *args]
+    # Files exactly as committed: no line-ending conversion, whatever this machine's git says
+    # (Git for Windows sets core.autocrlf=true, which made every line of an agent's edit a change).
+    argv = ["git", "-c", "credential.helper=", "-c", "core.hooksPath=/dev/null", "-c", "core.autocrlf=false", *args]
     # No prompts, and no LFS downloads even where git-lfs is set up globally: agents read
     # source, not large binaries.
     full_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_LFS_SKIP_SMUDGE": "1", **(env or {})}
@@ -171,12 +175,29 @@ def _size(root: Path) -> int:
     return total
 
 
+def remove_tree(path: Path) -> None:
+    """Delete a folder and everything in it, read-only files included (git's objects are
+    read-only, which Windows refuses to delete); a folder that isn't there is fine."""
+
+    def writable_then_retry(func: Callable[..., object], target: str, _exc: object) -> None:
+        try:
+            os.chmod(target, stat.S_IWRITE)
+            func(target)
+        except OSError:
+            pass
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=writable_then_retry)
+    else:
+        shutil.rmtree(path, onerror=writable_then_retry)  # pragma: no cover
+
+
 def _swap(fresh: Path, target: Path) -> None:
     old = target.parent / f".{target.name}.old.{uuid.uuid4().hex[:8]}"
     if target.exists():
         target.rename(old)
     fresh.rename(target)
-    shutil.rmtree(old, True)
+    remove_tree(old)
 
 
 def github_remote(app: object) -> Remote:

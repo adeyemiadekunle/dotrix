@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import shutil
 import tarfile
 import tempfile
 import time
@@ -35,7 +34,13 @@ from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.auth.github import GitHubUnavailable
-from dotrix_backend.modules.code.checkouts import CheckoutError, RepoRef, auth_env, run_git
+from dotrix_backend.modules.code.checkouts import (
+    CheckoutError,
+    RepoRef,
+    auth_env,
+    remove_tree,
+    run_git,
+)
 from dotrix_backend.modules.connectors.github_app import GitHubApp, PullRequest
 from dotrix_backend.modules.connectors.models import ConnectedRepo, GitHubInstallation
 from dotrix_backend.modules.issues.models import AgentAssignee, IssueStatus
@@ -122,7 +127,7 @@ class CodingWorker:
             logger.exception("coding run %s failed", run_id)
             await self._end(run_id, CodingRunStatus.FAILED, error="Something went wrong running the coding agent")
         finally:
-            await asyncio.to_thread(shutil.rmtree, work, True)
+            await asyncio.to_thread(remove_tree, work)
 
     async def _run(self, run_id: uuid.UUID, work: Path) -> None:
         if self.sandbox is None or self.app is None:

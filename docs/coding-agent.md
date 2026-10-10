@@ -85,16 +85,21 @@ Sessions follow the same rule as conversations (`agents/privacy.py`, decided 202
   `result` carries `total_cost_usd` and usage.
 - **Session state is the transcript.** Claude Code keeps each session as a transcript file under its
   home folder, keyed by the working directory. The repo is always at `/sandbox/repo`, in every sandbox
-  and both backends, so a restored transcript is found where `--resume` looks (**unverified** with
-  `--bare`; Phase 0).
+  and both backends, so a restored transcript is found where `--resume` looks. Verified with `--bare`
+  (Phase 0): the transcript is `/sandbox/.claude/projects/-sandbox-repo/<session>.jsonl`, and a copy
+  restored into a new container resumes the session.
 - **Scripted runs use `--bare`.** It skips the repo's hooks, MCP servers, and CLAUDE.md.
 - **Stopping.** SIGINT ends a turn cleanly; SIGTERM leaves it unfinished. The signal must reach `claude`
   **inside** the sandbox: interrupting the `docker exec` / `openshell sandbox exec` client stops only the
   client. The worker sends `kill -INT` to the turn's process group in the sandbox (its pid recorded at
-  start), waits about five seconds, then `kill -KILL`.
+  start), waits about five seconds, then `kill -KILL`. Verified (Phase 0): SIGINT inside the container
+  ended a turn in about 2 seconds with a final `result` event, and the session resumed afterwards. The
+  sandbox runs with an init process (`docker run --init`) so the commands a stopped turn leaves behind
+  are reaped.
 - **Background work.** A background Bash task is killed about five seconds after the final result, so
   anything the browser needs is started by our supervisor, not by the agent.
-- **Costs.** When resuming, the reported total includes earlier turns, so we store per-turn deltas.
+- **Costs.** When resuming, `total_cost_usd` is the session's running total (verified: it rose with
+  every turn), so we store per-turn deltas. Token counts in `usage` are per turn.
 - **Subagents** keep their own context. Inside a turn they can research or review; the platform's agents
   (the lead and the specialists) stay for planning, and the Reviewer reads the PR.
 
@@ -217,11 +222,21 @@ there.
 
 Each phase is usable on its own, and each is a PR.
 
-**Phase 0: verify (before building).** With a model key, on the Docker sandbox:
-- one real run end to end on a scratch repo (today's flow: brief, edit, patch, branch, PR);
-- `--resume` with `--bare`: a transcript saved from one container and restored into another, same path;
-- SIGINT delivered inside the container ends a turn cleanly and leaves a usable transcript;
-- Codex's `exec --json` flags, events, and resume, if a key is available.
+**Phase 0: verify (before building).** With a model key, on the Docker sandbox. Done 2026-10-10 on
+Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
+- [x] A real turn edits a scratch repo through the egress proxy with today's command line (7 s).
+- [x] `--resume` with `--bare`: a transcript saved from one container and restored into another, same
+  path, continues the session; it remembered the earlier turn.
+- [x] SIGINT inside the container ends a turn cleanly (about 2 s, a final `result` event), and the
+  session resumes after it.
+- [x] `total_cost_usd` is cumulative across resumed turns; tokens are per turn.
+- Found and fixed: Git for Windows' `core.autocrlf=true` gave the agent CRLF files, so every line of
+  an edited file showed as changed (the platform's git now runs with `core.autocrlf=false`); a killed
+  command lingered as a zombie (the sandbox now runs with `--init`); checkouts couldn't be deleted on
+  Windows because git's objects are read-only (`remove_tree`).
+- [ ] The rest of today's flow on a real repo: branch, push, PR, the Reviewer (needs a connected repo
+  to push to).
+- [ ] Codex's `exec --json` flags, events, and resume (needs an OpenAI key).
 
 **Phase A1: events and Stop.**
 - `coding_events` instead of the capped `events`; cost and tokens as per-turn deltas.
