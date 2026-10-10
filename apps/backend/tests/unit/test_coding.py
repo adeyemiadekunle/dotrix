@@ -109,3 +109,35 @@ async def test_a_process_is_streamed_and_killed_on_cancel_or_timeout() -> None:
     assert stopped.cancelled and stopped.code != 0
     slow = await run_process([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.3)
     assert slow.timed_out
+
+
+def test_processes_run_on_a_selector_loop_too(tmp_path) -> None:
+    """The API and the worker use a selector loop on Windows (for psycopg), which can't start
+    subprocesses: commands and git still run there, with threads reading the pipes."""
+    from dotrix_backend.modules.code.checkouts import run_git
+
+    async def check() -> None:
+        lines: list[str] = []
+
+        async def on_line(line: str) -> None:
+            lines.append(line.strip())
+
+        done = await run_process([sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"],
+                                 stdin=b"brief", on_line=on_line, timeout=10)
+        assert done.code == 0 and lines == ["BRIEF"]
+        kept = await run_process([sys.executable, "-c", "print('kept')"], timeout=10)
+        assert kept.stdout.strip() == "kept"
+        cancel = asyncio.Event()
+        asyncio.get_running_loop().call_later(0.2, cancel.set)
+        stopped = await run_process([sys.executable, "-c", "import time; time.sleep(30)"], timeout=10, cancel=cancel)
+        assert stopped.cancelled
+        slow = await run_process([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.3)
+        assert slow.timed_out
+        await run_git(tmp_path, "init", "-q")
+        assert (await run_git(tmp_path, "rev-parse", "--is-inside-work-tree")).strip() == "true"
+
+    loop = asyncio.SelectorEventLoop()
+    try:
+        loop.run_until_complete(check())
+    finally:
+        loop.close()

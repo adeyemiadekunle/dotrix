@@ -5,6 +5,12 @@
   the model key attached as a provider: OpenShell keeps the key and the sandbox sees a
   placeholder that its proxy swaps in only for the model provider's endpoints. Driven through
   the OpenShell CLI against the gateway it has selected.
+- Docker (`docker`): a container per run from the coding image, on an internal network of its
+  own with no route out. A second container, the egress proxy (`infra/coding/egress-proxy.mjs`),
+  sits on that network and the outside one and tunnels HTTPS to the tool's model API only. The
+  agent's container has a read-only system, no capabilities, and an unprivileged user; the repo
+  sits on a volume deleted with it. Unlike OpenShell, the model key is in the agent's environment:
+  the proxy is what keeps it from going anywhere but the model API.
 - Local (`local`): a temporary folder on this machine, with no isolation at all. For
   development only; refused in production.
 
@@ -14,17 +20,22 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import io
 import json
 import logging
 import os
 import shutil
 import signal
+import subprocess
+import tarfile
 import tempfile
+import threading
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import urlsplit
 
 from dotrix_backend.core.settings import Settings
 
@@ -98,6 +109,19 @@ async def run_process(
     """Run a command; stream its stdout a line at a time to `on_line`, or keep it (up to a limit).
     Killed (with its process group) on `timeout` or when `cancel` is set."""
     try:
+        return await _run_async(argv, cwd=cwd, env=env, stdin=stdin, on_line=on_line, timeout=timeout, cancel=cancel)
+    except NotImplementedError:
+        # Windows' selector loop (the API and the worker use it there, for psycopg) can't start
+        # subprocesses: the same, with threads reading the pipes.
+        return await _run_threaded(argv, cwd=cwd, env=env, stdin=stdin, on_line=on_line, timeout=timeout,
+                                   cancel=cancel)
+
+
+async def _run_async(
+    argv: list[str], *, cwd: Path | None, env: dict[str, str] | None, stdin: bytes | None,
+    on_line: LineHandler | None, timeout: float, cancel: asyncio.Event | None,
+) -> ExecResult:
+    try:
         process = await asyncio.create_subprocess_exec(
             *argv, cwd=cwd, env=env, start_new_session=True,
             stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
@@ -156,9 +180,87 @@ async def run_process(
     )
 
 
-def _kill(process: asyncio.subprocess.Process) -> None:
+async def _run_threaded(
+    argv: list[str], *, cwd: Path | None, env: dict[str, str] | None, stdin: bytes | None,
+    on_line: LineHandler | None, timeout: float, cancel: asyncio.Event | None,
+) -> ExecResult:
+    loop = asyncio.get_running_loop()
     try:
-        os.killpg(process.pid, signal.SIGKILL)
+        process = subprocess.Popen(
+            argv, cwd=cwd, env=env, stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        raise SandboxError(f"{argv[0]} isn't installed here") from exc
+    assert process.stdout is not None and process.stderr is not None
+    lines: asyncio.Queue[bytes | None] = asyncio.Queue()
+    err = bytearray()
+    lock = threading.Lock()
+
+    def pump_out() -> None:
+        for raw in iter(process.stdout.readline, b""):  # type: ignore[union-attr]
+            loop.call_soon_threadsafe(lines.put_nowait, raw)
+        loop.call_soon_threadsafe(lines.put_nowait, None)
+
+    def pump_err() -> None:
+        for raw in iter(process.stderr.readline, b""):  # type: ignore[union-attr]
+            with lock:
+                err.extend(raw)
+                del err[: max(0, len(err) - STDERR_TAIL)]
+
+    def feed() -> None:
+        try:
+            process.stdin.write(stdin or b"")  # type: ignore[union-attr]
+            process.stdin.close()  # type: ignore[union-attr]
+        except OSError:
+            pass
+
+    for target in (pump_out, pump_err, *([feed] if stdin is not None else [])):
+        threading.Thread(target=target, daemon=True).start()
+    kept: list[bytes] = []
+    size, truncated = 0, False
+
+    async def consume() -> None:
+        nonlocal size, truncated
+        while (raw := await lines.get()) is not None:
+            if on_line is not None:
+                await on_line(raw.decode(errors="replace"))
+            elif size + len(raw) <= CAPTURE_LIMIT:
+                kept.append(raw)
+                size += len(raw)
+            else:
+                truncated = True
+        await asyncio.to_thread(process.wait)
+
+    work = asyncio.ensure_future(consume())
+    waiters: set[asyncio.Future] = {work}
+    stopper = asyncio.ensure_future(cancel.wait()) if cancel is not None else None
+    if stopper is not None:
+        waiters.add(stopper)
+    done, _ = await asyncio.wait(waiters, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    timed_out = not done
+    cancelled = stopper is not None and stopper in done
+    if timed_out or cancelled:
+        process.kill()
+        work.cancel()
+        await asyncio.gather(work, return_exceptions=True)
+        await asyncio.to_thread(process.wait)
+    if stopper is not None:
+        stopper.cancel()
+    if not (timed_out or cancelled):
+        await work  # raises what on_line raised
+    with lock:
+        stderr = err.decode(errors="replace")
+    return ExecResult(code=process.returncode, stdout=b"".join(kept).decode(errors="replace"), stderr=stderr,
+                      timed_out=timed_out, cancelled=cancelled, truncated=truncated)
+
+
+def _kill(process: asyncio.subprocess.Process) -> None:
+    killpg = getattr(os, "killpg", None)  # not on Windows: there, the process alone
+    try:
+        if killpg is None:
+            raise ProcessLookupError
+        killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         try:
             process.kill()
@@ -238,6 +340,114 @@ class OpenShellSandbox:
         return session
 
 
+# -- Docker ---------------------------------------------------------------------------
+
+DOCKER_HOME = "/sandbox"  # the image's sandbox user's home; the repo goes in its `repo`
+DOCKER_UID = "1500:1500"  # that user (infra/coding/Dockerfile)
+EGRESS_PORT = 3128
+
+
+def egress_allow(tool: CodingTool) -> str:
+    """Where the egress proxy lets the tool go: its model API, or the proxy in front of it."""
+    base = os.environ.get(tool.base_url_env, "")
+    if base:
+        parts = urlsplit(base)
+        if parts.hostname:
+            return f"{parts.hostname}:{parts.port or (80 if parts.scheme == 'http' else 443)}"
+    return f"{tool.api_host}:443"
+
+
+def _tar_of(source: Path) -> bytes:
+    """`source` as a tar of one folder, `repo` (extracted by the sandbox's own user, so it owns it)."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        tar.add(source, arcname="repo")
+    return buffer.getvalue()
+
+
+class DockerSession:
+    def __init__(self, sandbox: DockerSandbox, name: str) -> None:
+        self.sandbox, self.name = sandbox, name
+
+    async def exec(
+        self, argv: list[str], *, stdin: bytes | None = None, on_line: LineHandler | None = None,
+        timeout: float, cancel: asyncio.Event | None = None,
+    ) -> ExecResult:
+        # Stopping `docker exec` leaves the command running in the container; close() removes it.
+        cli = [self.sandbox.bin, "exec", *(["-i"] if stdin is not None else []), "-w", f"{DOCKER_HOME}/repo",
+               self.name, *argv]
+        return await run_process(cli, env=self.sandbox.cli_env(), stdin=stdin, on_line=on_line, timeout=timeout,
+                                 cancel=cancel)
+
+    async def close(self) -> None:
+        for args in (["rm", "-f", "-v", self.name, f"{self.name}-egress"], ["network", "rm", self.name]):
+            try:
+                await self.sandbox.cli(*args)
+            except SandboxError as exc:
+                logger.warning("docker %s: %s", args[0], exc)
+
+
+class DockerSandbox:
+    kind = "docker"
+
+    def __init__(self, settings: Settings) -> None:
+        self.bin = settings.docker_bin
+        self.image = settings.coding_image
+
+    def cli_env(self, **extra: str) -> dict[str, str]:
+        """The CLI finds its daemon in the worker's environment; nothing else of ours reaches it."""
+        keep = ("PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMROOT", "TEMP",
+                "TMP", "LANG", "TZ")
+        return {**{k: v for k, v in os.environ.items() if k in keep or k.startswith("DOCKER_")}, **extra}
+
+    async def cli(self, *args: str, stdin: bytes | None = None, env: dict[str, str] | None = None) -> str:
+        result = await run_process([self.bin, *args], env=env or self.cli_env(), stdin=stdin, timeout=CLI_TIMEOUT)
+        if result.timed_out:
+            raise SandboxError(f"docker {args[0]} took too long")
+        if result.code != 0:
+            lines = result.stderr.strip().splitlines()
+            raise SandboxError(f"docker {args[0]} failed: {lines[-1][:300] if lines else result.code}")
+        return result.stdout
+
+    async def open(self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str) -> SandboxSession:
+        name = f"dotrix-run-{run_id.hex[-16:]}"
+        label = f"dotrix.run={run_id}"
+        try:
+            await self.cli("image", "inspect", "--format", "{{.Id}}", self.image)
+        except SandboxError as exc:
+            raise SandboxError(f"The coding image {self.image} isn't built on this machine "
+                               "(docker build -t dotrix-coding:latest infra/coding)") from exc
+        session = DockerSession(self, name)
+        try:
+            # A network with no route out. The proxy is on it (as "egress") and on the default bridge.
+            await self.cli("network", "create", "--internal", "--label", label, name)
+            await self.cli("run", "-d", "--name", f"{name}-egress", "--label", label, "--read-only",
+                           "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m",
+                           "--pids-limit", "128", "-e", f"DOTRIX_EGRESS_ALLOW={egress_allow(tool)}",
+                           self.image, "node", "/opt/dotrix/egress-proxy.mjs")
+            await self.cli("network", "connect", "--alias", "egress", name, f"{name}-egress")
+            # The agent's environment: the proxy, and the key (passed by name from ours, never on argv).
+            proxy = f"http://egress:{EGRESS_PORT}"
+            env = {tool.key_env: model_key, "HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "https_proxy": proxy,
+                   "http_proxy": proxy, "HOME": DOCKER_HOME, "LANG": "C.UTF-8"}
+            if tool.key_env == "OPENAI_API_KEY":
+                env["CODEX_API_KEY"] = model_key  # what `codex exec` reads
+            if os.environ.get(tool.base_url_env):
+                env[tool.base_url_env] = os.environ[tool.base_url_env]
+            await self.cli("run", "-d", "--name", name, "--label", label, "--network", name, "--read-only",
+                           "--tmpfs", "/tmp:rw,exec,size=1g", "--mount", f"type=volume,dst={DOCKER_HOME}",
+                           "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--user", DOCKER_UID,
+                           "--memory", "4g", "--cpus", "2", "--pids-limit", "512",
+                           *[a for k in env for a in ("-e", k)], "-w", DOCKER_HOME, self.image, "sleep", "infinity",
+                           env=self.cli_env(**env))
+            await self.cli("exec", "-i", "-w", DOCKER_HOME, name, "tar", "-x", "-f", "-",
+                           stdin=await asyncio.to_thread(_tar_of, source))
+        except BaseException:
+            await session.close()
+            raise
+        return session
+
+
 # -- Local (development) ---------------------------------------------------------------
 
 
@@ -279,6 +489,8 @@ class LocalSandbox:
 def build_sandbox(settings: Settings) -> CodingSandbox | None:
     if settings.coding_sandbox == "openshell":
         return OpenShellSandbox(settings)
+    if settings.coding_sandbox == "docker":
+        return DockerSandbox(settings)
     if settings.coding_sandbox == "local":
         return LocalSandbox()
     return None

@@ -51,6 +51,8 @@ class CodingTool(Protocol):
     agent: CodingAgent
     key_env: str  # the model key's environment variable
     provider_type: str  # its OpenShell provider profile
+    api_host: str  # where its model API is (the Docker sandbox lets it through, nothing else)
+    base_url_env: str  # a proxy in front of the provider, when this is set
 
     def command(self, model: str | None) -> list[str]: ...
     def parse(self, line: str, usage: Usage) -> Parsed: ...
@@ -91,6 +93,8 @@ class ClaudeCode:
     agent = CodingAgent.CLAUDE_CODE
     key_env = "ANTHROPIC_API_KEY"
     provider_type = "dotrix-claude-code"
+    api_host = "api.anthropic.com"
+    base_url_env = "ANTHROPIC_BASE_URL"
 
     def command(self, model: str | None) -> list[str]:
         argv = [
@@ -152,6 +156,8 @@ class Codex:
     agent = CodingAgent.CODEX
     key_env = "OPENAI_API_KEY"
     provider_type = "dotrix-codex"
+    api_host = "api.openai.com"
+    base_url_env = "OPENAI_BASE_URL"
 
     def command(self, model: str | None) -> list[str]:
         argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral"]

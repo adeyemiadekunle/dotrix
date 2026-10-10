@@ -4783,7 +4783,7 @@ export interface components {
             agent: components["schemas"]["CodingAgent"] | null;
             /**
              * Sandbox
-             * @description `openshell`, or `local` (development, no isolation)
+             * @description `docker`, `openshell`, or `local` (development, no isolation)
              */
             sandbox: string | null;
             /**

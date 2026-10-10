@@ -21779,7 +21779,7 @@
               }
             ],
             "title": "Sandbox",
-            "description": "`openshell`, or `local` (development, no isolation)"
+            "description": "`docker`, `openshell`, or `local` (development, no isolation)"
           },
           "reason": {
             "anyOf": [

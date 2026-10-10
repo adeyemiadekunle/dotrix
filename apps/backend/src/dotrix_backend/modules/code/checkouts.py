@@ -13,6 +13,7 @@ import base64
 import logging
 import os
 import shutil
+import subprocess
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -132,19 +133,30 @@ def auth_env(url: str, token: str | None) -> dict[str, str]:
 
 
 async def run_git(cwd: Path, *args: str, env: dict[str, str] | None = None, timeout: float = 60) -> str:
-    process = await asyncio.create_subprocess_exec(
-        "git", "-c", "credential.helper=", "-c", "core.hooksPath=/dev/null", *args,
-        cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        # No prompts, and no LFS downloads even where git-lfs is set up globally: agents read
-        # source, not large binaries.
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_LFS_SKIP_SMUDGE": "1", **(env or {})},
-    )
+    argv = ["git", "-c", "credential.helper=", "-c", "core.hooksPath=/dev/null", *args]
+    # No prompts, and no LFS downloads even where git-lfs is set up globally: agents read
+    # source, not large binaries.
+    full_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_LFS_SKIP_SMUDGE": "1", **(env or {})}
     try:
-        out, err = await asyncio.wait_for(process.communicate(), timeout)
-    except TimeoutError as exc:
-        process.kill()
-        raise CheckoutError("Fetching the repository took too long") from exc
-    if process.returncode != 0:
+        process = await asyncio.create_subprocess_exec(
+            *argv, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=full_env,
+        )
+    except NotImplementedError:
+        # Windows' selector loop (used there for psycopg) can't start subprocesses: in a thread.
+        try:
+            done = await asyncio.to_thread(subprocess.run, argv, cwd=cwd, env=full_env, capture_output=True,
+                                           timeout=timeout, check=False)
+        except subprocess.TimeoutExpired as exc:
+            raise CheckoutError("Fetching the repository took too long") from exc
+        returncode, out, err = done.returncode, done.stdout, done.stderr
+    else:
+        try:
+            out, err = await asyncio.wait_for(process.communicate(), timeout)
+        except TimeoutError as exc:
+            process.kill()
+            raise CheckoutError("Fetching the repository took too long") from exc
+        returncode = process.returncode
+    if returncode != 0:
         lines = err.decode(errors="replace").strip().splitlines()
         # git's own last line ("fatal: couldn't find remote ref main"); it never holds the token.
         raise CheckoutError(lines[-1][:300] if lines else f"git {args[0]} failed")

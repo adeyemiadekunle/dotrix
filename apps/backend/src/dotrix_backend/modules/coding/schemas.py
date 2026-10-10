@@ -12,7 +12,7 @@ from .models import CodingAgent, CodingOrigin, CodingRunStatus, PrState
 class CodingAvailability(BaseModel):
     available: bool
     agent: CodingAgent | None = Field(description="Who would code: Claude Code with an Anthropic key, else Codex")
-    sandbox: str | None = Field(description="`openshell`, or `local` (development, no isolation)")
+    sandbox: str | None = Field(description="`docker`, `openshell`, or `local` (development, no isolation)")
     reason: str | None = Field(description="Why not, when it isn't available")
 
 

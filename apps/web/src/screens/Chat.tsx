@@ -582,6 +582,51 @@ function NewSession({ issue0 }: { issue0: string | null }) {
 
 /* ---------- a coding session ---------- */
 
+/** What the session changed in the repo: each file with its lines added and removed. */
+function WorkingTree({ cs }: { cs: CodingSession }) {
+  const files = cs.files ?? [];
+  const added = files.reduce((n, f) => n + f.added, 0);
+  const removed = files.reduce((n, f) => n + f.removed, 0);
+  const href = cs.pr ? `${cs.pr.url}/files` : cs.repo && cs.branch ? `https://github.com/${cs.repo}/compare/${cs.base?.branch ?? "main"}...${cs.branch}` : null;
+  return (
+    <section className="panel cs-tree" aria-label="Working tree" style={{ marginBottom: 16 }}>
+      <div className="row cs-tree-h">
+        <Ic n="file-diff" s={14} />
+        <b>Working tree</b>
+        <span className="faint">
+          {files.length} {files.length === 1 ? "file" : "files"}
+        </span>
+        <span className="cs-add">+{added}</span>
+        <span className="cs-del">−{removed}</span>
+        <span className="sp" />
+        {href && (
+          <a href={href} target="_blank" rel="noreferrer" className="btn btn-sm btn-ghost">
+            <Ic n="external-link" s={13} />
+            {cs.pr ? "Files in the PR" : "Compare"}
+          </a>
+        )}
+      </div>
+      {files.map((f) => (
+        <div key={f.path} className="row cs-file">
+          <span className={`cs-st ${f.status ?? "modified"}`} title={f.status ?? "modified"}>
+            {f.status === "added" ? "A" : f.status === "deleted" ? "D" : "M"}
+          </span>
+          <span className="mono trunc grow">{f.path}</span>
+          <span className="cs-add">+{f.added}</span>
+          <span className="cs-del">−{f.removed}</span>
+          <span className="cs-bar" aria-hidden>
+            {Array.from({ length: 5 }, (_, i) => {
+              const total = f.added + f.removed || 1;
+              const greens = Math.round((f.added / total) * 5);
+              return <i key={i} className={i < greens ? "a" : "d"} />;
+            })}
+          </span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function Session({ cs }: { cs: CodingSession }) {
   const t = task(cs.task)!;
   const p = proj(cs.project)!;
@@ -641,11 +686,49 @@ function Session({ cs }: { cs: CodingSession }) {
               </span>
             </dd>
             <dt>
+              <Ic n="folder-git-2" s={14} />
+              Repository
+            </dt>
+            <dd>
+              {cs.repo ? (
+                <a href={`https://github.com/${cs.repo}`} target="_blank" rel="noreferrer" className="mono" style={{ fontSize: 12, color: "var(--acc)" }}>
+                  {cs.repo}
+                </a>
+              ) : (
+                <span className="faint">No repository connected to {p.name}</span>
+              )}
+            </dd>
+            <dt>
               <Ic n="git-branch" s={14} />
               Branch
             </dt>
             <dd className="mono" style={{ fontSize: 12 }}>
-              {cs.branch ?? <span className="faint">made when it starts</span>}
+              {cs.base && (
+                <span className="faint">
+                  {cs.base.branch}@{cs.base.sha.slice(0, 7)} →{" "}
+                </span>
+              )}
+              {cs.branch ?? <span className="faint">a new branch, made when it starts</span>}
+            </dd>
+            <dt>
+              <Ic n="git-commit-horizontal" s={14} />
+              Commits
+            </dt>
+            <dd>
+              {cs.commits?.length ? (
+                <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {cs.commits.map((m) => (
+                    <span key={m.sha} className="row" style={{ gap: 8 }}>
+                      <span className="mono faint" style={{ fontSize: 12 }}>
+                        {m.sha.slice(0, 7)}
+                      </span>
+                      <span className="trunc">{m.message}</span>
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                <span className="faint">none yet</span>
+              )}
             </dd>
             <dt>
               <Ic n="git-pull-request" s={14} />
@@ -663,6 +746,7 @@ function Session({ cs }: { cs: CodingSession }) {
             </dd>
           </dl>
           )}
+          {cs.files && cs.files.length > 0 && <WorkingTree cs={cs} />}
           {cs.turns.map((turn, i) => (
             <div key={i} style={{ marginBottom: 14 }}>
               <div className="chat-msg user">

@@ -823,3 +823,68 @@
   width: 100%;
   font-weight: 500;
 }
+
+/* A coding session's working tree (screens/Chat.tsx WorkingTree). */
+.cs-tree {
+  overflow: hidden;
+}
+.cs-tree-h {
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.cs-tree-h b {
+  font-weight: 600;
+}
+.cs-file {
+  gap: 10px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.cs-file + .cs-file {
+  border-top: 1px solid var(--border);
+}
+.cs-file .mono {
+  font-size: 12px;
+}
+.cs-add {
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+}
+.cs-del {
+  color: var(--red);
+  font-variant-numeric: tabular-nums;
+}
+.cs-st {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.cs-st.added {
+  color: var(--green);
+}
+.cs-st.deleted {
+  color: var(--red);
+}
+.cs-bar {
+  display: inline-flex;
+  gap: 2px;
+}
+.cs-bar i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--red);
+  opacity: 0.85;
+}
+.cs-bar i.a {
+  background: var(--green);
+}
