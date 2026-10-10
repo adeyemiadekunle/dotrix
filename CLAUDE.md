@@ -201,6 +201,21 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 - **Theme:** Settings → Appearance (System / Light / Dark, the accent, density, motion) is kept in the store's preferences in this browser and applied before the first paint (`applyPrefs` in `core/theme.ts`).
 - The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@dotrix/ui/lib/utils` and `@/hooks/…` → `@dotrix/ui/hooks/…`.
 
+## Plan: coding agent (design, 2026-10-10)
+
+Why: a person assigns an issue, and a coding agent (Claude Code or Codex) works on it in its own
+OpenShell sandbox, with a live view of the agent, terminal, file tree, diff, and a running app, and
+every change in git. Full design: [docs/coding-agent.md](docs/coding-agent.md). It replaces the one-shot
+model of the coding runs with a session per issue, and supersedes their unchecked session items. Each phase
+is usable on its own.
+
+- [ ] **A. Correct the loop:** sandbox clones the session branch with history and no credentials; turn commits are local; the worker pulls them as a bundle through the existing guard; accepted commits are pushed. Per-turn `claude -p --resume` with the transcript saved and restored; `--bare` with platform settings and MCP config; `CLAUDE.md` passed as text; Stop sends SIGINT, then SIGKILL; events in `coding_events`; cost as per-turn deltas
+- [ ] **B. Session lifecycle:** `coding_sessions` with warm, idle, and closed states; idle snapshot and restore; accept and reject per turn with the diff; per-turn approval in Notifications
+- [ ] **C. Workspace view:** read-only terminal, file tree, and diff in the session; subagent events nested; usage per session for owners and admins
+- [ ] **D. Running apps:** Playwright MCP in the sandbox; the supervisor starts dev servers; preview through the platform; network policy for registries and the preview port, tested on OpenShell
+- [ ] **E. Local-file projects and Codex:** a bare repo per local-file project at setup; Codex adapter once its protocol is verified
+- [ ] Open items to verify first (in the design doc): `--resume` across project paths, OpenShell snapshots, Codex's flags and events, idle and warm-sandbox limits
+
 ## Where things stand (2026-10-10)
 
 Built and in use (details live in the code and its docstrings; this list is only the map):
