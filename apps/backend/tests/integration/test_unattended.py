@@ -6,10 +6,10 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
-from pmagent_backend.modules.agents.unattended import Unattended, effective_specs
-from pmagent_backend.modules.workspaces.models import Membership, Role
-from pmagent_engine.contracts import AgentPolicy, AgentSpec
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.agents.unattended import Unattended, effective_specs
+from dotrix_backend.modules.workspaces.models import Membership, Role
+from dotrix_engine.contracts import AgentPolicy, AgentSpec
+from dotrix_engine.testing import tool_call
 
 WRITER = {
     "name": "Writer",
@@ -56,8 +56,8 @@ async def test_allowed_changes_go_through_recorded_as_the_owner_s_rule(
     issue = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Rotate keys"},
                                   headers=ada.headers)).json()
     agent_script.say(
-        tool_call("write_file", file_path="/pmagent/reviews/auth.md", content="# Auth review\n"),
-        tool_call("write_file", file_path="/pmagent/requirements/auth.md", content="# Not mine\n"),
+        tool_call("write_file", file_path="/dotrix/reviews/auth.md", content="# Auth review\n"),
+        tool_call("write_file", file_path="/dotrix/requirements/auth.md", content="# Not mine\n"),
         tool_call("create_issue", type="bug", title="Token in logs", description="auth.py logs it"),
         tool_call("update_issue", key=issue["key"], status="in_progress"),
         tool_call("update_issue", key=issue["key"], status="done"),
@@ -92,7 +92,7 @@ async def test_paused_workspace_and_a_member_s_request_wait_for_approval(
     world, db_client: AsyncClient, agent_script
 ) -> None:
     ada, bob, cat, ws, base = await world()
-    write = tool_call("write_file", file_path="/pmagent/reviews/a.md", content="# A\n")
+    write = tool_call("write_file", file_path="/dotrix/reviews/a.md", content="# A\n")
 
     # Cat can't edit documents herself, so the agent doesn't do it unasked for her.
     agent_script.say(write, "Done.")
@@ -121,7 +121,7 @@ async def test_an_automation_acts_unasked_only_with_its_own_switch(
     assert made["unattended"] is False
     url = f"{base}/automations/{made['id']}"
 
-    agent_script.say(tool_call("write_file", file_path="/pmagent/reviews/a.md", content="# A\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/reviews/a.md", content="# A\n"), "Done.")
     await db_client.post(f"{url}/run", headers=ada.headers)
     runs = (await db_client.get(f"{base}/agent/runs", headers=ada.headers)).json()
     assert runs[0]["status"] == "awaiting_approval"
@@ -132,7 +132,7 @@ async def test_an_automation_acts_unasked_only_with_its_own_switch(
     # Admins can't switch it on; owners can.
     assert (await db_client.patch(url, json={"unattended": True}, headers=bob.headers)).status_code == 403
     assert (await db_client.patch(url, json={"unattended": True}, headers=ada.headers)).json()["unattended"] is True
-    agent_script.say(tool_call("write_file", file_path="/pmagent/reviews/b.md", content="# B\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/reviews/b.md", content="# B\n"), "Done.")
     await db_client.post(f"{url}/run", headers=ada.headers)
     runs = (await db_client.get(f"{base}/agent/runs", headers=ada.headers)).json()
     assert runs[0]["status"] == "completed", runs[0]
@@ -140,7 +140,7 @@ async def test_an_automation_acts_unasked_only_with_its_own_switch(
 
 
 def _member(role: Role, permissions: list[str] | None = None) -> Membership:
-    from pmagent_backend.modules.workspaces.models import Workspace
+    from dotrix_backend.modules.workspaces.models import Workspace
 
     member = Membership(user_id=uuid.uuid4(), role=role)
     member.workspace = Workspace(member_permissions=permissions or [])
@@ -181,7 +181,7 @@ def test_what_a_run_may_use_and_the_cap() -> None:
 async def test_always_allow_from_a_waiting_change(world, db_client: AsyncClient, agent_script) -> None:
     ada, bob, _, ws, base = await world()
     # Lyra (product) asks before writing; owners can turn that into a standing rule from the change.
-    agent_script.say(tool_call("write_file", file_path="/pmagent/requirements/a.md", content="# A\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/requirements/a.md", content="# A\n"), "Done.")
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "write it", "agent": "product"},
                                 headers=ada.headers)).json()
     change = run["approvals"][0]
@@ -197,7 +197,7 @@ async def test_always_allow_from_a_waiting_change(world, db_client: AsyncClient,
     assert history[0]["note"].startswith("Always allow knowledge.write")
     # The change itself still waits; the next one goes straight through.
     assert (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=ada.headers)).json()["status"] == "awaiting_approval"
-    agent_script.say(tool_call("write_file", file_path="/pmagent/requirements/b.md", content="# B\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/requirements/b.md", content="# B\n"), "Done.")
     second = (await db_client.post(f"{base}/agent/runs", json={"message": "and b", "agent": "product"},
                                    headers=ada.headers)).json()
     assert second["status"] == "completed", second
@@ -213,7 +213,7 @@ async def test_a_project_override_gets_the_rule_not_the_workspace(world, db_clie
     fields = {k: product[k] for k in ("name", "description", "instructions", "tools", "access", "issue_types", "can_call")}
     assert (await db_client.put(f"{base}/agents/product", json={"agent": fields | {"description": "Ours."}},
                                 headers=ada.headers)).status_code == 200
-    agent_script.say(tool_call("write_file", file_path="/pmagent/requirements/a.md", content="# A\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/requirements/a.md", content="# A\n"), "Done.")
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "write it", "agent": "product"},
                                 headers=ada.headers)).json()
     url = f"{base}/agent/runs/{run['id']}/approvals/{run['approvals'][0]['id']}/always-allow"

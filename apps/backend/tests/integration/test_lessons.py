@@ -2,8 +2,8 @@
 accept into an agent's rules; folder templates every agent follows."""
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 
 async def _world(db_client: AsyncClient, signup, create_team, add_member):
@@ -28,8 +28,8 @@ async def test_a_rejection_teaches_the_agent_once_accepted(
 ) -> None:
     ada, cat, ws, base = await _world(db_client, signup, create_team, add_member)
     model = agent_script.say(
-        tool_call("write_file", file_path="/pmagent/roadmap.md", content="# Roadmap\n\nEverything in Q1\n"), "Ok.",
-        tool_call("write_file", file_path="/pmagent/vision.md", content="# Vision\n"), "Ok.",
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nEverything in Q1\n"), "Ok.",
+        tool_call("write_file", file_path="/dotrix/vision.md", content="# Vision\n"), "Ok.",
         "Planned it in quarters.",
     )
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "plan the year"}, headers=ada.headers)).json()

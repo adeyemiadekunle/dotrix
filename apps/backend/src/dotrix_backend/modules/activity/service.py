@@ -1,0 +1,171 @@
+"""Activity: what people and agents did, newest first, from the records each module already keeps
+(issue logs, document versions, agent runs, approval decisions). For one project, or for every
+project in the workspace someone can see. Nothing new is stored; the audit log stays the strict
+record for owners and admins."""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from dotrix_backend.modules.agents.models import AgentApproval, AgentRun, ApprovalStatus
+from dotrix_backend.modules.agents.privacy import runs_visible_to
+from dotrix_backend.modules.issues.models import Issue, IssueEvent
+from dotrix_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
+from dotrix_backend.modules.projects.deps import ProjectAccess
+from dotrix_backend.modules.projects.models import Project
+from dotrix_backend.modules.projects.repository import ProjectRepository
+from dotrix_backend.modules.workspaces.models import Membership
+from dotrix_backend.modules.workspaces.permissions import Permission, can
+
+from .schemas import ActivityItem, ActivityKind
+
+ISSUE_KINDS = {
+    "created": ActivityKind.ISSUE_CREATED,
+    "updated": ActivityKind.ISSUE_UPDATED,
+    "commented": ActivityKind.ISSUE_COMMENTED,
+    "claimed": ActivityKind.ISSUE_CLAIMED,
+}
+
+
+class ActivityService:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def project(
+        self, access: ProjectAccess, *, before: datetime | None, limit: int, agents: bool = False
+    ) -> list[ActivityItem]:
+        return await self._feed(access.member, [access.project], before=before, limit=limit, agents=agents)
+
+    async def workspace(
+        self, member: Membership, *, before: datetime | None, limit: int, agents: bool = False
+    ) -> list[ActivityItem]:
+        """Every project in the workspace that `member` can see."""
+        projects = await ProjectRepository(self.session).list(member.workspace_id, member=member)
+        return await self._feed(member, projects, before=before, limit=limit, agents=agents)
+
+    async def _feed(
+        self, member: Membership, projects: list[Project], *, before: datetime | None, limit: int, agents: bool
+    ) -> list[ActivityItem]:
+        """The newest `limit` items older than `before`. Each source gives at most `limit`, so
+        merging them and cutting at `limit` is exact. With `agents`, only what agents did (issue
+        and document changes they made, runs, decisions), and nothing for people who can't chat."""
+        if not projects or (agents and not can(member, Permission.CHAT)):
+            return []
+        by_id: dict[uuid.UUID, Project] = {p.id: p for p in projects}
+        ids = list(by_id)
+        items: list[ActivityItem] = []
+
+        def where(project_id: uuid.UUID) -> dict[str, object]:
+            project = by_id[project_id]
+            return {"project_id": project.id, "project_key": project.key, "project_name": project.name}
+
+        events = (
+            select(IssueEvent, Issue.key, Issue.title, Issue.project_id)
+            .join(Issue, Issue.id == IssueEvent.issue_id)
+            .where(Issue.project_id.in_(ids), IssueEvent.workspace_id == member.workspace_id)
+        )
+        if before is not None:
+            events = events.where(IssueEvent.created_at < before)
+        if agents:
+            events = events.where(IssueEvent.author_agent.is_not(None))
+        for event, key, title, project_id in await self.session.execute(
+            events.order_by(IssueEvent.created_at.desc()).limit(limit)
+        ):
+            items.append(
+                ActivityItem(
+                    kind=ISSUE_KINDS[event.kind.value],
+                    at=event.created_at,
+                    actor_user_id=event.author_user_id,
+                    actor_agent=event.author_agent,
+                    issue_key=key,
+                    issue_title=title,
+                    changes=event.changes or {},
+                    body=event.body,
+                    **where(project_id),
+                )
+            )
+
+        versions = (
+            select(KnowledgeVersion, KnowledgeFile.path)
+            .join(KnowledgeFile, KnowledgeFile.id == KnowledgeVersion.file_id)
+            .where(
+                KnowledgeVersion.project_id.in_(ids),
+                KnowledgeVersion.author_type != AuthorType.SYSTEM,  # the skeleton isn't anyone's act
+            )
+        )
+        if before is not None:
+            versions = versions.where(KnowledgeVersion.created_at < before)
+        if agents:
+            versions = versions.where(KnowledgeVersion.author_type == AuthorType.AGENT)
+        for version, path in await self.session.execute(
+            versions.order_by(KnowledgeVersion.created_at.desc()).limit(limit)
+        ):
+            by_agent = version.author_type is AuthorType.AGENT
+            items.append(
+                ActivityItem(
+                    kind=ActivityKind.DOCUMENT_DELETED if version.deleted else ActivityKind.DOCUMENT_CHANGED,
+                    at=version.created_at,
+                    actor_user_id=None if by_agent else version.author_id,
+                    actor_agent=version.agent if by_agent else None,
+                    path=path,
+                    version=version.version,
+                    body=version.message,
+                    instructed_by_id=version.instructed_by_id,
+                    approved_by_id=version.approved_by_id,
+                    **where(version.project_id),
+                )
+            )
+
+        # Conversations and decisions are for people who can chat with the agents here.
+        if can(member, Permission.CHAT):
+            # Conversations are private to whoever started them (agents/privacy.py).
+            runs = select(AgentRun).where(AgentRun.project_id.in_(ids), runs_visible_to(member))
+            if before is not None:
+                runs = runs.where(AgentRun.created_at < before)
+            for run in await self.session.scalars(runs.order_by(AgentRun.created_at.desc()).limit(limit)):
+                items.append(
+                    ActivityItem(
+                        kind=ActivityKind.RUN_STARTED,
+                        at=run.created_at,
+                        actor_user_id=run.requested_by_id,
+                        actor_agent=None,
+                        body=run.title or run.message,
+                        run_id=run.id,
+                        run_kind=run.kind.value,
+                        run_status=run.status.value,
+                        **where(run.project_id),
+                    )
+                )
+
+            decided = select(AgentApproval).where(
+                AgentApproval.project_id.in_(ids),
+                AgentApproval.status != ApprovalStatus.PENDING,
+                AgentApproval.decided_by_id.is_not(None),  # rejected automatically: not a person's act
+                AgentApproval.decided_at.is_not(None),
+            )
+            if before is not None:
+                decided = decided.where(AgentApproval.decided_at < before)
+            for approval in await self.session.scalars(
+                decided.order_by(AgentApproval.decided_at.desc()).limit(limit)
+            ):
+                assert approval.decided_at is not None
+                items.append(
+                    ActivityItem(
+                        kind=ActivityKind.APPROVAL_DECIDED,
+                        at=approval.decided_at,
+                        actor_user_id=approval.decided_by_id,
+                        actor_agent=None,
+                        run_id=approval.run_id,
+                        tool=approval.tool,
+                        target=approval.target,
+                        decision=approval.status.value,
+                        reason=approval.reason,
+                        **where(approval.project_id),
+                    )
+                )
+
+        items.sort(key=lambda item: item.at, reverse=True)
+        return items[:limit]

@@ -1,9 +1,9 @@
-import { Button } from "@pmagent/ui/components/button";
-import { Checkbox } from "@pmagent/ui/components/checkbox";
-import { ChatBubble, ChatMessage, ChatMessageMeta, ChatNotice } from "@pmagent/ui/components/chat-message";
-import { ChatScroller } from "@pmagent/ui/components/chat-scroller";
-import { PromptInput, type PromptStatus } from "@pmagent/ui/components/prompt-input";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Button } from "@dotrix/ui/components/button";
+import { Checkbox } from "@dotrix/ui/components/checkbox";
+import { ChatBubble, ChatMessage, ChatMessageMeta, ChatNotice } from "@dotrix/ui/components/chat-message";
+import { ChatScroller } from "@dotrix/ui/components/chat-scroller";
+import { PromptInput, type PromptStatus } from "@dotrix/ui/components/prompt-input";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { BotIcon, CircleAlertIcon, CircleStopIcon, LayersIcon } from "lucide-react";
 import { useState } from "react";
 

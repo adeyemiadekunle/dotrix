@@ -1,6 +1,6 @@
 import pytest
 
-from pmagent_backend.modules.projects.repo_urls import normalize_repo_url
+from dotrix_backend.modules.projects.repo_urls import normalize_repo_url
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,6 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "@pmagent/ui/lib/utils"
+import { cn } from "@dotrix/ui/lib/utils"
 import { Slot } from "radix-ui"
 
 // Gr8r's buttons (gr8r.css: .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-danger, sizes

@@ -1,7 +1,7 @@
-# The image coding runs use in OpenShell (PMAGENT_CODING_IMAGE): Claude Code, Codex, git, and
+# The image coding runs use in OpenShell (DOTRIX_CODING_IMAGE): Claude Code, Codex, git, and
 # common toolchains so the agent can run a project's tests. Add what your projects need.
 #
-#   docker build -t pmagent-coding:latest infra/coding
+#   docker build -t dotrix-coding:latest infra/coding
 #
 # No credentials are baked in: the model key is attached per run as an OpenShell provider, and
 # the agent never gets a GitHub token (the worker clones and pushes outside the sandbox).
@@ -9,7 +9,7 @@
 FROM node:22-bookworm
 
 # The CLIs, installed globally; their binaries are what the provider profiles allow to reach
-# the model APIs (see pmagent-claude-code.yaml and pmagent-codex.yaml).
+# the model APIs (see dotrix-claude-code.yaml and dotrix-codex.yaml).
 RUN npm install -g @anthropic-ai/claude-code @openai/codex && claude --version && codex --version
 
 # OpenShell drops the agent to this user (policy: run_as_user/run_as_group "sandbox").

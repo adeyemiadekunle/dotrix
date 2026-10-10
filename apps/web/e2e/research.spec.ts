@@ -4,7 +4,7 @@ import { NOT_WIRED, signUpWithProject } from "./helpers";
 
 test.fixme(true, NOT_WIRED);
 
-// The e2e backend's web is canned (PMAGENT_SEARCH_PROVIDER=fake): every search finds one gov.uk
+// The e2e backend's web is canned (DOTRIX_SEARCH_PROVIDER=fake): every search finds one gov.uk
 // page about VAT. "Research: <question>" makes the rule-based model search, read that page, and
 // record a report with one claim quoted from it and one that isn't on it.
 

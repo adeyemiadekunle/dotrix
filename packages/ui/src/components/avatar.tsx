@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { cn } from "@pmagent/ui/lib/utils"
+import { cn } from "@dotrix/ui/lib/utils"
 import { Avatar as AvatarPrimitive } from "radix-ui"
 
 function Avatar({

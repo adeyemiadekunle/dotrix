@@ -1,7 +1,7 @@
 // Who the agents are: the six built-ins and a workspace's own agents, as contracts owners and
 // admins change (Settings → Agents), with per-project overrides. The chat's + menu and the
 // names shown on replies come from here.
-import type { Schemas } from "@pmagent/api-client";
+import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { toast } from "sonner";

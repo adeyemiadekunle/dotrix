@@ -1,4 +1,4 @@
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 
 import { GitHubSettings } from "@/components/settings/github";
 import { canManageProjects } from "@/lib/labels";

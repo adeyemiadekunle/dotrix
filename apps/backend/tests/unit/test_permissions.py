@@ -1,7 +1,7 @@
 import pytest
 
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_backend.modules.workspaces.permissions import Permission, has_permission
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_backend.modules.workspaces.permissions import Permission, has_permission
 
 P = Permission
 

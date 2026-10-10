@@ -1,8 +1,8 @@
 """Which web search agents get, from settings (docs/agents-v2.md §6.2)."""
 import pytest
 
-from pmagent_backend.core.settings import Settings
-from pmagent_backend.modules.research.service import build_web_research
+from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.research.service import build_web_research
 
 
 def settings(**values: object) -> Settings:
@@ -30,5 +30,5 @@ def test_native_keeps_the_models_search_even_with_a_key() -> None:
 
 
 def test_tavily_needs_its_key() -> None:
-    with pytest.raises(ValueError, match="needs PMAGENT_TAVILY_API_KEY"):
+    with pytest.raises(ValueError, match="needs DOTRIX_TAVILY_API_KEY"):
         settings(search_provider="tavily")

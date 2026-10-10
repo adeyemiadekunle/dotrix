@@ -1,4 +1,4 @@
-import { Button } from "@pmagent/ui/components/button";
+import { Button } from "@dotrix/ui/components/button";
 
 /** "Continue with GitHub": a plain link, since the sign-in is a series of full-page redirects
  * (app/api/auth/github). Shown only when the backend has GitHub sign-in set up. */

@@ -1,5 +1,5 @@
-import { Button } from "@pmagent/ui/components/button";
-import { cn } from "@pmagent/ui/lib/utils";
+import { Button } from "@dotrix/ui/components/button";
+import { cn } from "@dotrix/ui/lib/utils";
 import {
   ChevronDownIcon,
   ChevronRightIcon,

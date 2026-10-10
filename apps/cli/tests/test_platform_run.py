@@ -1,4 +1,4 @@
-"""`pmagent run` / `jobs` / `jobs-approve` / `jobs-stop` against the platform, and the live
+"""`dotrix run` / `jobs` / `jobs-approve` / `jobs-stop` against the platform, and the live
 activity line ("Reading roadmap.md…") while the PM works."""
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from fake_platform import FakePlatform, approval  # noqa: E402
 
-from pmagent_cli import cli as cli_module  # noqa: E402
+from dotrix_cli import cli as cli_module  # noqa: E402
 
-DIFF = "--- a/pmagent/roadmap.md\n+++ b/pmagent/roadmap.md\n@@ -1 +1,2 @@\n # Roadmap\n+Phase 1: core\n"
+DIFF = "--- a/dotrix/roadmap.md\n+++ b/dotrix/roadmap.md\n@@ -1 +1,2 @@\n # Roadmap\n+Phase 1: core\n"
 
 
 def invoke(repo: Path, *args: str, input: str | None = None):
@@ -48,7 +48,7 @@ def test_in_a_terminal_the_status_line_is_replaced(capsys) -> None:
     assert out.rstrip().endswith("KUN-5 is blocked.")
 
 
-# -- pmagent run -----------------------------------------------------------------------------
+# -- dotrix run -----------------------------------------------------------------------------
 
 
 def test_run_streams_the_reply_and_settles_approvals_inline(linked_repo: Path, platform: FakePlatform) -> None:
@@ -62,7 +62,7 @@ def test_run_streams_the_reply_and_settles_approvals_inline(linked_repo: Path, p
     assert platform.runs_started == [{"message": "Add phase 1 to the roadmap"}]
     assert "+Phase 1: core" in result.output and "(1 change(s) approved, 0 rejected)" in result.output
     assert result.output.count("Roadmap updated.") == 1
-    assert "pmagent chat --thread thread-1" in result.output
+    assert "dotrix chat --thread thread-1" in result.output
 
 
 def test_run_in_the_background_returns_at_once(linked_repo: Path, platform: FakePlatform) -> None:
@@ -84,7 +84,7 @@ def test_run_continues_a_thread(linked_repo: Path, platform: FakePlatform) -> No
     assert platform.runs_started == [{"message": "and the vision?", "thread_id": "thread-7"}]
 
 
-# -- pmagent jobs ----------------------------------------------------------------------------
+# -- dotrix jobs ----------------------------------------------------------------------------
 
 
 def test_jobs_lists_the_projects_runs(linked_repo: Path, platform: FakePlatform) -> None:
@@ -104,7 +104,7 @@ def test_jobs_lists_the_projects_runs(linked_repo: Path, platform: FakePlatform)
     assert "No runs yet" in invoke(linked_repo, "jobs").output
 
 
-# -- pmagent jobs-approve / jobs-stop ---------------------------------------------------------
+# -- dotrix jobs-approve / jobs-stop ---------------------------------------------------------
 
 
 def test_jobs_approve_decides_everything_waiting(linked_repo: Path, platform: FakePlatform) -> None:

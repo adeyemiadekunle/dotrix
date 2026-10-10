@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "dotrix API",
-    "description": "\nThe dotrix platform API. The web app, desktop app, and `pmagent` CLI are all clients of it.\n\n## Authentication\n\nSend a bearer token in the `Authorization` header. Two kinds are accepted:\n\n| Token | How to get it | Lifetime |\n| --- | --- | --- |\n| **Access token** (JWT) | `POST /v1/auth/login` or `/v1/auth/signup`; renew with `/v1/auth/refresh` | 15 minutes |\n| **API token** (`pmat_\u2026`) | CLI device login (`/v1/auth/device/*`) or `POST /v1/me/tokens` | Up to 1 year |\n\nAPI tokens act as their user within that user's workspace roles, narrowed by scopes: a\n`read`-only token can only make `GET` requests. API tokens can't create more credentials.\n\nTo try the API here: sign up or log in, copy `access_token`, click **Authorize**, and paste it.\n\n## Workspaces and permissions\n\nMost routes are scoped to a workspace (`/v1/workspaces/{workspace_id}/\u2026`). What you can do\ndepends on your role there (owner, admin, member, guest). If you're not a member, the\nworkspace is reported as **404 Not Found**, never 403, so IDs can't be probed.\n\n## Errors\n\nErrors use [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\nSwitch on `type` (for example `\u2026/problems/invalid_link`), not on `detail`, which is for humans.\nEvery response carries an `X-Request-ID` header; include it when reporting a problem.\n\n## Secrets in requests\n\nOne-time tokens (email links, invites, device codes) always travel in request **bodies**,\nnever in URL paths, so they don't end up in logs.\n",
+    "description": "\nThe dotrix platform API. The web app, desktop app, and `dotrix` CLI are all clients of it.\n\n## Authentication\n\nSend a bearer token in the `Authorization` header. Two kinds are accepted:\n\n| Token | How to get it | Lifetime |\n| --- | --- | --- |\n| **Access token** (JWT) | `POST /v1/auth/login` or `/v1/auth/signup`; renew with `/v1/auth/refresh` | 15 minutes |\n| **API token** (`dtx_\u2026`) | CLI device login (`/v1/auth/device/*`) or `POST /v1/me/tokens` | Up to 1 year |\n\nAPI tokens act as their user within that user's workspace roles, narrowed by scopes: a\n`read`-only token can only make `GET` requests. API tokens can't create more credentials.\n\nTo try the API here: sign up or log in, copy `access_token`, click **Authorize**, and paste it.\n\n## Workspaces and permissions\n\nMost routes are scoped to a workspace (`/v1/workspaces/{workspace_id}/\u2026`). What you can do\ndepends on your role there (owner, admin, member, guest). If you're not a member, the\nworkspace is reported as **404 Not Found**, never 403, so IDs can't be probed.\n\n## Errors\n\nErrors use [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\nSwitch on `type` (for example `\u2026/problems/invalid_link`), not on `detail`, which is for humans.\nEvery response carries an `X-Request-ID` header; include it when reporting a problem.\n\n## Secrets in requests\n\nOne-time tokens (email links, invites, device codes) always travel in request **bodies**,\nnever in URL paths, so they don't end up in logs.\n",
     "version": "0.1.0"
   },
   "paths": {
@@ -3577,7 +3577,7 @@
           "projects"
         ],
         "summary": "Create Project",
-        "description": "Set up a project from a new repo, an existing repo, or docs only (owners and admins).\nIts `.pmagent/` is created with the full folder structure and the default agent rules.\nThe key (e.g. `KUN`) prefixes issue keys and can't be changed; 409 if it's taken, and 409\n`repo_taken` if a project in this workspace already uses the repo.",
+        "description": "Set up a project from a new repo, an existing repo, or docs only (owners and admins).\nIts `.dotrix/` is created with the full folder structure and the default agent rules.\nThe key (e.g. `KUN`) prefixes issue keys and can't be changed; 409 if it's taken, and 409\n`repo_taken` if a project in this workspace already uses the repo.",
         "operationId": "create_project",
         "security": [
           {
@@ -4661,7 +4661,7 @@
           "knowledge"
         ],
         "summary": "Export Knowledge",
-        "description": "Download the whole `.pmagent/` as Markdown (zip), with a `config.yaml`. Owners and\nadmins. Leaving the platform loses nothing.",
+        "description": "Download the whole `.dotrix/` as Markdown (zip), with a `config.yaml`. Owners and\nadmins. Leaving the platform loses nothing.",
         "operationId": "export_knowledge",
         "security": [
           {
@@ -4692,7 +4692,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Zip of `.pmagent/`",
+            "description": "Zip of `.dotrix/`",
             "content": {
               "application/zip": {}
             }
@@ -19765,7 +19765,7 @@
             },
             "type": "object",
             "title": "Access",
-            "description": "Folder pattern relative to .pmagent/ (e.g. research/*) -> access"
+            "description": "Folder pattern relative to .dotrix/ (e.g. research/*) -> access"
           },
           "issue_types": {
             "items": {
@@ -19835,7 +19835,7 @@
           "tools"
         ],
         "title": "AgentFields",
-        "description": "An agent's contract without its handle (the handle is in the path). Validated against\n`pmagent_engine.contracts.AgentSpec` on save (422 with the reason)."
+        "description": "An agent's contract without its handle (the handle is in the path). Validated against\n`dotrix_engine.contracts.AgentSpec` on save (422 with the reason)."
       },
       "AgentPreferenceRead": {
         "properties": {
@@ -19968,7 +19968,7 @@
             },
             "type": "object",
             "title": "Access",
-            "description": "Folder pattern relative to .pmagent/ (e.g. research/*) -> access"
+            "description": "Folder pattern relative to .dotrix/ (e.g. research/*) -> access"
           },
           "issue_types": {
             "items": {
@@ -20745,7 +20745,7 @@
               }
             ],
             "title": "Target",
-            "description": "What the action changes, e.g. /pmagent/vision.md"
+            "description": "What the action changes, e.g. /dotrix/vision.md"
           },
           "args": {
             "additionalProperties": true,
@@ -22656,7 +22656,7 @@
             "maxLength": 100,
             "minLength": 1,
             "title": "Client Name",
-            "default": "pmagent CLI"
+            "default": "dotrix CLI"
           },
           "scopes": {
             "items": {
@@ -27113,7 +27113,7 @@
           "ref": {
             "type": "string",
             "title": "Ref",
-            "description": "The document's path in `.pmagent/`, or the issue's key"
+            "description": "The document's path in `.dotrix/`, or the issue's key"
           },
           "heading": {
             "anyOf": [
@@ -27405,7 +27405,7 @@
           "stage": {
             "type": "string",
             "title": "Stage",
-            "description": "A pipeline stage the agent reported (pmagent_engine.pipelines)"
+            "description": "A pipeline stage the agent reported (dotrix_engine.pipelines)"
           },
           "input_tokens": {
             "type": "integer",
@@ -28320,7 +28320,7 @@
               }
             ],
             "title": "Target",
-            "description": "What the action changes, e.g. /pmagent/vision.md"
+            "description": "What the action changes, e.g. /dotrix/vision.md"
           },
           "args": {
             "additionalProperties": true,
@@ -28857,7 +28857,7 @@
           "ref": {
             "type": "string",
             "title": "Ref",
-            "description": "The document's path in `.pmagent/`, or the issue's key"
+            "description": "The document's path in `.dotrix/`, or the issue's key"
           },
           "heading": {
             "anyOf": [
@@ -29148,7 +29148,7 @@
     "securitySchemes": {
       "HTTPBearer": {
         "type": "http",
-        "description": "Access token from /v1/auth/login, or an API token (pmat_...)",
+        "description": "Access token from /v1/auth/login, or an API token (dtx_...)",
         "scheme": "bearer"
       }
     }
@@ -29192,7 +29192,7 @@
     },
     {
       "name": "knowledge",
-      "description": "A project's `.pmagent/` source of truth: files with full version history (who wrote, instructed, and approved each change), restore, sync for local mirrors, and Markdown export. Agents may only write the folders their role owns."
+      "description": "A project's `.dotrix/` source of truth: files with full version history (who wrote, instructed, and approved each change), restore, sync for local mirrors, and Markdown export. Agents may only write the folders their role owns."
     },
     {
       "name": "documents",
@@ -29220,7 +29220,7 @@
     },
     {
       "name": "coding",
-      "description": "Coding runs: an issue handed to Claude Code (or Codex, by the server's model key) in a sandbox, approved first; the platform pushes a new branch and opens a PR, the issue moves to review, and the Reviewer reads the PR. Never the default branch, never `.pmagent/`, never merged by an agent."
+      "description": "Coding runs: an issue handed to Claude Code (or Codex, by the server's model key) in a sandbox, approved first; the platform pushes a new branch and opens a PR, the issue moves to review, and the Reviewer reads the PR. Never the default branch, never `.dotrix/`, never merged by an agent."
     },
     {
       "name": "graph",

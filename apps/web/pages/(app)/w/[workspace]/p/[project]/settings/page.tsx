@@ -1,12 +1,12 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
-import { Input } from "@pmagent/ui/components/input";
-import { Label } from "@pmagent/ui/components/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { Textarea } from "@pmagent/ui/components/textarea";
-import { cn } from "@pmagent/ui/lib/utils";
+import type { Schemas } from "@dotrix/api-client";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
+import { Input } from "@dotrix/ui/components/input";
+import { Label } from "@dotrix/ui/components/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { Textarea } from "@dotrix/ui/components/textarea";
+import { cn } from "@dotrix/ui/lib/utils";
 import { ArrowRightLeftIcon, BotIcon, DownloadIcon, FileTextIcon, LockIcon, UsersIcon, XIcon } from "lucide-react";
 import { Link, useRouter } from "@/lib/navigation";
 import { useState, type CSSProperties, type FormEvent } from "react";
@@ -289,7 +289,7 @@ function Repository({ project, workspace, canEdit }: { project: Project; workspa
         <SettingsTitle>Repository</SettingsTitle>
         <SettingsDescription>
           The code repo this project plans for. Connected through the GitHub App, agents read its code (a copy of the
-          default branch, refreshed on every push), private repos included. Teammates link their own checkouts with <code className="font-mono">pmagent connect</code>.
+          default branch, refreshed on every push), private repos included. Teammates link their own checkouts with <code className="font-mono">dotrix connect</code>.
         </SettingsDescription>
       </SettingsHeader>
       <SettingsContent>
@@ -874,7 +874,7 @@ export default function ProjectSettings() {
             <SettingsHeader>
               <SettingsTitle>Export</SettingsTitle>
               <SettingsDescription>
-                The whole <code className="font-mono">.pmagent/</code> as Markdown in a zip, with a config.yaml. Leaving the
+                The whole <code className="font-mono">.dotrix/</code> as Markdown in a zip, with a config.yaml. Leaving the
                 platform loses nothing. Knowledge revision {project.knowledge_revision}.
               </SettingsDescription>
             </SettingsHeader>

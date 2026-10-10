@@ -1,7 +1,7 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import type { Schemas } from "@dotrix/api-client";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "@/lib/navigation";
 import { useEffect, type ReactNode } from "react";
@@ -81,7 +81,7 @@ export function GitHubSettings({ workspace }: { workspace: Workspace }) {
         ) : !status.data.configured ? (
           <Notice
             title="The GitHub App isn't set up on this server"
-            description="Whoever runs pmagent sets PMAGENT_GITHUB_APP_ID, PMAGENT_GITHUB_APP_SLUG, and the app's private key. Until then, projects link a repo by its address."
+            description="Whoever runs dotrix sets DOTRIX_GITHUB_APP_ID, DOTRIX_GITHUB_APP_SLUG, and the app's private key. Until then, projects link a repo by its address."
           />
         ) : (
           <>

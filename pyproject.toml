@@ -1,10 +1,10 @@
 # uv workspace root (virtual: not itself a package).
-# Members: the agent engine, the `pmagent` CLI, and the platform backend.
+# Members: the agent engine, the `dotrix` CLI, and the platform backend.
 [project]
-name = "pmagent-workspace"
+name = "dotrix-workspace"
 version = "0.0.0"
 requires-python = ">=3.11"
-dependencies = ["pmagent-engine", "pmagent", "pmagent-backend"]
+dependencies = ["dotrix-engine", "dotrix", "dotrix-backend"]
 
 [tool.uv]
 package = false
@@ -13,9 +13,9 @@ package = false
 members = ["packages/engine", "apps/cli", "apps/backend"]
 
 [tool.uv.sources]
-pmagent-engine = { workspace = true }
-pmagent = { workspace = true }
-pmagent-backend = { workspace = true }
+dotrix-engine = { workspace = true }
+dotrix = { workspace = true }
+dotrix-backend = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -35,7 +35,7 @@ select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
 ignore = ["B008"]  # Typer declares CLI options as function-call defaults
 
 [tool.ruff.lint.isort]
-known-first-party = ["pmagent_engine", "pmagent_cli", "pmagent_backend"]
+known-first-party = ["dotrix_engine", "dotrix_cli", "dotrix_backend"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages/engine/tests", "apps/cli/tests", "apps/backend/tests"]

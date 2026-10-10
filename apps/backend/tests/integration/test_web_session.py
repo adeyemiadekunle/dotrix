@@ -8,11 +8,11 @@ import httpx
 import pytest
 from httpx import AsyncClient
 
-from pmagent_backend.core.settings import Settings
-from pmagent_backend.modules.auth.github import GitHubOAuth, get_github
-from pmagent_backend.modules.web.session import SharedRefresh
+from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.auth.github import GitHubOAuth, get_github
+from dotrix_backend.modules.web.session import SharedRefresh
 
-WEB = {"X-Requested-With": "pmagent-web"}
+WEB = {"X-Requested-With": "dotrix-web"}
 PASSWORD = "correct horse battery"
 
 
@@ -40,10 +40,10 @@ async def test_signing_up_puts_the_session_into_httponly_cookies(db_client: Asyn
     assert res.json()["email"] == "ada@example.com"
     assert "access_token" not in res.text and "refresh_token" not in res.text
     cookies = set_cookies(res)
-    assert "HttpOnly" in cookies["pm_access"] and "Path=/;" in cookies["pm_access"] + ";"
-    assert "HttpOnly" in cookies["pm_refresh"] and "Path=/api/auth" in cookies["pm_refresh"]
-    assert "HttpOnly" not in cookies["pm_session"]  # only says someone is signed in
-    assert "SameSite=lax" in cookies["pm_access"]
+    assert "HttpOnly" in cookies["dx_access"] and "Path=/;" in cookies["dx_access"] + ";"
+    assert "HttpOnly" in cookies["dx_refresh"] and "Path=/api/auth" in cookies["dx_refresh"]
+    assert "HttpOnly" not in cookies["dx_session"]  # only says someone is signed in
+    assert "SameSite=lax" in cookies["dx_access"]
     # The API takes the access cookie, with no Authorization header.
     me = await db_client.get("/v1/me")
     assert me.status_code == 200 and me.json()["email"] == "ada@example.com"
@@ -54,12 +54,12 @@ async def test_signing_in_and_out(db_client: AsyncClient) -> None:
     db_client.cookies.clear()
     assert (await db_client.get("/v1/me")).status_code == 401
     wrong = await db_client.post("/api/auth/login", json={"email": "ada@example.com", "password": "nope"}, headers=WEB)
-    assert wrong.status_code == 401 and "pm_access" not in set_cookies(wrong)
+    assert wrong.status_code == 401 and "dx_access" not in set_cookies(wrong)
     res = await db_client.post("/api/auth/login", json={"email": "ada@example.com", "password": PASSWORD}, headers=WEB)
     assert res.status_code == 204
     assert (await db_client.get("/v1/me")).status_code == 200
 
-    refresh_token = db_client.cookies.get("pm_refresh")
+    refresh_token = db_client.cookies.get("dx_refresh")
     out = await db_client.post("/api/auth/logout", headers=WEB)
     assert out.status_code == 204
     assert (await db_client.get("/v1/me")).status_code == 401
@@ -95,10 +95,10 @@ async def test_a_bearer_token_works_without_the_header(db_client: AsyncClient, s
 
 async def test_refresh_rotates_the_cookies(db_client: AsyncClient) -> None:
     await sign_up(db_client)
-    before = db_client.cookies.get("pm_refresh")
+    before = db_client.cookies.get("dx_refresh")
     res = await db_client.post("/api/auth/refresh", headers=WEB)
     assert res.status_code == 204
-    after = db_client.cookies.get("pm_refresh")
+    after = db_client.cookies.get("dx_refresh")
     assert after and after != before
     assert (await db_client.get("/v1/me")).status_code == 200
 
@@ -106,11 +106,11 @@ async def test_refresh_rotates_the_cookies(db_client: AsyncClient) -> None:
 async def test_a_session_that_cant_refresh_is_cleared(db_client: AsyncClient) -> None:
     res = await db_client.post("/api/auth/refresh", headers=WEB)
     assert res.status_code == 401
-    db_client.cookies.set("pm_refresh", "not-a-real-token", domain="test", path="/api/auth")
+    db_client.cookies.set("dx_refresh", "not-a-real-token", domain="test", path="/api/auth")
     res = await db_client.post("/api/auth/refresh", headers=WEB)
     assert res.status_code == 401
     cleared = set_cookies(res)
-    assert 'pm_access=""' in cleared["pm_access"] and "Max-Age=0" in cleared["pm_access"]
+    assert 'dx_access=""' in cleared["dx_access"] and "Max-Age=0" in cleared["dx_access"]
 
 
 async def test_requests_refreshing_at_once_share_one_refresh() -> None:
@@ -195,7 +195,7 @@ async def test_github_sign_in_sets_the_session(db_client: AsyncClient, github: F
     state = await start(db_client)
     res = await db_client.get(f"/api/auth/github/callback?code=good-code&state={state}")
     assert res.status_code == 303 and res.headers["location"] == "/w/x"
-    assert "pm_access" in set_cookies(res)
+    assert "dx_access" in set_cookies(res)
     assert (await db_client.get("/v1/me")).json()["email"] == "ada@example.com"
 
 
@@ -237,7 +237,7 @@ async def test_installing_the_app_checks_the_state_and_the_install_link(db_clien
     assert "github_error" in bad.headers["location"] and "evil" not in bad.headers["location"]
 
     workspace = "0190f5b8-0000-7000-8000-000000000001"
-    url = "https://github.com/apps/pmagent/installations/new"
+    url = "https://github.com/apps/dotrix/installations/new"
     res = await db_client.get(f"/api/github/install?workspace={workspace}&install_url={url}&next=/w/x/settings/github")
     location = urlparse(res.headers["location"])
     assert f"{location.scheme}://{location.netloc}{location.path}" == url

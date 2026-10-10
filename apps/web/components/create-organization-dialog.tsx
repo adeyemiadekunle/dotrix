@@ -1,4 +1,4 @@
-import { Button } from "@pmagent/ui/components/button";
+import { Button } from "@dotrix/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -6,7 +6,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@pmagent/ui/components/dialog";
+} from "@dotrix/ui/components/dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";

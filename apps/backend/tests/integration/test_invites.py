@@ -2,8 +2,8 @@ from urllib.parse import parse_qs, urlparse
 
 from httpx import AsyncClient
 
-from pmagent_backend.core.email import OutboxEmailSender
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.core.email import OutboxEmailSender
+from dotrix_backend.modules.workspaces.models import Role
 
 
 def ws(team: dict) -> str:

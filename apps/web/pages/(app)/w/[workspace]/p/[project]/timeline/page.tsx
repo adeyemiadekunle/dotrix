@@ -1,6 +1,6 @@
-import { Checkbox } from "@pmagent/ui/components/checkbox";
-import { Label } from "@pmagent/ui/components/label";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Checkbox } from "@dotrix/ui/components/checkbox";
+import { Label } from "@dotrix/ui/components/label";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { Suspense, useMemo } from "react";
 
 import { IssueTimeline, ZoomToggle, type TimelineZoom } from "@/components/issues/timeline";

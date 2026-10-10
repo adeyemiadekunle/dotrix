@@ -1,4 +1,4 @@
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { Link } from "@/lib/navigation";
 import { useMemo, type ReactNode } from "react";
 

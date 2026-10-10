@@ -1,5 +1,5 @@
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
 import { useMutation } from "@tanstack/react-query";
 import { CircleCheckIcon, CircleXIcon, TerminalIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";

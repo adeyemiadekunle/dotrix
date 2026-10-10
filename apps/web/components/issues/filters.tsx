@@ -1,5 +1,5 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Button } from "@pmagent/ui/components/button";
+import type { Schemas } from "@dotrix/api-client";
+import { Button } from "@dotrix/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -12,9 +12,9 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@pmagent/ui/components/dropdown-menu";
-import { Input } from "@pmagent/ui/components/input";
-import { cn } from "@pmagent/ui/lib/utils";
+} from "@dotrix/ui/components/dropdown-menu";
+import { Input } from "@dotrix/ui/components/input";
+import { cn } from "@dotrix/ui/lib/utils";
 import { ListFilterIcon, SearchIcon, TagIcon, UserIcon, XIcon, ZapIcon, type LucideIcon } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 

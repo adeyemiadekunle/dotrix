@@ -1,14 +1,14 @@
-# PRD: pmagent, the AI project team for any project
+# PRD: dotrix, the AI project team for any project
 
 Sep 26, 2026 · @Adeyemi Adekunle
 
 ## Summary
 
-pmagent is a standalone product: an AI project team that plans, researches, reviews, documents, and builds any project, tracked on a Jira-style board. Anyone can sign up with a personal, team, or business account, start a new repo or connect an existing one, bring in their docs, and get a Project Manager agent backed by specialists and a coding agent.
+dotrix is a standalone product: an AI project team that plans, researches, reviews, documents, and builds any project, tracked on a Jira-style board. Anyone can sign up with a personal, team, or business account, start a new repo or connect an existing one, bring in their docs, and get a Project Manager agent backed by specialists and a coding agent.
 
 **Problem.** AI coding tools write code fast, but nobody keeps the project coherent. Requirements live in scattered docs, decisions are forgotten, coding agents remember nothing between sessions, and Jira-class tools were built for humans, not agents. As projects grow, teams hit **AI project drift**: agents guess instead of knowing, and the plan, the decisions, and the code fall out of sync.
 
-**Solution.** One structured **source of truth** per project, stored on the pmagent platform and never pushed to the code repo, plus a team of agents that works around it:
+**Solution.** One structured **source of truth** per project, stored on the dotrix platform and never pushed to the code repo, plus a team of agents that works around it:
 
 - A **Project Manager agent** you talk to, which coordinates everything.
 - Five **thinking agents** (Product, Architecture, Research, Reviewer, Documentation) that never write code.
@@ -26,7 +26,7 @@ Nothing changes without explicit instruction and approval (Chat Mode vs Action M
 
 1. **Any project, any starting point.** Start a new repo, connect an existing one, or start from docs alone; software or not.
 2. **Prevent AI project drift.** Every "why" is answered from a logged decision (ADR), never a guess.
-3. **One source of truth, on the platform.** Requirements, architecture, decisions, research, progress, and issues are structured files in `.pmagent/`, kept on the platform with full version history. Claude Code, Codex, and the CLI read a local, git-excluded mirror. The code repo holds code only.
+3. **One source of truth, on the platform.** Requirements, architecture, decisions, research, progress, and issues are structured files in `.dotrix/`, kept on the platform with full version history. Claude Code, Codex, and the CLI read a local, git-excluded mirror. The code repo holds code only.
 4. **A complete team.** Planning, research, review, documentation, and coding, coordinated by one PM agent.
 5. **Jira-style tracking** that humans and agents both use: issue types, epics, sprints, board, backlog.
 6. **Nothing changes without permission.** Chat Mode by default; Action Mode only on instruction, with approvals governed by account roles.
@@ -34,7 +34,7 @@ Nothing changes without explicit instruction and approval (Chat Mode vs Action M
 
 **Non-goals (v1)**
 
-- Replacing the code host. Repos stay on GitHub or GitLab; pmagent works through branches and pull requests.
+- Replacing the code host. Repos stay on GitHub or GitLab; dotrix works through branches and pull requests.
 - The coding agent never merges to the main branch or deploys; humans merge.
 - No custom workflow editor, time tracking, or portfolio reporting in v1.
 - No on-premise deployment in v1 (business plan roadmap item).
@@ -65,11 +65,11 @@ Three account types map to three customer segments; within a team or business, p
 
 ## System overview
 
-pmagent has four layers: clients people use, a hosted platform for accounts, the board, and each project's `.pmagent/` source of truth, an agent team per project, and the customer's code host, which holds code only.
+dotrix has four layers: clients people use, a hosted platform for accounts, the board, and each project's `.dotrix/` source of truth, an agent team per project, and the customer's code host, which holds code only.
 
 &#91;embedded content: platform overview · clients, platform layer, agent team, project repo, connectors\]
 
-The platform handles who you are, which workspaces and projects you can see, and who may approve what, and it stores every project's `.pmagent/`. That folder is never pushed to GitHub or GitLab; tools like Claude Code and Codex read a synced, git-excluded local copy. The coding agent works only on a branch and opens a pull request containing code only; humans merge.
+The platform handles who you are, which workspaces and projects you can see, and who may approve what, and it stores every project's `.dotrix/`. That folder is never pushed to GitHub or GitLab; tools like Claude Code and Codex read a synced, git-excluded local copy. The coding agent works only on a branch and opens a pull request containing code only; humans merge.
 
 **Default delegation for a new feature** (for example "I want to add scheduled delivery")
 
@@ -88,7 +88,7 @@ The platform handles who you are, which workspaces and projects you can see, and
 | Identity and accounts | Sign-up, login, SSO, personal / team / business accounts, workspaces, roles, invites | To build |
 | Billing | Plans, seats, usage limits for agent runs | To build |
 | Web and desktop apps | Board, backlog, briefings, chat, approvals, calendar, settings | To build |
-| Sync service | Stores each project's `.pmagent/` on the platform with version history, and syncs a git-excluded local mirror for the CLI, Claude Code, and Codex | To build |
+| Sync service | Stores each project's `.dotrix/` on the platform with version history, and syncs a git-excluded local mirror for the CLI, Claude Code, and Codex | To build |
 | Connectors | Doc sources (uploads, Drive, Notion, Confluence) and code hosts (GitHub, GitLab) | Uploads built; others to build |
 | Agent engine (`agent.py`) | PM + thinking agents + coding agent, approval gate | Thinking agents built; coding agent to build |
 | Issue engine (`tasks.py`, `ics.py`) | Jira-style issues, readiness, atomic claiming, calendar | Basic tasks built; issue types, epics, sprints to build |
@@ -253,7 +253,7 @@ Every agent can **read** the whole source of truth and the connected docs. **Wri
 - Its PR goes to the Reviewer, then to a human for merge.
 - Spend limits per run (time, tokens) are set by the workspace plan.
 
-**External coding tools.** Claude Code and Codex connect through a managed `CLAUDE.md` / `AGENTS.md` and the `pmagent` CLI. They follow the same rules: claim an issue when told to, log progress, and hand back for review.
+**External coding tools.** Claude Code and Codex connect through a managed `CLAUDE.md` / `AGENTS.md` and the `dotrix` CLI. They follow the same rules: claim an issue when told to, log progress, and hand back for review.
 
 ## Accounts, workspaces, and access
 
@@ -295,17 +295,17 @@ Prices and exact limits are an open question below.
 - Switch between workspaces; transfer project ownership between workspaces.
 - Every agent write records who instructed it and who approved it, in the audit log.
 - The CLI and external tools sign in with a device login and use scoped, revocable tokens; no passwords in config files.
-- Account deletion removes platform data, including each project's `.pmagent/`, after an export window; code in the user's own repos is untouched.
+- Account deletion removes platform data, including each project's `.dotrix/`, after an export window; code in the user's own repos is untouched.
 
 ## Projects and connectors
 
-A project can start three ways, and every path ends with the same `.pmagent/` on the platform and the same agent team. The code repo, if there is one, only ever holds code.
+A project can start three ways, and every path ends with the same `.dotrix/` on the platform and the same agent team. The code repo, if there is one, only ever holds code.
 
 | Start from | What happens |
 | --- | --- |
-| **New repo** (`init`) | Creates a code repo (on the connected code host, or local git), creates the project's `.pmagent/` on the platform, and asks a few questions to seed `project.md` and `vision.md` |
-| **Existing repo** (`connect`) | Creates the project's `.pmagent/` on the platform (nothing is added to the repo), imports the README, and has the Architecture agent draft `architecture/overview.md` from the codebase for approval |
-| **Docs only** | For projects with no code yet (or non-software projects): no repo needed; docs are ingested into the project's `.pmagent/` on the platform |
+| **New repo** (`init`) | Creates a code repo (on the connected code host, or local git), creates the project's `.dotrix/` on the platform, and asks a few questions to seed `project.md` and `vision.md` |
+| **Existing repo** (`connect`) | Creates the project's `.dotrix/` on the platform (nothing is added to the repo), imports the README, and has the Architecture agent draft `architecture/overview.md` from the codebase for approval |
+| **Docs only** | For projects with no code yet (or non-software projects): no repo needed; docs are ingested into the project's `.dotrix/` on the platform |
 
 **Connectors**
 
@@ -325,22 +325,22 @@ A project can start three ways, and every path ends with the same `.pmagent/` on
 
 ## Source of truth, agent rules, decision log, and briefing
 
-The project's memory is a structured folder, `.pmagent/`, stored on the pmagent platform. It is never the agents' chat history, and it is **never pushed to GitHub, GitLab, or any code repo**. The code host only ever sees code. Every agent reads `.pmagent/`; changes to it happen only in Action Mode.
+The project's memory is a structured folder, `.dotrix/`, stored on the dotrix platform. It is never the agents' chat history, and it is **never pushed to GitHub, GitLab, or any code repo**. The code host only ever sees code. Every agent reads `.dotrix/`; changes to it happen only in Action Mode.
 
-### Where `.pmagent/` lives
+### Where `.dotrix/` lives
 
 - **On the platform, per project.** Encrypted at rest, scoped to the workspace, and governed by the same roles and folder permissions as everything else.
 - **Version history on the platform, not git.** Every change records the file, the diff, which agent or person wrote it, who instructed it, and who approved it. Any file can be viewed at an earlier version or restored.
-- **Local mirror for tools.** `pmagent pull` (and every CLI command) syncs a copy of `.pmagent/` into the local checkout so Claude Code, Codex, and the CLI can read it. The CLI adds it to `.git/info/exclude` (local-only, nothing committed) and installs a pre-commit hook that refuses any commit containing `.pmagent/`.
+- **Local mirror for tools.** `dotrix pull` (and every CLI command) syncs a copy of `.dotrix/` into the local checkout so Claude Code, Codex, and the CLI can read it. The CLI adds it to `.git/info/exclude` (local-only, nothing committed) and installs a pre-commit hook that refuses any commit containing `.dotrix/`.
 - **Writes go through the platform.** Changes made locally are sent to the platform API, with the same permissions and approvals, then synced back down. Tools never commit knowledge to git.
-- **Coding agent sandbox.** The built-in coding agent gets a read-only copy of `.pmagent/` next to the repo checkout; its branches and PRs contain code only, and PR descriptions link to issues by key.
+- **Coding agent sandbox.** The built-in coding agent gets a read-only copy of `.dotrix/` next to the repo checkout; its branches and PRs contain code only, and PR descriptions link to issues by key.
 - **Docs-only projects need no repo at all.**
-- **Export anytime.** A workspace Owner or Admin can download the full `.pmagent/` as Markdown, so leaving the platform loses nothing.
+- **Export anytime.** A workspace Owner or Admin can download the full `.dotrix/` as Markdown, so leaving the platform loses nothing.
 
 **Folder structure** (the same for every project)
 
 ```
-.pmagent/                 stored on the platform, never in the code repo
+.dotrix/                 stored on the platform, never in the code repo
 ├── config.yaml           project key, name, model, connectors
 ├── project.md            what the project is
 ├── vision.md
@@ -381,12 +381,12 @@ The project's memory is a structured folder, `.pmagent/`, stored on the pmagent 
 
 ```
 <repo>/
-├── .pmagent/             synced mirror of the platform copy
+├── .dotrix/             synced mirror of the platform copy
 ├── AGENTS.md             generated hand-off for Codex and other tools
 └── CLAUDE.md             generated hand-off for Claude Code
 ```
 
-`AGENTS.md` and `CLAUDE.md` are generated by the CLI and git-excluded by default, since they point at `.pmagent/`.
+`AGENTS.md` and `CLAUDE.md` are generated by the CLI and git-excluded by default, since they point at `.dotrix/`.
 
 ### Stacked agent rules
 
@@ -443,7 +443,7 @@ The briefing is read-only: it never triggers a write.
 
 ## Jira-style issue tracking
 
-Each project has a Jira-style tracker that humans and agents share. Every issue is one Markdown file in `.pmagent/issues/` on the platform (YAML fields + description + append-only log), shown as a board, backlog, and sprint view. The platform keeps each issue's full change history; nothing about issues is stored in the code repo, except issue keys referenced in branch names, commits, and PR titles.
+Each project has a Jira-style tracker that humans and agents share. Every issue is one Markdown file in `.dotrix/issues/` on the platform (YAML fields + description + append-only log), shown as a board, backlog, and sprint view. The platform keeps each issue's full change history; nothing about issues is stored in the code repo, except issue keys referenced in branch names, commits, and PR titles.
 
 The board is how the PM knows what is completed, in progress, blocked, and next. The `progress/` files are the human-readable summary the PM keeps in step with it, and the briefing reads both.
 
@@ -503,7 +503,7 @@ Only a human, or the PM agent with approval, moves a task from `review` to `done
 - `next` returns an agent's own `in_progress` task before any new one, so a crashed session resumes its work.
 - Claiming holds a board-wide lock, so two agents can never claim the same task.
 
-**Calendar.** No separate calendar data exists. `pmagent calendar export` renders every task's `due` and `scheduled` dates as an iCalendar file with stable IDs, which any calendar app can import or subscribe to.
+**Calendar.** No separate calendar data exists. `dotrix calendar export` renders every task's `due` and `scheduled` dates as an iCalendar file with stable IDs, which any calendar app can import or subscribe to.
 
 ## Chat Mode vs Action Mode
 
@@ -533,7 +533,7 @@ Agents default to Chat Mode and change nothing; every write, by any planning age
 - Each paused write shows the tool, the target, and the content (truncated if long).
 - You approve or reject each action; a rejection can carry a reason that is sent back to the agent.
 - Several paused actions from parallel subagents are reviewed together, one decision each.
-- In a background job, a pause sets the job to `awaiting_approval` and exits; `pmagent jobs-approve` resumes it from any terminal.
+- In a background job, a pause sets the job to `awaiting_approval` and exits; `dotrix jobs-approve` resumes it from any terminal.
 - `brief` is read-only: any write it attempts is rejected automatically.
 
 **Approvals in team and business workspaces**
@@ -568,10 +568,10 @@ P0 is required for public launch; P1 is targeted for launch but can slip; P2 is 
 | FR-13 | On `connect`, the Architecture agent drafts an architecture overview from the codebase for approval | P1 | To build |
 | FR-14 | Slack and email notifications for approvals, PRs, and briefings | P1 | To build |
 | **Source of truth and rules** |  |  |  |
-| FR-15 | Scaffold the full `.pmagent/` structure, including `issues/`, `sprints/`, `progress/`, reviews/, and `agent-rules/` | P0 | Partial |
+| FR-15 | Scaffold the full `.dotrix/` structure, including `issues/`, `sprints/`, `progress/`, reviews/, and `agent-rules/` | P0 | Partial |
 | FR-16 | Agent prompts built from `base.md` + role file; defaults ship with the product and are editable per project | P0 | To build |
 | FR-17 | Business workspaces can set org-wide base rules that every project inherits | P2 | To build |
-| FR-18 | `.pmagent/` is stored only on the platform with per-file version history; a git-excluded local mirror syncs through the API; a pre-commit hook blocks committing it; full Markdown export on demand | P0 | To build |
+| FR-18 | `.dotrix/` is stored only on the platform with per-file version history; a git-excluded local mirror syncs through the API; a pre-commit hook blocks committing it; full Markdown export on demand | P0 | To build |
 | **Thinking agents** |  |  |  |
 | FR-19 | PM answers status, produces the daily briefing (health, phase, priorities, decisions, questions, blockers, research, doc status, sprint, open PRs) | P0 | Partial |
 | FR-20 | PM routes a feature through Product, Architecture, Research, Reviewer, Documentation, in parallel where independent | P0 | Built (prompt) |
@@ -609,7 +609,7 @@ P0 is required for public launch; P1 is targeted for launch but can slip; P2 is 
 | Multi-tenancy | Strict workspace isolation: no data, agent context, or connector token crosses workspaces. Every query is scoped by workspace. |
 | Agent safety | No agent write without instruction and approval. Each agent can write only to the folders it owns (path permissions enforced by the platform); the Reviewer only to reviews/. Coding agent runs in an isolated sandbox with no access to production credentials and cannot push to protected branches. Text in docs and repos is treated as data, never instructions. |
 | Privacy | Project content is not used to train models. Data export and deletion on request. Region choice for business plans (later). |
-| Data ownership | `.pmagent/` never leaves the platform for a code host: it is never pushed to GitHub, GitLab, or any repo, and coding-agent PRs contain code only. Customers can export the full `.pmagent/` as Markdown at any time, so leaving the platform loses nothing. |
+| Data ownership | `.dotrix/` never leaves the platform for a code host: it is never pushed to GitHub, GitLab, or any repo, and coding-agent PRs contain code only. Customers can export the full `.dotrix/` as Markdown at any time, so leaving the platform loses nothing. |
 | Concurrency | Many users, agents, and jobs on one project at once: per-file locks, atomic writes, atomic issue claiming, conflict-safe sync with git. |
 | Reliability | Web app 99.9% monthly uptime target; agent runs resumable after failure; failed runs clearly marked. |
 | Performance | Board and backlog load in under 1 second for 5,000 issues; briefing in under 60 seconds. |
@@ -677,9 +677,9 @@ Five phases take the product from a local tool proven on Kunemi to a public mult
 
 | Phase | Scope | Exit criteria |
 | --- | --- | --- |
-| 1: Engine, proven on Kunemi | Full folder structure, stacked agent rules, thinking agents, ADRs, briefing, Reviewer with repo read, Jira-style issue types and keys (local CLI; .pmagent/ kept local and git-excluded until the platform ships) | A week of trusted daily briefings on Kunemi; one feature from idea to approved epic, stories, and ADR |
+| 1: Engine, proven on Kunemi | Full folder structure, stacked agent rules, thinking agents, ADRs, briefing, Reviewer with repo read, Jira-style issue types and keys (local CLI; .dotrix/ kept local and git-excluded until the platform ships) | A week of trusted daily briefings on Kunemi; one feature from idea to approved epic, stories, and ADR |
 | 2: Coding agent | Built-in coding agent (sandbox, branch, tests, PR), GitHub connector, Reviewer on PRs, instruction-only Claude Code / Codex hand-off | 10 issues built by the coding agent on Kunemi; ≥ 6 merged without major rework; zero pushes to main |
-| 3: Platform beta (personal + team) | Accounts, login, workspaces, roles, invites, web app (chat, board, backlog, approvals), platform-hosted .pmagent/ with version history and local mirror sync, doc connectors, notifications | 20 design-partner teams onboarded; first briefing in < 10 min; no cross-workspace data leaks in security review |
+| 3: Platform beta (personal + team) | Accounts, login, workspaces, roles, invites, web app (chat, board, backlog, approvals), platform-hosted .dotrix/ with version history and local mirror sync, doc connectors, notifications | 20 design-partner teams onboarded; first briefing in < 10 min; no cross-workspace data leaks in security review |
 | 4: Public launch | Billing and plans, usage limits, sprints, GitLab, onboarding polish, docs site | Self-serve sign-up to paid without help; uptime ≥ 99.9% for 30 days |
 | 5: Business | SSO, SCIM, custom roles, audit export, data retention, desktop app, Jira / Linear import | First business customer live; SOC 2 audit started |
 
@@ -698,13 +698,13 @@ Five phases take the product from a local tool proven on Kunemi to a public mult
 | Crowded market (Jira, Linear, AI coding tools) | Medium | Position as the team around your coding tools, not a replacement; keeps knowledge beside the code without cluttering the repo; works with Claude Code and Codex |
 | Approval fatigue leads to rubber-stamping | Medium | Clear diffs, batched related writes, optional second approver |
 | `deepagents` / model API changes | Medium | Pinned versions, contract tests, provider abstraction |
-| .pmagent/ accidentally committed and pushed to a code host | High: private plans and decisions exposed | CLI adds .git/info/exclude and a pre-commit hook; coding-agent PRs are checked to contain no .pmagent/ files; connect warns if the repo already tracks one |
+| .dotrix/ accidentally committed and pushed to a code host | High: private plans and decisions exposed | CLI adds .git/info/exclude and a pre-commit hook; coding-agent PRs are checked to contain no .dotrix/ files; connect warns if the repo already tracks one |
 
 **Open questions**
 
-- [ ] Product name: keep "pmagent" or choose a brand name before public launch?
+- [ ] Product name: keep "dotrix" or choose a brand name before public launch?
 - [ ] Pricing: per-seat, per-usage, or both? What are the free limits for Personal?
-- [ ] Should open-source projects be able to opt in to publishing a read-only snapshot of selected .pmagent/ docs (e.g. the roadmap)?
+- [ ] Should open-source projects be able to opt in to publishing a read-only snapshot of selected .dotrix/ docs (e.g. the roadmap)?
 - [ ] Where does the coding agent sandbox run: our cloud only, or also on the customer's machine via the CLI?
 - [ ] Should the PM be allowed to close issues after a passing review without a separate approval?
 - [ ] Are custom workflows needed for launch, or is the fixed five-status workflow enough?

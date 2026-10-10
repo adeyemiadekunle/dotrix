@@ -13,12 +13,12 @@ from arq.worker import Worker
 from httpx import AsyncClient
 from pydantic import Field
 
-from pmagent_backend.modules.agents.llm import ModelChoice
-from pmagent_backend.modules.agents.queue import RunQueue
-from pmagent_backend.modules.agents.runner import AgentRunner
-from pmagent_backend.modules.agents.streams import RedisRunStreams
-from pmagent_backend.worker import run_agent
-from pmagent_engine.testing import ScriptedChatModel, tool_call
+from dotrix_backend.modules.agents.llm import ModelChoice
+from dotrix_backend.modules.agents.queue import RunQueue
+from dotrix_backend.modules.agents.runner import AgentRunner
+from dotrix_backend.modules.agents.streams import RedisRunStreams
+from dotrix_backend.worker import run_agent
+from dotrix_engine.testing import ScriptedChatModel, tool_call
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def worker_mode(db_client: AsyncClient, redis, create_team, signup, agent_script
     """Switch the app to worker mode and build a worker; returns (ada, base url, make_worker)."""
 
     async def _make():
-        name = f"pmagent:test:{uuid.uuid4().hex[:8]}"
+        name = f"dotrix:test:{uuid.uuid4().hex[:8]}"
         app = db_client._transport.app  # type: ignore[attr-defined]
         inline = app.state.runner
         streams = RedisRunStreams(redis, prefix=f"{name}:stream")
@@ -71,7 +71,7 @@ def worker_mode(db_client: AsyncClient, redis, create_team, signup, agent_script
 async def test_the_api_enqueues_and_the_worker_runs(worker_mode, db_client: AsyncClient, agent_script) -> None:
     ada, _, base, make_worker = await worker_mode()
     agent_script.say(
-        tool_call("write_file", file_path="/pmagent/roadmap.md", content="# Roadmap\n\nPhase 1.\n"),
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nPhase 1.\n"),
         "Updated the roadmap.",
     )
     queued = (await db_client.post(f"{base}/agent/runs", json={"message": "Update the roadmap"}, headers=ada.headers)).json()
@@ -94,7 +94,7 @@ async def test_the_api_enqueues_and_the_worker_runs(worker_mode, db_client: Asyn
 
 
 async def test_redis_streams_give_late_followers_the_text_so_far(redis) -> None:
-    streams = RedisRunStreams(redis, prefix=f"pmagent:test:{uuid.uuid4().hex[:8]}")
+    streams = RedisRunStreams(redis, prefix=f"dotrix:test:{uuid.uuid4().hex[:8]}")
     run_id = uuid.uuid4()
     stream = await streams.open(run_id)
     await stream.publish("Three issues ")
@@ -169,7 +169,7 @@ async def test_a_retried_step_does_not_resend_the_message(db_client: AsyncClient
 
     # Pretend the first attempt's outcome was never saved, then retry the job.
     runner: AgentRunner = db_client._transport.app.state.runner  # type: ignore[attr-defined]
-    from pmagent_backend.modules.agents.models import AgentRun, RunStatus
+    from dotrix_backend.modules.agents.models import AgentRun, RunStatus
 
     async with runner.session_factory() as session:
         row = await session.get(AgentRun, uuid.UUID(run["id"]))

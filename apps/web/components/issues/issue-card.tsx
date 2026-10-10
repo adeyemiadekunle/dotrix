@@ -1,5 +1,5 @@
-import type { Schemas } from "@pmagent/api-client";
-import { cn } from "@pmagent/ui/lib/utils";
+import type { Schemas } from "@dotrix/api-client";
+import { cn } from "@dotrix/ui/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { CalendarIcon } from "lucide-react";

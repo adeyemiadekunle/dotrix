@@ -1,4 +1,4 @@
-import type { Schemas } from "@pmagent/api-client";
+import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -44,7 +44,7 @@ export const PRESETS: { id: string; label: string; body: AutomationCreate }[] = 
       agent: "documentation",
       events: ["changes.approved", "issue.done"],
       instructions:
-        "Bring /pmagent/current-state.md and /pmagent/roadmap.md up to date with what just changed, and any other document it makes stale. Propose only the edits that are needed; change nothing else.",
+        "Bring /dotrix/current-state.md and /dotrix/roadmap.md up to date with what just changed, and any other document it makes stale. Propose only the edits that are needed; change nothing else.",
       max_runs_per_day: null,
       enabled: true,
       unattended: false,
@@ -60,7 +60,7 @@ export const PRESETS: { id: string; label: string; body: AutomationCreate }[] = 
       schedule_hour: 7,
       schedule_weekday: 0,
       instructions:
-        "Write this week's status into /pmagent/current-state.md: what got done, what's in progress, what's blocked, and what's next. Keep it short.",
+        "Write this week's status into /dotrix/current-state.md: what got done, what's in progress, what's blocked, and what's next. Keep it short.",
       max_runs_per_day: null,
       enabled: true,
       unattended: false,
@@ -104,7 +104,7 @@ export const PRESETS: { id: string; label: string; body: AutomationCreate }[] = 
       schedule_hour: 6,
       schedule_weekday: 0,
       instructions:
-        "Re-check <the topic: a regulation, a competitor, a dependency's releases and security advisories> on the web. Compare with the newest note on it in /pmagent/research/. If nothing material changed, say so in one line and propose nothing. If something did, report only what changed, with sources, and propose updating the note (and any requirement or decision it affects).",
+        "Re-check <the topic: a regulation, a competitor, a dependency's releases and security advisories> on the web. Compare with the newest note on it in /dotrix/research/. If nothing material changed, say so in one line and propose nothing. If something did, report only what changed, with sources, and propose updating the note (and any requirement or decision it affects).",
       max_runs_per_day: null,
       enabled: true,
       unattended: false,

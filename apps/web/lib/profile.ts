@@ -1,5 +1,5 @@
 // Your own profile: name, what you do, photo, and the ways you sign in.
-import type { Schemas } from "@pmagent/api-client";
+import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 

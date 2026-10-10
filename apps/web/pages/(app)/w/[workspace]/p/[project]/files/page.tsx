@@ -1,8 +1,8 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Button } from "@pmagent/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@pmagent/ui/components/sheet";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import type { Schemas } from "@dotrix/api-client";
+import { Button } from "@dotrix/ui/components/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@dotrix/ui/components/card";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@dotrix/ui/components/sheet";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { CircleAlertIcon, DownloadIcon, RotateCwIcon, EyeIcon, FileTextIcon, FilesIcon, LayersIcon, Loader2Icon } from "lucide-react";
 import { Link } from "@/lib/navigation";

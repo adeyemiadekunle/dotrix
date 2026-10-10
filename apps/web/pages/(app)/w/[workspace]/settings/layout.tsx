@@ -1,4 +1,4 @@
-import { cn } from "@pmagent/ui/lib/utils";
+import { cn } from "@dotrix/ui/lib/utils";
 import { Link, usePathname } from "@/lib/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
 

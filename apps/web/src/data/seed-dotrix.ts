@@ -1,5 +1,5 @@
 // dotrix's part of the seeded workspace: its agents, chat threads (with changes waiting for a
-// decision), each project's knowledge (.pmagent/), coding sessions, the audit log, automations;
+// decision), each project's knowledge (.dotrix/), coding sessions, the audit log, automations;
 // and on Gr8r's data, issue types and the agents' notifications and activity.
 import { minsAgo } from "../core/utils";
 import type {
@@ -192,7 +192,7 @@ const CODING: CodingSession[] = [
     status: "pr_opened",
     by: "m3",
     at: minsAgo(2900),
-    branch: "pmagent/web-154-fix-broken-anchor-links",
+    branch: "dotrix/web-154-fix-broken-anchor-links",
     pr: { number: 42, state: "merged", url: "https://github.com/dotrix/site/pull/42" },
     turns: [{ at: minsAgo(2900), ask: "Fix the anchor links on the pricing page.", summary: "Fixed 4 anchors and added a test for heading ids.", events: ["Read pricing.tsx", "Edited 2 files", "Ran the tests: 48 passed"] }],
   },
@@ -214,7 +214,7 @@ const CODING: CodingSession[] = [
     status: "running",
     by: "m3",
     at: minsAgo(12),
-    branch: "pmagent/mob-118-biometric-sign-in",
+    branch: "dotrix/mob-118-biometric-sign-in",
     turns: [{ at: minsAgo(12), ask: "Add the Android fallback to passcode.", events: ["Read auth/biometric.ts", "Editing auth/biometric.ts"] }],
   },
 ];

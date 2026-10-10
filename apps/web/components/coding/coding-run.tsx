@@ -1,10 +1,10 @@
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@pmagent/ui/components/dialog";
-import { Input } from "@pmagent/ui/components/input";
-import { Label } from "@pmagent/ui/components/label";
-import { Textarea } from "@pmagent/ui/components/textarea";
-import { cn } from "@pmagent/ui/lib/utils";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@dotrix/ui/components/dialog";
+import { Input } from "@dotrix/ui/components/input";
+import { Label } from "@dotrix/ui/components/label";
+import { Textarea } from "@dotrix/ui/components/textarea";
+import { cn } from "@dotrix/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { CodeIcon, ExternalLinkIcon, GitBranchIcon, GitPullRequestIcon, Loader2Icon, MessageSquareIcon, SquareIcon } from "lucide-react";
 import { Link } from "@/lib/navigation";

@@ -4,10 +4,10 @@ from datetime import UTC, datetime, timedelta
 from httpx import AsyncClient
 from sqlalchemy import update
 
-from pmagent_backend.modules.automations.models import Automation
-from pmagent_backend.modules.automations.service import next_run
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.automations.models import Automation
+from dotrix_backend.modules.automations.service import next_run
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 
 async def _world(db_client: AsyncClient, signup, create_team, add_member):
@@ -120,9 +120,9 @@ async def test_approved_changes_keep_documents_current_without_looping(
         return res.json()
 
     model = agent_script.say(
-        tool_call("write_file", file_path="/pmagent/roadmap.md", content="# Roadmap\n\nQ4: payments\n"), "Done.",
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nQ4: payments\n"), "Done.",
         # the automation's run, which changes a document too
-        tool_call("edit_file", file_path="/pmagent/current-state.md", old_string="", new_string="Payments in Q4.\n"),
+        tool_call("edit_file", file_path="/dotrix/current-state.md", old_string="", new_string="Payments in Q4.\n"),
         "Updated.",
     )
     chat = (await db_client.post(f"{base}/agent/runs", json={"message": "plan payments for Q4"}, headers=ada.headers)).json()
@@ -175,7 +175,7 @@ async def test_a_run_waiting_for_a_decision_isn_t_doubled(
     made = (await db_client.post(f"{base}/automations", json={
         "name": "Roadmap", "instructions": "Update the roadmap.", "schedule_hour": 6,
     }, headers=ada.headers)).json()
-    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
     url = f"{base}/automations/{made['id']}/run"
     assert (await db_client.post(url, headers=ada.headers)).json()["last_error"] is None
     again = (await db_client.post(url, headers=ada.headers)).json()

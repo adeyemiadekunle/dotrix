@@ -13,7 +13,7 @@ export const ACCENTS = [
 
 export type Accent = (typeof ACCENTS)[number]["value"];
 
-const KEY = "pmagent.accent";
+const KEY = "dotrix.accent";
 
 function stored(): Accent {
   try {

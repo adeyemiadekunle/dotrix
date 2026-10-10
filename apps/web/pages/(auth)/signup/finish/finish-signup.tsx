@@ -1,4 +1,4 @@
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";

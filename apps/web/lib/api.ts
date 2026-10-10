@@ -3,19 +3,19 @@
 // secret. Every request carries X-Requested-With, which the API requires on cookie-authenticated
 // changes (a page on another site can't send it). An expired session is refreshed once and the
 // request retried, so pages never handle token expiry.
-import { createClient, type ProblemDetail, type Schemas } from "@pmagent/api-client";
+import { createClient, type ProblemDetail, type Schemas } from "@dotrix/api-client";
 import { useQuery } from "@tanstack/react-query";
 
 export type { Schemas };
 
-const WEB_HEADER = { "X-Requested-With": "pmagent-web" };
+const WEB_HEADER = { "X-Requested-With": "dotrix-web" };
 
 /** Whether this browser has a session (a readable marker cookie; the API is what checks). */
 export function hasSession(): boolean {
-  return typeof document !== "undefined" && /(?:^|;\s*)pm_session=/.test(document.cookie);
+  return typeof document !== "undefined" && /(?:^|;\s*)dx_session=/.test(document.cookie);
 }
 
-const REFRESHED_AT = "pmagent.refreshedAt";
+const REFRESHED_AT = "dotrix.refreshedAt";
 
 /**
  * Trade the refresh cookie for a new session. The API rotates refresh tokens and signs a session
@@ -35,7 +35,7 @@ async function refreshSession(sentAt: number): Promise<boolean> {
     }
     return true;
   };
-  return navigator.locks ? navigator.locks.request("pmagent-session-refresh", run) : run();
+  return navigator.locks ? navigator.locks.request("dotrix-session-refresh", run) : run();
 }
 
 function toSignIn() {

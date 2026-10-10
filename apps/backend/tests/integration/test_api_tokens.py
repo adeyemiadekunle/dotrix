@@ -4,7 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pmagent_backend.modules.api_tokens.models import ApiToken, DeviceAuthorization
+from dotrix_backend.modules.api_tokens.models import ApiToken, DeviceAuthorization
 
 
 def bearer(token: str) -> dict[str, str]:
@@ -24,7 +24,7 @@ async def test_create_use_list_and_revoke(signup, db_client: AsyncClient) -> Non
     ada = await signup()
     created = await make_token(db_client, ada.headers, name="laptop")
     token = created["token"]
-    assert token.startswith("pmat_") and created["display_prefix"] == token[:12]
+    assert token.startswith("dtx_") and created["display_prefix"] == token[:12]
     assert created["scopes"] == ["read", "write"]
 
     me = await db_client.get("/v1/me", headers=bearer(token))
@@ -79,14 +79,14 @@ async def test_tokens_are_private_to_their_owner(signup, db_client: AsyncClient)
 
 
 async def test_unknown_api_token(db_client: AsyncClient) -> None:
-    assert (await db_client.get("/v1/me", headers=bearer("pmat_nope"))).status_code == 401
+    assert (await db_client.get("/v1/me", headers=bearer("dtx_nope"))).status_code == 401
 
 
 # -- device login -----------------------------------------------------------------------
 
 
 async def start(client: AsyncClient) -> dict:
-    res = await client.post("/v1/auth/device/code", json={"client_name": "pmagent CLI"})
+    res = await client.post("/v1/auth/device/code", json={"client_name": "dotrix CLI"})
     assert res.status_code == 200, res.text
     return res.json()
 
@@ -117,7 +117,7 @@ async def test_device_login(signup, db_client: AsyncClient, db_session: AsyncSes
     # In the web app, Ada types the code (any case, dash optional) and approves.
     typed = code.replace("-", "").lower()
     lookup = await db_client.post("/v1/auth/device/lookup", json={"user_code": typed}, headers=ada.headers)
-    assert lookup.status_code == 200 and lookup.json()["client_name"] == "pmagent CLI"
+    assert lookup.status_code == 200 and lookup.json()["client_name"] == "dotrix CLI"
     res = await db_client.post("/v1/auth/device/approve", json={"user_code": code}, headers=ada.headers)
     assert res.status_code == 204
 
@@ -132,7 +132,7 @@ async def test_device_login(signup, db_client: AsyncClient, db_session: AsyncSes
     again = await poll(db_client, device["device_code"])
     assert again.json()["type"].endswith("/invalid_grant")
     names = [t["name"] for t in (await db_client.get("/v1/me/tokens", headers=ada.headers)).json()]
-    assert names == ["pmagent CLI"]
+    assert names == ["dotrix CLI"]
 
 
 async def test_device_login_denied(signup, db_client: AsyncClient) -> None:

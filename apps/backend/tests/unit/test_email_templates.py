@@ -1,5 +1,5 @@
-from pmagent_backend.core import email_templates
-from pmagent_backend.core.email_templates import EmailContent, render
+from dotrix_backend.core import email_templates
+from dotrix_backend.core.email_templates import EmailContent, render
 
 
 def test_every_email_has_text_and_html_with_the_link() -> None:

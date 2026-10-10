@@ -3,8 +3,8 @@ import pytest
 from httpx import AsyncClient
 from pydantic import SecretStr
 
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 GEMINI = "google_genai:gemini-3.8-flash"
 CLAUDE = "anthropic:claude-sonnet-5"  # the tests' default model (make_settings)
@@ -64,7 +64,7 @@ async def test_a_specialist_answers_directly(project, db_client: AsyncClient, ag
 async def test_a_specialists_writes_are_its_own(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
     agent_script.say(
-        tool_call("write_file", file_path="/pmagent/requirements/zones.md", content="# Zones\n"),
+        tool_call("write_file", file_path="/dotrix/requirements/zones.md", content="# Zones\n"),
         "Drafted the zones requirements.",
     )
     paused = (await send(db_client, base, ada.headers, "Write up zones", agent="product")).json()
@@ -83,7 +83,7 @@ async def test_a_specialists_writes_are_its_own(project, db_client: AsyncClient,
 async def test_a_specialist_stays_in_its_folders(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
     agent_script.say(
-        tool_call("write_file", file_path="/pmagent/architecture/overview.md", content="# Changed"),
+        tool_call("write_file", file_path="/dotrix/architecture/overview.md", content="# Changed"),
         "Couldn't change architecture.",
     )
     paused = (await send(db_client, base, ada.headers, "Change the architecture", agent="research")).json()

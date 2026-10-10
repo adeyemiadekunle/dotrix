@@ -6,11 +6,11 @@ import re
 import pytest
 from httpx import AsyncClient
 
-from pmagent_backend.core.jobs import JobContext
-from pmagent_backend.jobs import index_knowledge
-from pmagent_backend.modules.search.models import EMBEDDING_DIMENSIONS
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.core.jobs import JobContext
+from dotrix_backend.jobs import index_knowledge
+from dotrix_backend.modules.search.models import EMBEDDING_DIMENSIONS
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 # The fake embedder knows a few synonyms, so a paraphrase lands near the original, as with a
 # real embedding model; keyword search alone can't find those.
@@ -194,8 +194,8 @@ async def test_agents_search_and_read_sections(db_client: AsyncClient, project, 
     ada, _, base, _ = await project()
     model = agent_script.say(
         tool_call("search_knowledge", call_id="s", query="forklift error"),
-        tool_call("document_outline", call_id="o", file_path="/pmagent/hubs.md"),
-        tool_call("read_section", call_id="r", file_path="/pmagent/hubs.md", heading="Abuja"),
+        tool_call("document_outline", call_id="o", file_path="/dotrix/hubs.md"),
+        tool_call("read_section", call_id="r", file_path="/dotrix/hubs.md", heading="Abuja"),
         "The Wuse hub's forklift fails on Mondays (E-417).",
     )
     res = await db_client.post(f"{base}/agent/runs", json={"message": "What's wrong at Abuja?"}, headers=ada.headers)
@@ -203,11 +203,11 @@ async def test_agents_search_and_read_sections(db_client: AsyncClient, project, 
     assert done["status"] == "completed", done
     results = [m.content for m in model.received[3] if m.type == "tool"]
     found, outline, section = results
-    assert "/pmagent/hubs.md v1, Hubs > Abuja" in found and "E-417" in found
+    assert "/dotrix/hubs.md v1, Hubs > Abuja" in found and "E-417" in found
     assert "## Lagos (lines 3-5" in outline and "## Abuja (lines 6-" in outline
-    assert section.startswith("/pmagent/hubs.md v1, ## Abuja") and "E-417" in section and "Ikeja" not in section
+    assert section.startswith("/dotrix/hubs.md v1, ## Abuja") and "E-417" in section and "Ikeja" not in section
     files = {f["path"] for f in done["breakdown"]["files_read"]}
-    assert files == {"/pmagent/hubs.md"}  # outline and section reads count as reads
+    assert files == {"/dotrix/hubs.md"}  # outline and section reads count as reads
     # The prompt tells agents about these tools.
     assert "search_knowledge(query)" in str(model.received[0][0].content)
 
@@ -215,13 +215,13 @@ async def test_agents_search_and_read_sections(db_client: AsyncClient, project, 
 async def test_missing_sections_list_what_exists(db_client: AsyncClient, project, agent_script) -> None:
     ada, _, base, _ = await project()
     model = agent_script.say(
-        tool_call("read_section", call_id="r", file_path="/pmagent/hubs.md", heading="Kano"),
-        tool_call("document_outline", call_id="o", file_path="/pmagent/nope.md"),
+        tool_call("read_section", call_id="r", file_path="/dotrix/hubs.md", heading="Kano"),
+        tool_call("document_outline", call_id="o", file_path="/dotrix/nope.md"),
         "ok",
     )
     await db_client.post(f"{base}/agent/runs", json={"message": "Kano?"}, headers=ada.headers)
     missing, gone = [m.content for m in model.received[2] if m.type == "tool"]
-    assert "No section 'Kano' in /pmagent/hubs.md" in missing and "## Abuja" in missing
+    assert "No section 'Kano' in /dotrix/hubs.md" in missing and "## Abuja" in missing
     assert "not found" in gone
 
 

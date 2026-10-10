@@ -15,7 +15,7 @@ import {
   type KeyboardCoordinateGetter,
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { cn } from "@pmagent/ui/lib/utils";
+import { cn } from "@dotrix/ui/lib/utils";
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 

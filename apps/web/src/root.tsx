@@ -1,4 +1,4 @@
-import { Button } from "@pmagent/ui/components/button";
+import { Button } from "@dotrix/ui/components/button";
 import { Outlet, useMatches } from "@tanstack/react-router";
 import { SearchXIcon } from "lucide-react";
 import { useEffect } from "react";

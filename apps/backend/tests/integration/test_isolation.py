@@ -13,8 +13,8 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 
-from pmagent_backend.modules.coding.models import CodingAgent, CodingRun, CodingRunStatus
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.coding.models import CodingAgent, CodingRun, CodingRunStatus
+from dotrix_engine.testing import tool_call
 
 SCOPES = ("{workspace_id}",)
 
@@ -90,12 +90,12 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             "provider": "anthropic",
         }
         # A run paused on an approval: it has a run, a thread, and a pending action.
-        agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
+        agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
         run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=h)).json()
         assert run["status"] == "awaiting_approval", run
         params |= {"run_id": run["id"], "thread_id": run["thread_id"], "approval_id": run["approvals"][0]["id"]}
         # A rejected change with a reason: a proposed lesson.
-        agent_script.say(tool_call("write_file", file_path="/pmagent/vision.md", content="# V\n"), "Fine.")
+        agent_script.say(tool_call("write_file", file_path="/dotrix/vision.md", content="# V\n"), "Fine.")
         other = (await db_client.post(f"{base}/agent/runs", json={"message": "Vision"}, headers=h)).json()
         await db_client.post(f"{base}/agent/runs/{other['id']}/decisions", headers=h, json={"decisions": [
             {"approval_id": a["id"], "decision": "reject", "reason": "Too vague"} for a in other["approvals"]

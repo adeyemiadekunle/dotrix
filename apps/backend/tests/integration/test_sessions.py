@@ -7,7 +7,7 @@ CHROME_MAC = (
 )
 DESKTOP_MAC = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "pmagent/0.1.0 Chrome/138.0.0.0 Electron/37.2.0 Safari/537.36"
+    "dotrix/0.1.0 Chrome/138.0.0.0 Electron/37.2.0 Safari/537.36"
 )
 
 
@@ -101,7 +101,7 @@ async def test_change_password_signs_out_the_others(signup, db_client: AsyncClie
 
 
 async def test_set_a_first_password(db_client: AsyncClient, signup, db_session) -> None:
-    from pmagent_backend.modules.auth.models import User
+    from dotrix_backend.modules.auth.models import User
 
     ada = await signup()
     user = await db_session.get(User, __import__("uuid").UUID(ada.id))

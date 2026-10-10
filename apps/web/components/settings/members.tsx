@@ -1,16 +1,16 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
+import type { Schemas } from "@dotrix/api-client";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@pmagent/ui/components/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
-import { Input } from "@pmagent/ui/components/input";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { cn } from "@pmagent/ui/lib/utils";
+} from "@dotrix/ui/components/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
+import { Input } from "@dotrix/ui/components/input";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { cn } from "@dotrix/ui/lib/utils";
 import { CrownIcon, LogOutIcon, MoreHorizontalIcon, SearchIcon, UserMinusIcon } from "lucide-react";
 import { useRouter } from "@/lib/navigation";
 import { useMemo, useState } from "react";

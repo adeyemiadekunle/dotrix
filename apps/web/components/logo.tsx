@@ -1,4 +1,4 @@
-import { cn } from "@pmagent/ui/lib/utils";
+import { cn } from "@dotrix/ui/lib/utils";
 
 import { Logo as Wordmark, Mark } from "@/src/core/icons";
 

@@ -1,5 +1,5 @@
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@pmagent/ui/components/tabs";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@dotrix/ui/components/tabs";
 import { CalendarIcon, CheckCircle2Icon, ChevronDownIcon, ChevronRightIcon, ClockAlertIcon, InboxIcon, SunIcon } from "lucide-react";
 import { Suspense, useMemo, useState, type ComponentType } from "react";
 

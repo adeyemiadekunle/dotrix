@@ -2,13 +2,13 @@
 from deepagents.backends import CompositeBackend, StateBackend
 from langgraph.checkpoint.memory import InMemorySaver
 
-from pmagent_engine import approvals
-from pmagent_engine.agent import build_team, role_for_agent_name
-from pmagent_engine.testing import ScriptedChatModel, tool_call
+from dotrix_engine import approvals
+from dotrix_engine.agent import build_team, role_for_agent_name
+from dotrix_engine.testing import ScriptedChatModel, tool_call
 
 
 def team(model: ScriptedChatModel, rules: dict[str, str] | None = None):
-    backend = CompositeBackend(default=StateBackend(), routes={"/pmagent/": StateBackend()})
+    backend = CompositeBackend(default=StateBackend(), routes={"/dotrix/": StateBackend()})
     return build_team(
         "Kunemi", "Logistics platform", model, backend, checkpointer=InMemorySaver(), rules=rules
     )
@@ -27,14 +27,14 @@ def test_chat_mode_answers() -> None:
 
 def test_writes_pause_for_approval_then_resume() -> None:
     model = ScriptedChatModel.of(
-        tool_call("write_file", file_path="/pmagent/decisions/ADR-001.md", content="# ADR-001"),
+        tool_call("write_file", file_path="/dotrix/decisions/ADR-001.md", content="# ADR-001"),
         "Action complete: wrote ADR-001.",
     )
     agent = team(model)
     result = agent.invoke({"messages": [{"role": "user", "content": "log it"}]}, config("t2"))
     pending = approvals.pending_actions(result)
     assert [a["tool"] for a in pending] == ["write_file"]
-    assert pending[0]["args"]["file_path"] == "/pmagent/decisions/ADR-001.md"
+    assert pending[0]["args"]["file_path"] == "/dotrix/decisions/ADR-001.md"
 
     resumed = agent.invoke(approvals.resume_command(result, "approve"), config("t2"))
     assert resumed["messages"][-1].content == "Action complete: wrote ADR-001."
@@ -77,7 +77,7 @@ def test_a_specialist_can_lead_and_call_the_others() -> None:
         "Dispatch and driver zones.",  # the architecture agent
         "Stories drafted; architecture says dispatch and driver zones are affected.",
     )
-    backend = CompositeBackend(default=StateBackend(), routes={"/pmagent/": StateBackend()})
+    backend = CompositeBackend(default=StateBackend(), routes={"/dotrix/": StateBackend()})
     agent = build_team("Kunemi", "Logistics platform", model, backend, checkpointer=InMemorySaver(), lead="product")
     result = agent.invoke({"messages": [{"role": "user", "content": "draft multi-zone stories"}]}, config("t5"))
     assert result["messages"][-1].content.startswith("Stories drafted")
@@ -92,10 +92,10 @@ def test_a_specialist_can_lead_and_call_the_others() -> None:
 
 def test_the_reviewer_leads_read_only() -> None:
     model = ScriptedChatModel.of(
-        tool_call("write_file", file_path="/pmagent/reviews/r.md", content="x"),
+        tool_call("write_file", file_path="/dotrix/reviews/r.md", content="x"),
         "I can't write; here is the review instead.",
     )
-    backend = CompositeBackend(default=StateBackend(), routes={"/pmagent/": StateBackend()})
+    backend = CompositeBackend(default=StateBackend(), routes={"/dotrix/": StateBackend()})
     agent = build_team("Kunemi", "x", model, backend, checkpointer=InMemorySaver(), lead="reviewer")
     result = agent.invoke({"messages": [{"role": "user", "content": "review it"}]}, config("t6"))
     assert not approvals.has_pending(result)  # denied outright, never offered for approval

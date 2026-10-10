@@ -1,4 +1,4 @@
-import { Button } from "@pmagent/ui/components/button";
+import { Button } from "@dotrix/ui/components/button";
 import { SearchXIcon, type LucideIcon } from "lucide-react";
 import { Link } from "@/lib/navigation";
 import type { ReactNode } from "react";

@@ -11,7 +11,7 @@ import { lucideSubset } from "./icons-plugin";
 // production a reverse proxy does the same (serve dist/, send /v1, /api, /health to the API).
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), ""), ...process.env };
-  const api = (env.PMAGENT_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+  const api = (env.DOTRIX_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
   // xfwd: the API sees the browser's address (it trusts X-Forwarded-For from 127.0.0.1).
   const forward: ProxyOptions = { target: api, xfwd: true };
   const proxy = { "/v1": forward, "/api": forward, "/health": forward };
@@ -20,6 +20,6 @@ export default defineConfig(({ mode }) => {
     resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } },
     server: { port: 3000, strictPort: true, proxy },
     preview: { port: 3000, strictPort: true, proxy },
-    build: { outDir: env.PMAGENT_WEB_OUT_DIR || "dist" },
+    build: { outDir: env.DOTRIX_WEB_OUT_DIR || "dist" },
   };
 });

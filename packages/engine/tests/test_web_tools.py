@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from pmagent_engine.web import (
+from dotrix_engine.web import (
     FakeSearch,
     PageFetcher,
     SearchHit,

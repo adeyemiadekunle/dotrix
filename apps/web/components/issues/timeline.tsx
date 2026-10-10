@@ -1,5 +1,5 @@
-import type { Schemas } from "@pmagent/api-client";
-import { cn } from "@pmagent/ui/lib/utils";
+import type { Schemas } from "@dotrix/api-client";
+import { cn } from "@dotrix/ui/lib/utils";
 import { Link } from "@/lib/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 

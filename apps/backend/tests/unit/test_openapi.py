@@ -4,8 +4,8 @@ from collections import Counter
 import pytest
 from fastapi.testclient import TestClient
 
-from pmagent_backend.core.settings import Settings
-from pmagent_backend.main import create_app
+from dotrix_backend.core.settings import Settings
+from dotrix_backend.main import create_app
 
 
 def make_app(**overrides):

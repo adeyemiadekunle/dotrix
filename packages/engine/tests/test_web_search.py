@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from pmagent_engine.web.search import FakeSearch, SearchHit, SearchUnavailable, TavilySearch
+from dotrix_engine.web.search import FakeSearch, SearchHit, SearchUnavailable, TavilySearch
 
 KEY = "tvly-secret-key"
 

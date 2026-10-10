@@ -1,7 +1,7 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Checkbox } from "@pmagent/ui/components/checkbox";
-import { Label } from "@pmagent/ui/components/label";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import type { Schemas } from "@dotrix/api-client";
+import { Checkbox } from "@dotrix/ui/components/checkbox";
+import { Label } from "@dotrix/ui/components/label";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 

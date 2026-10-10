@@ -2,8 +2,8 @@
 owners, admins, and the people added to it (docs/agents-v2.md §0)."""
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 
 async def _setup(signup, create_team, add_member, db_client: AsyncClient):
@@ -91,7 +91,7 @@ async def test_the_approvals_queue_leaves_out_projects_you_cant_see(
     signup, create_team, add_member, db_client: AsyncClient, agent_script
 ) -> None:
     ada, bob, _, ws, base = await _setup(signup, create_team, add_member, db_client)
-    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=ada.headers)).json()
     assert run["status"] == "awaiting_approval"
     assert len((await db_client.get(f"{ws}/approvals", headers=bob.headers)).json()) == 1

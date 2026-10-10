@@ -1,4 +1,4 @@
-// dotrix's Knowledge tab in Gr8r's design: the project's documents (.pmagent/), by folder; read one
+// dotrix's Knowledge tab in Gr8r's design: the project's documents (.dotrix/), by folder; read one
 // (Markdown), edit it with a note, see who wrote it (a person or an agent). Agents' edits arrive
 // as changes to approve in Chat and Notifications.
 import { useState } from "react";

@@ -1,0 +1,30 @@
+# OpenShell provider profile for dotrix's coding runs with Codex (an OpenAI API key, not Codex's
+# ChatGPT sign-in). Import it once per gateway:
+#   openshell provider profile import -f infra/coding/dotrix-codex.yaml --global
+# Coding runs attach a provider of this type to each sandbox, made from the server's
+# OPENAI_API_KEY; OpenShell's proxy puts it on requests to api.openai.com from Codex's binaries only.
+#
+# `binaries` must match the image (infra/coding/Dockerfile installs Codex with npm).
+id: dotrix-codex
+display_name: Codex (dotrix, API key)
+description: Codex CLI with an OpenAI API key, for dotrix coding runs
+category: agent
+inference_capable: true
+credentials:
+  - name: api_key
+    description: OpenAI API key used by Codex
+    env_vars: [OPENAI_API_KEY, CODEX_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [api_key]
+endpoints:
+  - host: api.openai.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/codex
+  - /usr/local/lib/node_modules/@openai/codex/**

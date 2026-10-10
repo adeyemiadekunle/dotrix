@@ -1047,7 +1047,7 @@ export interface paths {
         /**
          * Create Project
          * @description Set up a project from a new repo, an existing repo, or docs only (owners and admins).
-         *     Its `.pmagent/` is created with the full folder structure and the default agent rules.
+         *     Its `.dotrix/` is created with the full folder structure and the default agent rules.
          *     The key (e.g. `KUN`) prefixes issue keys and can't be changed; 409 if it's taken, and 409
          *     `repo_taken` if a project in this workspace already uses the repo.
          */
@@ -1237,7 +1237,7 @@ export interface paths {
         };
         /**
          * Export Knowledge
-         * @description Download the whole `.pmagent/` as Markdown (zip), with a `config.yaml`. Owners and
+         * @description Download the whole `.dotrix/` as Markdown (zip), with a `config.yaml`. Owners and
          *     admins. Leaving the platform loses nothing.
          */
         get: operations["export_knowledge"];
@@ -3913,7 +3913,7 @@ export interface components {
         /**
          * AgentFields
          * @description An agent's contract without its handle (the handle is in the path). Validated against
-         *     `pmagent_engine.contracts.AgentSpec` on save (422 with the reason).
+         *     `dotrix_engine.contracts.AgentSpec` on save (422 with the reason).
          */
         AgentFields: {
             /** Name */
@@ -3945,7 +3945,7 @@ export interface components {
             tools: string[];
             /**
              * Access
-             * @description Folder pattern relative to .pmagent/ (e.g. research/*) -> access
+             * @description Folder pattern relative to .dotrix/ (e.g. research/*) -> access
              */
             access?: {
                 [key: string]: components["schemas"]["Access"];
@@ -4042,7 +4042,7 @@ export interface components {
             tools: string[];
             /**
              * Access
-             * @description Folder pattern relative to .pmagent/ (e.g. research/*) -> access
+             * @description Folder pattern relative to .dotrix/ (e.g. research/*) -> access
              */
             access?: {
                 [key: string]: components["schemas"]["Access"];
@@ -4386,7 +4386,7 @@ export interface components {
             action?: string | null;
             /**
              * Target
-             * @description What the action changes, e.g. /pmagent/vision.md
+             * @description What the action changes, e.g. /dotrix/vision.md
              */
             target: string | null;
             /** Args */
@@ -5109,7 +5109,7 @@ export interface components {
         DeviceCodeRequest: {
             /**
              * Client Name
-             * @default pmagent CLI
+             * @default dotrix CLI
              */
             client_name: string;
             /**
@@ -7000,7 +7000,7 @@ export interface components {
             source: components["schemas"]["ChunkSource"];
             /**
              * Ref
-             * @description The document's path in `.pmagent/`, or the issue's key
+             * @description The document's path in `.dotrix/`, or the issue's key
              */
             ref: string;
             /**
@@ -7162,7 +7162,7 @@ export interface components {
             agent: string;
             /**
              * Stage
-             * @description A pipeline stage the agent reported (pmagent_engine.pipelines)
+             * @description A pipeline stage the agent reported (dotrix_engine.pipelines)
              */
             stage: string;
             /** Input Tokens */
@@ -7553,7 +7553,7 @@ export interface components {
             action?: string | null;
             /**
              * Target
-             * @description What the action changes, e.g. /pmagent/vision.md
+             * @description What the action changes, e.g. /dotrix/vision.md
              */
             target: string | null;
             /** Args */
@@ -7778,7 +7778,7 @@ export interface components {
             source: components["schemas"]["ChunkSource"];
             /**
              * Ref
-             * @description The document's path in `.pmagent/`, or the issue's key
+             * @description The document's path in `.dotrix/`, or the issue's key
              */
             ref: string;
             /**
@@ -11413,7 +11413,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Zip of `.pmagent/` */
+            /** @description Zip of `.dotrix/` */
             200: {
                 headers: {
                     [name: string]: unknown;

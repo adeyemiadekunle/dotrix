@@ -1,8 +1,8 @@
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
-import { Input } from "@pmagent/ui/components/input";
-import { Textarea } from "@pmagent/ui/components/textarea";
-import { cn } from "@pmagent/ui/lib/utils";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
+import { Input } from "@dotrix/ui/components/input";
+import { Textarea } from "@dotrix/ui/components/textarea";
+import { cn } from "@dotrix/ui/lib/utils";
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -35,9 +35,9 @@ export function toolLabel(tool: string): string {
   return TOOL_LABELS[tool] ?? tool.replaceAll("_", " ");
 }
 
-/** "/pmagent/roadmap.md" is shown as "roadmap.md": the knowledge root is implied. */
+/** "/dotrix/roadmap.md" is shown as "roadmap.md": the knowledge root is implied. */
 export function shortTarget(target: string | null): string | null {
-  return target?.replace(/^\/pmagent\//, "") ?? null;
+  return target?.replace(/^\/dotrix\//, "") ?? null;
 }
 
 /** A unified diff, coloured by line. */

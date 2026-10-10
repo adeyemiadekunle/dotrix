@@ -1,9 +1,9 @@
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@pmagent/ui/components/dialog";
-import { Input } from "@pmagent/ui/components/input";
-import { Label } from "@pmagent/ui/components/label";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@dotrix/ui/components/dialog";
+import { Input } from "@dotrix/ui/components/input";
+import { Label } from "@dotrix/ui/components/label";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { BoxIcon, FileTextIcon, LinkIcon, PlusIcon, SparklesIcon, TicketIcon, TriangleAlertIcon, WaypointsIcon, XIcon } from "lucide-react";
 import { Link } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";

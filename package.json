@@ -1,5 +1,5 @@
 {
-  "name": "pmagent",
+  "name": "dotrix",
   "private": true,
   "packageManager": "pnpm@11.1.2",
   "scripts": {
@@ -7,15 +7,15 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "dev:web": "turbo run dev --filter=@pmagent/web",
-    "dev:desktop": "turbo run dev --filter=@pmagent/desktop",
-    "dev:backend": "uv run python -m pmagent_backend.serve --reload --port 8000",
-    "dev:worker": "uv run python -m pmagent_backend.worker",
+    "dev:web": "turbo run dev --filter=@dotrix/web",
+    "dev:desktop": "turbo run dev --filter=@dotrix/desktop",
+    "dev:backend": "uv run python -m dotrix_backend.serve --reload --port 8000",
+    "dev:worker": "uv run python -m dotrix_backend.worker",
     "test:py": "uv run pytest",
     "db:up": "docker compose --env-file .env -f infra/docker-compose.yml up -d",
     "db:migrate": "uv run --directory apps/backend alembic upgrade head",
     "db:revision": "uv run --directory apps/backend alembic revision --autogenerate -m",
-    "openapi": "uv run python apps/backend/scripts/export_openapi.py && pnpm --filter @pmagent/api-client generate"
+    "openapi": "uv run python apps/backend/scripts/export_openapi.py && pnpm --filter @dotrix/api-client generate"
   },
   "devDependencies": {
     "turbo": "^2.11.4"

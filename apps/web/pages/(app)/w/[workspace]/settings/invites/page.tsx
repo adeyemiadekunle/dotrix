@@ -1,4 +1,4 @@
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 
 import { InvitesCard } from "@/components/settings/invites";
 import { canManageProjects } from "@/lib/labels";

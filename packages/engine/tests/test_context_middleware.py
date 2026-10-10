@@ -5,9 +5,9 @@ from deepagents.backends import CompositeBackend, FilesystemBackend, StateBacken
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
-from pmagent_engine.agent import build_team
-from pmagent_engine.context_middleware import SHORT_DESCRIPTIONS, UNCHANGED_NOTE, earlier_read
-from pmagent_engine.testing import ScriptedChatModel, tool_call
+from dotrix_engine.agent import build_team
+from dotrix_engine.context_middleware import SHORT_DESCRIPTIONS, UNCHANGED_NOTE, earlier_read
+from dotrix_engine.testing import ScriptedChatModel, tool_call
 
 ROADMAP = "# Roadmap\n\n" + "\n".join(f"- Phase {i}: hubs, drivers and parcels in state {i}" for i in range(40))
 
@@ -15,7 +15,7 @@ ROADMAP = "# Roadmap\n\n" + "\n".join(f"- Phase {i}: hubs, drivers and parcels i
 def team(model, tmp_path: Path, **kwargs):
     (tmp_path / "roadmap.md").write_text(ROADMAP, encoding="utf-8")
     backend = CompositeBackend(
-        default=StateBackend(), routes={"/pmagent/": FilesystemBackend(root_dir=tmp_path, virtual_mode=True)}
+        default=StateBackend(), routes={"/dotrix/": FilesystemBackend(root_dir=tmp_path, virtual_mode=True)}
     )
     return build_team("Kunemi", "Logistics", model, backend, checkpointer=InMemorySaver(), **kwargs)
 
@@ -30,41 +30,41 @@ def tool_results(prompt: list) -> list[str]:
 
 async def test_reading_an_unchanged_file_again_returns_a_note(tmp_path: Path) -> None:
     model = ScriptedChatModel.of(
-        tool_call("read_file", call_id="c1", file_path="/pmagent/roadmap.md"),
-        tool_call("read_file", call_id="c2", file_path="/pmagent/roadmap.md"),
-        tool_call("read_file", call_id="c3", file_path="/pmagent/roadmap.md", offset=5, limit=3),
+        tool_call("read_file", call_id="c1", file_path="/dotrix/roadmap.md"),
+        tool_call("read_file", call_id="c2", file_path="/dotrix/roadmap.md"),
+        tool_call("read_file", call_id="c3", file_path="/dotrix/roadmap.md", offset=5, limit=3),
         "Done.",
     )
     agent = team(model, tmp_path)
     await agent.ainvoke({"messages": [{"role": "user", "content": "roadmap?"}]}, config("t1"))
     first, second, other_lines = tool_results(model.received[3])
     assert "Phase 39" in first
-    assert second == UNCHANGED_NOTE.format(path="/pmagent/roadmap.md")
+    assert second == UNCHANGED_NOTE.format(path="/dotrix/roadmap.md")
     assert "Phase 4" in other_lines and "Phase 39" not in other_lines  # other lines: read them
 
 
 async def test_a_new_conversation_turn_still_gets_the_note(tmp_path: Path) -> None:
     model = ScriptedChatModel.of(
-        tool_call("read_file", call_id="c1", file_path="/pmagent/roadmap.md"),
+        tool_call("read_file", call_id="c1", file_path="/dotrix/roadmap.md"),
         "Read it.",
-        tool_call("read_file", call_id="c2", file_path="/pmagent/roadmap.md"),
+        tool_call("read_file", call_id="c2", file_path="/dotrix/roadmap.md"),
         "Still the same.",
     )
     agent = team(model, tmp_path)
     await agent.ainvoke({"messages": [{"role": "user", "content": "read it"}]}, config("t2"))
     await agent.ainvoke({"messages": [{"role": "user", "content": "read it again"}]}, config("t2"))
-    assert tool_results(model.received[3])[-1] == UNCHANGED_NOTE.format(path="/pmagent/roadmap.md")
+    assert tool_results(model.received[3])[-1] == UNCHANGED_NOTE.format(path="/dotrix/roadmap.md")
 
 
 def test_a_changed_file_is_not_unchanged() -> None:
-    key = ("/pmagent/roadmap.md", 0, None)
+    key = ("/dotrix/roadmap.md", 0, None)
     messages = [
         HumanMessage("hi"),
         AIMessage(content="", tool_calls=[{"name": "read_file", "args": {"file_path": key[0]}, "id": "a"}]),
         ToolMessage(content="old lines", tool_call_id="a"),
     ]
     assert earlier_read(messages, key) == "old lines"
-    assert earlier_read(messages, ("/pmagent/roadmap.md", 10, None)) is None  # other lines
+    assert earlier_read(messages, ("/dotrix/roadmap.md", 10, None)) is None  # other lines
     assert earlier_read(messages[:2], key) is None  # the result isn't there
     failed = [*messages[:2], ToolMessage(content="Error: not found", tool_call_id="a", status="error")]
     assert earlier_read(failed, key) is None

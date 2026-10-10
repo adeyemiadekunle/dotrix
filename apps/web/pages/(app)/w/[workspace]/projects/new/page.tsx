@@ -1,11 +1,11 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Button } from "@pmagent/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@pmagent/ui/components/card";
-import { Checkbox } from "@pmagent/ui/components/checkbox";
-import { Label } from "@pmagent/ui/components/label";
-import { RadioGroup, RadioGroupItem } from "@pmagent/ui/components/radio-group";
-import { Textarea } from "@pmagent/ui/components/textarea";
-import { cn } from "@pmagent/ui/lib/utils";
+import type { Schemas } from "@dotrix/api-client";
+import { Button } from "@dotrix/ui/components/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@dotrix/ui/components/card";
+import { Checkbox } from "@dotrix/ui/components/checkbox";
+import { Label } from "@dotrix/ui/components/label";
+import { RadioGroup, RadioGroupItem } from "@dotrix/ui/components/radio-group";
+import { Textarea } from "@dotrix/ui/components/textarea";
+import { cn } from "@dotrix/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   CircleAlertIcon,
@@ -104,7 +104,7 @@ export default function NewProjectPage() {
         <PageHeader title="New project" parent={workspace.name} />
         <p className="text-muted-foreground p-6 text-sm">
           Only owners and admins set up projects. To work on an existing project from your machine, run{" "}
-          <code className="font-mono">pmagent connect</code> in its repo.
+          <code className="font-mono">dotrix connect</code> in its repo.
         </p>
       </>
     );
@@ -275,7 +275,7 @@ export default function NewProjectPage() {
                     placeholder="https://github.com/acme/app"
                     required
                     disabled={busy || Boolean(created)}
-                    hint="Any host works by address; teammates link their own checkouts with pmagent connect. One project per repo in a workspace."
+                    hint="Any host works by address; teammates link their own checkouts with dotrix connect. One project per repo in a workspace."
                   />
                   {!picked && <RepoPreview url={repoUrl} />}
                 </div>

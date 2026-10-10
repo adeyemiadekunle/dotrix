@@ -1,5 +1,5 @@
-import { Button } from "@pmagent/ui/components/button";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Button } from "@dotrix/ui/components/button";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { BotIcon, PlusIcon } from "lucide-react";
 import { Link } from "@/lib/navigation";
 import { useMemo, type ReactNode } from "react";

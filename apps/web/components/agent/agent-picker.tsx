@@ -1,4 +1,4 @@
-import { Button } from "@pmagent/ui/components/button";
+import { Button } from "@dotrix/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,7 +7,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@pmagent/ui/components/dropdown-menu";
+} from "@dotrix/ui/components/dropdown-menu";
 import { PlusIcon, XIcon } from "lucide-react";
 
 import { AGENTS, agentLabel, modelName, type AgentId, type AgentOption } from "@/lib/agent";

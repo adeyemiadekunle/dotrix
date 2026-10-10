@@ -5,8 +5,8 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 
-from pmagent_backend.core.email import OutboxEmailSender
-from pmagent_backend.core.ratelimit import MemoryRateLimiter
+from dotrix_backend.core.email import OutboxEmailSender
+from dotrix_backend.core.ratelimit import MemoryRateLimiter
 
 
 @pytest.fixture

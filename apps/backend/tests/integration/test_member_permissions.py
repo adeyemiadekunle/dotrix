@@ -2,8 +2,8 @@
 workspace grants members more (`member_permissions`)."""
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 
 async def _team(db_client: AsyncClient, signup, create_team, add_member):
@@ -26,7 +26,7 @@ async def test_what_members_can_do_by_default(db_client: AsyncClient, signup, cr
     assert "agents:approve" in owner["permissions"] and "knowledge:write" in owner["permissions"]
 
     # Bob chats (and brainstorms); a change he asks for waits for an owner or admin.
-    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# Bob's plan"), "Updated.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Bob's plan"), "Updated.")
     paused = (await db_client.post(f"{base}/agent/runs", json={"message": "Rewrite the roadmap"}, headers=bob.headers)).json()
     assert paused["status"] == "awaiting_approval"
     approval_id = paused["approvals"][0]["id"]

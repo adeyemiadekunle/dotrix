@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@pmagent/ui/components/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@dotrix/ui/components/avatar";
 import { BotIcon } from "lucide-react";
 import { Link } from "@/lib/navigation";
 import type { ReactNode } from "react";

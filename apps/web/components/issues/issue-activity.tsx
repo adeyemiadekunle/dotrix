@@ -1,6 +1,6 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Avatar, AvatarFallback, AvatarImage } from "@pmagent/ui/components/avatar";
-import { Textarea } from "@pmagent/ui/components/textarea";
+import type { Schemas } from "@dotrix/api-client";
+import { Avatar, AvatarFallback, AvatarImage } from "@dotrix/ui/components/avatar";
+import { Textarea } from "@dotrix/ui/components/textarea";
 import { BotIcon } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 

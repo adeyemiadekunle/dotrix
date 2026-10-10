@@ -8,10 +8,10 @@ from httpx import AsyncClient
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pmagent_backend.modules.agents.context import _index
-from pmagent_backend.modules.knowledge.models import KnowledgeFile
-from pmagent_backend.modules.knowledge.repository import KnowledgeRepository
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.agents.context import _index
+from dotrix_backend.modules.knowledge.models import KnowledgeFile
+from dotrix_backend.modules.knowledge.repository import KnowledgeRepository
+from dotrix_engine.testing import tool_call
 
 
 @pytest.fixture

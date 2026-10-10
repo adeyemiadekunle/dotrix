@@ -1,4 +1,4 @@
-import type { Schemas } from "@pmagent/api-client";
+import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
@@ -7,7 +7,7 @@ import { ApiError, api, apiFetch, errorMessage, unwrap } from "./api";
 
 export type Document = Schemas["DocumentRead"];
 
-/** What the backend converts to Markdown (pmagent_engine.ingest.SUPPORTED_EXTENSIONS). */
+/** What the backend converts to Markdown (dotrix_engine.ingest.SUPPORTED_EXTENSIONS). */
 export const DOCUMENT_EXTENSIONS = [
   ".pdf",
   ".docx",
@@ -24,7 +24,7 @@ export const DOCUMENT_EXTENSIONS = [
   ".txt",
   ".rst",
 ];
-/** The backend's default limit (PMAGENT_MAX_UPLOAD_MB); it has the final say. */
+/** The backend's default limit (DOTRIX_MAX_UPLOAD_MB); it has the final say. */
 export const MAX_UPLOAD_MB = 25;
 
 export function checkFile(file: File): string | null {

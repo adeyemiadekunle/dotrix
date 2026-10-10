@@ -1,4 +1,4 @@
-import type { Schemas } from "@pmagent/api-client";
+import type { Schemas } from "@dotrix/api-client";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
 import { api, unwrap } from "./api";

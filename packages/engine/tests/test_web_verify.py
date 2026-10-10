@@ -1,7 +1,7 @@
 """A report's claims checked against what was read, in code (docs/agents-v2.md §6.3)."""
 import pytest
 
-from pmagent_engine.web import Source, check_claim, quote_in
+from dotrix_engine.web import Source, check_claim, quote_in
 
 PAGE = (
     "# VAT rates\n\nThe **standard rate** of VAT is 20% on most goods and services. "

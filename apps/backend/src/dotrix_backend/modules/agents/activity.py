@@ -1,0 +1,102 @@
+"""What the Project Manager is doing right now, in words, for the live stream: "Reading
+roadmap.md", "Checking the board", "Asking the research agent". Shown while a run works so
+people aren't staring at a spinner; never stored.
+
+Labels are built from the tool name and a few safe arguments (file paths, issue keys, the
+subagent's name, a web page's host), never from free text the model wrote.
+"""
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from dotrix_engine.outputs import PIPELINES
+from dotrix_engine.web.tiers import host_of
+
+_KNOWLEDGE_ROOT = "/dotrix/"
+# A custom agent's LangGraph name: its handle (validated: lower-case letters, digits, dashes) + "-agent".
+_AGENT_NAME = re.compile(r"^[a-z][a-z0-9-]{1,30}-agent$")
+_HOST = re.compile(r"^[a-z0-9][a-z0-9.-]{0,79}$")
+_STAGES = {stage for stages in PIPELINES.values() for stage in stages}
+_SUBAGENTS = {
+    "product-agent": "the product agent",
+    "architecture-agent": "the architecture agent",
+    "research-agent": "the research agent",
+    "reviewer-agent": "the reviewer agent",
+    "documentation-agent": "the documentation agent",
+    "general-purpose": "a helper agent",
+}
+
+
+def _path(args: dict[str, Any]) -> str:
+    raw = str(args.get("file_path") or args.get("path") or "").strip()
+    if raw.startswith(_KNOWLEDGE_ROOT):
+        raw = raw[len(_KNOWLEDGE_ROOT):]
+    raw = raw.strip("/")
+    return raw[:80] if raw else "the project files"
+
+
+def _key(args: dict[str, Any]) -> str:
+    key = str(args.get("key") or "").strip().upper()
+    return key[:24] if key else "an issue"
+
+
+def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
+    """A short present-tense description of a tool call, or None to show nothing for it."""
+    args = args if isinstance(args, dict) else {}
+    match tool:
+        case "read_file":
+            return f"Reading {_path(args)}"
+        case "read_section":
+            return f"Reading part of {_path(args)}"
+        case "document_outline":
+            return f"Looking over {_path(args)}"
+        case "search_knowledge":
+            return "Searching the project's documents and issues"
+        case "ls" | "glob" | "grep":
+            return "Looking through the project files"
+        case "code_tree":
+            return "Looking through the code"
+        case "code_search":
+            return "Searching the code"
+        case "code_read":
+            path = str(args.get("path") or "").strip().strip("/")[:80]
+            return f"Reading {path} in the code" if path else "Reading the code"
+        case "write_file" | "edit_file":
+            return f"Drafting a change to {_path(args)}"
+        case "write_todos":
+            return "Planning the steps"
+        case "list_issues":
+            return "Checking the board"
+        case "get_issue":
+            return f"Looking at {_key(args)}"
+        case "create_issue":
+            return "Drafting a new issue"
+        case "update_issue":
+            return f"Drafting changes to {_key(args)}"
+        case "comment_issue":
+            return f"Drafting a comment on {_key(args)}"
+        case "stage":
+            current = str(args.get("current") or "")
+            # Only the fixed stage names (dotrix_engine.pipelines), never model text.
+            return f"Now: {current.replace('_', ' ')}" if current in _STAGES else None
+        case "graph_neighbors" | "graph_impact" | "graph_path":
+            return "Following how things connect"
+        case "link_items":
+            return "Drafting a link"
+        case "submit_result":
+            return "Recording the result"
+        case "checkpoint":
+            return "Showing the plan before going on"
+        case "task":
+            name = str(args.get("subagent_type") or "")
+            custom = f"@{name.removesuffix('-agent')}" if _AGENT_NAME.match(name) else "a specialist agent"
+            who = _SUBAGENTS.get(name, custom)
+            return f"Asking {who}"
+        case "web_search":
+            return "Searching the web"
+        case "fetch_page":
+            host = host_of(str(args.get("url") or ""))
+            return f"Reading {host}" if _HOST.match(host) else "Reading a web page"
+        case _:
+            return None

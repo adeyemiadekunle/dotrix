@@ -1,7 +1,7 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Label } from "@pmagent/ui/components/label";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { Textarea } from "@pmagent/ui/components/textarea";
+import type { Schemas } from "@dotrix/api-client";
+import { Label } from "@dotrix/ui/components/label";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { Textarea } from "@dotrix/ui/components/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";

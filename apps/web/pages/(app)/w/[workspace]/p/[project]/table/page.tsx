@@ -1,5 +1,5 @@
-import { Button } from "@pmagent/ui/components/button";
-import { Checkbox } from "@pmagent/ui/components/checkbox";
+import { Button } from "@dotrix/ui/components/button";
+import { Checkbox } from "@dotrix/ui/components/checkbox";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -8,10 +8,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@pmagent/ui/components/dropdown-menu";
-import { Input } from "@pmagent/ui/components/input";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { cn } from "@pmagent/ui/lib/utils";
+} from "@dotrix/ui/components/dropdown-menu";
+import { Input } from "@dotrix/ui/components/input";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { cn } from "@dotrix/ui/lib/utils";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -144,7 +144,7 @@ const COLUMNS: Column[] = [
   },
 ];
 
-const HIDDEN_KEY = "pmagent:table-hidden-columns";
+const HIDDEN_KEY = "dotrix:table-hidden-columns";
 
 function csv(rows: IssueSummary[], columns: Column[], members: MemberMap): string {
   const quote = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;

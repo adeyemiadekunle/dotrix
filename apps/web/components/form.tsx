@@ -1,6 +1,6 @@
-import { Button } from "@pmagent/ui/components/button";
-import { Input } from "@pmagent/ui/components/input";
-import { Label } from "@pmagent/ui/components/label";
+import { Button } from "@dotrix/ui/components/button";
+import { Input } from "@dotrix/ui/components/input";
+import { Label } from "@dotrix/ui/components/label";
 import { AlertCircleIcon, Loader2Icon } from "lucide-react";
 import { useId, type ComponentProps, type ReactNode } from "react";
 

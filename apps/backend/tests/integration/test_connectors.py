@@ -13,7 +13,7 @@ async def test_not_set_up(db_client: AsyncClient, github_world) -> None:
 async def test_install_then_connect_a_repo(db_client: AsyncClient, github_world, github) -> None:
     ada, cat, ws, kun, mob = await github_world()
     status = (await db_client.get(f"{ws}/github", headers=ada.headers)).json()
-    assert status["configured"] and status["install_url"] == "https://github.com/apps/pmagent-test/installations/new"
+    assert status["configured"] and status["install_url"] == "https://github.com/apps/dotrix-test/installations/new"
     # Members don't set up projects' code.
     assert (await db_client.get(f"{ws}/github", headers=cat.headers)).status_code == 403
 

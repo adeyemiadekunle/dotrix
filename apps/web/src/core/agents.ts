@@ -193,7 +193,7 @@ export function decideCoding(cs: CodingSession, approve: boolean, reason = "") {
   if (cs.status !== "awaiting_approval") return;
   mutate(() => {
     cs.status = approve ? "running" : "rejected";
-    if (approve) cs.branch = `pmagent/${task(cs.task)!.key.toLowerCase()}-${task(cs.task)!.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
+    if (approve) cs.branch = `dotrix/${task(cs.task)!.key.toLowerCase()}-${task(cs.task)!.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
     if (approve) cs.turns.at(-1)!.events.push("Checked out the default branch", "Reading the code");
     else cs.turns.at(-1)!.summary = reason ? `Rejected: ${reason}` : "Rejected";
     D().notifs.forEach((n) => n.task === cs.task && n.type === "approval" && (n.read = true));

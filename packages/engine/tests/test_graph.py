@@ -1,4 +1,4 @@
-from pmagent_engine.graph import (
+from dotrix_engine.graph import (
     AFFECTS,
     DECIDED_BY,
     IMPLEMENTS,
@@ -19,7 +19,7 @@ def test_a_document_s_references() -> None:
 - Affected modules: `auth`, web proxy and sessions
 - Supersedes: ADR-1
 
-Context: [the requirement](../requirements/auth.md) and /pmagent/architecture/overview.md.
+Context: [the requirement](../requirements/auth.md) and /dotrix/architecture/overview.md.
 Work: KUN-4, KUN-12 (and KUN-4 again). Not a key: KUNX-3. Not there: ../nope.md
 
 ## Affected modules

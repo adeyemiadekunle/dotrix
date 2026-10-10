@@ -1,8 +1,8 @@
 """What a signed-in browser or app is called in Settings → Devices, from its User-Agent."""
 import pytest
 
-from pmagent_backend.modules.auth.models import SessionClient
-from pmagent_backend.modules.auth.sessions import describe
+from dotrix_backend.modules.auth.models import SessionClient
+from dotrix_backend.modules.auth.sessions import describe
 
 CHROME_MAC = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -19,7 +19,7 @@ SAFARI_IPHONE = (
 FIREFOX_LINUX = "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0"
 DESKTOP_MAC = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "pmagent/0.1.0 Chrome/138.0.0.0 Electron/37.2.0 Safari/537.36"
+    "dotrix/0.1.0 Chrome/138.0.0.0 Electron/37.2.0 Safari/537.36"
 )
 
 

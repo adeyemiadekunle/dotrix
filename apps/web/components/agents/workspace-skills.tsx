@@ -1,9 +1,9 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Button } from "@pmagent/ui/components/button";
-import { Input } from "@pmagent/ui/components/input";
-import { Label } from "@pmagent/ui/components/label";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { Textarea } from "@pmagent/ui/components/textarea";
+import type { Schemas } from "@dotrix/api-client";
+import { Button } from "@dotrix/ui/components/button";
+import { Input } from "@dotrix/ui/components/input";
+import { Label } from "@dotrix/ui/components/label";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { Textarea } from "@dotrix/ui/components/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PlusIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";

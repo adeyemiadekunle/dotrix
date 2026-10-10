@@ -9,12 +9,12 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pmagent_backend.modules.agents.models import AgentRunOutput
-from pmagent_backend.modules.research.models import ResearchSource, WebPage
-from pmagent_backend.modules.research.service import WebResearch
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
-from pmagent_engine.web import FakeSearch, PageFetcher, SearchHit
+from dotrix_backend.modules.agents.models import AgentRunOutput
+from dotrix_backend.modules.research.models import ResearchSource, WebPage
+from dotrix_backend.modules.research.service import WebResearch
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
+from dotrix_engine.web import FakeSearch, PageFetcher, SearchHit
 
 GOV = "https://www.gov.uk/vat-rates"
 BLOG = "https://blog.example/vat-tips"
@@ -127,7 +127,7 @@ async def test_source_ids_stay_the_same_when_a_run_resumes(world, web, db_client
     ada, _, _, base = await world()
     agent_script.say(
         tool_call("web_search", query="uk vat rate"),
-        tool_call("write_file", file_path="/pmagent/research/vat.md", content="# VAT\n\n20% [S1]\n"),
+        tool_call("write_file", file_path="/dotrix/research/vat.md", content="# VAT\n\n20% [S1]\n"),
         tool_call("fetch_page", url=BLOG),
         "Saved; the blog [S2] agrees.",
     )
@@ -250,8 +250,8 @@ async def test_only_reports_are_saved_as_notes(world, db_client: AsyncClient, ag
 
 async def test_the_end_to_end_model_researches_on_the_fake_web(world, db_client: AsyncClient, agent_script) -> None:
     """What the browser test drives: the rule-based model on the canned web."""
-    from pmagent_backend.modules.research.service import fake_web_research
-    from pmagent_engine.testing import RuleBasedChatModel
+    from dotrix_backend.modules.research.service import fake_web_research
+    from dotrix_engine.testing import RuleBasedChatModel
 
     ada, _, _, base = await world()
     runner = db_client._transport.app.state.runner  # type: ignore[attr-defined]

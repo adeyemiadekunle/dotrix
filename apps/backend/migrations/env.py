@@ -7,8 +7,8 @@ from alembic import context
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pmagent_backend.core.settings import get_database_settings
-from pmagent_backend.db.models import Base
+from dotrix_backend.core.settings import get_database_settings
+from dotrix_backend.db.models import Base
 
 config = context.config
 if config.config_file_name and config.attributes.get("configure_logger", True):

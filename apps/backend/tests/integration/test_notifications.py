@@ -4,8 +4,8 @@ import pytest
 from httpx import AsyncClient
 from langchain_core.messages import AIMessage
 
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ async def test_changes_waiting_notify_whoever_may_approve(world, db_client: Asyn
     await db_client.patch(base, json={"access": "restricted"}, headers=ada.headers)
     assert (await db_client.put(f"{base}/members/{cat.id}", headers=ada.headers)).status_code in (200, 201)
 
-    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# Roadmap\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n"), "Done.")
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan phase 1"}, headers=cat.headers)).json()
     assert run["status"] == "awaiting_approval"
 
@@ -187,7 +187,7 @@ async def test_turning_kinds_off(world, db_client: AsyncClient, agent_script) ->
     assert defaults == {"mention": True, "assigned": True, "finding": True, "decided": True, "watching": True,
                         "email": "immediately"}
     await db_client.post(f"{base}/issues", json={"title": "Ship it", "assignee_user_id": bob.id}, headers=ada.headers)
-    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
     await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=ada.headers)
     assert {n["kind"] for n in await _notifications(db_client, ws, bob)} == {"assigned", "approval"}
 
@@ -209,7 +209,7 @@ async def _verify(db_session, *people) -> None:
 
     from sqlalchemy import update
 
-    from pmagent_backend.modules.auth.models import User
+    from dotrix_backend.modules.auth.models import User
 
     await db_session.execute(update(User).where(User.id.in_([p.id for p in people])).values(email_verified_at=datetime.now(UTC)))
     await db_session.commit()
@@ -221,7 +221,7 @@ async def _a_minute_later(db_client: AsyncClient, db_session) -> None:
 
     from sqlalchemy import update
 
-    from pmagent_backend.modules.notifications.models import Notification
+    from dotrix_backend.modules.notifications.models import Notification
 
     await db_session.execute(update(Notification).values(created_at=Notification.created_at - timedelta(minutes=2)))
     await db_session.commit()
@@ -236,9 +236,9 @@ async def test_emails_as_it_happens_and_the_decision_back(
     # Two changes in one turn: they wait together, as one batch.
     agent_script.say(
         AIMessage(content="", tool_calls=[
-            {"name": "write_file", "args": {"file_path": "/pmagent/roadmap.md", "content": "# Roadmap\n"},
+            {"name": "write_file", "args": {"file_path": "/dotrix/roadmap.md", "content": "# Roadmap\n"},
              "id": "w1", "type": "tool_call"},
-            {"name": "write_file", "args": {"file_path": "/pmagent/vision.md", "content": "# Vision\n"},
+            {"name": "write_file", "args": {"file_path": "/dotrix/vision.md", "content": "# Vision\n"},
              "id": "w2", "type": "tool_call"},
         ]),
         "Done.",
@@ -271,9 +271,9 @@ async def test_daily_digest_off_and_read(world, db_client: AsyncClient, agent_sc
 
     from sqlalchemy import update
 
-    from pmagent_backend.modules.auth.models import User
-    from pmagent_backend.modules.notifications.emails import NotificationEmails
-    from pmagent_backend.modules.notifications.models import Notification
+    from dotrix_backend.modules.auth.models import User
+    from dotrix_backend.modules.notifications.emails import NotificationEmails
+    from dotrix_backend.modules.notifications.models import Notification
 
     ada, _, cat, _, ws, base = await world()
     await _verify(db_session, ada, cat)
@@ -291,7 +291,7 @@ async def test_daily_digest_off_and_read(world, db_client: AsyncClient, agent_sc
         await db_session.commit()
         await emails.send_due()
 
-    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="# R\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
     await db_client.post(f"{base}/agent/runs", json={"message": "Plan phase 2"}, headers=cat.headers)
     sent = len(outbox.messages)
     await minute_passes()

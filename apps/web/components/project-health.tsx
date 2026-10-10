@@ -1,5 +1,5 @@
-import type { Schemas } from "@pmagent/api-client";
-import { cn } from "@pmagent/ui/lib/utils";
+import type { Schemas } from "@dotrix/api-client";
+import { cn } from "@dotrix/ui/lib/utils";
 
 export type ProjectHealth = Schemas["ProjectHealth"];
 

@@ -1,13 +1,13 @@
-import { Button } from "@pmagent/ui/components/button";
+import { Button } from "@dotrix/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@pmagent/ui/components/dropdown-menu";
-import { Separator } from "@pmagent/ui/components/separator";
-import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@pmagent/ui/components/sidebar";
-import { cn } from "@pmagent/ui/lib/utils";
+} from "@dotrix/ui/components/dropdown-menu";
+import { Separator } from "@dotrix/ui/components/separator";
+import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@dotrix/ui/components/sidebar";
+import { cn } from "@dotrix/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import {
   BellIcon,
@@ -37,7 +37,7 @@ import { can, canManageProjects } from "@/lib/labels";
 import { useNotificationCounts } from "@/lib/notifications";
 import { useCurrentWorkspace, useMe, useWorkspaces } from "@/lib/queries";
 
-const DISMISSED = "pmagent:verify-banner-dismissed";
+const DISMISSED = "dotrix:verify-banner-dismissed";
 
 /** A slim reminder to confirm the email address; it can be put away for the browser session. */
 function VerifyEmailBanner() {
@@ -120,7 +120,7 @@ function ConnectionErrorBanner() {
 const FILL_WINDOW = /^\/w\/[^/]+\/chat$/;
 
 /** Asks the open project to show its New issue dialog (the top bar's New menu). */
-export const NEW_ISSUE_EVENT = "pmagent:new-issue";
+export const NEW_ISSUE_EVENT = "dotrix:new-issue";
 
 /** The page fades in when you go somewhere else (not when only the query changes). */
 function usePageEnter(pathname: string) {

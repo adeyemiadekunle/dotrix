@@ -11,10 +11,10 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@pmagent/ui/components",
-    "utils": "@pmagent/ui/lib/utils",
-    "hooks": "@pmagent/ui/hooks",
-    "lib": "@pmagent/ui/lib",
-    "ui": "@pmagent/ui/components"
+    "components": "@dotrix/ui/components",
+    "utils": "@dotrix/ui/lib/utils",
+    "hooks": "@dotrix/ui/hooks",
+    "lib": "@dotrix/ui/lib",
+    "ui": "@dotrix/ui/components"
   }
 }

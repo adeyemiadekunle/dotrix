@@ -1,5 +1,5 @@
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@pmagent/ui/components/dialog";
-import { cn } from "@pmagent/ui/lib/utils";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@dotrix/ui/components/dialog";
+import { cn } from "@dotrix/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIcon,

@@ -23,7 +23,7 @@ export function useProjects(workspaceId: string | undefined) {
   });
 }
 
-const LAST_WORKSPACE = "pmagent.lastWorkspace";
+const LAST_WORKSPACE = "dotrix.lastWorkspace";
 
 export function lastWorkspaceSlug(): string | null {
   try {

@@ -1,4 +1,4 @@
-import { ChatMessage, ChatMessageMeta, ChatNotice } from "@pmagent/ui/components/chat-message";
+import { ChatMessage, ChatMessageMeta, ChatNotice } from "@dotrix/ui/components/chat-message";
 import { BotIcon, ChevronDownIcon, CircleAlertIcon, CircleStopIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -110,7 +110,7 @@ function UsageDetails({ run, breakdown }: { run: Run; breakdown: NonNullable<Run
       {breakdown.files_read.length > 0 && (
         <UsageList title="Files read">
           {breakdown.files_read.map((f) => (
-            <UsageRow key={f.path} label={<code className="font-mono break-all">{f.path.replace(/^\/pmagent\//, "")}</code>}>
+            <UsageRow key={f.path} label={<code className="font-mono break-all">{f.path.replace(/^\/dotrix\//, "")}</code>}>
               {f.times > 1 ? `${f.times} times` : "once"}
             </UsageRow>
           ))}

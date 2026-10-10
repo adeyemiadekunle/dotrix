@@ -1,7 +1,7 @@
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { Textarea } from "@pmagent/ui/components/textarea";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { Textarea } from "@dotrix/ui/components/textarea";
 import { Link } from "@/lib/navigation";
 import { useState } from "react";
 

@@ -1,8 +1,8 @@
 // How issue types, statuses, priorities, and assignees look everywhere they appear.
-import type { Schemas } from "@pmagent/api-client";
-import { Avatar, AvatarFallback, AvatarImage } from "@pmagent/ui/components/avatar";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@pmagent/ui/components/tooltip";
-import { cn } from "@pmagent/ui/lib/utils";
+import type { Schemas } from "@dotrix/api-client";
+import { Avatar, AvatarFallback, AvatarImage } from "@dotrix/ui/components/avatar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@dotrix/ui/components/tooltip";
+import { cn } from "@dotrix/ui/lib/utils";
 import {
   BookmarkIcon,
   BotIcon,

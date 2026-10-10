@@ -1,5 +1,5 @@
 import * as React from "react"
-import { cn } from "@pmagent/ui/lib/utils"
+import { cn } from "@dotrix/ui/lib/utils"
 
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (

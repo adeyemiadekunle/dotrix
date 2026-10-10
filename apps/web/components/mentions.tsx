@@ -1,4 +1,4 @@
-import { cn } from "@pmagent/ui/lib/utils";
+import { cn } from "@dotrix/ui/lib/utils";
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 
 import { UserAvatar } from "@/components/user-avatar";

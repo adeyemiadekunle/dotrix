@@ -12,9 +12,9 @@ import pytest
 from httpx import AsyncClient
 from pydantic import SecretStr
 
-from pmagent_backend.modules.coding.runner import CodingWorker
-from pmagent_backend.modules.coding.sandbox import ExecResult, LocalSandbox, LocalSession
-from pmagent_backend.modules.connectors.github_app import get_github_app
+from dotrix_backend.modules.coding.runner import CodingWorker
+from dotrix_backend.modules.coding.sandbox import ExecResult, LocalSandbox, LocalSession
+from dotrix_backend.modules.connectors.github_app import get_github_app
 
 
 def _git(root: Path, *args: str) -> str:
@@ -102,7 +102,7 @@ async def coding(db_client: AsyncClient, github, github_world, origin: Path, cla
     client = app.dependency_overrides[get_github_app]()
     settings.coding_sandbox = "local"
     settings.anthropic_api_key = SecretStr("sk-ant-test")
-    settings.github_app_id, settings.github_app_slug = "4242", "pmagent-test"
+    settings.github_app_id, settings.github_app_slug = "4242", "dotrix-test"
     settings.github_app_private_key = SecretStr(client.private_key)
     ada, cat, ws, kun, mob = await github_world()
     installation = (await db_client.post(f"{ws}/github/installations", json={"installation_id": 111, "code": "code-1"},
@@ -168,7 +168,7 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["status"] == "pr_opened", run
     assert run["pr_number"] == 1 and run["pr_url"] == "https://github.com/kunemi/api/pull/1"
-    assert run["branch"].startswith(f"pmagent/{story['key'].lower()}-refund-a-payment-")
+    assert run["branch"].startswith(f"dotrix/{story['key'].lower()}-refund-a-payment-")
     assert {f["path"] for f in run["files_changed"]} == {"src/payments.py", "tests/test_refund.py"}
     assert run["summary"].startswith("Added refunds") and run["input_tokens"] == 2000 and run["cost_usd"] == 0.12
     assert "Edited src/payments.py" in [e["text"] for e in run["events"]]
@@ -199,19 +199,19 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert {"coding.requested", "coding.approved", "coding.pr_opened"} <= set(actions)
 
 
-async def test_changes_to_pmagent_or_workflows_are_never_pushed(
+async def test_changes_to_dotrix_or_workflows_are_never_pushed(
     db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
 ) -> None:
     ada, _, ws, kun, _, _ = coding
     base = f"{ws}/projects/{kun['id']}"
     task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Tidy"}, headers=ada.headers)).json()
-    claude.edits = {"src/payments.py": "# tidy\n", ".pmagent/requirements/x.md": "# sneaky\n"}
+    claude.edits = {"src/payments.py": "# tidy\n", ".dotrix/requirements/x.md": "# sneaky\n"}
     run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
     await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
-    assert run["status"] == "failed" and ".pmagent/ stays on the platform" in run["error"]
+    assert run["status"] == "failed" and ".dotrix/ stays on the platform" in run["error"]
     assert run["branch"] is None and github.pulls == []
-    assert _git(origin, "branch", "--list", "pmagent/*") == ""
+    assert _git(origin, "branch", "--list", "dotrix/*") == ""
 
     # Workflows likewise; and a run that changes nothing ends without a PR.
     claude.edits = {".github/workflows/ci.yml": "on: push\n"}
@@ -268,7 +268,7 @@ async def test_a_running_agent_is_stopped_and_nothing_is_pushed(
     db_client: AsyncClient, coding, github, claude: ScriptedClaude, monkeypatch
 ) -> None:
     """The worker polls for Stop while the agent works, and kills it."""
-    from pmagent_backend.modules.coding import runner as runner_module
+    from dotrix_backend.modules.coding import runner as runner_module
 
     ada, _, ws, kun, _, _ = coding
     base = f"{ws}/projects/{kun['id']}"

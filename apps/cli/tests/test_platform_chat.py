@@ -1,4 +1,4 @@
-"""`pmagent chat` and `brief` against the platform's agents, with inline approvals."""
+"""`dotrix chat` and `brief` against the platform's agents, with inline approvals."""
 from __future__ import annotations
 
 import sys
@@ -10,11 +10,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from fake_platform import PID, WS, FakePlatform, approval  # noqa: E402
 
-from pmagent_cli import cli as cli_module  # noqa: E402
-from pmagent_cli.agent_client import PlatformAgent  # noqa: E402
-from pmagent_cli.sync import LinkState  # noqa: E402
+from dotrix_cli import cli as cli_module  # noqa: E402
+from dotrix_cli.agent_client import PlatformAgent  # noqa: E402
+from dotrix_cli.sync import LinkState  # noqa: E402
 
-DIFF = "--- a/pmagent/roadmap.md\n+++ b/pmagent/roadmap.md\n@@ -1 +1,2 @@\n # Roadmap\n+Phase 1: core\n"
+DIFF = "--- a/dotrix/roadmap.md\n+++ b/dotrix/roadmap.md\n@@ -1 +1,2 @@\n # Roadmap\n+Phase 1: core\n"
 
 
 def agent(platform: FakePlatform, state: LinkState) -> PlatformAgent:
@@ -27,7 +27,7 @@ def agent(platform: FakePlatform, state: LinkState) -> PlatformAgent:
 def test_converse_settles_each_pause(platform: FakePlatform, state: LinkState) -> None:
     platform.agent_script = [
         {"status": "running"},
-        {"status": "awaiting_approval", "approvals": [approval("a1"), approval("a2", target="/pmagent/vision.md")]},
+        {"status": "awaiting_approval", "approvals": [approval("a1"), approval("a2", target="/dotrix/vision.md")]},
         {"status": "queued"},  # after the decisions
         {"status": "completed", "reply": "Done: roadmap updated."},
     ]
@@ -100,11 +100,11 @@ def test_chat_shows_the_diff_and_approves_inline(linked_repo: Path, platform: Fa
     assert result.exit_code == 0, result.output
     out = result.output
     assert "Talking to the KUN team (Kunemi) on the platform" in out
-    assert "The agents want to: write_file -> /pmagent/roadmap.md" in out
+    assert "The agents want to: write_file -> /dotrix/roadmap.md" in out
     assert "+Phase 1: core" in out
     assert "(1 change(s) approved, 0 rejected)" in out
     assert "Roadmap updated with Phase 1." in out
-    assert "pmagent chat --thread thread-1" in out
+    assert "dotrix chat --thread thread-1" in out
     assert platform.runs_started == [{"message": "Add phase 1 to the roadmap"}]
 
 

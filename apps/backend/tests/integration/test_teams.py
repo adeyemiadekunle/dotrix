@@ -1,6 +1,6 @@
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.modules.workspaces.models import Role
 
 
 async def test_teams_hold_people_and_projects_one_each(db_client: AsyncClient, signup, create_team, add_member) -> None:

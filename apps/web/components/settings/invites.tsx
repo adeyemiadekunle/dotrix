@@ -1,10 +1,10 @@
-import type { Schemas } from "@pmagent/api-client";
-import { Badge } from "@pmagent/ui/components/badge";
-import { Button } from "@pmagent/ui/components/button";
-import { Input } from "@pmagent/ui/components/input";
-import { Label } from "@pmagent/ui/components/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@pmagent/ui/components/select";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import type { Schemas } from "@dotrix/api-client";
+import { Badge } from "@dotrix/ui/components/badge";
+import { Button } from "@dotrix/ui/components/button";
+import { Input } from "@dotrix/ui/components/input";
+import { Label } from "@dotrix/ui/components/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { Building2Icon, CopyIcon, LinkIcon, MailIcon, XIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";

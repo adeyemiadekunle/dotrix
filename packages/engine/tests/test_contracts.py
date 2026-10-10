@@ -4,12 +4,12 @@ from deepagents.backends import CompositeBackend, StateBackend
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
-from pmagent_engine import approvals, permissions
-from pmagent_engine.agent import build_team, role_for_agent_name
-from pmagent_engine.builtins import BUILTIN_HANDLES, builtin, builtin_specs
-from pmagent_engine.contracts import AgentPolicy, AgentSpec
-from pmagent_engine.permissions import Access
-from pmagent_engine.testing import ScriptedChatModel, tool_call
+from dotrix_engine import approvals, permissions
+from dotrix_engine.agent import build_team, role_for_agent_name
+from dotrix_engine.builtins import BUILTIN_HANDLES, builtin, builtin_specs
+from dotrix_engine.contracts import AgentPolicy, AgentSpec
+from dotrix_engine.permissions import Access
+from dotrix_engine.testing import ScriptedChatModel, tool_call
 
 PATHS = [
     "project.md", "docs/README.md", "vision.md", "roadmap.md", "current-state.md",
@@ -92,7 +92,7 @@ def test_role_for_custom_agent_names() -> None:
 
 
 def _backend():
-    return CompositeBackend(default=StateBackend(), routes={"/pmagent/": StateBackend()})
+    return CompositeBackend(default=StateBackend(), routes={"/dotrix/": StateBackend()})
 
 
 def test_the_pm_delegates_to_a_custom_agent() -> None:
@@ -113,7 +113,7 @@ def test_the_pm_delegates_to_a_custom_agent() -> None:
 
 def test_a_custom_agent_leads_with_its_own_gates() -> None:
     model = ScriptedChatModel.of(
-        tool_call("write_file", file_path="/pmagent/reviews/security/r.md", content="# Review"),
+        tool_call("write_file", file_path="/dotrix/reviews/security/r.md", content="# Review"),
         "Written.",
     )
     writer = spec(tools=["knowledge.read", "knowledge.write"], access={"reviews/security/*": "write"})
@@ -126,7 +126,7 @@ def test_a_custom_agent_leads_with_its_own_gates() -> None:
 
 def test_a_custom_agent_without_document_writes_is_refused_outright() -> None:
     model = ScriptedChatModel.of(
-        tool_call("write_file", file_path="/pmagent/reviews/r.md", content="x"),
+        tool_call("write_file", file_path="/dotrix/reviews/r.md", content="x"),
         "I can't write that.",
     )
     agent = build_team("Kunemi", "x", model, _backend(), checkpointer=InMemorySaver(),
@@ -143,7 +143,7 @@ def test_an_unknown_lead_is_refused() -> None:
 
 
 def test_autonomy_shapes_tools_and_gates() -> None:
-    from pmagent_engine.agent import _gate, _toolbox, _tools_for
+    from dotrix_engine.agent import _gate, _toolbox, _tools_for
 
     def create_issue(): ...
     def comment_issue(): ...
@@ -197,7 +197,7 @@ def test_output_and_pipeline_names_are_checked() -> None:
 
 
 def test_an_agent_is_told_what_it_may_change_without_asking() -> None:
-    from pmagent_engine.agent import autonomy_note
+    from dotrix_engine.agent import autonomy_note
 
     assert autonomy_note(spec(tools=["knowledge.write"])) == ""
     note = autonomy_note(spec(tools=["knowledge.write", "issues.create"], issue_types=["bug"],
@@ -208,9 +208,9 @@ def test_an_agent_is_told_what_it_may_change_without_asking() -> None:
 
 
 def test_a_pause_says_which_agent_asked() -> None:
-    from pmagent_engine.agent import _gate, _toolbox
-    from pmagent_engine.approvals import agent_of
-    from pmagent_engine.catalog import action_for
+    from dotrix_engine.agent import _gate, _toolbox
+    from dotrix_engine.approvals import agent_of
+    from dotrix_engine.catalog import action_for
 
     def create_issue(): ...
 

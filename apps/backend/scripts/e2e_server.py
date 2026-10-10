@@ -1,6 +1,6 @@
 """The backend for end-to-end (browser) tests: `uv run python apps/backend/scripts/e2e_server.py`.
 
-Recreates a throwaway `pmagent_e2e` database (next to the dev one, or $PMAGENT_E2E_DATABASE_URL),
+Recreates a throwaway `dotrix_e2e` database (next to the dev one, or $DOTRIX_E2E_DATABASE_URL),
 migrates it, then serves the API on port 8100 with the deterministic "e2e:rules" model, so
 agent runs need no API key and always behave the same. Never point this at real data.
 """
@@ -17,18 +17,18 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pmagent_backend.core.settings import get_database_settings
+from dotrix_backend.core.settings import get_database_settings
 
 BACKEND = Path(__file__).resolve().parents[1]
-PORT = os.environ.get("PMAGENT_E2E_PORT", "8100")
-WEB_URL = os.environ.get("PMAGENT_E2E_WEB_URL", "http://localhost:3100")
+PORT = os.environ.get("DOTRIX_E2E_PORT", "8100")
+WEB_URL = os.environ.get("DOTRIX_E2E_WEB_URL", "http://localhost:3100")
 
 
 def e2e_database_url() -> str:
-    if url := os.environ.get("PMAGENT_E2E_DATABASE_URL"):
+    if url := os.environ.get("DOTRIX_E2E_DATABASE_URL"):
         return url
     dev = make_url(get_database_settings().database_url)
-    return dev.set(database="pmagent_e2e").render_as_string(hide_password=False)
+    return dev.set(database="dotrix_e2e").render_as_string(hide_password=False)
 
 
 async def recreate(url: str) -> None:
@@ -46,29 +46,29 @@ def main() -> None:
     asyncio.run(recreate(url))
     env = {
         **os.environ,
-        "PMAGENT_DATABASE_URL": url,
-        "PMAGENT_E2E_MODELS": "true",
-        "PMAGENT_DEFAULT_MODEL": "e2e:rules",
-        "PMAGENT_APP_URL": WEB_URL,
-        "PMAGENT_CORS_ORIGINS": f'["{WEB_URL}"]',
-        "PMAGENT_LOG_JSON": "false",
+        "DOTRIX_DATABASE_URL": url,
+        "DOTRIX_E2E_MODELS": "true",
+        "DOTRIX_DEFAULT_MODEL": "e2e:rules",
+        "DOTRIX_APP_URL": WEB_URL,
+        "DOTRIX_CORS_ORIGINS": f'["{WEB_URL}"]',
+        "DOTRIX_LOG_JSON": "false",
         # Every test signs up a fresh account from the same machine (backend tests cover limits).
-        "PMAGENT_RATE_LIMITS": "off",
+        "DOTRIX_RATE_LIMITS": "off",
         # Test sign-ups mustn't reach a real email provider, even if .env configures one.
-        "PMAGENT_EMAIL_BACKEND": "console",
+        "DOTRIX_EMAIL_BACKEND": "console",
         # A canned web: no Tavily calls with a developer's key.
-        "PMAGENT_SEARCH_PROVIDER": "fake",
+        "DOTRIX_SEARCH_PROVIDER": "fake",
         # Search by keywords only: no embedding calls with a developer's key.
-        "PMAGENT_EMBEDDING_MODEL": "",
+        "DOTRIX_EMBEDDING_MODEL": "",
         # Only used if no secret is configured (e.g. CI); this server holds throwaway data.
         # A fresh key each run (the database is thrown away too): organisations' model keys.
-        "PMAGENT_ENCRYPTION_KEY": Fernet.generate_key().decode(),
-        "PMAGENT_JWT_SECRET": os.environ.get("PMAGENT_JWT_SECRET") or "e2e-only-secret-for-throwaway-test-data",
+        "DOTRIX_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+        "DOTRIX_JWT_SECRET": os.environ.get("DOTRIX_JWT_SECRET") or "e2e-only-secret-for-throwaway-test-data",
     }
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=BACKEND, env=env, check=True)
     print(f"e2e backend: {make_url(url).database} on :{PORT}", flush=True)
     raise SystemExit(
-        subprocess.call([sys.executable, "-m", "pmagent_backend.serve", "--port", PORT], env=env)
+        subprocess.call([sys.executable, "-m", "dotrix_backend.serve", "--port", PORT], env=env)
     )
 
 

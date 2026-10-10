@@ -3,8 +3,8 @@ import pytest
 from httpx import AsyncClient
 from langchain_core.messages import AIMessage
 
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 
 @pytest.fixture
@@ -152,7 +152,7 @@ def empty_turn() -> AIMessage:
 async def test_an_empty_final_turn_is_asked_again(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
     model = agent_script.say(
-        tool_call("read_file", file_path="/pmagent/project.md"),
+        tool_call("read_file", file_path="/dotrix/project.md"),
         empty_turn(),
         "Kunemi is a logistics platform.",
     )
@@ -180,7 +180,7 @@ async def test_text_before_an_empty_final_turn_is_the_reply(
     project, db_client: AsyncClient, agent_script
 ) -> None:
     ada, _, base = await project()
-    answered = tool_call("read_file", file_path="/pmagent/project.md")
+    answered = tool_call("read_file", file_path="/dotrix/project.md")
     answered.content = "It's a logistics platform. Checking the details."
     model = agent_script.say(answered, empty_turn(), "unused")
     done = await run(db_client, base, ada.headers, "What is this?")
@@ -202,13 +202,13 @@ async def test_no_reply_even_when_asked_again_fails(project, db_client: AsyncCli
 async def test_write_waits_for_approval_then_applies(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
     agent_script.say(
-        tool_call("write_file", file_path="/pmagent/roadmap.md", content="# Roadmap\n\nPhase 1: core.\n"),
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nPhase 1: core.\n"),
         "Action complete: updated roadmap.md.",
     )
     paused = await run(db_client, base, ada.headers, "Update the roadmap with phase 1")
     assert paused["status"] == "awaiting_approval"
     [approval] = paused["approvals"]
-    assert approval["tool"] == "write_file" and approval["target"] == "/pmagent/roadmap.md"
+    assert approval["tool"] == "write_file" and approval["target"] == "/dotrix/roadmap.md"
     assert "+Phase 1: core." in approval["diff"] and "-_Phases, milestones" in approval["diff"]
     # Nothing is written before approval.
     assert "Phase 1" not in await read(db_client, base, "roadmap.md", ada.headers)
@@ -233,7 +233,7 @@ async def test_workspace_approvals_queue(
 ) -> None:
     ada, team, base = await project()
     agent_script.say(
-        tool_call("write_file", file_path="/pmagent/roadmap.md", content="# Roadmap\n\nPhase 1.\n"),
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nPhase 1.\n"),
         "Done.",
     )
     paused = await run(db_client, base, ada.headers, "Update the roadmap")
@@ -259,7 +259,7 @@ async def test_workspace_approvals_queue(
 async def test_rejected_write_is_not_applied(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
     model = agent_script.say(
-        tool_call("write_file", file_path="/pmagent/vision.md", content="Something else"),
+        tool_call("write_file", file_path="/dotrix/vision.md", content="Something else"),
         "Understood, I left the vision as it is.",
     )
     paused = await run(db_client, base, ada.headers, "rewrite the vision")
@@ -277,7 +277,7 @@ async def test_folder_permissions_apply_even_after_approval(
     ada, _, base = await project()
     model = agent_script.say(
         # The Project Manager may only read requirements/ (Product owns it).
-        tool_call("write_file", file_path="/pmagent/requirements/product.md", content="PM edit"),
+        tool_call("write_file", file_path="/dotrix/requirements/product.md", content="PM edit"),
         "I'll ask the Product agent instead.",
     )
     paused = await run(db_client, base, ada.headers, "change the requirements")
@@ -295,7 +295,7 @@ async def test_subagent_writes_are_attributed_to_its_role(
         # PM delegates to the Product agent...
         tool_call("task", description="Add a scheduled-delivery story", subagent_type="product-agent"),
         # ...which writes its own folder...
-        tool_call("write_file", file_path="/pmagent/requirements/product.md", content="# Scheduled delivery"),
+        tool_call("write_file", file_path="/dotrix/requirements/product.md", content="# Scheduled delivery"),
         "Story written.",
         # ...and the PM reports back.
         "Product added the story.",
@@ -329,7 +329,7 @@ async def test_briefing_is_read_only(project, db_client: AsyncClient, agent_scri
     ada, _, base = await project()
     agent_script.say(
         AIMessage(content=""),  # the one-call briefing came back empty: the team takes over...
-        tool_call("write_file", file_path="/pmagent/progress/blocked.md", content="changed"),  # ...and tries a write
+        tool_call("write_file", file_path="/dotrix/progress/blocked.md", content="changed"),  # ...and tries a write
         "Briefing: discovery phase, nothing blocked.",
     )
     res = await db_client.post(f"{base}/agent/briefing", headers=ada.headers)
@@ -348,7 +348,7 @@ async def test_decisions_must_cover_every_pending_approval(
     project, db_client: AsyncClient, agent_script
 ) -> None:
     ada, _, base = await project()
-    agent_script.say(tool_call("write_file", file_path="/pmagent/vision.md", content="x"), "ok")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/vision.md", content="x"), "ok")
     paused = await run(db_client, base, ada.headers)
     url = f"{base}/agent/runs/{paused['id']}/decisions"
     bogus = {"decisions": [{"approval_id": "00000000-0000-0000-0000-000000000000", "decision": "approve"}]}
@@ -360,7 +360,7 @@ async def test_decisions_must_cover_every_pending_approval(
 
 async def test_thread_rules(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
-    agent_script.say(tool_call("write_file", file_path="/pmagent/vision.md", content="x"), "ok")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/vision.md", content="x"), "ok")
     paused = await run(db_client, base, ada.headers)
     busy = await db_client.post(
         f"{base}/agent/runs", json={"message": "and?", "thread_id": paused["thread_id"]}, headers=ada.headers
@@ -385,7 +385,7 @@ async def test_agent_permissions(project, db_client: AsyncClient, agent_script, 
     guest = await signup(email="guest@example.com", name="Guest")
     eve = await signup(email="eve@example.com", name="Eve")
     await add_member(team["id"], guest.id, Role.GUEST)
-    agent_script.say(tool_call("write_file", file_path="/pmagent/vision.md", content="x"), "ok")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/vision.md", content="x"), "ok")
     paused = await run(db_client, base, ada.headers)
 
     body = {"message": "hi"}
@@ -400,7 +400,7 @@ async def test_audit_log(project, db_client: AsyncClient, agent_script, add_memb
     bob = await signup(email="bob@example.com", name="Bob")
     await add_member(team["id"], bob.id, Role.MEMBER)
     # roadmap.md belongs to the Project Manager, so the approved write goes through.
-    agent_script.say(tool_call("write_file", file_path="/pmagent/roadmap.md", content="New"), "done")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="New"), "done")
     paused = await run(db_client, base, ada.headers)
     await decide(db_client, base, paused, ada.headers, ("approve",))
 
@@ -432,12 +432,12 @@ async def test_architecture_draft_is_setup_work(
 
     assert (await db_client.post(url, json=body, headers=bob.headers)).status_code == 403
     model = agent_script.say(
-        tool_call("write_file", file_path="/pmagent/architecture/overview.md", content="# Overview\nNext.js + FastAPI"),
+        tool_call("write_file", file_path="/dotrix/architecture/overview.md", content="# Overview\nNext.js + FastAPI"),
         "Drafted the overview.",
     )
     paused = (await db_client.post(url, json=body, headers=ada.headers)).json()
     assert paused["status"] == "awaiting_approval"
-    assert paused["approvals"][0]["target"] == "/pmagent/architecture/overview.md"
+    assert paused["approvals"][0]["target"] == "/dotrix/architecture/overview.md"
     first_prompt = str(model.received[0])
     assert "draft the architecture overview" in first_prompt and "apps/api (FastAPI)" in first_prompt
     events = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", params={"action": "project.architecture_draft"},
@@ -452,7 +452,7 @@ async def test_only_owners_and_admins_approve_architecture_changes(
     bob = await signup(email="bob@example.com", name="Bob")
     await add_member(team["id"], bob.id, Role.MEMBER)
     agent_script.say(
-        tool_call("write_file", file_path="/pmagent/architecture/overview.md", content="# Rewritten by a chat"),
+        tool_call("write_file", file_path="/dotrix/architecture/overview.md", content="# Rewritten by a chat"),
         "Done.",
     )
     # A member chats and the agent proposes an architecture change...
@@ -487,7 +487,7 @@ def used(message: AIMessage | str, input_tokens: int, output_tokens: int) -> AIM
 async def test_a_run_records_its_model_and_tokens(project, db_client: AsyncClient, agent_script) -> None:
     ada, team, base = await project()
     agent_script.say(
-        used(tool_call("read_file", file_path="/pmagent/project.md"), 100, 10),
+        used(tool_call("read_file", file_path="/dotrix/project.md"), 100, 10),
         used("It's a logistics platform.", 150, 20),
     )
     done = await run(db_client, base, ada.headers, "What is this?")
@@ -504,7 +504,7 @@ async def test_a_run_records_its_model_and_tokens(project, db_client: AsyncClien
 async def test_tokens_add_up_across_an_approval(project, db_client: AsyncClient, agent_script) -> None:
     ada, team, base = await project()
     agent_script.say(
-        used(tool_call("write_file", file_path="/pmagent/roadmap.md", content="New"), 100, 10),
+        used(tool_call("write_file", file_path="/dotrix/roadmap.md", content="New"), 100, 10),
         used("Updated the roadmap.", 120, 5),
     )
     paused = await run(db_client, base, ada.headers, "Update the roadmap")
@@ -553,9 +553,9 @@ async def test_owners_see_where_the_tokens_went(
 ) -> None:
     ada, team, base = await project()
     agent_script.say(
-        used(tool_call("read_file", file_path="/pmagent/project.md"), 100, 10),
+        used(tool_call("read_file", file_path="/dotrix/project.md"), 100, 10),
         used(tool_call("task", description="Check the vision", subagent_type="research-agent"), 120, 10),
-        used(tool_call("read_file", file_path="/pmagent/vision.md"), 40, 5),  # the research agent
+        used(tool_call("read_file", file_path="/dotrix/vision.md"), 40, 5),  # the research agent
         used("Vision checked.", 50, 5),  # the research agent's answer
         used("All good.", 150, 5),
     )
@@ -569,7 +569,7 @@ async def test_owners_see_where_the_tokens_went(
     tools = {t["tool"]: t for t in breakdown["tools"]}
     assert tools["read_file"]["calls"] == 2 and tools["read_file"]["result_tokens"] > 0
     assert tools["task"]["calls"] == 1
-    assert {f["path"] for f in breakdown["files_read"]} == {"/pmagent/project.md", "/pmagent/vision.md"}
+    assert {f["path"] for f in breakdown["files_read"]} == {"/dotrix/project.md", "/dotrix/vision.md"}
     assert breakdown["token_budget"] is None  # tests run without a default budget
 
     bob = await signup(email="bob@example.com", name="Bob")
@@ -583,8 +583,8 @@ async def test_a_run_stops_at_its_token_budget(project, db_client: AsyncClient, 
     res = await db_client.patch(base, json={"token_budget": 10_000}, headers=ada.headers)
     assert res.status_code == 200 and res.json()["token_budget"] == 10_000
     model = agent_script.say(
-        used(tool_call("read_file", file_path="/pmagent/project.md"), 8_000, 100),
-        used(tool_call("read_file", file_path="/pmagent/roadmap.md"), 3_000, 0),
+        used(tool_call("read_file", file_path="/dotrix/project.md"), 8_000, 100),
+        used(tool_call("read_file", file_path="/dotrix/roadmap.md"), 3_000, 0),
         "never reached",
     )
     done = await run(db_client, base, ada.headers, "Read everything")
@@ -602,7 +602,7 @@ async def test_the_budget_covers_specialists_too(project, db_client: AsyncClient
     await db_client.patch(base, json={"token_budget": 10_000}, headers=ada.headers)
     agent_script.say(
         used(tool_call("task", description="Research it", subagent_type="research-agent"), 6_000, 0),
-        used(tool_call("read_file", file_path="/pmagent/vision.md"), 5_000, 0),  # the research agent
+        used(tool_call("read_file", file_path="/dotrix/vision.md"), 5_000, 0),  # the research agent
         "never reached",
     )
     done = await run(db_client, base, ada.headers, "Research it")
@@ -614,7 +614,7 @@ async def test_the_budget_counts_every_step_of_a_run(project, db_client: AsyncCl
     ada, _, base = await project()
     await db_client.patch(base, json={"token_budget": 10_000}, headers=ada.headers)
     agent_script.say(
-        used(tool_call("write_file", file_path="/pmagent/roadmap.md", content="New"), 10_500, 0),
+        used(tool_call("write_file", file_path="/dotrix/roadmap.md", content="New"), 10_500, 0),
         "never reached",
     )
     paused = await run(db_client, base, ada.headers, "Update the roadmap")

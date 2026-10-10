@@ -5,8 +5,8 @@ import pytest
 from httpx import AsyncClient
 from openpyxl import Workbook
 
-from pmagent_backend.core.storage import MemoryBlobStorage, get_storage
-from pmagent_backend.modules.workspaces.models import Role
+from dotrix_backend.core.storage import MemoryBlobStorage, get_storage
+from dotrix_backend.modules.workspaces.models import Role
 
 
 def xlsx_bytes() -> bytes:
@@ -149,7 +149,7 @@ async def test_conversion_happens_after_the_upload_returns(project, db_client: A
 
 
 async def test_conversions_cut_off_by_a_restart_are_marked_failed(project, db_client: AsyncClient) -> None:
-    from pmagent_backend.modules.documents.service import mark_interrupted_conversions
+    from dotrix_backend.modules.documents.service import mark_interrupted_conversions
 
     ada, _, base = await project()
 

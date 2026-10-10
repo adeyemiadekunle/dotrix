@@ -2,8 +2,8 @@
 whoever started them, and only while they still see every project in them."""
 from httpx import AsyncClient
 
-from pmagent_backend.modules.workspaces.models import Role
-from pmagent_engine.testing import tool_call
+from dotrix_backend.modules.workspaces.models import Role
+from dotrix_engine.testing import tool_call
 
 
 async def _world(db_client: AsyncClient, signup, create_team, add_member):
@@ -34,8 +34,8 @@ async def test_a_conversation_reads_several_projects_and_changes_nothing(
     model = agent_script.say(
         tool_call("search_knowledge", query="refunds"),
         tool_call("list_issues", project="OPS"),
-        tool_call("read_file", file_path="/pmagent/KUN/requirements/refunds.md"),
-        tool_call("write_file", file_path="/pmagent/KUN/requirements/refunds.md", content="# Gone\n"),
+        tool_call("read_file", file_path="/dotrix/KUN/requirements/refunds.md"),
+        tool_call("write_file", file_path="/dotrix/KUN/requirements/refunds.md", content="# Gone\n"),
         "KUN refunds take a week; OPS is planning the warehouse rota.",
     )
     res = await db_client.post(f"{ws}/conversations/runs", headers=ada.headers, json={
@@ -50,7 +50,7 @@ async def test_a_conversation_reads_several_projects_and_changes_nothing(
 
     system = model.received[0][0].content
     assert "## KUN: Kunemi" in system and "## OPS: Operations" in system and "A conversation across projects" in system
-    assert "/pmagent/KUN/requirements/refunds.md" in _results(model, "search_knowledge")[0]
+    assert "/dotrix/KUN/requirements/refunds.md" in _results(model, "search_knowledge")[0]
     assert "Rota for the warehouse" in str(_results(model, "list_issues")[0])
     assert "within a week" in _results(model, "read_file")[0]
     assert _results(model, "write_file") and "within a week" in (

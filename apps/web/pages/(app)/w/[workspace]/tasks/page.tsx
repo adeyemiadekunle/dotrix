@@ -1,5 +1,5 @@
-import { Input } from "@pmagent/ui/components/input";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
+import { Input } from "@dotrix/ui/components/input";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
 import { ChevronDownIcon, ChevronRightIcon, ListTodoIcon, SearchIcon } from "lucide-react";
 import { Suspense, useMemo, useState } from "react";
 

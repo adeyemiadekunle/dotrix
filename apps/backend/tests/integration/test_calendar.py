@@ -4,7 +4,7 @@ from typing import Any
 
 from httpx import AsyncClient
 
-from pmagent_backend.core.middleware import loggable_path
+from dotrix_backend.core.middleware import loggable_path
 
 TODAY = date.today()
 

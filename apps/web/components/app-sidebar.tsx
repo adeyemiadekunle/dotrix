@@ -18,16 +18,16 @@ import {
   SidebarMenuSubItem,
   SidebarRail,
   useSidebar,
-} from "@pmagent/ui/components/sidebar";
+} from "@dotrix/ui/components/sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@pmagent/ui/components/dropdown-menu";
-import { Skeleton } from "@pmagent/ui/components/skeleton";
-import { cn } from "@pmagent/ui/lib/utils";
+} from "@dotrix/ui/components/dropdown-menu";
+import { Skeleton } from "@dotrix/ui/components/skeleton";
+import { cn } from "@dotrix/ui/lib/utils";
 import {
   ActivityIcon,
   BellIcon,
@@ -78,7 +78,7 @@ const PROJECT_VIEWS: { href: string; label: string }[] = [
   { href: "activity", label: "Activity" },
 ];
 
-const EXPANDED_KEY = "pmagent:sidebar-projects";
+const EXPANDED_KEY = "dotrix:sidebar-projects";
 
 /**
  * Which projects show their views in the sidebar: the one you're in until you fold it, and any

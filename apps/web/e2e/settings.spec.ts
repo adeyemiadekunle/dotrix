@@ -65,23 +65,23 @@ test("change your password (a wrong current one is refused), and choose which no
 
 test("tokens under Sessions: the CLI's sign-in is listed, a new one is shown once, both revoke; the old Devices address opens Sessions", async ({ page }) => {
   await signUp(page);
-  // What `pmagent login` leaves behind: a token named for the device.
+  // What `dotrix login` leaves behind: a token named for the device.
   await page.evaluate(() =>
-    fetch("/v1/me/tokens", { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "e2e" }, body: JSON.stringify({ name: "pmagent CLI on laptop" }) }),
+    fetch("/v1/me/tokens", { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "e2e" }, body: JSON.stringify({ name: "dotrix CLI on laptop" }) }),
   );
   await settings(page, "devices");
   await expect(page.locator(".set-in h1")).toHaveText("Sessions");
   await expect(page.getByRole("heading", { name: "Tokens" })).toBeVisible();
-  await expect(page.locator(".srow", { hasText: "pmagent CLI on laptop" })).toBeVisible();
+  await expect(page.locator(".srow", { hasText: "dotrix CLI on laptop" })).toBeVisible();
 
   await page.getByRole("button", { name: "New token" }).click();
   await page.locator(".modal input").fill("CI");
   await page.locator(".modal input").press("Enter");
   await expect(page.getByText("copy it now, it isn't shown again")).toBeVisible();
-  await expect(page.locator("code", { hasText: /^pmat_/ })).toBeVisible();
+  await expect(page.locator("code", { hasText: /^dtx_/ })).toBeVisible();
 
   await page.locator(".srow", { hasText: "CI" }).getByRole("button", { name: "Revoke" }).click();
-  await page.locator(".srow", { hasText: "pmagent CLI on laptop" }).getByRole("button", { name: "Revoke" }).click();
+  await page.locator(".srow", { hasText: "dotrix CLI on laptop" }).getByRole("button", { name: "Revoke" }).click();
   await expect(page.getByText("No tokens.")).toBeVisible();
 });
 

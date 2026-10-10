@@ -7,8 +7,8 @@ import httpx
 import pytest
 from httpx import AsyncClient
 
-from pmagent_backend.core.settings import Settings
-from pmagent_backend.modules.auth.github import GitHubOAuth, get_github
+from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.auth.github import GitHubOAuth, get_github
 
 
 class FakeGitHub:
@@ -63,7 +63,7 @@ async def me(db_client: AsyncClient, res: httpx.Response) -> dict[str, Any]:
 async def test_not_offered_until_configured(db_client: AsyncClient) -> None:
     assert (await db_client.get("/v1/auth/providers")).json() == {"github": False}
     res = await db_client.post("/v1/auth/oauth/github/start")
-    assert res.status_code == 503 and "PMAGENT_GITHUB_CLIENT_ID" in res.json()["detail"]
+    assert res.status_code == 503 and "DOTRIX_GITHUB_CLIENT_ID" in res.json()["detail"]
 
 
 async def test_start_gives_the_authorize_url_and_state(db_client: AsyncClient, github: FakeGitHub) -> None:

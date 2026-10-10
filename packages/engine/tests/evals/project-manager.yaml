@@ -1,6 +1,6 @@
 # Structural evals: what an agent is offered, what pauses for approval, and what it's refused.
 # Run by tests/test_evals.py with the scripted model; they catch contract regressions, not
-# answer quality (that's `pmagent eval --live`, later).
+# answer quality (that's `dotrix eval --live`, later).
 - name: the PM has the whole board and delegates
   agent: project-manager
   message: status?
@@ -16,6 +16,6 @@
   message: log the decision
   script:
     - tool: write_file
-      args: {file_path: /pmagent/decisions/ADR-001.md, content: "# ADR-001"}
+      args: {file_path: /dotrix/decisions/ADR-001.md, content: "# ADR-001"}
   expect:
     pending: [write_file]
