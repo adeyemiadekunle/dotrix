@@ -62,7 +62,7 @@ function ThreadRow({ th, on }: { th: Thread; on: boolean }) {
 
 function Group({ title, icon, color, children, onNew }: { title: string; icon?: React.ReactNode; color?: string; children: React.ReactNode; onNew: () => void }) {
   return (
-    <div style={{ marginTop: 10 }}>
+    <div className="chat-group">
       <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
         {icon ?? <span className="pdot" style={css({ "--c": color ?? "var(--text-3)", width: 7, height: 7 })} />}
         <span className="grow trunc">{title}</span>
@@ -639,11 +639,34 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
   const [ask, setAsk] = useState("");
   const [label, c] = STATUS[cs.status];
   const busy = cs.status === "awaiting_approval" || cs.status === "running" || cs.status === "queued";
-  // Its details (tool, project, branch, PR) wait behind "⋯", unless you came from its issue or it just started.
-  const fromIssue = new URLSearchParams(location.search).get("from") === "issue";
-  const justStarted = cs.turns.length === 1 && Date.now() - cs.at < 2 * 60_000;
-  const [info, setInfo] = useState(fromIssue || justStarted);
-  useEffect(() => setInfo(fromIssue || justStarted), [cs.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Its details (tool, project, repo, branches, commits, PR) float over the chat from the ⋮: on hover,
+  // or pinned by a click until a click elsewhere or Escape.
+  const [info, setInfo] = useState<null | "hover" | "pinned">(null);
+  const infoBtn = useRef<HTMLButtonElement>(null);
+  const leave = useRef<number>(0);
+  useEffect(() => setInfo(null), [cs.id]);
+  useEffect(() => {
+    if (info !== "pinned") return;
+    const away = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest(".cs-info") && !infoBtn.current?.contains(t)) setInfo(null);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setInfo(null);
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [info]);
+  const hoverIn = () => {
+    window.clearTimeout(leave.current);
+    setInfo((i) => i ?? "hover");
+  };
+  const hoverOut = () => {
+    leave.current = window.setTimeout(() => setInfo((i) => (i === "hover" ? null : i)), 180);
+  };
+  const at = infoBtn.current?.getBoundingClientRect();
   return (
     <>
       <div className="row cs-head">
@@ -657,11 +680,14 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
           {t.title}
         </b>
         <button
+          ref={infoBtn}
           className={`ibtn ibtn-sm ${info ? "on" : ""}`}
-          onClick={() => setInfo(!info)}
+          onClick={() => setInfo(info === "pinned" ? null : "pinned")}
+          onMouseEnter={hoverIn}
+          onMouseLeave={hoverOut}
           aria-label={info ? "Hide the session's details" : "Show the session's details"}
-          aria-expanded={info}
-          data-tip="Details"
+          aria-expanded={!!info}
+          aria-haspopup="dialog"
         >
           <Ic n="ellipsis-vertical" s={15} />
         </button>
@@ -669,10 +695,16 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
         <span className="sp" />
         {panes.length === 0 && <PaneToolbar cs={cs} panes={panes} onToggle={(p) => open(paneSearch(cs.id, togglePane(panes, p)))} />}
       </div>
-      <div className="chat-scroll">
-        <div className="chat-col">
-          {info && (
-          <dl className="kv" style={{ marginBottom: 16 }}>
+      {info && at && (
+        <div
+          className="pop cs-info"
+          role="dialog"
+          aria-label="The session's details"
+          style={{ top: at.bottom + 6, left: Math.max(8, Math.min(at.left - 8, window.innerWidth - 436)) }}
+          onMouseEnter={hoverIn}
+          onMouseLeave={hoverOut}
+        >
+          <dl className="kv" style={{ margin: 0 }}>
             <dt>
               <Ic n="bot" s={14} />
               Tool
@@ -748,7 +780,10 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
               )}
             </dd>
           </dl>
-          )}
+        </div>
+      )}
+      <div className="chat-scroll">
+        <div className="chat-col">
           {cs.files && cs.files.length > 0 && <WorkingTree cs={cs} />}
           {cs.turns.map((turn, i) => (
             <div key={i} style={{ marginBottom: 14 }}>
@@ -942,7 +977,7 @@ export function Chat() {
                 ps
                   .filter((p) => sessions.some((c) => c.project === p.id))
                   .map((p) => (
-                    <div key={p.id} style={{ marginTop: 10 }}>
+                    <div key={p.id} className="chat-group">
                       <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
                         <span className="pdot" style={css({ "--c": pColor(p), width: 7, height: 7 })} />
                         {p.name}

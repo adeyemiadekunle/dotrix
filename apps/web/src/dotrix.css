@@ -16,7 +16,7 @@
   .chat-list {
     flex: 1;
     overflow-y: auto;
-    padding: 6px 8px 12px;
+    padding: 6px 14px 12px; /* the same edge as the search and "New" above it */
   }
   .chat-main {
     display: flex;
@@ -1268,4 +1268,20 @@ body.resizing-row * {
   .chat-fold {
     display: none;
   }
+}
+
+/* A project's group in Chat's and Code's lists: room between projects. */
+.chat-group {
+  margin-top: 6px;
+  padding: 10px 0 6px;
+}
+.chat-group + .chat-group {
+  border-top: 1px solid var(--border);
+}
+/* A coding session's details, over the chat from the header's ⋮ (it doesn't push the turns down). */
+.pop.cs-info {
+  width: 420px;
+  max-width: calc(100vw - 16px);
+  max-height: min(480px, 70vh);
+  padding: 12px 14px;
 }
