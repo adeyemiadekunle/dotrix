@@ -2,11 +2,12 @@
 @layer components {
   .chat-grid {
     display: grid;
-    grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, var(--list-w, 300px)) minmax(0, 1fr);
     flex: 1;
     min-height: 0;
   }
   .chat-side {
+    position: relative;
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
@@ -15,7 +16,7 @@
   .chat-list {
     flex: 1;
     overflow-y: auto;
-    padding: 6px 8px 12px;
+    padding: 6px 14px 12px; /* the same edge as the search and "New" above it */
   }
   .chat-main {
     display: flex;
@@ -887,4 +888,404 @@
 }
 .cs-bar i.a {
   background: var(--green);
+}
+
+/* A coding session's side panel (components/SessionPanel.tsx): beside the turns, like the app's. */
+/* List, session, and panels side by side, each edge draggable (--list-w, --panel-w); below 1200px the
+   panels take the list's place (the session's back arrow returns to it). */
+.chat-grid.with-panel {
+  grid-template-columns: minmax(0, var(--list-w, 300px)) minmax(280px, 1fr) minmax(0, min(var(--panel-w, 560px), 70vw));
+}
+@media (max-width: 1200px) {
+  .chat-grid.with-panel {
+    grid-template-columns: minmax(280px, 1fr) minmax(0, min(var(--panel-w, 560px), 65vw));
+  }
+  .chat-grid.with-panel .chat-side {
+    display: none;
+  }
+}
+.cs-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+}
+.cs-stack {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* Drag handles (ui/splitter.tsx): thin and invisible until hovered or focused. */
+.splitter {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 4;
+  touch-action: none;
+  outline: none;
+}
+.splitter::after {
+  content: "";
+  position: absolute;
+  background: transparent;
+  transition: background 0.12s;
+}
+.splitter:hover::after,
+.splitter:focus-visible::after {
+  background: var(--acc);
+}
+.splitter.col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  cursor: col-resize;
+}
+.splitter.col::after {
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+}
+.splitter.edge-r {
+  right: -5px;
+}
+.splitter.edge-l {
+  left: -5px;
+}
+.splitter.row {
+  height: 7px;
+  margin: -3px 0;
+  cursor: row-resize;
+}
+.splitter.row::after {
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 2px;
+}
+body.resizing-col,
+body.resizing-col * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+body.resizing-row,
+body.resizing-row * {
+  cursor: row-resize !important;
+  user-select: none;
+}
+.cs-panes {
+  gap: 2px;
+}
+.cs-panes .ibtn {
+  position: relative;
+}
+.cs-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg);
+}
+.cs-panel-h {
+  gap: 8px;
+  height: 46px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.cs-panel-b {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+.cs-live {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.cs-note {
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cs-term {
+  margin: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm, 6px);
+  background: #141413;
+  color: #e7e5df;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  min-height: 180px;
+}
+.cs-term pre {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  color: #a8a59d;
+  font: inherit;
+}
+.cs-prompt {
+  color: #7fbf8f;
+}
+.cs-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  background: #e7e5df;
+  vertical-align: text-bottom;
+  animation: csblink 1s steps(1) infinite;
+}
+@keyframes csblink {
+  50% {
+    opacity: 0;
+  }
+}
+.cs-branch {
+  gap: 6px;
+  padding: 10px 14px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.cs-dfile {
+  border-bottom: 1px solid var(--border);
+}
+.cs-dfile-h {
+  width: 100%;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.cs-dfile-h:hover {
+  background: var(--surface-2);
+}
+.cs-diff {
+  margin: 0;
+  padding: 6px 0;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.55;
+  overflow-x: auto;
+  background: var(--surface);
+}
+.cs-diff span {
+  display: block;
+  padding: 0 12px;
+  white-space: pre;
+}
+.cs-diff .a {
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+}
+.cs-diff .d {
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
+.cs-diff .h {
+  color: var(--text-3, var(--text-2));
+}
+.cs-url {
+  gap: 6px;
+  margin: 10px;
+  padding: 0 6px 0 10px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+}
+.cs-url input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.cs-preview {
+  margin: 0 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface);
+  font-size: 11.5px;
+}
+.cs-preview-bar {
+  height: 10px;
+  width: 40%;
+  border-radius: 4px;
+  background: var(--surface-3, var(--surface-2));
+}
+.cs-preview-hero {
+  height: 110px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--accent-soft, var(--surface-2)), var(--surface-2));
+}
+.cs-preview-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.cs-preview-row i {
+  height: 54px;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+.cs-files {
+  padding: 6px 0;
+}
+.cs-fnode {
+  gap: 6px;
+  height: 26px;
+  padding-right: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.cs-fnode:hover {
+  background: var(--surface-2);
+}
+.cs-fchanged {
+  color: var(--text);
+  font-weight: 500;
+}
+.cs-task {
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.cs-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-3, var(--text-2));
+  flex-shrink: 0;
+}
+.cs-dot.running {
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 25%, transparent);
+}
+.cs-dot.failed {
+  background: var(--red);
+}
+.linkbtn {
+  color: var(--acc);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+@media (max-width: 900px) {
+  /* Phones and narrow windows: the panel covers the session; its close button goes back. */
+  .chat-grid.with-panel {
+    grid-template-columns: minmax(0, 1fr);
+    position: relative;
+  }
+  .chat-grid.with-panel .cs-col {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border-left: 0;
+  }
+  .chat-grid.with-panel .cs-col > .splitter,
+  .chat-side > .splitter {
+    display: none;
+  }
+}
+
+.cs-panel + .splitter.row,
+.splitter.row + .cs-panel {
+  border-top: 1px solid var(--border);
+}
+
+.cs-key:hover {
+  color: var(--acc);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* The right column's head: the panels' icons, top right, above the open panels. */
+.cs-col-h {
+  height: 46px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Chat's list folded to a rail (the list's head has the button; the rail's top one brings it back). */
+.chat-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 0;
+}
+.chat-rail .ibtn.on {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.chat-rail .seg-n {
+  top: -4px;
+  right: -4px;
+}
+
+/* A coding session's header; on phones the panels' icons wrap to a line of their own so the title keeps its room. */
+.cs-head {
+  height: 46px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+@media (max-width: 640px) {
+  .cs-head {
+    height: auto;
+    min-height: 46px;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    row-gap: 4px;
+  }
+  .cs-head > .sp {
+    display: none;
+  }
+  .cs-head > .cs-panes {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+/* The list only folds beside a conversation or session: not where it is the whole screen. */
+@media (max-width: 900px) {
+  .chat-fold {
+    display: none;
+  }
+}
+
+/* A project's group in Chat's and Code's lists: room between projects. */
+.chat-group {
+  margin-top: 6px;
+  padding: 10px 0 6px;
+}
+.chat-group + .chat-group {
+  border-top: 1px solid var(--border);
+}
+/* A coding session's details, over the chat from the header's ⋮ (it doesn't push the turns down). */
+.pop.cs-info {
+  width: 420px;
+  max-width: calc(100vw - 16px);
+  max-height: min(480px, 70vh);
+  padding: 12px 14px;
+}
+/* Room between the sessions (and conversations) of one project. */
+.chat-group .sitem + .sitem {
+  margin-top: 4px;
 }

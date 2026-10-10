@@ -200,16 +200,53 @@ A transcript holds what the agent read and ran, so it is treated like the code i
 - **System checks** at warm-up use `system/init`: the tools and MCP servers loaded. A missing MCP server
   (the browser, say) is shown, not silently skipped.
 
-## Interactive surfaces
+## The session's layout
 
-| Surface | Built as | Notes |
+Like the Claude desktop app: the session's turns on the left, and a side panel on the right with one tab
+at a time, picked from icons in the session's header (the open tab is `?pane=` in the URL). When the
+panel is open it takes the session list's place; very wide windows keep all three, and on phones the
+panel covers the session. Built in the web on seeded data (`components/SessionPanel.tsx`); each tab's
+source once wired:
+
+| Tab | Shows | Source |
 |---|---|---|
-| Chat with the agent | Turns in the session | Chat's Code tab, a session per issue |
-| Terminal | A PTY in the sandbox (per backend, above), relayed over a WebSocket | Read-only at first; typed input later, under the session's approval mode |
-| File tree | `git ls-files` plus reads through the sandbox | Changed files marked, from git |
-| Diff | The turn's commit, and the branch against its base | Accept or reject per turn in Manual; per file later |
-| Browser and preview | Playwright MCP in the sandbox through `--mcp-config`; the dev server started by the supervisor on an allowed port | The preview is served through the platform, never an open port |
-| Subagents | Claude Code's own, inside a turn | Their events are shown nested |
+| **Terminal** | what the agent ran and what it printed, live | the turn's Bash events (`coding_events`); later a PTY in the sandbox (per backend, above) relayed over a WebSocket. Read-only at first; typing later, under the session's approval mode |
+| **Changes** | the branch against its base, a diff per file | git: the turns' commits and the branch against its base. Accept or reject per turn in Manual; per file later |
+| **Browser** | the app as the sandbox serves it | the dev server a background task runs, served through the platform (never an open port) |
+| **Files** | the repo's tracked files, changed ones marked | `git ls-files` at the head, reads through the sandbox |
+| **Background tasks** | dev servers, watchers, long test runs: status, port, Stop | the supervisor in the sandbox (not the agent: Claude Code kills its own background tasks after a turn), so they outlive a turn; stopped when the sandbox goes idle |
+
+The turns column keeps the chat: what was asked, what the agent said and did (subagents nested under their
+Agent call), the details (⋮: tool, repo, branches, commits), the working tree summary, and the follow-up box.
+
+## MCP servers in the sandbox
+
+The agent gets MCP servers only from the platform: the worker writes an MCP config into the sandbox and
+starts each turn with `--mcp-config <file> --strict-mcp-config`, so a repo's `.mcp.json` (already skipped
+by `--bare`) never adds one. `system/init` lists what loaded; a server that didn't load is shown in the
+session, not skipped silently. Three kinds:
+
+1. **dotrix (the board, documents, and graph).** The platform's own MCP server, the one `dotrix mcp` runs
+   for local Claude Code, here scoped to the session's project. It is an **HTTP MCP server that runs
+   outside the sandbox**, in the worker, and the agent reaches it through the sandbox's way out:
+   - Docker: the egress proxy serves it at `http://egress:3129/mcp` and forwards to the worker, adding the
+     turn's credential on the way;
+   - OpenShell: the same endpoint through the provider's proxy, which swaps the credential in like the
+     model key.
+
+   The credential is minted per turn, scoped to the session's project, and acts with the rights of the
+   person who instructed the session; it **never enters the sandbox**, so nothing the agent runs can read
+   it or use it elsewhere. Reads (issues, documents, search, the graph) are answered directly. Writes
+   (comments, issue updates, document changes) are proposals that follow the same approvals and standing
+   rules as any agent's, whatever the session's approval mode, and are audited as the coding tool.
+2. **Playwright (the browser).** `@playwright/mcp`, headless, runs **inside** the sandbox over stdio
+   (the coding image adds Chromium). It drives the dev server on `localhost` in the sandbox, so it needs no
+   network rule; its screenshots become events, and the Browser tab shows the same app through the
+   preview.
+3. **Later, the workspace's own.** Owners can add HTTP MCP servers per workspace (Settings → Agents →
+   Coding), reached through the same proxy with their credentials kept by the platform, and added to the
+   egress allowlist only for sessions in that workspace. Never from the repo, and never stdio servers
+   from outside the image.
 
 ## Local-file projects
 
@@ -234,8 +271,11 @@ Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
   an edited file showed as changed (the platform's git now runs with `core.autocrlf=false`); a killed
   command lingered as a zombie (the sandbox now runs with `--init`); checkouts couldn't be deleted on
   Windows because git's objects are read-only (`remove_tree`).
-- [ ] The rest of today's flow on a real repo: branch, push, PR, the Reviewer (needs a connected repo
-  to push to).
+- [x] The whole flow on a real repo (2026-10-10, `kunemi-group/dotrix-test`, Haiku, about $0.001):
+  connect the repo, an issue, Start coding, approve, the Docker sandbox, one commit pushed to
+  `dotrix/wir-3-add-subtract-to-the-calculator-…`, PR #1 opened, the issue moved to review, the Reviewer
+  started on the PR. The diff was exactly the change (+4 in `calc.py`), so the CRLF fix holds. The
+  Reviewer's run stopped at once on the project's Gemini key (out of credit), not on the flow.
 - [ ] Codex's `exec --json` flags, events, and resume (needs an OpenAI key).
 
 **Phase A1: events and Stop.**
@@ -256,11 +296,13 @@ Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
 - Approvals for start and accept wired to Notifications (one item per turn waiting).
 
 **Phase C: the workspace view.**
-- Terminal (read-only), file tree, and diff in the session; subagent events nested; usage per session.
+- The side panel's Terminal (read-only), Changes, and Files from real sessions; subagent events nested;
+  usage per session. The panel itself is built on seeded data.
 - The web's Code tab wired to the API (with Chat).
 
-**Phase D: running apps.**
-- Playwright MCP in the sandbox; the supervisor starts dev servers; preview through the platform.
+**Phase D: running apps and MCP.**
+- The dotrix MCP server through the proxy with a per-turn credential; Playwright MCP in the sandbox.
+- The supervisor and Background tasks; the Browser tab's preview through the platform.
 - Registries and the preview port: the Docker egress allowlist and OpenShell's policy.
 
 **Phase E: local-file projects and Codex.**

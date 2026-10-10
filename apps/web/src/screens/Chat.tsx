@@ -19,6 +19,8 @@ import { Av, Empty, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { useAtPicker } from "../components/AtPicker";
+import { PaneToolbar, SessionPanels, panesOf, togglePane, type Pane } from "../components/SessionPanel";
+import { Splitter, useStoredFlag, useStoredSize } from "../ui/splitter";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const MODELS = ["Gemini 3.8 Flash", "Claude Sonnet 5.5", "Claude Opus 5.5", "GPT-5.5"];
@@ -60,7 +62,7 @@ function ThreadRow({ th, on }: { th: Thread; on: boolean }) {
 
 function Group({ title, icon, color, children, onNew }: { title: string; icon?: React.ReactNode; color?: string; children: React.ReactNode; onNew: () => void }) {
   return (
-    <div style={{ marginTop: 10 }}>
+    <div className="chat-group">
       <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
         {icon ?? <span className="pdot" style={css({ "--c": color ?? "var(--text-3)", width: 7, height: 7 })} />}
         <span className="grow trunc">{title}</span>
@@ -627,49 +629,82 @@ function WorkingTree({ cs }: { cs: CodingSession }) {
   );
 }
 
-function Session({ cs }: { cs: CodingSession }) {
+/** `?pane=` for these panels (none: the session alone). */
+export const paneSearch = (session: string, panes: Pane[]) => `tab=coding&session=${session}${panes.length ? `&pane=${panes.join(",")}` : ""}`;
+
+function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
   const t = task(cs.task)!;
+
   const p = proj(cs.project)!;
   const [ask, setAsk] = useState("");
   const [label, c] = STATUS[cs.status];
   const busy = cs.status === "awaiting_approval" || cs.status === "running" || cs.status === "queued";
-  // Its details (tool, project, branch, PR) wait behind "⋯", unless you came from its issue or it just started.
-  const fromIssue = new URLSearchParams(location.search).get("from") === "issue";
-  const justStarted = cs.turns.length === 1 && Date.now() - cs.at < 2 * 60_000;
-  const [info, setInfo] = useState(fromIssue || justStarted);
-  useEffect(() => setInfo(fromIssue || justStarted), [cs.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Its details (tool, project, repo, branches, commits, PR) float over the chat from the ⋮: on hover,
+  // or pinned by a click until a click elsewhere or Escape.
+  const [info, setInfo] = useState<null | "hover" | "pinned">(null);
+  const infoBtn = useRef<HTMLButtonElement>(null);
+  const leave = useRef<number>(0);
+  useEffect(() => setInfo(null), [cs.id]);
+  useEffect(() => {
+    if (info !== "pinned") return;
+    const away = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest(".cs-info") && !infoBtn.current?.contains(t)) setInfo(null);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setInfo(null);
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [info]);
+  const hoverIn = () => {
+    window.clearTimeout(leave.current);
+    setInfo((i) => i ?? "hover");
+  };
+  const hoverOut = () => {
+    leave.current = window.setTimeout(() => setInfo((i) => (i === "hover" ? null : i)), 180);
+  };
+  const at = infoBtn.current?.getBoundingClientRect();
   return (
     <>
-      <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
+      <div className="row cs-head">
         <button className="ibtn ibtn-sm" onClick={() => open("tab=coding")} aria-label="Back to sessions">
           <Ic n="arrow-left" s={15} />
         </button>
-        <span className="mono faint" style={{ fontSize: 12 }}>
+        <button className="mono faint cs-key" style={{ fontSize: 12, whiteSpace: "nowrap" }} onClick={() => openTask(t.id)} data-tip="Open the issue" aria-label={`Open ${t.key}`}>
           {t.key}
-        </span>
+        </button>
         <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
           {t.title}
         </b>
-        <span className={`badge ${c}`}>{label}</span>
         <button
+          ref={infoBtn}
           className={`ibtn ibtn-sm ${info ? "on" : ""}`}
-          onClick={() => setInfo(!info)}
+          onClick={() => setInfo(info === "pinned" ? null : "pinned")}
+          onMouseEnter={hoverIn}
+          onMouseLeave={hoverOut}
           aria-label={info ? "Hide the session's details" : "Show the session's details"}
-          aria-expanded={info}
-          data-tip="Details"
+          aria-expanded={!!info}
+          aria-haspopup="dialog"
         >
           <Ic n="ellipsis-vertical" s={15} />
         </button>
+        <span className={`badge ${c}`}>{label}</span>
         <span className="sp" />
-        <button className="btn btn-sm btn-ghost" onClick={() => openTask(t.id)}>
-          <Ic n="panel-right-open" s={14} />
-          Open task
-        </button>
+        {panes.length === 0 && <PaneToolbar cs={cs} panes={panes} onToggle={(p) => open(paneSearch(cs.id, togglePane(panes, p)))} />}
       </div>
-      <div className="chat-scroll">
-        <div className="chat-col">
-          {info && (
-          <dl className="kv" style={{ marginBottom: 16 }}>
+      {info && at && (
+        <div
+          className="pop cs-info"
+          role="dialog"
+          aria-label="The session's details"
+          style={{ top: at.bottom + 6, left: Math.max(8, Math.min(at.left - 8, window.innerWidth - 436)) }}
+          onMouseEnter={hoverIn}
+          onMouseLeave={hoverOut}
+        >
+          <dl className="kv" style={{ margin: 0 }}>
             <dt>
               <Ic n="bot" s={14} />
               Tool
@@ -745,7 +780,10 @@ function Session({ cs }: { cs: CodingSession }) {
               )}
             </dd>
           </dl>
-          )}
+        </div>
+      )}
+      <div className="chat-scroll">
+        <div className="chat-col">
           {cs.files && cs.files.length > 0 && <WorkingTree cs={cs} />}
           {cs.turns.map((turn, i) => (
             <div key={i} style={{ marginBottom: 14 }}>
@@ -868,10 +906,37 @@ export function Chat() {
     .sort((a, b) => b.at - a.at);
   const waitingCoding = D().coding.filter((c) => c.status === "awaiting_approval").length;
   const hasSel = Boolean(th || cs || projectKey || across || search.get("q") || search.get("new"));
+  const panes = panesOf(search.get("pane"));
+  const withPanel = Boolean(coding && cs && panes.length);
+  // Column widths, dragged by their edges and kept in this browser.
+  const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 300, 220, 480);
+  const [panelW, setPanelW] = useStoredSize("dotrix.chat.panelWidth", 560, 320, 1100);
+  // The list folds to a rail (like the sidebar) to give the conversation or session the room; not on phones.
+  const [listMinSet, setListMin] = useStoredFlag("dotrix.chat.listMin");
+  const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;
   return (
     <div className="page flush">
-      <div className={`chat-grid ${hasSel ? "has-sel" : ""}`}>
-        <aside className="chat-side">
+      <div className={`chat-grid ${hasSel ? "has-sel" : ""} ${withPanel ? "with-panel" : ""}`} style={css({ "--list-w": listMin ? "52px" : `${listW}px`, "--panel-w": `${panelW}px` })}>
+        <aside className={`chat-side ${listMin ? "min" : ""}`}>
+          {listMin ? (
+            <div className="chat-rail">
+              <button className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
+                <Ic n="panel-left-open" s={16} />
+              </button>
+              <button className={`ibtn ${!coding ? "on" : ""}`} onClick={() => open("")} aria-label="Chat" aria-pressed={!coding} data-tip="Chat" data-tip-pos="right">
+                <Ic n="message-square" s={15} />
+              </button>
+              <button className={`ibtn ${coding ? "on" : ""}`} onClick={() => open("tab=coding")} aria-label={waitingCoding ? `Code, ${waitingCoding} waiting for approval` : "Code"} aria-pressed={coding} data-tip="Code" data-tip-pos="right" style={{ position: "relative" }}>
+                <Ic n="code" s={15} />
+                {waitingCoding > 0 && <span className="badge amber seg-n">{waitingCoding}</span>}
+              </button>
+              <button className="ibtn" onClick={() => open(coding ? "tab=coding" : "new=1")} aria-label={coding ? "New session" : "New chat"} data-tip={coding ? "New session" : "New chat"} data-tip-pos="right">
+                <Ic n="square-pen" s={15} />
+              </button>
+            </div>
+          ) : (
+          <>
+          <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(d) => setListW((w) => w + d)} />
           <div style={{ padding: "18px 14px 8px" }} className="row">
             <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>{coding ? "Code" : "Chat"}</h1>
             <span className="sp" />
@@ -891,6 +956,9 @@ export function Chat() {
                 {waitingCoding > 0 && <span className="badge amber seg-n">{waitingCoding}</span>}
               </button>
             </div>
+            <button className="ibtn ibtn-sm chat-fold" onClick={() => setListMin(true)} aria-label="Hide the list" data-tip="Hide the list" style={{ marginLeft: 6 }}>
+              <Ic n="panel-left-close" s={15} />
+            </button>
           </div>
           <div style={{ padding: "0 14px 8px" }}>
             <div className="inwrap">
@@ -909,7 +977,7 @@ export function Chat() {
                 ps
                   .filter((p) => sessions.some((c) => c.project === p.id))
                   .map((p) => (
-                    <div key={p.id} style={{ marginTop: 10 }}>
+                    <div key={p.id} className="chat-group">
                       <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
                         <span className="pdot" style={css({ "--c": pColor(p), width: 7, height: 7 })} />
                         {p.name}
@@ -945,11 +1013,13 @@ export function Chat() {
               </>
             )}
           </div>
+          </>
+          )}
         </aside>
         <section className="chat-main">
           {coding ? (
             cs ? (
-              <Session key={cs.id} cs={cs} />
+              <Session key={cs.id} cs={cs} panes={panes} />
             ) : (
               <NewSession key={search.get("issue") ?? ""} issue0={search.get("issue")} />
             )
@@ -959,6 +1029,16 @@ export function Chat() {
             <NewChat key={`${projectKey}-${across}-${search.get("q")}`} projectKey={projectKey} across={across} q={search.get("q") ?? ""} agent0={search.get("agent")} />
           )}
         </section>
+        {withPanel && cs && (
+          <aside className="cs-col" aria-label="Session panels">
+            <Splitter dir="col" className="edge-l" label="Resize the panels" onDrag={(d) => setPanelW((w) => w - d)} />
+            <div className="row cs-col-h">
+              <span className="sp" />
+              <PaneToolbar cs={cs} panes={panes} onToggle={(p) => open(paneSearch(cs.id, togglePane(panes, p)))} />
+            </div>
+            <SessionPanels cs={cs} panes={panes} onPanes={(next) => open(paneSearch(cs.id, next))} />
+          </aside>
+        )}
       </div>
     </div>
   );

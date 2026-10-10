@@ -16,7 +16,7 @@ import type { NotifType } from "../data/types";
 import { Av } from "../ui/helpers";
 import { PopLayer } from "../overlays/PopLayer";
 import { Toasts } from "../ui/toast";
-import { AgentsPanel, agentsShown, panelWide, toggleAgents } from "./AgentsPanel";
+import { AgentsPanel, agentsShown, inCodeTab, panelWide, toggleAgents } from "./AgentsPanel";
 import { Notices } from "./Notices";
 
 export const PEOPLE_ITEMS: NotifType[] = ["mention", "assign", "comment"];
@@ -462,10 +462,12 @@ function Topbar() {
         <span className="lbltxt">Search or jump to…</span>
         <span className="kbd">{MOD}K</span>
       </button>
-      <button className={`ibtn ${agentsShown() ? "on" : ""}`} onClick={toggleAgents} data-tip="Agents" aria-label={agentsShown() ? "Hide the agents panel" : "Show the agents panel"} aria-pressed={agentsShown()} style={{ position: "relative" }}>
-        <Ic n="bot" s={16} />
-        {waiting > 0 && !agentsShown() && <span className="top-dot" />}
-      </button>
+      {!inCodeTab() && (
+        <button className={`ibtn ${agentsShown() ? "on" : ""}`} onClick={toggleAgents} data-tip="Agents" aria-label={agentsShown() ? "Hide the agents panel" : "Show the agents panel"} aria-pressed={agentsShown()} style={{ position: "relative" }}>
+          <Ic n="bot" s={16} />
+          {waiting > 0 && !agentsShown() && <span className="top-dot" />}
+        </button>
+      )}
       <button className="ibtn" onClick={() => go("notifications")} data-tip="Notifications" aria-label="Notifications" style={{ position: "relative" }}>
         <Ic n="bell" s={16} />
         {unread && (

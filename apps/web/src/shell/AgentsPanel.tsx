@@ -20,7 +20,10 @@ export function toggleAgents() {
   } else S.ui.agentsSheet = !S.ui.agentsSheet;
   render();
 }
-export const agentsShown = () => (panelWide() ? S.prefs.agentsPanel : S.ui.agentsSheet);
+/** Chat's Code tab: the right side holds the session's own panels, so no agents panel there
+ * (the bell and the corner notices still say what needs you). */
+export const inCodeTab = () => /\/chat\/?$/.test(location.pathname) && new URLSearchParams(location.search).get("tab") === "coding";
+export const agentsShown = () => !inCodeTab() && (panelWide() ? S.prefs.agentsPanel : S.ui.agentsSheet);
 
 const LABEL: Record<Presence["state"], string> = { needs: "Needs you", working: "Working", blocked: "Blocked", idle: "Idle" };
 
