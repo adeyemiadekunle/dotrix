@@ -22,7 +22,7 @@ import { Chat } from "../screens/Chat";
 import { MemberPage, Members, TeamPage, Teams } from "../screens/Members";
 import { Settings } from "../screens/Settings";
 import { Home } from "../screens/Home";
-import { Inbox, Notifications } from "../screens/Inbox";
+import { Inbox } from "../screens/Inbox";
 import { Project } from "../screens/Project";
 import { Overview, Projects } from "../screens/Projects";
 import { Search } from "../screens/Search";
@@ -48,7 +48,7 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   overview: Overview,
   search: Search,
   inbox: Inbox,
-  notifications: Notifications,
+  notifications: ToInbox,
   chat: Chat,
   members: Members,
   member: MemberPage,
@@ -59,6 +59,14 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   system: DesignSystem,
   states: SystemStates,
 };
+
+/** Notifications moved into the Inbox: old links (?n=, ?tab=) open there. */
+function ToInbox() {
+  const { search } = useRoute();
+  const q = search.toString();
+  useEffect(() => go("inbox", {}, { replace: true, search: q }), [q]);
+  return null;
+}
 
 /** 404. */
 function NotFound() {

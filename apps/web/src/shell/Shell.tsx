@@ -1,6 +1,6 @@
 // Shell: sidebar, top bar, the page, and on phones a
-// bottom bar. dotrix adds Chat to the Workspace group; the Inbox holds people's items and
-// Notifications the agents' (approvals, plans, findings).
+// bottom bar. dotrix adds Chat to the Workspace group; the Inbox holds people's items and the
+// agents' (approvals, plans, findings).
 import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 import { openPop, projMove, toggleSide } from "../core/actions";
@@ -12,15 +12,11 @@ import { newProject } from "../core/more";
 import { go, useRoute, type Route } from "../core/nav";
 import { MOD, TODAY, diffD, parse } from "../core/utils";
 import { D, S, allTasks, pColor, projByKey, render, team, useStudio, visibleProjects } from "../data/store";
-import type { NotifType } from "../data/types";
 import { Av } from "../ui/helpers";
 import { PopLayer } from "../overlays/PopLayer";
 import { Toasts } from "../ui/toast";
 import { AgentsPanel, agentsShown, inCodeTab, panelColumn, toggleAgents } from "./AgentsPanel";
 import { Notices } from "./Notices";
-
-export const PEOPLE_ITEMS: NotifType[] = ["mention", "assign", "comment"];
-export const AGENT_ITEMS: NotifType[] = ["approval", "checkpoint", "finding", "decided", "update"];
 
 export const ROUTE_NAMES: Record<string, string> = {
   home: "Home",
@@ -215,8 +211,7 @@ function Sidebar() {
   const { route, params } = useRoute();
   const u = S.ui;
   const d = D();
-  const unreadInbox = d.notifs.filter((n) => !n.read && PEOPLE_ITEMS.includes(n.type)).length;
-  const unreadAgents = d.notifs.filter((n) => !n.read && AGENT_ITEMS.includes(n.type)).length;
+  const unreadInbox = d.notifs.filter((n) => !n.read).length;
   const myOpen = allTasks().filter((t) => t.assignee === d.me && t.status !== "done" && t.due && diffD(parse(t.due)!, TODAY) <= 0).length;
   const projs = visibleProjects().filter((p) => p.status !== "complete");
   const inProj = route === "project" ? projByKey(params.id)?.id : null;
@@ -253,7 +248,6 @@ function Sidebar() {
         <SItem route="home" label="Home" icon="house" />
         <SItem route="inbox" label="Inbox" icon="inbox" ct={unreadInbox || ""} dot />
         <SItem route="mytasks" label="My Tasks" icon="circle-check" ct={myOpen || ""} />
-        <SItem route="notifications" label="Notifications" icon="bell" ct={unreadAgents || ""} />
         <div className="sgroup">
           <div className="sgroup-h">Workspace</div>
           <SItem route="chat" label="Chat" icon="message-square" />
@@ -466,7 +460,7 @@ function Topbar() {
           {waiting > 0 && !agentsShown() && <span className="top-dot" />}
         </button>
       )}
-      <button className="ibtn" onClick={() => go("notifications")} data-tip="Notifications" aria-label="Notifications" style={{ position: "relative" }}>
+      <button className="ibtn" onClick={() => go("inbox")} data-tip="Inbox" aria-label="Inbox" style={{ position: "relative" }}>
         <Ic n="bell" s={16} />
         {unread && (
           <span
@@ -503,7 +497,7 @@ export function setPaletteOpener(f: () => void) {
 
 function BottomNav() {
   const { route } = useRoute();
-  const unread = D().notifs.some((n) => !n.read && PEOPLE_ITEMS.includes(n.type));
+  const unread = D().notifs.some((n) => !n.read);
   const b = (r: Route, label: string, icon: string, extra?: ReactNode) => (
     <button className={route === r ? "on" : ""} onClick={() => go(r)}>
       <Ic n={icon} s={19} />

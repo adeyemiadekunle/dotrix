@@ -1,6 +1,6 @@
 // dotrix's Knowledge tab: the project's documents (.dotrix/), by folder; read one
 // (Markdown), edit it with a note, see who wrote it (a person or an agent). Agents' edits arrive
-// as changes to approve in Chat and Notifications.
+// as changes to approve in Chat and the Inbox.
 import { useState } from "react";
 
 import { Ic } from "../core/icons";

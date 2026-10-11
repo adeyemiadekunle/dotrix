@@ -178,7 +178,7 @@ apps/web/
 │   ├── views/                   Board, Table, Calendar, Timeline, Files, project Overview
 │   ├── components/              TaskList, Changes (proposed changes, checkpoints), LimitNotice
 │   ├── ui/                      helpers (small render helpers), toast, face (an agent's face)
-│   └── screens/                 one module per page (Home, Inbox + Notifications, Chat, Projects + Overview, Project, Knowledge, TaskPages, Members, Settings, Archive, Search, DesignSystem, Onboarding)
+│   └── screens/                 one module per page (Home, Inbox, Chat, Projects + Overview, Project, Knowledge, TaskPages, Members, Settings, Archive, Search, DesignSystem, Onboarding)
 ├── pages/(auth)/                the sign-in pages: login, signup (+ finish), forgot/reset password, verify-email, magic link, device, invites/accept
 ├── pages/(app)/, components/, lib/   the older API-backed app, no longer routed; kept for reference until Chat and coding are wired (then deleted), except what `src/` still imports: `lib/api.ts` (`api`, `apiFetch`, `authPost`, `unwrap`, errors), `lib/navigation.tsx`, `components/markdown.tsx` and `components/states.tsx`
 └── e2e/                         Playwright: studio, settings, people (and auth) run; the rest are parked (`test.fixme(true, NOT_WIRED)`) until rewritten

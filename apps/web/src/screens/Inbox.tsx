@@ -1,6 +1,5 @@
-// Inbox for what people send you (mentions, assignments,
-// comments), and Notifications (pages/notifications.js) for what the agents need: changes to
-// approve, plans to steer, findings, decisions; with the change itself in the detail.
+// The Inbox: what people send you (mentions, assignments, comments) and what the agents need
+// (changes to approve, plans to steer, findings, decisions), with the change itself in the detail.
 import type { CSSProperties } from "react";
 
 import { continueLimited, decideCoding } from "../core/agents";
@@ -10,12 +9,11 @@ import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { ago, dayBucket } from "../core/utils";
 import { D, S, commentsOf, mutate, pColor, proj, render, task, who } from "../data/store";
-import type { Notif } from "../data/types";
+import type { Notif, NotifType } from "../data/types";
 import { ChangeCard } from "../components/Changes";
 import { notifsRead } from "../data/live";
 import { CellAssignee, CellDue, CellPrio, CellStatus } from "../components/TaskList";
 import { CommentBox, CommentItem } from "../overlays/Drawer";
-import { AGENT_ITEMS, PEOPLE_ITEMS } from "../shell/Shell";
 import { Av, CommentText, Empty } from "../ui/helpers";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
@@ -213,77 +211,7 @@ function TaskPreview({ n, onBack }: { n: Notif; onBack: () => void }) {
   );
 }
 
-export function Inbox() {
-  const cats = [
-    ["all", "All"],
-    ["mention", "Mentions"],
-    ["assign", "Assignments"],
-    ["comment", "Comments"],
-  ];
-  const cat = S.ui.inboxCat;
-  let ns = D()
-    .notifs.filter((n) => PEOPLE_ITEMS.includes(n.type))
-    .sort((a, b) => b.at - a.at);
-  const count = (k: string) => ns.filter((n) => (k === "all" || n.type === k) && !n.read).length;
-  ns = ns.filter((n) => cat === "all" || n.type === cat);
-  if (S.ui.inboxUnread) ns = ns.filter((n) => !n.read);
-  const sel = D().notifs.find((n) => n.id === S.ui.inboxSel) || null;
-  const select = (id: string) => {
-    S.ui.inboxSel = id;
-    const n = D().notifs.find((x) => x.id === id);
-    if (n && !n.read) markRead(n);
-    else render();
-  };
-  return (
-    <div className="page flush">
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,420px) minmax(0,1fr)", flex: 1, minHeight: 0 }} className="inbox-grid">
-        <style>{`@media(max-width:900px){.inbox-grid{grid-template-columns:minmax(0,1fr)!important}.inbox-prev{display:${sel ? "flex" : "none"}!important;position:fixed;inset:0;z-index:48;background:var(--surface)}}`}</style>
-        <div style={{ borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <div style={{ padding: "18px var(--gutter) 0" }} className="row">
-            <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Inbox</h1>
-            <span className="sp" />
-            <label className="row" style={{ fontSize: 12, color: "var(--text-2)", gap: 6, cursor: "pointer" }}>
-              <input type="checkbox" className="toggle" checked={S.ui.inboxUnread} onChange={() => ((S.ui.inboxUnread = !S.ui.inboxUnread), render())} />
-              Unread
-            </label>
-            <button className="ibtn ibtn-sm" onClick={() => markAllRead(PEOPLE_ITEMS)} data-tip="Mark all as read" aria-label="Mark all as read">
-              <Ic n="check-check" s={15} />
-            </button>
-          </div>
-          <div className="tabs inbox-tabs" role="tablist">
-            {cats.map(([k, n]) => (
-              <button key={k} role="tab" className={`tab ${cat === k ? "on" : ""}`} onClick={() => ((S.ui.inboxCat = k!), render())}>
-                {n}
-                {count(k!) > 0 && <span className="cnt">{count(k!)}</span>}
-              </button>
-            ))}
-          </div>
-          <div className="inbox-list">
-            {ns.length ? (
-              ns.map((n) => <Item key={n.id} n={n} on={sel?.id === n.id} select={select} />)
-            ) : (
-              <Empty
-                icon="inbox"
-                title="You're all caught up."
-                text={S.ui.inboxUnread ? "No unread notifications in this category." : "New mentions, assignments, and comments will show up here."}
-                cls="sm"
-              />
-            )}
-          </div>
-        </div>
-        <div className="inbox-prev" style={{ display: "flex", flexDirection: "column", minHeight: 0, overflowY: "auto" }}>
-          {sel ? (
-            <TaskPreview n={sel} onBack={() => ((S.ui.inboxSel = null), render())} />
-          ) : (
-            <SelectPrompt icon="mail-open" title="Select a notification" text="Read the conversation and reply without leaving your inbox." />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Notifications: what the agents need from you ---------- */
+/* ---------- What the agents need from you ---------- */
 
 function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
   const th = n.thread ? D().threads.find((t) => t.id === n.thread) : null;
@@ -408,34 +336,42 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
   );
 }
 
-export function Notifications() {
+const PEOPLE: NotifType[] = ["mention", "assign", "comment"];
+const TABS: [string, string, NotifType[] | null][] = [
+  ["all", "All", null],
+  ["needs", "Needs you", ["approval", "checkpoint", "limit"]],
+  ["mentions", "Mentions", PEOPLE],
+  ["updates", "Updates", ["finding", "decided", "update"]],
+];
+const ALL_TYPES = TABS.flatMap(([, , ts]) => ts ?? []);
+// Approvals and plans stay unread until decided.
+const staysUnread = (t: NotifType) => t === "approval" || t === "checkpoint";
+const typesOf = (k: string) => TABS.find(([id]) => id === k)?.[2] ?? null;
+// Notifications' old ?tab= values (approval, finding, …) open the tab that holds them.
+const tabOf = (k: string | null) => (k && TABS.find(([id, , ts]) => id === k || ts?.includes(k as NotifType))?.[0]) || "all";
+const qs = (n: string | null, tab: string) => [n && `n=${n}`, tab !== "all" && `tab=${tab}`].filter(Boolean).join("&");
+
+export function Inbox() {
   const { search } = useRoute();
-  const tabs = [
-    ["all", "All"],
-    ["approval", "Approvals"],
-    ["checkpoint", "Plans"],
-    ["finding", "Findings"],
-    ["decided", "Decided"],
-    ["update", "Updates"],
-  ];
-  const tab = search.get("tab") || S.ui.notifTab;
-  const f = S.ui.notifFilter;
-  const mine = D()
-    .notifs.filter((n) => AGENT_ITEMS.includes(n.type))
+  const tab = tabOf(search.get("tab") || S.ui.inboxCat);
+  const all = D()
+    .notifs.slice()
     .sort((a, b) => b.at - a.at);
-  const unread = mine.filter((n) => !n.read).length;
-  const count = (k: string) => mine.filter((n) => (k === "all" || n.type === k) && !n.read).length;
-  let ns = mine.filter((n) => tab === "all" || n.type === tab);
-  if (f === "unread") ns = ns.filter((n) => !n.read);
-  const selId = search.get("n") || S.ui.notifSel;
+  const inTab = (n: Notif, k: string) => typesOf(k)?.includes(n.type) ?? true;
+  const count = (k: string) => all.filter((n) => !n.read && inTab(n, k)).length;
+  const unread = count("all");
+  let ns = all.filter((n) => inTab(n, tab));
+  if (S.ui.inboxUnread) ns = ns.filter((n) => !n.read);
+  const selId = search.get("n") || S.ui.inboxSel;
   const sel = D().notifs.find((n) => n.id === selId) || null;
   const select = (id: string) => {
-    S.ui.notifSel = id;
+    S.ui.inboxSel = id;
     const n = D().notifs.find((x) => x.id === id);
-    // Approvals and plans stay unread until decided; the rest are read once opened.
-    if (n && !n.read && n.type !== "approval" && n.type !== "checkpoint") markRead(n);
-    go("notifications", {}, { replace: true, search: `n=${id}${tab !== "all" ? `&tab=${tab}` : ""}` });
+    if (n && !n.read && !staysUnread(n.type)) markRead(n);
+    go("inbox", {}, { replace: true, search: qs(id, tab) });
   };
+  const openTab = (k: string) => ((S.ui.inboxCat = k), go("inbox", {}, { replace: true, search: qs(sel?.id ?? null, k) }));
+  const onBack = () => ((S.ui.inboxSel = null), go("inbox", {}, { replace: true, search: qs(null, tab) }));
   const buckets: Record<string, Notif[]> = {};
   ns.forEach((n) => (buckets[dayBucket(n.at)] ||= []).push(n));
   return (
@@ -445,24 +381,24 @@ export function Notifications() {
         <div style={{ borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", minHeight: 0 }}>
           <div style={{ padding: "18px var(--gutter) 0" }} className="row">
             <h1 className="row" style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em", gap: 10 }}>
-              Notifications {unread > 0 && <span className="badge accent">{unread}</span>}
+              Inbox {unread > 0 && <span className="badge accent">{unread}</span>}
             </h1>
             <span className="sp" />
             <div className="seg">
               {(
                 [
-                  ["all", "All"],
-                  ["unread", "Unread"],
+                  [false, "All"],
+                  [true, "Unread"],
                 ] as const
               ).map(([k, n]) => (
-                <button key={k} className={f === k ? "on" : ""} onClick={() => ((S.ui.notifFilter = k), render())}>
+                <button key={n} className={S.ui.inboxUnread === k ? "on" : ""} onClick={() => ((S.ui.inboxUnread = k), render())}>
                   {n}
                 </button>
               ))}
             </div>
             <button
               className="ibtn ibtn-sm"
-              onClick={() => markAllRead(["finding", "decided", "update"])}
+              onClick={() => markAllRead((typesOf(tab) ?? ALL_TYPES).filter((t) => !staysUnread(t)))}
               data-tip="Mark all as read (approvals stay until decided)"
               aria-label="Mark all as read"
             >
@@ -478,15 +414,10 @@ export function Notifications() {
             </button>
           </div>
           <div className="tabs inbox-tabs" role="tablist">
-            {tabs.map(([k, n]) => (
-              <button
-                key={k}
-                role="tab"
-                className={`tab ${tab === k ? "on" : ""}`}
-                onClick={() => ((S.ui.notifTab = k!), go("notifications", {}, { replace: true, search: k === "all" ? "" : `tab=${k}` }))}
-              >
+            {TABS.map(([k, n]) => (
+              <button key={k} role="tab" className={`tab ${tab === k ? "on" : ""}`} onClick={() => openTab(k)}>
                 {n}
-                {count(k!) > 0 && <span className="cnt">{count(k!)}</span>}
+                {count(k) > 0 && <span className="cnt">{count(k)}</span>}
               </button>
             ))}
           </div>
@@ -504,13 +435,13 @@ export function Notifications() {
               ))
             ) : (
               <Empty
-                icon="bell-off"
+                icon="inbox"
                 title="You're all caught up."
-                text="Nothing waits for you. When an agent wants to change something, it shows up here."
+                text="Mentions, assignments, and comments show up here, and so does anything an agent wants you to approve."
                 cls="sm"
               >
-                {f === "unread" && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => ((S.ui.notifFilter = "all"), render())}>
+                {S.ui.inboxUnread && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => ((S.ui.inboxUnread = false), render())}>
                     Show all
                   </button>
                 )}
@@ -520,15 +451,16 @@ export function Notifications() {
         </div>
         <div className="inbox-prev" style={{ display: "flex", flexDirection: "column", minHeight: 0, overflowY: "auto" }}>
           {sel ? (
-            <AgentDetail
-              n={sel}
-              onBack={() => ((S.ui.notifSel = null), go("notifications", {}, { replace: true, search: tab !== "all" ? `tab=${tab}` : "" }))}
-            />
+            PEOPLE.includes(sel.type) ? (
+              <TaskPreview n={sel} onBack={onBack} />
+            ) : (
+              <AgentDetail n={sel} onBack={onBack} />
+            )
           ) : (
             <SelectPrompt
-              icon="shield-check"
+              icon="mail-open"
               title="Select a notification"
-              text="Approve or reject an agent's changes, steer its plan, or follow up on a finding."
+              text="Reply to a comment, approve or reject an agent's changes, steer its plan, or follow up on a finding."
             />
           )}
         </div>
