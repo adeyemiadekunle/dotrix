@@ -516,6 +516,8 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
     projectId ? send.mutate({ message, threadId: id, agent: a as AgentId }) : sendCross.mutate({ message, thread_id: id, agent: a as AgentId });
   const halt = () => last && (projectId ? stop.mutate(last.id) : stopCross.mutate(last.id));
   const about = [...new Set(runs.flatMap((r) => r.project_ids ?? []))].map((pid) => proj(pid)?.name).filter(Boolean);
+  // The address named a project (or "across"), so the list wasn't needed to open it; the runs say if it exists.
+  if ((projectId ? own.isFetched : cross.isFetched) && runs.length === 0) return <Pending text={MISSING_THREAD} />;
   return (
     <>
       <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
@@ -1192,6 +1194,8 @@ function Session({ cs }: { cs: CodingSession }) {
   );
 }
 
+const MISSING_THREAD = "This conversation isn't here: it was deleted, or isn't one you can see.";
+
 const Pending = ({ text }: { text: string }) => (
   <div className="chat-scroll" style={{ display: "flex" }}>
     <div className="faint" style={{ margin: "auto", fontSize: 13 }}>
@@ -1404,7 +1408,7 @@ export function Chat() {
             thread ? (
               <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />
             ) : (
-              <Pending text={loaded ? "This conversation isn't here: it was deleted, or isn't one you can see." : "Loading the conversation…"} />
+              <Pending text={loaded ? MISSING_THREAD : "Loading the conversation…"} />
             )
           ) : (
             <NewChat
