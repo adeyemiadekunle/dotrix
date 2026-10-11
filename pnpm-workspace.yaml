@@ -1,3 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# One TypeScript for typecheck and ESLint: the newest typescript-eslint supports (<6.1).
+catalog:
+  typescript: ~6.0.3

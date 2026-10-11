@@ -24,6 +24,8 @@ uv run ruff check apps packages --fix     # lint (rules pinned in root pyproject
 pnpm lint                                 # ESLint (TypeScript) + Ruff; `pnpm lint:fix` fixes what it can
 pnpm format                               # Prettier (TS, CSS, JSON, YAML; printWidth 160); CI runs `pnpm format:check`
 pnpm install && pnpm build && pnpm typecheck
+pnpm test                                 # web unit tests (Vitest, apps/web/src/**/*.test.ts)
+pnpm knip                                 # unused files, exports and dependencies (knip.json)
 pnpm dev:web                              # web app on :3000 (Vite; forwards /v1, /api, /health to the API, DOTRIX_API_URL in apps/web/.env.local)
 pnpm dev:backend                          # API on :8000, OpenAPI at /docs (python -m dotrix_backend.serve: selector loop on Windows)
 pnpm dev:worker                           # background worker (arq on Redis): agent runs, emails; needed when DOTRIX_JOBS=worker
@@ -33,7 +35,7 @@ pnpm openapi                              # after any API change: export openapi
 pnpm --filter @dotrix/web e2e            # browser tests: fresh dotrix_e2e DB + backend on :8100 + web on :3100, rule-based model
 ```
 
-A pre-commit hook (Husky + lint-staged) runs ESLint --fix and Prettier on staged TypeScript and JavaScript, Prettier on CSS, JSON, and YAML, and Ruff on staged Python. CI runs Ruff and pytest, Prettier and ESLint, the pnpm build and typecheck, and the browser tests. Run them before pushing (the browser tests at least when you change web flows).
+A pre-commit hook (Husky + lint-staged) runs ESLint --fix and Prettier on staged TypeScript and JavaScript, Prettier on CSS, JSON, and YAML, and Ruff on staged Python. CI runs Ruff and pytest, Prettier and ESLint, the pnpm build, typecheck and unit tests, knip (report only), and the browser tests. Run them before pushing (the browser tests at least when you change web flows).
 
 ## Rules that always apply
 
