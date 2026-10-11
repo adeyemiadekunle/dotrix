@@ -13,6 +13,18 @@ keys.
   them: nothing under `.dotrix/`, `.github/workflows/`, or `.git`. Only then does it commit,
   push a new branch (`dotrix/<key>-<title>-<id>`, never the default branch, never forced), and
   open the PR. Merging is a person's job.
+- **Branches live on a fork.** With `DOTRIX_CODING_FORK_OWNER` set (required in staging and
+  production), the app forks each repo into that organisation (`<owner>-<repo>`), pushes the
+  branch there, and opens the PR from the fork. GitHub gives a fork's PR no secrets, so the
+  agent's code can't reach them through CI, and the repo's own token only reads and opens the
+  PR. Setup:
+  1. A GitHub organisation for the forks (e.g. `dotrix-fork`), with the dotrix GitHub App
+     installed on it, with Administration (write) and Contents (write).
+  2. For private repos: the repo's organisation allows forking private repositories
+     (Settings → Member privileges → Repository forking), and the repo does too.
+  3. On each repo (or its organisation), under Settings → Actions → General: keep "Send secrets
+     to workflows from fork pull requests" off. Set "Require approval for fork pull request
+     workflows" to all outside collaborators, so a person approves before checks run.
 - **Network.** The policy (`sandbox_policy()` in
   `apps/backend/src/dotrix_backend/modules/coding/sandbox.py`) adds no network rules of its
   own. The provider attached to each run allows the model API only (api.anthropic.com or
@@ -84,7 +96,7 @@ checks all of this against a real container (it's skipped where the image isn't 
    ANTHROPIC_API_KEY=...   # Claude Code; with only OPENAI_API_KEY, Codex codes instead
    ```
    You also need the GitHub App, with Contents (write) and Pull requests (write); see CLAUDE.md
-   step 5.
+   step 5. Add `DOTRIX_CODING_FORK_OWNER` for the fork (above); it's required in staging and production.
 
 For development without OpenShell, `DOTRIX_CODING_SANDBOX=local` runs the agent in a
 temporary folder on your machine. **It has no isolation**, and production refuses to start with

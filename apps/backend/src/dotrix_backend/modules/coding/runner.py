@@ -24,7 +24,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -106,6 +106,17 @@ async def github_url(ref: RepoRef) -> str:
     return f"https://github.com/{ref.full_name}.git"
 
 
+@dataclass(frozen=True)
+class _PushTarget:
+    """Where a run's branch goes: the repo itself, or the app's fork of it."""
+
+    ref: RepoRef
+    url: str
+    env: dict[str, str]
+    head: str = ""  # what the PR puts before the branch: "owner:" from a fork
+    fork_token: str | None = None
+
+
 class RunFailed(Exception):
     """Ends a run as failed; the message is safe to show (no tokens)."""
 
@@ -183,15 +194,21 @@ class CodingWorker:
             if key is None:
                 raise RunFailed(f"The server has no key for {NAMES[agent.value]} any more")
 
-        # 1. Our checkout, with a token for this repo only (an hour long, never stored).
-        token = await self.app.access_token(ref.installation_id, repository_id=github_repo_id, write=True)
+        # 1. Our checkout, with a token for this repo only (an hour long, never stored). With a fork
+        # owner, the branch goes to the app's fork: the PR's CI then gets none of the repo's secrets,
+        # and this token may only read the repo and open the PR.
+        fork_owner = self.settings.coding_fork_owner
+        token = await self.app.access_token(ref.installation_id, repository_id=github_repo_id,
+                                            write=fork_owner is None, pull_requests=fork_owner is not None)
         url = await self.repo_url(ref)
         env = auth_env(url, token)
+        push = await self._fork(ref, fork_owner) if fork_owner else _PushTarget(ref, url, env)
         host = work / "host"
         await run_git(work, "init", "-q", str(host))
         try:
-            await run_git(host, "fetch", "-q", "--depth", "1", "--no-tags", url,
-                          f"refs/heads/{session_branch or ref.default_branch}", env=env, timeout=FETCH_TIMEOUT)
+            source = push if session_branch else _PushTarget(ref, url, env)
+            await run_git(host, "fetch", "-q", "--depth", "1", "--no-tags", source.url,
+                          f"refs/heads/{session_branch or ref.default_branch}", env=source.env, timeout=FETCH_TIMEOUT)
         except CheckoutError as exc:
             if session_branch is None:
                 raise
@@ -278,8 +295,12 @@ class CodingWorker:
                           "commit", "-q", "--no-verify", "-m", message)
             commit_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
             await self._update(run_id, step=f"Pushing {branch}")
+            if push.fork_token and session_branch is None:
+                # The fork needs the commit we started from (our checkout is shallow).
+                await self.app.sync_fork(push.ref.full_name, ref.default_branch, token=push.fork_token)
             # Never forced: on the session's branch, this commit sits on top of what's there.
-            await run_git(host, "push", "-q", url, f"HEAD:refs/heads/{branch}", env=env, timeout=FETCH_TIMEOUT)
+            await run_git(host, "push", "-q", push.url, f"HEAD:refs/heads/{branch}", env=push.env,
+                          timeout=FETCH_TIMEOUT)
             # The sandbox's own history moves on with the branch: the next turn's changes are its own.
             committed = await box.exec(["git", "-c", "user.name=dotrix", "-c", f"user.email={BOT_EMAIL}", "commit", "-q",
                                         "--no-verify", "--allow-empty", "-m", heading], timeout=120)
@@ -288,7 +309,7 @@ class CodingWorker:
                 pr = PullRequest(*session_pr)  # the session's PR shows the new commit
             else:
                 pr = await self.app.create_pull_request(
-                    ref.installation_id, ref.full_name, head=branch, base=ref.default_branch,
+                    ref.installation_id, ref.full_name, head=push.head + branch, base=ref.default_branch,
                     title=f"{issue_key}: {title}", body=_pr_body(summary, issue_key, run_id, agent.value, files),
                     token=token,
                 )
@@ -316,6 +337,17 @@ class CodingWorker:
             else:
                 await close_quietly(box)
                 await self._session(session_id, state=CodingSessionState.IDLE)
+
+    async def _fork(self, ref: RepoRef, owner: str) -> _PushTarget:
+        """The app's fork of the repo in `owner` (made the first time), with a token to push there."""
+        assert self.app is not None
+        installation_id = await self.app.org_installation(owner)
+        upstream_owner, name = ref.full_name.split("/", 1)
+        fork = await self.app.fork(installation_id, ref.full_name, org=owner, name=f"{upstream_owner}-{name}"[:100])
+        fork_token = await self.app.access_token(installation_id, repository_id=fork.id, write=True)
+        fork_ref = replace(ref, installation_id=installation_id, full_name=fork.full_name)
+        fork_url = await self.repo_url(fork_ref)
+        return _PushTarget(fork_ref, fork_url, auth_env(fork_url, fork_token), f"{owner}:", fork_token)
 
     async def _code(
         self, run_id: uuid.UUID, box: SandboxSession, tool: Any, brief: str, extra: list[str], cost_before: float | None,

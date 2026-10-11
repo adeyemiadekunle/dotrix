@@ -143,7 +143,9 @@ uv run dotrix --help    # CLI
   - The GitHub sign-in and GitHub App settings: sign-in with GitHub and connected repos.
   - `DOTRIX_CODING_SANDBOX`: coding runs: `docker` (build the image first:
     `docker build -t dotrix-coding:latest infra/coding`), `openshell`, or `local` for
-    development only. See [infra/coding/README.md](infra/coding/README.md).
+    development only. Staging and production also need `DOTRIX_CODING_FORK_OWNER`, the
+    organisation coding branches are pushed to as a fork. See
+    [infra/coding/README.md](infra/coding/README.md).
 - **Limits:**
   - `DOTRIX_RUN_TOKEN_BUDGET`: tokens per agent run.
   - `DOTRIX_AUTOMATION_DAILY_RUNS` and `DOTRIX_AUTOMATION_DAILY_TOKENS`: automation runs and

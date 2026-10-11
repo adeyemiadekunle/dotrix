@@ -39,10 +39,13 @@ class FakeGitHub:
                   "repos": [_repo(9001, "kunemi/api", private=True), _repo(9002, "kunemi/web")]},
             222: {"account": {"login": "someone-else", "type": "User"}, "repos": [_repo(9100, "someone-else/x")]},
             333: {"account": {"login": "ada-gh", "type": "User"}, "repos": []},
+            444: {"account": {"login": "dotrix-fork", "type": "Organization"}, "repos": []},  # coding runs' forks
         }
         self.manages = {111, 333}
         self.token_requests: list[dict[str, Any]] = []  # what each installation token was scoped to
         self.pulls: list[dict[str, Any]] = []  # pull requests opened
+        self.forks: list[dict[str, Any]] = []  # forks asked for
+        self.synced: list[tuple[str, str]] = []  # forks' branches brought up to their upstream
         self.codes = {"code-1", "code-2", "code-3"}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -57,6 +60,11 @@ class FakeGitHub:
         if path == "/user/installations":
             assert auth == "Bearer gho_user"
             return httpx.Response(200, json={"installations": [{"id": i} for i in sorted(self.manages)]})
+        if path.startswith("/orgs/") and path.endswith("/installation"):
+            jwt.decode(auth.removeprefix("Bearer "), KEY.public_key(), algorithms=["RS256"])
+            org = path.split("/")[2]
+            found = [i for i, inst in self.installations.items() if inst["account"]["login"] == org]
+            return httpx.Response(200, json={"id": found[0]}) if found else httpx.Response(404)
         if path.startswith("/app/"):
             claims = jwt.decode(auth.removeprefix("Bearer "), KEY.public_key(), algorithms=["RS256"])
             assert claims["iss"] == "4242"
@@ -79,6 +87,21 @@ class FakeGitHub:
             repo = _repo(9500 + len(installation["repos"]), f"{org}/{body['name']}", private=body["private"])
             installation["repos"].append(repo)
             return httpx.Response(201, json=repo)
+        if path.startswith("/repos/") and path.endswith("/forks") and request.method == "POST":
+            body = json.loads(request.content)
+            if body["organization"] != installation["account"]["login"]:
+                return httpx.Response(403)
+            self.forks.append({"repo": path.removeprefix("/repos/").removesuffix("/forks"), **body})
+            full_name = f"{body['organization']}/{body['name']}"
+            repo = next((r for r in installation["repos"] if r["full_name"] == full_name), None)
+            if repo is None:
+                repo = _repo(9700 + len(installation["repos"]), full_name)
+                installation["repos"].append(repo)
+            return httpx.Response(202, json=repo)
+        if path.startswith("/repos/") and path.endswith("/merge-upstream") and request.method == "POST":
+            self.synced.append((path.removeprefix("/repos/").removesuffix("/merge-upstream"),
+                                json.loads(request.content)["branch"]))
+            return httpx.Response(200, json={"merge_type": "fast-forward"})
         if path.startswith("/repos/") and path.endswith("/pulls") and request.method == "POST":
             full_name = path.removeprefix("/repos/").removesuffix("/pulls")
             self.pulls.append({"repo": full_name, **json.loads(request.content)})

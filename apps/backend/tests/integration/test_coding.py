@@ -305,6 +305,54 @@ async def _approve(db_client: AsyncClient, base: str, run: dict, headers: dict) 
     return (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=headers)).json()
 
 
+async def test_with_a_fork_owner_branches_go_to_the_apps_fork(
+    db_client: AsyncClient, coding, github, origin: Path, tmp_path: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    app.state.settings.coding_fork_owner = "dotrix-fork"
+    fork = tmp_path / "fork"
+    _git(tmp_path, "clone", "-q", "--bare", str(origin), str(fork))
+    folders = {"kunemi/api": origin, "dotrix-fork/kunemi-api": fork}
+
+    async def repo_url(ref) -> str:
+        return str(folders[ref.full_name])
+
+    jobs = app.state.jobs
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(jobs.ctx.coding, repo_url=repo_url))
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    agent_script.say("Fine.", "Fine again.")
+    first = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    first = await _approve(db_client, base, first, ada.headers)
+    assert first["status"] == "pr_opened", first
+
+    # The branch is on the fork, not the repo; the PR is the repo's, from the fork's branch.
+    assert _git(fork, "rev-parse", first["branch"]) == first["commit_sha"]
+    assert first["branch"] not in _git(origin, "branch", "--list")
+    assert github.forks == [{"repo": "kunemi/api", "organization": "dotrix-fork", "name": "kunemi-api",
+                             "default_branch_only": True}]
+    assert github.synced == [("dotrix-fork/kunemi-api", "main")]
+    [pr] = github.pulls
+    assert pr["repo"] == "kunemi/api" and pr["head"] == f"dotrix-fork:{first['branch']}" and not pr["maintainer_can_modify"]
+    # The repo's token reads and opens the PR, no more; only the fork's token pushes.
+    assert github.token_requests[-3:] == [
+        {"repository_ids": [9001], "permissions": {"metadata": "read", "contents": "read", "pull_requests": "write"}},
+        {},  # the fork organisation's, to fork
+        {"repository_ids": [9700], "permissions": {"metadata": "read", "contents": "write", "pull_requests": "write"}},
+    ]
+
+    # A follow-up continues on the fork's branch, with the same fork and PR.
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return -amount\n"}
+    second = (await db_client.post(f"{base}/coding/sessions/{first['session_id']}/turns",
+                                   json={"message": "Negative"}, headers=ada.headers)).json()
+    second = await _approve(db_client, base, second, ada.headers)
+    assert second["status"] == "pr_opened" and second["base_sha"] == first["commit_sha"]
+    assert _git(fork, "rev-parse", f"{first['branch']}~1") == first["commit_sha"]
+    assert len(github.pulls) == 1 and len(github.forks) == 2 and len(github.synced) == 1
+
+
 async def test_a_session_continues_on_its_branch_and_pr(
     db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
 ) -> None:
