@@ -62,7 +62,7 @@ function notices(): Notice[] {
         title: n.type === "checkpoint" ? "wants you to steer its plan" : "needs your approval",
         text: n.snippet || n.text,
         mood: "needs",
-        open: () => go("notifications", {}, { search: `n=${n.id}` }),
+        open: () => go("inbox", {}, { search: `n=${n.id}` }),
       });
     }
   for (const cs of D().coding) {

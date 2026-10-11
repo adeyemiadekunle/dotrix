@@ -67,7 +67,7 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
 - **Notifications:**
   - What happens: approvals waiting, decisions, mentions, assignments, findings, and changes to
     issues you watch.
-  - Where: in the app and by email, as it happens, as a daily digest, or off.
+  - Where: in the app (one Inbox, with what people and agents send you) and by email, as it happens, as a daily digest, or off.
 - **Teams:**
   - Personal workspaces and organisations, with roles and invites.
   - Restricted projects.
@@ -80,7 +80,7 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
 
 - **The web app on TanStack Query:** Chat and its Code tab read the API through TanStack Query;
   the other screens still load into the store (`data/live.ts`), and Home's ask box, the agents
-  panel, the command palette and Notifications still use the store's conversations and sessions.
+  panel, the command palette and the Inbox still use the store's conversations and sessions.
 - **Coding, next:**
   - A full run on a real model (needs an Anthropic or OpenAI key).
   - Coding from the CLI or desktop, in your own checkout.

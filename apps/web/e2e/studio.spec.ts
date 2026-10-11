@@ -11,7 +11,7 @@ test("every screen renders", async ({ page }) => {
     ["inbox", "Inbox"],
     ["my-tasks", "My Tasks"],
     ["favorites", "Favorites"],
-    ["notifications", "Notifications"],
+    ["notifications", "Inbox"],
     ["overview", "Workspace overview"],
     ["chat", "Chat"],
     ["projects", "Projects"],
@@ -36,8 +36,8 @@ test("every screen renders", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("approve a coding run from Notifications", async ({ page }) => {
-  await page.goto("/w/dotrix/notifications?n=na4");
+test("approve a coding run from the Inbox", async ({ page }) => {
+  await page.goto("/w/dotrix/inbox?n=na4");
   await expect(page.getByText("Build the hero component from the wireframes.")).toBeVisible();
   await page.locator("#main-content").getByRole("button", { name: "Approve" }).click();
   await expect(page.locator("#main-content").getByRole("button", { name: "Approve" })).toHaveCount(0);
@@ -72,8 +72,8 @@ test("the agents panel shows who needs you, and approving from it settles the ch
     .click();
 });
 
-test("a conversation stopped at its model's limit offers to continue from Notifications", async ({ page }) => {
-  await page.goto("/w/dotrix/notifications?n=na5");
+test("a conversation stopped at its model's limit offers to continue from the Inbox", async ({ page }) => {
+  await page.goto("/w/dotrix/inbox?n=na5");
   await expect(page.getByText("Stopped at the model's limit.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue when it resets" })).toBeVisible();
 });

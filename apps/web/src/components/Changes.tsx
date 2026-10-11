@@ -1,5 +1,5 @@
 // An agent's proposed changes (a document diff, an issue's fields) and checkpoints (a plan to
-// continue, change, or stop), the same in Chat and Notifications.
+// continue, change, or stop), the same in Chat and the Inbox.
 import { useState } from "react";
 
 import { ACTION_OF, alwaysAllow, answerCheckpoint, canAlwaysAllow, decideAll, decideChange, threadOf } from "../core/agents";

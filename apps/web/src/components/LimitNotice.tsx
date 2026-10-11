@@ -1,6 +1,6 @@
 // A run that stopped at its model's limit (the person's key, or the workspace's): what happened,
 // when it resets if the provider said, and Continue now or when it resets. In Chat under the
-// reply where it stopped, and in Notifications.
+// reply where it stopped, and in the Inbox.
 import { Ic } from "../core/icons";
 
 function resetsIn(at: number | null): string {

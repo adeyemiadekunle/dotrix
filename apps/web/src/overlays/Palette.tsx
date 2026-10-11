@@ -54,7 +54,6 @@ function commands(): (Item & { id: string })[] {
       { id: "c-search", name: "Search workspace", icon: "search", kbd: "/", run: () => openPalette("search") },
       { id: "c-home", name: "Go to Home", icon: "house", kbd: "G H", run: () => go("home") },
       { id: "c-inbox", name: "Go to Inbox", icon: "inbox", kbd: "G I", run: () => go("inbox") },
-      { id: "c-notif", name: "Go to Notifications", icon: "bell", kbd: "G N", run: () => go("notifications") },
       { id: "c-my", name: "Go to My Tasks", icon: "circle-check", kbd: "G T", run: () => go("mytasks") },
       { id: "c-chatgo", name: "Go to Chat", icon: "message-square", kbd: "G A", run: () => go("chat") },
       { id: "c-projs", name: "Go to Projects", icon: "folder-kanban", kbd: "G P", run: () => go("projects") },
@@ -142,7 +141,7 @@ function items(): Group[] {
       items: [
         { icon: "clock-alert", name: "Overdue tasks", run: () => goTasks("overdue") },
         { icon: "user", name: "Tasks assigned to me", run: () => go("mytasks") },
-        { icon: "shield-check", name: "Changes waiting for my approval", run: () => go("notifications", {}, { search: "tab=approval" }) },
+        { icon: "shield-check", name: "Changes waiting for my approval", run: () => go("inbox", {}, { search: "tab=needs" }) },
         { icon: "paperclip", name: "Files in Website Redesign", run: () => go("project", { id: "WEB", tab: "files" }) },
       ],
     });

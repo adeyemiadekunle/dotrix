@@ -35,11 +35,11 @@ export function goTasks(f: "open" | "done" | "overdue") {
   go("tasks");
 }
 
-/** An agent's request in a list (Home, Notifications): who, what, where. */
+/** An agent's request in a list (Home, Inbox): who, what, where. */
 export function AgentItem({ n }: { n: Notif }) {
   const w = who(n.by);
   const p = n.project ? proj(n.project) : n.task ? proj(D().tasks.find((t) => t.id === n.task)?.project) : null;
-  const open = () => (n.thread ? go("chat", {}, { search: `thread=${n.thread}` }) : go("notifications", {}, { search: `n=${n.id}` }));
+  const open = () => (n.thread ? go("chat", {}, { search: `thread=${n.thread}` }) : go("inbox", {}, { search: `n=${n.id}` }));
   return (
     <div className="row" style={{ alignItems: "flex-start", gap: 10, padding: "8px 0", cursor: "pointer" }} onClick={open} role="button" tabIndex={0}>
       <Av id={n.by} cls="md" tip={false} />
@@ -374,7 +374,7 @@ export function Home() {
                 <h2>Waiting for a decision</h2>
                 <span className="badge amber">{waiting.length}</span>
                 <div className="acts">
-                  <button className="btn btn-sm btn-ghost" onClick={() => go("notifications")}>
+                  <button className="btn btn-sm btn-ghost" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
                     View all
                   </button>
                 </div>
