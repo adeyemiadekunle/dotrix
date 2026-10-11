@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { newUser, signUp } from "./helpers";
 
-// The workspace runs on seeded data until the API is wired (CLAUDE.md, the Gr8r plan), so there
+// The workspace runs on seeded data until the API is wired (CLAUDE.md), so there
 // is no sign-in guard in front of it yet; the sign-in pages themselves still go through the API.
 test.fixme("signed-out visitors are sent to sign in, and come back afterwards", async ({ page }) => {
   await page.goto("/settings");

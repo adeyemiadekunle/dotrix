@@ -1,4 +1,4 @@
-// Gr8r's Projects (gr8r-studio/src/pages/projects.js) and workspace Overview (overview.js).
+// Projects and workspace Overview.
 import type { CSSProperties } from "react";
 
 import { openPop } from "../core/actions";

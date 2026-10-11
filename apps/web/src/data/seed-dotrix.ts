@@ -1,6 +1,6 @@
 // dotrix's part of the seeded workspace: its agents, chat threads (with changes waiting for a
 // decision), each project's knowledge (.dotrix/), coding sessions, the audit log, automations;
-// and on Gr8r's data, issue types and the agents' notifications and activity.
+// and on the seed's data, issue types and the agents' notifications and activity.
 import { minsAgo } from "../core/utils";
 import type { Activity, Agent, AuditEvent, Automation, CodingSession, KnowledgeFile, Notif, Task, Thread } from "./types";
 
@@ -472,7 +472,7 @@ const AUTOMATIONS: Automation[] = [
 ];
 
 export function seedDotrix(base: Base) {
-  // Issue types on Gr8r's tasks: an epic per big piece, stories under it.
+  // Issue types on the seed's tasks: an epic per big piece, stories under it.
   const byId = new Map(base.tasks.map((t) => [t.id, t]));
   for (const [id, type] of [
     ["t3", "story"],

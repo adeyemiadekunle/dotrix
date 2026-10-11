@@ -31,7 +31,7 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" }],
-      // Gr8r's code runs actions as `cond && act()` and `a ? b() : c()`.
+      // Code runs actions as `cond && act()` and `a ? b() : c()`.
       "@typescript-eslint/no-unused-expressions": ["error", { allowShortCircuit: true, allowTernary: true }],
     },
   },

@@ -1,4 +1,4 @@
-// Gr8r's filter engine (gr8r-studio/src/shell/view-engine.js): each view's filters (is / is not),
+// Filter engine: each view's filters (is / is not),
 // search, sort, grouping, and the toolbar every task view shares.
 import type { ReactNode } from "react";
 

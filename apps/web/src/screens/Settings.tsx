@@ -1,4 +1,4 @@
-// Gr8r's settings (gr8r-studio/src/pages/settings.js): a left nav of sections, each a set of rows.
+// Settings: a left nav of sections, each a set of rows.
 // dotrix adds the agents' sections (owners and admins): Agents, Rules and skills, Automations,
 // GitHub, What members can do, Audit log; and Devices and tokens (the CLI) under Security.
 import { useState, type CSSProperties, type ReactNode } from "react";

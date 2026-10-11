@@ -13,7 +13,7 @@ import { createRoot } from "react-dom/client";
 import { Providers } from "./providers";
 import { router } from "./router";
 
-// Gr8r's preferences (theme, accent) on <html> before the first paint, so nothing flashes.
+// Preferences (theme, accent) on <html> before the first paint, so nothing flashes.
 applyPrefs();
 
 createRoot(document.getElementById("root")!).render(

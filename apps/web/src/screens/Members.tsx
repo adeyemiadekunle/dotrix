@@ -1,4 +1,4 @@
-// Gr8r's members, teams, and profiles (gr8r-studio/src/pages/members.js). dotrix's roles table
+// Members, teams, and profiles. dotrix's roles table
 // adds what each role may do with the agents (approving changes, editing documents, coding).
 import { openPop } from "../core/actions";
 import { ROLES } from "../core/constants";

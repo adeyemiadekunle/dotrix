@@ -1,4 +1,4 @@
-// Gr8r's Home (gr8r-studio/src/pages/home.js), with dotrix's "Waiting for a decision": what the
+// Home, with dotrix's "Waiting for a decision": what the
 // agents ask you to approve or steer, first in the right column.
 import { useRef, useState, type CSSProperties } from "react";
 

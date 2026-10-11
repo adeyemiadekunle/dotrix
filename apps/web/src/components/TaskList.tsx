@@ -1,4 +1,4 @@
-// Gr8r's shared task list (gr8r-studio/src/components/task-list.js): the editable cells, a row, the
+// Shared task list: the editable cells, a row, the
 // grouped list with inline add and bulk selection, an activity line, and the small task row.
 import { Fragment, useState, type CSSProperties, type MouseEvent, type ReactElement } from "react";
 

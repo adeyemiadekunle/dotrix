@@ -1,4 +1,4 @@
-// Gr8r's task drawer (gr8r-studio/src/overlays/drawer.js + features/subtasks.js): a side panel or
+// Task drawer: a side panel or
 // full page with the task's fields, description, subtasks (each with its own view), attachments,
 // comments (@mentions, reactions), and activity. dotrix adds the issue type, and coding: "Start
 // coding" asks Claude Code or Codex to work on it, approved like any agent change.

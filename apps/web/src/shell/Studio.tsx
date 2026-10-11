@@ -1,4 +1,4 @@
-// The workspace app (Gr8r's render loop, gr8r-studio/src/shell/render.js): your preferences on
+// The workspace app (the render loop): your preferences on
 // <html>, the page title, the shell with the screen for the URL, and the overlay layers.
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -60,7 +60,7 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   states: SystemStates,
 };
 
-/** Gr8r's 404 (gr8r-studio/src/pages/errors.js page404). */
+/** 404. */
 function NotFound() {
   return (
     <div className="fullstate">

@@ -3,8 +3,8 @@ packages/api-client/openapi.json
 packages/api-client/src/schema.ts
 pnpm-lock.yaml
 uv.lock
-# Copied verbatim from Gr8r Studio (keep it diffable against the original)
-packages/ui/src/styles/gr8r.css
+# Kept as generated (unformatted)
+packages/ui/src/styles/design.css
 # Build output, caches, and tools' own folders
 **/dist/
 **/dist-*/

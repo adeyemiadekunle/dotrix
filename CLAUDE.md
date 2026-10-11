@@ -161,30 +161,30 @@ The CLI works in two modes: **linked** to a platform project (after `dotrix conn
 
 ## Web app (`apps/web`)
 
-Vite, React 19, TanStack Router and the typed `@dotrix/api-client`. The app is `src/`, a port of Gr8r Studio (each file names the Gr8r file it copies) that runs on seeded data at `/w/dotrix` and against the API in a real workspace. It is a static single-page app served on the API's origin: Vite's server forwards `/v1`, `/api` and `/health` to the API locally (`vite.config.ts`), and a reverse proxy does the same in production, so the session cookies the API sets are first-party.
+Vite, React 19, TanStack Router and the typed `@dotrix/api-client`. The app is `src/`, that runs on seeded data at `/w/dotrix` and against the API in a real workspace. It is a static single-page app served on the API's origin: Vite's server forwards `/v1`, `/api` and `/health` to the API locally (`vite.config.ts`), and a reverse proxy does the same in production, so the session cookies the API sets are first-party.
 
 ```
 apps/web/
 ├── index.html, vite.config.ts
 ├── src/                         the app
-│   ├── main.tsx, providers.tsx  fonts, Gr8r's preferences applied before the first paint, tooltips, toasts
+│   ├── main.tsx, providers.tsx  fonts, your preferences applied before the first paint, tooltips, toasts
 │   ├── router.tsx               every URL: the sign-in pages (from pages/(auth)), /onboarding, and /w/{ws}/… (all one `Studio`, the screen picked from the path)
 │   ├── root.tsx                 the browser tab's title (a route's `staticData.title`), the not-found page
-│   ├── dotrix.css               Dotrix's surfaces Gr8r lacks (chat, proposed changes, diffs), on Gr8r's tokens
-│   ├── core/                    utils, constants, icons (`Ic`, a lucide subset from `icons-plugin.ts`), nav (`Route`, `href`, `go`, `useRoute`), actions + more (Gr8r's actions), can (what you may do), agents (decisions, checkpoints, chat replies, coding, Continue after a limit), presence (what each agent is doing now), theme, dragdrop, keyboard
-│   ├── data/                    types, store (`S`, `D()`, `mutate`, `useStudio`, lookups; saved in localStorage `dotrix.studio.v2`), seed (Gr8r's) + seed-dotrix (agents, threads, knowledge, coding, audit, automations), live.ts (a real workspace from the API into the store's shapes, writes sent as they happen), account.ts (Settings and Members: your account, the workspace, its people, agents, models; `useApi`)
+│   ├── dotrix.css               Dotrix's own surfaces (chat, proposed changes, diffs), on the design's tokens
+│   ├── core/                    utils, constants, icons (`Ic`, a lucide subset from `icons-plugin.ts`), nav (`Route`, `href`, `go`, `useRoute`), actions + more, can (what you may do), agents (decisions, checkpoints, chat replies, coding, Continue after a limit), presence (what each agent is doing now), theme, dragdrop, keyboard
+│   ├── data/                    types, store (`S`, `D()`, `mutate`, `useStudio`, lookups; saved in localStorage `dotrix.studio.v2`), seed + seed-dotrix (agents, threads, knowledge, coding, audit, automations), live.ts (a real workspace from the API into the store's shapes, writes sent as they happen), account.ts (Settings and Members: your account, the workspace, its people, agents, models; `useApi`)
 │   ├── shell/                   Shell (sidebar, top bar), Studio (screens by route, overlays), AgentsPanel (who needs you, who is working), Notices (corner notices), viewEngine (filters, sort, group, toolbar)
 │   ├── overlays/                PopLayer (every popover and context menu), Modals, Drawer (the task), Palette (⌘K)
 │   ├── views/                   Board, Table, Calendar, Timeline, Files, project Overview
 │   ├── components/              TaskList, Changes (proposed changes, checkpoints), LimitNotice
-│   ├── ui/                      helpers (Gr8r's small render helpers), toast, face (an agent's face)
+│   ├── ui/                      helpers (small render helpers), toast, face (an agent's face)
 │   └── screens/                 one module per page (Home, Inbox + Notifications, Chat, Projects + Overview, Project, Knowledge, TaskPages, Members, Settings, Archive, Search, DesignSystem, Onboarding)
 ├── pages/(auth)/                the sign-in pages: login, signup (+ finish), forgot/reset password, verify-email, magic link, device, invites/accept
 ├── pages/(app)/, components/, lib/   the older API-backed app, no longer routed; kept for reference until Chat and coding are wired (then deleted), except what `src/` still imports: `lib/api.ts` (`api`, `apiFetch`, `authPost`, `unwrap`, errors), `lib/navigation.tsx`, `components/markdown.tsx` and `components/states.tsx`
 └── e2e/                         Playwright: studio, settings, people (and auth) run; the rest are parked (`test.fixme(true, NOT_WIRED)`) until rewritten
 packages/ui/src/                 consumed as source (no build step), by path: `@dotrix/ui/components/*`, `/lib/*`, `/hooks/*`, `/globals.css`
 ├── components/                  shadcn/ui components (used by the sign-in pages), plus a chat kit (chat-scroller, chat-message, prompt-input, code-block)
-└── styles/                      globals.css (Tailwind entry and tokens, imports gr8r.css), gr8r.css (Gr8r Studio's design, copied and owned here)
+└── styles/                      globals.css (Tailwind entry and tokens, imports design.css), design.css (the design: tokens and component classes)
 ```
 
 **Conventions**
@@ -199,7 +199,7 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
   - Build and follow them with `href` / `go` and read them with `useRoute()` (`core/nav.ts`). The open task and similar state go in the search string.
   - A new page is a `Route` in `core/nav.ts` (with its path in `href` / `routeOf`), a screen in `screens/`, a case in `shell/Studio.tsx`, and a title in `src/router.tsx`.
 - **UI:**
-  - The design is Gr8r Studio's (`packages/ui/src/styles/gr8r.css`): warm paper neutrals and one accent (indigo, or the one picked in Settings → Appearance, `data-accent` on `<html>`). Build with its classes and CSS variables (`row`, `grow`, `muted`, `btn`, `--acc`, `--bg`…) and the helpers in `ui/helpers.tsx`, never raw colours, so light and dark mode both work. Dotrix's own surfaces go in `dotrix.css` on the same tokens.
+  - The design lives in `packages/ui/src/styles/design.css`: warm paper neutrals and one accent (indigo, or the one picked in Settings → Appearance, `data-accent` on `<html>`). Build with its classes and CSS variables (`row`, `grow`, `muted`, `btn`, `--acc`, `--bg`…) and the helpers in `ui/helpers.tsx`, never raw colours, so light and dark mode both work. Dotrix's own surfaces go in `dotrix.css` on the same tokens.
   - Icons are `Ic` (`core/icons.tsx`). Toasts are `toast()` (`ui/toast.tsx`). Agents' faces are `ui/face.tsx`, and what each agent is doing comes from `core/presence.ts`.
   - Write copy in sentence case.
   - Show people only what they can do. Hide a control they can't use (`allowed(...)` / `canInvite()` in `src/core/can.ts`, from the permissions the API reports for them) rather than letting it fail; the API is what enforces access.
@@ -215,7 +215,7 @@ Built and in use (details live in the code and its docstrings; this list is only
 - **Agents:** contracts per workspace with project overrides (six named built-ins: Nova, Lyra, Orion, Vega, Juno, Echo); pipelines, checkpoints, results, findings dedup; context packs, search (pgvector + full text), the project graph and staleness; rules, skills, templates, lessons; web research with checked claims; automations on schedules and events; approvals, standing rules to act without approval, "Always allow this"; organisations' own model keys (Settings → Models), a model per agent, limits shown; conversations across projects.
 - **Per person (2026-10-09):** conversations private to whoever started them; each person's own keys and default model (Account → Your models; a run uses their key, if the organisation allows personal keys, else the workspace's, else the server's; their own key lets them pick its models); their own touches to each agent (Your agents: up to 2,000 characters of instructions and a model, never tools, access, or autonomy; automations don't use them); a run stopped at its model's limit says so (in Chat, Notifications, and a toast) and continues from where it stopped, now or once the limit resets (`POST .../agent/runs/{id}/continue`). A personal workspace is its owner's in full.
 - **Code:** the GitHub App connection, checkouts agents read, coding runs in a sandbox (Claude Code or Codex) with sessions, follow-ups, PRs, and the Reviewer. Sandboxes: Docker (a container per run on an internal network whose only way out is an egress proxy to the model API; `infra/coding`), OpenShell, or local for development. Subprocesses (git, the sandbox) also run on Windows' selector loop, through threads.
-- **Web:** Gr8r's whole UI on seeded data at `/w/dotrix`, and a real workspace wired to the API everywhere (Chat and coding through TanStack Query); the agents panel, faces, corner notices, Home's ask box. Chat has a Chat / Code switch; message boxes pick the project and agent with @ (`components/AtPicker.tsx`); the Code tab starts a session (@ or / picks one of your issues; any open one in a personal workspace) and shows each session's turns, repo, branch, commit, pull request, and changed files (the desktop-style side panel was seeded-only; it returns with C below).
+- **Web:** the whole UI on seeded data at `/w/dotrix`, and a real workspace wired to the API everywhere (Chat and coding through TanStack Query); the agents panel, faces, corner notices, Home's ask box. Chat has a Chat / Code switch; message boxes pick the project and agent with @ (`components/AtPicker.tsx`); the Code tab starts a session (@ or / picks one of your issues; any open one in a personal workspace) and shows each session's turns, repo, branch, commit, pull request, and changed files (the desktop-style side panel was seeded-only; it returns with C below).
 - **CLI:** device login, linking a checkout, the mirror, chat / brief / triage / review / run / jobs with inline approvals (and "always allow"), the issue board, the MCP server for Claude Code and Codex.
 
 Not being extended (kept working only): the CLI's local engine, the calendar feed, the desktop app.

@@ -1,4 +1,4 @@
-// Gr8r's toasts (gr8r-studio/src/ui/toast.js): a message, an optional action (Undo), dismissable.
+// Toasts: a message, an optional action (Undo), dismissable.
 import { useSyncExternalStore } from "react";
 
 import { Ic } from "../core/icons";

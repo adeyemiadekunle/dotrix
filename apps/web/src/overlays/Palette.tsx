@@ -1,4 +1,4 @@
-// Gr8r's command palette (gr8r-studio/src/overlays/palette.js): commands, then search over
+// Command palette: commands, then search over
 // everything (Tab switches), and the workspace switcher. dotrix adds Chat, the agents (Chat opens
 // with that agent picked), documents, and "Ask the agents" with what you typed.
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";

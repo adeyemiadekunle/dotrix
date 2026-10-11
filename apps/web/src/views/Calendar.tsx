@@ -1,4 +1,4 @@
-// Gr8r's calendar (gr8r-studio/src/views/calendar.js): month or week, tasks on their due dates and
+// Calendar: month or week, tasks on their due dates and
 // events; drag a task to another day to reschedule it (core/dragdrop).
 import type { CSSProperties } from "react";
 

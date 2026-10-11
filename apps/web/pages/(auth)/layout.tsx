@@ -4,7 +4,7 @@ import { setPref } from "@/src/core/actions";
 import { Ic, Logo } from "@/src/core/icons";
 import { applyPrefs, effectiveDark } from "@/src/core/theme";
 
-/** Gr8r's auth shell (gr8r-studio/src/pages/auth.js authShell): the wordmark and a theme toggle
+/** Auth shell: the wordmark and a theme toggle
  * on top, the card in the middle, small print below. */
 export default function AuthLayout({ children }: { children: ReactNode }) {
   const [, flip] = useState(0);

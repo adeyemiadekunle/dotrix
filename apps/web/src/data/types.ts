@@ -1,4 +1,4 @@
-// The seeded workspace's shape (Gr8r's data, plus dotrix's agents, chat, knowledge, coding).
+// The seeded workspace's shape (tasks and projects, plus dotrix's agents, chat, knowledge, coding).
 // When the API is wired, these become views over the API's schemas.
 import type { IssueType, PriorityId, ProjectStatusId, Role, StatusId } from "../core/constants";
 

@@ -1,4 +1,4 @@
-// Gr8r's files (gr8r-studio/src/views/files.js): search, type, sort, grid or list, drop to upload.
+// Files: search, type, sort, grid or list, drop to upload.
 // dotrix: documents are also converted to Markdown into the project's knowledge, for the agents.
 import type { CSSProperties } from "react";
 

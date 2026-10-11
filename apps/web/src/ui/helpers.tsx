@@ -1,4 +1,4 @@
-// Gr8r's small render helpers (gr8r-studio/src/ui/helpers.js) as components, same markup.
+// Small render helpers as components, same markup.
 import type { CSSProperties, ReactNode } from "react";
 import { Fragment } from "react";
 

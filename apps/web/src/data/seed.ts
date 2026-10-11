@@ -1,4 +1,4 @@
-// Dotrix's seeded workspace (gr8r-studio/src/data/seed.js), copied as is; dotrix's data is
+// The seeded workspace's tasks and projects; dotrix's data is
 // added in ./seed-dotrix.ts. Tasks get an issue type here (bugs from the bug label).
 import { dOff, minsAgo, uid } from "../core/utils";
 import type { Data, Member, Project, Task } from "./types";

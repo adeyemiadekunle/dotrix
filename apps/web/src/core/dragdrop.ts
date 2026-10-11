@@ -1,4 +1,4 @@
-// Gr8r's drag and drop (gr8r-studio/src/actions/drag-drop.js), as is: global listeners keyed on
+// Drag and drop, as is: global listeners keyed on
 // data attributes. Board cards between columns (data-drag-card, data-drop-col, data-col-body),
 // list rows (a row's handle data-drag-row; the row data-task-row, data-group, data-lkey), calendar
 // items onto days (data-drag-cal, data-drop-day), sidebar projects (data-drag-proj,

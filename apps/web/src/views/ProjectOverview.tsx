@@ -1,4 +1,4 @@
-// Gr8r's project overview and activity (gr8r-studio/src/views/project-overview.js). dotrix adds
+// Project overview and activity. dotrix adds
 // "Ask in Chat" for a summary, and the agents' latest conversations about the project.
 import type { CSSProperties } from "react";
 

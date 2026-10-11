@@ -1,6 +1,6 @@
-// Gr8r's store (gr8r-studio/src/core/store.js) for React: one state (the seeded workspace, your
+// Store for React: one state (the seeded workspace, your
 // preferences, each view's filters, and UI state such as the open drawer or popover), saved in
-// this browser. Components read it with useStudio() and re-render on any change, like Gr8r's
+// this browser. Components read it with useStudio() and re-render on any change
 // render loop; changes go through mutate(). Wiring the API replaces the seed and the actions,
 // not the screens.
 import { useSyncExternalStore } from "react";
@@ -11,7 +11,7 @@ import { AGENTS, CODING_TOOLS } from "./seed-dotrix";
 import { seed } from "./seed";
 import type { Data, Filter, Project, Task, Team } from "./types";
 
-export const STORE_KEY = "dotrix.studio.v2"; // v2: the seeded workspace is Dotrix (was Gr8r Studio)
+export const STORE_KEY = "dotrix.studio.v2"; // v2: the seeded workspace is Dotrix
 export const DEFAULT_PREFS = {
   theme: "system" as "system" | "light" | "dark",
   accent: "indigo",
@@ -88,7 +88,7 @@ export const S = {
     drafts: {} as Record<string, string>,
     subOpen: null as null | { tid: string; sid: string },
     mention: null as null | { tid: string; q: string },
-    // each page's own controls (Gr8r keeps them in the store, so they survive navigating away)
+    // each page's own controls (kept in the store, so they survive navigating away)
     calDate: iso(TODAY),
     calMode: "month" as "month" | "week",
     tlZoom: "week" as "week" | "month",

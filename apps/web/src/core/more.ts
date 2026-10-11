@@ -1,6 +1,6 @@
-// More of Gr8r's actions (gr8r-studio/src/actions/*.js): undo snapshots, confirmations, modals,
+// More actions: undo snapshots, confirmations, modals,
 // and what the context menus do (duplicate, archive, delete, rename, share, columns, members,
-// files, saved views), with Gr8r's wording and undo.
+// files, saved views), with their wording and undo.
 import { allowed, canInvite } from "./can";
 import { PR, PCOLORS } from "./constants";
 import { applyPatch, closePop, copy, createTask, guarded, nextKey, openTask } from "./actions";
@@ -56,7 +56,7 @@ export function closeModal() {
 }
 export interface ConfirmOpts {
   title: string;
-  body: string; // may hold <b> (Gr8r's wording); rendered as HTML from our own strings only
+  body: string; // may hold <b> (our wording); rendered as HTML from our own strings only
   ok: string;
   danger?: boolean;
   icon?: string;

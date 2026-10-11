@@ -1,4 +1,4 @@
-// Gr8r's Inbox (gr8r-studio/src/pages/inbox.js) for what people send you (mentions, assignments,
+// Inbox for what people send you (mentions, assignments,
 // comments), and Notifications (pages/notifications.js) for what the agents need: changes to
 // approve, plans to steer, findings, decisions; with the change itself in the detail.
 import type { CSSProperties } from "react";

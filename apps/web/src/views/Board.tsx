@@ -1,4 +1,4 @@
-// Gr8r's board (gr8r-studio/src/views/board.js): a column per status, cards you drag between and
+// Board: a column per status, cards you drag between and
 // within them (core/dragdrop), an inline composer per column, collapsible columns.
 import { useState, type CSSProperties } from "react";
 

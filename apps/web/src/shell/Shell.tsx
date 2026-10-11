@@ -1,4 +1,4 @@
-// Gr8r's shell (gr8r-studio/src/shell/layout.js): sidebar, top bar, the page, and on phones a
+// Shell: sidebar, top bar, the page, and on phones a
 // bottom bar. dotrix adds Chat to the Workspace group; the Inbox holds people's items and
 // Notifications the agents' (approvals, plans, findings).
 import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";

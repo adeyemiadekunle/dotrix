@@ -4,7 +4,7 @@ import { cn } from "@dotrix/ui/lib/utils";
 import { Slot } from "radix-ui";
 
 const badgeVariants = cva(
-  // Gr8r's badge (gr8r.css .badge and its colours).
+  // Badge (design.css .badge and its colours).
   "badge w-fit shrink-0 justify-center overflow-hidden [&>svg]:pointer-events-none [&>svg]:size-3",
   {
     variants: {

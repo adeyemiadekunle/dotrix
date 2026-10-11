@@ -1,5 +1,4 @@
-// Gr8r's task pages (gr8r-studio/src/pages/my-tasks.js, tasks.js, favorites.js, activity.js and the
-// workspace calendar and timeline): the same views over every project you can see.
+// Task pages: the same views over every project you can see.
 import { Ic } from "../core/icons";
 import { newTask } from "../core/more";
 import { go } from "../core/nav";
@@ -60,7 +59,7 @@ export function MyTasks() {
       set: { status: "done" },
     },
   ];
-  // Completed starts folded, like Gr8r's.
+  // Completed starts folded.
   if (S.ui.collapsedGroups[k + ":completed"] === undefined) S.ui.collapsedGroups[k + ":completed"] = true;
   return (
     <div className="page flush">
