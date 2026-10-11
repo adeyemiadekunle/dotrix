@@ -1,6 +1,6 @@
-// Files: search, type, sort, grid or list, drop to upload.
-// dotrix: documents are also converted to Markdown into the project's knowledge, for the agents.
-import type { CSSProperties } from "react";
+// A project's uploaded files, under Knowledge: search, type, sort, grid or list, drop to upload.
+// Documents are also converted to Markdown into the project's knowledge, for the agents.
+import type { CSSProperties, ReactNode } from "react";
 
 import { openPop, openTask } from "../core/actions";
 import { Ic } from "../core/icons";
@@ -16,7 +16,7 @@ const set = (k: "fileQ" | "fileType" | "fileSort", v: string) => {
   render();
 };
 
-export function Files({ pid }: { pid: string }) {
+export function Files({ pid, lead }: { pid: string; lead?: ReactNode }) {
   const u = S.ui;
   const q = u.fileQ.toLowerCase();
   const ft = u.fileType;
@@ -29,6 +29,7 @@ export function Files({ pid }: { pid: string }) {
   return (
     <>
       <div className="toolbar">
+        {lead}
         <div className="inwrap">
           <Ic n="search" s={13} />
           <input

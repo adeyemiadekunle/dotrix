@@ -77,3 +77,11 @@ test("a conversation stopped at its model's limit offers to continue from Notifi
   await expect(page.getByText("Stopped at the model's limit.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue when it resets" })).toBeVisible();
 });
+
+test("a project's files live under Knowledge, and old Files links open them there", async ({ page }) => {
+  await page.goto("/w/dotrix/p/WEB/files");
+  await expect(page.getByRole("tab", { name: /^Files/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByPlaceholder("Search files")).toBeVisible();
+  await page.getByRole("tab", { name: "Documents" }).click();
+  await expect(page.getByPlaceholder("Find a document")).toBeVisible();
+});
