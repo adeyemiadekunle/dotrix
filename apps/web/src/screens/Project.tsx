@@ -14,7 +14,6 @@ import { applyView, groupTasks, viewOf, ViewToolbar } from "../shell/viewEngine"
 import { AvStack, Empty, PIcon } from "../ui/helpers";
 import { Board } from "../views/Board";
 import { Calendar } from "../views/Calendar";
-import { Files } from "../views/Files";
 import { ProjectActivity, ProjectOverview } from "../views/ProjectOverview";
 import { Table } from "../views/Table";
 import { TlControls, Timeline } from "../views/Timeline";
@@ -24,7 +23,6 @@ export const PTABS: [string, string, string][] = [
   ["overview", "Overview", "layout-dashboard"],
   ["board", "Board", "square-kanban"],
   ["list", "List", "list"],
-  ["files", "Files", "paperclip"],
   ["knowledge", "Knowledge", "book-open"],
   ["activity", "Activity", "activity"],
 ];
@@ -100,11 +98,12 @@ export function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) 
 const svInit: Record<string, boolean> = {};
 
 export function Project() {
-  const { params } = useRoute();
+  const { params, search } = useRoute();
   const p = projByKey(params.id);
   if (!p) return <Empty icon="file-question" title="Page not found" text="That project doesn't exist or was deleted." />;
   if (!canSee(p)) return <Denied p={p} />;
-  const tab = params.tab || "board";
+  // Files moved into Knowledge: old Files links open there.
+  const tab = params.tab === "files" ? "knowledge" : params.tab || "board";
   const views = D().savedViews.filter((v) => v.project === p.id);
   const key = "p:" + p.id;
   let body;
@@ -121,8 +120,7 @@ export function Project() {
       body = <TaskViewBody type={sv.type} k={k} p={p} />;
     }
   } else if (tab === "overview") body = <ProjectOverview p={p} />;
-  else if (tab === "files") body = <Files pid={p.id} />;
-  else if (tab === "knowledge") body = <Knowledge p={p} />;
+  else if (tab === "knowledge") body = <Knowledge p={p} view={params.tab === "files" || search.get("view") === "files" ? "files" : "docs"} />;
   else if (tab === "activity") body = <ProjectActivity p={p} />;
   else body = <TaskViewBody type={tab} k={key} p={p} />;
   return (

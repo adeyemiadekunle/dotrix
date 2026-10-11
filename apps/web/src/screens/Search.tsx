@@ -146,7 +146,7 @@ export function Search() {
             "files",
             "Files",
             r.files.map((f) => (
-              <div key={f.id} className="mini" onClick={() => go("project", { id: proj(f.project)!.key, tab: "files" })}>
+              <div key={f.id} className="mini" onClick={() => go("project", { id: proj(f.project)!.key, tab: "knowledge" }, { search: "view=files" })}>
                 <span className="ftype" style={{ "--c": (FT[f.type] || FT.other!).c } as CSSProperties}>
                   <Ic n={(FT[f.type] || FT.other!).i} s={14} />
                 </span>

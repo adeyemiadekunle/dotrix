@@ -334,7 +334,6 @@ function Sidebar() {
                     [
                       ["board", "Board", "square-kanban"],
                       ["list", "List", "list"],
-                      ["files", "Files", "paperclip"],
                       ["knowledge", "Knowledge", "book-open"],
                     ] as const
                   ).map(([tab, n, i]) => (
