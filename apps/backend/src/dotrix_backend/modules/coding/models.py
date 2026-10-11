@@ -4,7 +4,7 @@ checkout of the project's repo in a sandbox; the platform pushes a new branch an
 A run is asked for by someone who may instruct the coding agent, and starts only once someone
 who may approve agent changes approves it (it may be the same person). The agent never holds
 the GitHub token: it edits files in the sandbox, and the worker reads its changes back as a
-patch, checks them (no `.dotrix/`, no workflows), commits, pushes, and opens the PR.
+patch, checks them (no `.dotrix/`, no CI configuration), commits, pushes, and opens the PR.
 """
 from __future__ import annotations
 

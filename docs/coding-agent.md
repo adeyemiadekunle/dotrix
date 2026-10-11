@@ -27,7 +27,7 @@ These hold whatever the implementation does, and whatever the approval mode.
    The history of the session is the history of the branch.
 4. **People merge.** No mode pushes to the default branch, merges, or deploys (FR-26). The guard
    (`guard.py`) checks every turn's changes in every mode: nothing under `.dotrix/`,
-   `.github/workflows/`, or `.git`, and size limits.
+   CI configuration (all of `.github/`, `.gitlab-ci.yml`, `.circleci/`, ...), or `.git`, and size limits.
 5. **A session's approval mode never exceeds what the person who set it may do**, and never exceeds
    what the workspace's owners allow (below).
 6. **Repo content is data.** Code, docs, `CLAUDE.md`, and `AGENTS.md` from a repo never change the
@@ -58,6 +58,9 @@ turn may run, and spend tokens) and **accept** (a turn's commit may leave the sa
   under which mode a commit was pushed and who set it (`coding.mode_changed`).
 - **What every mode keeps:** budgets (tokens, time, warm sandboxes), Stop, the guard, the sandbox's
   limits, and the PR as the review point. Accept edits and Auto remove clicks, not checks.
+- **Files CI runs fall back to Manual.** A turn whose changes touch files CI may run (`guard.ci_sensitive`:
+  `package.json`, `Makefile`, `conftest.py`, Dockerfiles, ...) waits for an approver to accept its diff in
+  every mode, until coding branches are pushed from a fork that CI gives no secrets.
 - **Rejecting after the fact.** In Accept edits and Auto, an approver can still reject a pushed turn:
   the platform pushes a revert commit (never a force push) and the agent is told why on its next turn.
 - **Claude Code's own permission mode** inside the sandbox is separate and stays fixed:

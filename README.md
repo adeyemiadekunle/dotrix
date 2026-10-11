@@ -62,7 +62,7 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
   - A session shows its repo, the branch it started from and its own, its commits, and its
     working tree (each changed file, lines added and removed).
   - Guardrails: the agent never holds a GitHub token, and nothing is pushed to the default
-    branch. Changes to `.dotrix/` or CI workflows are refused, and a person merges.
+    branch. Changes to `.dotrix/` or CI configuration (all of `.github/`) are refused, and a person merges.
   - Setup: [infra/coding/README.md](infra/coding/README.md).
 - **Notifications:**
   - What happens: approvals waiting, decisions, mentions, assignments, findings, and changes to
