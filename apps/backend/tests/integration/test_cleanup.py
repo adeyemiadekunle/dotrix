@@ -43,12 +43,14 @@ async def test_cleanup_deletes_only_what_is_finished(
     # the refresh token is still valid, and an expired invite is kept 30 days.
     deleted = await cleanup_expired(ctx, now=(now + timedelta(days=10)).isoformat())
     assert deleted == {"refresh_tokens": 0, "auth_sessions": 0, "action_tokens": 1, "email_signups": 0,
-                       "device_authorizations": 1, "invites": 0, "web_pages": 0, "cut_off_coding_runs": 0}
+                       "device_authorizations": 1, "invites": 0, "web_pages": 0, "cut_off_coding_runs": 0,
+                       "github_deliveries": 0}
 
     # In 40 days: the refresh token (and so its session) expired over a week ago, the invite over 30 days ago.
     deleted = await cleanup_expired(ctx, now=(now + timedelta(days=40)).isoformat())
     assert deleted == {"refresh_tokens": 1, "auth_sessions": 1, "action_tokens": 0, "email_signups": 0,
-                       "device_authorizations": 0, "invites": 1, "web_pages": 0, "cut_off_coding_runs": 0}
+                       "device_authorizations": 0, "invites": 1, "web_pages": 0, "cut_off_coding_runs": 0,
+                       "github_deliveries": 0}
     db_session.expire_all()
     assert set((await _counts(db_session)).values()) == {0}
 
@@ -65,3 +67,16 @@ async def test_revoked_refresh_tokens_are_kept_until_they_expire(db_client: Asyn
     assert deleted["refresh_tokens"] == 0
     reuse = await db_client.post("/v1/auth/refresh", json={"refresh_token": ada.tokens["refresh_token"]})
     assert "reuse" in reuse.json()["detail"]
+
+
+async def test_github_deliveries_are_kept_a_week(db_client: AsyncClient, db_session: AsyncSession, outbox) -> None:
+    from dotrix_backend.modules.connectors.webhook import first_delivery
+
+    assert await first_delivery(db_session, "d-1", "push")
+    await db_session.commit()
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    ctx = JobContext(app.state.runner.session_factory, app.state.settings, outbox)
+    now = datetime.now(UTC)
+    assert (await cleanup_expired(ctx, now=(now + timedelta(days=3)).isoformat()))["github_deliveries"] == 0
+    assert (await cleanup_expired(ctx, now=(now + timedelta(days=8)).isoformat()))["github_deliveries"] == 1
+    assert await first_delivery(db_session, "d-1", "push")  # forgotten, so it would be applied again

@@ -31,7 +31,7 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 def _secure(settings: Settings) -> bool:
-    return settings.env == "production"
+    return settings.is_deployed
 
 
 def set_session(response: Response, tokens: TokenPair, settings: Settings) -> None:

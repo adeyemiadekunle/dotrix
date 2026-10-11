@@ -136,16 +136,22 @@ async def github_webhook(
     jobs: JobsDep,
     x_github_event: Annotated[str, Header()] = "",
     x_hub_signature_256: Annotated[str | None, Header()] = None,
+    x_github_delivery: Annotated[str | None, Header()] = None,
 ) -> dict[str, str]:
     """GitHub's deliveries for the app (pushes, installs and uninstalls, repos added or
-    removed), signed with the webhook secret. Not for people: GitHub calls it."""
+    removed), signed with the webhook secret. Not for people: GitHub calls it. A delivery
+    already applied (the same X-GitHub-Delivery) is skipped."""
     body = await request.body()
     webhook.verify_signature(settings, body, x_hub_signature_256)
     try:
         payload = json.loads(body)
     except ValueError as exc:
         raise Unprocessable("The delivery isn't JSON") from exc
+    if x_github_delivery and not await webhook.first_delivery(session, x_github_delivery, x_github_event):
+        logger.info("github webhook %s: delivery %s already applied", x_github_event, x_github_delivery)
+        return {"result": "duplicate"}
     done, pushed = await webhook.handle(session, x_github_event, payload)
+    await session.commit()  # the delivery's record, when handling changed nothing
     logger.info("github webhook %s: %s", x_github_event, done)
     for project_id in pushed:  # their checkouts are behind now
         await jobs.enqueue("sync_repository", project_id=str(project_id))

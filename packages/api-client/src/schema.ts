@@ -3596,7 +3596,8 @@ export interface paths {
         /**
          * Github Webhook
          * @description GitHub's deliveries for the app (pushes, installs and uninstalls, repos added or
-         *     removed), signed with the webhook secret. Not for people: GitHub calls it.
+         *     removed), signed with the webhook secret. Not for people: GitHub calls it. A delivery
+         *     already applied (the same X-GitHub-Delivery) is skipped.
          */
         post: operations["github_webhook"];
         delete?: never;
@@ -19774,6 +19775,7 @@ export interface operations {
             header?: {
                 "x-github-event"?: string;
                 "x-hub-signature-256"?: string | null;
+                "x-github-delivery"?: string | null;
             };
             path?: never;
             cookie?: never;
