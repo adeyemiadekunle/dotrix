@@ -50,3 +50,14 @@ class ConnectedRepo(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     checkout_sha: Mapped[str | None] = mapped_column(String(40))
     checked_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     checkout_error: Mapped[str | None] = mapped_column(String(500))
+
+
+class GitHubDelivery(Base):
+    """A webhook delivery already applied (GitHub's X-GitHub-Delivery id), so a redelivery or a
+    replayed one isn't applied twice. Kept a week (cleanup_expired)."""
+
+    __tablename__ = "github_deliveries"
+
+    delivery_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    event: Mapped[str] = mapped_column(String(100))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

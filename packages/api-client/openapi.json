@@ -18294,7 +18294,7 @@
           "github"
         ],
         "summary": "Github Webhook",
-        "description": "GitHub's deliveries for the app (pushes, installs and uninstalls, repos added or\nremoved), signed with the webhook secret. Not for people: GitHub calls it.",
+        "description": "GitHub's deliveries for the app (pushes, installs and uninstalls, repos added or\nremoved), signed with the webhook secret. Not for people: GitHub calls it. A delivery\nalready applied (the same X-GitHub-Delivery) is skipped.",
         "operationId": "github_webhook",
         "parameters": [
           {
@@ -18321,6 +18321,22 @@
                 }
               ],
               "title": "X-Hub-Signature-256"
+            }
+          },
+          {
+            "name": "x-github-delivery",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Github-Delivery"
             }
           }
         ],

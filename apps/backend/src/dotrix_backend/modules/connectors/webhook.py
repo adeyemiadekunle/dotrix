@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.errors import Unauthorized
@@ -20,7 +21,7 @@ from dotrix_backend.modules.auth.github import GitHubUnavailable
 from dotrix_backend.modules.automations.events import record_event
 from dotrix_backend.modules.automations.models import AutomationEvent
 
-from .models import ConnectedRepo, GitHubInstallation
+from .models import ConnectedRepo, GitHubDelivery, GitHubInstallation
 
 
 def verify_signature(settings: Settings, body: bytes, signature: str | None) -> None:
@@ -32,6 +33,28 @@ def verify_signature(settings: Settings, body: bytes, signature: str | None) -> 
     ).hexdigest()
     if not signature or not hmac.compare_digest(expected, signature):
         raise Unauthorized("The delivery isn't signed with the webhook secret")
+
+
+async def first_delivery(session: AsyncSession, delivery_id: str, event: str) -> bool:
+    """Record the delivery; False if it was recorded before (GitHub redelivered it, or someone
+    replayed it). Committed with what the delivery changes, so a failed one can be retried."""
+    result = await session.execute(
+        insert(GitHubDelivery)
+        .values(delivery_id=delivery_id, event=event[:100], received_at=datetime.now(UTC))
+        .on_conflict_do_nothing()
+        .returning(GitHubDelivery.delivery_id)
+    )
+    return result.first() is not None
+
+
+async def forget_delivery(session: AsyncSession, delivery_id: str) -> None:
+    await session.execute(delete(GitHubDelivery).where(GitHubDelivery.delivery_id == delivery_id))
+    await session.commit()
+
+
+async def delete_stale_deliveries(session: AsyncSession, cutoff: datetime) -> int:
+    result = await session.execute(delete(GitHubDelivery).where(GitHubDelivery.received_at < cutoff))
+    return result.rowcount
 
 
 async def handle(session: AsyncSession, event: str, payload: dict[str, Any]) -> tuple[str, list[uuid.UUID]]:
@@ -65,7 +88,8 @@ async def _push(session: AsyncSession, payload: dict[str, Any]) -> tuple[str, li
     )
     rows = list(result.all())
     head = payload.get("head_commit") or {}
-    message = str(head.get("message") or "").strip().splitlines()[0][:150] if head.get("message") else ""
+    lines = str(head.get("message") or "").strip().splitlines()
+    message = lines[0][:150] if lines else ""
     for project_id, workspace_id in rows:
         await record_event(
             session, workspace_id=workspace_id, project_id=project_id, event=AutomationEvent.CODE_PUSHED,

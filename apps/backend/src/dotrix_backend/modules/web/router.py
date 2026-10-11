@@ -210,7 +210,7 @@ async def web_github_start(request: Request, settings: SettingsDep, github: GitH
         max_age=10 * 60,
         path=GITHUB_STATE_PATH,
         httponly=True,
-        secure=settings.env == "production",
+        secure=settings.is_deployed,
         # Lax: sent on GitHub's top-level redirect back here, never on cross-site subrequests.
         samesite="lax",
     )
@@ -324,7 +324,7 @@ async def web_github_install(request: Request, settings: SettingsDep) -> Redirec
         max_age=30 * 60,
         path=GITHUB_INSTALL_PATH,
         httponly=True,
-        secure=settings.env == "production",
+        secure=settings.is_deployed,
         samesite="lax",
     )
     return response

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from typing import Annotated
 
@@ -29,6 +30,7 @@ from .schemas import (
 )
 from .service import ConnectorService
 
+DELIVERY_ID = re.compile(r"[A-Za-z0-9-]{1,100}")
 logger = logging.getLogger(__name__)
 
 Manager = Annotated[Membership, Depends(require_permission(Permission.MANAGE_PROJECTS))]
@@ -136,17 +138,32 @@ async def github_webhook(
     jobs: JobsDep,
     x_github_event: Annotated[str, Header()] = "",
     x_hub_signature_256: Annotated[str | None, Header()] = None,
+    x_github_delivery: Annotated[str | None, Header()] = None,
 ) -> dict[str, str]:
     """GitHub's deliveries for the app (pushes, installs and uninstalls, repos added or
-    removed), signed with the webhook secret. Not for people: GitHub calls it."""
+    removed), signed with the webhook secret. Not for people: GitHub calls it. A delivery
+    already applied (the same X-GitHub-Delivery) is skipped."""
     body = await request.body()
     webhook.verify_signature(settings, body, x_hub_signature_256)
     try:
         payload = json.loads(body)
     except ValueError as exc:
         raise Unprocessable("The delivery isn't JSON") from exc
+    if x_github_delivery is not None and not DELIVERY_ID.fullmatch(x_github_delivery):
+        raise Unprocessable("X-GitHub-Delivery isn't a delivery id")
+    if x_github_delivery is None and settings.is_deployed:
+        raise Unprocessable("X-GitHub-Delivery is missing")
+    if x_github_delivery and not await webhook.first_delivery(session, x_github_delivery, x_github_event):
+        logger.info("github webhook %s: delivery %s already applied", x_github_event, x_github_delivery)
+        return {"result": "duplicate"}
     done, pushed = await webhook.handle(session, x_github_event, payload)
+    await session.commit()  # the delivery's record, when handling changed nothing
     logger.info("github webhook %s: %s", x_github_event, done)
-    for project_id in pushed:  # their checkouts are behind now
-        await jobs.enqueue("sync_repository", project_id=str(project_id))
+    try:
+        for project_id in pushed:  # their checkouts are behind now
+            await jobs.enqueue("sync_repository", project_id=str(project_id))
+    except Exception:
+        if x_github_delivery:  # so GitHub's retry is applied again and schedules the syncs
+            await webhook.forget_delivery(session, x_github_delivery)
+        raise
     return {"result": done}

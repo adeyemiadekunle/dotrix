@@ -141,18 +141,20 @@ async def _make_world(db_client: AsyncClient, signup, create_team, add_member):
 def deliver(db_client: AsyncClient):
     """Send GitHub's webhook delivery, signed (with `secret`, the right one by default)."""
 
-    async def _send(event: str, payload: dict, secret: str = WEBHOOK_SECRET) -> httpx.Response:
-        return await _deliver(db_client, event, payload, secret)
+    async def _send(event: str, payload: dict, secret: str = WEBHOOK_SECRET, delivery: str | None = None) -> httpx.Response:
+        return await _deliver(db_client, event, payload, secret, delivery)
 
     return _send
 
 
-async def _deliver(db_client: AsyncClient, event: str, payload: dict, secret: str = WEBHOOK_SECRET) -> httpx.Response:
+async def _deliver(
+    db_client: AsyncClient, event: str, payload: dict, secret: str = WEBHOOK_SECRET, delivery: str | None = None
+) -> httpx.Response:
     body = json.dumps(payload).encode()
     signature = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    return await db_client.post(
-        "/v1/github/webhook", content=body,
-        headers={"X-GitHub-Event": event, "X-Hub-Signature-256": signature, "Content-Type": "application/json"},
-    )
+    headers = {"X-GitHub-Event": event, "X-Hub-Signature-256": signature, "Content-Type": "application/json"}
+    if delivery:
+        headers["X-GitHub-Delivery"] = delivery
+    return await db_client.post("/v1/github/webhook", content=body, headers=headers)
 
 

@@ -29,7 +29,8 @@ class DatabaseSettings(BaseSettings):
 class Settings(DatabaseSettings):
     model_config = _CONFIG
 
-    env: str = "development"
+    # "staging" and "production" are deployed: secure cookies, and the checks in _safe_for_production.
+    env: Literal["development", "test", "staging", "production"] = "development"
     log_level: str = "INFO"
     log_json: bool = True
     # 127.0.0.1, not localhost: on Windows "localhost" tries IPv6 first and stalls.
@@ -207,7 +208,7 @@ class Settings(DatabaseSettings):
     # - "inline": inside the request (tests, debugging)
     jobs: Literal["local", "worker", "inline"] = "local"
     # Rate limits on sign-up, login, password reset, and verification emails:
-    # "redis" (shared by every API process; required in production), "memory" (this process
+    # "redis" (shared by every API process; required in staging and production), "memory" (this process
     # only), or "off".
     rate_limits: Literal["redis", "memory", "off"] = "memory"
     # Peers whose X-Forwarded-For is believed when finding a caller's IP (the web app's
@@ -216,24 +217,28 @@ class Settings(DatabaseSettings):
     # End-to-end tests only: allow the deterministic "e2e:rules" model (no API key, no cost).
     e2e_models: bool = False
 
+    @property
+    def is_deployed(self) -> bool:
+        return self.env in ("staging", "production")
+
     @model_validator(mode="after")
     def _safe_for_production(self) -> Settings:
         if self.email_backend is None:
             self.email_backend = "sendly" if self.sendly_api_key else "console"
         if self.email_backend == "sendly" and not self.sendly_api_key:
             raise ValueError("email_backend=sendly needs DOTRIX_SENDLY_API_KEY")
-        if self.env == "production" and self.email_backend == "console":
-            raise ValueError("email_backend=console logs tokens; not allowed in production")
-        if self.env == "production" and self.rate_limits != "redis":
-            raise ValueError("rate_limits must be redis in production (limits shared by every process)")
+        if self.is_deployed and self.email_backend == "console":
+            raise ValueError("email_backend=console logs tokens; not allowed in staging or production")
+        if self.is_deployed and self.rate_limits != "redis":
+            raise ValueError("rate_limits must be redis in staging and production (limits shared by every process)")
         if self.search_provider == "tavily" and not self.tavily_api_key:
             raise ValueError("search_provider=tavily needs DOTRIX_TAVILY_API_KEY")
         if self.search_provider == "fake" and not self.e2e_models:
             raise ValueError("search_provider=fake is for end-to-end tests (needs DOTRIX_E2E_MODELS=true)")
-        if self.env == "production" and self.coding_sandbox == "local":
-            raise ValueError("coding_sandbox=local runs coding agents unisolated; not allowed in production")
-        if self.env == "production" and self.e2e_models:
-            raise ValueError("e2e_models is for end-to-end tests; not allowed in production")
+        if self.is_deployed and self.coding_sandbox == "local":
+            raise ValueError("coding_sandbox=local runs coding agents unisolated; not allowed in staging or production")
+        if self.is_deployed and self.e2e_models:
+            raise ValueError("e2e_models is for end-to-end tests; not allowed in staging or production")
         return self
 
 
