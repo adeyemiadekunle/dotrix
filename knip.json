@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreBinaries": ["uv"],
+  "ignoreWorkspaces": ["apps/backend", "apps/cli", "packages/engine"],
+  "workspaces": {
+    "apps/web": {
+      "project": ["**/*.{ts,tsx,css}"]
+    },
+    "apps/desktop": {
+      "entry": ["src/preload.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/ui": {
+      "entry": ["src/components/*.tsx", "src/hooks/*.ts", "src/lib/*.ts"],
+      "project": ["src/**/*.{ts,tsx,css}"]
+    },
+    "packages/api-client": {
+      "project": ["src/**/*.ts"]
+    }
+  }
+}

@@ -215,5 +215,7 @@ CI runs all of these:
 ```bash
 uv run ruff check apps packages && uv run pytest   # lint; unit and integration tests (need Postgres)
 pnpm build && pnpm typecheck
+pnpm test                                          # web unit tests (Vitest)
+pnpm knip                                          # unused files, exports and dependencies (report only in CI for now)
 pnpm --filter @dotrix/web e2e                     # browser tests on a rule-based model
 ```
