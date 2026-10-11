@@ -222,7 +222,7 @@ async def test_changes_to_dotrix_or_workflows_are_never_pushed(
     run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
     await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
-    assert run["status"] == "failed" and "CI workflows" in run["error"]
+    assert run["status"] == "failed" and "CI configuration" in run["error"]
     claude.edits = {}
     run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
     await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)

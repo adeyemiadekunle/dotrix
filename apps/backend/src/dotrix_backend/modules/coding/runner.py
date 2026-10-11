@@ -5,7 +5,7 @@
    no token), in a sandbox (`sandbox.py`), and run Claude Code or Codex there with the brief.
    Its events stream into the run; it's stopped at the time limit, the token budget, or Stop.
 3. Read its changes back as a patch (data), apply it to our own checkout, and check it
-   (`guard.py`): nothing is pushed if it touches `.dotrix/`, workflows, or `.git`.
+   (`guard.py`): nothing is pushed if it touches `.dotrix/`, CI configuration, or `.git`.
 4. Commit, push a new branch (never the default branch, never forced), open the PR, link it on
    the issue and move the issue to review, then have the Reviewer look at the PR.
 The sandbox and the temporary folders are deleted whatever happens.
@@ -289,7 +289,8 @@ class CodingWorker:
             else:
                 pr = await self.app.create_pull_request(
                     ref.installation_id, ref.full_name, head=branch, base=ref.default_branch,
-                    title=f"{issue_key}: {title}", body=_pr_body(summary, issue_key, run_id, agent.value, files),
+                    title=f"{issue_key}: {title}",
+                    body=_pr_body(summary, issue_key, run_id, agent.value, files, guard.ci_sensitive(paths)),
                     token=token,
                 )
             async with self.session_factory() as session:
@@ -649,8 +650,17 @@ async def _issue_title(session: AsyncSession, run: CodingRun) -> str:
     return await session.scalar(select(Issue.title).where(Issue.id == run.issue_id)) or run.issue_key
 
 
-def _pr_body(summary: str | None, key: str, run_id: uuid.UUID, agent: str, files: list[dict[str, Any]]) -> str:
+def _pr_body(
+    summary: str | None, key: str, run_id: uuid.UUID, agent: str, files: list[dict[str, Any]], ci_sensitive: list[str]
+) -> str:
+    warning = [
+        "> [!WARNING]",
+        "> CI may run these changed files with the repository's secrets; review them before letting checks run:",
+        *(f"> - `{path}`" for path in ci_sensitive[:20]),
+        "",
+    ] if ci_sensitive else []
     return "\n".join([
+        *warning,
         (summary or "The agent left no summary.").strip()[:20_000],
         "",
         "---",
