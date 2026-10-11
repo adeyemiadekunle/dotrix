@@ -122,6 +122,37 @@ async def test_a_delivery_is_applied_once(db_client: AsyncClient, github_world, 
     assert repo["last_push_sha"] == "b" * 40
 
 
+async def test_a_delivery_whose_syncs_fail_to_queue_can_be_retried(
+    db_client: AsyncClient, github_world, deliver, github
+) -> None:
+    from dotrix_backend.core.jobs import get_jobs
+
+    class Down:
+        async def enqueue(self, name: str, **kwargs: object) -> None:
+            raise ConnectionError("redis is down")
+
+    ada, _, ws, kun, _ = await github_world()
+    installation = (await db_client.post(f"{ws}/github/installations", json={"installation_id": 111, "code": "code-1"},
+                                          headers=ada.headers)).json()
+    await db_client.put(f"{ws}/projects/{kun['id']}/repository",
+                        json={"installation_ref": installation["id"], "github_repo_id": 9001}, headers=ada.headers)
+    push = {"ref": "refs/heads/main", "after": "a" * 40,
+            "repository": {"id": 9001, "full_name": "kunemi/api", "default_branch": "main"}}
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    app.dependency_overrides[get_jobs] = Down
+    try:
+        assert (await deliver("push", push, delivery="d-1")).status_code == 500
+    finally:
+        app.dependency_overrides.pop(get_jobs)
+    assert (await deliver("push", push, delivery="d-1")).json()["result"] != "duplicate"
+
+
+async def test_a_malformed_delivery_id_is_refused(db_client: AsyncClient, github_world, deliver, github) -> None:
+    await github_world()
+    assert (await deliver("ping", {}, delivery="d-1 forged log line")).status_code == 422
+    assert (await deliver("ping", {}, delivery="x" * 101)).status_code == 422
+
+
 async def test_forget_an_installation(db_client: AsyncClient, github_world, github) -> None:
     ada, _, ws, kun, _ = await github_world()
     installation = (await db_client.post(f"{ws}/github/installations", json={"installation_id": 111, "code": "code-1"},

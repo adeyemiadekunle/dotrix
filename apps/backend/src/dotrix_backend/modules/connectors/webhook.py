@@ -40,11 +40,16 @@ async def first_delivery(session: AsyncSession, delivery_id: str, event: str) ->
     replayed it). Committed with what the delivery changes, so a failed one can be retried."""
     result = await session.execute(
         insert(GitHubDelivery)
-        .values(delivery_id=delivery_id[:100], event=event[:100], received_at=datetime.now(UTC))
+        .values(delivery_id=delivery_id, event=event[:100], received_at=datetime.now(UTC))
         .on_conflict_do_nothing()
         .returning(GitHubDelivery.delivery_id)
     )
     return result.first() is not None
+
+
+async def forget_delivery(session: AsyncSession, delivery_id: str) -> None:
+    await session.execute(delete(GitHubDelivery).where(GitHubDelivery.delivery_id == delivery_id))
+    await session.commit()
 
 
 async def delete_stale_deliveries(session: AsyncSession, cutoff: datetime) -> int:
