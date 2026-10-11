@@ -1217,7 +1217,6 @@ export const SHORTCUTS: [string, [string, string[]][]][] = [
       ["Go to My Tasks", ["G", "T"]],
       ["Go to Projects", ["G", "P"]],
       ["Go to Inbox", ["G", "I"]],
-      ["Go to Calendar", ["G", "C"]],
       ["Go to Settings", ["G", "S"]],
     ],
   ],

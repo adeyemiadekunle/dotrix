@@ -38,8 +38,8 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
   - Approve or reject each change, with diffs.
   - Ask across several projects at once; those conversations are read-only.
 - **Plan and track:**
-  - Board, List, Table, and Timeline (dependencies, drag to reschedule) for each project.
-  - My issues, Tasks, an Overview, and Activity across the workspace.
+  - Board and List for each project, with an Overview and Activity.
+  - My Tasks across the workspace.
   - ⌘K search over issues, documents, projects, people, and agents.
 - **Keep knowledge current:**
   - Documents with full history, restore, and export.

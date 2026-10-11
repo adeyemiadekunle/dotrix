@@ -81,7 +81,6 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
     [
       ["workspace", "Workspace", "building-2"],
       ["appearance", "Appearance", "palette"],
-      ["language", "Language", "languages"],
       ["datetime", "Date & time", "clock"],
     ],
   ],
@@ -89,7 +88,6 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
     "Workspace",
     [
       ["members", "Members", "users"],
-      ["teams", "Teams", "users-round"],
       ["projects", "Projects", "folder-kanban"],
       ["permissions", "Permissions", "shield"],
     ],
@@ -110,7 +108,6 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
     "Notifications",
     [
       ["notif-email", "Email", "mail"],
-      ["notif-push", "Push", "smartphone"],
       ["notif-mentions", "Mentions", "at-sign"],
       ["notif-assign", "Task assignments", "user-check"],
       ["notif-agents", "Agents", "sparkles"],
@@ -131,15 +128,6 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
     [
       ["password", "Password", "key-round"],
       ["sessions", "Sessions", "monitor-smartphone"],
-      ["2fa", "Two-factor authentication", "shield-check"],
-    ],
-  ],
-  [
-    "Billing",
-    [
-      ["plan", "Plan", "gem"],
-      ["payment", "Payment", "credit-card"],
-      ["invoices", "Invoices", "receipt"],
     ],
   ],
 ];
@@ -627,49 +615,6 @@ function LiveAgent({ handle }: { handle: string }) {
   );
 }
 
-/** A new custom agent in a real workspace: a name and handle, then its page. */
-function newLiveAgent() {
-  promptDlg({
-    title: "New agent",
-    label: "Name",
-    value: "",
-    run: (name: string) => {
-      const n = name.trim();
-      if (!n) return;
-      const handle =
-        n
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "")
-          .replace(/-agent$/, "")
-          .slice(0, 30) || "custom";
-      const body: AgentFields = {
-        name: n,
-        description: "",
-        instructions: `You are the ${n} agent. Describe what it does, what it reads, and what it returns.`,
-        model: null,
-        budget_tokens: null,
-        tools: ["knowledge.read", "knowledge.search", "board.read"],
-        access: {},
-        issue_types: [],
-        can_call: [],
-        autonomy: {},
-        output: null,
-        pipeline: null,
-        triggers: [],
-      };
-      agentSaved(/^[a-z]/.test(handle) && handle.length > 1 ? handle : `a-${handle}`, body, null)
-        .then(async (r) => {
-          await reloadAgents();
-          S.ui.agentSel = r.handle;
-          render();
-          toast(`Created @${r.handle}`);
-        })
-        .catch((e: unknown) => toast(`The agent wasn't created: ${errText(e)}`, { kind: "err", ms: 6000 }));
-    },
-  });
-}
-
 function Agents() {
   const sel = D().agents.find((a) => a.handle === S.ui.agentSel);
   if (sel && isLive()) return <LiveAgent handle={sel.handle} />;
@@ -777,31 +722,6 @@ function Agents() {
         <span className="muted" style={{ fontSize: 13 }}>
           {D().agents.length} agents · used by every project unless a project overrides one
         </span>
-        <span className="sp" />
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={() => {
-            if (isLive()) return newLiveAgent();
-            const h = "agent" + (D().agents.length + 1);
-            mutate(() =>
-              D().agents.push({
-                handle: h,
-                name: "Custom",
-                role: "Custom",
-                desc: "A custom agent.",
-                icon: "bot",
-                c: "#57544E",
-                builtIn: false,
-                tools: ["knowledge.read"],
-              }),
-            );
-            S.ui.agentSel = h;
-            render();
-          }}
-        >
-          <Ic n="plus" s={13} />
-          New agent
-        </button>
       </div>
       <UnattendedPause />
       <div className="panel" style={{ overflow: "hidden" }}>
@@ -2697,9 +2617,7 @@ function Body({ sec }: { sec: string }) {
               opts={[
                 ["board", "Board"],
                 ["list", "List"],
-                ["table", "Table"],
                 ["overview", "Overview"],
-                ["timeline", "Timeline"],
               ]}
             />
           </SRow>
