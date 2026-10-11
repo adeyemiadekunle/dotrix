@@ -82,10 +82,21 @@ def test_the_tool_follows_the_key_the_server_has() -> None:
 
 
 def test_what_a_run_may_not_change() -> None:
-    assert guard.check(["src/a.py", "docs/dotrix.md", ".github/CODEOWNERS"]) == []
+    assert guard.check(["src/a.py", "docs/dotrix.md", "docs/.github/notes.md", "src/Jenkinsfile.md"]) == []
     reasons = guard.check([".dotrix/x.md", "app/.dotrix/y.md", ".github/workflows/ci.yml", "lib/.git/config"])
-    assert len(reasons) == 4 and ".dotrix/ stays on the platform" in reasons[0] and "CI workflows" in reasons[2]
+    assert len(reasons) == 4 and ".dotrix/ stays on the platform" in reasons[0] and "CI configuration" in reasons[2]
+    ci = [".github/actions/setup/action.yml", ".github/CODEOWNERS", ".gitlab-ci.yml", ".circleci/config.yml", "Jenkinsfile"]
+    assert len(guard.check(ci)) == len(ci)
     assert guard.check([f"f{i}" for i in range(guard.MAX_FILES + 1)])[-1].endswith(f"more than {guard.MAX_FILES}")
+
+
+def test_files_ci_runs_are_named_for_review() -> None:
+    changed = ["src/a.py", "package.json", "apps/web/package.json", "tests/conftest.py", "infra/Dockerfile.worker",
+               "Makefile", "README.md", ".husky/pre-commit", "apps/web/vitest.config.ts"]
+    assert guard.ci_sensitive(changed) == [
+        "package.json", "apps/web/package.json", "tests/conftest.py", "infra/Dockerfile.worker", "Makefile",
+        ".husky/pre-commit", "apps/web/vitest.config.ts",
+    ]
 
 
 def test_the_policy_reaches_nothing_by_itself() -> None:
