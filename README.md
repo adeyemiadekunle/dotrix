@@ -78,8 +78,9 @@ The plan and what's built, item by item: [CLAUDE.md](CLAUDE.md).
 
 ## What's next
 
-- **Chat and coding in a real workspace:** the web app's Chat and Code tab run on demo data
-  today; wiring them to the API is next.
+- **The web app on TanStack Query:** Chat and its Code tab read the API through TanStack Query;
+  the other screens still load into the store (`data/live.ts`), and Home's ask box, the agents
+  panel, the command palette and Notifications still use the store's conversations and sessions.
 - **Coding, next:**
   - A full run on a real model (needs an Anthropic or OpenAI key).
   - Coding from the CLI or desktop, in your own checkout.
@@ -216,6 +217,6 @@ CI runs all of these:
 uv run ruff check apps packages && uv run pytest   # lint; unit and integration tests (need Postgres)
 pnpm build && pnpm typecheck
 pnpm test                                          # web unit tests (Vitest)
-pnpm knip                                          # unused files, exports and dependencies (report only in CI for now)
+pnpm knip                                          # unused files, exports and dependencies (CI fails on unused files and dependencies)
 pnpm --filter @dotrix/web e2e                     # browser tests on a rule-based model
 ```

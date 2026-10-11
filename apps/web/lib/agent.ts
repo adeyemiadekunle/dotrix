@@ -314,6 +314,18 @@ export function useStopRun(scope: Scope | undefined) {
   );
 }
 
+/** Continue a run that stopped at its model's limit: now, or once the limit resets. */
+export function useContinueRun(scope: Scope | undefined) {
+  return useAgentMutation(scope, (s, { runId, whenReset }: { runId: string; whenReset: boolean }) =>
+    unwrap(
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/continue", {
+        params: { path: { ...path(s), run_id: runId } },
+        body: { when_reset: whenReset },
+      }),
+    ),
+  );
+}
+
 export function useRenameThread(scope: Scope | undefined) {
   const queryClient = useQueryClient();
   return useMutation({

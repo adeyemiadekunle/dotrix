@@ -95,8 +95,10 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
-      - name: Unused files and exports (report only until the old web pages are deleted)
-        run: pnpm knip --no-exit-code
+      - name: Unused files and dependencies
+        run: pnpm knip --include files,dependencies,unlisted,unresolved,binaries
+      - name: Unused exports (report only)
+        run: pnpm knip --no-exit-code --include exports,types
 
   e2e:
     # The web app in a real browser against a real backend: throwaway database, and the

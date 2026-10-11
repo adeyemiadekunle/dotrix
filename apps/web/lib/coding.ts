@@ -62,7 +62,7 @@ export function useCodingRuns(scope: Scope | undefined, issueKey: string | null 
   });
 }
 
-function useCodingMutation<T>(scope: Scope | undefined, issueKey: string, fn: (scope: Scope, arg: T) => Promise<CodingRun>) {
+function useCodingMutation<T, R = CodingRun>(scope: Scope | undefined, issueKey: string, fn: (scope: Scope, arg: T) => Promise<R>) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (arg: T) => fn(scope!, arg),
@@ -169,5 +169,29 @@ export function useFollowUp(scope: Scope | undefined, sessionId: string, issueKe
         body: { message },
       }),
     ),
+  );
+}
+
+const sessionPath = (s: Scope, sessionId: string) => ({ ...path(s), session_id: sessionId });
+
+/** Rename, pin, or archive a session. */
+export function useUpdateSession(scope: Scope | undefined, sessionId: string, issueKey: string) {
+  return useCodingMutation(scope, issueKey, (s, body: Schemas["CodingSessionUpdate"]) =>
+    unwrap(
+      api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}", { params: { path: sessionPath(s, sessionId) }, body }),
+    ),
+  );
+}
+
+/** Close a session: no more turns on its branch. */
+export function useCloseSession(scope: Scope | undefined, sessionId: string, issueKey: string) {
+  return useCodingMutation(scope, issueKey, (s, _: void) =>
+    unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/close", { params: { path: sessionPath(s, sessionId) } })),
+  );
+}
+
+export function useDeleteSession(scope: Scope | undefined, sessionId: string, issueKey: string) {
+  return useCodingMutation(scope, issueKey, (s, _: void) =>
+    unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}", { params: { path: sessionPath(s, sessionId) } })),
   );
 }
