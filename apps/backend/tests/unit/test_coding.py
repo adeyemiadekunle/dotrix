@@ -85,7 +85,8 @@ def test_what_a_run_may_not_change() -> None:
     assert guard.check(["src/a.py", "docs/dotrix.md", "docs/.github/notes.md", "src/Jenkinsfile.md"]) == []
     reasons = guard.check([".dotrix/x.md", "app/.dotrix/y.md", ".github/workflows/ci.yml", "lib/.git/config"])
     assert len(reasons) == 4 and ".dotrix/ stays on the platform" in reasons[0] and "CI configuration" in reasons[2]
-    ci = [".github/actions/setup/action.yml", ".github/CODEOWNERS", ".gitlab-ci.yml", ".circleci/config.yml", "Jenkinsfile"]
+    ci = [".github/actions/setup/action.yml", ".github/CODEOWNERS", ".gitlab-ci.yml", ".circleci/config.yml", "Jenkinsfile",
+          ".semaphore/semaphore.yml", ".cirrus.yml"]
     assert len(guard.check(ci)) == len(ci)
     assert guard.check([f"f{i}" for i in range(guard.MAX_FILES + 1)])[-1].endswith(f"more than {guard.MAX_FILES}")
 

@@ -18,8 +18,12 @@ MAX_PATCH_BYTES = 8_000_000
 CI_CONFIG = frozenset({
     ".gitlab-ci.yml", ".travis.yml", "azure-pipelines.yml", "bitbucket-pipelines.yml", "Jenkinsfile",
     ".drone.yml", ".woodpecker.yml", "appveyor.yml", ".appveyor.yml", "cloudbuild.yaml", "buildspec.yml",
+    ".cirrus.yml", "codemagic.yaml", "bitrise.yml", "wercker.yml",
 })
-CI_CONFIG_DIRS = frozenset({".github", ".circleci", ".buildkite", ".gitlab", ".woodpecker", ".azure-pipelines"})
+CI_CONFIG_DIRS = frozenset({
+    ".github", ".circleci", ".buildkite", ".gitlab", ".woodpecker", ".azure-pipelines", ".semaphore", ".tekton",
+    ".harness", ".gitea", ".forgejo",
+})
 # Files whose code CI runs when it builds or tests (matched on the file name, anywhere).
 CI_SENSITIVE = (
     "package.json", ".npmrc", ".yarnrc*", "Makefile", "*.mk", "justfile", "Taskfile.yml", "Rakefile",
