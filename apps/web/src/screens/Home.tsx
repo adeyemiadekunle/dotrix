@@ -389,12 +389,6 @@ export function Home() {
           <section className="panel">
             <div className="panel-h">
               <h2>Upcoming deadlines</h2>
-              <div className="acts">
-                <button className="btn btn-sm btn-ghost" onClick={() => go("calendar")}>
-                  <Ic n="calendar" s={13} />
-                  Calendar
-                </button>
-              </div>
             </div>
             <div className="panel-b" style={{ paddingBottom: 6 }}>
               {dls.map((g) => (
@@ -433,11 +427,6 @@ export function Home() {
           <section className="panel">
             <div className="panel-h">
               <h2>Recent activity</h2>
-              <div className="acts">
-                <button className="btn btn-sm btn-ghost" onClick={() => go("activity")}>
-                  View all
-                </button>
-              </div>
             </div>
             <div className="panel-b feed lined">
               {D()

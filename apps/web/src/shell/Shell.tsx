@@ -8,10 +8,10 @@ import { PSTAT } from "../core/constants";
 import { Ic, WsLogo } from "../core/icons";
 import { presence } from "../core/presence";
 import { allowed } from "../core/can";
-import { newProject, newTeam } from "../core/more";
+import { newProject } from "../core/more";
 import { go, useRoute, type Route } from "../core/nav";
 import { MOD, TODAY, diffD, parse } from "../core/utils";
-import { D, S, allTasks, pColor, projByKey, render, team, teamsList, useStudio, visibleProjects } from "../data/store";
+import { D, S, allTasks, pColor, projByKey, render, team, useStudio, visibleProjects } from "../data/store";
 import type { NotifType } from "../data/types";
 import { Av } from "../ui/helpers";
 import { PopLayer } from "../overlays/PopLayer";
@@ -220,7 +220,6 @@ function Sidebar() {
   const myOpen = allTasks().filter((t) => t.assignee === d.me && t.status !== "done" && t.due && diffD(parse(t.due)!, TODAY) <= 0).length;
   const projs = visibleProjects().filter((p) => p.status !== "complete");
   const inProj = route === "project" ? projByKey(params.id)?.id : null;
-  const archived = d.tasks.filter((t) => t.archived).length + d.projects.filter((p) => p.archived).length;
   return (
     <nav className="side" aria-label="Main">
       <div className="side-top">
@@ -254,18 +253,11 @@ function Sidebar() {
         <SItem route="home" label="Home" icon="house" />
         <SItem route="inbox" label="Inbox" icon="inbox" ct={unreadInbox || ""} dot />
         <SItem route="mytasks" label="My Tasks" icon="circle-check" ct={myOpen || ""} />
-        <SItem route="favorites" label="Favorites" icon="star" />
         <SItem route="notifications" label="Notifications" icon="bell" ct={unreadAgents || ""} />
         <div className="sgroup">
           <div className="sgroup-h">Workspace</div>
-          <SItem route="overview" label="Overview" icon="layout-dashboard" />
           <SItem route="chat" label="Chat" icon="message-square" />
           <SItem route="projects" label="Projects" icon="folder-kanban" />
-          <SItem route="tasks" label="Tasks" icon="list-checks" />
-          <SItem route="calendar" label="Calendar" icon="calendar" />
-          <SItem route="timeline" label="Timeline" icon="chart-gantt" />
-          <SItem route="members" label="Members" icon="users" />
-          <SItem route="activity" label="Activity" icon="activity" />
         </div>
         <div className="sgroup" id="side-projects">
           <div className="sgroup-h">
@@ -348,7 +340,6 @@ function Sidebar() {
                     [
                       ["board", "Board", "square-kanban"],
                       ["list", "List", "list"],
-                      ["timeline", "Timeline", "chart-gantt"],
                       ["files", "Files", "paperclip"],
                       ["knowledge", "Knowledge", "book-open"],
                     ] as const
@@ -362,21 +353,6 @@ function Sidebar() {
               </div>
             );
           })}
-          <SItem route="archive" label="Archive" icon="archive" ct={archived || ""} />
-        </div>
-        <div className="sgroup">
-          <div className="sgroup-h">
-            <span>Teams</span>
-            <span className="sp" />
-            {allowed("members:manage") && (
-              <button className="ibtn ibtn-xs" onClick={newTeam} data-tip="New team" aria-label="New team">
-                <Ic n="plus" s={14} />
-              </button>
-            )}
-          </div>
-          {teamsList().map((t) => (
-            <SItem key={t.id} route="team" label={t.name} icon={t.icon} params={{ id: t.id }} />
-          ))}
         </div>
       </div>
       <div className="side-bot">

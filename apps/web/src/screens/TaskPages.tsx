@@ -62,7 +62,6 @@ export function MyTasks() {
   ];
   // Completed starts folded, like Gr8r's.
   if (S.ui.collapsedGroups[k + ":completed"] === undefined) S.ui.collapsedGroups[k + ":completed"] = true;
-  const mode = S.ui.myView;
   return (
     <div className="page flush">
       <div className="ph">
@@ -73,19 +72,6 @@ export function MyTasks() {
           </p>
         </div>
         <div className="acts">
-          <div className="seg" role="tablist" aria-label="View">
-            {(
-              [
-                ["list", "List", "list"],
-                ["calendar", "Calendar", "calendar"],
-              ] as const
-            ).map(([m, n, i]) => (
-              <button key={m} className={mode === m ? "on" : ""} onClick={() => ((S.ui.myView = m), render())}>
-                <Ic n={i} s={13} />
-                {n}
-              </button>
-            ))}
-          </div>
           <button className="btn btn-primary" onClick={() => newTask({ assignee: D().me })}>
             <Ic n="plus" s={14} />
             New task
@@ -93,13 +79,9 @@ export function MyTasks() {
         </div>
       </div>
       <ViewToolbar k={k} group={false} />
-      {mode === "calendar" ? (
-        <Calendar ts={mine} k="my" />
-      ) : (
-        <div className="list-wrap">
-          <ListView groups={groups} k={k} cols={["project", "status", "priority", "due"]} complete drag={false} />
-        </div>
-      )}
+      <div className="list-wrap">
+        <ListView groups={groups} k={k} cols={["project", "status", "priority", "due"]} complete drag={false} />
+      </div>
     </div>
   );
 }

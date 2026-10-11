@@ -138,11 +138,9 @@ export function installKeyboard() {
         t: "mytasks",
         p: "projects",
         i: "inbox",
-        c: "calendar",
         s: "settings",
         n: "notifications",
         a: "chat",
-        m: "members",
       };
       const r = map[k.toLowerCase()];
       if (r) {

@@ -31,7 +31,6 @@ import {
   invite,
   newProject,
   newTask,
-  newTeam,
   previewFile,
   removeMember,
   renameFile,
@@ -215,7 +214,6 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             <div className="mh">Create</div>
             <Mi icon="circle-check" label="Task" onClick={() => newTask()} r={<kbd>N</kbd>} />
             {allowed("projects:manage") && <Mi icon="folder-plus" label="Project" onClick={newProject} r={<kbd>P</kbd>} />}
-            {allowed("members:manage") && <Mi icon="users" label="Team" onClick={newTeam} />}
             <Mi icon="message-square-plus" label="Chat with the agents" onClick={() => (closePop(), go("chat"))} />
             {canInvite() && (
               <>
@@ -554,8 +552,12 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             <Mi icon="keyboard" label="Keyboard shortcuts" onClick={shortcuts} r={<kbd>?</kbd>} />
             <Mi icon="command" label="Command menu" onClick={() => (closePop(), openPaletteSoon())} r={<kbd>{MOD}K</kbd>} />
             <Mi icon="terminal" label="Connect the CLI" onClick={() => (closePop(), go("settings", { sec: "sessions" }))} />
-            <Mi icon="component" label="Design system" onClick={() => (closePop(), go("system"))} />
-            <Mi icon="layers" label="System states" onClick={() => (closePop(), go("states"))} />
+            {import.meta.env.DEV && (
+              <>
+                <Mi icon="component" label="Design system" onClick={() => (closePop(), go("system"))} />
+                <Mi icon="layers" label="System states" onClick={() => (closePop(), go("states"))} />
+              </>
+            )}
             <Sep />
             <div className="mh">Prototype</div>
             <Mi icon={S.ui.offline ? "wifi" : "wifi-off"} label={S.ui.offline ? "Go back online" : "Simulate offline"} onClick={toggleOffline} />

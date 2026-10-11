@@ -359,10 +359,6 @@ export function Overview() {
           <p>Health of every project in {D().ws.name}.</p>
         </div>
         <div className="acts">
-          <button className="btn btn-secondary" onClick={() => go("timeline")}>
-            <Ic n="chart-gantt" s={14} />
-            Timeline
-          </button>
           {allowed("projects:manage") && (
             <button className="btn btn-primary" onClick={newProject}>
               <Ic n="plus" s={14} />
