@@ -1,4 +1,4 @@
-// Gr8r's preferences on <html> (gr8r-studio/src/core/theme.js): theme (the .dark class), accent,
+// Preferences on <html>: theme (the .dark class), accent,
 // sidebar and row density, reduced motion; and the date format.
 import { S } from "../data/store";
 import { setDateFormat } from "./utils";

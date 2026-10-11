@@ -1,4 +1,4 @@
-// Gr8r's modals (gr8r-studio/src/overlays/modals.js and features/teams.js), same markup. Each
+// Modals, same markup. Each
 // open modal is an entry in S.ui.modals; its form lives on the entry.
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 

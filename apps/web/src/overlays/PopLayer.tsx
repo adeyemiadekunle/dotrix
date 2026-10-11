@@ -1,4 +1,4 @@
-// Gr8r's popovers (gr8r-studio/src/overlays/popovers.js + context-menu.js): one floating menu at a
+// Popovers: one floating menu at a
 // time (S.ui.pop), placed under what opened it and kept on screen; Escape or a click outside
 // closes it. Picks apply to a task, or to the open New task form ("__form").
 import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";

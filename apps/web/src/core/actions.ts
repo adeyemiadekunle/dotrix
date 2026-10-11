@@ -1,4 +1,4 @@
-// Gr8r's actions (gr8r-studio/src/actions/actions.js): what clicks and keys do to the workspace.
+// Actions: what clicks and keys do to the workspace.
 // They change the seeded data through mutate(); wiring the API turns these into API calls.
 import { PR, PSTAT, ST, type ProjectStatusId } from "./constants";
 import { TODAY, addD, fmtDate, iso, parse, uid } from "./utils";

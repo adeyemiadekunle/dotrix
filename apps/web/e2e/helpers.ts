@@ -36,7 +36,7 @@ export async function signUpWithProject(page: Page, name = "Kumove", key = "KUM"
   return { user, key };
 }
 
-/** Why a spec of the API-backed workspace pages is parked: /w/… shows the seeded Gr8r UI until
- * each screen is wired to the API (CLAUDE.md, "Plan: Gr8r Studio into Dotrix"). Un-park a spec
+/** Why a spec of the API-backed workspace pages is parked: /w/… shows the seeded UI until
+ * each screen is wired to the API (CLAUDE.md). Un-park a spec
  * when its screens are wired, updating it for their markup. */
 export const NOT_WIRED = "the workspace runs on seeded data until this screen is wired to the API";

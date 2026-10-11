@@ -1,4 +1,4 @@
-// Gr8r's `virtual:icons` (gr8r-studio/vite.config.js): exports only the Lucide icons src/ names, as
+// `virtual:icons`: exports only the Lucide icons src/ names, as
 // inline SVG markup, so the bundle carries the icons in use instead of the full set. Any quoted
 // kebab-case token in src/ that matches a Lucide icon name is included.
 import fs from "node:fs";

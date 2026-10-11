@@ -1,5 +1,5 @@
-// Gr8r's icons (gr8r-studio/src/core/icons.js): ic(name, size, class) as <Ic>, any Lucide name,
-// bundled only if src/ names it (icons-plugin.ts). The logo is Gr8r's, for now.
+// Icons: ic(name, size, class) as <Ic>, any Lucide name,
+// bundled only if src/ names it (icons-plugin.ts).
 import type { CSSProperties } from "react";
 import { ICONS } from "virtual:icons";
 

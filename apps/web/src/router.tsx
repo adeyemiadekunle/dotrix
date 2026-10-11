@@ -1,5 +1,5 @@
-// The app's URLs (TanStack Router). A workspace (/w/{workspace}/…) is Gr8r's shell with the
-// screen picked from the path (shell/Studio, like Gr8r's renderPage): one of yours comes from the
+// The app's URLs (TanStack Router). A workspace (/w/{workspace}/…) is the shell with the
+// screen picked from the path (shell/Studio): one of yours comes from the
 // API (data/live.ts, sign-in needed), the demo (/w/dotrix) is seeded in the browser.
 import { Navigate, Outlet, createRootRoute, createRoute, createRouter, lazyRouteComponent } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";

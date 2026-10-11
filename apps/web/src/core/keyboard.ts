@@ -1,4 +1,4 @@
-// Gr8r's keyboard (gr8r-studio/src/actions/keyboard.js): ⌘K, ⌘⇧L, focus kept inside modals,
+// Keyboard: ⌘K, ⌘⇧L, focus kept inside modals,
 // arrows in menus and the palette, Escape closing the top surface, and single-key shortcuts
 // (G then a letter to go somewhere, / to search, N, P, ?, [, E).
 import { STATUSES } from "./constants";

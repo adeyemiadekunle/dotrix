@@ -1,8 +1,8 @@
-// Gr8r's vocabulary (gr8r-studio/src/core/constants.js), with dotrix's additions marked.
+// Vocabulary, with dotrix's additions marked.
 export type StatusId = "backlog" | "todo" | "progress" | "blocked" | "review" | "done";
 export type PriorityId = "urgent" | "high" | "medium" | "low" | "none";
 
-// dotrix adds Blocked (agents and people flag it); Gr8r's five otherwise.
+// dotrix adds Blocked (agents and people flag it); five otherwise.
 export const STATUSES: { id: StatusId; name: string }[] = [
   { id: "backlog", name: "Backlog" },
   { id: "todo", name: "To Do" },
@@ -76,7 +76,7 @@ export const TEAMS_SEED = [
   { id: "product", name: "Product", icon: "target", c: "#C48A1E", desc: "Roadmap, planning, and QA" },
 ];
 
-/* dotrix: issue types (Gr8r's tasks are all "task") */
+/* dotrix: issue types (the seed's tasks are all "task") */
 export type IssueType = "epic" | "story" | "task" | "bug" | "spike" | "sub-task";
 export const TYPES: { id: IssueType; name: string; icon: string; c: string }[] = [
   { id: "epic", name: "Epic", icon: "zap", c: "var(--violet)" },

@@ -1,4 +1,4 @@
-// Gr8r's archive (gr8r-studio/src/features/archive.js): archived tasks and projects, restore or
+// Archive: archived tasks and projects, restore or
 // delete for good.
 import type { ReactNode } from "react";
 

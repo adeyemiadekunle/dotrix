@@ -1,4 +1,4 @@
-// Gr8r's onboarding (gr8r-studio/src/pages/auth.js renderOnboarding): six steps in the auth
+// Onboarding: six steps in the auth
 // shell. On the seeded data it renames the workspace, creates the first project from a template
 // (dotrix: with its documents for the agents), and adds the invites. Signed in, it creates a real
 // organisation instead (data/live.ts organisationCreated) and opens it.

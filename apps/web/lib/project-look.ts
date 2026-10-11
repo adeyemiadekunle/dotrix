@@ -1,4 +1,4 @@
-// How a project looks: its colour, icon, and status (Gr8r's design). Set in project settings;
+// How a project looks: its colour, icon, and status. Set in project settings;
 // a project without them looks like its key (a letter, a colour picked from the key).
 import type { Schemas } from "@dotrix/api-client";
 import {

@@ -1,4 +1,4 @@
-// Gr8r's timeline (gr8r-studio/src/views/timeline.js): bars from start to due date by week or
+// Timeline: bars from start to due date by week or
 // month, grouped, with milestones and dependency arrows; drag a bar to move it (core/dragdrop).
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 

@@ -1,4 +1,4 @@
-// Gr8r's go(route, params) as URLs (dotrix's /w/{workspace}/… scheme, so the API can be wired in
+// go(route, params) as URLs (dotrix's /w/{workspace}/… scheme, so the API can be wired in
 // without changing addresses). Screens ask where they are with useRoute().
 import { useRouterState, type AnyRouter } from "@tanstack/react-router";
 
@@ -70,7 +70,7 @@ export function href(route: Route, params: Params = {}): string {
   return `${base}/${SIMPLE[route] ?? ""}`;
 }
 
-/** Where we are, as Gr8r's route and params. */
+/** Where we are, as a route and params. */
 export function routeOf(pathname: string): { route: Route | "notfound"; params: Params } {
   const m = pathname.match(/^\/w\/[^/]+(?:\/(.*))?$/);
   if (!m) return { route: "notfound", params: {} };
@@ -94,7 +94,7 @@ let router: AnyRouter | null = null;
 export function setRouter(r: AnyRouter) {
   router = r;
 }
-/** Go somewhere (Gr8r's go()); `replace` keeps the history entry, `search` sets the query. */
+/** Go somewhere; `replace` keeps the history entry, `search` sets the query. */
 export function go(route: Route, params: Params = {}, opt: { replace?: boolean; search?: string } = {}) {
   void router?.navigate({ href: href(route, params) + (opt.search ? `?${opt.search}` : ""), replace: opt.replace });
 }

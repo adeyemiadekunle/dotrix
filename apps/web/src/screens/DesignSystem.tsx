@@ -1,4 +1,4 @@
-// Gr8r's design system and system states pages (gr8r-studio/src/pages/design-system.js), with
+// Design system and system states pages, with
 // dotrix's own pieces: a proposed change, a plan to steer, and the chat's "working" line.
 import type { CSSProperties, ReactNode } from "react";
 

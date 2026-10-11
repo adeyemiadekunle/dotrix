@@ -1,4 +1,4 @@
-// Gr8r's table (gr8r-studio/src/views/table.js): every field as a column (choose them, resize them
+// Table: every field as a column (choose them, resize them
 // by dragging the header edge, sort by clicking it), edit in place, grouped rows; cards on phones.
 import { useState, type CSSProperties } from "react";
 

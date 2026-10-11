@@ -1,4 +1,4 @@
-// Gr8r's search results (gr8r-studio/src/pages/search.js). dotrix adds the projects' documents.
+// Search results. dotrix adds the projects' documents.
 import type { CSSProperties, ReactNode } from "react";
 
 import { openTask } from "../core/actions";

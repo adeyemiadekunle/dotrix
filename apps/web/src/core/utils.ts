@@ -1,4 +1,4 @@
-// Gr8r's utilities (gr8r-studio/src/core/utils.js), typed.
+// Utilities, typed.
 export const uid = (p = "x") => p + Math.random().toString(36).slice(2, 8);
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);

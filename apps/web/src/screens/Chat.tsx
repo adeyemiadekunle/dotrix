@@ -1,4 +1,4 @@
-// dotrix's workspace Chat in Gr8r's design (Gr8r has none): conversations grouped by project (and
+// dotrix's workspace Chat: conversations grouped by project (and
 // "All projects"), a new chat with project, agent, and model; replies with what the agent did
 // and the changes it proposes; and the Coding tab, coding sessions with their turns. Conversations
 // and sessions come from the API (TanStack Query); projects, people, and issues still from the store.

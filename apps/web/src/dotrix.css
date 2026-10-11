@@ -1,4 +1,4 @@
-/* dotrix's surfaces Gr8r doesn't have (chat, proposed changes, diffs), on Gr8r's tokens. */
+/* dotrix's own surfaces (chat, proposed changes, diffs), on the design's tokens (design.css). */
 @layer components {
   .chat-grid {
     display: grid;
@@ -335,7 +335,7 @@
 }
 
 /* A collapsed sidebar's labels (shell/Shell.tsx SideTip): fixed over the page, since the sidebar
-   clips what overflows it. Same look as Gr8r's [data-tip] tooltips. */
+   clips what overflows it. Same look as the [data-tip] tooltips. */
 .side [data-tip-pos="right"]::after {
   display: none !important;
 }

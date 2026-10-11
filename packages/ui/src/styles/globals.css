@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-/* Gr8r Studio's stylesheets (see below). */
-@import "./gr8r.css";
+/* The design's stylesheet (see below). */
+@import "./design.css";
 
 /* Scan the shared components and every app that uses them. */
 @source "../../../../apps/web/pages";
@@ -12,12 +12,12 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Gr8r Studio's design (gr8r.css, copied from Gr8r) owns the colours, type, and spacing. The names
-   dotrix's components and pages use (shadcn's, and ours) read Gr8r's tokens, so there is one source.
-   Dark mode and accents are Gr8r's too: .dark on <html> (next-themes), data-accent (Settings →
+/* The design (design.css) owns the colours, type, and spacing. The names
+   dotrix's components and pages use (shadcn's, and ours) read its tokens, so there is one source.
+   Dark mode and accents come from it too: .dark on <html> (next-themes), data-accent (Settings →
    Appearance). */
 :root {
-  /* dotrix's Blocked status (Gr8r has none) */
+  /* dotrix's Blocked status */
   --st-blocked: var(--red);
   --radius: 0.625rem;
   --background: var(--bg);
@@ -35,7 +35,7 @@
   --accent: var(--surface-3);
   --accent-foreground: var(--text);
   --destructive: var(--red);
-  /* --border is Gr8r's own */
+  /* --border is the design's own */
   --input: var(--border-strong);
   --ring: var(--acc);
   --sidebar: var(--bg-side);
@@ -141,7 +141,7 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-size: 0.84375rem; /* 13.5px: Gr8r's calm, dense base size */
+    font-size: 0.84375rem; /* 13.5px: a calm, dense base size */
     line-height: 1.45;
     font-feature-settings: "ss01", "cv11";
   }
@@ -176,7 +176,7 @@
   color: var(--shiki-dark);
 }
 
-/* Gr8r set this inline (layout.js): the menu button shows only where the sidebar is a drawer. */
+/* The menu button shows only where the sidebar is a drawer. */
 .mnav-btn {
   display: none;
 }
@@ -185,7 +185,7 @@
     display: inline-flex;
   }
 }
-/* Gr8r's mini calendar hovered its days inline (popovers.js). */
+/* Mini calendar hovered its days inline. */
 .cal-day:hover:not([style*="--acc"]) {
   background: var(--surface-2);
 }

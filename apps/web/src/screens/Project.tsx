@@ -1,4 +1,4 @@
-// Gr8r's project page (gr8r-studio/src/pages/project.js): header and a tab per view, saved views as
+// Project page: header and a tab per view, saved views as
 // extra tabs. dotrix adds Knowledge (the project's documents the agents read and keep current).
 import type { CSSProperties } from "react";
 

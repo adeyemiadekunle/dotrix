@@ -3,8 +3,8 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@dotrix/ui/lib/utils";
 import { Slot } from "radix-ui";
 
-// Gr8r's buttons (gr8r.css: .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-danger, sizes
-// .btn-sm / .btn-lg). Icon sizes are the same button, square (Gr8r's .ibtn is the ghost one).
+// Buttons (design.css: .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-danger, sizes
+// .btn-sm / .btn-lg). Icon sizes are the same button, square (.ibtn is the ghost one).
 const buttonVariants = cva(
   "btn [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[15px] focus-visible:outline-2 focus-visible:outline-primary aria-invalid:border-destructive",
   {

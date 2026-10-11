@@ -1,7 +1,6 @@
-/* Gr8r Studio's design, copied from gr8r-studio/src/styles (index.css order). Generated, then
-   owned here: change it in place. Differences from the original: Gr8r's --accent is --acc (shadcn
-   uses --accent for hover backgrounds); dark mode is the .dark class (next-themes); #app is #root;
-   fonts are the bundled Geist; only the app shell stops the page scrolling. In @layer components,
+/* The design: tokens and component classes. Change it in place. The accent is --acc (shadcn
+   uses --accent for hover backgrounds); dark mode is the .dark class (next-themes); fonts are the
+   bundled Geist; only the app shell stops the page scrolling. In @layer components,
    so Tailwind utilities on a page can still adjust it. */
 @layer components {
 
