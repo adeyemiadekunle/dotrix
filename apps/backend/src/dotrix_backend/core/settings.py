@@ -126,6 +126,10 @@ class Settings(DatabaseSettings):
     coding_warm_max: int = Field(default=3, ge=0, le=50)
     # Tokens (input + output) one coding run may use before it's stopped; 0: no limit.
     coding_token_budget: int = Field(default=3_000_000, ge=0)
+    # The GitHub organisation coding branches are pushed to: the app forks each repo there (it needs
+    # Administration and Contents write on it), so the PR's CI never gets the repo's secrets. Unset:
+    # branches go to the repo itself (development only).
+    coding_fork_owner: str | None = Field(default=None, pattern=r"^[A-Za-z0-9-]{1,39}$")
 
     # Object storage for document originals: any S3-compatible store (MinIO locally).
     # Leave the endpoint and keys unset to run without uploads (they answer 503).
@@ -237,6 +241,9 @@ class Settings(DatabaseSettings):
             raise ValueError("search_provider=fake is for end-to-end tests (needs DOTRIX_E2E_MODELS=true)")
         if self.is_deployed and self.coding_sandbox == "local":
             raise ValueError("coding_sandbox=local runs coding agents unisolated; not allowed in staging or production")
+        if self.is_deployed and self.coding_sandbox != "off" and not self.coding_fork_owner:
+            raise ValueError("coding runs need DOTRIX_CODING_FORK_OWNER in staging and production (branches pushed "
+                             "to the repo itself get its secrets in CI)")
         if self.is_deployed and self.e2e_models:
             raise ValueError("e2e_models is for end-to-end tests; not allowed in staging or production")
         return self

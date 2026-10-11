@@ -6,6 +6,7 @@ they last an hour, and each request gets what it needs.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -22,6 +23,7 @@ from dotrix_backend.modules.auth.github import API_URL, GitHubUnavailable
 
 HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
 MAX_REPOS = 1_000  # per installation, in pages of 100
+FORK_READY_TRIES = 5
 
 
 @dataclass(frozen=True)
@@ -65,7 +67,8 @@ class GitHubApp(Protocol):
     async def repositories(self, installation_id: int) -> list[Repo]: ...
     async def repository(self, installation_id: int, repo_id: int) -> Repo: ...
     async def access_token(
-        self, installation_id: int, *, repository_id: int | None = None, write: bool = False
+        self, installation_id: int, *, repository_id: int | None = None, write: bool = False,
+        pull_requests: bool = False,
     ) -> str: ...
     async def create_pull_request(
         self, installation_id: int, full_name: str, *, head: str, base: str, title: str, body: str, token: str
@@ -73,6 +76,9 @@ class GitHubApp(Protocol):
     async def create_repository(
         self, installation_id: int, org: str, name: str, *, private: bool, description: str
     ) -> Repo: ...
+    async def org_installation(self, org: str) -> int: ...
+    async def fork(self, installation_id: int, full_name: str, *, org: str, name: str) -> Repo: ...
+    async def sync_fork(self, full_name: str, branch: str, *, token: str) -> None: ...
 
 
 class GitHubAppClient:
@@ -143,26 +149,35 @@ class GitHubAppClient:
         raise GitHubUnavailable(f"GitHub answered {res.status_code}; try again shortly")
 
     async def access_token(
-        self, installation_id: int, *, repository_id: int | None = None, write: bool = False
+        self, installation_id: int, *, repository_id: int | None = None, write: bool = False,
+        pull_requests: bool = False,
     ) -> str:
         """An installation token (an hour long) for git; never stored. With `repository_id`, it
-        works on that one repo only; `write` adds pushing and opening pull requests there."""
+        works on that one repo only; `write` adds pushing and opening pull requests there, and
+        `pull_requests` only opening them (from a fork)."""
         body: dict | None = None
         if repository_id is not None:
-            permissions = {"contents": "write", "pull_requests": "write"} if write else {"contents": "read"}
+            permissions: dict[str, str] = {"contents": "read"}
+            if write:
+                permissions = {"contents": "write", "pull_requests": "write"}
+            elif pull_requests:
+                permissions["pull_requests"] = "write"
             body = {"repository_ids": [repository_id], "permissions": {"metadata": "read", **permissions}}
         return await self._installation_token(installation_id, body)
 
     async def create_pull_request(
         self, installation_id: int, full_name: str, *, head: str, base: str, title: str, body: str, token: str
     ) -> PullRequest:
-        """Open a pull request from `head` into `base`, with a token from `access_token(write=True)`."""
+        """Open a pull request from `head` ("owner:branch" from a fork) into `base`, with a token from
+        `access_token` that may open pull requests."""
         async with httpx.AsyncClient(transport=self.transport, timeout=30) as http:
             try:
                 res = await http.post(
                     f"{API_URL}/repos/{full_name}/pulls",
                     headers={**HEADERS, "Authorization": f"Bearer {token}"},
-                    json={"title": title, "head": head, "base": base, "body": body, "maintainer_can_modify": True},
+                    json={"title": title, "head": head, "base": base, "body": body,
+                          # GitHub refuses it for a fork an organisation owns.
+                          "maintainer_can_modify": ":" not in head},
                 )
             except httpx.HTTPError as exc:
                 raise GitHubUnavailable("GitHub couldn't be reached; try again shortly") from exc
@@ -172,6 +187,60 @@ class GitHubAppClient:
         if res.status_code in (403, 404):
             raise Forbidden("The GitHub App can't open pull requests there: it needs Pull requests (write)")
         raise GitHubUnavailable(f"GitHub didn't open the pull request ({res.status_code})")
+
+    async def org_installation(self, org: str) -> int:
+        """The app's installation on an organisation (where coding runs' forks live)."""
+        async with httpx.AsyncClient(transport=self.transport, timeout=15) as http:
+            try:
+                res = await http.get(f"{API_URL}/orgs/{org}/installation",
+                                     headers={**HEADERS, "Authorization": f"Bearer {self._app_token()}"})
+            except httpx.HTTPError as exc:
+                raise GitHubUnavailable("GitHub couldn't be reached; try again shortly") from exc
+        if res.status_code == 404:
+            raise Forbidden(f"The GitHub App isn't installed on {org}, where coding runs push their branches")
+        if res.status_code != 200:
+            raise GitHubUnavailable(f"GitHub answered {res.status_code}; try again shortly")
+        return int(res.json()["id"])
+
+    async def fork(self, installation_id: int, full_name: str, *, org: str, name: str) -> Repo:
+        """The app's fork of `full_name` in `org` (GitHub returns the existing one if it's there).
+        Needs Administration (write) on `org`, and the repo readable from there."""
+        token = await self._installation_token(installation_id)
+        async with httpx.AsyncClient(transport=self.transport, timeout=30) as http:
+            try:
+                res = await http.post(
+                    f"{API_URL}/repos/{full_name}/forks",
+                    headers={**HEADERS, "Authorization": f"Bearer {token}"},
+                    json={"organization": org, "name": name, "default_branch_only": True},
+                )
+            except httpx.HTTPError as exc:
+                raise GitHubUnavailable("GitHub couldn't be reached; try again shortly") from exc
+        if res.status_code in (200, 202):
+            return _repo(res.json())
+        if res.status_code in (403, 404, 422):
+            raise Forbidden(
+                f"The GitHub App can't fork {full_name} into {org}: it needs Administration (write) on {org}, "
+                "and a private repo's owner must allow forking"
+            )
+        raise GitHubUnavailable(f"GitHub didn't fork the repository ({res.status_code})")
+
+    async def sync_fork(self, full_name: str, branch: str, *, token: str) -> None:
+        """Bring a fork's `branch` up to its upstream (a new fork may take a few seconds to be ready)."""
+        for attempt in range(FORK_READY_TRIES):
+            async with httpx.AsyncClient(transport=self.transport, timeout=30) as http:
+                try:
+                    res = await http.post(f"{API_URL}/repos/{full_name}/merge-upstream",
+                                          headers={**HEADERS, "Authorization": f"Bearer {token}"},
+                                          json={"branch": branch})
+                except httpx.HTTPError as exc:
+                    raise GitHubUnavailable("GitHub couldn't be reached; try again shortly") from exc
+            if res.status_code == 200:
+                return
+            if res.status_code == 409:
+                raise Conflict(f"{full_name}'s {branch} has commits its upstream doesn't: reset it to the upstream")
+            if res.status_code not in (404, 422) or attempt == FORK_READY_TRIES - 1:
+                raise GitHubUnavailable(f"GitHub didn't update the fork {full_name} ({res.status_code})")
+            await asyncio.sleep(2 * (attempt + 1))
 
     # -- tokens and requests -----------------------------------------------------------
 

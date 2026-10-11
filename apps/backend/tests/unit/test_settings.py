@@ -48,3 +48,13 @@ def test_session_cookies_are_secure_when_deployed(env: str, secure: bool) -> Non
     cookies = [v for k, v in response.raw_headers if k == b"set-cookie" and b"Max-Age=0" not in v]
     session_cookies = [c.decode() for c in cookies if c.split(b"=")[0] in (b"dx_access", b"dx_refresh", b"dx_session")]
     assert session_cookies and all(("; Secure" in c or "; secure" in c) == secure for c in session_cookies)
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+def test_deployed_coding_runs_push_to_a_fork(env: str) -> None:
+    with pytest.raises(ValueError, match="DOTRIX_CODING_FORK_OWNER"):
+        settings(env=env, **DEPLOYED, coding_sandbox="docker")
+    assert settings(env=env, **DEPLOYED, coding_sandbox="docker", coding_fork_owner="dotrix-fork").coding_fork_owner
+    assert settings(env=env, **DEPLOYED).coding_fork_owner is None  # coding off: no fork needed
+    with pytest.raises(ValueError):
+        settings(coding_fork_owner="not/an-org")
