@@ -5,7 +5,9 @@ import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode 
 
 import { closePop, copy, openTask, projMove, setPref, setProjectStatus, setRole, toggleDone, toggleFavProj, toggleFavTask, updateTask } from "../core/actions";
 import { LABELS, PRIOS, PSTAT, STATUSES, type ProjectStatusId } from "../core/constants";
-import { closeSession, deleteSession, renameSession, toggleArchiveSession, togglePinSession } from "../core/agents";
+import { useCloseSession, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
+import { confirmDlg, promptDlg } from "../core/more";
+import { live } from "../data/live";
 import { allowed, canInvite } from "../core/can";
 import { Ic, WsLogo } from "../core/icons";
 import {
@@ -498,30 +500,9 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
       };
     case "session": {
       // A coding session's ⋮ (Chat's Code tab).
-      const cs = D().coding.find((c) => c.id === p.id);
+      const cs = p.session as CodingSession | undefined;
       if (!cs) return null;
-      const it = task(cs.task);
-      const github = cs.repo ? `https://github.com/${cs.repo}` : null;
-      const act = (f: () => void) => () => (closePop(), f());
-      return {
-        style: { width: 230 },
-        inner: (
-          <>
-            {cs.pr && <Mi icon="git-pull-request" label="Open PR" onClick={act(() => window.open(cs.pr!.url, "_blank", "noopener"))} />}
-            {it && <Mi icon="panel-right-open" label="Open issue" onClick={act(() => openTask(it.id))} />}
-            {github && cs.branch && (
-              <Mi icon="external-link" label="Open branch on GitHub" onClick={act(() => window.open(`${github}/tree/${cs.branch}`, "_blank", "noopener"))} />
-            )}
-            <Sep />
-            <Mi icon={cs.pinned ? "pin-off" : "pin"} label={cs.pinned ? "Unpin" : "Pin"} onClick={act(() => togglePinSession(cs.id))} />
-            <Mi icon="pencil" label="Rename" onClick={act(() => renameSession(cs.id))} />
-            <Sep />
-            {cs.state !== "closed" && <Mi icon="power" label="Close session" onClick={act(() => closeSession(cs.id))} />}
-            <Mi icon="archive" label={cs.archived ? "Unarchive" : "Archive"} onClick={act(() => toggleArchiveSession(cs.id))} />
-            <Mi icon="trash-2" label="Delete" danger onClick={act(() => deleteSession(cs.id))} />
-          </>
-        ),
-      };
+      return { style: { width: 230 }, inner: <SessionMenu cs={cs} /> };
     }
     case "user":
       return {
@@ -1058,6 +1039,55 @@ function FilterBuilder({ p }: { p: P }) {
 }
 
 /** The one floating popover. */
+/** A coding session's actions, on the API. */
+function SessionMenu({ cs }: { cs: CodingSession }) {
+  const scope = live.ws ? { workspaceId: live.ws.id, projectId: cs.project_id } : undefined;
+  const update = useUpdateSession(scope, cs.session_id, cs.issue_key);
+  const close = useCloseSession(scope, cs.session_id, cs.issue_key);
+  const remove = useDeleteSession(scope, cs.session_id, cs.issue_key);
+  const it = D().tasks.find((t) => t.key === cs.issue_key);
+  const act = (f: () => void) => () => (closePop(), f());
+  return (
+    <>
+      {cs.pr_url && <Mi icon="git-pull-request" label="Open PR" onClick={act(() => window.open(cs.pr_url!, "_blank", "noopener"))} />}
+      {it && <Mi icon="panel-right-open" label="Open issue" onClick={act(() => openTask(it.id))} />}
+      <Sep />
+      <Mi icon={cs.pinned ? "pin-off" : "pin"} label={cs.pinned ? "Unpin" : "Pin"} onClick={act(() => update.mutate({ pinned: !cs.pinned }))} />
+      <Mi
+        icon="pencil"
+        label="Rename"
+        onClick={act(() =>
+          promptDlg({ title: "Rename session", label: "Name", value: cs.title ?? cs.issue_title, run: (v) => update.mutate({ title: v.trim() || null }) }),
+        )}
+      />
+      <Sep />
+      {cs.state !== "closed" && <Mi icon="power" label="Close session" onClick={act(() => close.mutate())} />}
+      <Mi icon="archive" label={cs.archived ? "Unarchive" : "Archive"} onClick={act(() => update.mutate({ archived: !cs.archived }))} />
+      <Mi
+        icon="trash-2"
+        label="Delete"
+        danger
+        onClick={act(() =>
+          confirmDlg({
+            title: "Delete this session?",
+            body: "Its turns, screenshots, and saved conversation are deleted. The branch and pull request stay on GitHub.",
+            ok: "Delete",
+            danger: true,
+            run: () =>
+              // The menu has closed by now, so the promise (not mutate's callbacks) says when it's gone.
+              remove.mutateAsync().then(
+                () => {
+                  if (new URLSearchParams(location.search).get("session") === cs.session_id) go("chat", {}, { search: "tab=coding" });
+                },
+                () => {},
+              ),
+          }),
+        )}
+      />
+    </>
+  );
+}
+
 export function PopLayer() {
   const p = S.ui.pop as P | null;
   const ref = useRef<HTMLDivElement>(null);

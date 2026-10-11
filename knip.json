@@ -4,7 +4,8 @@
   "ignoreWorkspaces": ["apps/backend", "apps/cli", "packages/engine"],
   "workspaces": {
     "apps/web": {
-      "project": ["**/*.{ts,tsx,css}"]
+      "project": ["**/*.{ts,tsx,css}"],
+      "ignoreDependencies": ["tailwindcss"]
     },
     "apps/desktop": {
       "entry": ["src/preload.ts"],
@@ -17,5 +18,6 @@
     "packages/api-client": {
       "project": ["src/**/*.ts"]
     }
-  }
+  },
+  "ignore": ["infra/coding/egress-proxy.mjs"]
 }

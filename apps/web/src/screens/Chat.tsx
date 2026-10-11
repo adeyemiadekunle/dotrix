@@ -1,30 +1,61 @@
 // dotrix's workspace Chat in Gr8r's design (Gr8r has none): conversations grouped by project (and
 // "All projects"), a new chat with project, agent, and model; replies with what the agent did
-// and the changes it proposes; and the Coding tab, coding sessions with their turns.
-// URL: ?project=KEY&thread=ID, ?tab=coding&session=ID, ?q= (start with a question), ?agent=.
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+// and the changes it proposes; and the Coding tab, coding sessions with their turns. Conversations
+// and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
+// URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?tab=coding&session=ID, ?q=, ?agent=.
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
-import { continueLimited, decideCoding, followUp, newThread, sendChat, startCoding, stopCoding } from "../core/agents";
+import {
+  isActive,
+  modelName,
+  runTitle,
+  useContinueRun,
+  useModels,
+  useRunStream,
+  useSendMessage,
+  useStopRun,
+  useThread,
+  useWorkspaceThreads,
+  wasStopped,
+  type AgentId,
+  type Run,
+  type RunStreamState,
+} from "@/lib/agent";
+import {
+  AGENT_NAMES,
+  useCodingAvailability,
+  useCodingSession,
+  useCodingSessions,
+  useDecideCoding,
+  useFollowUp,
+  useStartCoding,
+  useStopCoding,
+  type CodingSession,
+} from "@/lib/coding";
+import { useCrossConversations, useCrossStream, useCrossThread, useSendCross, useStopCross } from "@/lib/conversations";
+import type { Scope } from "@/lib/issues";
 import { LimitNotice } from "../components/LimitNotice";
 import { openPop, openTask } from "../core/actions";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { MOD, ago, greeting } from "../core/utils";
+import { live } from "../data/live";
 import { D, S, canSee, me, pColor, proj, projByKey, render, task, visibleProjects, who } from "../data/store";
-import type { CodingSession, Thread } from "../data/types";
 import { Markdown } from "@/components/markdown";
-import { Changes } from "../components/Changes";
+import { RunApprovals } from "../components/RunApprovals";
 import { openDocument } from "./Knowledge";
 import { Av, Empty, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { useAtPicker } from "../components/AtPicker";
-import { PaneToolbar, SessionPanels, panesOf, togglePane, type Pane } from "../components/SessionPanel";
 import { Splitter, useStoredFlag, useStoredSize } from "../ui/splitter";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
-const MODELS = ["Gemini 3.8 Flash", "Claude Sonnet 5.5", "Claude Opus 5.5", "GPT-5.5"];
 const agentName = (h: string) => D().agents.find((a) => a.handle === h)?.name ?? h;
+const ms = (at: string | null | undefined) => (at ? new Date(at).getTime() : Date.now());
+/** An agent as the store names it: the project manager is "auto". */
+const handleOf = (a: string | null | undefined) => (!a || a === "project-manager" || a === "pm" ? "auto" : a);
+const wsId = () => live.ws?.id;
 
 const SUGGESTIONS = [
   ["sparkles", "Summarise the project"],
@@ -43,23 +74,62 @@ function open(search: string) {
 
 /* ---------- the list ---------- */
 
-function ThreadRow({ th, on }: { th: Thread; on: boolean }) {
-  const waiting = th.messages.some((m) => m.changes?.some((c) => c.status === "pending"));
+/** A conversation in the list: one in a project, or one across projects. */
+interface Row {
+  id: string;
+  title: string;
+  at: number;
+  projectId: string | null;
+  projectKey: string | null;
+  projectKeys: string[];
+  waiting: boolean;
+}
+
+function useRows(ws: string | undefined) {
+  const own = useWorkspaceThreads(ws);
+  const cross = useCrossConversations(ws);
+  const rows: Row[] = [
+    ...(own.data ?? []).map((t) => ({
+      id: t.thread_id,
+      title: t.title,
+      at: ms(t.updated_at),
+      projectId: t.project_id,
+      projectKey: t.project_key,
+      projectKeys: [],
+      waiting: t.waiting,
+    })),
+    ...(cross.data ?? []).map((c) => ({
+      id: c.thread_id,
+      title: c.title,
+      at: ms(c.updated_at),
+      projectId: null,
+      projectKey: null,
+      projectKeys: c.project_keys,
+      waiting: false,
+    })),
+  ];
+  return { rows, loaded: own.isFetched && cross.isFetched };
+}
+
+const threadSearch = (r: Pick<Row, "id" | "projectKey">) => (r.projectKey ? `thread=${r.id}&project=${r.projectKey}` : `thread=${r.id}&across=1`);
+
+function ThreadRow({ row, on }: { row: Row; on: boolean }) {
   return (
     <button
       className={`sitem ${on ? "on" : ""}`}
       style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start" }}
-      onClick={() => open(`thread=${th.id}`)}
+      onClick={() => open(threadSearch(row))}
     >
       <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
         <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
-          {th.title}
+          {row.title}
         </span>
         <span className="faint" style={{ fontSize: 11.5 }}>
-          {agentName(th.agent)} · {ago(th.at)}
+          {row.projectKeys.length > 0 && `${row.projectKeys.join(", ")} · `}
+          {ago(row.at)}
         </span>
       </span>
-      {waiting && <span className="sdot" style={{ background: "var(--amber)", marginTop: 6 }} aria-label="Waiting for a decision" />}
+      {row.waiting && <span className="sdot" style={{ background: "var(--amber)", marginTop: 6 }} aria-label="Waiting for a decision" />}
     </button>
   );
 }
@@ -101,29 +171,28 @@ const STATUS: Record<CodingSession["status"], [string, string]> = {
   stopped: ["Stopped", ""],
   rejected: ["Rejected", "red"],
 };
-const toolName = (t: CodingSession["tool"]) => (t === "codex" ? "Codex" : "Claude Code");
+const BUSY: CodingSession["status"][] = ["awaiting_approval", "queued", "running"];
 
 function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
-  const t = task(cs.task);
   const [label, c] = STATUS[cs.status];
   return (
     <div className={`cs-row ${on ? "on" : ""}`}>
       <button
         className={`sitem ${on ? "on" : ""}`}
         style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start", width: "100%" }}
-        onClick={() => open(`tab=coding&session=${cs.id}`)}
+        onClick={() => open(`tab=coding&session=${cs.session_id}`)}
       >
         <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
           <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
             {cs.pinned && <Ic n="pin" s={11} cls="cs-pin" />}
             <span className="mono faint" style={{ fontSize: 11 }}>
-              {t?.key}
+              {cs.issue_key}
             </span>{" "}
-            {cs.title ?? t?.title}
+            {cs.title ?? cs.issue_title}
           </span>
           <span className="row faint" style={{ fontSize: 11.5, gap: 6 }}>
-            {toolName(cs.tool)} · {ago(cs.at)}
-            {cs.pr && <span>· PR #{cs.pr.number}</span>}
+            {AGENT_NAMES[cs.agent]} · {ago(ms(cs.updated_at))}
+            {cs.pr_number && <span>· PR #{cs.pr_number}</span>}
           </span>
         </span>
         <span className={`badge ${c}`} style={{ marginTop: 2 }}>
@@ -132,11 +201,11 @@ function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
       </button>
       <button
         className="ibtn ibtn-xs cs-more"
-        onClick={(e) => openPop(e.currentTarget, "session", { id: cs.id })}
-        aria-label={`More for ${t?.key ?? "this session"}`}
+        onClick={(e) => openPop(e.currentTarget, "session", { id: cs.session_id, session: cs })}
+        aria-label={`More for ${cs.issue_key}`}
         aria-haspopup="menu"
       >
-        <Ic n="ellipsis-vertical" s={14} />
+        <Ic n="ellipsis" s={14} />
       </button>
     </div>
   );
@@ -144,42 +213,50 @@ function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
 
 /* ---------- a conversation ---------- */
 
+/** One message as Chat draws it: what someone asked, or an agent's reply. */
+interface Msg {
+  id: string;
+  role: "user" | "agent";
+  by: string; // member id, or agent handle
+  at: number;
+  text: string; // Markdown
+  activity?: string[];
+  tokens?: number;
+}
+
 /** Issue keys a reply names, and documents it read: chips that open them. */
-function refsOf(th: Thread, text: string, activity: string[] = []): { tasks: string[]; docs: string[] } {
+function refsOf(projectId: string | null, text: string, activity: string[] = []): { tasks: string[]; docs: string[] } {
   const tasks = [...new Set(text.match(/\b[A-Z]{2,6}-\d+\b/g) ?? [])].filter((k) => D().tasks.some((t) => t.key === k)).slice(0, 4);
-  const p = proj(th.project);
-  const docs = p
+  const docs = projectId
     ? [...new Set(activity.flatMap((a) => a.match(/[\w./-]+\.md\b/g) ?? []))]
-        .map((n) => D().knowledge.find((f) => f.project === p.id && (f.path === n || f.path.endsWith(`/${n}`)))?.path)
+        .map((n) => D().knowledge.find((f) => f.project === projectId && (f.path === n || f.path.endsWith(`/${n}`)))?.path)
         .filter((x): x is string => Boolean(x))
         .slice(0, 4)
     : [];
   return { tasks, docs };
 }
 
-function Message({ th, i }: { th: Thread; i: number }) {
-  const m = th.messages[i]!;
+function Message({ m, projectId, children }: { m: Msg; projectId: string | null; children?: React.ReactNode }) {
   const w = who(m.by);
   const agent = m.role === "agent" ? D().agents.find((a) => a.handle === m.by) : null;
   const [openSteps, setOpenSteps] = useState(false);
-  const refs = agent ? refsOf(th, m.text, m.activity) : { tasks: [], docs: [] };
-  const p = proj(th.project);
+  const refs = m.role === "agent" ? refsOf(projectId, m.text, m.activity) : { tasks: [], docs: [] };
+  const p = proj(projectId ?? "");
   const admin = me()?.role === "Owner" || me()?.role === "Admin";
   return (
     <div className={`chat-msg ${m.role}`}>
-      {agent ? <Face c={agent.c} size={26} mood="idle" /> : <Av id={m.by} cls="md" tip={false} />}
+      {m.role === "agent" ? <Face c={agent?.c ?? "#57544E"} size={26} mood="idle" /> : <Av id={m.by} cls="md" tip={false} />}
       <div className="body">
         <div className="who">
-          <b>{m.by === D().me ? "You" : w?.name}</b>
+          <b>{m.role === "agent" ? (agent?.name ?? agentName(m.by)) : m.by === D().me ? "You" : w?.name}</b>
           {agent && <span className="role">{agent.role}</span>}
           <time>{ago(m.at)}</time>
-          {m.tokens && admin && <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span>}
+          {m.tokens && admin ? <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span> : null}
         </div>
         {m.activity && m.activity.length > 0 && (
           <div className="chat-steps">
             <button className="chat-steps-h" onClick={() => setOpenSteps(!openSteps)} aria-expanded={openSteps}>
-              <Ic n="chevron-right" s={12} cls={`chev ${openSteps ? "open" : ""}`} />
-              <Ic n="sparkles" s={12} />
+              <Ic n={openSteps ? "chevron-down" : "chevron-right"} s={12} />
               Worked through {m.activity.length} step{m.activity.length > 1 ? "s" : ""}
             </button>
             {openSteps && (
@@ -197,9 +274,11 @@ function Message({ th, i }: { th: Thread; i: number }) {
         {m.role === "user" ? (
           <div className="said">{m.text}</div>
         ) : (
-          <div className="md">
-            <Markdown>{m.text}</Markdown>
-          </div>
+          m.text && (
+            <div className="md">
+              <Markdown>{m.text}</Markdown>
+            </div>
+          )
         )}
         {(refs.tasks.length > 0 || refs.docs.length > 0) && (
           <div className="chat-refs">
@@ -218,17 +297,48 @@ function Message({ th, i }: { th: Thread; i: number }) {
               ))}
           </div>
         )}
-        <Changes msg={m} />
-        {m.limit && !m.limit.continued && (
-          <LimitNotice
-            provider={m.limit.provider}
-            resetsAt={m.limit.resetsAt}
-            whenReset={m.limit.whenReset}
-            onContinue={(w) => continueLimited({ thread: th.id, project: th.project ?? undefined }, w)}
-          />
-        )}
+        {children}
       </div>
     </div>
+  );
+}
+
+/** A run as two messages: what was asked, and the agent's reply (as it's written, while it works). */
+function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: string | null; scope: Scope | undefined; stream: RunStreamState | null }) {
+  const cont = useContinueRun(scope);
+  const limited = run.error_kind === "model_limit";
+  const failed = run.status === "failed" && !limited;
+  const text = stream ? stream.text : (run.reply ?? "");
+  const reply: Msg = {
+    id: `${run.id}-reply`,
+    role: "agent",
+    by: handleOf(run.agent),
+    at: ms(run.finished_at ?? run.updated_at),
+    text: failed ? (wasStopped(run) ? "Stopped." : (run.error ?? "It didn't finish.")) : text,
+    activity: stream?.activity ? [stream.activity] : undefined,
+    tokens: (run.input_tokens ?? 0) + (run.output_tokens ?? 0) || undefined,
+  };
+  const shows = !stream || stream.text;
+  return (
+    <>
+      <Message
+        m={{ id: run.id, role: "user", by: run.requested_by_id ?? D().me, at: ms(run.created_at), text: run.message || runTitle(run) }}
+        projectId={projectId}
+      />
+      {shows && (reply.text || run.approvals?.length || limited) ? (
+        <Message m={reply} projectId={projectId}>
+          {projectId && <RunApprovals run={run} scope={scope} />}
+          {limited && projectId && (
+            <LimitNotice
+              said={run.error ?? undefined}
+              resetsAt={run.resumes_at ? ms(run.resumes_at) : null}
+              whenReset={run.continue_at_reset}
+              onContinue={(whenReset) => cont.mutate({ runId: run.id, whenReset })}
+            />
+          )}
+        </Message>
+      ) : null}
+    </>
   );
 }
 
@@ -270,6 +380,7 @@ function Composer({
   setAgent,
   model,
   setModel,
+  models,
   autoFocus,
   initial = "",
   context,
@@ -282,6 +393,7 @@ function Composer({
   setAgent: (a: string) => void;
   model?: string;
   setModel?: (m: string) => void;
+  models?: [string, string][];
   autoFocus?: boolean;
   initial?: string;
   context?: string;
@@ -356,8 +468,8 @@ function Composer({
             label="Agent"
             lead={a && <Face c={a.c} size={16} mood="idle" />}
           />
-          {setModel ? (
-            <Pick value={model ?? MODELS[0]!} onChange={setModel} options={MODELS.map((x) => [x, x])} label="Model" lead={<Ic n={MODELS_ICON} s={12} />} />
+          {setModel && models?.length ? (
+            <Pick value={model ?? ""} onChange={setModel} options={models ?? []} label="Model" lead={<Ic n={MODELS_ICON} s={12} />} />
           ) : (
             model && (
               <span className="cpill" data-tip="The model is fixed once a conversation starts">
@@ -377,14 +489,33 @@ function Composer({
   );
 }
 
-function Conversation({ th }: { th: Thread }) {
-  const p = proj(th.project);
-  const busy = S.ui.chatBusy === th.id;
+function Conversation({ id, projectId, title }: { id: string; projectId: string | null; title: string }) {
+  const ws = wsId();
+  const p = proj(projectId ?? "");
+  const scope = useMemo(() => (ws && projectId ? { workspaceId: ws, projectId } : undefined), [ws, projectId]);
+  const own = useThread(scope, projectId ? id : null);
+  const cross = useCrossThread(ws, projectId ? null : id);
+  const runs = (projectId ? own.data : cross.data) ?? [];
+  const last = runs.at(-1);
+  const active = Boolean(last && isActive(last));
+  const ownStream = useRunStream(scope, last?.id ?? "", Boolean(projectId) && active);
+  const crossStream = useCrossStream(ws, last?.id ?? "", !projectId && active);
+  const stream = projectId ? ownStream : crossStream;
+  const send = useSendMessage(scope);
+  const sendCross = useSendCross(ws);
+  const stop = useStopRun(scope);
+  const stopCross = useStopCross(ws);
+  const [picked, setAgent] = useState<string | null>(null);
+  const agent = picked ?? handleOf(last?.agent);
   const end = useRef<HTMLDivElement>(null);
-  const [agent, setAgent] = useState(th.agent);
+  const busy = active && !stream.text;
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
-  }, [th.id, th.messages.length, busy]);
+  }, [id, runs.length, busy, stream.text]);
+  const say = (message: string, a: string) =>
+    projectId ? send.mutate({ message, threadId: id, agent: a as AgentId }) : sendCross.mutate({ message, thread_id: id, agent: a as AgentId });
+  const halt = () => last && (projectId ? stop.mutate(last.id) : stopCross.mutate(last.id));
+  const about = [...new Set(runs.flatMap((r) => r.project_ids ?? []))].map((pid) => proj(pid)?.name).filter(Boolean);
   return (
     <>
       <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
@@ -392,7 +523,7 @@ function Conversation({ th }: { th: Thread }) {
           <Ic n="arrow-left" s={15} />
         </button>
         <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
-          {th.title}
+          {title || (runs[0] ? (runs[0].title ?? runTitle(runs[0])) : "")}
         </b>
         <span className="sp" />
         {p ? (
@@ -403,11 +534,11 @@ function Conversation({ th }: { th: Thread }) {
         ) : (
           <span className="pillbtn">
             <Ic n="layers" s={13} />
-            {(th.projects ?? []).map((id) => proj(id)?.name).join(", ") || "All projects"}
+            {about.join(", ") || "All projects"}
           </span>
         )}
         <span className="chat-faces hide-m" aria-label="Agents in this conversation">
-          {[...new Set(th.messages.filter((x) => x.role === "agent").map((x) => x.by))].map((h) => {
+          {[...new Set(runs.map((r) => handleOf(r.agent)))].map((h) => {
             const ag = D().agents.find((x) => x.handle === h);
             return ag ? (
               <span key={h} data-tip={`${ag.name} · ${ag.role}`}>
@@ -419,24 +550,30 @@ function Conversation({ th }: { th: Thread }) {
       </div>
       <div className="chat-scroll">
         <div className="chat-col">
-          {th.messages.map((_, i) => (
-            <Message key={th.messages[i]!.id} th={th} i={i} />
+          {runs.map((r) => (
+            <RunMessages key={r.id} run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
           ))}
-          {busy && (
+          {active && (
             <div className="chat-msg">
               <Face c={D().agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={26} mood="working" />
               <div className="body">
-                <div className="who">
-                  <b>{agentName(agent)}</b>
-                  <span className="role">{D().agents.find((a) => a.handle === agent)?.role}</span>
-                </div>
+                {busy && (
+                  <div className="who">
+                    <b>{agentName(agent)}</b>
+                    <span className="role">{D().agents.find((a) => a.handle === agent)?.role}</span>
+                  </div>
+                )}
                 <div className="row muted" style={{ gap: 8, fontSize: 12.5, marginTop: 6 }}>
                   <span className="chat-typing">
                     <i />
                     <i />
                     <i />
                   </span>
-                  {agentName(agent)} is reading the project's documents…
+                  {stream.activity ?? `${agentName(agent)} is reading the project's documents…`}
+                  <span className="sp" />
+                  <button className="btn btn-sm btn-ghost" onClick={halt}>
+                    Stop
+                  </button>
                 </div>
               </div>
             </div>
@@ -449,12 +586,12 @@ function Conversation({ th }: { th: Thread }) {
           placeholder={`Ask ${agentName(agent)}, or type @ to pick an agent`}
           agent={agent}
           setAgent={setAgent}
-          model={th.model}
+          model={modelName(last?.conversation_model) || undefined}
           context={p?.name ?? "All projects"}
-          onSend={(q, a) => sendChat(th, q, a)}
+          onSend={say}
           autoFocus
         />
-        {!th.project && (
+        {!projectId && (
           <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
             <Ic n="lock" s={11} /> In all projects the agents only read; for a change they'll say which project's chat to ask in.
           </div>
@@ -465,16 +602,24 @@ function Conversation({ th }: { th: Thread }) {
 }
 
 function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null; across: boolean; q: string; agent0: string | null }) {
+  const ws = wsId();
   const ps = visibleProjects().filter((p) => canSee(p) && !p.archived);
   const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ps[0]?.id ?? ""));
   const [picked, setPicked] = useState<string[]>(ps.slice(0, 3).map((p) => p.id));
   const [agent, setAgent] = useState(agent0 ?? S.ui.chatAgent);
-  const [model, setModel] = useState(S.ui.chatModel);
+  const models = useModels(ws).data ?? [];
+  const [chosen, setModel] = useState<string | null>(null);
+  const model = chosen ?? models[0]?.id ?? "";
+  const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
+  const send = useSendMessage(scope);
+  const sendCross = useSendCross(ws);
   const start = (text: string, a: string) => {
     S.ui.chatAgent = a;
-    S.ui.chatModel = model;
-    const th = pid ? newThread(pid, a, model, text) : newThread(null, a, model, text, picked);
-    if (th) open(`thread=${th.id}`);
+    const body = { agent: a as AgentId, model: model || null };
+    const started = pid
+      ? send.mutateAsync({ message: text, threadId: null, ...body }).then((run) => `thread=${run.thread_id}&project=${proj(pid)?.key}`)
+      : sendCross.mutateAsync({ message: text, thread_id: null, project_ids: picked, ...body }).then((run) => `thread=${run.thread_id}&across=1`);
+    started.then(open, () => {});
   };
   const sugg = pid ? SUGGESTIONS : ACROSS;
   return (
@@ -487,7 +632,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           Ask the agents about a project: they read its documents and board, and propose changes for you to approve.
         </p>
         {!pid && (
-          <div className="row" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap", justifyContent: "center" }}>
+          <div className="row" role="group" aria-label="Projects" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap", justifyContent: "center" }}>
             <span className="faint" style={{ fontSize: 12 }}>
               Projects
             </span>
@@ -510,6 +655,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           setAgent={setAgent}
           model={model}
           setModel={setModel}
+          models={models.map((m): [string, string] => [m.id, m.name])}
           context={pid}
           contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "All projects"]]}
           setContext={setPid}
@@ -532,11 +678,6 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
 
 /* ---------- a new coding session ---------- */
 
-const TOOLS: ["claude-code" | "codex", string][] = [
-  ["claude-code", "Claude Code"],
-  ["codex", "Codex"],
-];
-
 function NewSession({ issue0 }: { issue0: string | null }) {
   // Issues a tool could work on: open ones in the projects you see, and in an organisation only yours.
   const ps = new Set(
@@ -547,17 +688,24 @@ function NewSession({ issue0 }: { issue0: string | null }) {
   const personal = D().ws.kind === "personal";
   const mine = D().tasks.filter((t) => ps.has(t.project) && !t.archived && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me));
   const [tid, setTid] = useState(issue0 ? (D().tasks.find((t) => t.key === issue0)?.id ?? "") : "");
-  const [tool, setTool] = useState<"claude-code" | "codex">("claude-code");
   const [note, setNote] = useState("");
   const [menu, setMenu] = useState<string | null>(null);
   const [hl, setHl] = useState(0);
   const ref = useRef<HTMLTextAreaElement>(null);
   const t = task(tid);
+  const ws = wsId();
+  const pid = t?.project;
+  const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
+  const avail = useCodingAvailability(scope).data;
+  const start = useStartCoding(scope, t?.key ?? "");
   const found = menu === null ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes(menu.toLowerCase())).slice(0, 8);
   const go_ = () => {
     if (!t) return;
-    const id = startCoding(t, tool, note);
-    if (id) open(`tab=coding&session=${id}`);
+    if (avail?.available === false || start.isPending) return;
+    start.mutateAsync(note.trim() || null).then(
+      (run) => open(`tab=coding&session=${run.session_id}`),
+      () => {},
+    );
   };
   const onText = (el: HTMLTextAreaElement) => {
     setNote(el.value);
@@ -637,19 +785,17 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                   Issue
                 </button>
               )}
-              <div className="seg" role="radiogroup" aria-label="Tool">
-                {TOOLS.map(([id, name]) => (
-                  <button key={id} role="radio" aria-checked={tool === id} className={tool === id ? "on" : ""} onClick={() => setTool(id)}>
-                    <Face c={who(`agent:${id}`)?.c ?? "var(--acc)"} size={14} />
-                    {name}
-                  </button>
-                ))}
-              </div>
+              {avail && (
+                <span className="cpill" data-tip={avail.available ? "The coding tool this server runs" : (avail.reason ?? undefined)}>
+                  <Ic n="bot" s={12} />
+                  {avail.available && avail.agent ? AGENT_NAMES[avail.agent] : "Coding is off"}
+                </span>
+              )}
               <span className="sp" />
               <span className="faint hide-m" style={{ fontSize: 11 }}>
                 {MOD}+Enter to start
               </span>
-              <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t}>
+              <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t || avail?.available === false || start.isPending}>
                 <Ic n="code" s={13} />
                 Start coding
               </button>
@@ -698,62 +844,23 @@ function NewSession({ issue0 }: { issue0: string | null }) {
 
 /* ---------- a coding session ---------- */
 
-/** What the session changed in the repo: each file with its lines added and removed. */
-function WorkingTree({ cs }: { cs: CodingSession }) {
-  const files = cs.files ?? [];
-  const added = files.reduce((n, f) => n + f.added, 0);
-  const removed = files.reduce((n, f) => n + f.removed, 0);
-  const href = cs.pr ? `${cs.pr.url}/files` : cs.repo && cs.branch ? `https://github.com/${cs.repo}/compare/${cs.base?.branch ?? "main"}...${cs.branch}` : null;
-  return (
-    <section className="panel cs-tree" aria-label="Working tree" style={{ marginBottom: 16 }}>
-      <div className="row cs-tree-h">
-        <Ic n="file-diff" s={14} />
-        <b>Working tree</b>
-        <span className="faint">
-          {files.length} {files.length === 1 ? "file" : "files"}
-        </span>
-        <span className="cs-add">+{added}</span>
-        <span className="cs-del">−{removed}</span>
-        <span className="sp" />
-        {href && (
-          <a href={href} target="_blank" rel="noreferrer" className="btn btn-sm btn-ghost">
-            <Ic n="external-link" s={13} />
-            {cs.pr ? "Files in the PR" : "Compare"}
-          </a>
-        )}
-      </div>
-      {files.map((f) => (
-        <div key={f.path} className="row cs-file">
-          <span className={`cs-st ${f.status ?? "modified"}`} title={f.status ?? "modified"}>
-            {f.status === "added" ? "A" : f.status === "deleted" ? "D" : "M"}
-          </span>
-          <span className="mono trunc grow">{f.path}</span>
-          <span className="cs-add">+{f.added}</span>
-          <span className="cs-del">−{f.removed}</span>
-          <span className="cs-bar" aria-hidden>
-            {Array.from({ length: 5 }, (_, i) => {
-              const total = f.added + f.removed || 1;
-              const greens = Math.round((f.added / total) * 5);
-              return <i key={i} className={i < greens ? "a" : "d"} />;
-            })}
-          </span>
-        </div>
-      ))}
-    </section>
-  );
-}
+const fileOf = (f: Record<string, unknown>) => String(f.path ?? f.file ?? f.name ?? "");
 
-/** `?pane=` for these panels (none: the session alone). */
-export const paneSearch = (session: string, panes: Pane[]) => `tab=coding&session=${session}${panes.length ? `&pane=${panes.join(",")}` : ""}`;
-
-function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
-  const t = task(cs.task)!;
-
-  const p = proj(cs.project)!;
+function Session({ cs }: { cs: CodingSession }) {
+  const ws = wsId();
+  const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
+  const turns = useCodingSession(scope, cs.session_id).data ?? [];
+  const latest = turns.at(-1);
+  const decide = useDecideCoding(scope, cs.issue_key);
+  const stop = useStopCoding(scope, cs.issue_key);
+  const follow = useFollowUp(scope, cs.session_id, cs.issue_key);
+  const t = D().tasks.find((x) => x.key === cs.issue_key);
+  const p = proj(cs.project_id);
+  const tool = AGENT_NAMES[cs.agent];
   const [ask, setAsk] = useState("");
   const [label, c] = STATUS[cs.status];
-  const busy = cs.status === "awaiting_approval" || cs.status === "running" || cs.status === "queued";
-  // Its details (tool, project, repo, branches, commits, PR) float over the chat from the ⋮: on hover,
+  const busy = BUSY.includes(cs.status) || cs.state === "closed";
+  // Its details (tool, project, repo, branches, commit, PR) float over the chat from the ⋮: on hover,
   // or pinned by a click until a click elsewhere or Escape.
   const [info, setInfo] = useState<null | "hover" | "pinned">(null);
   // A screenshot opened large over everything; Escape or a click closes it.
@@ -766,7 +873,7 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
   }, [shot]);
   const infoBtn = useRef<HTMLButtonElement>(null);
   const leave = useRef<number>(0);
-  useEffect(() => setInfo(null), [cs.id]);
+  useEffect(() => setInfo(null), [cs.session_id]);
   useEffect(() => {
     if (info !== "pinned") return;
     const away = (e: MouseEvent) => {
@@ -788,7 +895,14 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
   const hoverOut = () => {
     leave.current = window.setTimeout(() => setInfo((i) => (i === "hover" ? null : i)), 180);
   };
+  const send = () => {
+    if (busy || !ask.trim()) return;
+    follow.mutate(ask.trim());
+    setAsk("");
+  };
   const at = infoBtn.current?.getBoundingClientRect();
+  const files = latest?.files_changed ?? [];
+  const shotSrc = (runId: string, index: number) => `/v1/workspaces/${ws}/projects/${cs.project_id}/coding/runs/${runId}/screenshots/${index}`;
   return (
     <>
       <div className="row cs-head">
@@ -798,14 +912,14 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
         <button
           className="mono faint cs-key"
           style={{ fontSize: 12, whiteSpace: "nowrap" }}
-          onClick={() => openTask(t.id)}
+          onClick={() => t && openTask(t.id)}
           data-tip="Open the issue"
-          aria-label={`Open ${t.key}`}
+          aria-label={`Open ${cs.issue_key}`}
         >
-          {t.key}
+          {cs.issue_key}
         </button>
         <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
-          {t.title}
+          {cs.title ?? cs.issue_title}
         </b>
         <button
           ref={infoBtn}
@@ -821,7 +935,6 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
         </button>
         <span className={`badge ${c}`}>{label}</span>
         <span className="sp" />
-        {panes.length === 0 && <PaneToolbar cs={cs} panes={panes} onToggle={(p) => open(paneSearch(cs.id, togglePane(panes, p)))} />}
       </div>
       {shot && (
         <div className="cs-lightbox" role="dialog" aria-label={`Screenshot: ${shot.name}`} onClick={() => setShot(null)}>
@@ -843,15 +956,15 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
               <Ic n="bot" s={14} />
               Tool
             </dt>
-            <dd>{toolName(cs.tool)}</dd>
+            <dd>{tool}</dd>
             <dt>
               <Ic n="folder" s={14} />
               Project
             </dt>
             <dd>
               <span className="row" style={{ gap: 6 }}>
-                <span className="pdot" style={css({ "--c": pColor(p) })} />
-                {p.name}
+                {p && <span className="pdot" style={css({ "--c": pColor(p) })} />}
+                {cs.project_name}
               </span>
             </dd>
             <dt>
@@ -859,12 +972,18 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
               Repository
             </dt>
             <dd>
-              {cs.repo ? (
-                <a href={`https://github.com/${cs.repo}`} target="_blank" rel="noreferrer" className="mono" style={{ fontSize: 12, color: "var(--acc)" }}>
-                  {cs.repo}
+              {latest?.repo_full_name ? (
+                <a
+                  href={`https://github.com/${latest.repo_full_name}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mono"
+                  style={{ fontSize: 12, color: "var(--acc)" }}
+                >
+                  {latest.repo_full_name}
                 </a>
               ) : (
-                <span className="faint">No repository connected to {p.name}</span>
+                <span className="faint">No repository connected to {cs.project_name}</span>
               )}
             </dd>
             <dt>
@@ -872,28 +991,22 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
               Branch
             </dt>
             <dd className="mono" style={{ fontSize: 12 }}>
-              {cs.base && (
+              {latest?.base_branch && (
                 <span className="faint">
-                  {cs.base.branch}@{cs.base.sha.slice(0, 7)} →{" "}
+                  {latest.base_branch}
+                  {latest.base_sha ? `@${latest.base_sha.slice(0, 7)}` : ""} →{" "}
                 </span>
               )}
               {cs.branch ?? <span className="faint">a new branch, made when it starts</span>}
             </dd>
             <dt>
               <Ic n="git-commit-horizontal" s={14} />
-              Commits
+              Commit
             </dt>
             <dd>
-              {cs.commits?.length ? (
-                <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  {cs.commits.map((m) => (
-                    <span key={m.sha} className="row" style={{ gap: 8 }}>
-                      <span className="mono faint" style={{ fontSize: 12 }}>
-                        {m.sha.slice(0, 7)}
-                      </span>
-                      <span className="trunc">{m.message}</span>
-                    </span>
-                  ))}
+              {latest?.commit_sha ? (
+                <span className="mono faint" style={{ fontSize: 12 }}>
+                  {latest.commit_sha.slice(0, 7)}
                 </span>
               ) : (
                 <span className="faint">none yet</span>
@@ -904,10 +1017,10 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
               Pull request
             </dt>
             <dd>
-              {cs.pr ? (
-                <a href={cs.pr.url} target="_blank" rel="noreferrer" className="row" style={{ gap: 6, color: "var(--acc)" }}>
-                  #{cs.pr.number}
-                  <span className={`badge ${cs.pr.state === "merged" ? "accent" : cs.pr.state === "open" ? "green" : ""}`}>{cs.pr.state}</span>
+              {cs.pr_url && cs.pr_number ? (
+                <a href={cs.pr_url} target="_blank" rel="noreferrer" className="row" style={{ gap: 6, color: "var(--acc)" }}>
+                  #{cs.pr_number}
+                  {cs.pr_state && <span className={`badge ${cs.pr_state === "merged" ? "accent" : cs.pr_state === "open" ? "green" : ""}`}>{cs.pr_state}</span>}
                 </a>
               ) : (
                 <span className="faint">none yet</span>
@@ -918,45 +1031,77 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
       )}
       <div className="chat-scroll">
         <div className="chat-col">
-          {cs.files && cs.files.length > 0 && <WorkingTree cs={cs} />}
-          {cs.turns.map((turn, i) => (
-            <div key={i} style={{ marginBottom: 14 }}>
+          {files.length > 0 && (
+            <div className="change" aria-label="Files changed">
+              <div className="change-h">
+                <Ic n="files" s={14} />
+                <b style={{ fontWeight: 500 }}>
+                  {files.length} file{files.length > 1 ? "s" : ""} changed
+                </b>
+              </div>
+              <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
+                {files.map((f, i) => (
+                  <span key={i} className="trunc">
+                    {fileOf(f)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {turns.map((turn, i) => (
+            <div key={turn.id} style={{ marginBottom: 14 }}>
               <div className="chat-msg user">
-                <Av id={cs.by} cls="md" tip={false} />
+                <Av id={turn.requested_by_id ?? D().me} cls="md" tip={false} />
                 <div className="body">
                   <div className="who">
-                    <b>{who(cs.by)?.name}</b>
+                    <b>{turn.requested_by_id === D().me ? "You" : (who(turn.requested_by_id ?? "")?.name ?? "Someone")}</b>
                     <time>
-                      Turn {i + 1} · {ago(turn.at)}
+                      Turn {i + 1} · {ago(ms(turn.created_at))}
                     </time>
                   </div>
-                  <div className="bubble">{turn.ask}</div>
+                  <div className="bubble">{turn.note || `Work on ${cs.issue_key}: ${cs.issue_title}`}</div>
                 </div>
               </div>
-              {(turn.events.length > 0 || turn.summary) && (
+              {(turn.events.length > 0 || turn.summary || turn.error) && (
                 <div className="chat-msg">
-                  <Av id={`agent:${cs.tool}`} cls="md" tip={false} />
+                  <Av id={`agent:${cs.agent}`} cls="md" tip={false} />
                   <div className="body">
                     <div className="who">
-                      <b>{toolName(cs.tool)}</b>
+                      <b>{tool}</b>
                     </div>
                     <div className="chat-act" style={{ flexDirection: "column", gap: 2 }}>
-                      {turn.events.map((e) => (
-                        <span key={e}>
-                          <Ic n="chevron-right" s={11} />
-                          {e}
-                        </span>
-                      ))}
-                    </div>
-                    {turn.summary && <div className="md">{turn.summary}</div>}
-                    {turn.shots && turn.shots.length > 0 && (
-                      <div className="cs-shots" aria-label="Screenshots from the browser">
-                        {turn.shots.map((s) => (
-                          <button key={s.src} className="cs-shot" onClick={() => setShot(s)} aria-label={`Open the screenshot ${s.name}`}>
-                            <img src={s.src} alt={`Screenshot: ${s.name}`} loading="lazy" />
-                            <span className="faint trunc">{s.name}</span>
-                          </button>
+                      {turn.events
+                        .filter((e) => e.kind !== "text")
+                        .slice(-30)
+                        .map((e, j) => (
+                          <span key={j}>
+                            <Ic n={e.kind === "error" ? "triangle-alert" : "check"} s={11} />
+                            {e.text}
+                          </span>
                         ))}
+                    </div>
+                    {turn.summary && (
+                      <div className="md">
+                        <Markdown>{turn.summary}</Markdown>
+                      </div>
+                    )}
+                    {turn.error && <div className="faint">{turn.error}</div>}
+                    {(turn.screenshots ?? []).length > 0 && (
+                      <div className="cs-shots" aria-label="Screenshots from the browser">
+                        {(turn.screenshots ?? []).map((sh) => {
+                          const src = shotSrc(turn.id, sh.index);
+                          return (
+                            <button
+                              key={sh.index}
+                              className="cs-shot"
+                              onClick={() => setShot({ src, name: sh.name })}
+                              aria-label={`Open the screenshot ${sh.name}`}
+                            >
+                              <img src={src} alt={`Screenshot: ${sh.name}`} loading="lazy" />
+                              <span className="faint trunc">{sh.name}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -964,7 +1109,7 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
               )}
             </div>
           ))}
-          {cs.status === "awaiting_approval" && (
+          {latest?.status === "awaiting_approval" && (
             <div className="change">
               <div className="change-h">
                 <Ic n="shield-check" s={14} />
@@ -975,17 +1120,29 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
                   It works on its own branch and opens a pull request; a person merges.
                 </span>
                 <span className="sp" />
-                <button className="btn btn-sm btn-secondary" onClick={() => decideCoding(cs, false)}>
-                  Reject
-                </button>
-                <button className="btn btn-sm btn-primary" onClick={() => decideCoding(cs, true)}>
-                  <Ic n="check" s={13} />
-                  Approve
-                </button>
+                {latest.can_decide && (
+                  <>
+                    <button
+                      className="btn btn-sm btn-secondary"
+                      disabled={decide.isPending}
+                      onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
+                    >
+                      Reject
+                    </button>
+                    <button
+                      className="btn btn-sm btn-primary"
+                      disabled={decide.isPending}
+                      onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
+                    >
+                      <Ic n="check" s={13} />
+                      Approve
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}
-          {cs.status === "running" && (
+          {(latest?.status === "running" || latest?.status === "queued") && (
             <div className="row" style={{ gap: 8 }}>
               <span className="chat-typing">
                 <i />
@@ -993,13 +1150,15 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
                 <i />
               </span>
               <span className="muted" style={{ fontSize: 12.5 }}>
-                {toolName(cs.tool)} is working
+                {latest.status === "queued" ? `${tool} starts soon` : `${tool} is working`}
               </span>
               <span className="sp" />
-              <button className="btn btn-sm btn-secondary" onClick={() => stopCoding(cs)}>
-                <Ic n="square" s={12} />
-                Stop
-              </button>
+              {latest.can_stop && (
+                <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
+                  <Ic n="square" s={12} />
+                  Stop
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1008,26 +1167,22 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
         <div className="cbox">
           <textarea
             rows={2}
-            placeholder={busy ? "A turn is waiting or working…" : `Ask ${toolName(cs.tool)} for a follow-up on the same branch`}
+            placeholder={
+              cs.state === "closed" ? "This session is closed" : busy ? "A turn is waiting or working…" : `Ask ${tool} for a follow-up on the same branch`
+            }
             value={ask}
             disabled={busy}
             onChange={(e) => setAsk(e.target.value)}
             aria-label="Follow-up"
-            onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && (followUp(cs, ask), setAsk(""))}
+            onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && send()}
           />
           <div className="row">
             <span className="faint" style={{ fontSize: 11.5 }}>
               {MOD}+Enter to send · approved like the first turn
             </span>
             <span className="sp" />
-            <button
-              className="btn btn-primary btn-sm"
-              disabled={busy || !ask.trim()}
-              onClick={() => {
-                followUp(cs, ask);
-                setAsk("");
-              }}
-            >
+            <button className="btn btn-primary btn-sm" disabled={busy || !ask.trim() || follow.isPending} onClick={send}>
+              <Ic n="arrow-up" s={13} />
               Send
             </button>
           </div>
@@ -1037,45 +1192,51 @@ function Session({ cs, panes }: { cs: CodingSession; panes: Pane[] }) {
   );
 }
 
-/* ---------- the page ---------- */
+const Pending = ({ text }: { text: string }) => (
+  <div className="chat-scroll" style={{ display: "flex" }}>
+    <div className="faint" style={{ margin: "auto", fontSize: 13 }}>
+      {text}
+    </div>
+  </div>
+);
 
 export function Chat() {
   const { search } = useRoute();
+  const ws = wsId();
   const coding = search.get("tab") === "coding";
-  const th = D().threads.find((t) => t.id === search.get("thread")) ?? null;
-  const cs = D().coding.find((c) => c.id === search.get("session")) ?? null;
   const projectKey = search.get("project");
   const across = search.get("across") === "1";
+  const threadId = search.get("thread");
+  const sessionId = search.get("session");
   const q = S.ui.chatQ.toLowerCase();
   const ps = visibleProjects().filter(canSee);
-  const threads = D()
-    .threads.filter((t) => (t.project ? canSee(proj(t.project)) : t.by === D().me))
-    .filter((t) => !q || t.title.toLowerCase().includes(q))
-    .sort((a, b) => b.at - a.at);
-  const visibleSessions = D()
-    .coding.filter((c) => canSee(proj(c.project)))
-    .filter((c) => !q || `${task(c.task)?.key} ${c.title ?? task(c.task)?.title}`.toLowerCase().includes(q));
+  const { rows, loaded } = useRows(ws);
+  const sessionsQ = useCodingSessions(ws);
+  const allSessions = sessionsQ.data ?? [];
+  const row = rows.find((r) => r.id === threadId);
+  // A conversation just started isn't listed yet: its address says where it is.
+  const thread =
+    threadId && (row || across || projectKey)
+      ? { id: threadId, projectId: row ? row.projectId : across ? null : (projByKey(projectKey!)?.id ?? null), title: row?.title ?? "" }
+      : null;
+  const cs = allSessions.find((c) => c.session_id === sessionId) ?? null;
+  const threads = rows.filter((r) => !q || r.title.toLowerCase().includes(q)).sort((a, b) => b.at - a.at);
+  const visibleSessions = allSessions.filter((c) => !q || `${c.issue_key} ${c.title ?? c.issue_title}`.toLowerCase().includes(q));
   const archivedCount = visibleSessions.filter((c) => c.archived).length;
   // Archived ones only on request; pinned first, then the latest.
   const sessions = visibleSessions
-    .filter((c) => Boolean(c.archived) === Boolean(S.ui.showArchivedSessions))
-    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.at - a.at);
-  const waitingCoding = D().coding.filter((c) => c.status === "awaiting_approval").length;
-  const hasSel = Boolean(th || cs || projectKey || across || search.get("q") || search.get("new"));
-  const panes = panesOf(search.get("pane"));
-  const withPanel = Boolean(coding && cs && panes.length);
+    .filter((c) => c.archived === Boolean(S.ui.showArchivedSessions))
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || ms(b.updated_at) - ms(a.updated_at));
+  const waitingCoding = allSessions.filter((c) => c.status === "awaiting_approval").length;
+  const hasSel = Boolean(threadId || sessionId || projectKey || across || search.get("q") || search.get("new"));
   // Column widths, dragged by their edges and kept in this browser.
   const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 300, 220, 480);
-  const [panelW, setPanelW] = useStoredSize("dotrix.chat.panelWidth", 560, 320, 1100);
   // The list folds to a rail (like the sidebar) to give the conversation or session the room; not on phones.
   const [listMinSet, setListMin] = useStoredFlag("dotrix.chat.listMin");
   const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;
   return (
     <div className="page flush">
-      <div
-        className={`chat-grid ${hasSel ? "has-sel" : ""} ${withPanel ? "with-panel" : ""}`}
-        style={css({ "--list-w": listMin ? "52px" : `${listW}px`, "--panel-w": `${panelW}px` })}
-      >
+      <div className={`chat-grid ${hasSel ? "has-sel" : ""}`} style={css({ "--list-w": listMin ? "52px" : `${listW}px` })}>
         <aside className={`chat-side ${listMin ? "min" : ""}`}>
           {listMin ? (
             <div className="chat-rail">
@@ -1160,18 +1321,18 @@ export function Chat() {
                 </div>
                 {/* Start something new, under the search: a conversation, or a coding session on the Code tab. */}
                 <button
-                  className={`sitem chat-new ${(coding ? !cs : !th && !projectKey && !across) ? "on" : ""}`}
+                  className={`sitem chat-new ${(coding ? !sessionId : !threadId && !projectKey && !across) ? "on" : ""}`}
                   onClick={() => open(coding ? "tab=coding" : "new=1")}
                 >
                   <Ic n={coding ? "code" : "square-pen"} s={15} />
                   <span className="trunc">{coding ? "New session" : "New chat"}</span>
                 </button>
               </div>
-              <div className="chat-list">
+              <nav className="chat-list" aria-label={coding ? "Coding sessions" : "Conversations"}>
                 {coding ? (
                   sessions.length ? (
                     ps
-                      .filter((p) => sessions.some((c) => c.project === p.id))
+                      .filter((p) => sessions.some((c) => c.project_id === p.id))
                       .map((p) => (
                         <div key={p.id} className="chat-group">
                           <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
@@ -1179,9 +1340,9 @@ export function Chat() {
                             {p.name}
                           </div>
                           {sessions
-                            .filter((c) => c.project === p.id)
+                            .filter((c) => c.project_id === p.id)
                             .map((c) => (
-                              <SessionRow key={c.id} cs={c} on={cs?.id === c.id} />
+                              <SessionRow key={c.session_id} cs={c} on={sessionId === c.session_id} />
                             ))}
                         </div>
                       ))
@@ -1196,12 +1357,12 @@ export function Chat() {
                 ) : (
                   <>
                     {ps.map((p) => {
-                      const list = threads.filter((t) => t.project === p.id);
+                      const list = threads.filter((t) => t.projectId === p.id);
                       if (!list.length && q) return null;
                       return (
                         <Group key={p.id} title={p.name} color={pColor(p)} onNew={() => open(`project=${p.key}`)}>
                           {list.length ? (
-                            list.map((t) => <ThreadRow key={t.id} th={t} on={th?.id === t.id} />)
+                            list.map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />)
                           ) : (
                             <div className="faint" style={{ fontSize: 12, padding: "2px 8px 4px" }}>
                               No conversations yet
@@ -1212,9 +1373,9 @@ export function Chat() {
                     })}
                     <Group title="Conversations" icon={<Ic n="layers" s={12} />} onNew={() => open("across=1")}>
                       {threads
-                        .filter((t) => !t.project)
+                        .filter((t) => !t.projectId)
                         .map((t) => (
-                          <ThreadRow key={t.id} th={t} on={th?.id === t.id} />
+                          <ThreadRow key={t.id} row={t} on={threadId === t.id} />
                         ))}
                     </Group>
                   </>
@@ -1224,19 +1385,27 @@ export function Chat() {
                     {S.ui.showArchivedSessions ? "Back to sessions" : `Show archived (${archivedCount})`}
                   </button>
                 )}
-              </div>
+              </nav>
             </>
           )}
         </aside>
         <section className="chat-main">
           {coding ? (
-            cs ? (
-              <Session key={cs.id} cs={cs} panes={panes} />
+            sessionId ? (
+              cs ? (
+                <Session key={cs.session_id} cs={cs} />
+              ) : (
+                <Pending text={sessionsQ.isFetched ? "This session isn't here: it was deleted, or isn't one you can see." : "Loading the session…"} />
+              )
             ) : (
               <NewSession key={search.get("issue") ?? ""} issue0={search.get("issue")} />
             )
-          ) : th ? (
-            <Conversation key={th.id} th={th} />
+          ) : threadId ? (
+            thread ? (
+              <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />
+            ) : (
+              <Pending text={loaded ? "This conversation isn't here: it was deleted, or isn't one you can see." : "Loading the conversation…"} />
+            )
           ) : (
             <NewChat
               key={`${projectKey}-${across}-${search.get("q")}`}
@@ -1247,16 +1416,6 @@ export function Chat() {
             />
           )}
         </section>
-        {withPanel && cs && (
-          <aside className="cs-col" aria-label="Session panels">
-            <Splitter dir="col" className="edge-l" label="Resize the panels" onDrag={(d) => setPanelW((w) => w - d)} />
-            <div className="row cs-col-h">
-              <span className="sp" />
-              <PaneToolbar cs={cs} panes={panes} onToggle={(p) => open(paneSearch(cs.id, togglePane(panes, p)))} />
-            </div>
-            <SessionPanels cs={cs} panes={panes} onPanes={(next) => open(paneSearch(cs.id, next))} />
-          </aside>
-        )}
       </div>
     </div>
   );
