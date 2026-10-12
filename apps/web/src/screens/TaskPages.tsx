@@ -2,10 +2,9 @@
 import { Ic } from "../core/icons";
 import { newTask } from "../core/more";
 import { go } from "../core/nav";
-import { TODAY, dOff, dayBucket, diffD, parse } from "../core/utils";
-import { D, S, allTasks, canSee, isOver, proj, render, visibleProjects } from "../data/store";
-import type { Activity as A } from "../data/types";
-import { ActItem, LCOLS, ListView, MiniRow } from "../components/TaskList";
+import { TODAY, dOff, diffD, parse } from "../core/utils";
+import { D, S, allTasks, canSee, isOver, visibleProjects } from "../data/store";
+import { LCOLS, ListView, MiniRow } from "../components/TaskList";
 import { applyView, groupTasks, viewChange, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
 import { Empty } from "../ui/helpers";
 import { Board } from "../views/Board";
@@ -233,76 +232,4 @@ export function Favorites() {
   );
 }
 
-export function ActivityPage() {
-  const f = S.ui.actFilter;
-  const whoF = S.ui.actWho;
-  let as = D().activity.filter((a) => !a.project || canSee(proj(a.project)));
-  if (f !== "all")
-    as = as.filter((a) =>
-      f === "comments"
-        ? a.verb.includes("comment")
-        : f === "status"
-          ? /moved|completed|reopened/.test(a.verb)
-          : f === "projects"
-            ? a.verb.includes("project")
-            : f === "agents"
-              ? !D().members.some((m) => m.id === a.by)
-              : true,
-    );
-  if (whoF !== "all") as = as.filter((a) => a.by === whoF);
-  const b: Record<string, A[]> = {};
-  as.forEach((a) => (b[dayBucket(a.at)] ||= []).push(a));
-  return (
-    <div className="page" style={{ maxWidth: 820 }}>
-      <div className="ph">
-        <div>
-          <h1>Activity</h1>
-          <p>Everything that&apos;s changed across the workspace, by people and agents.</p>
-        </div>
-      </div>
-      <div className="row" style={{ gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-        <div className="seg">
-          {[
-            ["all", "All"],
-            ["status", "Status changes"],
-            ["comments", "Comments"],
-            ["projects", "Projects"],
-            ["agents", "Agents"],
-          ].map(([k, n]) => (
-            <button key={k} className={f === k ? "on" : ""} onClick={() => ((S.ui.actFilter = k!), render())}>
-              {n}
-            </button>
-          ))}
-        </div>
-        <select
-          className="select"
-          style={{ height: 26, width: "auto", fontSize: 12 }}
-          value={whoF}
-          onChange={(e) => ((S.ui.actWho = e.target.value), render())}
-          aria-label="Filter by person"
-        >
-          <option value="all">Everyone</option>
-          {D().members.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      {as.length ? (
-        Object.entries(b).map(([k, list]) => (
-          <div key={k}>
-            <div className="day-h">{k}</div>
-            <div className="feed lined">
-              {list.map((a) => (
-                <ActItem key={a.id} a={a} withProject />
-              ))}
-            </div>
-          </div>
-        ))
-      ) : (
-        <Empty icon="activity" title="No activity yet" text="Changes to tasks and projects will appear here." />
-      )}
-    </div>
-  );
-}
+// The workspace Activity page folded into Home.

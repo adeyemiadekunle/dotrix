@@ -24,9 +24,9 @@ import { Settings } from "../screens/Settings";
 import { Home } from "../screens/Home";
 import { Inbox } from "../screens/Inbox";
 import { Project } from "../screens/Project";
-import { Overview, Projects } from "../screens/Projects";
+import { Projects } from "../screens/Projects";
 import { Search } from "../screens/Search";
-import { ActivityPage, CalendarPage, Favorites, MyTasks, Tasks, TimelinePage } from "../screens/TaskPages";
+import { CalendarPage, Favorites, MyTasks, Tasks, TimelinePage } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
 import { ROUTE_NAMES, Shell, routeName } from "./Shell";
 
@@ -42,10 +42,10 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   calendar: CalendarPage,
   timeline: TimelinePage,
   favorites: Favorites,
-  activity: ActivityPage,
+  activity: ToHome,
   projects: Projects,
   project: Project,
-  overview: Overview,
+  overview: ToHome,
   search: Search,
   inbox: Inbox,
   notifications: ToInbox,
@@ -59,6 +59,12 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   system: DesignSystem,
   states: SystemStates,
 };
+
+/** Overview and Activity folded into Home: old links open it. */
+function ToHome() {
+  useEffect(() => go("home", {}, { replace: true }), []);
+  return null;
+}
 
 /** Notifications moved into the Inbox: old links (?n=, ?tab=) open there. */
 function ToInbox() {
