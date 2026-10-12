@@ -46,9 +46,9 @@ import {
 } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, MONL, TODAY, WD, addD, dOff, diffD, fmtDate, iso, parse } from "../core/utils";
-import { D, S, allTasks, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, visibleProjects, people } from "../data/store";
+import { D, S, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, visibleProjects, people } from "../data/store";
 import type { Task } from "../data/types";
-import { Av, AvStack, PrIcon, StIcon } from "../ui/helpers";
+import { Av, PrIcon, StIcon } from "../ui/helpers";
 import { FIELDS, viewChange, viewOf } from "../shell/viewEngine";
 import { toggleReaction } from "./Drawer";
 import { taskForm } from "./Modals";
@@ -704,68 +704,6 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
                 {o.name}
               </label>
             ))}
-          </>
-        ),
-      };
-    }
-    case "daylist": {
-      const ds = p.date as string;
-      const evs = D().events.filter((e) => e.date === ds);
-      const ts = allTasks().filter((x) => x.due === ds);
-      return {
-        style: { width: 280 },
-        inner: (
-          <>
-            <div className="mh">{fmtDate(ds, true)}</div>
-            {evs.map((e) => (
-              <button key={e.id} className="mi" onClick={() => (closePop(), go("project", { id: proj(e.project)!.key, tab: "calendar" }))}>
-                <Ic n="clock" s={14} />
-                {e.title}
-                <span className="r">{e.time}</span>
-              </button>
-            ))}
-            {ts.map((x) => (
-              <button key={x.id} className="mi" onClick={() => openTask(x.id)}>
-                <StIcon st={x.status} />
-                <span className="trunc">{x.title}</span>
-                <span className="r">
-                  <Av id={x.assignee} cls="sm" tip={false} />
-                </span>
-              </button>
-            ))}
-          </>
-        ),
-      };
-    }
-    case "event": {
-      const e = D().events.find((x) => x.id === p.id)!;
-      const pr = proj(e.project)!;
-      return {
-        style: { width: 270 },
-        inner: (
-          <>
-            <div style={{ padding: "10px 10px 6px" }}>
-              <div className="row" style={{ gap: 8, marginBottom: 6 }}>
-                <span className="pdot" style={css({ "--c": pColor(pr), borderRadius: "50%" })} />
-                <b style={{ fontSize: 14, fontWeight: 600 }}>{e.title}</b>
-              </div>
-              <div className="muted" style={{ fontSize: 12.5, display: "flex", flexDirection: "column", gap: 4 }}>
-                <span className="row" style={{ gap: 6 }}>
-                  <Ic n="calendar" s={13} />
-                  {fmtDate(e.date, true)} · {e.time}
-                </span>
-                <span className="row" style={{ gap: 6 }}>
-                  <Ic n="folder" s={13} />
-                  {pr.name}
-                </span>
-                <span className="row" style={{ gap: 6 }}>
-                  <Ic n="users" s={13} />
-                  <AvStack ids={pr.members} max={5} />
-                </span>
-              </div>
-            </div>
-            <Sep />
-            <Mi icon="arrow-up-right" label="Open project" onClick={() => (closePop(), go("project", { id: pr.key, tab: "overview" }))} />
           </>
         ),
       };
