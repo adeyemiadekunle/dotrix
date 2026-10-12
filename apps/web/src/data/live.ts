@@ -426,8 +426,6 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       savedViews: [],
       recentSearches: [],
       sessions: [],
-      invoices: [],
-      tfa: false,
       notifPrefs: {},
       teams: teamList.map(toTeam),
       agents: (agents as Schemas["AgentRead"][]).map(toAgent),

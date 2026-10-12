@@ -19,7 +19,6 @@ export const DEFAULT_PREFS = {
   density: "comfortable",
   weekStart: 1,
   dateFmt: "MMM d",
-  lang: "English (US)",
   tz: "(GMT-07:00) Pacific Time",
   motion: "system",
   home: "home",
