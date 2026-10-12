@@ -315,7 +315,6 @@ A project can start three ways, and every path ends with the same `.dotrix/` on 
 | Code hosts | GitHub, GitLab, local git | Create or connect repos, read code for the Architecture and Reviewer agents, and let the coding agent push branches and open PRs |
 | Coding tools | Built-in coding agent, Claude Code, Codex | Build issues; external tools connect via managed `CLAUDE.md` / `AGENTS.md` and the CLI |
 | Notifications | Email, Slack | Approvals waiting, PRs ready for review, daily briefing |
-| Calendars | iCalendar feed | Due dates and sprint dates in any calendar app |
 
 **Connection rules**
 
@@ -588,7 +587,7 @@ P0 is required for public launch; P1 is targeted for launch but can slip; P2 is 
 | FR-29 | Issue types (epic, story, task, bug, spike, sub-task), parent links, sequential keys per project | P0 | To build: today flat tasks with hex ids |
 | FR-30 | Board, backlog with ranking, epic view, filters | P0 | Partial: CLI list only |
 | FR-31 | Optional sprints with goal and dates | P1 | To build |
-| FR-32 | Dependencies, readiness, priority ordering, due dates, calendar feed | P0 | Built |
+| FR-32 | Dependencies, readiness, priority ordering, due dates | P0 | Built |
 | FR-33 | Comments, @mentions, watchers | P1 | Partial: comments only |
 | FR-34 | Custom workflows per project | P2 | To build |
 | **Chat Mode vs Action Mode** |  |  |  |

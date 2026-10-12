@@ -5,7 +5,6 @@ from dotrix_backend.modules.api_tokens import models as _api_tokens  # noqa: F40
 from dotrix_backend.modules.audit import models as _audit  # noqa: F401
 from dotrix_backend.modules.auth import models as _auth  # noqa: F401
 from dotrix_backend.modules.automations import models as _automations  # noqa: F401
-from dotrix_backend.modules.calendar import models as _calendar  # noqa: F401
 from dotrix_backend.modules.coding import models as _coding  # noqa: F401
 from dotrix_backend.modules.connectors import models as _connectors  # noqa: F401
 from dotrix_backend.modules.documents import models as _documents  # noqa: F401
