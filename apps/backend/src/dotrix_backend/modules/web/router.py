@@ -36,6 +36,7 @@ from dotrix_backend.modules.auth.schemas import (
     TokenRequest,
 )
 from dotrix_backend.modules.auth.service import AuthService
+from dotrix_backend.modules.calendar.router import Calendars, calendar_feed
 from dotrix_backend.modules.connectors.github_app import get_github_app
 from dotrix_backend.modules.connectors.schemas import InstallationAdd
 from dotrix_backend.modules.connectors.service import ConnectorService
@@ -140,6 +141,16 @@ async def web_logout(request: Request, auth: Auth) -> Response:
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     clear_session(response)
     return response
+
+
+# -- calendar feeds subscribed before the move to Vite --------------------------------------
+
+
+@router.get("/v1/calendar/{feed}")
+async def web_calendar_feed_before_vite(feed: str, calendars: Calendars) -> Response:
+    """Calendar apps keep polling the address they were given, which was
+    `{app}/api/v1/calendar/{secret}.ics` (through the old web server's API proxy)."""
+    return await calendar_feed(feed, calendars)
 
 
 # -- GitHub: sign in, link to your account, install the app ---------------------------------

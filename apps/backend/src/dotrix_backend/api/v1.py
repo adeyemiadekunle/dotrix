@@ -18,6 +18,8 @@ from dotrix_backend.modules.audit.router import router as audit
 from dotrix_backend.modules.auth.router import me_router
 from dotrix_backend.modules.auth.router import router as auth
 from dotrix_backend.modules.automations.router import router as automations
+from dotrix_backend.modules.calendar.router import feed_router as calendar_feed
+from dotrix_backend.modules.calendar.router import me_router as calendar_settings
 from dotrix_backend.modules.coding.router import router as coding
 from dotrix_backend.modules.coding.router import workspace_router as workspace_coding
 from dotrix_backend.modules.connectors.router import project_router as project_repository
@@ -48,6 +50,8 @@ for module_router in (
     device_router,
     me_router,
     tokens_router,
+    calendar_settings,
+    calendar_feed,
     workspaces,
     workspace_invites,
     invites,

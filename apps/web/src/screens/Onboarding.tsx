@@ -276,7 +276,11 @@ export function Onboarding() {
         <div className="panel">
           {[
             ["building-2", `Workspace “${o.ws || "My Workspace"}”`, "dotrix.app/w/" + (o.url || "workspace")],
-            [tm?.icon || "folder", `Project “${o.proj}”`, `${tm?.tasks.length || 0} starter tasks · ${{ kanban: "Board", list: "List" }[o.team]} view`],
+            [
+              tm?.icon || "folder",
+              `Project “${o.proj}”`,
+              `${tm?.tasks.length || 0} starter tasks · ${{ kanban: "Board", list: "List", timeline: "Timeline", table: "Table" }[o.team]} view`,
+            ],
             ["sparkles", "Six agents, ready in Chat", "They read your documents and propose changes for you to approve"],
             [
               "user-plus",

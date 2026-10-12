@@ -7,7 +7,6 @@ Unhandled exceptions are caught here rather than in a FastAPI exception
 handler, because Starlette runs those outside user middleware, where the
 request ID is already gone.
 """
-
 from __future__ import annotations
 
 import logging
@@ -23,6 +22,17 @@ REQUEST_ID_HEADER = "x-request-id"
 
 access_logger = logging.getLogger("dotrix.access")
 logger = logging.getLogger(__name__)
+
+# Paths whose last segment is a secret (calendar feeds: a calendar app can only send a URL).
+# /api/v1/calendar/ is the address feeds had before the web app moved to Vite (modules/web).
+_SECRET_PATHS = ("/v1/calendar/", "/api/v1/calendar/")
+
+
+def loggable_path(path: str) -> str:
+    for prefix in _SECRET_PATHS:
+        if path.startswith(prefix):
+            return f"{prefix}[secret]"
+    return path
 
 
 class RequestContextMiddleware:
@@ -61,7 +71,7 @@ class RequestContextMiddleware:
                 scope, receive, send_with_id
             )
         finally:
-            path = scope["path"]
+            path = loggable_path(scope["path"])
             access_logger.info(
                 "%s %s %s",
                 scope["method"],

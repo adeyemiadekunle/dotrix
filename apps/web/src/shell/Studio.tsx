@@ -26,7 +26,7 @@ import { Inbox } from "../screens/Inbox";
 import { Project } from "../screens/Project";
 import { Overview, Projects } from "../screens/Projects";
 import { Search } from "../screens/Search";
-import { ActivityPage, Favorites, MyTasks } from "../screens/TaskPages";
+import { ActivityPage, CalendarPage, Favorites, MyTasks, Tasks, TimelinePage } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
 import { ROUTE_NAMES, Shell, routeName } from "./Shell";
 
@@ -38,9 +38,9 @@ onLoaded.push(limitToasts);
 const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   home: Home,
   mytasks: MyTasks,
-  tasks: ToHome,
-  calendar: ToHome,
-  timeline: ToHome,
+  tasks: Tasks,
+  calendar: CalendarPage,
+  timeline: TimelinePage,
   favorites: Favorites,
   activity: ActivityPage,
   projects: Projects,
@@ -65,12 +65,6 @@ function ToInbox() {
   const { search } = useRoute();
   const q = search.toString();
   useEffect(() => go("inbox", {}, { replace: true, search: q }), [q]);
-  return null;
-}
-
-/** Pages folded into Home: old links open it. */
-function ToHome() {
-  useEffect(() => go("home", {}, { replace: true }), []);
   return null;
 }
 

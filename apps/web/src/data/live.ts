@@ -422,6 +422,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       activity: activity.map(toActivity),
       notifs: notifs.map(toNotif),
       files: perProject.flatMap((x) => x.files),
+      events: [],
       projOrder: [...ps.filter((p) => p.fav), ...ps.filter((p) => !p.fav)].map((p) => p.id),
       savedViews: [],
       recentSearches: [],
