@@ -20,7 +20,7 @@ import { isLive } from "../data/live";
 import { Face } from "../ui/face";
 import { useAtPicker } from "../components/AtPicker";
 import { sortTasks, viewOf } from "../shell/viewEngine";
-import { Av, AvStack, Empty, PIcon, PStatus, PrIcon, ProgBar } from "../ui/helpers";
+import { Av, AvStack, Empty, PIcon, PStatus, PrIcon, ProgBar, StIcon } from "../ui/helpers";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -204,11 +204,8 @@ export function Home() {
   });
   const dls = [dl("Today", 0, 0), dl("Tomorrow", 1, 1), dl("This week", 2, 7)];
   const waiting = D().notifs.filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read);
-  // From the old workspace Overview: what the agents did, and how the work is spread.
-  const agentActs = D().activity.filter((a) => !D().members.some((m) => m.id === a.by)).length;
-  const tokens = D()
-    .threads.flatMap((t) => t.messages)
-    .reduce((sum, m) => sum + (m.tokens ?? 0), 0);
+  // From the old workspace Overview: tasks by status and how the work is spread.
+  const counts = STATUSES.map((st) => ({ st, n: all.filter((t) => t.status === st.id).length }));
   const load = D()
     .members.filter((m) => m.status === "active")
     .map((m) => ({ m, ts: all.filter((t) => t.assignee === m.id && t.status !== "done") }))
@@ -307,14 +304,6 @@ export function Home() {
           </span>
           <span className={`d ${over.length ? "bad" : ""}`}>{over.length ? "need attention" : "all on track"}</span>
         </button>
-        <button className="stat" onClick={() => ((S.ui.actFilter = "agents"), render(), document.getElementById("h-activity")?.scrollIntoView())}>
-          <span className="k">
-            <Ic n="sparkles" s={14} />
-            Agents this week
-          </span>
-          <span className="v">{agentActs}</span>
-          <span className="d">{Math.round(tokens / 1000)}k tokens</span>
-        </button>
       </div>
       <div className="grid2">
         <div className="stack">
@@ -372,6 +361,8 @@ export function Home() {
                     <th style={{ paddingLeft: 14 }}>Project</th>
                     <th style={{ textAlign: "left" }}>Status</th>
                     <th style={{ textAlign: "left", width: "26%" }}>Progress</th>
+                    <th>Open</th>
+                    <th>Overdue</th>
                     <th style={{ textAlign: "left" }}>Due</th>
                     <th style={{ textAlign: "right", paddingRight: 14 }}>Team</th>
                   </tr>
@@ -379,6 +370,8 @@ export function Home() {
                 <tbody>
                   {activeP.map((p) => {
                     const pr = progressOf(p.id);
+                    const pts = all.filter((t) => t.project === p.id);
+                    const ov = pts.filter(isOver).length;
                     return (
                       <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => go("project", { id: p.key, tab: "overview" })}>
                         <td style={{ paddingLeft: 14 }}>
@@ -398,6 +391,10 @@ export function Home() {
                             </span>
                           </span>
                         </td>
+                        <td className="num">{pts.filter((t) => t.status !== "done").length}</td>
+                        <td className="num" style={{ color: ov ? "var(--red)" : "var(--text-3)" }}>
+                          {ov}
+                        </td>
                         <td style={{ textAlign: "left" }} className="num muted">
                           {fmtDate(p.due)}
                         </td>
@@ -409,6 +406,35 @@ export function Home() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </section>
+          <section className="panel">
+            <div className="panel-h">
+              <h2>Tasks by status</h2>
+              <span className="faint" style={{ fontSize: 11.5 }}>
+                {all.length} across {activeP.length} projects
+              </span>
+            </div>
+            <div className="panel-b">
+              <div className="stackbar" style={{ height: 10, marginBottom: 12 }}>
+                {counts.map((c) => (
+                  <i
+                    key={c.st.id}
+                    style={{ width: `${(c.n / Math.max(all.length, 1)) * 100}%`, background: `var(--st-${c.st.id})` }}
+                    title={`${c.st.name}: ${c.n}`}
+                  />
+                ))}
+              </div>
+              {counts.map((c) => (
+                <div key={c.st.id} className="row" style={{ height: 28, fontSize: 13 }}>
+                  <StIcon st={c.st.id} />
+                  <span className="grow">{c.st.name}</span>
+                  <span className="num muted">{c.n}</span>
+                  <span className="num faint" style={{ width: 36, textAlign: "right" }}>
+                    {Math.round((c.n / Math.max(all.length, 1)) * 100)}%
+                  </span>
+                </div>
+              ))}
             </div>
           </section>
         </div>
