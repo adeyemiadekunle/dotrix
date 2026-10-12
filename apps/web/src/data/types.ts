@@ -305,8 +305,6 @@ export interface Data {
   savedViews: SavedView[];
   recentSearches: string[];
   sessions: { id: string; dev: string; loc: string; at: string; cur?: boolean }[];
-  invoices: { id: string; date: string; amt: string; st: string }[];
-  tfa: boolean;
   notifPrefs: Record<string, boolean>;
   teams?: Team[];
   /* dotrix */
