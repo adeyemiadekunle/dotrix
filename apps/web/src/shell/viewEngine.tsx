@@ -240,7 +240,8 @@ export function ViewToolbar({
 }: {
   k: string;
   group?: boolean;
-  cols?: boolean;
+  /** List's columns that can be hidden, as [key, name]; `true` for the table's. */
+  cols?: boolean | [string, string][];
   extra?: ReactNode;
   right?: ReactNode;
 }) {
@@ -279,7 +280,7 @@ export function ViewToolbar({
           </button>
         )}
         {cols && (
-          <button className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "cols", { key: k })}>
+          <button className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "cols", { key: k, list: Array.isArray(cols) ? cols : undefined })}>
             <Ic n="columns-3" s={14} />
             Columns
           </button>

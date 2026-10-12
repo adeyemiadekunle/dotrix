@@ -1496,7 +1496,6 @@ function SaveViewModal({ m }: { m: Modal }) {
           <select className="select" id="sv-type" value={type} onChange={(e) => setType(e.target.value)}>
             <option value="list">List</option>
             <option value="board">Board</option>
-            <option value="table">Table</option>
           </select>
         </div>
         {nf ? (

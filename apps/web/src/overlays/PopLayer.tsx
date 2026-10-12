@@ -654,11 +654,12 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
     case "cols": {
       const k = p.key as string;
       const v = viewOf(k);
+      const list = p.list as [string, string][] | undefined;
       return {
         inner: (
           <>
             <div className="mh">Visible columns</div>
-            {TCOLS.filter((c) => c[0] !== "title").map((c) => (
+            {(list ?? TCOLS.filter((c) => c[0] !== "title")).map((c) => (
               <label key={c[0]} className="mi" style={{ cursor: "pointer" }}>
                 <input
                   type="checkbox"
@@ -669,8 +670,12 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
                 {c[1]}
               </label>
             ))}
-            <Sep />
-            <Mi icon="rotate-ccw" label="Reset widths" onClick={() => viewChange(k, (vv) => (vv.colW = {}))} />
+            {!list && (
+              <>
+                <Sep />
+                <Mi icon="rotate-ccw" label="Reset widths" onClick={() => viewChange(k, (vv) => (vv.colW = {}))} />
+              </>
+            )}
           </>
         ),
       };

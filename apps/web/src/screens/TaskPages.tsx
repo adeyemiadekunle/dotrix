@@ -5,12 +5,11 @@ import { go } from "../core/nav";
 import { TODAY, dOff, dayBucket, diffD, parse } from "../core/utils";
 import { D, S, allTasks, canSee, isOver, proj, render, visibleProjects } from "../data/store";
 import type { Activity as A } from "../data/types";
-import { ActItem, ListView, MiniRow } from "../components/TaskList";
+import { ActItem, LCOLS, ListView, MiniRow } from "../components/TaskList";
 import { applyView, groupTasks, viewChange, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
 import { Empty } from "../ui/helpers";
 import { Board } from "../views/Board";
 import { Calendar } from "../views/Calendar";
-import { Table } from "../views/Table";
 import { TlControls, Timeline } from "../views/Timeline";
 import { ProjectCard } from "./Projects";
 
@@ -85,10 +84,12 @@ export function MyTasks() {
   );
 }
 
+const TASKS_COLS = ["status", "assignee", "priority", "due", "project"];
+
 export function Tasks() {
   const k = "tasks";
   const v = viewOf(k) as ReturnType<typeof viewOf> & { mode?: string };
-  v.mode = v.mode || "list";
+  if (!v.mode || v.mode === "table") v.mode = "list";
   const ts = applyView(allTasks(), v);
   const right = (
     <div className="seg">
@@ -96,7 +97,6 @@ export function Tasks() {
         [
           ["list", "List", "list"],
           ["board", "Board", "square-kanban"],
-          ["table", "Table", "table-2"],
         ] as const
       ).map(([m, n, i]) => (
         <button key={m} className={v.mode === m ? "on" : ""} onClick={() => viewChange(k, (vv) => ((vv as typeof v).mode = m))}>
@@ -120,14 +120,12 @@ export function Tasks() {
           </button>
         </div>
       </div>
-      <ViewToolbar k={k} right={right} cols={v.mode === "table"} group={v.mode !== "board"} />
+      <ViewToolbar k={k} right={right} cols={v.mode === "list" && TASKS_COLS.map((c) => [c, LCOLS[c]![0]])} group={v.mode !== "board"} />
       {v.mode === "board" ? (
         <Board ts={ts} k={k} />
-      ) : v.mode === "table" ? (
-        <Table ts={ts} k={k} />
       ) : (
         <div className="list-wrap">
-          <ListView groups={groupTasks(ts, v.group)} k={k} cols={["status", "assignee", "priority", "due", "project"]} />
+          <ListView groups={groupTasks(ts, v.group)} k={k} cols={TASKS_COLS} />
         </div>
       )}
     </div>

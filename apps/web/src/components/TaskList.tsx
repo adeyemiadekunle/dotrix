@@ -316,6 +316,8 @@ export function ListView({
   project?: string;
   drag?: boolean;
 }) {
+  const hidden = S.views[k]?.hidden ?? [];
+  cols = cols.filter((c) => !hidden.includes(c));
   const tpl = `18px 30px minmax(220px,1fr) ${cols.map((c) => LCOLS[c]![1]).join(" ")} 40px`;
   const all = groups.flatMap((g) => g.tasks.map((t) => t.id));
   const nSel = all.filter((id) => S.ui.sel.has(id)).length;
