@@ -204,8 +204,6 @@ export function Onboarding() {
           {[
             ["kanban", "square-kanban", "Boards", "Move cards through stages"],
             ["list", "list-checks", "Lists", "Checklists and priorities"],
-            ["timeline", "chart-gantt", "Timelines", "Plan with dates & dependencies"],
-            ["table", "table-2", "Tables", "Spreadsheet-style tracking"],
           ].map(([v, i, n, s]) => (
             <Opt key={v} k="team" v={v!} icon={i!} n={n!} s={s} />
           ))}

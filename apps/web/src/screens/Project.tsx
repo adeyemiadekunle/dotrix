@@ -9,13 +9,12 @@ import { PSTAT } from "../core/constants";
 import { go, useRoute } from "../core/nav";
 import { D, canSee, projByKey, tasksOf } from "../data/store";
 import type { Project as P } from "../data/types";
-import { ListView } from "../components/TaskList";
+import { LCOLS, ListView } from "../components/TaskList";
 import { applyView, groupTasks, viewOf, ViewToolbar } from "../shell/viewEngine";
 import { AvStack, Empty, PIcon } from "../ui/helpers";
 import { Board } from "../views/Board";
 import { Calendar } from "../views/Calendar";
 import { ProjectActivity, ProjectOverview } from "../views/ProjectOverview";
-import { Table } from "../views/Table";
 import { TlControls, Timeline } from "../views/Timeline";
 import { Knowledge } from "./Knowledge";
 
@@ -38,6 +37,8 @@ function Denied({ p }: { p: P }) {
     </div>
   );
 }
+
+const LIST_COLS = ["status", "assignee", "priority", "due", "labels"];
 
 export function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   const v = viewOf(k);
@@ -64,18 +65,12 @@ export function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) 
         {noTasks ? emptyAll : <Board ts={ts} k={k} project={p.id} />}
       </>
     );
-  if (type === "list")
+  // Table folded into List (its columns can be hidden); old Table views and links open List.
+  if (type === "list" || type === "table")
     return (
       <>
-        <ViewToolbar k={k} right={addBtn} />
+        <ViewToolbar k={k} cols={LIST_COLS.map((c) => [c, LCOLS[c]![0]])} right={addBtn} />
         <div className="list-wrap">{noTasks ? emptyAll : <ListView groups={groupTasks(ts, v.group)} k={k} project={p.id} />}</div>
-      </>
-    );
-  if (type === "table")
-    return (
-      <>
-        <ViewToolbar k={k} cols right={addBtn} />
-        {noTasks ? emptyAll : <Table ts={ts} k={k} p={p} />}
       </>
     );
   if (type === "calendar")

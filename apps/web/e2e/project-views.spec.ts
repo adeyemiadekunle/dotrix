@@ -29,13 +29,11 @@ test("a project's views: overview, list, table, activity, and My issues", async 
   // Groups fold, as on My issues; Done starts folded.
   await expect(page.getByRole("button", { name: /Done/ })).toHaveAttribute("aria-expanded", "false");
 
-  // Table: every issue with its columns; a column can be hidden.
-  await tabs.getByRole("link", { name: "Table", exact: true }).click();
-  await expect(page.getByRole("cell", { name: `${key}-1`, exact: true })).toBeVisible();
+  // List's columns can be hidden (Table folded into List).
   await page.getByRole("button", { name: "Columns" }).click();
   await page.getByRole("menuitemcheckbox", { name: "Labels" }).click();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("columnheader", { name: "Labels" })).toHaveCount(0);
+  await expect(page.locator(".thead").getByText("Labels")).toHaveCount(0);
 
   // Select issues and change them together.
   await page.getByRole("button", { name: "New issue" }).click();
