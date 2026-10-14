@@ -1,5 +1,7 @@
 // Home, with dotrix's "Waiting for a decision": what the
-// agents ask you to approve or steer, first in the right column.
+// agents ask you to approve or steer, first in the right column. The workspace's Overview and
+// Activity pages folded into this: its stats, workload, and milestones sit here, and the
+// activity feed keeps the old filters.
 import { useRef, useState, type CSSProperties } from "react";
 
 import { openTask } from "../core/actions";
@@ -7,9 +9,10 @@ import { allowed, canInvite } from "../core/can";
 import { Ic } from "../core/icons";
 import { invite, newProject, newTask } from "../core/more";
 import { go } from "../core/nav";
-import { DAY, MONL, TODAY, WDL, ago, diffD, fmtDate, greeting, parse } from "../core/utils";
-import { D, S, allTasks, canSee, isOver, pColor, progressOf, proj, visibleProjects, who } from "../data/store";
+import { DAY, MONL, TODAY, WDL, ago, diffD, fmtDate, greeting, parse, relDate } from "../core/utils";
+import { D, S, allTasks, canSee, isOver, pColor, progressOf, proj, render, visibleProjects, who } from "../data/store";
 import type { Notif } from "../data/types";
+import { STATUSES } from "../core/constants";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { newThread } from "../core/agents";
 import { moodOf } from "../core/presence";
@@ -17,7 +20,7 @@ import { isLive } from "../data/live";
 import { Face } from "../ui/face";
 import { useAtPicker } from "../components/AtPicker";
 import { sortTasks, viewOf } from "../shell/viewEngine";
-import { Av, AvStack, Empty, PIcon, PStatus, PrIcon, ProgBar } from "../ui/helpers";
+import { Av, AvStack, Empty, PIcon, PStatus, PrIcon, ProgBar, StIcon } from "../ui/helpers";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -201,6 +204,37 @@ export function Home() {
   });
   const dls = [dl("Today", 0, 0), dl("Tomorrow", 1, 1), dl("This week", 2, 7)];
   const waiting = D().notifs.filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read);
+  // From the old workspace Overview: tasks by status and how the work is spread.
+  const counts = STATUSES.map((st) => ({ st, n: all.filter((t) => t.status === st.id).length }));
+  const load = D()
+    .members.filter((m) => m.status === "active")
+    .map((m) => ({ m, ts: all.filter((t) => t.assignee === m.id && t.status !== "done") }))
+    .sort((a, b) => b.ts.length - a.ts.length)
+    .filter((l) => l.ts.length > 0)
+    .slice(0, 8);
+  const maxL = Math.max(...load.map((l) => l.ts.length), 1);
+  const ms = activeP
+    .flatMap((p) => (p.milestones || []).map((m) => ({ ...m, p })))
+    .filter((m) => diffD(parse(m.date)!, TODAY) >= 0)
+    .sort((a, b) => (a.date > b.date ? 1 : -1))
+    .slice(0, 4);
+  // From the old workspace Activity page: the same filters on the same feed.
+  const actF = S.ui.actFilter;
+  const actWho = S.ui.actWho;
+  let acts = D().activity.filter((a) => !a.project || canSee(proj(a.project)));
+  if (actF !== "all")
+    acts = acts.filter((a) =>
+      actF === "comments"
+        ? a.verb.includes("comment")
+        : actF === "status"
+          ? /moved|completed|reopened/.test(a.verb)
+          : actF === "projects"
+            ? a.verb.includes("project")
+            : actF === "agents"
+              ? !D().members.some((m) => m.id === a.by)
+              : true,
+    );
+  if (actWho !== "all") acts = acts.filter((a) => a.by === actWho);
   return (
     <div className="page">
       <div className="ph">
@@ -327,6 +361,8 @@ export function Home() {
                     <th style={{ paddingLeft: 14 }}>Project</th>
                     <th style={{ textAlign: "left" }}>Status</th>
                     <th style={{ textAlign: "left", width: "26%" }}>Progress</th>
+                    <th>Open</th>
+                    <th>Overdue</th>
                     <th style={{ textAlign: "left" }}>Due</th>
                     <th style={{ textAlign: "right", paddingRight: 14 }}>Team</th>
                   </tr>
@@ -334,6 +370,8 @@ export function Home() {
                 <tbody>
                   {activeP.map((p) => {
                     const pr = progressOf(p.id);
+                    const pts = all.filter((t) => t.project === p.id);
+                    const ov = pts.filter(isOver).length;
                     return (
                       <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => go("project", { id: p.key, tab: "overview" })}>
                         <td style={{ paddingLeft: 14 }}>
@@ -353,6 +391,10 @@ export function Home() {
                             </span>
                           </span>
                         </td>
+                        <td className="num">{pts.filter((t) => t.status !== "done").length}</td>
+                        <td className="num" style={{ color: ov ? "var(--red)" : "var(--text-3)" }}>
+                          {ov}
+                        </td>
                         <td style={{ textAlign: "left" }} className="num muted">
                           {fmtDate(p.due)}
                         </td>
@@ -364,6 +406,35 @@ export function Home() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </section>
+          <section className="panel">
+            <div className="panel-h">
+              <h2>Tasks by status</h2>
+              <span className="faint" style={{ fontSize: 11.5 }}>
+                {all.length} across {activeP.length} projects
+              </span>
+            </div>
+            <div className="panel-b">
+              <div className="stackbar" style={{ height: 10, marginBottom: 12 }}>
+                {counts.map((c) => (
+                  <i
+                    key={c.st.id}
+                    style={{ width: `${(c.n / Math.max(all.length, 1)) * 100}%`, background: `var(--st-${c.st.id})` }}
+                    title={`${c.st.name}: ${c.n}`}
+                  />
+                ))}
+              </div>
+              {counts.map((c) => (
+                <div key={c.st.id} className="row" style={{ height: 28, fontSize: 13 }}>
+                  <StIcon st={c.st.id} />
+                  <span className="grow">{c.st.name}</span>
+                  <span className="num muted">{c.n}</span>
+                  <span className="num faint" style={{ width: 36, textAlign: "right" }}>
+                    {Math.round((c.n / Math.max(all.length, 1)) * 100)}%
+                  </span>
+                </div>
+              ))}
             </div>
           </section>
         </div>
@@ -391,6 +462,32 @@ export function Home() {
               <h2>Upcoming deadlines</h2>
             </div>
             <div className="panel-b" style={{ paddingBottom: 6 }}>
+              {ms.length > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  <div className="row" style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
+                    Milestones
+                    <span className="faint" style={{ fontWeight: 500 }}>
+                      {ms.length}
+                    </span>
+                  </div>
+                  {ms.map((m) => (
+                    <div
+                      key={m.p.id + m.name}
+                      className="row"
+                      style={{ height: 30, cursor: "pointer", gap: 8, fontSize: 13 }}
+                      onClick={() => go("project", { id: m.p.key, tab: "timeline" })}
+                    >
+                      <span
+                        style={{ width: 9, height: 9, transform: "rotate(45deg)", background: pColor(m.p), borderRadius: 2, flexShrink: 0, margin: "0 3px" }}
+                      />
+                      <span className="trunc grow">
+                        {m.name} <span className="faint">· {m.p.name}</span>
+                      </span>
+                      <span className="num muted">{relDate(m.date)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {dls.map((g) => (
                 <div key={g.lab} style={{ marginBottom: 10 }}>
                   <div className="row" style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
@@ -424,16 +521,76 @@ export function Home() {
               ))}
             </div>
           </section>
-          <section className="panel">
-            <div className="panel-h">
-              <h2>Recent activity</h2>
+          <section className="panel" aria-labelledby="h-activity">
+            <div className="panel-h" style={{ flexWrap: "wrap", gap: 8 }}>
+              <h2 id="h-activity">Activity</h2>
+              <div className="seg" style={{ marginLeft: "auto" }}>
+                {(
+                  [
+                    ["all", "All"],
+                    ["status", "Status"],
+                    ["comments", "Comments"],
+                    ["projects", "Projects"],
+                    ["agents", "Agents"],
+                  ] as const
+                ).map(([k, n]) => (
+                  <button key={k} className={actF === k ? "on" : ""} onClick={() => ((S.ui.actFilter = k), render())}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <select
+                className="select"
+                style={{ height: 26, width: "auto", fontSize: 12 }}
+                value={actWho}
+                onChange={(e) => ((S.ui.actWho = e.target.value), render())}
+                aria-label="Filter by person"
+              >
+                <option value="all">Everyone</option>
+                {D().members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="panel-b feed lined">
-              {D()
-                .activity.slice(0, 7)
-                .map((a) => (
-                  <ActItem key={a.id} a={a} withProject />
-                ))}
+              {acts.length ? (
+                acts.slice(0, 10).map((a) => <ActItem key={a.id} a={a} withProject />)
+              ) : (
+                <Empty icon="activity" title="Nothing here" text="No activity matches these filters." cls="sm" />
+              )}
+            </div>
+          </section>
+          <section className="panel">
+            <div className="panel-h">
+              <h2>Workload</h2>
+              <div className="acts">
+                <span className="faint" style={{ fontSize: 11.5 }}>
+                  Open tasks per person
+                </span>
+              </div>
+            </div>
+            <div className="panel-b">
+              {load.map((l) => (
+                <div key={l.m.id} className="row" style={{ height: 30, fontSize: 13, cursor: "pointer" }} onClick={() => go("member", { id: l.m.id })}>
+                  <Av id={l.m.id} cls="sm" tip={false} />
+                  <span style={{ width: 96 }} className="trunc">
+                    {l.m.name.split(" ")[0]}
+                  </span>
+                  <span className="grow" style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: "var(--surface-3)" }}>
+                    <span style={{ display: "flex", width: `${(l.ts.length / maxL) * 100}%` }}>
+                      {STATUSES.filter((st) => st.id !== "done").map((st) => {
+                        const n = l.ts.filter((t) => t.status === st.id).length;
+                        return n ? <i key={st.id} style={{ display: "block", flex: n, background: `var(--st-${st.id})` }} /> : null;
+                      })}
+                    </span>
+                  </span>
+                  <span className="num muted" style={{ width: 22, textAlign: "right" }}>
+                    {l.ts.length}
+                  </span>
+                </div>
+              ))}
             </div>
           </section>
         </div>

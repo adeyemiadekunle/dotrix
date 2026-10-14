@@ -24,9 +24,9 @@ import { Settings } from "../screens/Settings";
 import { Home } from "../screens/Home";
 import { Inbox } from "../screens/Inbox";
 import { Project } from "../screens/Project";
-import { Overview, Projects } from "../screens/Projects";
+import { Projects } from "../screens/Projects";
 import { Search } from "../screens/Search";
-import { ActivityPage, Favorites, MyTasks } from "../screens/TaskPages";
+import { Favorites, MyTasks } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
 import { ROUTE_NAMES, Shell, routeName } from "./Shell";
 
@@ -42,10 +42,10 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   calendar: ToHome,
   timeline: ToHome,
   favorites: Favorites,
-  activity: ActivityPage,
+  activity: ToHome,
   projects: Projects,
   project: Project,
-  overview: Overview,
+  overview: ToHome,
   search: Search,
   inbox: Inbox,
   notifications: ToInbox,
@@ -60,17 +60,17 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   states: SystemStates,
 };
 
+/** Overview and Activity folded into Home: old links open it. */
+function ToHome() {
+  useEffect(() => go("home", {}, { replace: true }), []);
+  return null;
+}
+
 /** Notifications moved into the Inbox: old links (?n=, ?tab=) open there. */
 function ToInbox() {
   const { search } = useRoute();
   const q = search.toString();
   useEffect(() => go("inbox", {}, { replace: true, search: q }), [q]);
-  return null;
-}
-
-/** Pages folded into Home: old links open it. */
-function ToHome() {
-  useEffect(() => go("home", {}, { replace: true }), []);
   return null;
 }
 

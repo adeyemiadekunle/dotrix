@@ -12,7 +12,7 @@ test("every screen renders", async ({ page }) => {
     ["my-tasks", "My Tasks"],
     ["favorites", "Favorites"],
     ["notifications", "Inbox"],
-    ["overview", "Workspace overview"],
+    ["overview", "Good"],
     ["chat", "Chat"],
     ["projects", "Projects"],
     ["tasks", "Good"],
@@ -20,7 +20,7 @@ test("every screen renders", async ({ page }) => {
     ["timeline", "Good"],
     ["members", "Members"],
     ["teams", "Teams"],
-    ["activity", "Activity"],
+    ["activity", "Good"],
     ["archive", "Archive"],
     ["settings/agents", "Agents"],
     ["design-system", "Design system"],
@@ -46,7 +46,7 @@ test("approve a coding run from the Inbox", async ({ page }) => {
 test("the command palette finds an agent and opens Chat with it", async ({ page }) => {
   await page.goto("/w/dotrix");
   await page.keyboard.press("Control+k");
-  await page.getByRole("combobox").fill("research");
+  await page.getByRole("dialog", { name: "Command menu" }).getByRole("combobox").fill("research");
   await page.getByRole("option", { name: /Vega/ }).click();
   await expect(page).toHaveURL(/\/chat\?new=1&agent=research/);
   await expect(page.getByLabel("Agent", { exact: true })).toHaveValue("research");
