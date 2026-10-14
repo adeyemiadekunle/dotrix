@@ -29,7 +29,7 @@ takes on the organisation's job; the organisations layer goes.
 - **Project access** replaces "several workspaces per team": `Project.access` is `workspace`
   (every member) or `restricted` (owners and admins, plus the people in `project_members`).
   `require_project_permission` checks it, so a restricted project is a 404 to anyone else;
-  project lists, search, the calendar feed, and the approvals queue filter by it; the
+  project lists, search, and the approvals queue filter by it; the
   isolation suite gets a restricted project in its `World`.
 - **Web:** the switcher lists Personal and your organisations; "Create organisation" makes an
   organisation workspace; the `/o/…` pages go, their people and settings move into the

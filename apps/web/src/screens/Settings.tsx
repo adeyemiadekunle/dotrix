@@ -1925,256 +1925,6 @@ function Password() {
   );
 }
 
-function TwoFA() {
-  if (isLive())
-    return (
-      <div className="alert info">
-        <Ic n="info" s={15} />
-        <span>Two-factor authentication isn't available yet. Until it is, use a long password, or sign in with GitHub or an email link.</span>
-      </div>
-    );
-  return <SeedTwoFA />;
-}
-function SeedTwoFA() {
-  const [setup, setSetup] = useState(false);
-  const [code, setCode] = useState("");
-  const [err, setErr] = useState("");
-  const d = D();
-  if (d.tfa)
-    return (
-      <>
-        <div className="alert ok">
-          <Ic n="shield-check" s={16} />
-          <div>
-            <b>Two-factor authentication is on.</b>
-            <div className="muted">You'll enter a code from your authenticator app when signing in on a new device.</div>
-          </div>
-        </div>
-        <div className="sblock">
-          <h2>Recovery codes</h2>
-          <p className="muted" style={{ fontSize: 13 }}>
-            Store these somewhere safe. Each code works once.
-          </p>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2,max-content)",
-              gap: "6px 28px",
-              fontFamily: "var(--mono)",
-              fontSize: 13,
-              padding: 14,
-              border: "1px solid var(--border)",
-              borderRadius: "var(--r)",
-              background: "var(--sunken)",
-              userSelect: "all",
-            }}
-          >
-            {["7KQ2-M8PX", "D4TN-9WRE", "HV3C-QZ6L", "P2YB-J7SK", "R9FG-4NUD", "X6MA-T3HE"].map((c) => (
-              <span key={c}>{c}</span>
-            ))}
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <button className="btn btn-danger-ghost" onClick={() => (mutate(() => (d.tfa = false)), toast("Two-factor authentication is off"))}>
-              Turn off two-factor authentication
-            </button>
-          </div>
-        </div>
-      </>
-    );
-  if (setup)
-    return (
-      <div className="panel" style={{ padding: 18, display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <div
-          style={{
-            width: 132,
-            height: 132,
-            display: "grid",
-            gridTemplateColumns: "repeat(11,1fr)",
-            gap: 1,
-            padding: 8,
-            background: "#fff",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-          }}
-          aria-label="QR code"
-        >
-          {Array.from({ length: 121 }, (_, i) => {
-            const r = Math.floor(i / 11);
-            const c = i % 11;
-            const f = (r < 3 && c < 3) || (r < 3 && c > 7) || (r > 7 && c < 3);
-            const on = f ? !((r === 1 && c === 1) || (r === 1 && c === 9) || (r === 9 && c === 1)) : (i * 7919) % 13 < 6;
-            return <i key={i} style={{ background: on ? "#1D1C1A" : "#fff" }} />;
-          })}
-        </div>
-        <div className="grow col" style={{ gap: 10, minWidth: 220 }}>
-          <div>
-            <b>1. Scan the QR code</b>
-            <div className="muted" style={{ fontSize: 13 }}>
-              Use 1Password, Authy, or Google Authenticator.
-            </div>
-          </div>
-          <div>
-            <b>2. Enter the 6-digit code</b>
-          </div>
-          <form
-            className="row"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!/^\d{6}$/.test(code)) return setErr("Enter the 6 digits from your app");
-              mutate(() => (d.tfa = true));
-              toast("Two-factor authentication is on");
-            }}
-          >
-            <input
-              className={`input mono ${err ? "is-error" : ""}`}
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="000000"
-              style={{ width: 130, letterSpacing: ".2em", fontSize: 15 }}
-              autoFocus
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              aria-label="Code"
-            />
-            <button className="btn btn-primary" type="submit">
-              Verify
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setSetup(false)}>
-              Cancel
-            </button>
-          </form>
-          {err ? (
-            <span className="err">
-              <Ic n="circle-alert" s={12} />
-              {err}
-            </span>
-          ) : (
-            <span className="hint">Any 6 digits work on the seeded data.</span>
-          )}
-        </div>
-      </div>
-    );
-  return (
-    <div className="panel" style={{ padding: 18 }}>
-      <div className="row" style={{ gap: 14, alignItems: "flex-start" }}>
-        <span className="ftype" style={css({ "--c": "var(--amber)", width: 36, height: 36 })}>
-          <Ic n="shield-alert" s={18} />
-        </span>
-        <div className="grow">
-          <b>Two-factor authentication is off</b>
-          <p className="muted" style={{ margin: "4px 0 12px", fontSize: 13 }}>
-            Protect your account with a code from an authenticator app in addition to your password.
-          </p>
-          <button className="btn btn-primary" onClick={() => setSetup(true)}>
-            Set up two-factor authentication
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Plan() {
-  const d = D();
-  const plan = d.ws.plan || "Team";
-  return (
-    <>
-      <div className="panel" style={{ padding: 18, marginBottom: 18 }}>
-        <div className="row" style={{ flexWrap: "wrap" }}>
-          <div>
-            <div className="eyebrow">Current plan</div>
-            <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-.015em", marginTop: 4 }}>
-              {plan}{" "}
-              <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>
-                · $12 per member / month
-              </span>
-            </div>
-            <div className="muted" style={{ fontSize: 13 }}>
-              Renews {fmtDate(dOff(7), true)} · Billed monthly
-            </div>
-          </div>
-          <span className="sp" />
-          <button className="btn btn-secondary" onClick={() => go("settings", { sec: "invoices" })}>
-            View invoices
-          </button>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 18, marginTop: 18 }}>
-          {(
-            [
-              ["Members", d.members.length, 10, ""],
-              ["Agent tokens this month", 3.1, 10, "M"],
-              ["Projects", d.projects.length, 50, ""],
-            ] as const
-          ).map(([n, v, m, u]) => (
-            <div key={n}>
-              <div className="row" style={{ fontSize: 12.5, marginBottom: 6 }}>
-                <span className="muted">{n}</span>
-                <span className="sp" />
-                <span className="num">
-                  {v}
-                  {u} of {m}
-                  {u}
-                </span>
-              </div>
-              <div className="meter">
-                <i style={{ width: `${(v / m) * 100}%`, ...(v / m > 0.75 ? { background: "var(--amber)" } : {}) }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>
-        {(
-          [
-            ["Free", "$0", ["Up to 3 members", "Unlimited tasks", "Agents with your own key"]],
-            ["Team", "$12", ["Up to 50 members", "Timelines & custom views", "Agents, 10M tokens a month", "Guest access"]],
-            ["Business", "$24", ["Unlimited members", "Coding sessions", "SAML SSO", "Audit export"]],
-          ] as const
-        ).map(([n, pr, fs]) => {
-          const cur = plan === n;
-          return (
-            <div key={n} className={`plan ${cur ? "cur" : ""}`}>
-              <div className="row">
-                <b>{n}</b>
-                {cur && <span className="badge accent">Current</span>}
-              </div>
-              <div className="pr">
-                {pr}
-                <span className="muted" style={{ fontSize: 12.5, fontWeight: 400 }}>
-                  {" "}
-                  /member/mo
-                </span>
-              </div>
-              <ul>
-                {fs.map((f) => (
-                  <li key={f}>
-                    <Ic n="check" s={13} />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-              <div style={{ marginTop: 8 }}>
-                {cur ? (
-                  <button className="btn btn-secondary btn-block" disabled>
-                    Current plan
-                  </button>
-                ) : (
-                  <button
-                    className={`btn ${n === "Business" ? "btn-primary" : "btn-secondary"} btn-block`}
-                    onClick={() => (mutate(() => (d.ws.plan = n)), toast(`Switched to ${n}`))}
-                  >
-                    {n === "Free" ? "Downgrade" : "Upgrade"}
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </>
-  );
-}
-
 /** Your notification settings in a real workspace: saved as you change them, in every workspace. */
 function LiveNotifs({ sec }: { sec: string }) {
   const r = useApi(notifSettings);
@@ -2218,13 +1968,6 @@ function LiveNotifs({ sec }: { sec: string }) {
             Which kinds reach you follows Mentions, Task assignments, and Agents. Emails go only to a verified address.
           </p>
         </>
-      );
-    case "notif-push":
-      return (
-        <div className="alert info">
-          <Ic n="info" s={15} />
-          <span>Push notifications aren't available yet: you get them in the app and by email.</span>
-        </div>
       );
     case "notif-mentions":
       return (
@@ -2480,17 +2223,6 @@ function Body({ sec }: { sec: string }) {
           </div>
         </>
       );
-    case "language":
-      return (
-        <>
-          <SRow t="Language" d="The language used throughout the interface.">
-            <Sel k="lang" v={Pr.lang} opts={["English (US)", "English (UK)", "Deutsch", "Español", "Français", "日本語"]} />
-          </SRow>
-          <SRow t="Spellcheck" d="Check spelling in descriptions and comments.">
-            <PTog k="spell" />
-          </SRow>
-        </>
-      );
     case "datetime":
       return (
         <>
@@ -2727,23 +2459,6 @@ function Body({ sec }: { sec: string }) {
           </SRow>
         </>
       );
-    case "notif-push":
-      return (
-        <>
-          <SRow t="Mentions">
-            <NTog k="push_mention" />
-          </SRow>
-          <SRow t="Assignments">
-            <NTog k="push_assign" />
-          </SRow>
-          <SRow t="Comments">
-            <NTog k="push_comment" />
-          </SRow>
-          <SRow t="Due date reminders" d="One day before a task is due.">
-            <NTog k="push_due" />
-          </SRow>
-        </>
-      );
     case "notif-mentions":
       return (
         <>
@@ -2915,79 +2630,6 @@ function Body({ sec }: { sec: string }) {
           </div>
         </>
       );
-    case "2fa":
-      return <TwoFA />;
-    case "plan":
-      return <Plan />;
-    case "payment":
-      return (
-        <>
-          <SRow
-            t={
-              <span className="row" style={{ gap: 10 }}>
-                <span className="ftype" style={css({ "--c": "var(--blue)" })}>
-                  <Ic n="credit-card" s={15} />
-                </span>
-                Visa ending in 4242
-              </span>
-            }
-            d="Expires 08/2028 · Default"
-          >
-            <button className="btn btn-secondary btn-sm" onClick={() => toast("Card updates open in a secure payment window", { kind: "info" })}>
-              Update
-            </button>
-          </SRow>
-          <SRow t="Billing email" d="Invoices and receipts are sent here.">
-            <span className="muted" style={{ userSelect: "all" }}>
-              {me()!.email}
-            </span>
-          </SRow>
-          <SRow t="Billing address" d="2150 Mission St, San Francisco, CA 94110">
-            <button className="btn btn-secondary btn-sm" onClick={() => toast("Address editing opens in the billing portal", { kind: "info" })}>
-              Edit
-            </button>
-          </SRow>
-          <SRow t="Tax ID" d="Shown on invoices">
-            <span className="muted">US EIN ••-•••4410</span>
-          </SRow>
-        </>
-      );
-    case "invoices":
-      return (
-        <div className="panel" style={{ overflowX: "auto" }}>
-          <table className="perm-t" style={{ minWidth: 480 }}>
-            <thead>
-              <tr>
-                <th style={{ paddingLeft: 14 }}>Invoice</th>
-                <th style={{ textAlign: "left" }}>Date</th>
-                <th style={{ textAlign: "left" }}>Amount</th>
-                <th style={{ textAlign: "left" }}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.invoices.map((i) => (
-                <tr key={i.id}>
-                  <td style={{ paddingLeft: 14 }} className="mono">
-                    {i.id}
-                  </td>
-                  <td style={{ textAlign: "left" }} className="num">
-                    {fmtDate(i.date, true)}
-                  </td>
-                  <td style={{ textAlign: "left" }} className="num">
-                    {i.amt}
-                  </td>
-                  <td style={{ textAlign: "left" }}>
-                    <span className="badge green">
-                      <Ic n="check" s={11} />
-                      {i.st}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
   }
   return <Empty icon="file-question" title="Page not found" text="That settings page doesn't exist." />;
 }
@@ -3007,7 +2649,6 @@ const LEADS: Record<string, string> = {
   github: "The GitHub App's installations, and the repository each project reads code from.",
   audit: "Everything people and agents changed, who asked, and who approved.",
   "notif-email": "Choose which emails you receive.",
-  "notif-push": "Notifications on desktop and mobile.",
   "notif-mentions": "Decide which mentions reach you.",
   "notif-assign": "Updates about tasks assigned to you.",
   "notif-agents": "What the agents tell you about.",
@@ -3018,18 +2659,11 @@ const LEADS: Record<string, string> = {
   "my-agents": "How you like each agent to work, for the conversations you start. Only you see these.",
   password: "Use a long password you don't use anywhere else.",
   sessions: "Browsers and apps signed in to your account, and the tokens that act as you.",
-  "2fa": "Add a second step when signing in.",
-  plan: "Your subscription and usage.",
-  payment: "Payment method and billing details.",
-  invoices: "Past invoices for this workspace.",
 };
 
 const ITEM_NEEDS: Record<string, Perm> = {
   workspace: "workspace:manage",
   permissions: "workspace:manage",
-  plan: "workspace:billing",
-  payment: "workspace:billing",
-  invoices: "workspace:billing",
 };
 
 export function Settings() {

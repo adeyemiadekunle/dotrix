@@ -80,10 +80,9 @@ apps/backend/
 │   │   ├── health.py            /health (liveness), /health/ready (database)
 │   │   └── v1.py                mounts every module router under /v1
 │   ├── modules/
-│   │   ├── web/                 the web app's session under /api (not in the OpenAPI schema): sign in / up / out into httpOnly cookies, refresh (shared per token), CSRF header check, GitHub sign-in and app-install redirects, calendar feeds at their pre-Vite address
+│   │   ├── web/                 the web app's session under /api (not in the OpenAPI schema): sign in / up / out into httpOnly cookies, refresh (shared per token), CSRF header check, GitHub sign-in and app-install redirects
 │   │   ├── auth/                users, sign-up/login, refresh tokens, email verification, password reset, GitHub sign-in (github.py), your profile (profile.py: name, what you do, photo, sign-in methods), where you're signed in (sessions.py: browsers and the desktop app)
 │   │   ├── api_tokens/          personal access tokens (dtx_…) and CLI device login
-│   │   ├── calendar/            per-person iCalendar feed of issue dates at a secret URL (FR-32)
 │   │   ├── workspaces/          workspaces (personal or organisation), members, roles, the permission matrix (permissions.py), turn into an organisation
 │   │   ├── invites/             email and link invites
 │   │   ├── teams/               teams in a workspace: their people and the projects each looks after (one team each)
@@ -211,14 +210,14 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 Built and in use (details live in the code and its docstrings; this list is only the map):
 - **Accounts:** email + password, magic links, GitHub sign-in, verification, password reset, sessions (browsers and the desktop app) and API tokens, profile and photo, notification settings, rate limits, Sendly email with templates.
 - **Workspaces:** Personal or Organisation; roles and the permission matrix with member grants; invites by email and link; teams; restricted projects; moving projects; turning a personal workspace into an organisation; audit log.
-- **Projects and the board:** issues with keys, types, checklists, repeats, stars, attachments, dependencies, claim, archive and delete, move between projects, comments with edits and reactions, @mentions, watchers; knowledge files with versions; document uploads converted to Markdown; activity; notifications in the app and by email; the calendar feed.
+- **Projects and the board:** issues with keys, types, checklists, repeats, stars, attachments, dependencies, claim, archive and delete, move between projects, comments with edits and reactions, @mentions, watchers; knowledge files with versions; document uploads converted to Markdown; activity; notifications in the app and by email.
 - **Agents:** contracts per workspace with project overrides (six named built-ins: Nova, Lyra, Orion, Vega, Juno, Echo); pipelines, checkpoints, results, findings dedup; context packs, search (pgvector + full text), the project graph and staleness; rules, skills, templates, lessons; web research with checked claims; automations on schedules and events; approvals, standing rules to act without approval, "Always allow this"; organisations' own model keys (Settings → Models), a model per agent, limits shown; conversations across projects.
 - **Per person (2026-10-09):** conversations private to whoever started them; each person's own keys and default model (Account → Your models; a run uses their key, if the organisation allows personal keys, else the workspace's, else the server's; their own key lets them pick its models); their own touches to each agent (Your agents: up to 2,000 characters of instructions and a model, never tools, access, or autonomy; automations don't use them); a run stopped at its model's limit says so (in Chat, Notifications, and a toast) and continues from where it stopped, now or once the limit resets (`POST .../agent/runs/{id}/continue`). A personal workspace is its owner's in full.
 - **Code:** the GitHub App connection, checkouts agents read, coding runs in a sandbox (Claude Code or Codex) with sessions, follow-ups, PRs, and the Reviewer. Sandboxes: Docker (a container per run on an internal network whose only way out is an egress proxy to the model API; `infra/coding`), OpenShell, or local for development. Subprocesses (git, the sandbox) also run on Windows' selector loop, through threads.
 - **Web:** the whole UI on seeded data at `/w/dotrix`, and a real workspace wired to the API everywhere (Chat and coding through TanStack Query); the agents panel, faces, corner notices, Home's ask box. Chat has a Chat / Code switch; message boxes pick the project and agent with @ (`components/AtPicker.tsx`); the Code tab starts a session (@ or / picks one of your issues; any open one in a personal workspace) and shows each session's turns, repo, branch, commit, pull request, and changed files (the desktop-style side panel was seeded-only; it returns with C below).
 - **CLI:** device login, linking a checkout, the mirror, chat / brief / triage / review / run / jobs with inline approvals (and "always allow"), the issue board, the MCP server for Claude Code and Codex.
 
-Not being extended (kept working only): the CLI's local engine, the calendar feed, the desktop app.
+Not being extended (kept working only): the CLI's local engine, the desktop app.
 
 ## Plan: coding agent (design, 2026-10-10)
 
@@ -251,7 +250,7 @@ Each phase is usable on its own.
 - [ ] Wire Chat and coding to the API: conversations and runs (streaming, Stop, rename), the limit notice with Continue under a stopped run, proposed changes with approve / reject / "Always allow", checkpoints, results with their actions, research sources, conversations across projects; the Code tab, sessions (with their repo, base, commits, and changed files from the turn's `base_sha`, `head_sha`, `files_changed`; see Plan: coding agent), follow-ups, "Start coding" in the drawer; Notifications' approvals with the change in the detail; the agents panel and corner notices from real runs
 - [ ] Rewrite the parked browser tests for the new screens (`test.fixme(true, NOT_WIRED)`): board, project views, workspace pages, admin, mobile, mentions now; chat, research, pipelines after Chat is wired; the signed-out redirect in `auth.spec.ts`; document upload (needs MinIO in CI)
 - [ ] Delete `pages/(app)`, `components/` and `lib/` pieces only the old app uses, once Chat and coding are wired
-- [ ] Settings still "not available yet": two-factor authentication, push notifications, deleting a workspace, changing its address, billing (plan, payment, invoices), the calendar feed's settings
+- [ ] Settings still "not available yet": two-factor authentication, push notifications, deleting a workspace, changing its address, billing (plan, payment, invoices)
 - [ ] A page for a settings section a person can't use, if they reach it by its address (today it renders and the API refuses its calls)
 
 ### Backend (`apps/backend`)

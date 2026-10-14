@@ -26,7 +26,7 @@ import { Inbox } from "../screens/Inbox";
 import { Project } from "../screens/Project";
 import { Projects } from "../screens/Projects";
 import { Search } from "../screens/Search";
-import { CalendarPage, Favorites, MyTasks, Tasks, TimelinePage } from "../screens/TaskPages";
+import { Favorites, MyTasks } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
 import { ROUTE_NAMES, Shell, routeName } from "./Shell";
 
@@ -38,9 +38,9 @@ onLoaded.push(limitToasts);
 const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   home: Home,
   mytasks: MyTasks,
-  tasks: Tasks,
-  calendar: CalendarPage,
-  timeline: TimelinePage,
+  tasks: ToHome,
+  calendar: ToHome,
+  timeline: ToHome,
   favorites: Favorites,
   activity: ToHome,
   projects: Projects,

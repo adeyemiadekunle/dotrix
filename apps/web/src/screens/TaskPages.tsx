@@ -4,12 +4,9 @@ import { newTask } from "../core/more";
 import { go } from "../core/nav";
 import { TODAY, dOff, diffD, parse } from "../core/utils";
 import { D, S, allTasks, canSee, isOver, visibleProjects } from "../data/store";
-import { LCOLS, ListView, MiniRow } from "../components/TaskList";
-import { applyView, groupTasks, viewChange, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
+import { ListView, MiniRow } from "../components/TaskList";
+import { applyView, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
 import { Empty } from "../ui/helpers";
-import { Board } from "../views/Board";
-import { Calendar } from "../views/Calendar";
-import { TlControls, Timeline } from "../views/Timeline";
 import { ProjectCard } from "./Projects";
 
 export function MyTasks() {
@@ -79,96 +76,6 @@ export function MyTasks() {
       <div className="list-wrap">
         <ListView groups={groups} k={k} cols={["project", "status", "priority", "due"]} complete drag={false} />
       </div>
-    </div>
-  );
-}
-
-const TASKS_COLS = ["status", "assignee", "priority", "due", "project"];
-
-export function Tasks() {
-  const k = "tasks";
-  const v = viewOf(k) as ReturnType<typeof viewOf> & { mode?: string };
-  if (!v.mode || v.mode === "table") v.mode = "list";
-  const ts = applyView(allTasks(), v);
-  const right = (
-    <div className="seg">
-      {(
-        [
-          ["list", "List", "list"],
-          ["board", "Board", "square-kanban"],
-        ] as const
-      ).map(([m, n, i]) => (
-        <button key={m} className={v.mode === m ? "on" : ""} onClick={() => viewChange(k, (vv) => ((vv as typeof v).mode = m))}>
-          <Ic n={i} s={13} />
-          <span className="hide-m">{n}</span>
-        </button>
-      ))}
-    </div>
-  );
-  return (
-    <div className="page flush">
-      <div className="ph">
-        <div>
-          <h1>Tasks</h1>
-          <p>Every task across {visibleProjects().filter(canSee).length} projects.</p>
-        </div>
-        <div className="acts">
-          <button className="btn btn-primary" onClick={() => newTask()}>
-            <Ic n="plus" s={14} />
-            New task
-          </button>
-        </div>
-      </div>
-      <ViewToolbar k={k} right={right} cols={v.mode === "list" && TASKS_COLS.map((c) => [c, LCOLS[c]![0]])} group={v.mode !== "board"} />
-      {v.mode === "board" ? (
-        <Board ts={ts} k={k} />
-      ) : (
-        <div className="list-wrap">
-          <ListView groups={groupTasks(ts, v.group)} k={k} cols={TASKS_COLS} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function CalendarPage() {
-  const k = "cal";
-  return (
-    <div className="page flush">
-      <div className="ph">
-        <div>
-          <h1>Calendar</h1>
-          <p>Deadlines and events across every project.</p>
-        </div>
-        <div className="acts">
-          <button className="btn btn-primary" onClick={() => newTask()}>
-            <Ic n="plus" s={14} />
-            New task
-          </button>
-        </div>
-      </div>
-      <ViewToolbar k={k} group={false} />
-      <Calendar ts={applyView(allTasks(), viewOf(k))} k={k} events />
-    </div>
-  );
-}
-
-export function TimelinePage() {
-  const k = "tl";
-  if (!S.ui.tlWsInit) {
-    S.ui.tlWsInit = true;
-    S.ui.tlGroup = "project";
-  }
-  return (
-    <div className="page flush">
-      <div className="ph">
-        <div>
-          <h1>Timeline</h1>
-          <p>Schedules, dependencies, and milestones across projects.</p>
-        </div>
-      </div>
-      <ViewToolbar k={k} group={false} extra={<TlControls />} />
-      <Timeline ts={applyView(allTasks(), viewOf(k))} k={k} p={null} />
     </div>
   );
 }

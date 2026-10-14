@@ -19,7 +19,6 @@ export const DEFAULT_PREFS = {
   density: "comfortable",
   weekStart: 1,
   dateFmt: "MMM d",
-  lang: "English (US)",
   tz: "(GMT-07:00) Pacific Time",
   motion: "system",
   home: "home",
@@ -90,10 +89,6 @@ export const S = {
     mention: null as null | { tid: string; q: string },
     // each page's own controls (kept in the store, so they survive navigating away)
     calDate: iso(TODAY),
-    calMode: "month" as "month" | "week",
-    tlZoom: "week" as "week" | "month",
-    tlGroup: "status",
-    tlWsInit: false,
     fileQ: "",
     fileType: "all",
     fileSort: "date",
