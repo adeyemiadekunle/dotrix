@@ -23,6 +23,7 @@ import { Home } from "../screens/Home";
 import { Inbox } from "../screens/Inbox";
 import { Project } from "../screens/Project";
 import { Projects } from "../screens/Projects";
+import { ActivityPage } from "../screens/Activity";
 import { Search } from "../screens/Search";
 import { MyTasks } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
@@ -40,7 +41,7 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   calendar: ToHome,
   timeline: ToHome,
   favorites: () => <ToMyTasks view="starred" />,
-  activity: ToHome,
+  activity: ActivityPage,
   projects: Projects,
   project: Project,
   overview: ToHome,
@@ -56,7 +57,7 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   settings: Settings,
 };
 
-/** Overview and Activity folded into Home: old links open it. */
+/** Overview folded into Home: old links open it. */
 function ToHome() {
   useEffect(() => go("home", {}, { replace: true }), []);
   return null;
