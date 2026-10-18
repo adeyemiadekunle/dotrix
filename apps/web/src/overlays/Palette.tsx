@@ -60,7 +60,7 @@ function commands(): (Item & { id: string })[] {
       { id: "c-mem", name: "Members settings", icon: "users", run: () => go("settings", { sec: "members" }) },
       { id: "c-set", name: "Open settings", icon: "settings", kbd: "G S", run: () => go("settings") },
       { id: "c-agents", name: "Agents settings", icon: "bot", run: () => go("settings", { sec: "agents" }) },
-      { id: "c-app", name: "Appearance settings", icon: "palette", run: () => go("settings", { sec: "appearance" }) },
+      { id: "c-app", name: "Preferences settings", icon: "palette", run: () => go("settings", { sec: "preferences" }) },
       { id: "c-ws", name: "Switch workspace…", icon: "arrow-left-right", run: () => ((S.ui.palette = { q: "", mode: "ws", scope: "all", hl: 0 }), render()) },
       {
         id: "c-dark",
