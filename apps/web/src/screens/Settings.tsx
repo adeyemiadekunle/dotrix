@@ -79,7 +79,6 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
     "General",
     [
       ["workspace", "Workspace", "building-2"],
-      ["appearance", "Appearance", "palette"],
       ["datetime", "Date & time", "clock"],
     ],
   ],
@@ -96,22 +95,12 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
     [
       ["agents", "Agents", "bot"],
       ["models", "Models", "cpu"],
-      ["rules", "Rules and skills", "scroll-text"],
-      ["automations", "Automations", "zap"],
       ["github", "GitHub", "github"],
       ["audit", "Audit log", "list-checks"],
     ],
     true,
   ],
-  [
-    "Notifications",
-    [
-      ["notif-email", "Email", "mail"],
-      ["notif-mentions", "Mentions", "at-sign"],
-      ["notif-assign", "Task assignments", "user-check"],
-      ["notif-agents", "Agents", "sparkles"],
-    ],
-  ],
+  ["Notifications", [["notif-email", "Notifications", "bell"]]],
   [
     "Personal",
     [
@@ -119,7 +108,6 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
       ["my-models", "Your models", "key-round"],
       ["my-agents", "Your agents", "bot"],
       ["preferences", "Preferences", "sliders-horizontal"],
-      ["shortcuts", "Keyboard shortcuts", "keyboard"],
     ],
   ],
   [
@@ -2167,61 +2155,13 @@ function LivePermissions() {
 }
 
 function Body({ sec }: { sec: string }) {
+  if (sec === "appearance" || sec === "shortcuts") sec = "preferences";
   const d = D();
   const Pr = S.prefs;
   if (isLive() && sec.startsWith("notif-")) return <LiveNotifs sec={sec} />;
   switch (sec) {
     case "workspace":
       return <Workspace />;
-    case "appearance":
-      return (
-        <>
-          <div className="sblock" style={{ marginTop: 0 }}>
-            <h2>Theme</h2>
-            <ThemeCards />
-          </div>
-          <div className="sblock">
-            <h2>Accent color</h2>
-            <SRow t="Accent" d="Used for primary buttons, focus rings, and selection.">
-              <div className="swatches" role="radiogroup" aria-label="Accent color">
-                {ACCENTS.map(([k, c]) => (
-                  <button
-                    key={k}
-                    className={`sw ${Pr.accent === k ? "on" : ""}`}
-                    style={css({ "--c": c })}
-                    role="radio"
-                    aria-checked={Pr.accent === k}
-                    onClick={() => setPref("accent", k)}
-                    aria-label={k}
-                    data-tip={k[0]!.toUpperCase() + k.slice(1)}
-                  >
-                    {Pr.accent === k && <Ic n="check" s={13} />}
-                  </button>
-                ))}
-              </div>
-            </SRow>
-          </div>
-          <div className="sblock">
-            <h2>Density</h2>
-            <SRow t="Sidebar density" d="Compact fits more projects on screen.">
-              <Seg k="side" opts={["comfortable", "compact"]} />
-            </SRow>
-            <SRow t="Task display" d="Row height in lists and card padding on boards.">
-              <Seg k="density" opts={["comfortable", "compact"]} />
-            </SRow>
-            <SRow t="Motion" d="Reduce animations for drawers, modals, and transitions.">
-              <Sel
-                k="motion"
-                v={Pr.motion}
-                opts={[
-                  ["system", "Follow system"],
-                  ["reduce", "Reduce motion"],
-                ]}
-              />
-            </SRow>
-          </div>
-        </>
-      );
     case "datetime":
       return (
         <>
@@ -2490,6 +2430,54 @@ function Body({ sec }: { sec: string }) {
     case "preferences":
       return (
         <>
+          <div className="gh" style={{ marginTop: 0 }}>
+            Appearance
+          </div>
+          <div className="sblock">
+            <h2>Theme</h2>
+            <ThemeCards />
+          </div>
+          <div className="sblock">
+            <h2>Accent color</h2>
+            <SRow t="Accent" d="Used for primary buttons, focus rings, and selection.">
+              <div className="swatches" role="radiogroup" aria-label="Accent color">
+                {ACCENTS.map(([k, c]) => (
+                  <button
+                    key={k}
+                    className={`sw ${Pr.accent === k ? "on" : ""}`}
+                    style={css({ "--c": c })}
+                    role="radio"
+                    aria-checked={Pr.accent === k}
+                    onClick={() => setPref("accent", k)}
+                    aria-label={k}
+                    data-tip={k[0]!.toUpperCase() + k.slice(1)}
+                  >
+                    {Pr.accent === k && <Ic n="check" s={13} />}
+                  </button>
+                ))}
+              </div>
+            </SRow>
+          </div>
+          <div className="sblock">
+            <h2>Density</h2>
+            <SRow t="Sidebar density" d="Compact fits more projects on screen.">
+              <Seg k="side" opts={["comfortable", "compact"]} />
+            </SRow>
+            <SRow t="Task display" d="Row height in lists and card padding on boards.">
+              <Seg k="density" opts={["comfortable", "compact"]} />
+            </SRow>
+            <SRow t="Motion" d="Reduce animations for drawers, modals, and transitions.">
+              <Sel
+                k="motion"
+                v={Pr.motion}
+                opts={[
+                  ["system", "Follow system"],
+                  ["reduce", "Reduce motion"],
+                ]}
+              />
+            </SRow>
+          </div>
+          <div className="gh">Personal defaults</div>
           <SRow t="Open on launch" d="The page you see when dotrix opens.">
             <Sel
               k="home"
@@ -2515,11 +2503,7 @@ function Body({ sec }: { sec: string }) {
           <SRow t="Confirm before deleting tasks">
             <PTog k="confirmDel" />
           </SRow>
-        </>
-      );
-    case "shortcuts":
-      return (
-        <>
+          <div className="gh">Keyboard shortcuts</div>
           {SHORTCUTS.map(([g, list]) => (
             <div key={g} className="sblock" style={{ marginTop: 18 }}>
               <h2>{g}</h2>
@@ -2614,7 +2598,6 @@ function Body({ sec }: { sec: string }) {
 
 const LEADS: Record<string, string> = {
   workspace: "Your workspace name, address, and identity.",
-  appearance: "Customize how dotrix looks on this device.",
   language: "Language and regional formats.",
   datetime: "How dates and times appear across the workspace.",
   members: `people have access to this workspace.`,
@@ -2625,17 +2608,38 @@ const LEADS: Record<string, string> = {
   automations: "Agents that run on a schedule or when something happens. Their changes still wait for approval.",
   github: "The GitHub App's installations, and the repository each project reads code from.",
   audit: "Everything people and agents changed, who asked, and who approved.",
-  "notif-email": "Choose which emails you receive.",
-  "notif-mentions": "Decide which mentions reach you.",
-  "notif-assign": "Updates about tasks assigned to you.",
-  "notif-agents": "What the agents tell you about.",
+  "notif-email": "Choose what reaches you, and where.",
   profile: "How you appear to others in the workspace.",
   preferences: "Personal defaults for how you work.",
-  shortcuts: "Move faster with the keyboard.",
   "my-models": "Your own model keys and the model you start conversations on.",
   "my-agents": "How you like each agent to work, for the conversations you start. Only you see these.",
   password: "Use a long password you don't use anywhere else.",
   sessions: "Browsers and apps signed in to your account, and the tokens that act as you.",
+};
+
+// Old sec ids fold into a page: Agents holds Rules and Automations, Notifications holds the
+// four notif- pages, Preferences holds Appearance and Shortcuts (normalized inside Body).
+const SEC_PAGE: Record<string, string> = {
+  rules: "agents",
+  automations: "agents",
+  "notif-mentions": "notif-email",
+  "notif-assign": "notif-email",
+  "notif-agents": "notif-email",
+  appearance: "preferences",
+  shortcuts: "preferences",
+};
+const SEC_TABS: Record<string, [string, string][]> = {
+  agents: [
+    ["agents", "Agents"],
+    ["rules", "Rules and skills"],
+    ["automations", "Automations"],
+  ],
+  "notif-email": [
+    ["notif-email", "Email"],
+    ["notif-mentions", "Mentions"],
+    ["notif-assign", "Task assignments"],
+    ["notif-agents", "Agents"],
+  ],
 };
 
 const ITEM_NEEDS: Record<string, Perm> = {
@@ -2650,8 +2654,9 @@ export function Settings() {
   const admin = allowed("workspace:manage");
   // Pages only some people may open: shown to them alone (the API refuses the rest anyway).
   const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true);
-  const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === sec);
-  const lead = sec === "members" ? `${D().members.length} ${LEADS.members}` : LEADS[sec];
+  const page = SEC_PAGE[sec] ?? sec;
+  const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === page);
+  const lead = sec === "members" ? `${D().members.length} ${LEADS.members}` : LEADS[page];
   return (
     <div className="set">
       <nav className="set-nav" aria-label="Settings">
@@ -2663,7 +2668,7 @@ export function Settings() {
               .map(([k, n, i]) => (
                 <button
                   key={k}
-                  className={`sitem ${sec === k ? "on" : ""}`}
+                  className={`sitem ${sec === k || page === k ? "on" : ""}`}
                   onClick={() => ((S.ui.settings = k), (S.ui.agentSel = null), go("settings", { sec: k }))}
                 >
                   <Ic n={i} s={15} />
@@ -2680,6 +2685,15 @@ export function Settings() {
               <h1>{title[1]}</h1>
               <p className="lead">{lead}</p>
             </>
+          )}
+          {SEC_TABS[page] && (
+            <div className="seg" style={{ marginBottom: 14 }}>
+              {SEC_TABS[page].map(([k, n]) => (
+                <button key={k} className={sec === k ? "on" : ""} onClick={() => ((S.ui.settings = k), go("settings", { sec: k }))}>
+                  {n}
+                </button>
+              ))}
+            </div>
           )}
           <Body sec={sec} />
         </div>
