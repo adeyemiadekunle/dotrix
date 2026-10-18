@@ -23,8 +23,6 @@ test("every screen renders", async ({ page }) => {
     ["activity", "Good"],
     ["archive", "Archive"],
     ["settings/agents", "Agents"],
-    ["design-system", "Design system"],
-    ["system-states", "System states"],
     ["p/WEB/board", "Website Redesign"],
     ["p/WEB/knowledge", "Website Redesign"],
     ["nowhere", "Page not found"],

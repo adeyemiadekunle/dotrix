@@ -29,9 +29,7 @@ export type Route =
   | "activity"
   | "settings"
   | "archive"
-  | "chat"
-  | "system"
-  | "states";
+  | "chat";
 
 export interface Params {
   id?: string; // a project key, member, or team id
@@ -56,8 +54,6 @@ const SIMPLE: Partial<Record<Route, string>> = {
   activity: "activity",
   archive: "archive",
   chat: "chat",
-  system: "design-system",
-  states: "system-states",
 };
 
 export function href(route: Route, params: Params = {}): string {

@@ -35,8 +35,6 @@ export const ROUTE_NAMES: Record<string, string> = {
   settings: "Settings",
   archive: "Archive",
   chat: "Chat",
-  system: "Design system",
-  states: "System states",
 };
 
 /** A page's name; Chat is "Code" while its Code tab is open. */

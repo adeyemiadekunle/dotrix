@@ -10,7 +10,6 @@ import { WS, back, currentSlug, go, useRoute, type Route } from "../core/nav";
 import { limitToasts } from "../core/agents";
 import { live, loadWorkspace, onLoaded, showDemo } from "../data/live";
 import { loadInvites } from "../data/account";
-import { DesignSystem, SystemStates } from "../screens/DesignSystem";
 import { D, projByKey, team, useStudio } from "../data/store";
 import { Drawer } from "../overlays/Drawer";
 import { ModalLayer } from "../overlays/Modals";
@@ -56,8 +55,6 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   team: TeamPage,
   archive: Archive,
   settings: Settings,
-  system: DesignSystem,
-  states: SystemStates,
 };
 
 /** Overview and Activity folded into Home: old links open it. */
