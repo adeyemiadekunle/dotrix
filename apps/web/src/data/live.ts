@@ -15,31 +15,34 @@
 // Settings and Members (your account, the workspace, its people, agents' settings) are in
 // account.ts. Not yet: chat and coding (their own step).
 import { api, apiFetch, authPost, hasSession, problemMessage, unwrap, type Schemas } from "@/lib/api";
+import {
+  RECUR_OUT,
+  STATUS_OUT,
+  fromApi,
+  hashTint,
+  logComment,
+  ms,
+  toActivity,
+  toAgent,
+  toAttachment,
+  toAudit,
+  toAutomation,
+  toChecklist,
+  toFile,
+  toKnowledge,
+  toMember,
+  toNotif,
+  toProject,
+  toTask,
+} from "@/lib/view-models";
+import { invalidateLiveQueries } from "@/lib/queryClient";
 
-import { PCOLORS } from "../core/constants";
 import { fmtDate, uid } from "../core/utils";
-import { fileType, fsize } from "../ui/helpers";
+import { fileType } from "../ui/helpers";
 import { toast } from "../ui/toast";
 import { htmlToMd, mdToHtml } from "./markdown";
-import { AGENTS } from "./seed-dotrix";
 import { D, S, afterMutate, persist, render } from "./store";
-import type {
-  Activity,
-  Agent,
-  Attachment,
-  AuditEvent,
-  Automation,
-  Comment,
-  Data,
-  FileItem,
-  KnowledgeFile,
-  Member,
-  Notif,
-  NotifType,
-  Project,
-  Subtask,
-  Task,
-} from "./types";
+import type { Automation, Comment, Data, FileItem, KnowledgeFile, Member, Project, Task } from "./types";
 
 type W = Schemas["WorkspaceWithRole"];
 
@@ -56,259 +59,17 @@ export const live = {
   demo: null as Data | null,
 };
 export const isLive = () => live.mode === "live";
+
+/** API writes also refresh the TanStack caches the migrated screens read (store writes go
+ *  through mutate() + these senders; hook-read screens refetch on invalidation). */
+const send = <T>(p: Promise<{ data?: T; error?: unknown; response: Response }>) =>
+  unwrap(p).then((r) => {
+    invalidateLiveQueries();
+    return r;
+  });
 // While a real workspace is shown, this browser keeps saving the demo's data, never the API's.
 persist.data = () => (live.mode === "demo" ? S.data : (live.demo ?? S.data));
 /** An id the API made (a project or user), not one the store made up for a new item. */
-const fromApi = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(id);
-
-/* ---------- mapping the API into the store's shapes ---------- */
-
-const STATUS_IN: Record<string, Task["status"]> = {
-  backlog: "backlog",
-  todo: "todo",
-  in_progress: "progress",
-  blocked: "blocked",
-  review: "review",
-  done: "done",
-};
-const STATUS_OUT: Record<Task["status"], Schemas["IssueStatus"]> = {
-  backlog: "backlog",
-  todo: "todo",
-  progress: "in_progress",
-  blocked: "blocked",
-  review: "review",
-  done: "done",
-};
-const ROLE_IN: Record<string, Member["role"]> = { owner: "Owner", admin: "Admin", member: "Member", guest: "Guest" };
-const AGENT_IN: Record<string, string> = { "project-manager": "auto", pm: "auto", auto: "auto" };
-const TINTS = Object.values(PCOLORS);
-
-const hashTint = (s: string) => TINTS[[...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % TINTS.length]!;
-const ms = (s: string | null | undefined) => (s ? new Date(s).getTime() : Date.now());
-/** An agent or coding tool as the store names it ("auto", "research", "agent:claude-code"). */
-const agentId = (a: string | null | undefined) =>
-  a ? (a.includes("code") || a === "codex" ? `agent:${a === "coding-agent" ? "claude-code" : a}` : (AGENT_IN[a] ?? a)) : null;
-const actor = (user: string | null | undefined, agent: string | null | undefined) => user ?? agentId(agent) ?? "";
-
-function toMember(m: Schemas["MemberRead"]): Member {
-  return {
-    id: m.user_id,
-    name: m.display_name,
-    email: m.email,
-    role: ROLE_IN[m.role] ?? "Member",
-    title: m.title ?? "",
-    c: hashTint(m.user_id),
-    status: "active",
-    last: null,
-    tz: "",
-  };
-}
-
-function toProject(p: Schemas["ProjectRead"], members: Schemas["MemberRead"][], starred: Set<string>): Project {
-  const status: Project["status"] =
-    p.status === "completed"
-      ? "complete"
-      : p.status === "on_hold"
-        ? "hold"
-        : p.status === "planning"
-          ? "planning"
-          : p.health === "at_risk" || p.health === "off_track"
-            ? "risk"
-            : "active";
-  const seeing = members.filter((m) => m.sees_all_projects || m.project_ids.includes(p.id)).map((m) => m.user_id);
-  const owner = members.find((m) => m.role === "owner")?.user_id ?? seeing[0] ?? "";
-  return {
-    id: p.id,
-    key: p.key,
-    name: p.name,
-    icon: p.icon ?? "folder",
-    color: p.color ?? Object.keys(PCOLORS)[[...p.key].reduce((a, c) => a + c.charCodeAt(0), 0) % TINTS.length]!,
-    status,
-    lead: owner,
-    due: p.target_date ?? "",
-    start: p.created_at.slice(0, 10),
-    fav: starred.has(p.id),
-    members: seeing,
-    desc: p.description || "No description yet.",
-    milestones: [],
-    last: Math.max(0, Math.round((Date.now() - ms(p.updated_at)) / 60000)),
-    private: p.access === "restricted",
-    repo: p.repo_url ?? undefined,
-    model: p.model,
-    archived: p.archived_at ? true : undefined,
-  };
-}
-
-const RECUR_IN: Record<string, string> = { daily: "Daily", weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly" };
-const RECUR_OUT: Record<string, Schemas["Recurrence"]> = { Daily: "daily", Weekly: "weekly", "Every 2 weeks": "biweekly", Monthly: "monthly" };
-
-const toSubtask = (c: Schemas["ChecklistItem"]): Subtask => ({
-  id: c.id,
-  title: c.title,
-  done: c.done ?? false,
-  due: c.due ?? null,
-  assignee: c.assignee_user_id ?? null,
-});
-const toChecklist = (subs: Subtask[]): Schemas["ChecklistItem"][] =>
-  subs.map((x) => ({ id: x.id, title: x.title, done: x.done, due: x.due || null, assignee_user_id: x.assignee && fromApi(x.assignee) ? x.assignee : null }));
-const toAttachment = (a: Schemas["AttachmentRead"]): Attachment => ({
-  id: a.id,
-  name: a.filename,
-  type: fileType(a.filename),
-  size: fsize(a.size),
-  by: a.uploaded_by_id ?? "",
-  at: ms(a.created_at),
-});
-/** Stand-ins for the attachments a list row only counts (cards show the count); the drawer loads the real ones. */
-const counted = (n: number): Attachment[] => Array.from({ length: n }, (_, k) => ({ id: `counted-${k}`, name: "", type: "other", size: "", by: "", at: 0 }));
-
-type IssueLike = Schemas["WorkspaceIssue"] | (Schemas["IssueRead"] & { project_id?: string });
-function toTask(i: IssueLike, projectId: string, order: number): Task {
-  const full = "description" in i;
-  return {
-    id: i.key,
-    key: i.key,
-    project: projectId,
-    title: i.title,
-    status: STATUS_IN[i.status] ?? "todo",
-    assignee: i.assignee_user_id ?? agentId(i.assignee_agent),
-    priority: i.priority,
-    due: i.due,
-    start: i.scheduled ?? null,
-    labels: i.labels,
-    subtasks: (i.checklist ?? []).map(toSubtask),
-    attachments: "attachments" in i && i.attachments ? i.attachments.map(toAttachment) : counted(i.attachment_count ?? 0),
-    deps: i.depends_on ?? [],
-    desc: full ? mdToHtml(i.description) : "",
-    estimate: i.estimate != null ? `${i.estimate}` : null,
-    created: ms(i.created_at),
-    updated: ms(i.updated_at),
-    order,
-    fav: false,
-    recur: i.recurrence ? (RECUR_IN[i.recurrence] ?? null) : null,
-    completedAt: i.status === "done" ? ms(i.updated_at) : undefined,
-    archived: i.archived_at ? true : undefined,
-    type: i.type,
-    parent: i.parent_key ?? null,
-  };
-}
-
-const NOTIF_IN: Record<string, NotifType> = {
-  assigned: "assign",
-  mention: "mention",
-  watching: "update",
-  approval: "approval",
-  checkpoint: "checkpoint",
-  finding: "finding",
-  decided: "decided",
-  limit: "limit",
-};
-function toNotif(n: Schemas["NotificationRead"]): Notif {
-  return {
-    id: n.id,
-    type: NOTIF_IN[n.kind] ?? "update",
-    by: n.actor_user_id ?? agentId(n.actor_agent),
-    task: n.issue_key ?? undefined,
-    project: n.project_id,
-    thread: n.thread_id ?? undefined,
-    run: n.run_id ?? undefined,
-    text: n.title,
-    snippet: n.excerpt ?? "",
-    at: ms(n.created_at),
-    read: n.read || n.resolved,
-  };
-}
-
-function toActivity(a: Schemas["ActivityItem"]): Activity {
-  const verb: Record<string, string> = {
-    "issue.created": "created",
-    "issue.updated": "updated",
-    "issue.commented": "commented on",
-    "issue.claimed": "started",
-    "document.changed": "updated",
-    "document.deleted": "deleted",
-    "run.started": "asked the agents about",
-    "approval.decided": a.decision === "rejected" ? "rejected a change to" : "approved a change to",
-  };
-  return {
-    id: uid("a"),
-    by: actor(a.actor_user_id, a.actor_agent),
-    verb: verb[a.kind] ?? "updated",
-    task: a.issue_key ?? null,
-    project: a.project_id,
-    at: ms(a.at),
-    extra: a.path ?? (a.kind.startsWith("run.") || a.kind.startsWith("approval.") ? (a.target ?? a.project_name) : ""),
-  };
-}
-
-const SCHEDULE_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const EVENT_LABEL: Record<string, string> = {
-  "issue.created": "When an issue is created",
-  "issue.done": "When an issue is done",
-  "document.changed": "When a document changes",
-  "changes.approved": "When changes are approved",
-  "code.pushed": "When code is pushed",
-};
-const hour = (h: number) => `${String(h).padStart(2, "0")}:00`;
-
-/** An automation's trigger as the screens say it ("Weekly, Monday 08:00 · When an issue is created"). */
-function triggerLabel(a: Schemas["AutomationRead"]): string {
-  const parts = a.events.map((e) => EVENT_LABEL[e] ?? e);
-  if (a.schedule_hour != null)
-    parts.unshift(a.schedule_weekday != null ? `Weekly, ${SCHEDULE_DAYS[a.schedule_weekday]} ${hour(a.schedule_hour)}` : `Daily, ${hour(a.schedule_hour)}`);
-  return parts.join(" · ") || "Run by hand";
-}
-const toAutomation = (a: Schemas["AutomationRead"]): Automation => ({
-  id: a.id,
-  project: a.project_id,
-  name: a.name,
-  agent: AGENT_IN[a.agent] ?? a.agent,
-  trigger: triggerLabel(a),
-  enabled: a.enabled,
-  unattended: a.unattended,
-});
-
-function toKnowledge(f: Schemas["FileRead"], pid: string): KnowledgeFile {
-  return { path: f.path, project: pid, content: f.content, version: f.version, by: "", at: ms(f.updated_at) };
-}
-function toFile(d: Schemas["DocumentRead"], pid: string): FileItem {
-  return {
-    id: d.id,
-    project: pid,
-    name: d.filename,
-    type: fileType(d.filename),
-    size: fsize(d.size),
-    by: d.uploaded_by_id ?? "",
-    at: ms(d.created_at),
-    converted: d.status === "ready" ? "ready" : d.status === "failed" ? "failed" : "converting",
-  };
-}
-const toAudit = (a: Schemas["AuditEventRead"]): AuditEvent => ({
-  id: a.id,
-  at: ms(a.created_at),
-  by: actor(a.actor_user_id, a.agent),
-  action: a.action,
-  target: a.target ?? "",
-  project: a.project_id ?? undefined,
-});
-/** An agent as the store has it: the API's definition, with the store's icon and colour for it. */
-function toAgent(a: Schemas["AgentRead"]): Agent {
-  const handle = AGENT_IN[a.handle] ?? a.handle;
-  // A built-in's look and role; a contract based on one keeps them.
-  const look = AGENTS.find((x) => x.handle === handle) ?? AGENTS.find((x) => x.handle === (AGENT_IN[a.base ?? ""] ?? a.base));
-  return {
-    handle,
-    name: a.name,
-    role: look?.role ?? "Custom",
-    desc: a.description,
-    icon: look?.icon ?? "bot",
-    c: look?.c ?? "#57544E",
-    builtIn: a.source !== "custom",
-    customised: a.source === "customised",
-    tools: a.tools,
-    model: a.model ?? undefined,
-  };
-}
 
 /** The agents list again, after one was saved, reset, or created in Settings. */
 export async function reloadAgents() {
@@ -593,7 +354,7 @@ export function taskCreated(t: Task): Promise<void> {
     priority: full.priority ?? "none",
     parent: t.parent ?? null,
   };
-  const made = unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", { params: { path: projectPath(t.project) }, body }))
+  const made = send(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", { params: { path: projectPath(t.project) }, body }))
     .then((i) => {
       const was = t.id;
       t.id = t.key = i.key;
@@ -623,9 +384,7 @@ export async function loadComments(t: Task) {
     const i = await unwrap(
       api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } } }),
     );
-    const cs: Comment[] = (i.log ?? [])
-      .filter((e) => e.kind === "commented" && e.body)
-      .map((e) => ({ id: e.id, task: t.id, by: actor(e.author_user_id, e.author_agent), at: ms(e.created_at), text: e.body!, re: e.reactions ?? {} }));
+    const cs: Comment[] = (i.log ?? []).filter((e) => e.kind === "commented" && e.body).map((e) => logComment(e, t.id));
     D().comments = [...D().comments.filter((c) => c.task !== t.id), ...cs];
     // The full issue has the description and its attachments, which lists leave out.
     if (!t.desc) t.desc = mdToHtml(i.description);
@@ -693,7 +452,7 @@ export function projectChanged(p: Project, keys: (keyof Project)[]): Promise<voi
     else if (k === "private") body.access = p.private ? "restricted" : "workspace";
   }
   if (!Object.keys(body).length) return Promise.resolve();
-  return unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(p.id) }, body })).then(
+  return send(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(p.id) }, body })).then(
     () => undefined,
     (e) => {
       failed(p.name, e);
@@ -903,7 +662,7 @@ async function reloadFiles(pid: string) {
 /** A project file renamed in Files (the store shows the new name already). */
 export function fileRenamed(f: FileItem, was: string) {
   if (!isLive()) return;
-  void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}", { ...docPath(f), body: { filename: f.name } }))
+  void send(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}", { ...docPath(f), body: { filename: f.name } }))
     .then((d) => {
       f.name = d.filename; // as the API cleaned it
       f.type = fileType(d.filename);
@@ -920,7 +679,7 @@ export function fileRenamed(f: FileItem, was: string) {
 /** A copy of a project file: the API stores and converts it, then it's listed. */
 export async function fileDuplicated(f: FileItem) {
   try {
-    const d = await unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}/duplicate", docPath(f)));
+    const d = await send(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}/duplicate", docPath(f)));
     const i = D().files.indexOf(f);
     D().files.splice(i + 1, 0, toFile(d, f.project));
     render();
@@ -933,7 +692,7 @@ export async function fileDuplicated(f: FileItem) {
 /** A project file deleted in Files (already gone from the store): its markdown in Knowledge goes too. */
 export function fileDeleted(f: FileItem) {
   if (!isLive()) return;
-  void unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}", docPath(f)))
+  void send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}", docPath(f)))
     .then(() => reloadKnowledge(f.project))
     .catch((e) => {
       failed(`Deleting “${f.name}”`, e);
@@ -1021,7 +780,7 @@ function reconcile() {
     }
     if (Boolean(t.archived) !== was.arch) {
       was.arch = Boolean(t.archived);
-      void unwrap(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { ...path, body: { archived: was.arch } })).catch((e) => {
+      void send(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { ...path, body: { archived: was.arch } })).catch((e) => {
         failed(`“${t.title}”`, e);
         void reloadTask(t);
       });
@@ -1086,7 +845,7 @@ export function tasksDeleted(ts: Task[]) {
 export function projectDeleted(pr: Project) {
   if (!isLive()) return;
   synced.projects.delete(pr.id);
-  void unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(pr.id) } })).catch((e) => {
+  void send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(pr.id) } })).catch((e) => {
     failed(`Deleting ${pr.name}`, e);
     void reloadProjects();
   });
@@ -1140,7 +899,7 @@ export function commentEdited(c: Comment) {
 /** A comment deleted (already gone from the store). */
 export function commentDeleted(c: Comment) {
   if (!isLive() || !fromApi(c.id)) return;
-  void unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}", { params: { path: commentPath(c) } })).catch(
+  void send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}", { params: { path: commentPath(c) } })).catch(
     (e) => {
       failed("Deleting the comment", e);
       void reloadComments(c);
@@ -1183,7 +942,7 @@ const PROJECT_ICONS = new Set([
 /** Create an organisation with its first project (and the template's starter issues), invite
  * people, and return its slug to open. Signed in only; the demo keeps the seeded flow. */
 export async function organisationCreated(f: { name: string; project: string; icon: string; tasks: string[]; invites: string[] }): Promise<string> {
-  const ws = await unwrap(api.POST("/v1/workspaces", { body: { name: f.name, kind: "organization" } }));
+  const ws = await send(api.POST("/v1/workspaces", { body: { name: f.name, kind: "organization" } }));
   const inWs = { params: { path: { workspace_id: ws.id } } };
   const letters = f.project.toUpperCase().replace(/[^A-Z ]/g, "");
   let key = letters
@@ -1221,7 +980,7 @@ export async function organisationCreated(f: { name: string; project: string; ic
       }),
     );
   for (const email of f.invites)
-    await unwrap(api.POST("/v1/workspaces/{workspace_id}/invites", { ...inWs, body: { email, role: "member" } })).catch((e) =>
+    await send(api.POST("/v1/workspaces/{workspace_id}/invites", { ...inWs, body: { email, role: "member" } })).catch((e) =>
       failed(`The invite to ${email}`, e),
     );
   return ws.slug;
