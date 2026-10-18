@@ -1,7 +1,6 @@
 // Home, with dotrix's "Waiting for a decision": what the
 // agents ask you to approve or steer, first in the right column. The workspace's Overview and
 // Activity pages folded into this: its stats, workload, and milestones sit here, and the
-// activity feed keeps the old filters.
 import { useRef, useState, type CSSProperties } from "react";
 
 import { openTask } from "../core/actions";
@@ -10,10 +9,10 @@ import { Ic } from "../core/icons";
 import { invite, newProject, newTask } from "../core/more";
 import { go } from "../core/nav";
 import { DAY, MONL, TODAY, WDL, ago, diffD, fmtDate, greeting, parse, relDate } from "../core/utils";
-import { D, S, allTasks, canSee, isOver, pColor, progressOf, proj, render, visibleProjects, who } from "../data/store";
+import { D, S, allTasks, canSee, isOver, pColor, progressOf, proj, visibleProjects, who } from "../data/store";
 import type { Notif } from "../data/types";
 import { STATUSES } from "../core/constants";
-import { ActItem, MiniRow } from "../components/TaskList";
+import { MiniRow } from "../components/TaskList";
 import { newThread } from "../core/agents";
 import { moodOf } from "../core/presence";
 import { isLive } from "../data/live";
@@ -218,23 +217,6 @@ export function Home() {
     .filter((m) => diffD(parse(m.date)!, TODAY) >= 0)
     .sort((a, b) => (a.date > b.date ? 1 : -1))
     .slice(0, 4);
-  // From the old workspace Activity page: the same filters on the same feed.
-  const actF = S.ui.actFilter;
-  const actWho = S.ui.actWho;
-  let acts = D().activity.filter((a) => !a.project || canSee(proj(a.project)));
-  if (actF !== "all")
-    acts = acts.filter((a) =>
-      actF === "comments"
-        ? a.verb.includes("comment")
-        : actF === "status"
-          ? /moved|completed|reopened/.test(a.verb)
-          : actF === "projects"
-            ? a.verb.includes("project")
-            : actF === "agents"
-              ? !D().members.some((m) => m.id === a.by)
-              : true,
-    );
-  if (actWho !== "all") acts = acts.filter((a) => a.by === actWho);
   return (
     <div className="page">
       <div className="ph">
@@ -521,47 +503,7 @@ export function Home() {
               ))}
             </div>
           </section>
-          <section className="panel" aria-labelledby="h-activity">
-            <div className="panel-h" style={{ flexWrap: "wrap", gap: 8 }}>
-              <h2 id="h-activity">Activity</h2>
-              <div className="seg" style={{ marginLeft: "auto" }}>
-                {(
-                  [
-                    ["all", "All"],
-                    ["status", "Status"],
-                    ["comments", "Comments"],
-                    ["projects", "Projects"],
-                    ["agents", "Agents"],
-                  ] as const
-                ).map(([k, n]) => (
-                  <button key={k} className={actF === k ? "on" : ""} onClick={() => ((S.ui.actFilter = k), render())}>
-                    {n}
-                  </button>
-                ))}
-              </div>
-              <select
-                className="select"
-                style={{ height: 26, width: "auto", fontSize: 12 }}
-                value={actWho}
-                onChange={(e) => ((S.ui.actWho = e.target.value), render())}
-                aria-label="Filter by person"
-              >
-                <option value="all">Everyone</option>
-                {D().members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="panel-b feed lined">
-              {acts.length ? (
-                acts.slice(0, 10).map((a) => <ActItem key={a.id} a={a} withProject />)
-              ) : (
-                <Empty icon="activity" title="Nothing here" text="No activity matches these filters." cls="sm" />
-              )}
-            </div>
-          </section>
+
           <section className="panel">
             <div className="panel-h">
               <h2>Workload</h2>

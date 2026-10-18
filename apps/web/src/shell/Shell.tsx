@@ -249,6 +249,7 @@ function Sidebar() {
           <div className="sgroup-h">Workspace</div>
           <SItem route="chat" label="Chat" icon="message-square" />
           <SItem route="projects" label="Projects" icon="folder-kanban" />
+          <SItem route="activity" label="Activity" icon="activity" />
         </div>
         <div className="sgroup" id="side-projects">
           <div className="sgroup-h">

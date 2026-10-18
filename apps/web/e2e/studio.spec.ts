@@ -20,7 +20,7 @@ test("every screen renders", async ({ page }) => {
     ["timeline", "Good"],
     ["members", "Members"],
     ["teams", "Members"],
-    ["activity", "Good"],
+    ["activity", "Activity"],
     ["archive", "My Tasks"],
     ["settings/agents", "Agents"],
     ["design-system", "Design system"],
