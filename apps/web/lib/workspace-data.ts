@@ -49,6 +49,12 @@ export function useLiveArchivedTasks(workspaceId: string | undefined, enabled = 
   return useMemo(() => tasks?.slice().sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0)), [tasks]);
 }
 
+/** A project's non-archived issues as store Tasks (Board and List). */
+export function useLiveProjectTasks(workspaceId: string | undefined, projectId: string | undefined, enabled = true) {
+  const tasks = useLiveTasks(workspaceId, {}, enabled && Boolean(projectId));
+  return useMemo(() => tasks?.filter((t) => t.project === projectId && !t.archived), [tasks, projectId]);
+}
+
 /** Workspace members as store Members. */
 export function useLiveMembers(workspaceId: string | undefined, enabled = true): Member[] | undefined {
   const members = useQuery({
