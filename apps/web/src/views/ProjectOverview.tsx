@@ -8,7 +8,7 @@ import { Ic } from "../core/icons";
 import { editProject, share } from "../core/more";
 import { go } from "../core/nav";
 import { TODAY, ago, dayBucket, diffD, fmtDate, parse } from "../core/utils";
-import { D, TM, isOver, mem, pColor, progressOf, task, tasksOf } from "../data/store";
+import { D, isOver, mem, pColor, progressOf, task, tasksOf } from "../data/store";
 import type { Activity, Project } from "../data/types";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { sortTasks, viewOf } from "../shell/viewEngine";
@@ -144,16 +144,6 @@ export function ProjectOverview({ p }: { p: Project }) {
                     <Av id={p.lead} cls="sm" tip={false} />
                     {mem(p.lead)?.name}
                   </span>
-                </dd>
-                <dt>
-                  <Ic n="users" s={14} />
-                  Team
-                </dt>
-                <dd>
-                  <button className="pillbtn" onClick={() => go("team", { id: p.team })}>
-                    <Ic n={TM(p.team).icon} s={13} />
-                    {TM(p.team).name}
-                  </button>
                 </dd>
                 <dt>
                   <Ic n="calendar" s={14} />

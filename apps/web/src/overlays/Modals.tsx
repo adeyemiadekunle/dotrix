@@ -12,7 +12,7 @@ import type { Schemas } from "@/lib/api";
 
 import { inviteLinkCreated, invitesSent, projectMemberSet, projectMembers } from "../data/account";
 import { filesAttached, isLive, live, projectChanged } from "../data/live";
-import { D, S, TM, mem, mutate, pColor, proj, render, task, tasksOf, team, teamsList, type Modal, people } from "../data/store";
+import { D, S, mem, mutate, pColor, proj, render, task, tasksOf, type Modal } from "../data/store";
 import type { FileItem, Member, Task } from "../data/types";
 import { Av, FT, FilePrev, Lbl, PrPill, StPill, fileType, fsize } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -112,12 +112,6 @@ function ModalBody({ m }: { m: Modal }) {
       return (
         <Wrap m={m} cls="lg">
           <ShortcutsModal />
-        </Wrap>
-      );
-    case "team":
-      return (
-        <Wrap m={m}>
-          <TeamModal m={m} />
         </Wrap>
       );
     case "filePreview":
@@ -404,7 +398,7 @@ export function taskForm(): TaskForm | null {
 }
 
 /* ---------- project ---------- */
-type ProjectForm = { name: string; desc: string; icon: string; color: string; team: string; lead: string; due: string; tmpl: string };
+type ProjectForm = { name: string; desc: string; icon: string; color: string; lead: string; due: string; tmpl: string };
 function ProjectModal({ m }: { m: Modal }) {
   const f = m.form as ProjectForm;
   const err = m.err as string | undefined;
@@ -427,7 +421,6 @@ function ProjectModal({ m }: { m: Modal }) {
           desc: f.desc,
           icon: f.icon,
           color: f.color,
-          team: f.team,
           lead: f.lead,
           due: f.due,
           members: [...new Set([...p.members, f.lead])],
@@ -538,18 +531,6 @@ function ProjectModal({ m }: { m: Modal }) {
         </div>
         <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
           <div className="field" style={{ flex: 1, minWidth: 150 }}>
-            <label className="label" htmlFor="p-team">
-              Team
-            </label>
-            <select className="select" id="p-team" value={f.team} onChange={(e) => set("team", e.target.value)}>
-              {teamsList().map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field" style={{ flex: 1, minWidth: 150 }}>
             <label className="label" htmlFor="p-lead">
               Lead
             </label>
@@ -639,7 +620,7 @@ function ShareModal({ m }: { m: Modal }) {
       .replace(/\b\w/g, (c) => c.toUpperCase());
     mutate(() => {
       const id = uid("m");
-      D().members.push({ id, name: nm, email: v, role: "Guest", team: p.team, title: "Guest", c: "#6B7280", status: "invited", last: null, tz: "—" });
+      D().members.push({ id, name: nm, email: v, role: "Guest", title: "Guest", c: "#6B7280", status: "invited", last: null, tz: "—" });
       p.members.push(id);
       p.perms![id] = perm;
     });
@@ -968,7 +949,6 @@ function InviteModal() {
   const m = top();
   const [emails, setEmails] = useState((m.draft as string) || "");
   const [role, setRole] = useState("Member");
-  const [tm, setTm] = useState(teamsList()[0]?.id ?? "");
   const err = m.err as string | undefined;
   // A personal workspace is just for its owner: only organisations invite.
   const personal = isLive() && live.ws?.kind === "personal";
@@ -997,7 +977,6 @@ function InviteModal() {
               .replace(/\b\w/g, (c) => c.toUpperCase()),
             email: e,
             role: role as "Member",
-            team: tm,
             title: role,
             c: "#6B7280",
             status: "invited",
@@ -1049,18 +1028,6 @@ function InviteModal() {
             <select className="select" id="inv-role" value={role} onChange={(e) => setRole(e.target.value)}>
               {["Member", "Admin", "Guest"].map((r) => (
                 <option key={r}>{r}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field grow">
-            <label className="label" htmlFor="inv-team">
-              Team
-            </label>
-            <select className="select" id="inv-team" value={tm} onChange={(e) => setTm(e.target.value)}>
-              {teamsList().map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
               ))}
             </select>
           </div>
@@ -1262,172 +1229,6 @@ function ShortcutsModal() {
 }
 
 /* ---------- team ---------- */
-type TeamForm = { name: string; desc: string; icon: string; color: string; members: string[] };
-function TeamModal({ m }: { m: Modal }) {
-  const f = m.form as TeamForm;
-  const err = m.err as string | undefined;
-  const ppl = people();
-  const set = (k: keyof TeamForm, v: string) => {
-    (f as Record<string, unknown>)[k] = v;
-    render();
-  };
-  const submit = () => {
-    f.name = f.name.trim();
-    f.desc = f.desc.trim();
-    if (!f.name) return ((m.err = "Give the team a name"), render());
-    if (teamsList().some((t) => t.name.toLowerCase() === f.name.toLowerCase() && t.id !== m.edit))
-      return ((m.err = `A team called “${f.name}” already exists`), render());
-    let t = m.edit ? team(m.edit as string)! : null;
-    mutate(() => {
-      if (t) {
-        Object.assign(t, { name: f.name, desc: f.desc, icon: f.icon, c: PCOLORS[f.color] });
-        D().members.forEach((x) => {
-          if (x.team === t!.id && !f.members.includes(x.id)) x.team = "";
-        });
-      } else {
-        t = { id: uid("tm"), name: f.name, desc: f.desc || "No description yet.", icon: f.icon, c: PCOLORS[f.color]! };
-        teamsList().push(t);
-      }
-      f.members.forEach((id) => {
-        const x = mem(id);
-        if (x) x.team = t!.id;
-      });
-    });
-    closeModal();
-    if (m.edit) toast(`Saved ${t!.name}`);
-    else {
-      go("team", { id: t!.id });
-      toast(`Created ${t!.name}`);
-    }
-  };
-  return (
-    <>
-      <H id="team" title={m.edit ? "Edit team" : "New team"} sub={m.edit ? undefined : "Teams group the people who work on projects together."} />
-      <form
-        className="modal-b"
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-      >
-        <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
-          <span className="picon lg" style={css({ "--c": PCOLORS[f.color]!, marginTop: 22 })} aria-hidden="true">
-            <Ic n={f.icon} s={18} />
-          </span>
-          <div className="field grow">
-            <label className="label" htmlFor="tm-name">
-              Team name
-            </label>
-            <input
-              className={`input ${err ? "is-error" : ""}`}
-              id="tm-name"
-              value={f.name}
-              onChange={(e) => set("name", e.target.value)}
-              placeholder="e.g. Growth"
-              autoFocus
-              aria-invalid={Boolean(err)}
-            />
-            {err && (
-              <span className="err" role="alert">
-                <Ic n="circle-alert" s={12} />
-                {err}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="field">
-          <label className="label" htmlFor="tm-desc">
-            What does this team own?
-          </label>
-          <input
-            className="input"
-            id="tm-desc"
-            value={f.desc}
-            onChange={(e) => set("desc", e.target.value)}
-            placeholder="e.g. Acquisition experiments and lifecycle email"
-          />
-        </div>
-        <div className="row" style={{ gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div className="field" style={{ flex: 1, minWidth: 220 }}>
-            <span className="label">Icon</span>
-            <div className="iconpick" role="radiogroup" aria-label="Icon">
-              {PICONS.map((i) => (
-                <button
-                  key={i}
-                  type="button"
-                  role="radio"
-                  aria-checked={f.icon === i}
-                  className={f.icon === i ? "on" : ""}
-                  onClick={() => set("icon", i)}
-                  aria-label={i}
-                >
-                  <Ic n={i} s={15} />
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="field">
-            <span className="label">Color</span>
-            <div className="swatches" role="radiogroup" aria-label="Color" style={{ maxWidth: 140 }}>
-              {Object.entries(PCOLORS).map(([k, v]) => (
-                <button
-                  key={k}
-                  type="button"
-                  role="radio"
-                  aria-checked={f.color === k}
-                  className={`sw ${f.color === k ? "on" : ""}`}
-                  style={css({ "--c": v, width: 22, height: 22 })}
-                  onClick={() => set("color", k)}
-                  aria-label={k}
-                >
-                  {f.color === k && <Ic n="check" s={12} />}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-        <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend className="label" style={{ marginBottom: 6 }}>
-            Members{" "}
-            <span className="faint" style={{ fontWeight: 400 }}>
-              · {f.members.length} selected
-            </span>
-          </legend>
-          <div className="panel" style={{ maxHeight: 220, overflowY: "auto", padding: 4 }}>
-            {ppl.map((x) => (
-              <label key={x.id} className="mi" style={{ cursor: "pointer", minHeight: 36 }}>
-                <input
-                  type="checkbox"
-                  className="check"
-                  checked={f.members.includes(x.id)}
-                  onChange={() => {
-                    f.members = f.members.includes(x.id) ? f.members.filter((y) => y !== x.id) : [...f.members, x.id];
-                    render();
-                  }}
-                />
-                <Av id={x.id} cls="sm" tip={false} />
-                <span className="grow trunc">{x.name}</span>
-                <span className="r">{x.team && x.team !== m.edit ? TM(x.team).name : ""}</span>
-              </label>
-            ))}
-          </div>
-          <span className="hint">Everyone belongs to one primary team. Adding someone here moves them from their current team.</span>
-        </fieldset>
-      </form>
-      <div className="modal-f">
-        <span className="sp" />
-        <button className="btn btn-secondary" onClick={closeModal}>
-          Cancel
-        </button>
-        <button className="btn btn-primary" data-submit onClick={submit}>
-          {m.edit ? "Save changes" : "Create team"}
-        </button>
-      </div>
-    </>
-  );
-}
-
-/* ---------- file preview, save view ---------- */
 function FilePreviewModal({ m }: { m: Modal }) {
   const f = m.file as FileItem;
   const t = FT[f.type] || FT.other!;

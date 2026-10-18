@@ -19,7 +19,6 @@ from dotrix_backend.modules.projects import models as _projects  # noqa: F401
 from dotrix_backend.modules.research import models as _research  # noqa: F401
 from dotrix_backend.modules.rules import models as _rules  # noqa: F401
 from dotrix_backend.modules.search import models as _search  # noqa: F401
-from dotrix_backend.modules.teams import models as _teams  # noqa: F401
 from dotrix_backend.modules.workspaces import models as _workspaces  # noqa: F401
 
 from .base import Base

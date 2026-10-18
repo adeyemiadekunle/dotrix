@@ -5,6 +5,7 @@ The route checks are generated from the app's own routes, so a new workspace or 
 is covered automatically. If a new route has a path parameter this file
 doesn't know, `test_every_scoped_route_is_covered` fails: add a value to `World.params`.
 """
+
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -25,7 +26,9 @@ class World:
 
     headers: dict[str, str]
     params: dict[str, str]
-    colleague_headers: dict[str, str]  # a member of the workspace, not added to the restricted project
+    colleague_headers: dict[
+        str, str
+    ]  # a member of the workspace, not added to the restricted project
     restricted_id: str  # a restricted project nobody was added to
 
 
@@ -37,34 +40,48 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
         team = await create_team(h, name=f"{name}'s team")
         ws = f"/v1/workspaces/{team['id']}"
         # Same project key and issue key in every world, so keys alone never identify one.
-        project = (await db_client.post(f"{ws}/projects", json={"key": "KUN", "name": "K"}, headers=h)).json()
+        project = (
+            await db_client.post(f"{ws}/projects", json={"key": "KUN", "name": "K"}, headers=h)
+        ).json()
         base = f"{ws}/projects/{project['id']}"
-        issue = await db_client.post(f"{base}/issues", json={"type": "task", "title": "x"}, headers=h)
+        issue = await db_client.post(
+            f"{base}/issues", json={"type": "task", "title": "x"}, headers=h
+        )
         assert issue.status_code == 201, issue.text
         document = await db_client.post(
-            f"{base}/documents", files={"file": ("notes.md", b"# Notes\n", "text/markdown")}, headers=h
+            f"{base}/documents",
+            files={"file": ("notes.md", b"# Notes\n", "text/markdown")},
+            headers=h,
         )
         assert document.status_code == 201, document.text
-        invite = await db_client.post(f"{ws}/invites", json={"email": f"guest-{email}", "role": "member"}, headers=h)
+        invite = await db_client.post(
+            f"{ws}/invites", json={"email": f"guest-{email}", "role": "member"}, headers=h
+        )
         assert invite.status_code == 201, invite.text
         colleague = await signup(email=f"colleague-{email}", name="Colleague")
         await add_member(team["id"], colleague.id, "member")
         restricted = await db_client.post(
-            f"{ws}/projects", json={"key": "SEC", "name": "Secret", "access": "restricted"}, headers=h
+            f"{ws}/projects",
+            json={"key": "SEC", "name": "Secret", "access": "restricted"},
+            headers=h,
         )
         assert restricted.status_code == 201, restricted.text
         token = (await db_client.post("/v1/me/tokens", json={"name": "script"}, headers=h)).json()
         automation = await db_client.post(
-            f"{base}/automations", json={"name": "Daily", "instructions": "Summarise.", "schedule_hour": 6}, headers=h
+            f"{base}/automations",
+            json={"name": "Daily", "instructions": "Summarise.", "schedule_hour": 6},
+            headers=h,
         )
         assert automation.status_code == 201, automation.text
-        squad = await db_client.post(f"{ws}/teams", json={"name": "Design"}, headers=h)
-        assert squad.status_code == 201, squad.text
         attached = await db_client.post(
-            f"{base}/issues/{issue.json()['key']}/attachments", files={"file": ("shot.png", b"png", "image/png")}, headers=h
+            f"{base}/issues/{issue.json()['key']}/attachments",
+            files={"file": ("shot.png", b"png", "image/png")},
+            headers=h,
         )
         assert attached.status_code == 201, attached.text
-        commented = await db_client.post(f"{base}/issues/{issue.json()['key']}/comments", json={"body": "Hi"}, headers=h)
+        commented = await db_client.post(
+            f"{base}/issues/{issue.json()['key']}/comments", json={"body": "Hi"}, headers=h
+        )
         assert commented.status_code == 201, commented.text
         params = {
             "workspace_id": team["id"],
@@ -82,44 +99,84 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             "index": "0",
             "installation_ref": "01a0e000-0000-7000-8000-000000000000",
             "automation_id": automation.json()["id"],
-            "team_id": squad.json()["id"],
             "attachment_id": attached.json()["attachments"][0]["id"],
-            "comment_id": next(e["id"] for e in commented.json()["log"] if e["kind"] == "commented"),
+            "comment_id": next(
+                e["id"] for e in commented.json()["log"] if e["kind"] == "commented"
+            ),
             "emoji": "\N{THUMBS UP SIGN}",
             "name": "release-note",
             "provider": "anthropic",
         }
         # A run paused on an approval: it has a run, a thread, and a pending action.
-        agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
-        run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=h)).json()
+        agent_script.say(
+            tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done."
+        )
+        run = (
+            await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=h)
+        ).json()
         assert run["status"] == "awaiting_approval", run
-        params |= {"run_id": run["id"], "thread_id": run["thread_id"], "approval_id": run["approvals"][0]["id"]}
+        params |= {
+            "run_id": run["id"],
+            "thread_id": run["thread_id"],
+            "approval_id": run["approvals"][0]["id"],
+        }
         # A rejected change with a reason: a proposed lesson.
-        agent_script.say(tool_call("write_file", file_path="/dotrix/vision.md", content="# V\n"), "Fine.")
-        other = (await db_client.post(f"{base}/agent/runs", json={"message": "Vision"}, headers=h)).json()
-        await db_client.post(f"{base}/agent/runs/{other['id']}/decisions", headers=h, json={"decisions": [
-            {"approval_id": a["id"], "decision": "reject", "reason": "Too vague"} for a in other["approvals"]
-        ]})
+        agent_script.say(
+            tool_call("write_file", file_path="/dotrix/vision.md", content="# V\n"), "Fine."
+        )
+        other = (
+            await db_client.post(f"{base}/agent/runs", json={"message": "Vision"}, headers=h)
+        ).json()
+        await db_client.post(
+            f"{base}/agent/runs/{other['id']}/decisions",
+            headers=h,
+            json={
+                "decisions": [
+                    {"approval_id": a["id"], "decision": "reject", "reason": "Too vague"}
+                    for a in other["approvals"]
+                ]
+            },
+        )
         lessons = (await db_client.get(f"{base}/lessons", headers=h)).json()
         assert len(lessons) == 1, lessons
-        link = await db_client.post(f"{base}/graph/links", headers=h,
-                                    json={"source": issue.json()["key"], "target": "project.md"})
+        link = await db_client.post(
+            f"{base}/graph/links",
+            headers=h,
+            json={"source": issue.json()["key"], "target": "project.md"},
+        )
         assert link.status_code == 201, link.text
-        params["link_id"] = next(lk["id"] for lk in link.json()["links"] if lk["origin"] == "person")
-        params |= {"lesson_id": lessons[0]["id"], "rejected_run_id": other["id"]}  # (not a path parameter)
+        params["link_id"] = next(
+            lk["id"] for lk in link.json()["links"] if lk["origin"] == "person"
+        )
+        params |= {
+            "lesson_id": lessons[0]["id"],
+            "rejected_run_id": other["id"],
+        }  # (not a path parameter)
         # A coding run waiting for approval (made directly: starting one needs a connected repo).
         coding_run_id = uuid.uuid4()
         coding_run = CodingRun(
-            id=coding_run_id, session_id=coding_run_id, workspace_id=uuid.UUID(team["id"]), project_id=uuid.UUID(project["id"]),
-            issue_id=uuid.UUID(issue.json()["id"]), issue_key=issue.json()["key"], agent=CodingAgent.CLAUDE_CODE,
-            status=CodingRunStatus.AWAITING_APPROVAL, brief="x", repo_full_name="o/r", base_branch="main",
-            requested_by_id=uuid.UUID(owner.id), created_at=datetime.now(UTC),
+            id=coding_run_id,
+            session_id=coding_run_id,
+            workspace_id=uuid.UUID(team["id"]),
+            project_id=uuid.UUID(project["id"]),
+            issue_id=uuid.UUID(issue.json()["id"]),
+            issue_key=issue.json()["key"],
+            agent=CodingAgent.CLAUDE_CODE,
+            status=CodingRunStatus.AWAITING_APPROVAL,
+            brief="x",
+            repo_full_name="o/r",
+            base_branch="main",
+            requested_by_id=uuid.UUID(owner.id),
+            created_at=datetime.now(UTC),
         )
         db_session.add(coding_run)
         await db_session.flush()
         params["coding_run_id"] = params["session_id"] = str(coding_run.id)
         return World(
-            headers=h, params=params, colleague_headers=colleague.headers, restricted_id=restricted.json()["id"]
+            headers=h,
+            params=params,
+            colleague_headers=colleague.headers,
+            restricted_id=restricted.json()["id"],
         )
 
     return _build
@@ -150,38 +207,85 @@ def _fill(template: str, params: dict[str, str]) -> str:
 # their resource up in the service, after it.
 BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("PATCH", "/v1/workspaces/{workspace_id}/members/{user_id}"): {"role": "admin"},
-    ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}"): {"body": "x"},
-    ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}"): {"filename": "x.md"},
-    ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}"): {"title": "x"},
-    ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}"): {
-        "state": "dismissed"
+    (
+        "PATCH",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}",
+    ): {"body": "x"},
+    ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}"): {
+        "filename": "x.md"
     },
-    ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision"): {
-        "decision": "reject"
+    ("PATCH", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}"): {
+        "title": "x"
     },
-    ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns"): {
-        "message": "x"
+    (
+        "PATCH",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}",
+    ): {"state": "dismissed"},
+    (
+        "POST",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision",
+    ): {"decision": "reject"},
+    (
+        "POST",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns",
+    ): {"message": "x"},
+    ("POST", "/v1/workspaces/{workspace_id}/github/installations"): {
+        "installation_id": 1,
+        "code": "x",
     },
-    ("POST", "/v1/workspaces/{workspace_id}/github/installations"): {"installation_id": 1, "code": "x"},
     ("PUT", "/v1/workspaces/{workspace_id}/projects/{project_id}/repository"): {
-        "installation_ref": "01a0e000-0000-7000-8000-000000000000", "github_repo_id": 1
+        "installation_ref": "01a0e000-0000-7000-8000-000000000000",
+        "github_repo_id": 1,
     },
     ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/decisions"): {
-        "decisions": [{"approval_id": "01a0e000-0000-7000-8000-000000000000", "decision": "approve"}]
+        "decisions": [
+            {"approval_id": "01a0e000-0000-7000-8000-000000000000", "decision": "approve"}
+        ]
     },
 }
 
 
-async def _call(client: AsyncClient, method: str, url: str, body: bool, headers: dict[str, str], template: str = "") -> int:
+async def _call(
+    client: AsyncClient,
+    method: str,
+    url: str,
+    body: bool,
+    headers: dict[str, str],
+    template: str = "",
+) -> int:
     json = BODIES.get((method, template), {}) if body else None
     res = await client.request(method, url, json=json, headers=headers)
     return res.status_code
 
 
 async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
-    known = {"workspace_id", "project_id", "key", "path", "version", "document_id", "invite_id",
-             "user_id", "run_id", "thread_id", "handle", "output_id", "index", "installation_ref", "automation_id",
-             "lesson_id", "link_id", "name", "coding_run_id", "session_id", "team_id", "attachment_id", "comment_id", "emoji", "approval_id", "provider"}
+    known = {
+        "workspace_id",
+        "project_id",
+        "key",
+        "path",
+        "version",
+        "document_id",
+        "invite_id",
+        "user_id",
+        "run_id",
+        "thread_id",
+        "handle",
+        "output_id",
+        "index",
+        "installation_ref",
+        "automation_id",
+        "lesson_id",
+        "link_id",
+        "name",
+        "coding_run_id",
+        "session_id",
+        "attachment_id",
+        "comment_id",
+        "emoji",
+        "approval_id",
+        "provider",
+    }
     routes = _scoped_routes(db_client)
     assert len(routes) > 60  # sanity: the whole API is being walked
     for _, template, _ in routes:
@@ -189,7 +293,9 @@ async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
         assert names <= known, f"{template}: add a value for {names - known} to World.params"
 
 
-async def test_outsiders_get_404_from_every_route_with_real_ids(db_client: AsyncClient, build_world) -> None:
+async def test_outsiders_get_404_from_every_route_with_real_ids(
+    db_client: AsyncClient, build_world
+) -> None:
     ada = await build_world("ada@example.com", "Ada")
     mallory = await build_world("mallory@example.com", "Mallory")
     leaks = []
@@ -201,12 +307,23 @@ async def test_outsiders_get_404_from_every_route_with_real_ids(db_client: Async
     assert leaks == []
 
 
-async def test_ids_from_another_workspace_dont_work_in_your_own(db_client: AsyncClient, build_world) -> None:
+async def test_ids_from_another_workspace_dont_work_in_your_own(
+    db_client: AsyncClient, build_world
+) -> None:
     """Mallory owns her workspace, so she passes every permission check there; each of Ada's
     IDs, used under Mallory's workspace (and project), must still be not found."""
     ada = await build_world("ada@example.com", "Ada")
     mallory = await build_world("mallory@example.com", "Mallory")
-    mixed_in = ["project_id", "document_id", "run_id", "thread_id", "invite_id", "user_id", "team_id", "attachment_id", "comment_id"]
+    mixed_in = [
+        "project_id",
+        "document_id",
+        "run_id",
+        "thread_id",
+        "invite_id",
+        "user_id",
+        "attachment_id",
+        "comment_id",
+    ]
     leaks = []
     for method, template, body in _scoped_routes(db_client):
         if "{workspace_id}" not in template:
@@ -215,7 +332,9 @@ async def test_ids_from_another_workspace_dont_work_in_your_own(db_client: Async
             if f"{{{name}}}" not in template:
                 continue
             params = mallory.params | {name: ada.params[name]}
-            status = await _call(db_client, method, _fill(template, params), body, mallory.headers, template)
+            status = await _call(
+                db_client, method, _fill(template, params), body, mallory.headers, template
+            )
             if status != 404:
                 leaks.append(f"{method} {template} with Ada's {name} -> {status}")
     assert leaks == []
@@ -230,7 +349,9 @@ async def test_lists_show_only_your_own(db_client: AsyncClient, build_world) -> 
     assert ada.params["workspace_id"] not in {w["id"] for w in workspaces}
     tokens = (await db_client.get("/v1/me/tokens", headers=h)).json()
     assert ada.params["token_id"] not in {t["id"] for t in tokens}
-    assert (await db_client.delete(f"/v1/me/tokens/{ada.params['token_id']}", headers=h)).status_code == 404
+    assert (
+        await db_client.delete(f"/v1/me/tokens/{ada.params['token_id']}", headers=h)
+    ).status_code == 404
 
     approvals = (await db_client.get(f"{ws}/approvals", headers=h)).json()
     assert {a["run_id"] for a in approvals} == {mallory.params["run_id"]}
@@ -249,7 +370,9 @@ async def test_lists_show_only_your_own(db_client: AsyncClient, build_world) -> 
     assert issue["id"] == mallory.params["issue_id"] != ada.params["issue_id"]
 
 
-async def test_a_restricted_project_is_404_to_a_member_not_added(db_client: AsyncClient, build_world) -> None:
+async def test_a_restricted_project_is_404_to_a_member_not_added(
+    db_client: AsyncClient, build_world
+) -> None:
     ada = await build_world("ada@example.com", "Ada")
     """Answered exactly as for a project that doesn't exist: 404, or a 403 from the role check
     that runs before any project is looked up."""
@@ -259,8 +382,12 @@ async def test_a_restricted_project_is_404_to_a_member_not_added(db_client: Asyn
     for method, template, body in _scoped_routes(db_client):
         if "{project_id}" not in template:
             continue
-        status = await _call(db_client, method, _fill(template, params), body, ada.colleague_headers, template)
-        expected = await _call(db_client, method, _fill(template, missing), body, ada.colleague_headers, template)
+        status = await _call(
+            db_client, method, _fill(template, params), body, ada.colleague_headers, template
+        )
+        expected = await _call(
+            db_client, method, _fill(template, missing), body, ada.colleague_headers, template
+        )
         if status not in (403, 404) or status != expected:
             leaks.append(f"{method} {template} -> {status} (missing project: {expected})")
     assert leaks == []
@@ -268,4 +395,6 @@ async def test_a_restricted_project_is_404_to_a_member_not_added(db_client: Asyn
     listed = (await db_client.get(f"{ws}/projects", headers=ada.colleague_headers)).json()
     assert [p["key"] for p in listed] == ["KUN"]
     # Its owner sees both.
-    assert [p["key"] for p in (await db_client.get(f"{ws}/projects", headers=ada.headers)).json()] == ["KUN", "SEC"]
+    assert [
+        p["key"] for p in (await db_client.get(f"{ws}/projects", headers=ada.headers)).json()
+    ] == ["KUN", "SEC"]

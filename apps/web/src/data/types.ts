@@ -7,7 +7,6 @@ export interface Member {
   name: string;
   email: string;
   role: Role;
-  team: string;
   title: string;
   c: string;
   status: "active" | "invited" | "deactivated";
@@ -26,7 +25,6 @@ export interface Project {
   icon: string;
   color: string;
   status: ProjectStatusId;
-  team: string;
   lead: string;
   due: string;
   start: string;
@@ -146,13 +144,6 @@ export interface Filter {
   f: string;
   op: "is" | "not";
   v: string[];
-}
-export interface Team {
-  id: string;
-  name: string;
-  icon: string;
-  c: string;
-  desc: string;
 }
 export interface Workspace {
   id: string;
@@ -298,7 +289,6 @@ export interface Data {
   recentSearches: string[];
   sessions: { id: string; dev: string; loc: string; at: string; cur?: boolean }[];
   notifPrefs: Record<string, boolean>;
-  teams?: Team[];
   /* dotrix */
   agents: Agent[];
   threads: Thread[];
