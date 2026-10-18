@@ -11,7 +11,8 @@ import { ago, dayBucket } from "../core/utils";
 import { D, S, commentsOf, mutate, pColor, proj, render, task, who } from "../data/store";
 import type { Notif, NotifType } from "../data/types";
 import { ChangeCard } from "../components/Changes";
-import { notifsRead } from "../data/live";
+import { isLive, live, notifsRead } from "../data/live";
+import { useLiveNotifications } from "../../lib/workspace-data";
 import { CellAssignee, CellDue, CellPrio, CellStatus } from "../components/TaskList";
 import { CommentBox, CommentItem } from "../overlays/Drawer";
 import { Av, CommentText, Empty } from "../ui/helpers";
@@ -352,11 +353,11 @@ const tabOf = (k: string | null) => (k && TABS.find(([id, , ts]) => id === k || 
 const qs = (n: string | null, tab: string) => [n && `n=${n}`, tab !== "all" && `tab=${tab}`].filter(Boolean).join("&");
 
 export function Inbox() {
+  const liveNotifs = useLiveNotifications(live.ws?.id, isLive());
+  const notifs = isLive() ? (liveNotifs ?? []) : D().notifs;
   const { search } = useRoute();
   const tab = tabOf(search.get("tab") || S.ui.inboxCat);
-  const all = D()
-    .notifs.slice()
-    .sort((a, b) => b.at - a.at);
+  const all = notifs.slice().sort((a, b) => b.at - a.at);
   const inTab = (n: Notif, k: string) => typesOf(k)?.includes(n.type) ?? true;
   const count = (k: string) => all.filter((n) => !n.read && inTab(n, k)).length;
   const unread = count("all");

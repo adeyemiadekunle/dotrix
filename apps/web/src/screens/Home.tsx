@@ -10,12 +10,13 @@ import { invite, newProject, newTask } from "../core/more";
 import { go } from "../core/nav";
 import { DAY, MONL, TODAY, WDL, ago, diffD, fmtDate, greeting, parse, relDate } from "../core/utils";
 import { D, S, allTasks, canSee, isOver, pColor, progressOf, proj, visibleProjects, who } from "../data/store";
+import { isLive, live } from "../data/live";
+import { useLiveAllTasks, useLiveNotifications } from "../../lib/workspace-data";
 import type { Notif } from "../data/types";
 import { STATUSES } from "../core/constants";
 import { MiniRow } from "../components/TaskList";
 import { newThread } from "../core/agents";
 import { moodOf } from "../core/presence";
-import { isLive } from "../data/live";
 import { Face } from "../ui/face";
 import { useAtPicker } from "../components/AtPicker";
 import { sortTasks, viewOf } from "../shell/viewEngine";
@@ -176,7 +177,9 @@ function AskHero() {
 
 export function Home() {
   const [tab, setTab] = useState<"upcoming" | "overdue" | "completed">("upcoming");
-  const all = allTasks();
+  const liveAll = useLiveAllTasks(live.ws?.id, isLive());
+  const liveNotifs = useLiveNotifications(live.ws?.id, isLive());
+  const all = isLive() ? (liveAll ?? []) : allTasks();
   const mineAll = all.filter((t) => t.assignee === D().me);
   const activeP = visibleProjects().filter((p) => canSee(p) && p.status !== "complete");
   const open = all.filter((t) => t.status !== "done");
@@ -202,7 +205,7 @@ export function Home() {
     ),
   });
   const dls = [dl("Today", 0, 0), dl("Tomorrow", 1, 1), dl("This week", 2, 7)];
-  const waiting = D().notifs.filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read);
+  const waiting = (isLive() ? (liveNotifs ?? []) : D().notifs).filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read);
   // From the old workspace Overview: tasks by status and how the work is spread.
   const counts = STATUSES.map((st) => ({ st, n: all.filter((t) => t.status === st.id).length }));
   const load = D()

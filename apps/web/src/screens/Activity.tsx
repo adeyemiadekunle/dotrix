@@ -2,13 +2,16 @@
 import { ActItem } from "../components/TaskList";
 import { dayBucket } from "../core/utils";
 import { D, S, canSee, proj, render } from "../data/store";
+import { isLive, live } from "../data/live";
+import { useLiveWorkspaceActivity } from "../../lib/workspace-data";
 import type { Activity as A } from "../data/types";
 import { Empty } from "../ui/helpers";
 
 export function ActivityPage() {
   const f = S.ui.actFilter;
   const whoF = S.ui.actWho;
-  let as = D().activity.filter((a) => !a.project || canSee(proj(a.project)));
+  const liveFeed = useLiveWorkspaceActivity(live.ws?.id, isLive());
+  let as = (isLive() ? (liveFeed ?? []) : D().activity).filter((a) => !a.project || canSee(proj(a.project)));
   if (f !== "all")
     as = as.filter((a) =>
       f === "comments"
