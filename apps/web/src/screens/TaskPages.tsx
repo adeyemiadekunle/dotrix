@@ -4,6 +4,8 @@ import { confirmDlg, deleteTasks, escapeHtml, newTask, restore, snapshot } from 
 import { go } from "../core/nav";
 import { TODAY, ago, dOff, diffD, parse } from "../core/utils";
 import { isLive } from "../data/live";
+import { useCurrentWorkspace } from "../../lib/queries";
+import { useLiveArchivedTasks, useLiveMyTasks, useLiveStarredTasks } from "../../lib/workspace-data";
 import { D, S, allTasks, canSee, isOver, mutate, proj, render } from "../data/store";
 import { ListView, MiniRow } from "../components/TaskList";
 import { applyView, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
@@ -15,8 +17,10 @@ export function MyTasks() {
   const view = S.ui.myTab;
   const setView = (v: typeof view) => ((S.ui.myTab = v), render());
   const v = viewOf(k);
+  const ws = useCurrentWorkspace().workspace?.id;
+  const liveMine = useLiveMyTasks(ws, isLive());
   const mine = applyView(
-    allTasks().filter((t) => t.assignee === D().me),
+    (isLive() ? (liveMine ?? []) : allTasks()).filter((t) => t.assignee === D().me),
     v.sort.f === "manual" ? { ...v, sort: { f: "due", dir: 1 } } : v,
   );
   const groups: Group[] = [
@@ -106,7 +110,9 @@ export function MyTasks() {
 
 /** Tasks you starred, from every project you can see. */
 function Starred() {
-  const ts = allTasks().filter((t) => t.fav);
+  const ws = useCurrentWorkspace().workspace?.id;
+  const live = useLiveStarredTasks(ws, isLive());
+  const ts = isLive() ? (live ?? []) : allTasks().filter((t) => t.fav);
   return (
     <div style={{ padding: "0 24px 24px" }}>
       {ts.length ? (
@@ -148,9 +154,13 @@ function purgeTask(id: string) {
 
 /** Archived tasks: restore them or delete them for good. Archived projects are restored from Settings → Projects. */
 function Archived() {
-  const ts = D()
-    .tasks.filter((t) => t.archived && canSee(proj(t.project)) && !proj(t.project)?.archived)
-    .sort((a, b) => ((b as ArchivedAt).archivedAt || 0) - ((a as ArchivedAt).archivedAt || 0));
+  const ws = useCurrentWorkspace().workspace?.id;
+  const live = useLiveArchivedTasks(ws, isLive());
+  const ts = isLive()
+    ? (live ?? [])
+    : D()
+        .tasks.filter((t) => t.archived && canSee(proj(t.project)) && !proj(t.project)?.archived)
+        .sort((a, b) => ((b as ArchivedAt).archivedAt || 0) - ((a as ArchivedAt).archivedAt || 0));
   return (
     <div style={{ padding: "0 24px 24px" }}>
       {ts.length ? (

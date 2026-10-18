@@ -79,6 +79,7 @@ export interface Task {
   recur: string | null;
   completedAt?: number;
   archived?: boolean;
+  archivedAt?: number;
   len?: number;
   est?: string;
   age?: number;

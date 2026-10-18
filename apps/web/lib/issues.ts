@@ -41,10 +41,16 @@ export type WorkspaceIssue = Schemas["WorkspaceIssue"];
 
 /** Filters for issues across the workspace's projects; `me` stands for you. */
 export interface WorkspaceIssueFilters {
+  type?: IssueType[];
   assignee?: string;
   reporter?: string;
   watching?: boolean;
+  starred?: boolean;
+  archived?: "exclude" | "include" | "only";
   status?: IssueStatus[];
+  label?: string;
+  due_before?: string;
+  order?: "due" | "priority" | "created" | "updated";
 }
 
 /** Issues in every project of the workspace you can see (Home, My issues). */
