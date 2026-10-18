@@ -85,7 +85,6 @@ apps/backend/
 │   │   ├── api_tokens/          personal access tokens (dtx_…) and CLI device login
 │   │   ├── workspaces/          workspaces (personal or organisation), members, roles, the permission matrix (permissions.py), turn into an organisation
 │   │   ├── invites/             email and link invites
-│   │   ├── teams/               teams in a workspace: their people and the projects each looks after (one team each)
 │   │   ├── projects/            projects, who can see them (open or restricted, project_members; `visible_to`), project access deps, canonical repo URLs, how they look (`status`: planning / active / on hold / completed; `icon` from `PROJECT_ICONS`, `color`: null follows the key)
 │   │   ├── knowledge/           .dotrix/ files + version history + export
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge; rename (same extension), duplicate (converted again), delete (with its Markdown unless another upload made it)

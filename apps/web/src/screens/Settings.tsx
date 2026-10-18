@@ -7,7 +7,7 @@ import { copy, openPop, setPref } from "../core/actions";
 import { ACTION_OF } from "../core/agents";
 import { allowed, canInvite, type Perm } from "../core/can";
 import { Ic, WsLogo } from "../core/icons";
-import { confirmDlg, invite, newTeam, promptDlg } from "../core/more";
+import { confirmDlg, invite, promptDlg, restoreProject } from "../core/more";
 import { go, useRoute } from "../core/nav";
 import { ago, dOff, fmtDate, uid } from "../core/utils";
 import { ApiError } from "@/lib/api";
@@ -68,8 +68,7 @@ import { D, S, me, mutate, proj, render, save, visibleProjects, who } from "../d
 import { SHORTCUTS } from "../overlays/Modals";
 import { Av, Empty, PIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";
-import { restoreProject } from "./Archive";
-import { PermsTable, TeamsGrid } from "./Members";
+import { PermsTable } from "./Members";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 
@@ -2326,18 +2325,6 @@ function Body({ sec }: { sec: string }) {
           </div>
         </>
       );
-    case "teams":
-      return (
-        <>
-          <div style={{ marginBottom: 12 }}>
-            <button className="btn btn-secondary btn-sm" onClick={newTeam}>
-              <Ic n="plus" s={13} />
-              New team
-            </button>
-          </div>
-          <TeamsGrid />
-        </>
-      );
     case "projects": {
       const arch = d.projects.filter((p) => p.archived);
       return (
@@ -2377,12 +2364,6 @@ function Body({ sec }: { sec: string }) {
                 No archived projects. Archived projects are hidden from the sidebar but keep all their tasks.
               </p>
             )}
-            <div style={{ marginTop: 12 }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => go("archive")}>
-                <Ic n="archive" s={13} />
-                Open archive
-              </button>
-            </div>
           </div>
         </>
       );
@@ -2464,9 +2445,6 @@ function Body({ sec }: { sec: string }) {
         <>
           <SRow t="@mentions in comments, chat, and descriptions">
             <NTog k="mention_all" />
-          </SRow>
-          <SRow t="@team mentions" d="When your team is mentioned, e.g. @Product.">
-            <NTog k="mention_team" def />
           </SRow>
           <SRow t="@workspace mentions" d="Announcements to everyone.">
             <NTog k="mention_ws" />
@@ -2640,7 +2618,6 @@ const LEADS: Record<string, string> = {
   language: "Language and regional formats.",
   datetime: "How dates and times appear across the workspace.",
   members: `people have access to this workspace.`,
-  teams: "Teams group people and projects.",
   projects: "Defaults for new projects and archived work.",
   permissions: "Control what each role can do.",
   agents: "The agents every project uses: what they may do, their model, and their instructions. Versioned and audited.",

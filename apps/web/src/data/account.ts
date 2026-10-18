@@ -144,7 +144,6 @@ function toInvited(i: Schemas["InviteRead"]): Member {
     name: nameFromEmail(email),
     email,
     role: ROLE_IN[i.role] ?? "Member",
-    team: "",
     title: "",
     c: "#6B7280",
     status: "invited",

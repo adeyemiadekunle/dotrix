@@ -11,7 +11,7 @@ import { allowed } from "../core/can";
 import { newProject } from "../core/more";
 import { go, useRoute, type Route } from "../core/nav";
 import { MOD, TODAY, diffD, parse } from "../core/utils";
-import { D, S, allTasks, pColor, projByKey, render, team, useStudio, visibleProjects } from "../data/store";
+import { D, S, allTasks, pColor, projByKey, render, useStudio, visibleProjects } from "../data/store";
 import { Av } from "../ui/helpers";
 import { PopLayer } from "../overlays/PopLayer";
 import { Toasts } from "../ui/toast";
@@ -406,9 +406,6 @@ function Crumbs() {
   } else if (route === "member") {
     out.push(c("Members", () => go("members")));
     out.push(c(D().members.find((m) => m.id === params.id)?.name || "Member", undefined, true));
-  } else if (route === "team") {
-    out.push(c("Teams", () => go("teams")));
-    out.push(c(team(params.id)?.name || "Team", undefined, true));
   } else out.push(c(routeName(route) || "Not found", undefined, true));
   return (
     <nav className="crumbs trunc" aria-label="Breadcrumb">

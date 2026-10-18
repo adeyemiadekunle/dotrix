@@ -31,7 +31,6 @@ from dotrix_backend.modules.knowledge.models import AuthorType, KnowledgeFile, K
 from dotrix_backend.modules.knowledge.service import KnowledgeService
 from dotrix_backend.modules.research.models import ResearchSource
 from dotrix_backend.modules.search.models import KnowledgeChunk
-from dotrix_backend.modules.teams.models import TeamProject
 from dotrix_backend.modules.workspaces.models import Membership, Role
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
@@ -221,8 +220,6 @@ class ProjectService:
         await self.session.execute(delete(ProjectStar).where(ProjectStar.project_id == project.id))
         moving = select(Issue.id).where(Issue.project_id == project.id).scalar_subquery()
         await self.session.execute(delete(IssueStar).where(IssueStar.issue_id.in_(moving)))
-        # Teams belong to a workspace: it joins one of the new workspace's teams there, if any.
-        await self.session.execute(delete(TeamProject).where(TeamProject.project_id == project.id))
         for model in _PROJECT_ROWS:
             await self.session.execute(
                 update(model).where(model.project_id == project.id).values(workspace_id=target_id)
