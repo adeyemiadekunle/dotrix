@@ -6,7 +6,8 @@ import { useState } from "react";
 import { Ic } from "../core/icons";
 import { go } from "../core/nav";
 import { ago, uid } from "../core/utils";
-import { isLive, knowledgeSaved } from "../data/live";
+import { isLive, knowledgeSaved, live } from "../data/live";
+import { useLiveKnowledgeFile, useLiveKnowledgeFiles, useLiveProjectFiles } from "../../lib/workspace-data";
 import { D, S, mutate, render, who } from "../data/store";
 import type { KnowledgeFile, Project } from "../data/types";
 import { Markdown } from "@/components/markdown";
@@ -34,11 +35,17 @@ export function openDocument(p: Project, path: string) {
 }
 
 export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "files" }) {
-  const files = D()
-    .knowledge.filter((f) => f.project === p.id)
-    .filter((f) => !open.q || f.path.toLowerCase().includes(open.q.toLowerCase()));
+  const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
+  const liveFiles = useLiveKnowledgeFiles(scope);
+  const files = isLive()
+    ? (liveFiles ?? [])
+    : D()
+        .knowledge.filter((f) => f.project === p.id)
+        .filter((f) => !open.q || f.path.toLowerCase().includes(open.q.toLowerCase()));
   const t = tree(files);
-  const cur = D().knowledge.find((f) => f.project === p.id && f.path === (open.path ?? "project.md")) ?? files[0];
+  const curEntry = files.find((f) => f.path === (open.path ?? "project.md")) ?? files[0];
+  const liveCur = useLiveKnowledgeFile(scope, curEntry?.path);
+  const cur = isLive() ? (liveCur ?? curEntry) : curEntry;
   const [draft, setDraft] = useState("");
   const [note, setNote] = useState("");
   const pick = (f: KnowledgeFile) => {
@@ -82,7 +89,8 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
     </button>
   );
   // The uploaded originals sit beside the documents made from them.
-  const nFiles = D().files.filter((f) => f.project === p.id).length;
+  const liveDocs = useLiveProjectFiles(scope);
+  const nFiles = isLive() ? (liveDocs?.length ?? 0) : D().files.filter((f) => f.project === p.id).length;
   const seg = (
     <div className="seg" role="tablist" aria-label="Knowledge">
       {(
@@ -108,7 +116,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
     <>
       <div className="toolbar">{seg}</div>
       <div className="page wide" style={{ paddingTop: 16 }}>
-        {!D().knowledge.some((f) => f.project === p.id) ? (
+        {!files.length ? (
           <Empty
             icon="book-open"
             title="No documents yet"

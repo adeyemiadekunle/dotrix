@@ -9,6 +9,8 @@ import { newProject } from "../core/more";
 import { go } from "../core/nav";
 import { ago, fmtDate, minsAgo } from "../core/utils";
 import { S, canSee, mem, progressOf, render, tasksOf, visibleProjects } from "../data/store";
+import { isLive, live } from "../data/live";
+import { useLiveProjects } from "../../lib/workspace-data";
 import type { Project } from "../data/types";
 import { Av, AvStack, Empty, PIcon, PStatus, ProgBar } from "../ui/helpers";
 
@@ -97,7 +99,9 @@ export function Projects() {
   const q = u.projQ.toLowerCase();
   const st = u.projStatus;
   const sort = u.projSort;
-  const ps = visibleProjects().filter((p) => (st === "all" || p.status === st) && (!q || p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)));
+  const liveProjects = useLiveProjects(live.ws?.id, isLive());
+  const base = isLive() ? (liveProjects ?? []).filter((p) => canSee(p)) : visibleProjects();
+  const ps = base.filter((p) => (st === "all" || p.status === st) && (!q || p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)));
   const sorter = (
     { recent: (p: Project) => p.last, name: (p: Project) => p.name, due: (p: Project) => p.due, progress: (p: Project) => -progressOf(p.id) } as Record<
       string,
@@ -108,7 +112,7 @@ export function Projects() {
   const view = u.projView;
   const set = (k: "projQ" | "projStatus" | "projSort", v: string) => ((u[k] = v), render());
   let body;
-  if (!visibleProjects().length)
+  if (!base.length)
     body = (
       <div className="panel">
         <Empty icon="folder-kanban" title="No projects yet" text="Create your first project to start organizing your work.">
