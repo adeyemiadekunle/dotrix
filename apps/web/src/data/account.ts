@@ -7,6 +7,14 @@
 import { useEffect, useState } from "react";
 
 import { api, unwrap, type Schemas } from "@/lib/api";
+import { invalidateLiveQueries } from "@/lib/queryClient";
+
+/** Writes also refresh the TanStack caches the migrated screens read. */
+const send = <T>(p: Promise<{ data?: T; error?: unknown; response: Response }>) =>
+  unwrap(p).then((r) => {
+    invalidateLiveQueries();
+    return r;
+  });
 
 import { toast } from "../ui/toast";
 import { isLive, live, loadWorkspace } from "./live";
@@ -42,40 +50,40 @@ export function useApi<T>(load: () => Promise<T>, deps: unknown[] = []): { data:
 export const getMe = () => unwrap(api.GET("/v1/me"));
 
 export async function profileSaved(name: string, title: string) {
-  await unwrap(api.PATCH("/v1/me", { body: { display_name: name, title } }));
+  await send(api.PATCH("/v1/me", { body: { display_name: name, title } }));
 }
 
 export const signInMethods = () => unwrap(api.GET("/v1/me/sign-in-methods"));
-export const unlinkGitHub = () => unwrap(api.DELETE("/v1/me/sign-in-methods/{provider}", { params: { path: { provider: "github" } } }));
+export const unlinkGitHub = () => send(api.DELETE("/v1/me/sign-in-methods/{provider}", { params: { path: { provider: "github" } } }));
 /** GitHub links through a top-level redirect; it comes back here. */
 export function linkGitHub() {
   location.assign(`/api/auth/github?link=1&next=${encodeURIComponent(location.pathname)}`);
 }
 
 export const passwordChanged = (current: string | null, next: string) =>
-  unwrap(api.PUT("/v1/me/password", { body: { current_password: current, new_password: next } }));
+  send(api.PUT("/v1/me/password", { body: { current_password: current, new_password: next } }));
 export async function passwordResetRequested(email: string) {
-  await unwrap(api.POST("/v1/auth/password-reset/request", { body: { email } }));
+  await send(api.POST("/v1/auth/password-reset/request", { body: { email } }));
 }
 
 export type NotifSettings = Schemas["NotificationSettings"];
 export const notifSettings = () => unwrap(api.GET("/v1/me/notification-settings"));
-export const notifSettingsSaved = (s: NotifSettings) => unwrap(api.PUT("/v1/me/notification-settings", { body: s }));
+export const notifSettingsSaved = (s: NotifSettings) => send(api.PUT("/v1/me/notification-settings", { body: s }));
 
 export const sessions = () => unwrap(api.GET("/v1/me/sessions"));
-export const sessionSignedOut = (id: string) => unwrap(api.DELETE("/v1/me/sessions/{session_id}", { params: { path: { session_id: id } } }));
-export const otherSessionsSignedOut = () => unwrap(api.POST("/v1/me/sessions/sign-out-others"));
+export const sessionSignedOut = (id: string) => send(api.DELETE("/v1/me/sessions/{session_id}", { params: { path: { session_id: id } } }));
+export const otherSessionsSignedOut = () => send(api.POST("/v1/me/sessions/sign-out-others"));
 
 export const tokens = () => unwrap(api.GET("/v1/me/tokens"));
 export const tokenCreated = (name: string, days: number | null) =>
-  unwrap(api.POST("/v1/me/tokens", { body: { name, scopes: ["read", "write"], expires_in_days: days } }));
-export const tokenRevoked = (id: string) => unwrap(api.DELETE("/v1/me/tokens/{token_id}", { params: { path: { token_id: id } } }));
+  send(api.POST("/v1/me/tokens", { body: { name, scopes: ["read", "write"], expires_in_days: days } }));
+export const tokenRevoked = (id: string) => send(api.DELETE("/v1/me/tokens/{token_id}", { params: { path: { token_id: id } } }));
 
 /* ---------- the workspace ---------- */
 
 /** Rename the workspace (the store shows the new name already). */
 export async function workspaceRenamed(name: string) {
-  const w = await unwrap(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { name } }));
+  const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { name } }));
   live.ws = { ...live.ws!, name: w.name };
   const listed = D().workspaces.find((x) => x.id === w.id);
   if (listed) listed.name = w.name;
@@ -94,7 +102,7 @@ export async function memberPermissionsSaved(perms: Schemas["Permission"][]) {
   live.ws = { ...live.ws!, member_permissions: perms };
   render();
   try {
-    const w = await unwrap(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { member_permissions: perms } }));
+    const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { member_permissions: perms } }));
     live.ws = { ...live.ws!, member_permissions: w.member_permissions };
   } catch (e) {
     live.ws = { ...live.ws!, member_permissions: was };
@@ -109,7 +117,7 @@ export async function unattendedPaused(on: boolean) {
   live.ws = { ...live.ws!, unattended_paused: on };
   render();
   try {
-    const w = await unwrap(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { unattended_paused: on } }));
+    const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { unattended_paused: on } }));
     live.ws = { ...live.ws!, unattended_paused: w.unattended_paused };
     toast(on ? "Agents ask before every change" : "Agents' standing rules are back on");
   } catch (e) {
@@ -121,7 +129,7 @@ export async function unattendedPaused(on: boolean) {
 
 /** A personal workspace becomes an organisation (you get a new, empty personal one); reloaded. */
 export async function convertedToOrganization(name: string | null) {
-  const w = await unwrap(api.POST("/v1/workspaces/{workspace_id}/convert-to-organization", { ...wsPath(), body: { name } }));
+  const w = await send(api.POST("/v1/workspaces/{workspace_id}/convert-to-organization", { ...wsPath(), body: { name } }));
   await loadWorkspace(w.slug);
   return w;
 }
@@ -179,6 +187,7 @@ export async function invitesSent(emails: string[], role: Member["role"]): Promi
       failed(`The invite to ${email}`, e);
     }
   }
+  invalidateLiveQueries();
   render();
   return sent;
 }
@@ -187,12 +196,12 @@ export async function invitesSent(emails: string[], role: Member["role"]): Promi
 export async function inviteLinkCreated(role: Member["role"]): Promise<string> {
   // A link brings people in as members or guests; admins are invited by email.
   const r = role === "Guest" ? "guest" : "member";
-  const l = await unwrap(api.POST("/v1/workspaces/{workspace_id}/invites/links", { ...wsPath(), body: { role: r, max_uses: null, expires_in_days: 7 } }));
+  const l = await send(api.POST("/v1/workspaces/{workspace_id}/invites/links", { ...wsPath(), body: { role: r, max_uses: null, expires_in_days: 7 } }));
   return l.url;
 }
 
 export async function inviteRevoked(m: Member) {
-  await unwrap(
+  await send(
     api.DELETE("/v1/workspaces/{workspace_id}/invites/{invite_id}", {
       params: { path: { workspace_id: live.ws!.id, invite_id: m.id.slice(INVITE_ID.length) } },
     }),
@@ -210,12 +219,12 @@ export async function inviteResent(m: Member) {
 /** Take someone out of the workspace (the API unassigns their issues). */
 export async function memberRemoved(m: Member) {
   if (isInvite(m.id)) return inviteRevoked(m);
-  await unwrap(api.DELETE("/v1/workspaces/{workspace_id}/members/{user_id}", { params: { path: { workspace_id: live.ws!.id, user_id: m.id } } }));
+  await send(api.DELETE("/v1/workspaces/{workspace_id}/members/{user_id}", { params: { path: { workspace_id: live.ws!.id, user_id: m.id } } }));
 }
 
 /** Hand the workspace to another member; you become an admin. */
 export async function ownershipTransferred(m: Member) {
-  await unwrap(api.POST("/v1/workspaces/{workspace_id}/transfer-ownership", { ...wsPath(), body: { user_id: m.id } }));
+  await send(api.POST("/v1/workspaces/{workspace_id}/transfer-ownership", { ...wsPath(), body: { user_id: m.id } }));
   await loadWorkspace(live.slug!);
 }
 
@@ -255,15 +264,15 @@ export const agentSaved = (handle: string, agent: AgentFields, base: number | nu
   );
 /** A built-in back to its default, or a custom agent removed. */
 export const agentReset = (handle: string) =>
-  unwrap(api.DELETE("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }));
+  send(api.DELETE("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }));
 
 /* ---------- models: the organisation's own keys, your own, and each agent's model ---------- */
 
 export const myModels = () => unwrap(api.GET("/v1/me/models"));
-export const myDefaultModelSaved = (model: string | null) => unwrap(api.PUT("/v1/me/models", { body: { default_model: model } }));
+export const myDefaultModelSaved = (model: string | null) => send(api.PUT("/v1/me/models", { body: { default_model: model } }));
 export const myKeySaved = (provider: string, apiKey: string) =>
-  unwrap(api.PUT("/v1/me/model-keys/{provider}", { params: { path: { provider } }, body: { api_key: apiKey } }));
-export const myKeyRemoved = (provider: string) => unwrap(api.DELETE("/v1/me/model-keys/{provider}", { params: { path: { provider } } }));
+  send(api.PUT("/v1/me/model-keys/{provider}", { params: { path: { provider } }, body: { api_key: apiKey } }));
+export const myKeyRemoved = (provider: string) => send(api.DELETE("/v1/me/model-keys/{provider}", { params: { path: { provider } } }));
 export const myAgents = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/my-agents", wsPath()));
 export const myAgentSaved = (handle: string, instructions: string, model: string | null) =>
   unwrap(
@@ -275,7 +284,7 @@ export const myAgentSaved = (handle: string, instructions: string, model: string
 
 /** Let people's own keys run what they start here, or not (owners and admins). */
 export async function personalKeysAllowed(on: boolean) {
-  const w = await unwrap(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { personal_keys: on } }));
+  const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { personal_keys: on } }));
   live.ws = { ...live.ws!, personal_keys: w.personal_keys };
   render();
 }
@@ -295,7 +304,7 @@ export const modelKeySaved = (provider: string, apiKey: string) =>
     api.PUT("/v1/workspaces/{workspace_id}/model-keys/{provider}", { params: { path: { workspace_id: live.ws!.id, provider } }, body: { api_key: apiKey } }),
   );
 export const modelKeyRemoved = (provider: string) =>
-  unwrap(api.DELETE("/v1/workspaces/{workspace_id}/model-keys/{provider}", { params: { path: { workspace_id: live.ws!.id, provider } } }));
+  send(api.DELETE("/v1/workspaces/{workspace_id}/model-keys/{provider}", { params: { path: { workspace_id: live.ws!.id, provider } } }));
 export const agentList = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", wsPath()));
 
 export const rules = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/rules", wsPath()));
@@ -327,7 +336,7 @@ export function installGitHub(status: Schemas["GitHubStatus"]) {
 export async function repoConnected(pid: string, r: Schemas["RepoOption"] | null) {
   const params = { params: { path: { workspace_id: live.ws!.id, project_id: pid } } };
   if (!r) {
-    await unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/repository", params));
+    await send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/repository", params));
     return null;
   }
   return unwrap(
