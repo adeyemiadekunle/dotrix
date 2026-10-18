@@ -64,6 +64,7 @@ import {
   type NotifSettings,
 } from "../data/account";
 import { automationAdded, automationToggled, isLive, live, reloadAgents } from "../data/live";
+import { useLiveAgents } from "../../lib/workspace-data";
 import { D, S, me, mutate, proj, render, save, visibleProjects, who } from "../data/store";
 import { SHORTCUTS } from "../overlays/Modals";
 import { Av, Empty, PIcon } from "../ui/helpers";
@@ -414,6 +415,7 @@ const errText = (e: unknown) => (e instanceof Error && e.message ? e.message : "
 
 /** An agent's contract in a real workspace: loaded from the API, saved as a new version. */
 function LiveAgent({ handle }: { handle: string }) {
+  const liveAgents = useLiveAgents(live.ws?.id, isLive());
   const a = useApi(() => agentDetail(handle), [handle]);
   const cat = useApi(agentCatalog);
   const ms = useApi(models);
@@ -426,7 +428,7 @@ function LiveAgent({ handle }: { handle: string }) {
   const ag = a.data;
   const v = f ?? fieldsOf(ag);
   const set = (patch: Partial<AgentFields>) => setF({ ...v, ...patch });
-  const look = D().agents.find((x) => x.handle === handle);
+  const look = (isLive() ? (liveAgents ?? []) : D().agents).find((x) => x.handle === handle);
   const save = () => {
     if (!v.instructions.trim()) return toast("Give the agent instructions", { kind: "err" });
     setBusy(true);
@@ -603,7 +605,9 @@ function LiveAgent({ handle }: { handle: string }) {
 }
 
 function Agents() {
-  const sel = D().agents.find((a) => a.handle === S.ui.agentSel);
+  const liveAgents = useLiveAgents(live.ws?.id, isLive());
+  const agents = isLive() ? (liveAgents ?? []) : D().agents;
+  const sel = agents.find((a) => a.handle === S.ui.agentSel);
   if (sel && isLive()) return <LiveAgent handle={sel.handle} />;
   if (sel)
     return (
@@ -707,12 +711,12 @@ function Agents() {
     <>
       <div className="row" style={{ marginBottom: 12 }}>
         <span className="muted" style={{ fontSize: 13 }}>
-          {D().agents.length} agents · used by every project unless a project overrides one
+          {agents.length} agents · used by every project unless a project overrides one
         </span>
       </div>
       <UnattendedPause />
       <div className="panel" style={{ overflow: "hidden" }}>
-        {D().agents.map((a) => (
+        {agents.map((a) => (
           <div key={a.handle} className="mini" style={{ minHeight: 52 }} onClick={() => ((S.ui.agentSel = a.handle), render())}>
             <Face c={a.c} size={26} mood={moodOf(a.handle)} />
             <div className="grow" style={{ minWidth: 0 }}>
@@ -1158,6 +1162,8 @@ function MyAgentRow({
 }
 
 function MyAgents() {
+  const liveAgents = useLiveAgents(live.ws?.id, isLive());
+  const agents = isLive() ? (liveAgents ?? []) : D().agents;
   const prefs = useApi(isLive() ? myAgents : async () => [] as { handle: string; instructions: string; model?: string | null }[]);
   const ms = useApi(isLive() ? models : async () => DEMO_MODELS.map((m) => ({ id: m })));
   if (prefs.error) return <div className="alert danger">{prefs.error}</div>;
@@ -1168,7 +1174,7 @@ function MyAgents() {
         Within limits: your touches can&apos;t change what an agent may do, read, or change, and automations don&apos;t use them. A model of your own needs your
         key for it, or the workspace&apos;s permission to choose models.
       </p>
-      {D().agents.map((a) => (
+      {agents.map((a) => (
         <MyAgentRow
           key={a.handle}
           a={a}

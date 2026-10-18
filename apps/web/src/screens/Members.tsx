@@ -8,6 +8,8 @@ import { copyEmail, invite, newTask } from "../core/more";
 import { go, useRoute } from "../core/nav";
 import { ago, minsAgo } from "../core/utils";
 import { D, S, allTasks, canSee, isOver, me, mem, render, visibleProjects } from "../data/store";
+import { isLive, live } from "../data/live";
+import { useLiveMembers } from "../../lib/workspace-data";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { sortTasks } from "../shell/viewEngine";
 import { Av, Empty, PIcon } from "../ui/helpers";
@@ -99,7 +101,9 @@ export function Members() {
   const u = S.ui;
   const q = (u.memQ || "").toLowerCase();
   const role = u.memRole || "all";
-  const ms = D().members.filter((m) => (role === "all" || m.role === role) && (!q || m.name.toLowerCase().includes(q) || m.email.includes(q)));
+  const liveMembers = useLiveMembers(live.ws?.id, isLive());
+  const members = isLive() ? (liveMembers ?? []) : D().members;
+  const ms = members.filter((m) => (role === "all" || m.role === role) && (!q || m.name.toLowerCase().includes(q) || m.email.includes(q)));
   const isAdmin = ["Owner", "Admin"].includes(me()!.role);
   const tab = u.membersTab;
   return (
@@ -108,7 +112,7 @@ export function Members() {
         <div>
           <h1>Members</h1>
           <p>
-            {D().members.length} people in {D().ws.name} · {D().members.filter((m) => m.status === "invited").length} pending
+            {members.length} people in {D().ws.name} · {members.filter((m) => m.status === "invited").length} pending
           </p>
         </div>
         <div className="acts">

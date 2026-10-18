@@ -13,8 +13,8 @@ import { useKnowledge, useKnowledgeFile } from "./knowledge";
 import { useNotifications } from "./notifications";
 import { useProjects } from "./queries";
 import { useStarredProjects } from "./stars";
-import { ms, toActivity, toFile, toMember, toNotif, toProject, toTask } from "./view-models";
-import type { Activity, FileItem, KnowledgeFile, Member, Notif, Project, Task } from "@/src/data/types";
+import { ms, toActivity, toAgent, toFile, toMember, toNotif, toProject, toTask } from "./view-models";
+import type { Activity, Agent, FileItem, KnowledgeFile, Member, Notif, Project, Task } from "@/src/data/types";
 
 /** Workspace issues as store Tasks: `fav` comes from the starred set, project ids are real. */
 function useLiveTasks(workspaceId: string | undefined, filters: WorkspaceIssueFilters, enabled: boolean): Task[] | undefined {
@@ -91,6 +91,17 @@ export function useLiveMembers(workspaceId: string | undefined, enabled = true):
     staleTime: 5 * 60_000,
   });
   return useMemo(() => members.data?.map(toMember), [members.data]);
+}
+
+/** The workspace's agent contracts as store Agents (Chat's list, Settings → Agents). */
+export function useLiveAgents(workspaceId: string | undefined, enabled = true): Agent[] | undefined {
+  const agents = useQuery({
+    queryKey: ["agents", workspaceId],
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", { params: { path: { workspace_id: workspaceId! } } })),
+    enabled: enabled && Boolean(workspaceId),
+    staleTime: 5 * 60_000,
+  });
+  return useMemo(() => agents.data?.map(toAgent), [agents.data]);
 }
 
 /** The workspace's projects as store Projects (starred and member lists resolved). */
