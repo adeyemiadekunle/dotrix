@@ -245,12 +245,9 @@ function Sidebar() {
         <SItem route="home" label="Home" icon="house" />
         <SItem route="inbox" label="Inbox" icon="inbox" ct={unreadInbox || ""} dot />
         <SItem route="mytasks" label="My Tasks" icon="circle-check" ct={myOpen || ""} />
-        <div className="sgroup">
-          <div className="sgroup-h">Workspace</div>
-          <SItem route="chat" label="Chat" icon="message-square" />
-          <SItem route="projects" label="Projects" icon="folder-kanban" />
-          <SItem route="activity" label="Activity" icon="activity" />
-        </div>
+        <SItem route="chat" label="Chat" icon="message-square" />
+        <SItem route="projects" label="Projects" icon="folder-kanban" />
+        <SItem route="activity" label="Activity" icon="activity" />
         <div className="sgroup" id="side-projects">
           <div className="sgroup-h">
             <span>Projects</span>
