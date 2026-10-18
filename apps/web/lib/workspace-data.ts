@@ -6,13 +6,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { api, unwrap } from "./api";
+import { useWorkspaceActivity } from "./activity";
 import { useDocuments } from "./documents";
 import { useWorkspaceIssues, type Scope, type WorkspaceIssueFilters } from "./issues";
 import { useKnowledge, useKnowledgeFile } from "./knowledge";
+import { useNotifications } from "./notifications";
 import { useProjects } from "./queries";
 import { useStarredProjects } from "./stars";
-import { ms, toFile, toMember, toProject, toTask } from "./view-models";
-import type { FileItem, KnowledgeFile, Member, Project, Task } from "@/src/data/types";
+import { ms, toActivity, toFile, toMember, toNotif, toProject, toTask } from "./view-models";
+import type { Activity, FileItem, KnowledgeFile, Member, Notif, Project, Task } from "@/src/data/types";
 
 /** Workspace issues as store Tasks: `fav` comes from the starred set, project ids are real. */
 function useLiveTasks(workspaceId: string | undefined, filters: WorkspaceIssueFilters, enabled: boolean): Task[] | undefined {
@@ -49,6 +51,23 @@ export function useLiveStarredTasks(workspaceId: string | undefined, enabled = t
 export function useLiveArchivedTasks(workspaceId: string | undefined, enabled = true) {
   const tasks = useLiveTasks(workspaceId, { archived: "only" }, enabled);
   return useMemo(() => tasks?.slice().sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0)), [tasks]);
+}
+
+/** Every non-archived issue across the workspace's visible projects (Home's stats). */
+export function useLiveAllTasks(workspaceId: string | undefined, enabled = true) {
+  return useLiveTasks(workspaceId, {}, enabled);
+}
+
+/** The signed-in person's notifications as store Notifs (Home's waiting card, the Inbox). */
+export function useLiveNotifications(workspaceId: string | undefined, enabled = true): Notif[] | undefined {
+  const notifs = useNotifications(enabled ? workspaceId : undefined);
+  return useMemo(() => notifs.data?.map(toNotif), [notifs.data]);
+}
+
+/** The workspace activity feed as store Activity rows (the /activity page). */
+export function useLiveWorkspaceActivity(workspaceId: string | undefined, enabled = true): Activity[] | undefined {
+  const feed = useWorkspaceActivity(enabled ? workspaceId : undefined);
+  return useMemo(() => feed.data?.map(toActivity), [feed.data]);
 }
 
 /** A project's non-archived issues as store Tasks (Board and List). */
