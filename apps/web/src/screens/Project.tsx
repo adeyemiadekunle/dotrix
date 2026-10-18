@@ -8,6 +8,8 @@ import { openPop, toggleFavProj } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { go, useRoute } from "../core/nav";
 import { D, canSee, projByKey, tasksOf } from "../data/store";
+import { isLive, live } from "../data/live";
+import { useLiveProjectTasks } from "../../lib/workspace-data";
 import type { Project as P } from "../data/types";
 import { LCOLS, ListView } from "../components/TaskList";
 import { applyView, groupTasks, viewOf, ViewToolbar } from "../shell/viewEngine";
@@ -40,14 +42,16 @@ const LIST_COLS = ["status", "assignee", "priority", "due", "labels"];
 
 export function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   const v = viewOf(k);
-  const ts = applyView(tasksOf(p.id), v);
+  const liveTasks = useLiveProjectTasks(live.ws?.id, p.id, isLive());
+  const base = isLive() ? (liveTasks ?? []) : tasksOf(p.id);
+  const ts = applyView(base, v);
   const addBtn = (
     <button className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
       <Ic n="plus" s={13} />
       New task
     </button>
   );
-  const noTasks = !tasksOf(p.id).length;
+  const noTasks = !base.length;
   const emptyAll = (
     <Empty icon="list-checks" title="No tasks here" text="Add a task to get things moving.">
       <button className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
