@@ -8,7 +8,7 @@ import { Ic } from "../core/icons";
 import { newProject } from "../core/more";
 import { go } from "../core/nav";
 import { TODAY, ago, diffD, fmtDate, minsAgo, parse, relDate } from "../core/utils";
-import { D, S, TM, allTasks, canSee, isOver, mem, pColor, progressOf, render, tasksOf, visibleProjects } from "../data/store";
+import { D, S, allTasks, canSee, isOver, mem, pColor, progressOf, render, tasksOf, visibleProjects } from "../data/store";
 import type { Project } from "../data/types";
 import { Av, AvStack, Empty, PIcon, PStatus, ProgBar, StIcon } from "../ui/helpers";
 
@@ -186,7 +186,6 @@ export function Projects() {
               <th style={{ paddingLeft: 14 }}>Project</th>
               <th style={{ textAlign: "left" }}>Status</th>
               <th style={{ textAlign: "left" }}>Lead</th>
-              <th style={{ textAlign: "left" }}>Team</th>
               <th style={{ textAlign: "left", width: "16%" }}>Progress</th>
               <th>Tasks</th>
               <th style={{ textAlign: "left" }}>Start</th>
@@ -214,9 +213,6 @@ export function Projects() {
                       <Av id={p.lead} cls="sm" />
                       {mem(p.lead)?.name}
                     </span>
-                  </td>
-                  <td style={{ textAlign: "left" }} className="muted">
-                    {TM(p.team).name}
                   </td>
                   <td>
                     <span className="row">

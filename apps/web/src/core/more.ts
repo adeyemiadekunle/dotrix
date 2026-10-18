@@ -2,7 +2,7 @@
 // and what the context menus do (duplicate, archive, delete, rename, share, columns, members,
 // files, saved views), with their wording and undo.
 import { allowed, canInvite } from "./can";
-import { PR, PCOLORS } from "./constants";
+import { PR } from "./constants";
 import { applyPatch, closePop, copy, createTask, guarded, nextKey, openTask } from "./actions";
 import { go, routeOf } from "./nav";
 import { dOff, uid } from "./utils";
@@ -22,7 +22,6 @@ import {
   save,
   task,
   tasksOf,
-  team,
   visibleProjects,
   type Modal,
 } from "../data/store";
@@ -185,10 +184,7 @@ export function makeKey(name: string) {
   while (D().projects.some((p) => p.key === key)) key = base + n++;
   return key;
 }
-export function createProject(
-  f: { name: string; desc?: string; icon: string; color: string; team: string; lead: string; due?: string },
-  tmplId: string,
-): Project {
+export function createProject(f: { name: string; desc?: string; icon: string; color: string; lead: string; due?: string }, tmplId: string): Project {
   const p: Project = {
     id: uid("p"),
     key: makeKey(f.name),
@@ -196,7 +192,6 @@ export function createProject(
     icon: f.icon,
     color: f.color,
     status: "planning",
-    team: f.team,
     lead: f.lead,
     due: f.due || dOff(30),
     start: dOff(0),
@@ -216,14 +211,14 @@ export function createProject(
 }
 export function newProject() {
   if (!allowed("projects:manage")) return;
-  openModal({ type: "project", form: { name: "", desc: "", icon: "folder", color: "indigo", team: me().team, lead: D().me, due: dOff(30), tmpl: "blank" } });
+  openModal({ type: "project", form: { name: "", desc: "", icon: "folder", color: "indigo", lead: D().me, due: dOff(30), tmpl: "blank" } });
 }
 export function editProject(id: string) {
   const p = proj(id)!;
   openModal({
     type: "project",
     edit: p.id,
-    form: { name: p.name, desc: p.desc, icon: p.icon, color: p.color, team: p.team, lead: p.lead, due: p.due, tmpl: "blank" },
+    form: { name: p.name, desc: p.desc, icon: p.icon, color: p.color, lead: p.lead, due: p.due, tmpl: "blank" },
   });
 }
 export function share(id: string) {
@@ -233,31 +228,6 @@ export function invite() {
   if (!canInvite()) return; // (a shortcut or an old link; the control itself isn't shown)
   openModal({ type: "invite" });
 }
-export function newTeam() {
-  if (!allowed("members:manage")) return;
-  openModal({ type: "team", form: { name: "", desc: "", icon: "users", color: "teal", members: [] as string[] } });
-}
-export function editTeam(id: string) {
-  const t = team(id);
-  if (!t) return;
-  openModal({
-    type: "team",
-    edit: t.id,
-    form: {
-      name: t.name,
-      desc: t.desc,
-      icon: t.icon,
-      color: Object.keys(PCOLORS).find((k) => PCOLORS[k] === t.c) || "slate",
-      members: D()
-        .members.filter((m) => m.team === t.id)
-        .map((m) => m.id),
-    },
-  });
-}
-
-/* ---------- tasks ---------- */
-/** Remove issues from the store; a real workspace deletes them on the API too (`send: false` when
- * something else deletes them there, like their project). */
 export function deleteTasks(ids: string[], { send = true } = {}) {
   const set = new Set(ids);
   if (send) tasksDeleted(D().tasks.filter((t) => set.has(t.id)));
@@ -668,4 +638,10 @@ export function toggleOffline() {
 
 export function escapeHtml(s: string) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
+export function restoreProject(id: string) {
+  const p = proj(id)!;
+  mutate(() => (p.archived = false));
+  toast(`Restored ${p.name}`);
 }

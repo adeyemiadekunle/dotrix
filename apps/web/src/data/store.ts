@@ -5,11 +5,11 @@
 // not the screens.
 import { useSyncExternalStore } from "react";
 
-import { PCOLORS, TEAMS_SEED } from "../core/constants";
+import { PCOLORS } from "../core/constants";
 import { TODAY, diffD, iso, parse, uid } from "../core/utils";
 import { AGENTS, CODING_TOOLS } from "./seed-dotrix";
 import { seed } from "./seed";
-import type { Data, Filter, Project, Task, Team } from "./types";
+import type { Data, Filter, Project, Task } from "./types";
 
 export const STORE_KEY = "dotrix.studio.v2"; // v2: the seeded workspace is Dotrix
 export const DEFAULT_PREFS = {
@@ -105,7 +105,7 @@ export const S = {
     inboxCat: "all",
     inboxUnread: false,
     inboxSel: null as string | null,
-    archTab: "tasks" as "tasks" | "projects",
+    myTab: "mine" as "mine" | "starred" | "archived",
     agentSel: null as string | null,
     // dotrix: chat
     chatBusy: null as string | null,
@@ -230,13 +230,3 @@ export function logAct(verb: string, t?: Task | null, extra = "") {
   D().activity.unshift({ id: uid("a"), by: D().me, verb, task: t?.id ?? null, project: t?.project ?? null, at: Date.now(), extra });
   if (t) t.updated = Date.now();
 }
-
-/* ---------- teams (seeded on first use) ---------- */
-export const NO_TEAM: Team = { id: "", name: "No team", icon: "users", c: "#8A867E", desc: "" };
-export function teamsList(): Team[] {
-  const d = D();
-  if (!d.teams) d.teams = TEAMS_SEED.map((t) => ({ ...t }));
-  return d.teams;
-}
-export const team = (id: string | null | undefined) => teamsList().find((t) => t.id === id) ?? null;
-export const TM = (id: string | null | undefined) => team(id) ?? NO_TEAM;

@@ -1,20 +1,23 @@
 // Task pages: the same views over every project you can see.
 import { Ic } from "../core/icons";
-import { newTask } from "../core/more";
+import { confirmDlg, deleteTasks, escapeHtml, newTask, restore, snapshot } from "../core/more";
 import { go } from "../core/nav";
-import { TODAY, dOff, dayBucket, diffD, parse } from "../core/utils";
-import { D, S, allTasks, canSee, isOver, proj, render, visibleProjects } from "../data/store";
+import { TODAY, ago, dOff, dayBucket, diffD, parse } from "../core/utils";
+import { isLive } from "../data/live";
+import { D, S, allTasks, canSee, isOver, mutate, proj, render, visibleProjects } from "../data/store";
 import type { Activity as A } from "../data/types";
 import { ActItem, LCOLS, ListView, MiniRow } from "../components/TaskList";
 import { applyView, groupTasks, viewChange, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
-import { Empty } from "../ui/helpers";
+import { Empty, StIcon } from "../ui/helpers";
+import { toast } from "../ui/toast";
 import { Board } from "../views/Board";
 import { Calendar } from "../views/Calendar";
 import { TlControls, Timeline } from "../views/Timeline";
-import { ProjectCard } from "./Projects";
 
 export function MyTasks() {
   const k = "mytasks";
+  const view = S.ui.myTab;
+  const setView = (v: typeof view) => ((S.ui.myTab = v), render());
   const v = viewOf(k);
   const mine = applyView(
     allTasks().filter((t) => t.assignee === D().me),
@@ -76,10 +79,135 @@ export function MyTasks() {
           </button>
         </div>
       </div>
-      <ViewToolbar k={k} group={false} />
-      <div className="list-wrap">
-        <ListView groups={groups} k={k} cols={["project", "status", "priority", "due"]} complete drag={false} />
+      <div className="tabs" style={{ margin: "0 24px 10px" }}>
+        {(
+          [
+            ["mine", "Assigned to me"],
+            ["starred", "Starred"],
+            ["archived", "Archived"],
+          ] as const
+        ).map(([v, n]) => (
+          <button key={v} className={`tab ${view === v ? "on" : ""}`} onClick={() => setView(v)}>
+            {n}
+          </button>
+        ))}
       </div>
+      {view === "mine" ? (
+        <>
+          <ViewToolbar k={k} group={false} />
+          <div className="list-wrap">
+            <ListView groups={groups} k={k} cols={["project", "status", "priority", "due"]} complete drag={false} />
+          </div>
+        </>
+      ) : view === "starred" ? (
+        <Starred />
+      ) : (
+        <Archived />
+      )}
+    </div>
+  );
+}
+
+/** Tasks you starred, from every project you can see. */
+function Starred() {
+  const ts = allTasks().filter((t) => t.fav);
+  return (
+    <div style={{ padding: "0 24px 24px" }}>
+      {ts.length ? (
+        <div className="panel" style={{ overflow: "hidden" }}>
+          {ts.map((t) => (
+            <MiniRow key={t.id} t={t} />
+          ))}
+        </div>
+      ) : (
+        <div className="panel">
+          <Empty icon="star" title="No starred tasks" text="Open a task and click the star to keep it here." />
+        </div>
+      )}
+    </div>
+  );
+}
+
+type ArchivedAt = { archivedAt?: number };
+
+function restoreTask(id: string) {
+  const t = D().tasks.find((x) => x.id === id)!;
+  mutate(() => (t.archived = false));
+  toast(`Restored “${t.title}”`);
+}
+function purgeTask(id: string) {
+  const t = D().tasks.find((x) => x.id === id)!;
+  confirmDlg({
+    title: "Delete task permanently?",
+    body: `<b>${escapeHtml(t.title)}</b> and its comments will be deleted for everyone. This can't be undone.`,
+    ok: "Delete permanently",
+    danger: true,
+    run: () => {
+      const snap = snapshot();
+      mutate(() => deleteTasks([t.id]));
+      toast(`Deleted “${t.title}”`, isLive() ? {} : { action: "Undo", onAction: () => restore(snap) }); // for good in a real workspace
+    },
+  });
+}
+
+/** Archived tasks: restore them or delete them for good. Archived projects are restored from Settings → Projects. */
+function Archived() {
+  const ts = D()
+    .tasks.filter((t) => t.archived && canSee(proj(t.project)) && !proj(t.project)?.archived)
+    .sort((a, b) => ((b as ArchivedAt).archivedAt || 0) - ((a as ArchivedAt).archivedAt || 0));
+  return (
+    <div style={{ padding: "0 24px 24px" }}>
+      {ts.length ? (
+        <div className="panel" style={{ overflow: "hidden" }}>
+          {ts.map((t) => {
+            const at = (t as ArchivedAt).archivedAt;
+            return (
+              <div key={t.id} className="mini" style={{ minHeight: 52, cursor: "default", gap: 12 }}>
+                <StIcon st={t.status} />
+                <div className="grow" style={{ minWidth: 0 }}>
+                  <div className="trunc" style={{ fontWeight: 500 }}>
+                    {t.title}
+                  </div>
+                  <div className="faint trunc" style={{ fontSize: 12 }}>
+                    {t.key} · {proj(t.project)?.name}
+                  </div>
+                </div>
+                <span className="faint hide-m" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                  {at ? "Archived " + ago(at) : "Archived"}
+                </span>
+                <button className="btn btn-secondary btn-sm" onClick={() => restoreTask(t.id)}>
+                  <Ic n="rotate-ccw" s={13} />
+                  Restore
+                </button>
+                <button
+                  className="ibtn ibtn-sm"
+                  onClick={() => purgeTask(t.id)}
+                  data-tip="Delete permanently"
+                  aria-label="Delete permanently"
+                  style={{ color: "var(--red)" }}
+                >
+                  <Ic n="trash-2" s={15} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="panel">
+          <Empty
+            icon="archive"
+            title="No archived tasks"
+            text="Archive finished or abandoned tasks to keep boards focused. They wait here until you restore them."
+          />
+        </div>
+      )}
+      <p className="faint" style={{ fontSize: 12, marginTop: 10 }}>
+        Archived projects are restored from{" "}
+        <button className="link" onClick={() => go("settings", { sec: "projects" })}>
+          Settings → Projects
+        </button>
+        .
+      </p>
     </div>
   );
 }
@@ -170,65 +298,6 @@ export function TimelinePage() {
       </div>
       <ViewToolbar k={k} group={false} extra={<TlControls />} />
       <Timeline ts={applyView(allTasks(), viewOf(k))} k={k} p={null} />
-    </div>
-  );
-}
-
-export function Favorites() {
-  const ps = visibleProjects().filter((p) => p.fav && canSee(p));
-  const ts = allTasks().filter((t) => t.fav);
-  return (
-    <div className="page wide">
-      <div className="ph">
-        <div>
-          <h1>Favorites</h1>
-          <p>Projects and tasks you&apos;ve starred for quick access.</p>
-        </div>
-      </div>
-      {!ps.length && !ts.length ? (
-        <div className="panel">
-          <Empty icon="star" title="No favorites yet" text="Star a project or task to pin it here.">
-            <button className="btn btn-secondary btn-sm" onClick={() => go("projects")}>
-              Browse projects
-            </button>
-          </Empty>
-        </div>
-      ) : (
-        <>
-          <h2 className="sec" style={{ marginBottom: 10 }}>
-            Projects{" "}
-            <span className="faint" style={{ fontWeight: 500 }}>
-              {ps.length}
-            </span>
-          </h2>
-          {ps.length ? (
-            <div className="pgrid" style={{ marginBottom: 28 }}>
-              {ps.map((p) => (
-                <ProjectCard key={p.id} p={p} />
-              ))}
-            </div>
-          ) : (
-            <p className="faint" style={{ marginBottom: 28 }}>
-              No favorite projects.
-            </p>
-          )}
-          <h2 className="sec" style={{ marginBottom: 6 }}>
-            Tasks{" "}
-            <span className="faint" style={{ fontWeight: 500 }}>
-              {ts.length}
-            </span>
-          </h2>
-          {ts.length ? (
-            <div className="panel" style={{ overflow: "hidden" }}>
-              {ts.map((t) => (
-                <MiniRow key={t.id} t={t} />
-              ))}
-            </div>
-          ) : (
-            <p className="faint">Open a task and click the star to add it here.</p>
-          )}
-        </>
-      )}
     </div>
   );
 }

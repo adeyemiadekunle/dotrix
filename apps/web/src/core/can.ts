@@ -6,7 +6,7 @@ import { isLive, live } from "../data/live";
 import { me } from "../data/store";
 
 export type Perm =
-  | "members:manage" // invite, remove, change roles, teams
+  | "members:manage" // invite, remove, change roles
   | "projects:manage" // create projects, set them up
   | "workspace:manage" // rename, agents, models, automations, GitHub, audit log
   | "agents:approve"

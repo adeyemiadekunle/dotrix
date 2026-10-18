@@ -4,7 +4,7 @@
 // the store changes first (the screen answers at once), then the request; a refused request
 // puts the item back as the API has it and says why.
 //
-// Wired: the workspace, members and roles, teams (who and which projects), projects (create,
+// Wired: the workspace, members and roles, projects (create,
 // edit, status, star), issues (create, every field, checklists, repeats, stars, attachments,
 // comments), notifications (read state), activity, agents (the list), Knowledge (read and save),
 // files (upload, list, rename, duplicate, delete), automations (list, on/off, add a preset), the audit log.
@@ -17,7 +17,6 @@
 import { api, apiFetch, authPost, hasSession, problemMessage, unwrap, type Schemas } from "@/lib/api";
 
 import { PCOLORS } from "../core/constants";
-import { go } from "../core/nav";
 import { fmtDate, uid } from "../core/utils";
 import { fileType, fsize } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -40,7 +39,6 @@ import type {
   Project,
   Subtask,
   Task,
-  Team,
 } from "./types";
 
 type W = Schemas["WorkspaceWithRole"];
@@ -98,7 +96,6 @@ function toMember(m: Schemas["MemberRead"]): Member {
     name: m.display_name,
     email: m.email,
     role: ROLE_IN[m.role] ?? "Member",
-    team: "",
     title: m.title ?? "",
     c: hashTint(m.user_id),
     status: "active",
@@ -127,7 +124,6 @@ function toProject(p: Schemas["ProjectRead"], members: Schemas["MemberRead"][], 
     icon: p.icon ?? "folder",
     color: p.color ?? Object.keys(PCOLORS)[[...p.key].reduce((a, c) => a + c.charCodeAt(0), 0) % TINTS.length]!,
     status,
-    team: "",
     lead: owner,
     due: p.target_date ?? "",
     start: p.created_at.slice(0, 10),
@@ -165,7 +161,6 @@ const toAttachment = (a: Schemas["AttachmentRead"]): Attachment => ({
 });
 /** Stand-ins for the attachments a list row only counts (cards show the count); the drawer loads the real ones. */
 const counted = (n: number): Attachment[] => Array.from({ length: n }, (_, k) => ({ id: `counted-${k}`, name: "", type: "other", size: "", by: "", at: 0 }));
-const toTeam = (t: Schemas["TeamRead"]): Team => ({ id: t.id, name: t.name, icon: t.icon, c: t.color, desc: t.description });
 
 type IssueLike = Schemas["WorkspaceIssue"] | (Schemas["IssueRead"] & { project_id?: string });
 function toTask(i: IssueLike, projectId: string, order: number): Task {
@@ -381,7 +376,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
     const ps = projects.map((p) => toProject(p, members, stars));
     // Per project: knowledge (every file's content), documents, automations. Agents and the audit
     // log are the workspace's; the audit log is for owners and admins, so others get none.
-    const [perProject, agents, audit, teams, starredIssues] = await Promise.all([
+    const [perProject, agents, audit, starredIssues] = await Promise.all([
       Promise.all(
         projects.map(async (p) => {
           const pp = { params: { path: { workspace_id: ws.id, project_id: p.id } } };
@@ -395,14 +390,10 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       ),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", path)).catch(() => []),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/audit", { params: { path: { workspace_id: ws.id }, query: { limit: 200 } } })).catch(() => []),
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/teams", path)).catch(() => []),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/issues", { params: { path: { workspace_id: ws.id }, query: { starred: true, limit: 5000 } } })).catch(
         () => [],
       ),
     ]);
-    const teamList = teams as Schemas["TeamRead"][];
-    const memberTeam = new Map(teamList.flatMap((t) => (t.member_ids ?? []).map((u) => [u, t.id] as const)));
-    ps.forEach((p) => (p.team = teamList.find((t) => (t.project_ids ?? []).includes(p.id))?.id ?? ""));
     const starredKeys = new Set((starredIssues as Schemas["WorkspaceIssue"][]).map((i) => i.key));
     const data: Data = {
       ws: { id: ws.id, name: ws.name, c: hashTint(ws.id), plan: ws.kind === "personal" ? "Personal" : "Team", kind: ws.kind, url: ws.slug },
@@ -415,7 +406,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
         slug: w.slug,
       })),
       me: me.id,
-      members: members.map((m) => ({ ...toMember(m), team: memberTeam.get(m.user_id) ?? "" })),
+      members: members.map(toMember),
       projects: ps,
       tasks: issues.map((i) => ({ ...toTask(i, i.project_id, i.rank), fav: starredKeys.has(i.key) })),
       comments: [],
@@ -430,7 +421,6 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       invoices: [],
       tfa: false,
       notifPrefs: {},
-      teams: teamList.map(toTeam),
       agents: (agents as Schemas["AgentRead"][]).map(toAgent),
       threads: [],
       knowledge: perProject.flatMap((x) => x.knowledge),
@@ -991,25 +981,15 @@ async function upload<T>(url: string, file: File, onProgress: (pct: number) => v
 const synced = {
   tasks: new Map<string, { sub: string; fav: boolean; att: string[]; arch: boolean }>(), // by key: undo puts back copies
   projects: new Map<string, boolean>(), // archived
-  teams: new Map<string, string>(),
-  memberTeam: new Map<string, string>(),
-  projectTeam: new Map<string, string>(),
 };
 const subSig = (t: Task) => JSON.stringify(toChecklist(t.subtasks));
-const teamSig = (t: Team) => JSON.stringify([t.name, t.desc, t.icon, t.c]);
 function markTask(t: Task) {
   synced.tasks.set(t.key, { sub: subSig(t), fav: t.fav, att: t.attachments.map((a) => a.id), arch: Boolean(t.archived) });
-}
-function markTeams() {
-  synced.teams = new Map((D().teams ?? []).filter((t) => fromApi(t.id)).map((t) => [t.id, teamSig(t)]));
-  synced.memberTeam = new Map(D().members.map((m) => [m.id, m.team]));
-  synced.projectTeam = new Map(D().projects.map((p) => [p.id, p.team]));
 }
 function baseline() {
   synced.tasks = new Map();
   D().tasks.forEach(markTask);
   synced.projects = new Map(D().projects.map((p) => [p.id, Boolean(p.archived)]));
-  markTeams();
 }
 
 /** After every change in a real workspace: send what differs from what the API last had. */
@@ -1072,7 +1052,6 @@ function reconcile() {
       void reloadProjects();
     });
   }
-  reconcileTeams();
 }
 afterMutate.push(reconcile);
 /** Run after the store's data was replaced (undo): what differs from the API is sent. */
@@ -1184,101 +1163,6 @@ export function commentReacted(c: Comment, emoji: string, on: boolean) {
     void reloadComments(c);
   });
 }
-
-const teamPath = (id: string) => ({ workspace_id: wsId(), team_id: id });
-const pendingTeams = new WeakSet<Team>();
-
-async function reloadTeams() {
-  try {
-    const teams = await unwrap(api.GET("/v1/workspaces/{workspace_id}/teams", { params: { path: { workspace_id: wsId() } } }));
-    D().teams = teams.map(toTeam);
-    D().members.forEach((m) => (m.team = teams.find((t) => (t.member_ids ?? []).includes(m.id))?.id ?? ""));
-    D().projects.forEach((p) => (p.team = teams.find((t) => (t.project_ids ?? []).includes(p.id))?.id ?? ""));
-    markTeams();
-    render();
-  } catch {
-    /* leave what's shown */
-  }
-}
-function teamFailed(what: string, e: unknown) {
-  failed(what, e);
-  void reloadTeams();
-}
-
-function reconcileTeams() {
-  const teams = D().teams ?? [];
-  for (const tm of teams) {
-    if (!fromApi(tm.id)) {
-      if (!pendingTeams.has(tm)) {
-        pendingTeams.add(tm);
-        void createTeam(tm);
-      }
-      continue;
-    }
-    const sig = teamSig(tm);
-    if (synced.teams.get(tm.id) !== sig) {
-      synced.teams.set(tm.id, sig);
-      void unwrap(
-        api.PATCH("/v1/workspaces/{workspace_id}/teams/{team_id}", {
-          params: { path: teamPath(tm.id) },
-          body: { name: tm.name, description: tm.desc, icon: tm.icon, color: tm.c },
-        }),
-      ).catch((e) => teamFailed(tm.name, e));
-    }
-  }
-  for (const id of [...synced.teams.keys()])
-    if (!teams.some((t) => t.id === id)) {
-      synced.teams.delete(id);
-      void unwrap(api.DELETE("/v1/workspaces/{workspace_id}/teams/{team_id}", { params: { path: teamPath(id) } })).catch((e) =>
-        teamFailed("Deleting the team", e),
-      );
-    }
-  // Who is in which team, and which project is under which: one team each.
-  for (const m of D().members) {
-    const now = m.team || "";
-    const was = synced.memberTeam.get(m.id) ?? "";
-    if (!fromApi(m.id) || now === was || (now && !fromApi(now))) continue; // a team being created: sent once it exists
-    synced.memberTeam.set(m.id, now);
-    const req = now
-      ? api.PUT("/v1/workspaces/{workspace_id}/teams/{team_id}/members/{user_id}", { params: { path: { ...teamPath(now), user_id: m.id } } })
-      : api.DELETE("/v1/workspaces/{workspace_id}/teams/{team_id}/members/{user_id}", { params: { path: { ...teamPath(was), user_id: m.id } } });
-    void unwrap(req).catch((e) => teamFailed(`${m.name}'s team`, e));
-  }
-  for (const p of D().projects) {
-    const now = p.team || "";
-    const was = synced.projectTeam.get(p.id) ?? "";
-    if (!fromApi(p.id) || now === was || (now && !fromApi(now))) continue;
-    synced.projectTeam.set(p.id, now);
-    const req = now
-      ? api.PUT("/v1/workspaces/{workspace_id}/teams/{team_id}/projects/{project_id}", { params: { path: { ...teamPath(now), project_id: p.id } } })
-      : api.DELETE("/v1/workspaces/{workspace_id}/teams/{team_id}/projects/{project_id}", { params: { path: { ...teamPath(was), project_id: p.id } } });
-    void unwrap(req).catch((e) => teamFailed(`${p.name}'s team`, e));
-  }
-}
-
-async function createTeam(tm: Team) {
-  try {
-    const made = await unwrap(
-      api.POST("/v1/workspaces/{workspace_id}/teams", {
-        params: { path: { workspace_id: wsId() } },
-        body: { name: tm.name, description: tm.desc, icon: tm.icon, color: tm.c },
-      }),
-    );
-    const old = tm.id;
-    tm.id = made.id;
-    D().members.forEach((m) => m.team === old && (m.team = made.id));
-    D().projects.forEach((p) => p.team === old && (p.team = made.id));
-    synced.teams.set(made.id, teamSig(tm));
-    if (location.pathname.includes(old)) go("team", { id: made.id }, { replace: true });
-    reconcile(); // its people and projects, now that it exists
-    render();
-  } catch (e) {
-    failed(tm.name, e);
-    void reloadTeams();
-  }
-}
-
-/* ---------- a new organisation (onboarding, or "Create workspace" in the switcher) ---------- */
 
 const PROJECT_ICONS = new Set([
   "globe",

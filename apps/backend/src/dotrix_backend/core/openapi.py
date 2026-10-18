@@ -69,11 +69,6 @@ TAGS: list[dict[str, str]] = [
     },
     {"name": "invites", "description": "Invite people by email or shareable link; accept invites."},
     {
-        "name": "teams",
-        "description": "Teams in a workspace (Design, Engineering, ...): the people in each and the projects "
-        "each looks after. One team each, for people and for projects.",
-    },
-    {
         "name": "models",
         "description": "An organisation's own model provider keys (Anthropic, OpenAI, Google), stored "
         "encrypted and used for its agents' runs, and when a provider last refused a run for its limits.",

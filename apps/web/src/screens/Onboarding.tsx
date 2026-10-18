@@ -11,7 +11,7 @@ import { uid } from "../core/utils";
 import { errorMessage, hasSession } from "@/lib/api";
 
 import { organisationCreated } from "../data/live";
-import { D, me, mutate } from "../data/store";
+import { D, mutate } from "../data/store";
 
 type Data = { use: string; ws: string; url: string; team: string; size: string; proj: string; tmpl: string; invites: string[] };
 const N = 6;
@@ -60,7 +60,7 @@ export function Onboarding() {
       D().ws.name = o.ws.trim() || "My Workspace";
       D().ws.url = o.url || "workspace";
       const tm = TEMPLATES.find((t) => t.id === o.tmpl);
-      const p = createProject({ name: o.proj || "My first project", icon: tm?.icon || "folder", color: "indigo", team: me()!.team, lead: D().me }, o.tmpl);
+      const p = createProject({ name: o.proj || "My first project", icon: tm?.icon || "folder", color: "indigo", lead: D().me }, o.tmpl);
       D().knowledge.push({
         path: "project.md",
         project: p.id,
@@ -75,7 +75,7 @@ export function Onboarding() {
           name: email.split("@")[0]!,
           email,
           role: "Member",
-          team: me()!.team,
+
           title: "",
           c: "#8A867E",
           status: "invited",

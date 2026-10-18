@@ -11,22 +11,21 @@ import { limitToasts } from "../core/agents";
 import { live, loadWorkspace, onLoaded, showDemo } from "../data/live";
 import { loadInvites } from "../data/account";
 import { DesignSystem, SystemStates } from "../screens/DesignSystem";
-import { D, projByKey, team, useStudio } from "../data/store";
+import { D, S, projByKey, useStudio } from "../data/store";
 import { Drawer } from "../overlays/Drawer";
 import { ModalLayer } from "../overlays/Modals";
 import { installDragDrop } from "../core/dragdrop";
 import { installKeyboard } from "../core/keyboard";
 import { Palette } from "../overlays/Palette";
-import { Archive } from "../screens/Archive";
 import { Chat } from "../screens/Chat";
-import { MemberPage, Members, TeamPage, Teams } from "../screens/Members";
+import { MemberPage, Members } from "../screens/Members";
 import { Settings } from "../screens/Settings";
 import { Home } from "../screens/Home";
 import { Inbox } from "../screens/Inbox";
 import { Project } from "../screens/Project";
 import { Overview, Projects } from "../screens/Projects";
 import { Search } from "../screens/Search";
-import { ActivityPage, CalendarPage, Favorites, MyTasks, Tasks, TimelinePage } from "../screens/TaskPages";
+import { ActivityPage, CalendarPage, MyTasks, Tasks, TimelinePage } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
 import { ROUTE_NAMES, Shell, routeName } from "./Shell";
 
@@ -41,7 +40,7 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   tasks: Tasks,
   calendar: CalendarPage,
   timeline: TimelinePage,
-  favorites: Favorites,
+  favorites: () => <ToMyTasks view="starred" />,
   activity: ActivityPage,
   projects: Projects,
   project: Project,
@@ -52,13 +51,27 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   chat: Chat,
   members: Members,
   member: MemberPage,
-  teams: Teams,
-  team: TeamPage,
-  archive: Archive,
+  teams: ToMembers,
+  team: ToMembers,
+  archive: () => <ToMyTasks view="archived" />,
   settings: Settings,
   system: DesignSystem,
   states: SystemStates,
 };
+
+/** Favorites and Archive became My Tasks' Starred and Archived views. */
+function ToMyTasks({ view }: { view: "starred" | "archived" }) {
+  useEffect(() => {
+    S.ui.myTab = view;
+    go("mytasks", {}, { replace: true });
+  }, [view]);
+  return null;
+}
+/** Teams are gone; their links open Settings → Members. */
+function ToMembers() {
+  useEffect(() => go("settings", { sec: "members" }, { replace: true }), []);
+  return null;
+}
 
 /** Notifications moved into the Inbox: old links (?n=, ?tab=) open there. */
 function ToInbox() {
@@ -151,7 +164,6 @@ export function Studio() {
       if (p) t = `${params.tab ? params.tab[0]!.toUpperCase() + params.tab.slice(1) : "Board"} · ${p.name}`;
     }
     if (route === "member") t = D().members.find((m) => m.id === params.id)?.name ?? t;
-    if (route === "team") t = team(params.id)?.name ?? t;
     document.title = `${t} · ${D().ws.name}`;
   });
   if (slug !== WS) {

@@ -69,13 +69,6 @@ export const PICONS = [
 ];
 export const ROLES = ["Owner", "Admin", "Member", "Guest"] as const;
 export type Role = (typeof ROLES)[number];
-export const TEAMS_SEED = [
-  { id: "design", name: "Design", icon: "palette", c: "#8662C9", desc: "Product design, brand, and research" },
-  { id: "eng", name: "Engineering", icon: "code", c: "#3B82C4", desc: "Web, mobile, and platform engineering" },
-  { id: "mkt", name: "Marketing", icon: "megaphone", c: "#C54B78", desc: "Campaigns, content, and growth" },
-  { id: "product", name: "Product", icon: "target", c: "#C48A1E", desc: "Roadmap, planning, and QA" },
-];
-
 /* dotrix: issue types (the seed's tasks are all "task") */
 export type IssueType = "epic" | "story" | "task" | "bug" | "spike" | "sub-task";
 export const TYPES: { id: IssueType; name: string; icon: string; c: string }[] = [

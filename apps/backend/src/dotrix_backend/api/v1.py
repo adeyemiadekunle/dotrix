@@ -41,7 +41,6 @@ from dotrix_backend.modules.projects.router import router as projects
 from dotrix_backend.modules.rules.router import router as rules
 from dotrix_backend.modules.search.router import router as search
 from dotrix_backend.modules.search.router import workspace_router as workspace_search
-from dotrix_backend.modules.teams.router import router as teams
 from dotrix_backend.modules.workspaces.router import router as workspaces
 
 router = APIRouter(prefix="/v1")
@@ -83,7 +82,6 @@ for module_router in (
     coding,
     workspace_coding,
     github_webhook,
-    teams,
     model_keys,
     my_models,
     search,
