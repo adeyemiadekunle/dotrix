@@ -13,9 +13,7 @@ import { LCOLS, ListView } from "../components/TaskList";
 import { applyView, groupTasks, viewOf, ViewToolbar } from "../shell/viewEngine";
 import { AvStack, Empty, PIcon } from "../ui/helpers";
 import { Board } from "../views/Board";
-import { Calendar } from "../views/Calendar";
 import { ProjectActivity, ProjectOverview } from "../views/ProjectOverview";
-import { TlControls, Timeline } from "../views/Timeline";
 import { Knowledge } from "./Knowledge";
 
 export const PTABS: [string, string, string][] = [
@@ -66,25 +64,11 @@ export function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) 
       </>
     );
   // Table folded into List (its columns can be hidden); old Table views and links open List.
-  if (type === "list" || type === "table")
+  if (type === "list" || type === "table" || type === "calendar" || type === "timeline")
     return (
       <>
         <ViewToolbar k={k} cols={LIST_COLS.map((c) => [c, LCOLS[c]![0]])} right={addBtn} />
         <div className="list-wrap">{noTasks ? emptyAll : <ListView groups={groupTasks(ts, v.group)} k={k} project={p.id} />}</div>
-      </>
-    );
-  if (type === "calendar")
-    return (
-      <>
-        <ViewToolbar k={k} group={false} right={addBtn} />
-        <Calendar ts={ts} k={k} project={p.id} events />
-      </>
-    );
-  if (type === "timeline")
-    return (
-      <>
-        <ViewToolbar k={k} group={false} right={addBtn} extra={<TlControls />} />
-        <Timeline ts={ts} k={k} p={p} />
       </>
     );
   return <Empty icon="file-question" title="Page not found" text="That view doesn't exist." />;

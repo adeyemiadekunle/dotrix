@@ -23,9 +23,9 @@ import { Settings } from "../screens/Settings";
 import { Home } from "../screens/Home";
 import { Inbox } from "../screens/Inbox";
 import { Project } from "../screens/Project";
-import { Overview, Projects } from "../screens/Projects";
+import { Projects } from "../screens/Projects";
 import { Search } from "../screens/Search";
-import { ActivityPage, CalendarPage, MyTasks, Tasks, TimelinePage } from "../screens/TaskPages";
+import { MyTasks } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
 import { ROUTE_NAMES, Shell, routeName } from "./Shell";
 
@@ -37,14 +37,14 @@ onLoaded.push(limitToasts);
 const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   home: Home,
   mytasks: MyTasks,
-  tasks: Tasks,
-  calendar: CalendarPage,
-  timeline: TimelinePage,
+  tasks: ToHome,
+  calendar: ToHome,
+  timeline: ToHome,
   favorites: () => <ToMyTasks view="starred" />,
-  activity: ActivityPage,
+  activity: ToHome,
   projects: Projects,
   project: Project,
-  overview: Overview,
+  overview: ToHome,
   search: Search,
   inbox: Inbox,
   notifications: ToInbox,
@@ -59,6 +59,11 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   states: SystemStates,
 };
 
+/** Overview and Activity folded into Home: old links open it. */
+function ToHome() {
+  useEffect(() => go("home", {}, { replace: true }), []);
+  return null;
+}
 /** Favorites and Archive became My Tasks' Starred and Archived views. */
 function ToMyTasks({ view }: { view: "starred" | "archived" }) {
   useEffect(() => {

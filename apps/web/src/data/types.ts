@@ -133,13 +133,6 @@ export interface FileItem {
   /** dotrix: converted to Markdown into the project's knowledge */
   converted?: "ready" | "converting" | "failed";
 }
-export interface CalEvent {
-  id: string;
-  title: string;
-  date: string;
-  time: string;
-  project: string;
-}
 export interface SavedView {
   id: string;
   project: string;
@@ -291,13 +284,10 @@ export interface Data {
   activity: Activity[];
   notifs: Notif[];
   files: FileItem[];
-  events: CalEvent[];
   projOrder: string[];
   savedViews: SavedView[];
   recentSearches: string[];
   sessions: { id: string; dev: string; loc: string; at: string; cur?: boolean }[];
-  invoices: { id: string; date: string; amt: string; st: string }[];
-  tfa: boolean;
   notifPrefs: Record<string, boolean>;
   /* dotrix */
   agents: Agent[];
