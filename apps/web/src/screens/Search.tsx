@@ -7,23 +7,27 @@ import { go } from "../core/nav";
 import { ago } from "../core/utils";
 import { D, S, allTasks, canSee, mem, pColor, proj, render, task, visibleProjects } from "../data/store";
 import { isLive, live } from "../data/live";
-import { useLiveMembers } from "../../lib/workspace-data";
-import type { Member } from "../data/types";
+import { useLiveAllTasks, useLiveMembers, useLiveWorkspaceSearch } from "../../lib/workspace-data";
+import type { Schemas } from "../../lib/api";
+import type { Member, Task } from "../data/types";
 import { Av, Empty, FT, Hl, PIcon, PStatus, StIcon } from "../ui/helpers";
 
-export function searchAll(raw: string, people?: Member[]) {
+export function searchAll(raw: string, people?: Member[], tasks?: Task[], docHits?: Schemas["WorkspaceSearchHit"][]) {
   const q = (raw || "").trim().toLowerCase();
   if (!q) return { tasks: [], projects: [], people: [], files: [], documents: [], comments: [] };
   const has = (s?: string | null) => (s || "").toLowerCase().includes(q);
+  const live = tasks !== undefined || docHits !== undefined;
   return {
-    tasks: allTasks()
-      .filter((t) => has(t.title) || has(t.key) || has(t.desc.replace(/<[^>]+>/g, "")))
-      .slice(0, 30),
+    tasks: (tasks ?? allTasks()).filter((t) => has(t.title) || has(t.key) || has(t.desc.replace(/<[^>]+>/g, ""))).slice(0, 30),
     projects: visibleProjects().filter((p) => has(p.name) || has(p.desc)),
     people: (people ?? D().members).filter((m) => has(m.name) || has(m.email) || has(m.title)),
-    files: D().files.filter((f) => has(f.name) && canSee(proj(f.project))),
-    documents: D().knowledge.filter((f) => (has(f.path) || has(f.content)) && canSee(proj(f.project))),
-    comments: D().comments.filter((c) => has(c.text) && task(c.task) && canSee(proj(task(c.task)!.project))),
+    files: live ? [] : D().files.filter((f) => has(f.name) && canSee(proj(f.project))),
+    documents: docHits
+      ? docHits
+          .filter((h) => h.source === "document")
+          .map((h) => ({ path: h.ref, project: h.project_id, content: h.snippet, version: h.version, by: "", at: 0 }))
+      : D().knowledge.filter((f) => (has(f.path) || has(f.content)) && canSee(proj(f.project))),
+    comments: live ? [] : D().comments.filter((c) => has(c.text) && task(c.task) && canSee(proj(task(c.task)!.project))),
   };
 }
 
@@ -32,7 +36,9 @@ const setSearch = (q: string) => ((S.ui.searchQ = q), render());
 export function Search() {
   const q = S.ui.searchQ;
   const liveMembers = useLiveMembers(live.ws?.id, isLive());
-  const r = searchAll(q, isLive() ? liveMembers : undefined);
+  const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
+  const docHits = useLiveWorkspaceSearch(live.ws?.id, q, "document", isLive());
+  const r = searchAll(q, isLive() ? liveMembers : undefined, isLive() ? liveTasks : undefined, isLive() ? docHits : undefined);
   const cat = S.ui.searchCat;
   const cats: [keyof typeof r | "all", string][] = [
     ["all", "All"],

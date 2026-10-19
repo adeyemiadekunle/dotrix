@@ -39,7 +39,8 @@ import { openPop, openTask } from "../core/actions";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { MOD, ago, greeting } from "../core/utils";
-import { live } from "../data/live";
+import { isLive, live } from "../data/live";
+import { useLiveAllTasks, useLiveKnowledgeFiles } from "../../lib/workspace-data";
 import { D, S, canSee, me, pColor, proj, projByKey, render, task, visibleProjects, who } from "../data/store";
 import { Markdown } from "@/components/markdown";
 import { RunApprovals } from "../components/RunApprovals";
@@ -225,11 +226,22 @@ interface Msg {
 }
 
 /** Issue keys a reply names, and documents it read: chips that open them. */
-function refsOf(projectId: string | null, text: string, activity: string[] = []): { tasks: string[]; docs: string[] } {
-  const tasks = [...new Set(text.match(/\b[A-Z]{2,6}-\d+\b/g) ?? [])].filter((k) => D().tasks.some((t) => t.key === k)).slice(0, 4);
+function refsOf(
+  projectId: string | null,
+  text: string,
+  activity: string[] = [],
+  liveTasks?: { key: string }[],
+  liveDocs?: { path: string }[],
+): { tasks: string[]; docs: string[] } {
+  const tasks = [...new Set(text.match(/\b[A-Z]{2,6}-\d+\b/g) ?? [])].filter((k) => (liveTasks ?? D().tasks).some((t) => t.key === k)).slice(0, 4);
   const docs = projectId
     ? [...new Set(activity.flatMap((a) => a.match(/[\w./-]+\.md\b/g) ?? []))]
-        .map((n) => D().knowledge.find((f) => f.project === projectId && (f.path === n || f.path.endsWith(`/${n}`)))?.path)
+        .map(
+          (n) =>
+            (liveDocs ?? D().knowledge).find(
+              (f: { path: string; project?: string }) => (f.project === undefined || f.project === projectId) && (f.path === n || f.path.endsWith(`/${n}`)),
+            )?.path,
+        )
         .filter((x): x is string => Boolean(x))
         .slice(0, 4)
     : [];
@@ -240,7 +252,10 @@ function Message({ m, projectId, children }: { m: Msg; projectId: string | null;
   const w = who(m.by);
   const agent = m.role === "agent" ? D().agents.find((a) => a.handle === m.by) : null;
   const [openSteps, setOpenSteps] = useState(false);
-  const refs = m.role === "agent" ? refsOf(projectId, m.text, m.activity) : { tasks: [], docs: [] };
+  const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
+  const liveDocs = useLiveKnowledgeFiles(isLive() && live.ws && projectId ? { workspaceId: live.ws.id, projectId } : undefined, isLive() && m.role === "agent");
+  const refs =
+    m.role === "agent" ? refsOf(projectId, m.text, m.activity, isLive() ? liveTasks : undefined, isLive() ? liveDocs : undefined) : { tasks: [], docs: [] };
   const p = proj(projectId ?? "");
   const admin = me()?.role === "Owner" || me()?.role === "Admin";
   return (
@@ -283,7 +298,7 @@ function Message({ m, projectId, children }: { m: Msg; projectId: string | null;
         {(refs.tasks.length > 0 || refs.docs.length > 0) && (
           <div className="chat-refs">
             {refs.tasks.map((k) => (
-              <button key={k} className="ref" onClick={() => openTask(D().tasks.find((t) => t.key === k)!.id)}>
+              <button key={k} className="ref" onClick={() => openTask(isLive() ? k : D().tasks.find((t) => t.key === k)!.id)}>
                 <Ic n="square-check" s={12} />
                 {k}
               </button>
@@ -688,8 +703,15 @@ function NewSession({ issue0 }: { issue0: string | null }) {
       .map((p) => p.id),
   );
   const personal = D().ws.kind === "personal";
-  const mine = D().tasks.filter((t) => ps.has(t.project) && !t.archived && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me));
-  const [tid, setTid] = useState(issue0 ? (D().tasks.find((t) => t.key === issue0)?.id ?? "") : "");
+  const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
+  const mine =
+    (isLive() ? liveTasks : undefined)?.filter(
+      (t) => ps.has(t.project) && !t.archived && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me),
+    ) ??
+    (!isLive()
+      ? D().tasks.filter((t) => ps.has(t.project) && !t.archived && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me))
+      : []);
+  const [tid, setTid] = useState(issue0 ? (isLive() ? issue0 : (D().tasks.find((t) => t.key === issue0)?.id ?? "")) : "");
   const [note, setNote] = useState("");
   const [menu, setMenu] = useState<string | null>(null);
   const [hl, setHl] = useState(0);
@@ -856,7 +878,7 @@ function Session({ cs }: { cs: CodingSession }) {
   const decide = useDecideCoding(scope, cs.issue_key);
   const stop = useStopCoding(scope, cs.issue_key);
   const follow = useFollowUp(scope, cs.session_id, cs.issue_key);
-  const t = D().tasks.find((x) => x.key === cs.issue_key);
+  const t = isLive() ? { id: cs.issue_key, key: cs.issue_key } : D().tasks.find((x) => x.key === cs.issue_key);
   const p = proj(cs.project_id);
   const tool = AGENT_NAMES[cs.agent];
   const [ask, setAsk] = useState("");

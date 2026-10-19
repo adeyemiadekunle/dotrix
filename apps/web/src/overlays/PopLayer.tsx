@@ -6,8 +6,9 @@ import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode 
 import { closePop, copy, openTask, projMove, setPref, setProjectStatus, setRole, toggleDone, toggleFavProj, toggleFavTask, updateTask } from "../core/actions";
 import { LABELS, PRIOS, PSTAT, STATUSES, type ProjectStatusId } from "../core/constants";
 import { useCloseSession, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
+import { useLiveProjectTasks } from "@/lib/workspace-data";
 import { confirmDlg, promptDlg } from "../core/more";
-import { live, taskPatched } from "../data/live";
+import { isLive, live, taskPatched } from "../data/live";
 import { allowed, canInvite } from "../core/can";
 import { Ic, WsLogo } from "../core/icons";
 import {
@@ -362,17 +363,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
       };
     case "deps": {
       const tk = task(p.id as string)!;
-      const cands = D().tasks.filter((x) => x.project === tk.project && x.id !== tk.id && !x.archived);
-      return {
-        inner: (
-          <PopList
-            p={p}
-            search="Blocked by…"
-            items={cands.map((x) => ({ id: x.id, name: `${x.key}  ${x.title}`, html: <StIcon st={x.status} />, on: tk.deps.includes(x.id) }))}
-            onPick={(v) => updateTask(tk.id, { deps: tk.deps.includes(v) ? tk.deps.filter((x) => x !== v) : [...tk.deps, v] })}
-          />
-        ),
-      };
+      return { inner: <DepsMenu p={p} tk={tk} /> };
     }
     case "date": {
       const field = p.field as string;
@@ -727,6 +718,20 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
   return null;
 }
 
+/** "Blocked by" candidates: the project's other issues, live when signed in. */
+function DepsMenu({ p, tk }: { p: P; tk: Task }) {
+  const liveTasks = useLiveProjectTasks(live.ws?.id, tk.project, isLive());
+  const cands = isLive() ? (liveTasks ?? []).filter((x) => x.id !== tk.id) : D().tasks.filter((x) => x.project === tk.project && x.id !== tk.id && !x.archived);
+  return (
+    <PopList
+      p={p}
+      search="Blocked by…"
+      items={cands.map((x) => ({ id: x.id, name: `${x.key}  ${x.title}`, html: <StIcon st={x.status} />, on: tk.deps.includes(x.id) }))}
+      onPick={(v) => updateTask(tk.id, { deps: tk.deps.includes(v) ? tk.deps.filter((x) => x !== v) : [...tk.deps, v] })}
+    />
+  );
+}
+
 /** Comment reactions (yours toggles). */
 export function react(commentId: string, e: string) {
   const c = D().comments.find((x) => x.id === commentId);
@@ -986,7 +991,7 @@ function SessionMenu({ cs }: { cs: CodingSession }) {
   const update = useUpdateSession(scope, cs.session_id, cs.issue_key);
   const close = useCloseSession(scope, cs.session_id, cs.issue_key);
   const remove = useDeleteSession(scope, cs.session_id, cs.issue_key);
-  const it = D().tasks.find((t) => t.key === cs.issue_key);
+  const it = isLive() ? { id: cs.issue_key } : D().tasks.find((t) => t.key === cs.issue_key);
   const act = (f: () => void) => () => (closePop(), f());
   return (
     <>
