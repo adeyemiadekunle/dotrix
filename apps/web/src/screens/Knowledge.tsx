@@ -6,12 +6,15 @@ import { useState } from "react";
 import { Ic } from "../core/icons";
 import { go } from "../core/nav";
 import { ago, uid } from "../core/utils";
+import { allowed } from "../core/can";
 import { isLive, knowledgeSaved, live } from "../data/live";
 import { useLiveKnowledgeFile, useLiveKnowledgeFiles, useLiveProjectFiles } from "../../lib/workspace-data";
+import { useLessons } from "../../lib/lessons";
 import { D, S, mutate, render, who } from "../data/store";
 import type { KnowledgeFile, Project } from "../data/types";
 import { Markdown } from "@/components/markdown";
 import { Files } from "../views/Files";
+import { Lessons } from "../views/Lessons";
 import { Av, Empty } from "../ui/helpers";
 import { toast } from "../ui/toast";
 
@@ -34,9 +37,13 @@ export function openDocument(p: Project, path: string) {
   go("project", { id: p.key, tab: "knowledge" });
 }
 
-export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "files" }) {
+export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "files" | "lessons" }) {
   const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
   const liveFiles = useLiveKnowledgeFiles(scope);
+  // Lessons are decided by project managers; others never see the tab or the query.
+  const manage = isLive() && allowed("projects:manage");
+  const liveLessons = useLessons(manage ? scope : undefined);
+  const nLessons = (liveLessons.data ?? []).filter((l) => l.status === "proposed").length;
   const files = isLive()
     ? (liveFiles ?? [])
     : D()
@@ -95,16 +102,17 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
     <div className="seg" role="tablist" aria-label="Knowledge">
       {(
         [
-          ["docs", "Documents"],
-          ["files", nFiles ? `Files ${nFiles}` : "Files"],
+          ["docs", "Documents", undefined],
+          ["files", nFiles ? `Files ${nFiles}` : "Files", "view=files"],
+          ...(manage ? [["lessons", nLessons ? `Lessons ${nLessons}` : "Lessons", "view=lessons"] as const] : []),
         ] as const
-      ).map(([k, n]) => (
+      ).map(([k, n, search]) => (
         <button
           key={k}
           role="tab"
           aria-selected={view === k}
           className={view === k ? "on" : ""}
-          onClick={() => go("project", { id: p.key, tab: "knowledge" }, { replace: true, search: k === "files" ? "view=files" : undefined })}
+          onClick={() => go("project", { id: p.key, tab: "knowledge" }, { replace: true, search })}
         >
           {n}
         </button>
@@ -112,6 +120,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
     </div>
   );
   if (view === "files") return <Files pid={p.id} lead={seg} />;
+  if (view === "lessons" && manage) return <Lessons p={p} lead={seg} />;
   return (
     <>
       <div className="toolbar">{seg}</div>
