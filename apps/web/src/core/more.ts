@@ -25,7 +25,19 @@ import {
   visibleProjects,
   type Modal,
 } from "../data/store";
-import { fileDeleted, fileDuplicated, fileRenamed, isLive, projectCreated, projectDeleted, resynced, showDemo, signOutLive, tasksDeleted } from "../data/live";
+import {
+  fileDeleted,
+  fileDuplicated,
+  fileRenamed,
+  isLive,
+  projectChanged,
+  projectCreated,
+  projectDeleted,
+  showDemo,
+  signOutLive,
+  taskPatched,
+  tasksDeleted,
+} from "../data/live";
 import { inviteResent, isInvite, memberRemoved, ownershipTransferred } from "../data/account";
 import { seed } from "../data/seed";
 import type { Project, Task } from "../data/types";
@@ -40,7 +52,16 @@ export function restore(snap: string) {
   S.data = JSON.parse(snap);
   save();
   render();
-  resynced(); // a real workspace sends what the undo changed (an archive, a star, a checklist)
+}
+
+/** Undo for real workspaces: put the snapshot back, then send the restored field again.
+ * (resend re-finds what changed — the restored copies are new objects.) */
+export function restoreSend(snap: string, ids: string[], key: "archived" | "status") {
+  restore(snap);
+  for (const id of ids) {
+    const t = task(id);
+    if (t) taskPatched(t, [key]);
+  }
 }
 
 /* ---------- modals ---------- */
@@ -263,7 +284,8 @@ export function archiveTask(id: string) {
     t.archived = true;
     logAct("archived", t);
   });
-  toast(`Archived “${t.title}”`, { action: "Undo", onAction: () => restore(snap) });
+  taskPatched(t, ["archived"]);
+  toast(`Archived “${t.title}”`, { action: "Undo", onAction: () => restoreSend(snap, [t.id], "archived") });
 }
 export function delTask(id: string) {
   const t = task(id);
@@ -305,8 +327,16 @@ export function archiveProject(id: string) {
     run: () => {
       const snap = snapshot();
       if (guarded(() => (p.archived = true))) {
+        void projectChanged(p, ["archived"]);
         if (here().route === "project") go("projects");
-        toast(`Archived ${p.name}`, { action: "Undo", onAction: () => restore(snap) });
+        toast(`Archived ${p.name}`, {
+          action: "Undo",
+          onAction: () => {
+            restore(snap);
+            const r = proj(p.id);
+            if (r) void projectChanged(r, ["archived"]);
+          },
+        });
       }
     },
   });
@@ -394,13 +424,32 @@ export function colDoneAll(key: string, st: string) {
   if (!ts.length) return render();
   const snap = snapshot();
   if (guarded(() => ts.forEach((t) => applyPatch(t, { status: "done" }))))
-    toast(`Marked ${ts.length} tasks as done`, { action: "Undo", onAction: () => restore(snap) });
+    toast(`Marked ${ts.length} tasks as done`, {
+      action: "Undo",
+      onAction: () =>
+        restoreSend(
+          snap,
+          ts.map((t) => t.id),
+          "status",
+        ),
+    });
 }
 export function colArchive(key: string) {
   const ts = colTasks(key, "done");
   S.ui.pop = null;
   const snap = snapshot();
-  if (guarded(() => ts.forEach((t) => (t.archived = true)))) toast(`Archived ${ts.length} completed tasks`, { action: "Undo", onAction: () => restore(snap) });
+  if (guarded(() => ts.forEach((t) => (t.archived = true)))) {
+    ts.forEach((t) => taskPatched(t, ["archived"]));
+    toast(`Archived ${ts.length} completed tasks`, {
+      action: "Undo",
+      onAction: () =>
+        restoreSend(
+          snap,
+          ts.map((t) => t.id),
+          "archived",
+        ),
+    });
+  }
 }
 export function colSortPrio(key: string, st: string) {
   const ts = colTasks(key, st).sort((a, b) => PR[b.priority].w - PR[a.priority].w);
@@ -643,5 +692,6 @@ export function escapeHtml(s: string) {
 export function restoreProject(id: string) {
   const p = proj(id)!;
   mutate(() => (p.archived = false));
+  void projectChanged(p, ["archived"]);
   toast(`Restored ${p.name}`);
 }
