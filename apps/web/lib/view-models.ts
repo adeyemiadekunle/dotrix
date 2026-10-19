@@ -298,4 +298,23 @@ export function logComment(
   return { id: e.id, task: taskId, by: actor(e.author_user_id, e.author_agent), at: ms(e.created_at), text: e.body!, re: e.reactions ?? {} };
 }
 
+/** A non-comment entry of an issue's log as an activity line (the drawer's activity tab). */
+export function logActivity(
+  e: {
+    id: string;
+    kind: string;
+    author_user_id?: string | null;
+    author_agent?: string | null;
+    created_at: string;
+    changes?: Record<string, unknown> | null;
+  },
+  taskId: string,
+): Activity {
+  const verb: Record<string, string> = { created: "created", updated: "updated", commented: "commented on", claimed: "started" };
+  const extra = Object.entries(e.changes ?? {})
+    .map(([k, v]) => `${k}: ${Array.isArray(v) ? `${v[0] ?? "—"} → ${v[1] ?? "—"}` : String(v)}`)
+    .join(", ");
+  return { id: e.id, task: taskId, by: actor(e.author_user_id, e.author_agent), verb: verb[e.kind] ?? "updated", project: null, at: ms(e.created_at), extra };
+}
+
 export { htmlToMd, mdToHtml };
