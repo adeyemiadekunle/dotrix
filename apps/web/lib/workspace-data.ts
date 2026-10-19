@@ -179,5 +179,27 @@ export function useLiveProjectFiles(scope: Scope | undefined, enabled = true): F
   return useMemo(() => (docs.data && scope ? docs.data.map((d) => toFile(d, scope.projectId)) : undefined), [docs.data, scope]);
 }
 
+/** Workspace hybrid search hits (documents and/or issues) across every project you can see. */
+export function useLiveWorkspaceSearch(
+  workspaceId: string | undefined,
+  q: string,
+  source?: Schemas["ChunkSource"],
+  enabled = true,
+): Schemas["WorkspaceSearchHit"][] | undefined {
+  const trimmed = q.trim();
+  const query = useQuery({
+    queryKey: ["search", workspaceId, trimmed, source],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/search", {
+          params: { path: { workspace_id: workspaceId! }, query: { q: trimmed, source: source ?? null, limit: 15 } },
+        }),
+      ),
+    enabled: enabled && Boolean(workspaceId && trimmed),
+    placeholderData: (prev) => prev,
+  });
+  return query.data;
+}
+
 /** Minutes-since strings: store dates are epoch ms under the same name. */
 export { ms };
