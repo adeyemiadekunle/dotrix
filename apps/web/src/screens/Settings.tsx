@@ -63,7 +63,7 @@ import {
   type AgentFields,
   type NotifSettings,
 } from "../data/account";
-import { automationAdded, automationToggled, isLive, live, reloadAgents } from "../data/live";
+import { automationAdded, automationRemoved, automationToggled, isLive, live, reloadAgents } from "../data/live";
 import { useLiveAgents } from "../../lib/workspace-data";
 import { D, S, me, mutate, proj, render, save, visibleProjects, who } from "../data/store";
 import { SHORTCUTS } from "../overlays/Modals";
@@ -1436,34 +1436,41 @@ function Automations() {
           ["Keep documents current", "After approved changes, Documentation proposes current-state and roadmap updates."],
           ["Flag stale documents", "Weekly, lists documents that may be out of date."],
           ["Triage new bugs", "When an issue is created, Nova checks for duplicates and fills in the fields."],
-          ["Watch a topic", "Research re-checks a topic weekly and reports what changed."],
-        ].map(([n, d]) => (
-          <SRow key={n} t={n} d={d}>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => {
-                if (isLive()) {
-                  void automationAdded(visibleProjects()[0]!.id, n!);
-                  return;
-                }
-                mutate(() =>
-                  D().automations.push({
-                    id: uid("am"),
-                    project: visibleProjects()[0]!.id,
-                    name: n!,
-                    agent: n!.startsWith("Watch") ? "research" : n!.startsWith("Triage") ? "auto" : "documentation",
-                    trigger: n!.startsWith("Triage") ? "When an issue is created" : "Weekly, Monday 08:00",
-                    enabled: true,
-                  }),
-                );
-                toast(`Added “${n}”`);
-              }}
-            >
-              <Ic n="plus" s={13} />
-              Add
-            </button>
-          </SRow>
-        ))}
+        ].map(([n, d]) => {
+          const on = D().automations.some((x) => x.name === n);
+          return (
+            <SRow key={n} t={n} d={d}>
+              <Tog
+                on={on}
+                label={`Turn ${n} on`}
+                set={(v) => {
+                  if (v) {
+                    if (isLive()) {
+                      void automationAdded(visibleProjects()[0]!.id, n!);
+                      return;
+                    }
+                    mutate(() =>
+                      D().automations.push({
+                        id: uid("am"),
+                        project: visibleProjects()[0]!.id,
+                        name: n!,
+                        agent: n!.startsWith("Triage") ? "auto" : "documentation",
+                        trigger: n!.startsWith("Triage") ? "When an issue is created" : "Weekly, Monday 08:00",
+                        enabled: true,
+                      }),
+                    );
+                    toast(`Added “${n}”`);
+                    return;
+                  }
+                  const existing = D().automations.filter((x) => x.name === n);
+                  if (isLive()) existing.forEach((x) => automationRemoved(x));
+                  mutate(() => (D().automations = D().automations.filter((x) => x.name !== n)));
+                  toast(`Removed “${n}”`);
+                }}
+              />
+            </SRow>
+          );
+        })}
       </div>
     </>
   );
