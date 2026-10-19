@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { api, unwrap } from "./api";
-import { useWorkspaceActivity } from "./activity";
+import { useProjectActivity, useWorkspaceActivity } from "./activity";
 import { useDocuments } from "./documents";
 import { useWorkspaceIssues, type Scope, type WorkspaceIssueFilters } from "./issues";
 import { useKnowledge, useKnowledgeFile } from "./knowledge";
@@ -67,6 +67,12 @@ export function useLiveNotifications(workspaceId: string | undefined, enabled = 
 /** The workspace activity feed as store Activity rows (the /activity page). */
 export function useLiveWorkspaceActivity(workspaceId: string | undefined, enabled = true): Activity[] | undefined {
   const feed = useWorkspaceActivity(enabled ? workspaceId : undefined);
+  return useMemo(() => feed.data?.map(toActivity), [feed.data]);
+}
+
+/** A project's activity feed as store Activity rows (the project Activity tab / overview rail). */
+export function useLiveProjectActivity(scope: Scope | undefined, enabled = true): Activity[] | undefined {
+  const feed = useProjectActivity(enabled ? scope : undefined);
   return useMemo(() => feed.data?.map(toActivity), [feed.data]);
 }
 

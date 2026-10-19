@@ -9,6 +9,8 @@ import { editProject, share } from "../core/more";
 import { go } from "../core/nav";
 import { TODAY, ago, dayBucket, diffD, fmtDate, parse } from "../core/utils";
 import { D, isOver, mem, pColor, progressOf, task, tasksOf } from "../data/store";
+import { isLive, live } from "../data/live";
+import { useLiveProjectActivity, useLiveProjectTasks } from "../../lib/workspace-data";
 import type { Activity, Project } from "../data/types";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { sortTasks, viewOf } from "../shell/viewEngine";
@@ -24,7 +26,10 @@ function goFilteredList(p: Project, st: string) {
 }
 
 export function ProjectOverview({ p }: { p: Project }) {
-  const ts = tasksOf(p.id);
+  const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
+  const liveTasks = useLiveProjectTasks(live.ws?.id, p.id, isLive());
+  const liveActs = useLiveProjectActivity(scope);
+  const ts = isLive() ? (liveTasks ?? []) : tasksOf(p.id);
   const pr = progressOf(p.id);
   const cnt = STATUSES.map((s) => ({ s, n: ts.filter((t) => t.status === s.id).length }));
   const over = ts.filter(isOver);
@@ -32,9 +37,7 @@ export function ProjectOverview({ p }: { p: Project }) {
     ts.filter((t) => t.status !== "done" && t.due),
     { f: "due", dir: 1 },
   ).slice(0, 6);
-  const acts = D()
-    .activity.filter((a) => a.project === p.id)
-    .slice(0, 6);
+  const acts = (isLive() ? (liveActs ?? []) : D().activity.filter((a) => a.project === p.id)).slice(0, 6);
   const daysLeft = p.due ? diffD(parse(p.due)!, TODAY) : null;
   const threads = D()
     .threads.filter((t) => t.project === p.id)
@@ -252,7 +255,9 @@ export function ProjectOverview({ p }: { p: Project }) {
 }
 
 export function ProjectActivity({ p }: { p: Project }) {
-  const as = D().activity.filter((a) => a.project === p.id);
+  const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
+  const liveActs = useLiveProjectActivity(scope);
+  const as = isLive() ? (liveActs ?? []) : D().activity.filter((a) => a.project === p.id);
   const cs: Activity[] = D()
     .comments.filter((c) => task(c.task)?.project === p.id)
     .map((c) => ({ id: c.id, by: c.by, verb: "commented on", task: c.task, project: p.id, at: c.at, extra: "" }));
