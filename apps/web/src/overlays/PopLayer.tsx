@@ -7,7 +7,7 @@ import { closePop, copy, openTask, projMove, setPref, setProjectStatus, setRole,
 import { LABELS, PRIOS, PSTAT, STATUSES, type ProjectStatusId } from "../core/constants";
 import { useCloseSession, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
 import { confirmDlg, promptDlg } from "../core/more";
-import { live } from "../data/live";
+import { live, taskPatched } from "../data/live";
 import { allowed, canInvite } from "../core/can";
 import { Ic, WsLogo } from "../core/icons";
 import {
@@ -248,6 +248,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
                 sb.assignee = v || null;
                 logActSub("assigned a subtask on", tk!, v ? `to ${mem(v)!.name}` : "(unassigned)");
               });
+              taskPatched(tk!, ["subtasks"]);
             }}
           />
         ),
@@ -385,6 +386,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             sb.due = v || null;
             logActSub("set a subtask due date on", tk!, v ? fmtDate(v) : "(cleared)");
           });
+          taskPatched(tk!, ["subtasks"]);
           return;
         }
         pick(field)(v);

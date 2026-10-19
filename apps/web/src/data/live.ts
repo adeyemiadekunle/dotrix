@@ -41,7 +41,7 @@ import { fmtDate, uid } from "../core/utils";
 import { fileType } from "../ui/helpers";
 import { toast } from "../ui/toast";
 import { htmlToMd, mdToHtml } from "./markdown";
-import { D, S, afterMutate, persist, render } from "./store";
+import { D, S, mutate, persist, render } from "./store";
 import type { Automation, Comment, Data, FileItem, KnowledgeFile, Member, Project, Task } from "./types";
 
 type W = Schemas["WorkspaceWithRole"];
@@ -188,7 +188,6 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
     };
     if (live.demo === null) live.demo = S.data; // set aside the demo's data the first time only
     S.data = data;
-    baseline();
     S.prefs.name = me.display_name;
     S.prefs.title = me.title ?? "";
     live.ws = ws;
@@ -262,7 +261,6 @@ async function reloadTask(t: Task) {
       api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } } }),
     );
     Object.assign(t, toTask(i, t.project, t.order), { fav: t.fav });
-    markTask(t);
     render();
   } catch {
     /* leave it */
@@ -308,9 +306,7 @@ export function taskPatched(t: Task, keys: (keyof Task)[]) {
   if (!isLive() || t.key.startsWith("new-")) return;
   const body = issueFields(t, keys);
   if (!Object.keys(body).length) return;
-  const was = synced.tasks.get(t.key);
-  if (was && body.checklist) was.sub = subSig(t); // sent here, so reconcile doesn't send it again
-  void unwrap(
+  void send(
     api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } }, body }),
   )
     .then(async (i) => {
@@ -322,7 +318,6 @@ export function taskPatched(t: Task, keys: (keyof Task)[]) {
         );
         const nt = toTask(next, t.project, next.rank);
         D().tasks.push(nt);
-        markTask(nt);
         render();
         toast(`Next “${nt.title}” scheduled for ${nt.due ? fmtDate(nt.due) : "later"}`, { kind: "info" });
       }
@@ -360,10 +355,9 @@ export function taskCreated(t: Task): Promise<void> {
       t.id = t.key = i.key;
       if (S.ui.drawer === was) S.ui.drawer = i.key;
       D().activity.forEach((a) => a.task === was && (a.task = i.key));
-      markTask(t);
       render();
       // Starred while it was being created.
-      if (t.fav) reconcile();
+      if (t.fav) taskStarred(t);
     })
     .catch((e) => {
       failed(`“${t.title}”`, e);
@@ -389,8 +383,6 @@ export async function loadComments(t: Task) {
     // The full issue has the description and its attachments, which lists leave out.
     if (!t.desc) t.desc = mdToHtml(i.description);
     t.attachments = (i.attachments ?? []).map(toAttachment);
-    const was = synced.tasks.get(t.key);
-    if (was) was.att = t.attachments.map((a) => a.id);
     render();
   } catch {
     /* the drawer still shows what the list had */
@@ -399,7 +391,7 @@ export async function loadComments(t: Task) {
 
 export function commentPosted(t: Task, text: string, mentions: string[] = []) {
   if (!isLive()) return;
-  void unwrap(
+  void send(
     api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments", {
       params: { path: { ...projectPath(t.project), key: t.key } },
       body: { body: text, mentions },
@@ -418,7 +410,7 @@ export function commentPosted(t: Task, text: string, mentions: string[] = []) {
 export function taskRanked(t: Task, before: Task | undefined, after: Task | undefined) {
   if (!isLive() || (!before && !after)) return;
   const body = before ? { before: before.key } : { after: after!.key };
-  void unwrap(
+  void send(
     api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/rank", {
       params: { path: { ...projectPath(t.project), key: t.key } },
       body: body as Schemas["RankRequest"],
@@ -450,6 +442,7 @@ export function projectChanged(p: Project, keys: (keyof Project)[]): Promise<voi
     else if (k === "due") body.target_date = p.due || null;
     else if (k === "status") Object.assign(body, PSTATUS_OUT[p.status]);
     else if (k === "private") body.access = p.private ? "restricted" : "workspace";
+    else if (k === "archived") body.archived = Boolean(p.archived);
   }
   if (!Object.keys(body).length) return Promise.resolve();
   return send(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(p.id) }, body })).then(
@@ -464,7 +457,7 @@ export function projectChanged(p: Project, keys: (keyof Project)[]): Promise<voi
 export function projectCreated(p: Project) {
   if (!isLive()) return;
   const was = p.id;
-  void unwrap(
+  void send(
     api.POST("/v1/workspaces/{workspace_id}/projects", {
       params: { path: { workspace_id: wsId() } },
       body: {
@@ -499,7 +492,7 @@ export function projectCreated(p: Project) {
 export function projectStarred(p: Project) {
   if (!isLive()) return;
   const params = { params: { path: projectPath(p.id) } };
-  void unwrap(
+  void send(
     p.fav
       ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/star", params)
       : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/star", params),
@@ -508,7 +501,7 @@ export function projectStarred(p: Project) {
 
 export function roleChanged(m: Member) {
   if (!isLive()) return;
-  void unwrap(
+  void send(
     api.PATCH("/v1/workspaces/{workspace_id}/members/{user_id}", {
       params: { path: { workspace_id: wsId(), user_id: m.id } },
       body: { role: m.role.toLowerCase() as Schemas["Role"] },
@@ -521,7 +514,7 @@ export function roleChanged(m: Member) {
 
 export function notifsRead(ids: string[] | "all") {
   if (!isLive() || (ids !== "all" && !ids.length)) return;
-  void unwrap(
+  void send(
     api.POST("/v1/workspaces/{workspace_id}/notifications/read", {
       params: { path: { workspace_id: wsId() } },
       body: ids === "all" ? { all: true, ids: [] } : { ids, all: false },
@@ -547,7 +540,7 @@ export function knowledgeSaved(f: KnowledgeFile, content: string, message: strin
   if (!isLive()) return;
   const base = f.version;
   f.content = content;
-  void unwrap(
+  void send(
     api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/knowledge/files/{path}", {
       params: { path: { ...projectPath(f.project), path: f.path } },
       body: { content, base_version: base, message: message || null },
@@ -580,7 +573,7 @@ async function reloadAutomations(pid: string) {
 /** An automation switched on or off, or let act without approval, in Settings (the store already shows it). */
 export function automationToggled(a: Automation, field: "enabled" | "unattended" = "enabled") {
   if (!isLive()) return;
-  void unwrap(
+  void send(
     api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/automations/{automation_id}", {
       params: { path: { ...projectPath(a.project), automation_id: a.id } },
       body: { [field]: !!a[field] },
@@ -616,7 +609,7 @@ export async function automationAdded(pid: string, preset: string) {
   const spec = PRESETS[preset];
   if (!spec || !isLive()) return;
   try {
-    const made = await unwrap(
+    const made = await send(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/automations", {
         params: { path: projectPath(pid) },
         body: {
@@ -644,6 +637,7 @@ export async function automationAdded(pid: string, preset: string) {
 export async function documentUploaded(file: File, pid: string, onProgress: (pct: number) => void): Promise<void> {
   const doc = await upload<Schemas["DocumentRead"]>(`/v1/workspaces/${wsId()}/projects/${pid}/documents`, file, onProgress);
   D().files.unshift(toFile(doc, pid));
+  invalidateLiveQueries();
   render();
   onProgress(100);
 }
@@ -710,8 +704,7 @@ export async function issueFileAttached(file: File, t: Task, onProgress: (pct: n
     onProgress,
   );
   t.attachments = (i.attachments ?? []).map(toAttachment);
-  const was = synced.tasks.get(t.key);
-  if (was) was.att = t.attachments.map((a) => a.id);
+  invalidateLiveQueries();
   render();
   onProgress(100);
 }
@@ -732,86 +725,37 @@ async function upload<T>(url: string, file: File, onProgress: (pct: number) => v
   return (await res.json()) as T;
 }
 
-/* ---------- what the API last had: changes made anywhere are compared with it and sent ---------- */
+/* ---------- delete, move ---------- */
 
-const synced = {
-  tasks: new Map<string, { sub: string; fav: boolean; att: string[]; arch: boolean }>(), // by key: undo puts back copies
-  projects: new Map<string, boolean>(), // archived
-};
-const subSig = (t: Task) => JSON.stringify(toChecklist(t.subtasks));
-function markTask(t: Task) {
-  synced.tasks.set(t.key, { sub: subSig(t), fav: t.fav, att: t.attachments.map((a) => a.id), arch: Boolean(t.archived) });
-}
-function baseline() {
-  synced.tasks = new Map();
-  D().tasks.forEach(markTask);
-  synced.projects = new Map(D().projects.map((p) => [p.id, Boolean(p.archived)]));
+/** An issue's star toggled in the store: star or unstar it on the API. */
+export function taskStarred(t: Task) {
+  if (!isLive() || t.key.startsWith("new-")) return;
+  const path = { params: { path: { ...projectPath(t.project), key: t.key } } };
+  const on = t.fav;
+  void send(
+    on
+      ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path)
+      : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path),
+  ).catch((e) => {
+    failed("The star", e);
+    mutate(() => (t.fav = !on));
+  });
 }
 
-/** After every change in a real workspace: send what differs from what the API last had. */
-function reconcile() {
-  if (!isLive()) return;
-  for (const t of D().tasks) {
-    const was = synced.tasks.get(t.key);
-    if (!was || t.key.startsWith("new-")) continue; // not on the API yet: creating it sends it
-    const path = { params: { path: { ...projectPath(t.project), key: t.key } } };
-    const sub = subSig(t);
-    if (sub !== was.sub) {
-      was.sub = sub;
-      void unwrap(
-        api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { ...path, body: { checklist: toChecklist(t.subtasks) } }),
-      ).catch((e) => {
-        failed(`The checklist of “${t.title}”`, e);
-        void reloadTask(t);
-      });
-    }
-    if (t.fav !== was.fav) {
-      was.fav = t.fav;
-      const on = t.fav;
-      void unwrap(
-        on
-          ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path)
-          : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path),
-      ).catch((e) => {
-        failed("The star", e);
-        t.fav = was.fav = !on;
-        render();
-      });
-    }
-    if (Boolean(t.archived) !== was.arch) {
-      was.arch = Boolean(t.archived);
-      void send(api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { ...path, body: { archived: was.arch } })).catch((e) => {
-        failed(`“${t.title}”`, e);
-        void reloadTask(t);
-      });
-    }
-    const gone = was.att.filter((id) => !id.startsWith("counted-") && !t.attachments.some((a) => a.id === id));
-    was.att = t.attachments.map((a) => a.id);
-    for (const id of gone)
-      void unwrap(
-        api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/attachments/{attachment_id}", {
-          params: { path: { ...path.params.path, attachment_id: id } },
-        }),
-      ).catch((e) => {
-        failed("Removing the file", e);
-        void reloadTask(t);
-      });
-  }
-  for (const pr of D().projects) {
-    const was = synced.projects.get(pr.id);
-    if (was === undefined || Boolean(pr.archived) === was) continue;
-    synced.projects.set(pr.id, Boolean(pr.archived));
-    void unwrap(
-      api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(pr.id) }, body: { archived: Boolean(pr.archived) } }),
-    ).catch((e) => {
-      failed(pr.name, e);
-      void reloadProjects();
-    });
-  }
+/** A file detached from an issue (already gone from the store). */
+export function attachmentRemoved(t: Task, attachmentId: string) {
+  if (!isLive() || t.key.startsWith("new-") || attachmentId.startsWith("counted-")) return;
+  void send(
+    api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/attachments/{attachment_id}", {
+      params: { path: { ...projectPath(t.project), key: t.key, attachment_id: attachmentId } },
+    }),
+  ).catch((e) => {
+    failed("Removing the file", e);
+    void reloadTask(t);
+  });
 }
-afterMutate.push(reconcile);
-/** Run after the store's data was replaced (undo): what differs from the API is sent. */
-export const resynced = () => reconcile();
+
+/* ---------- delete, move, comments ---------- */
 
 /* ---------- delete, move, comments ---------- */
 
@@ -820,8 +764,7 @@ export function tasksDeleted(ts: Task[]) {
   if (!isLive()) return;
   for (const t of ts) {
     if (t.key.startsWith("new-")) continue;
-    synced.tasks.delete(t.key);
-    void unwrap(
+    void send(
       api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } } }),
     ).catch(async (e) => {
       failed(`Deleting “${t.title}”`, e);
@@ -832,7 +775,6 @@ export function tasksDeleted(ts: Task[]) {
         );
         const back = { ...toTask(i, t.project, t.order), fav: t.fav };
         D().tasks.push(back);
-        markTask(back);
         render();
       } catch {
         /* gone after all */
@@ -844,7 +786,6 @@ export function tasksDeleted(ts: Task[]) {
 /** A project deleted in the screens (already gone from the store), with everything in it. */
 export function projectDeleted(pr: Project) {
   if (!isLive()) return;
-  synced.projects.delete(pr.id);
   void send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(pr.id) } })).catch((e) => {
     failed(`Deleting ${pr.name}`, e);
     void reloadProjects();
@@ -856,15 +797,13 @@ export function projectDeleted(pr: Project) {
 export async function taskMoved(t: Task, toProject: string) {
   const from = t.key;
   try {
-    const i = await unwrap(
+    const i = await send(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/move", {
         params: { path: { ...projectPath(t.project), key: from } },
         body: { project_id: toProject },
       }),
     );
-    synced.tasks.delete(from);
     Object.assign(t, toTask(i, toProject, t.order), { fav: t.fav });
-    markTask(t);
     if (S.ui.drawer === from) S.ui.drawer = t.id;
     D().comments.forEach((c) => c.task === from && (c.task = t.id));
     D().activity.forEach((a) => a.task === from && (a.task = t.id));
@@ -886,7 +825,7 @@ async function reloadComments(c: Comment) {
 /** A comment's new text (its author only; the store shows it already). */
 export function commentEdited(c: Comment) {
   if (!isLive() || !fromApi(c.id)) return;
-  void unwrap(
+  void send(
     api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}", {
       params: { path: commentPath(c) },
       body: { body: c.text },
@@ -910,7 +849,7 @@ export function commentDeleted(c: Comment) {
 export function commentReacted(c: Comment, emoji: string, on: boolean) {
   if (!isLive() || !fromApi(c.id)) return;
   const path = { params: { path: { ...commentPath(c), emoji } } };
-  void unwrap(
+  void send(
     on
       ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}/reactions/{emoji}", path)
       : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}/reactions/{emoji}", path),
@@ -952,7 +891,7 @@ export async function organisationCreated(f: { name: string; project: string; ic
     .join("")
     .slice(0, 4);
   if (key.length < 2) key = (letters.replace(/\s/g, "") + "PRJ").slice(0, 3);
-  const project = await unwrap(
+  const project = await send(
     api.POST("/v1/workspaces/{workspace_id}/projects", {
       ...inWs,
       body: { key, name: f.project, description: "", source: "docs_only", access: "workspace", icon: PROJECT_ICONS.has(f.icon) ? f.icon : "folder" },
@@ -961,7 +900,7 @@ export async function organisationCreated(f: { name: string; project: string; ic
   const inProject = { params: { path: { workspace_id: ws.id, project_id: project.id } } };
   for (const title of f.tasks)
     // one at a time, so keys follow the template's order
-    await unwrap(
+    await send(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", {
         ...inProject,
         body: {

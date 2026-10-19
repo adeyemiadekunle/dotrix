@@ -3,7 +3,7 @@
 import { PR, PSTAT, ST, type ProjectStatusId } from "./constants";
 import { TODAY, addD, fmtDate, iso, parse, uid } from "./utils";
 import { inviteResent, isInvite } from "../data/account";
-import { isLive, loadComments, projectChanged, projectStarred, roleChanged, taskCreated, taskMoved, taskPatched } from "../data/live";
+import { isLive, loadComments, projectChanged, projectStarred, roleChanged, taskCreated, taskMoved, taskPatched, taskStarred } from "../data/live";
 import { D, S, canSee, logAct, mem, mutate, proj, render, save, task, visibleProjects, who } from "../data/store";
 import type { Project, Task } from "../data/types";
 import { toast } from "../ui/toast";
@@ -133,6 +133,7 @@ export function toggleFavTask(id: string) {
   mutate(() => {
     t.fav = !t.fav;
   });
+  taskStarred(t);
   S.ui.pop = null;
   toast(t.fav ? "Added to favorites" : "Removed from favorites", { ms: 1800 });
 }

@@ -3,7 +3,7 @@ import { Ic } from "../core/icons";
 import { confirmDlg, deleteTasks, escapeHtml, newTask, restore, snapshot } from "../core/more";
 import { go } from "../core/nav";
 import { TODAY, ago, dOff, diffD, parse } from "../core/utils";
-import { isLive, live } from "../data/live";
+import { isLive, live, taskPatched } from "../data/live";
 import { useLiveArchivedTasks, useLiveMyTasks, useLiveStarredTasks } from "../../lib/workspace-data";
 import { D, S, allTasks, canSee, isOver, mutate, proj, render } from "../data/store";
 import { ListView, MiniRow } from "../components/TaskList";
@@ -134,6 +134,7 @@ type ArchivedAt = { archivedAt?: number };
 function restoreTask(id: string) {
   const t = D().tasks.find((x) => x.id === id)!;
   mutate(() => (t.archived = false));
+  taskPatched(t, ["archived"]);
   toast(`Restored “${t.title}”`);
 }
 function purgeTask(id: string) {

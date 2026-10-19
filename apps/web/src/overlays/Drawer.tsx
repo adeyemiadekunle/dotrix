@@ -6,7 +6,17 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 
 import { applyPatch, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
 import { startCoding } from "../core/agents";
-import { commentDeleted, commentEdited, commentPosted, commentReacted, documentUploaded, isLive, issueFileAttached } from "../data/live";
+import {
+  attachmentRemoved,
+  commentDeleted,
+  commentEdited,
+  commentPosted,
+  commentReacted,
+  documentUploaded,
+  isLive,
+  issueFileAttached,
+  taskPatched,
+} from "../data/live";
 import { TY, TYPES } from "../core/constants";
 import { Ic } from "../core/icons";
 import { openModal, restore, snapshot } from "../core/more";
@@ -384,6 +394,7 @@ function toggleSub(t: Task, s: Subtask) {
     s.done = !s.done;
     logAct(s.done ? "completed subtask on" : "reopened subtask on", t, `“${s.title}”`);
   });
+  taskPatched(t, ["subtasks"]);
 }
 function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
   const i = t.subtasks.indexOf(s);
@@ -411,6 +422,7 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
       t.subtasks = t.subtasks.filter((x) => x !== s);
       logAct("converted a subtask of", t, `into ${n.key}`);
     });
+    taskPatched(t, ["subtasks"]);
     S.ui.subOpen = null;
     render();
     toast(`Converted to ${n!.key}`, { action: "Open", onAction: () => openTaskById(n!.id) });
@@ -441,7 +453,12 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
           rows={1}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => title.trim() && title.trim() !== s.title && mutate(() => ((s.title = title.trim()), (t.updated = Date.now())))}
+          onBlur={() => {
+            if (title.trim() && title.trim() !== s.title) {
+              mutate(() => ((s.title = title.trim()), (t.updated = Date.now())));
+              taskPatched(t, ["subtasks"]);
+            }
+          }}
           onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), e.currentTarget.blur())}
           aria-label="Subtask title"
           style={s.done ? { textDecoration: "line-through", color: "var(--text-3)" } : undefined}
@@ -522,6 +539,7 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
               t.subtasks = t.subtasks.filter((x) => x !== s);
               logAct("removed a subtask from", t, `“${s.title}”`);
             });
+            taskPatched(t, ["subtasks"]);
           }}
         >
           <Ic n="trash-2" s={13} />
@@ -875,6 +893,7 @@ export function Drawer() {
                               t.attachments = t.attachments.filter((a) => a.id !== f.id);
                               logAct("removed a file from", t);
                             });
+                            attachmentRemoved(t, f.id);
                             toast(`Removed ${f.name}`);
                           }}
                         >
@@ -1045,6 +1064,7 @@ function Subtasks({ t, sd }: { t: Task; sd: number }) {
                 t.subtasks.push({ id: uid("s"), title, done: false });
                 logAct("added subtask to", t, `“${title}”`);
               });
+              taskPatched(t, ["subtasks"]);
               setV("");
             }
           }}
