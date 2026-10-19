@@ -15,6 +15,7 @@ import {
   documentUploaded,
   isLive,
   issueFileAttached,
+  live,
   taskPatched,
 } from "../data/live";
 import { TY, TYPES } from "../core/constants";
@@ -23,10 +24,13 @@ import { openModal, restore, snapshot } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, TODAY, ago, diffD, fmtDate, parse, relDate, uid } from "../core/utils";
 import { D, S, commentsOf, isOver, logAct, me, mutate, pColor, proj, render, save, task, who, people } from "../data/store";
-import type { Comment, Subtask, Task } from "../data/types";
+import type { CodingSession, Comment, Subtask, Task } from "../data/types";
 import { CellAssignee, CellDue, CellPrio, CellProject, CellStatus } from "../components/TaskList";
 import { Av, CommentText, FT, FilePrev, Lbl, ProgBar, fileType, fsize } from "../ui/helpers";
 import { toast } from "../ui/toast";
+import { useCodingRuns } from "@/lib/coding";
+import { useIssue } from "@/lib/issues";
+import { logActivity, logComment, toAttachment } from "@/lib/view-models";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -557,7 +561,21 @@ function openTaskById(id: string) {
 
 /* ---------- dotrix: coding ---------- */
 function CodingSection({ t }: { t: Task }) {
-  const sessions = D().coding.filter((c) => c.task === t.id);
+  const scope = isLive() && live.ws ? { workspaceId: live.ws.id, projectId: t.project } : undefined;
+  const runs = useCodingRuns(scope, isLive() ? t.key : null);
+  const sessions = isLive()
+    ? (runs.data ?? []).map((r): CodingSession => ({
+        id: r.id,
+        project: r.project_id,
+        task: t.id,
+        tool: r.agent,
+        status: r.status,
+        by: r.requested_by_id ?? "",
+        at: Date.parse(r.created_at),
+        turns: [{ at: Date.parse(r.created_at), ask: r.brief, summary: r.summary ?? undefined, events: [] }],
+        pr: r.pr_url ? { url: r.pr_url, number: r.pr_number ?? 0, state: (r.pr_state ?? "open") as "open" | "merged" | "closed" } : undefined,
+      }))
+    : D().coding.filter((c) => c.task === t.id);
   const latest = sessions[0];
   const start = (tool: "claude-code" | "codex") => {
     S.ui.pop = null;
@@ -629,6 +647,8 @@ export function Drawer() {
   const id = S.ui.drawer;
   const t = id ? task(id) : undefined;
   const ref = useRef<HTMLElement>(null);
+  const scope = isLive() && live.ws && t ? { workspaceId: live.ws.id, projectId: t.project } : undefined;
+  const liveIssue = useIssue(scope, isLive() && t ? t.key : null);
   useEffect(() => {
     if (t && ref.current && !ref.current.contains(document.activeElement)) ref.current.focus({ preventScroll: true });
   }, [id]);
@@ -643,9 +663,16 @@ export function Drawer() {
   if (!t) return null;
   const p = proj(t.project)!;
   const u = S.ui;
-  const cs = commentsOf(t.id);
+  const issue = liveIssue.data;
+  const cs = isLive() ? (issue?.log ?? []).filter((e) => e.kind === "commented" && e.body).map((e) => logComment(e, t.id)) : commentsOf(t.id);
   const sd = t.subtasks.filter((s) => s.done).length;
-  const acts = D().activity.filter((a) => a.task === t.id);
+  const acts = isLive()
+    ? (issue?.log ?? [])
+        .filter((e) => e.kind !== "commented")
+        .map((e) => logActivity(e, t.id))
+        .reverse()
+    : D().activity.filter((a) => a.task === t.id);
+  const atts = isLive() ? (issue?.attachments ?? []).map(toAttachment) : t.attachments;
   const tab = u.drawerTab;
   const ups = uploads.filter((x) => x.task === t.id);
   const sub = u.subOpen && u.subOpen.tid === t.id ? t.subtasks.find((s) => s.id === u.subOpen!.sid) : undefined;
@@ -843,7 +870,7 @@ export function Drawer() {
               <div className="dsec">
                 <div className="dsec-h">
                   <h3>Attachments</h3>
-                  <span className="cnt">{t.attachments.length}</span>
+                  <span className="cnt">{atts.length}</span>
                   <div className="acts">
                     <label className="btn btn-sm btn-ghost" style={{ cursor: "pointer" }}>
                       <Ic n="upload" s={13} />
@@ -871,9 +898,9 @@ export function Drawer() {
                     </div>
                   </div>
                 ))}
-                {t.attachments.length > 0 ? (
+                {atts.length > 0 ? (
                   <div className="att">
-                    {t.attachments.map((f) => (
+                    {atts.map((f) => (
                       <div key={f.id} className="attc" onClick={() => openModal({ type: "filePreview", file: f, tid: t.id })} role="button" tabIndex={0}>
                         <FilePrev f={f} />
                         <div className="fi">
