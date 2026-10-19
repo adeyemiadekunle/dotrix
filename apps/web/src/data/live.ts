@@ -604,6 +604,18 @@ export const PRESETS: Record<string, { agent: string; events?: Schemas["Automati
   },
 };
 
+/** A preset toggled off: the automation is deleted (the list row has no remove of its own). */
+export function automationRemoved(a: Automation) {
+  if (!isLive()) return;
+  void send(
+    api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/automations/{automation_id}", {
+      params: { path: { ...projectPath(a.project), automation_id: a.id } },
+    }),
+  ).catch((e) => {
+    failed(a.name, e);
+    void reloadAutomations(a.project);
+  });
+}
 /** A preset added in Settings: created for the project, then shown. */
 export async function automationAdded(pid: string, preset: string) {
   const spec = PRESETS[preset];
