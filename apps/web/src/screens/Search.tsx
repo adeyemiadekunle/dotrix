@@ -6,9 +6,12 @@ import { Ic } from "../core/icons";
 import { go } from "../core/nav";
 import { ago } from "../core/utils";
 import { D, S, allTasks, canSee, mem, pColor, proj, render, task, visibleProjects } from "../data/store";
+import { isLive, live } from "../data/live";
+import { useLiveMembers } from "../../lib/workspace-data";
+import type { Member } from "../data/types";
 import { Av, Empty, FT, Hl, PIcon, PStatus, StIcon } from "../ui/helpers";
 
-export function searchAll(raw: string) {
+export function searchAll(raw: string, people?: Member[]) {
   const q = (raw || "").trim().toLowerCase();
   if (!q) return { tasks: [], projects: [], people: [], files: [], documents: [], comments: [] };
   const has = (s?: string | null) => (s || "").toLowerCase().includes(q);
@@ -17,7 +20,7 @@ export function searchAll(raw: string) {
       .filter((t) => has(t.title) || has(t.key) || has(t.desc.replace(/<[^>]+>/g, "")))
       .slice(0, 30),
     projects: visibleProjects().filter((p) => has(p.name) || has(p.desc)),
-    people: D().members.filter((m) => has(m.name) || has(m.email) || has(m.title)),
+    people: (people ?? D().members).filter((m) => has(m.name) || has(m.email) || has(m.title)),
     files: D().files.filter((f) => has(f.name) && canSee(proj(f.project))),
     documents: D().knowledge.filter((f) => (has(f.path) || has(f.content)) && canSee(proj(f.project))),
     comments: D().comments.filter((c) => has(c.text) && task(c.task) && canSee(proj(task(c.task)!.project))),
@@ -28,7 +31,8 @@ const setSearch = (q: string) => ((S.ui.searchQ = q), render());
 
 export function Search() {
   const q = S.ui.searchQ;
-  const r = searchAll(q);
+  const liveMembers = useLiveMembers(live.ws?.id, isLive());
+  const r = searchAll(q, isLive() ? liveMembers : undefined);
   const cat = S.ui.searchCat;
   const cats: [keyof typeof r | "all", string][] = [
     ["all", "All"],

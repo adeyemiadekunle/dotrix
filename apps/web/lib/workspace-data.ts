@@ -5,7 +5,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
-import { api, unwrap } from "./api";
+import { api, unwrap, type Schemas } from "./api";
 import { useProjectActivity, useWorkspaceActivity } from "./activity";
 import { useDocuments } from "./documents";
 import { useWorkspaceIssues, type Scope, type WorkspaceIssueFilters } from "./issues";
@@ -13,8 +13,8 @@ import { useKnowledge, useKnowledgeFile } from "./knowledge";
 import { useNotifications } from "./notifications";
 import { useProjects } from "./queries";
 import { useStarredProjects } from "./stars";
-import { ms, toActivity, toFile, toMember, toNotif, toProject, toTask } from "./view-models";
-import type { Activity, FileItem, KnowledgeFile, Member, Notif, Project, Task } from "@/src/data/types";
+import { ms, toActivity, toAgent, toFile, toMember, toNotif, toProject, toTask } from "./view-models";
+import type { Activity, Agent, FileItem, KnowledgeFile, Member, Notif, Project, Task } from "@/src/data/types";
 
 /** Workspace issues as store Tasks: `fav` comes from the starred set, project ids are real. */
 function useLiveTasks(workspaceId: string | undefined, filters: WorkspaceIssueFilters, enabled: boolean): Task[] | undefined {
@@ -83,6 +83,21 @@ export function useLiveProjectTasks(workspaceId: string | undefined, projectId: 
 }
 
 /** Workspace members as store Members. */
+const toInvitedMember = (i: Schemas["InviteRead"]): Member => ({
+  id: "invite:" + i.id,
+  name: (i.email ?? "")
+    .split("@")[0]!
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase()),
+  email: i.email ?? "",
+  role: ({ owner: "Owner", admin: "Admin", member: "Member", guest: "Guest" } as const)[i.role] ?? "Member",
+  title: "",
+  c: "#6B7280",
+  status: "invited",
+  last: null,
+  tz: "",
+});
+
 export function useLiveMembers(workspaceId: string | undefined, enabled = true): Member[] | undefined {
   const members = useQuery({
     queryKey: ["members", workspaceId],
@@ -90,7 +105,29 @@ export function useLiveMembers(workspaceId: string | undefined, enabled = true):
     enabled: enabled && Boolean(workspaceId),
     staleTime: 5 * 60_000,
   });
-  return useMemo(() => members.data?.map(toMember), [members.data]);
+  const invites = useQuery({
+    queryKey: ["members", workspaceId, "invites"],
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/invites", { params: { path: { workspace_id: workspaceId! } } })),
+    enabled: enabled && Boolean(workspaceId),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  return useMemo(() => {
+    if (!members.data) return undefined;
+    const pending = (invites.data ?? []).filter((i) => i.kind === "email" && i.email).map(toInvitedMember);
+    return [...members.data.map(toMember), ...pending];
+  }, [members.data, invites.data]);
+}
+
+/** The workspace's agent contracts as store Agents (Chat's list, Settings → Agents). */
+export function useLiveAgents(workspaceId: string | undefined, enabled = true): Agent[] | undefined {
+  const agents = useQuery({
+    queryKey: ["agents", workspaceId],
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", { params: { path: { workspace_id: workspaceId! } } })),
+    enabled: enabled && Boolean(workspaceId),
+    staleTime: 5 * 60_000,
+  });
+  return useMemo(() => agents.data?.map(toAgent), [agents.data]);
 }
 
 /** The workspace's projects as store Projects (starred and member lists resolved). */
