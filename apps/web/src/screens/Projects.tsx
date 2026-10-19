@@ -100,7 +100,7 @@ export function Projects() {
   const st = u.projStatus;
   const sort = u.projSort;
   const liveProjects = useLiveProjects(live.ws?.id, isLive());
-  const base = isLive() ? (liveProjects ?? []).filter((p) => canSee(p)) : visibleProjects();
+  const base = (isLive() ? (liveProjects ?? []) : visibleProjects()).filter((p) => canSee(p) && !p.archived);
   const ps = base.filter((p) => (st === "all" || p.status === st) && (!q || p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)));
   const sorter = (
     { recent: (p: Project) => p.last, name: (p: Project) => p.name, due: (p: Project) => p.due, progress: (p: Project) => -progressOf(p.id) } as Record<
