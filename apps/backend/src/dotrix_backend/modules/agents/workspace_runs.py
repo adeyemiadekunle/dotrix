@@ -277,8 +277,11 @@ class WorkspaceRunService:
             details={"kind": "chat", "thread_id": str(thread_id), "agent": data.agent, "model": model,
                      "projects": [p.key for p in projects]},
         )
+        dispatch = self.runner.prepare_dispatch(
+            self.session, run, {"kind": "start", "message": data.message},
+        )
         await self.session.commit()
-        await self.runner.start(run.id, data.message)
+        await self.runner.start(run.id, data.message, dispatch=dispatch)
         return await self.get(member, run.id)
 
     async def _first(self, member: Membership, thread_id: uuid.UUID) -> AgentRun:
@@ -361,7 +364,13 @@ class WorkspaceRunService:
             workspace_id=member.workspace_id, action="agent_run.stopped", target=str(run.id),
             actor_type=AuthorType.USER, actor_user_id=member.user_id,
         )
+        queued = run.status is RunStatus.QUEUED
+        if queued:
+            run.status, run.error = RunStatus.FAILED, reason
+            run.updated_at = run.finished_at = _now()
         await self.session.commit()
+        if queued:
+            return await self.get(member, run.id)
         await self.runner.stop(run.id, reason)
         await self.session.refresh(run)
         if run.status in (RunStatus.QUEUED, RunStatus.RUNNING):

@@ -20,8 +20,10 @@ from typing import Any
 from deepagents.backends import CompositeBackend, StateBackend
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.crypto import Secrets
+from dotrix_backend.core.errors import Conflict
 from dotrix_backend.modules.agent_definitions.preferences import preferences_for, with_preferences
 from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from dotrix_backend.modules.audit.service import AuditLog
@@ -30,6 +32,13 @@ from dotrix_backend.modules.automations.events import record_event
 from dotrix_backend.modules.automations.models import Automation, AutomationEvent
 from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.code.service import CodeService
+from dotrix_backend.modules.execution.models import RunDispatch
+from dotrix_backend.modules.execution.service import (
+    DispatchOperation,
+    RunDispatcher,
+    accept_operation,
+    record_dispatch,
+)
 from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.knowledge.repository import KnowledgeRepository
 from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
@@ -269,8 +278,20 @@ class AgentRunner:
 
     # -- dispatching -----------------------------------------------------------------
 
-    async def start(self, run_id: uuid.UUID, message: str) -> None:
-        await self._dispatch(run_id, {"kind": "start", "message": message})
+    def prepare_dispatch(
+        self, session: AsyncSession, run: AgentRun, payload: dict[str, Any],
+    ) -> RunDispatch | None:
+        """Record worker dispatch in the caller's transaction; local/inline stay immediate."""
+        if self.queue is None:
+            if run.dispatch_generation:
+                raise Conflict("Continue this run with worker execution enabled")
+            return None
+        return record_dispatch(session, run, payload, queue_name=self.queue.queue_name)
+
+    async def start(
+        self, run_id: uuid.UUID, message: str, *, dispatch: RunDispatch | None = None,
+    ) -> None:
+        await self._dispatch(run_id, {"kind": "start", "message": message}, dispatch)
 
     async def resume(
         self,
@@ -279,6 +300,7 @@ class AgentRunner:
         interrupt_ids: list[str | None],
         decisions: list[tuple[str, str | None]],
         approved_by_id: uuid.UUID | None,
+        dispatch: RunDispatch | None = None,
     ) -> None:
         await self._dispatch(
             run_id,
@@ -289,16 +311,23 @@ class AgentRunner:
                 # None when only checkpoints were answered: nothing was approved.
                 "approved_by_id": str(approved_by_id) if approved_by_id else None,
             },
+            dispatch,
         )
 
-    async def continue_run(self, run_id: uuid.UUID, message: str) -> None:
+    async def continue_run(
+        self, run_id: uuid.UUID, message: str, *, dispatch: RunDispatch | None = None,
+    ) -> None:
         """Pick up a run that stopped at a model's limit from its last checkpoint (the person's
         message isn't sent again)."""
-        await self._dispatch(run_id, {"kind": "continue", "message": message})
+        await self._dispatch(run_id, {"kind": "continue", "message": message}, dispatch)
 
-    async def _dispatch(self, run_id: uuid.UUID, payload: dict[str, Any]) -> None:
+    async def _dispatch(
+        self, run_id: uuid.UUID, payload: dict[str, Any], dispatch: RunDispatch | None = None,
+    ) -> None:
         if self.queue is not None:
-            await self.queue.enqueue(run_id, payload)
+            if dispatch is None or dispatch.agent_run_id != run_id:
+                raise ValueError("Worker runs require dispatch intent committed with their state")
+            await RunDispatcher(self.session_factory, self.queue).kick(dispatch.workspace_id, dispatch.id)
             return
         if self.inline:
             await self.execute(run_id, payload)
@@ -329,15 +358,23 @@ class AgentRunner:
 
     # -- execution -------------------------------------------------------------------
 
-    async def execute(self, run_id: uuid.UUID, payload: dict[str, Any]) -> None:
+    async def execute(
+        self, run_id: uuid.UUID, payload: dict[str, Any], *,
+        operation: DispatchOperation | None = None, retry_operation: bool = False,
+    ) -> None:
         """Run one step of a run to its outcome: a reply, actions waiting for approval, or a
         failure. Safe to call again for a step that was cut off (a retried queue job): it
         continues from the last checkpoint instead of starting over."""
         async with self.session_factory() as session:
-            about_projects = await session.scalar(select(AgentRun.project_id).where(AgentRun.id == run_id))
-            across = about_projects is None and await session.scalar(select(AgentRun.id).where(AgentRun.id == run_id))
+            target = select(AgentRun).where(AgentRun.id == run_id)
+            if operation is not None:
+                target = target.where(AgentRun.workspace_id == operation.workspace_id)
+            original = await session.scalar(target)
+            if original is None:
+                return
+            across = original.project_id is None
         if across:
-            await self._execute_across(run_id, payload)
+            await self._execute_across(run_id, payload, operation, retry_operation)
             return
         resuming = payload["kind"] == "resume"
         approved_by_id = uuid.UUID(payload["approved_by_id"]) if resuming and payload.get("approved_by_id") else None
@@ -347,11 +384,17 @@ class AgentRunner:
         usage = TokenUsage()
         results: list[tuple[str, list[dict[str, Any]]]] = []  # what the leading agent submitted
         run_web: RunWeb | None = None
+        executing = False
         try:
             async with self.session_factory() as session:
-                run = await session.get(AgentRun, run_id)
+                query = select(AgentRun).where(AgentRun.id == run_id)
+                if operation is not None:
+                    query = query.where(AgentRun.workspace_id == operation.workspace_id)
+                run = await session.scalar(query.with_for_update())
                 if run is None or run.status not in (RunStatus.QUEUED, RunStatus.RUNNING):
                     logger.info("agent run %s: nothing to do (%s)", run_id, run and run.status)
+                    return
+                if not await accept_operation(session, run, operation, retry=retry_operation):
                     return
                 # A previous attempt was cut off, or the person continues one that stopped at a limit.
                 retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue"
@@ -386,6 +429,7 @@ class AgentRunner:
                     stages=(run.usage or {}).get("stages"),
                 )
                 await session.commit()
+                executing = True
                 rules = await self._rules(session, project.id, list(resolved), workspace_id=project.workspace_id)
                 context = await build_context_pack(session, project, run, self.embedder)
                 kind, thread_id = run.kind, run.thread_id
@@ -540,16 +584,26 @@ class AgentRunner:
         finally:
             if run_web is not None:
                 await run_web.aclose()
-            await self.streams.close(run_id)
+            if executing:
+                await self.streams.close(run_id)
 
-    async def _execute_across(self, run_id: uuid.UUID, payload: dict[str, Any]) -> None:
+    async def _execute_across(
+        self, run_id: uuid.UUID, payload: dict[str, Any],
+        operation: DispatchOperation | None = None, retry_operation: bool = False,
+    ) -> None:
         """A conversation across projects (workspace_runs.py): read-only, over every project in
         it, so nothing waits for approval; anything that tries to write is refused."""
         usage = TokenUsage()
+        executing = False
         try:
             async with self.session_factory() as session:
-                run = await session.get(AgentRun, run_id)
+                query = select(AgentRun).where(AgentRun.id == run_id)
+                if operation is not None:
+                    query = query.where(AgentRun.workspace_id == operation.workspace_id)
+                run = await session.scalar(query.with_for_update())
                 if run is None or run.status not in (RunStatus.QUEUED, RunStatus.RUNNING):
+                    return
+                if not await accept_operation(session, run, operation, retry=retry_operation):
                     return
                 retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue"
                 member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
@@ -582,6 +636,7 @@ class AgentRunner:
                 run.token_budget = lead_agent.spec.budget_tokens or self.token_budget
                 usage = TokenUsage(budget=run.token_budget, used=(run.input_tokens or 0) + (run.output_tokens or 0))
                 await session.commit()
+                executing = True
                 workspace_rules = await WorkspaceRules(session).texts(run.workspace_id)
                 rules = layered({h: t for h, t in workspace_rules.items() if h in ("base", *resolved)}, {})
                 context = await build_workspace_pack(session, projects, visible)
@@ -659,7 +714,8 @@ class AgentRunner:
             logger.exception("agent run %s (across projects) failed", run_id)
             await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}", usage)
         finally:
-            await self.streams.close(run_id)
+            if executing:
+                await self.streams.close(run_id)
 
     async def _settle(self, agent: Any, kind: RunKind, config: dict, stream: Stream, result: dict) -> dict:
         """A briefing is read-only: any write it attempts is rejected so it can carry on."""

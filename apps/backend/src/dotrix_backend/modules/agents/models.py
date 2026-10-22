@@ -57,6 +57,8 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     thread_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     kind: Mapped[RunKind] = mapped_column(str_enum(RunKind, 16))
     status: Mapped[RunStatus] = mapped_column(str_enum(RunStatus, 24))
+    # Each start/resume/continue has one immutable worker dispatch operation.
+    dispatch_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     message: Mapped[str] = mapped_column(Text)
     # The conversation's title, on its first run only (a placeholder, then the model's title).
     title: Mapped[str | None] = mapped_column(String(120))

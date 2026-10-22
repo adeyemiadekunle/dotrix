@@ -89,7 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if settings.jobs == "worker":
                 # Work executes in the worker; the API enqueues it and serves run streams.
                 queue, streams = RunQueue(redis), RedisRunStreams(redis)
-                app.state.jobs = QueuedJobs(redis)
+                app.state.jobs = QueuedJobs(redis, session_factory=sessionmaker)
             else:
                 # Runs execute in this process, so any cut off by the last shutdown are over.
                 await mark_interrupted_runs(sessionmaker)

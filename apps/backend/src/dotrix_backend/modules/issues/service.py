@@ -483,7 +483,10 @@ class IssueService:
 
     # -- change ------------------------------------------------------------------------
 
-    async def update(self, project: Project, key: str, actor: IssueActor, data: IssueUpdate) -> IssueRead:
+    async def update(
+        self, project: Project, key: str, actor: IssueActor, data: IssueUpdate, *, commit: bool = True,
+    ) -> IssueRead:
+        """Update an issue; a composing service can own the transaction with commit=False."""
         issue = await self._by_key(project, key, for_update=True)
         sent = data.model_dump(exclude_unset=True)
         note = sent.pop("note", None)
@@ -595,7 +598,10 @@ class IssueService:
                     event=AutomationEvent.ISSUE_DONE, summary=f"{issue.key} done: {issue.title}",
                     details={"key": issue.key, "type": issue.type.value},
                 )
-            await self.session.commit()
+            if commit:
+                await self.session.commit()
+            else:
+                await self.session.flush()
         return await self.get(project, issue.key)
 
     async def comment(self, project: Project, key: str, actor: IssueActor, data: CommentCreate) -> IssueRead:

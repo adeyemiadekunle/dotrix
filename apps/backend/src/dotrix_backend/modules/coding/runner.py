@@ -48,6 +48,7 @@ from dotrix_backend.modules.code.checkouts import (
 )
 from dotrix_backend.modules.connectors.github_app import GitHubApp, PullRequest
 from dotrix_backend.modules.connectors.models import ConnectedRepo, GitHubInstallation
+from dotrix_backend.modules.execution.service import DispatchOperation, accept_operation
 from dotrix_backend.modules.issues.models import AgentAssignee, IssueStatus
 from dotrix_backend.modules.issues.schemas import IssueUpdate, Link
 from dotrix_backend.modules.issues.service import IssueActor, IssueService
@@ -139,11 +140,18 @@ class CodingWorker:
     pool: WarmPool = field(default_factory=lambda: WarmPool(30 * 60, 3))  # sessions' sandboxes between turns
     _reaper: asyncio.Task[None] | None = field(default=None, repr=False)
 
-    async def execute(self, run_id: uuid.UUID) -> None:
+    async def execute(
+        self, run_id: uuid.UUID, *, operation: DispatchOperation | None = None,
+    ) -> None:
         async with self.session_factory() as session:
-            run = await session.get(CodingRun, run_id)
+            query = select(CodingRun).where(CodingRun.id == run_id)
+            if operation is not None:
+                query = query.where(CodingRun.workspace_id == operation.workspace_id)
+            run = await session.scalar(query.with_for_update())
             if run is None or run.status is not CodingRunStatus.QUEUED:
                 return  # stopped before it started, or already handled
+            if not await accept_operation(session, run, operation):
+                return
             if run.stop_requested:
                 await self._finish(session, run, CodingRunStatus.STOPPED, error="Stopped before it started")
                 return

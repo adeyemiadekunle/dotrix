@@ -10,13 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid_utils.compat import uuid7
 
 from dotrix_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
-from dotrix_backend.core.jobs import Jobs
+from dotrix_backend.core.jobs import Jobs, QueuedJobs
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.core.storage import BlobStorage, StorageUnavailable
+from dotrix_backend.modules.agents.queue import RunQueue
 from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.connectors.github_app import GitHubAppClient
 from dotrix_backend.modules.connectors.models import ConnectedRepo
+from dotrix_backend.modules.execution.service import RunDispatcher, record_dispatch
 from dotrix_backend.modules.issues.models import AgentAssignee, Issue, IssueStatus, IssueType
 from dotrix_backend.modules.issues.schemas import IssueRead, IssueUpdate
 from dotrix_backend.modules.issues.service import IssueActor, IssueService
@@ -213,10 +215,24 @@ class CodingService:
                              note=f"Coding run approved: {run.agent.value} is working on it")
         if issue.status is not IssueStatus.IN_PROGRESS:
             change.status = IssueStatus.IN_PROGRESS
-        await IssueService(self.session).update(access.project, run.issue_key, IssueActor(access.member), change)
+        await IssueService(self.session).update(
+            access.project, run.issue_key, IssueActor(access.member), change, commit=False,
+        )
         self._audit(access.project, access, "coding.approved", run)
+        dispatch = None
+        if isinstance(self.jobs, QueuedJobs):
+            dispatch = record_dispatch(self.session, run, {}, queue_name=self.jobs.queue_name)
         await self.session.commit()
-        await self.jobs.enqueue("run_coding", run_id=str(run.id))
+        if dispatch is not None:
+            # The service's transaction is complete; use a fresh session for the
+            # best-effort publication. The worker sweep recovers any missed wake-up.
+            assert isinstance(self.jobs, QueuedJobs)
+            if self.jobs.session_factory is not None:
+                await RunDispatcher(
+                    self.jobs.session_factory, RunQueue(self.jobs.redis, self.jobs.queue_name),
+                ).kick(dispatch.workspace_id, dispatch.id)
+        else:
+            await self.jobs.enqueue("run_coding", run_id=str(run.id))
         await self.session.refresh(run)
         return self._read(run, access)
 

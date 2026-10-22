@@ -34,6 +34,7 @@ from .modules.agents.runner import AgentRunner
 from .modules.agents.streams import RedisRunStreams
 from .modules.code.checkouts import build_checkouts
 from .modules.coding.runner import build_coding_worker
+from .modules.execution.service import RunDispatcher, load_operation
 from .modules.research.service import build_web_research
 from .modules.search.embeddings import build_embedder
 
@@ -90,9 +91,27 @@ async def shutdown(ctx: dict[str, Any]) -> None:
     await ctx["engine"].dispose()
 
 
-async def run_agent(ctx: dict[str, Any], run_id: str, payload: dict[str, Any]) -> None:
+async def run_agent(
+    ctx: dict[str, Any], run_id: str, payload: dict[str, Any] | None = None, *,
+    workspace_id: str | None = None, dispatch_id: str | None = None,
+) -> None:
     runner: AgentRunner = ctx["runner"]
-    await runner.execute(uuid.UUID(run_id), payload)
+    if dispatch_id is None:
+        if payload is None:
+            raise ValueError("A legacy agent job requires a payload")
+        await runner.execute(uuid.UUID(run_id), payload)
+        return
+    if workspace_id is None:
+        raise ValueError("A durable agent job requires its workspace")
+    operation = await load_operation(
+        runner.session_factory, workspace_id=uuid.UUID(workspace_id),
+        dispatch_id=uuid.UUID(dispatch_id), run_id=uuid.UUID(run_id), kind="agent",
+    )
+    if operation is not None:
+        await runner.execute(
+            operation.run_id, operation.payload, operation=operation,
+            retry_operation=ctx.get("job_try", 1) > 1,
+        )
 
 
 def job_function(name: str, job: JobFunction, backoff_seconds: float = 10) -> Function:
@@ -109,8 +128,18 @@ def job_function(name: str, job: JobFunction, backoff_seconds: float = 10) -> Fu
     return func(run, name=name, timeout=JOB_TIMEOUT, max_tries=JOB_MAX_TRIES)
 
 
-async def coding_run(ctx: dict[str, Any], *, run_id: str) -> None:
-    await JOBS["run_coding"](ctx["jobs"], run_id=run_id)
+async def coding_run(
+    ctx: dict[str, Any], *, run_id: str, workspace_id: str | None = None, dispatch_id: str | None = None,
+) -> None:
+    await JOBS["run_coding"](
+        ctx["jobs"], run_id=run_id, workspace_id=workspace_id, dispatch_id=dispatch_id,
+    )
+
+
+async def dispatch_runs(ctx: dict[str, Any]) -> None:
+    """Recover committed intent whose queue publication/acceptance was interrupted."""
+    runner: AgentRunner = ctx["runner"]
+    await RunDispatcher(runner.session_factory, RunQueue(ctx["redis"])).sweep()
 
 
 async def cleanup(ctx: dict[str, Any]) -> None:
@@ -139,6 +168,7 @@ class WorkerSettings:
     # Hourly; arq gives each run a unique job ID, so with several workers only one does it.
     # The search index every minute (only what changed is re-chunked or embedded).
     cron_jobs = [
+        cron(dispatch_runs, second={0, 15, 30, 45}, run_at_startup=True),
         cron(cleanup, minute={17}, run_at_startup=True),
         cron(index, run_at_startup=True, timeout=10 * 60),
         cron(automations, timeout=2 * 60),

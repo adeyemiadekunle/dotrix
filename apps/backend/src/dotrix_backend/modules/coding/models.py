@@ -84,6 +84,7 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     agent: Mapped[CodingAgent] = mapped_column(str_enum(CodingAgent, 16))
     model: Mapped[str | None] = mapped_column(String(100))  # the tool's own default when null
     status: Mapped[CodingRunStatus] = mapped_column(str_enum(CodingRunStatus, 24), index=True)
+    dispatch_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # What the agent is told: the issue, its acceptance criteria, linked documents (as data).
     # Fixed when asked for, so the approver sees exactly what will be sent.
     brief: Mapped[str] = mapped_column(Text)
