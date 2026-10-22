@@ -142,6 +142,12 @@ async def dispatch_runs(ctx: dict[str, Any]) -> None:
     await RunDispatcher(runner.session_factory, RunQueue(ctx["redis"])).sweep()
 
 
+async def reconcile_coding_runs(ctx: dict[str, Any]) -> None:
+    """Surface accepted coding jobs whose queue process ended without a result."""
+    runner: AgentRunner = ctx["runner"]
+    await RunDispatcher(runner.session_factory, RunQueue(ctx["redis"])).reconcile_coding()
+
+
 async def cleanup(ctx: dict[str, Any]) -> None:
     await cleanup_expired(ctx["jobs"])
 
@@ -169,6 +175,7 @@ class WorkerSettings:
     # The search index every minute (only what changed is re-chunked or embedded).
     cron_jobs = [
         cron(dispatch_runs, second={0, 15, 30, 45}, run_at_startup=True),
+        cron(reconcile_coding_runs, second={5}, run_at_startup=True),
         cron(cleanup, minute={17}, run_at_startup=True),
         cron(index, run_at_startup=True, timeout=10 * 60),
         cron(automations, timeout=2 * 60),

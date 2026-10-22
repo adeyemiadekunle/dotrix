@@ -139,7 +139,8 @@ async def decide_coding_run(
 
 @router.post("/runs/{coding_run_id}/stop", responses=errors(403, 409))
 async def stop_coding_run(coding_run_id: uuid.UUID, access: ProjectViewer, coding: Coding) -> CodingRunRead:
-    """Stop a coding run that waits or works; nothing is pushed. Whoever asked for it, or owners and admins."""
+    """Request that a waiting or running coding turn stop. A push already in flight may need
+    reconciliation. Whoever asked for it, or owners and admins."""
     return await coding.stop(access, coding_run_id)
 
 

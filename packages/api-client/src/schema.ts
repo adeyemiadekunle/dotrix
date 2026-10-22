@@ -4872,7 +4872,7 @@ export interface components {
          * CodingRunStatus
          * @enum {string}
          */
-        CodingRunStatus: "awaiting_approval" | "rejected" | "queued" | "running" | "pr_opened" | "no_changes" | "failed" | "stopped";
+        CodingRunStatus: "awaiting_approval" | "rejected" | "queued" | "running" | "pr_opened" | "no_changes" | "failed" | "recovery_required" | "stopped";
         /** CodingScreenshot */
         CodingScreenshot: {
             /**

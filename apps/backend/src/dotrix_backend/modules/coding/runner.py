@@ -8,7 +8,8 @@
    (`guard.py`): nothing is pushed if it touches `.dotrix/`, CI configuration, or `.git`.
 4. Commit, push a new branch (never the default branch, never forced), open the PR, link it on
    the issue and move the issue to review, then have the Reviewer look at the PR.
-The sandbox and the temporary folders are deleted whatever happens.
+Completed runs clean up their temporary folders; uncertain runs keep a
+recorded workspace reference for reconciliation.
 """
 from __future__ import annotations
 
@@ -48,7 +49,11 @@ from dotrix_backend.modules.code.checkouts import (
 )
 from dotrix_backend.modules.connectors.github_app import GitHubApp, PullRequest
 from dotrix_backend.modules.connectors.models import ConnectedRepo, GitHubInstallation
-from dotrix_backend.modules.execution.service import DispatchOperation, accept_operation
+from dotrix_backend.modules.execution.service import (
+    DispatchOperation,
+    accept_operation,
+    mark_coding_recovery_required,
+)
 from dotrix_backend.modules.issues.models import AgentAssignee, IssueStatus
 from dotrix_backend.modules.issues.schemas import IssueUpdate, Link
 from dotrix_backend.modules.issues.service import IssueActor, IssueService
@@ -127,6 +132,21 @@ class _Stopped(Exception):
         self.reason = reason
 
 
+class _ReconciliationRequired(Exception):
+    """A stale worker must not overwrite a run awaiting outcome inspection."""
+
+
+@dataclass
+class _Publication:
+    """Evidence known in this process, including an external attempt without a reply."""
+
+    attempted: bool = False
+    branch: str | None = None
+    commit_sha: str | None = None
+    files: list[dict[str, Any]] = field(default_factory=list)
+    pr: PullRequest | None = None
+
+
 @dataclass
 class CodingWorker:
     session_factory: Callable[[], AbstractAsyncContextManager[AsyncSession]]
@@ -143,6 +163,8 @@ class CodingWorker:
     async def execute(
         self, run_id: uuid.UUID, *, operation: DispatchOperation | None = None,
     ) -> None:
+        work: Path | None = None
+        publication = _Publication()
         async with self.session_factory() as session:
             query = select(CodingRun).where(CodingRun.id == run_id)
             if operation is not None:
@@ -155,24 +177,68 @@ class CodingWorker:
             if run.stop_requested:
                 await self._finish(session, run, CodingRunStatus.STOPPED, error="Stopped before it started")
                 return
+            # Register the actual checkout location before work starts. If the
+            # process dies, the next worker has a reference to inspect; it must
+            # still verify that the host and filesystem are available.
+            work = Path(tempfile.mkdtemp(prefix="dotrix-coding-"))
+            run.workspace_path = str(work)
             run.status, run.started_at = CodingRunStatus.RUNNING, datetime.now(UTC)
+            # A failed commit may have succeeded on the server before the
+            # connection was lost. Leave this empty directory for reconciliation.
             await session.commit()
-        work = Path(tempfile.mkdtemp(prefix="dotrix-coding-"))
+        assert work is not None
         try:
-            await self._run(run_id, work)
+            await self._run(run_id, work, publication)
+        except _ReconciliationRequired:
+            if publication.attempted:
+                await self._record_uncertain_publication(run_id, publication)
+            logger.info("coding run %s needs reconciliation; preserving its workspace", run_id)
         except _Stopped as stop:
-            await self._end(run_id, CodingRunStatus.STOPPED, error=stop.reason)
+            if publication.attempted:
+                await self._record_uncertain_publication(run_id, publication)
+            else:
+                await self._end(run_id, CodingRunStatus.STOPPED, error=stop.reason)
         except (RunFailed, SandboxError, CheckoutError, GitHubUnavailable) as exc:
-            await self._end(run_id, CodingRunStatus.FAILED, error=str(exc))
+            if publication.attempted:
+                await self._record_uncertain_publication(run_id, publication)
+            else:
+                await self._end(run_id, CodingRunStatus.FAILED, error=str(exc))
         except DomainError as exc:  # e.g. the app was uninstalled (NotFound), or may not open PRs
-            await self._end(run_id, CodingRunStatus.FAILED, error=exc.detail)
+            if publication.attempted:
+                await self._record_uncertain_publication(run_id, publication)
+            else:
+                await self._end(run_id, CodingRunStatus.FAILED, error=exc.detail)
         except Exception:
             logger.exception("coding run %s failed", run_id)
-            await self._end(run_id, CodingRunStatus.FAILED, error="Something went wrong running the coding agent")
+            if publication.attempted:
+                await self._record_uncertain_publication(run_id, publication)
+            else:
+                await self._end(run_id, CodingRunStatus.FAILED, error="Something went wrong running the coding agent")
         finally:
-            await asyncio.to_thread(remove_tree, work)
+            await self._cleanup_finished_workspace(run_id, work)
 
-    async def _run(self, run_id: uuid.UUID, work: Path) -> None:
+    async def _cleanup_finished_workspace(self, run_id: uuid.UUID, work: Path) -> None:
+        """Keep uncertain work intact; remove only a confirmed terminal run's own path."""
+        try:
+            async with self.session_factory() as session:
+                run = await session.get(CodingRun, run_id)
+                if run is not None and (
+                    run.workspace_path != str(work)
+                    or run.status in (CodingRunStatus.RUNNING, CodingRunStatus.RECOVERY_REQUIRED)
+                ):
+                    return
+            await asyncio.to_thread(remove_tree, work)
+            async with self.session_factory() as session:
+                run = await session.get(CodingRun, run_id)
+                if run is not None and run.workspace_path == str(work) and run.status not in (
+                    CodingRunStatus.RUNNING, CodingRunStatus.RECOVERY_REQUIRED,
+                ):
+                    run.workspace_path = None
+                    await session.commit()
+        except Exception:
+            logger.warning("coding run %s: preserving workspace after cleanup was uncertain", run_id, exc_info=True)
+
+    async def _run(self, run_id: uuid.UUID, work: Path, publication: _Publication) -> None:
         if self.sandbox is None or self.app is None:
             raise RunFailed("Coding runs aren't set up on this server (DOTRIX_CODING_SANDBOX, the GitHub App)")
         async with self.session_factory() as session:
@@ -307,6 +373,9 @@ class CodingWorker:
                 # The fork needs the commit we started from (our checkout is shallow).
                 await self.app.sync_fork(push.ref.full_name, ref.default_branch, token=push.fork_token)
             # Never forced: on the session's branch, this commit sits on top of what's there.
+            await self._prepare_publication(run_id, branch=branch, commit_sha=commit_sha, files=files)
+            publication.branch, publication.commit_sha, publication.files = branch, commit_sha, files
+            publication.attempted = True
             await run_git(host, "push", "-q", push.url, f"HEAD:refs/heads/{branch}", env=push.env,
                           timeout=FETCH_TIMEOUT)
             # The sandbox's own history moves on with the branch: the next turn's changes are its own.
@@ -316,18 +385,27 @@ class CodingWorker:
             if session_pr is not None:
                 pr = PullRequest(*session_pr)  # the session's PR shows the new commit
             else:
+                await self._ensure_running(run_id)
                 pr = await self.app.create_pull_request(
                     ref.installation_id, ref.full_name, head=push.head + branch, base=ref.default_branch,
                     title=f"{issue_key}: {title}",
                     body=_pr_body(summary, issue_key, run_id, agent.value, files, guard.ci_sensitive(paths)),
                     token=token,
                 )
+            publication.pr = pr
             async with self.session_factory() as session:
-                run = await session.get(CodingRun, run_id)
+                run = await session.scalar(select(CodingRun).where(
+                    CodingRun.id == run_id,
+                ).with_for_update())
                 assert run is not None
                 run.branch, run.commit_sha, run.files_changed = branch, commit_sha, files
                 run.pr_number, run.pr_url = pr.number, pr.html_url
                 run.pr_state = run.pr_state or PrState.OPEN
+                if run.status is CodingRunStatus.RECOVERY_REQUIRED:
+                    # Preserve a PR observed after the scanner classified the
+                    # run, without claiming that execution completed safely.
+                    await session.commit()
+                    raise _ReconciliationRequired()
                 await self._finish(session, run, CodingRunStatus.PR_OPENED, summary=summary)
                 await self._issue_to_review(session, run, title, opened=session_pr is None)
             await self._review(run_id, title, files, changes.stdout)
@@ -337,6 +415,13 @@ class CodingWorker:
                 await self._save_transcript(box, session_id, workspace_id)
             if reported is not None:
                 await self._session(session_id, cost_reported=reported)
+            # A scanner may have classified the run while the sandbox was
+            # working. Never place that sandbox back in the warm session pool.
+            if keep:
+                try:
+                    keep = not await self.reconciliation_required(run_id)
+                except Exception:
+                    keep = False
             if keep:
                 for closed in await self.pool.put(session_id, workspace_id, box):
                     await self._session(closed, state=CodingSessionState.IDLE)
@@ -401,6 +486,10 @@ class CodingWorker:
         async def watch_stop() -> None:
             while not cancel.is_set():
                 await asyncio.sleep(STOP_POLL_SECONDS)
+                if await self.reconciliation_required(run_id):
+                    stop_reason.append("Stopped for outcome reconciliation")
+                    cancel.set()
+                    continue
                 if await self.stop_requested(run_id):
                     stop_reason.append("Stopped by a person")
                     cancel.set()
@@ -546,6 +635,36 @@ class CodingWorker:
         async with self.session_factory() as session:
             return bool(await session.scalar(select(CodingRun.stop_requested).where(CodingRun.id == run_id)))
 
+    async def reconciliation_required(self, run_id: uuid.UUID) -> bool:
+        async with self.session_factory() as session:
+            return await session.scalar(select(CodingRun.status).where(
+                CodingRun.id == run_id,
+            )) is CodingRunStatus.RECOVERY_REQUIRED
+
+    async def _ensure_running(self, run_id: uuid.UUID) -> None:
+        """Check authority immediately before irreversible GitHub side effects."""
+        async with self.session_factory() as session:
+            run = await session.get(CodingRun, run_id)
+            if run is None or run.status is not CodingRunStatus.RUNNING:
+                raise _ReconciliationRequired()
+            if run.stop_requested:
+                raise _Stopped("Stopped before publishing changes")
+
+    async def _prepare_publication(
+        self, run_id: uuid.UUID, *, branch: str, commit_sha: str, files: list[dict[str, Any]],
+    ) -> None:
+        """Persist the intended remote branch and exact commit before attempting a push."""
+        async with self.session_factory() as session:
+            run = await session.scalar(select(CodingRun).where(
+                CodingRun.id == run_id,
+            ).with_for_update())
+            if run is None or run.status is not CodingRunStatus.RUNNING:
+                raise _ReconciliationRequired()
+            if run.stop_requested:
+                raise _Stopped("Stopped before publishing changes")
+            run.branch, run.commit_sha, run.files_changed = branch, commit_sha, files
+            await session.commit()
+
     # -- recording ------------------------------------------------------------------------
 
     async def _update(
@@ -553,9 +672,13 @@ class CodingWorker:
         step: str | None = None, base_sha: str | None = None,
     ) -> None:
         async with self.session_factory() as session:
-            run = await session.get(CodingRun, run_id)
+            run = await session.scalar(select(CodingRun).where(
+                CodingRun.id == run_id,
+            ).with_for_update())
             if run is None:
                 return
+            if run.status is not CodingRunStatus.RUNNING:
+                raise _ReconciliationRequired()
             added = list(events or [])
             if step:
                 added.append({"at": datetime.now(UTC).isoformat(), "kind": "step", "text": step})
@@ -577,12 +700,41 @@ class CodingWorker:
     async def _end(self, run_id: uuid.UUID, status: CodingRunStatus, *, error: str | None = None,
                    summary: str | None = None) -> None:
         async with self.session_factory() as session:
-            run = await session.get(CodingRun, run_id)
-            if run is not None:
+            run = await session.scalar(select(CodingRun).where(
+                CodingRun.id == run_id,
+            ).with_for_update())
+            if run is not None and run.status in (CodingRunStatus.QUEUED, CodingRunStatus.RUNNING):
                 await self._finish(session, run, status, error=error, summary=summary)
+
+    async def _record_uncertain_publication(self, run_id: uuid.UUID, publication: _Publication) -> None:
+        """A push or PR request may have taken effect even when its reply was lost."""
+        async with self.session_factory() as session:
+            run = await session.scalar(select(CodingRun).where(
+                CodingRun.id == run_id,
+            ).with_for_update())
+            if run is None or run.status not in (
+                CodingRunStatus.RUNNING, CodingRunStatus.RECOVERY_REQUIRED,
+            ):
+                return
+            if publication.branch:
+                run.branch = publication.branch
+                run.commit_sha = publication.commit_sha
+                run.files_changed = publication.files
+            if publication.pr:
+                run.pr_number, run.pr_url = publication.pr.number, publication.pr.html_url
+                run.pr_state = run.pr_state or PrState.OPEN
+            mark_coding_recovery_required(
+                session, run,
+                reason="GitHub publication was attempted, but the final outcome is uncertain. "
+                       "Inspect the branch, PR and recorded workspace before another coding turn.",
+                source="publication_attempt",
+            )
+            await session.commit()
 
     async def _finish(self, session: AsyncSession, run: CodingRun, status: CodingRunStatus, *,
                       error: str | None = None, summary: str | None = None) -> None:
+        if run.status not in (CodingRunStatus.QUEUED, CodingRunStatus.RUNNING):
+            raise _ReconciliationRequired()
         run.status, run.finished_at = status, datetime.now(UTC)
         run.error = error[:1000] if error else None
         if summary:
@@ -729,18 +881,31 @@ def build_coding_worker(
 
 
 async def end_cut_off_runs(session: AsyncSession, settings: Settings, *, everything: bool = False) -> int:
-    """Runs a restart cut off: all queued and running ones (when this process ran them, at its
-    start), or those running well past the time limit (from the hourly cleanup)."""
+    """Classify legacy local runs after restart or long past their time limit.
+
+    Worker-mode operations are reconciled against their queue state instead.
+    """
     from datetime import timedelta
 
-    query = select(CodingRun).where(CodingRun.status.in_([CodingRunStatus.QUEUED, CodingRunStatus.RUNNING]))
+    query = select(CodingRun).where(
+        CodingRun.dispatch_generation == 0,
+        CodingRun.status.in_([CodingRunStatus.QUEUED, CodingRunStatus.RUNNING]),
+    )
     if not everything:
         cutoff = datetime.now(UTC) - timedelta(minutes=settings.coding_timeout_minutes + 30)
         query = query.where(CodingRun.status == CodingRunStatus.RUNNING, CodingRun.started_at < cutoff)
-    runs = list(await session.scalars(query))
+    runs = list(await session.scalars(query.with_for_update(skip_locked=True)))
     for run in runs:
-        run.status, run.finished_at = CodingRunStatus.FAILED, datetime.now(UTC)
-        run.error = "Cut off by a server restart; nothing was pushed unless the run shows a PR"
+        if run.status is CodingRunStatus.QUEUED:
+            run.status, run.finished_at = CodingRunStatus.FAILED, datetime.now(UTC)
+            run.error = "The server restarted before coding began"
+        else:
+            mark_coding_recovery_required(
+                session, run,
+                reason="The local coding process stopped unexpectedly. Inspect GitHub and the "
+                       "recorded workspace reference before another coding turn.",
+                source="local_restart" if everything else "local_timeout",
+            )
     await session.commit()
     return len(runs)
 

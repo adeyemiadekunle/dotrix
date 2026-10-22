@@ -25,7 +25,9 @@ from uuid_utils.compat import uuid7
 
 from dotrix_backend.modules.agents.models import AgentRun, RunStatus
 from dotrix_backend.modules.agents.queue import RunQueue
-from dotrix_backend.modules.coding.models import CodingRun
+from dotrix_backend.modules.audit.models import AuthorType
+from dotrix_backend.modules.audit.service import AuditLog
+from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
 
 from .models import RunDispatch
 
@@ -36,6 +38,7 @@ Run = AgentRun | CodingRun
 DispatchKind = Literal["agent", "coding"]
 PUBLISH_TIMEOUT_SECONDS = 5
 ACK_WAIT_SECONDS = 30
+RECONCILIATION_GRACE_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -127,6 +130,23 @@ async def accept_operation(
     if run.status.value != "queued":
         return False
     row.accepted_at = datetime.now(UTC)
+    return True
+
+
+def mark_coding_recovery_required(
+    session: AsyncSession, run: CodingRun, *, reason: str, source: str,
+) -> bool:
+    """Classify an uncertain result without asserting that execution or a push failed."""
+    if run.status is not CodingRunStatus.RUNNING:
+        return False
+    run.status, run.error = CodingRunStatus.RECOVERY_REQUIRED, reason
+    AuditLog(session).record(
+        workspace_id=run.workspace_id, project_id=run.project_id,
+        action="coding.recovery_required", target=run.issue_key,
+        actor_type=AuthorType.SYSTEM, instructed_by_id=run.requested_by_id,
+        approved_by_id=run.decided_by_id,
+        details={"run_id": str(run.id), "source": source, "workspace_recorded": bool(run.workspace_path)},
+    )
     return True
 
 
@@ -224,3 +244,54 @@ class RunDispatcher:
                 break
             published += await self.publish(workspace_id, dispatch_id)
         return published
+
+    async def reconcile_coding(self, *, limit: int = 50, budget_seconds: float = 10) -> int:
+        """Flag accepted coding jobs missing from arq; never replay their side effects."""
+        cutoff = datetime.now(UTC) - timedelta(seconds=RECONCILIATION_GRACE_SECONDS)
+        async with self.session_factory() as session:
+            candidates = list((await session.execute(select(
+                RunDispatch.workspace_id, RunDispatch.id, RunDispatch.coding_run_id,
+                RunDispatch.delivery_generation,
+            ).join(CodingRun, CodingRun.id == RunDispatch.coding_run_id).where(
+                RunDispatch.queue_name == self.queue.queue_name,
+                RunDispatch.coding_run_id.is_not(None), RunDispatch.accepted_at <= cutoff,
+                CodingRun.status == CodingRunStatus.RUNNING,
+            ).order_by(RunDispatch.accepted_at).limit(limit))).all())
+        started, classified = time.monotonic(), 0
+        for workspace_id, dispatch_id, run_id, delivery_generation in candidates:
+            if time.monotonic() - started >= budget_seconds:
+                break
+            try:
+                async with asyncio.timeout(PUBLISH_TIMEOUT_SECONDS):
+                    status = await Job(
+                        f"dispatch:{dispatch_id}:{delivery_generation}", self.queue.redis,
+                        _queue_name=self.queue.queue_name,
+                    ).status()
+            except Exception as exc:
+                logger.warning("coding dispatch %s could not be inspected (%s)", dispatch_id, type(exc).__name__)
+                continue
+            if status not in (JobStatus.complete, JobStatus.not_found):
+                continue
+            reason = (
+                "The worker finished without recording an outcome. A branch or PR may already exist; "
+                "inspect GitHub and the recorded workspace reference before another coding turn."
+                if status is JobStatus.complete else
+                "The worker queue no longer tracks this run. It may still be active; inspect its "
+                "process, GitHub branch or PR, and recorded workspace before another coding turn."
+            )
+            async with self.session_factory() as session:
+                run = await session.scalar(select(CodingRun).where(
+                    CodingRun.workspace_id == workspace_id, CodingRun.id == run_id,
+                ).with_for_update(skip_locked=True))
+                if run is None or run.status is not CodingRunStatus.RUNNING:
+                    continue
+                operation = await session.scalar(select(RunDispatch).where(
+                    RunDispatch.workspace_id == workspace_id, RunDispatch.id == dispatch_id,
+                    RunDispatch.coding_run_id == run_id, RunDispatch.accepted_at.is_not(None),
+                ).with_for_update(skip_locked=True))
+                if operation is None or operation.delivery_generation != delivery_generation:
+                    continue
+                if mark_coding_recovery_required(session, run, reason=reason, source=f"arq:{status.value}"):
+                    await session.commit()
+                    classified += 1
+        return classified
