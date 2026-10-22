@@ -21,12 +21,26 @@ class RunQueue:
     def _key(self, run_id: uuid.UUID, what: str) -> str:
         return f"{self.queue_name}:run:{run_id}:{what}"
 
-    async def enqueue(self, run_id: uuid.UUID, payload: dict[str, Any]) -> None:
+    async def enqueue(
+        self, run_id: uuid.UUID, payload: dict[str, Any] | None, *,
+        operation_id: uuid.UUID | None = None, workspace_id: uuid.UUID | None = None,
+        delivery_generation: int = 0,
+    ) -> None:
         """Queue one step of a run (its start, or its resumption after decisions)."""
-        job_id = f"{run_id}:{uuid7().hex}"
+        if operation_id is not None and workspace_id is None:
+            raise ValueError("A durable dispatch requires a workspace")
+        job_id = (
+            f"dispatch:{operation_id}:{delivery_generation}"
+            if operation_id is not None else f"{run_id}:{uuid7().hex}"
+        )
+        references = (
+            {"dispatch_id": str(operation_id), "workspace_id": str(workspace_id)}
+            if operation_id is not None else {}
+        )
         await self.redis.set(self._key(run_id, "job"), job_id, ex=KEY_TTL_SECONDS)
         await self.redis.enqueue_job(
-            "run_agent", str(run_id), payload, _job_id=job_id, _queue_name=self.queue_name
+            "run_agent", str(run_id), payload, _job_id=job_id, _queue_name=self.queue_name,
+            **references,
         )
 
     async def stop(self, run_id: uuid.UUID, reason: str, timeout: float = 10) -> bool:

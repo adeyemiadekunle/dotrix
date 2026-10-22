@@ -5,6 +5,8 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
+
 from .core.email import EmailMessage, EmailSendError
 from .core.jobs import JobContext, JobFunction
 from .modules.agents.service import continue_due_runs
@@ -21,6 +23,7 @@ from .modules.code.service import CodeService
 from .modules.coding.models import CodingRun, CodingRunStatus
 from .modules.connectors.webhook import delete_stale_deliveries
 from .modules.documents.service import DocumentService
+from .modules.execution.service import accept_operation, load_operation
 from .modules.invites.repository import InviteRepository
 from .modules.notifications.emails import NotificationEmails
 from .modules.projects.models import Project
@@ -98,18 +101,39 @@ async def sync_repository(ctx: JobContext, *, project_id: str) -> None:
         await CodeService(session, ctx.checkouts).sync(uuid.UUID(project_id))
 
 
-async def run_coding(ctx: JobContext, *, run_id: str) -> None:
+async def run_coding(
+    ctx: JobContext, *, run_id: str, workspace_id: str | None = None, dispatch_id: str | None = None,
+) -> None:
     """An approved coding run: the agent in a sandbox, then the branch and the PR. Never retried
     (it may have pushed); it records its own failure."""
+    operation = None
+    if dispatch_id is not None:
+        if workspace_id is None:
+            raise ValueError("A durable coding job requires its workspace")
+        operation = await load_operation(
+            ctx.session_factory, workspace_id=uuid.UUID(workspace_id),
+            dispatch_id=uuid.UUID(dispatch_id), run_id=uuid.UUID(run_id), kind="coding",
+        )
+        if operation is None:
+            return
     if ctx.coding is None:
         async with ctx.session_factory() as session:
-            run = await session.get(CodingRun, uuid.UUID(run_id))
-            if run is not None and run.status is CodingRunStatus.QUEUED:
+            query = select(CodingRun).where(CodingRun.id == uuid.UUID(run_id))
+            if operation is not None:
+                query = query.where(CodingRun.workspace_id == operation.workspace_id)
+            run = await session.scalar(query.with_for_update())
+            if (
+                run is not None and run.status is CodingRunStatus.QUEUED
+                and await accept_operation(session, run, operation)
+            ):
                 run.status, run.error = CodingRunStatus.FAILED, "Coding runs aren't executed on this server"
                 run.finished_at = datetime.now(UTC)
                 await session.commit()
         return
-    await ctx.coding.execute(uuid.UUID(run_id))
+    if operation is None:
+        await ctx.coding.execute(uuid.UUID(run_id))
+    else:
+        await ctx.coding.execute(uuid.UUID(run_id), operation=operation)
 
 
 async def run_automations(ctx: JobContext) -> dict[str, int]:

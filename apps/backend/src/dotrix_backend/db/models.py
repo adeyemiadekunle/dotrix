@@ -8,6 +8,7 @@ from dotrix_backend.modules.automations import models as _automations  # noqa: F
 from dotrix_backend.modules.coding import models as _coding  # noqa: F401
 from dotrix_backend.modules.connectors import models as _connectors  # noqa: F401
 from dotrix_backend.modules.documents import models as _documents  # noqa: F401
+from dotrix_backend.modules.execution import models as _execution  # noqa: F401
 from dotrix_backend.modules.graph import models as _graph  # noqa: F401
 from dotrix_backend.modules.invites import models as _invites  # noqa: F401
 from dotrix_backend.modules.issues import models as _issues  # noqa: F401

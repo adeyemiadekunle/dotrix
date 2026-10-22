@@ -90,8 +90,14 @@ class LocalJobs:
 
 
 class QueuedJobs:
-    def __init__(self, redis: Any, queue_name: str = QUEUE_NAME) -> None:
+    def __init__(
+        self, redis: Any, queue_name: str = QUEUE_NAME, *,
+        session_factory: Callable[[], AbstractAsyncContextManager[AsyncSession]] | None = None,
+    ) -> None:
         self.redis, self.queue_name = redis, queue_name
+        # Optional low-latency publication of committed run dispatches. The worker
+        # sweep also delivers them when no request-side publisher is available.
+        self.session_factory = session_factory
 
     async def enqueue(self, name: str, **kwargs: Any) -> None:
         await self.redis.enqueue_job(name, _queue_name=self.queue_name, **kwargs)

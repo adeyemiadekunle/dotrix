@@ -251,8 +251,11 @@ class AgentService:
                      **({"mode": mode} if mode else {}),
                      **({"automation_id": str(automation_id)} if automation_id else {})},
         )
+        dispatch = self.runner.prepare_dispatch(
+            self.session, run, {"kind": "start", "message": data.message},
+        )
         await self.session.commit()
-        await self.runner.start(run.id, data.message)
+        await self.runner.start(run.id, data.message, dispatch=dispatch)
         return await self.get(access, run.id)
 
     async def architecture_draft(
@@ -555,14 +558,20 @@ class AgentService:
                     subject=f"A change to {approval.target or approval.tool}", reason=approval.reason,
                     run_id=run.id, by=member.user_id,
                 )
+        interrupt_ids = [a.interrupt_id for a in pending]
+        decisions = [_engine_decision(a, by_id[a.id]) for a in pending]
+        # Answering only checkpoints approves nothing.
+        approved_by_id = member.user_id if changes else None
+        dispatch = self.runner.prepare_dispatch(self.session, run, {
+            "kind": "resume", "interrupt_ids": interrupt_ids,
+            "decisions": [list(decision) for decision in decisions],
+            "approved_by_id": str(approved_by_id) if approved_by_id else None,
+        })
         await self.session.commit()
 
         await self.runner.resume(
-            run.id,
-            interrupt_ids=[a.interrupt_id for a in pending],
-            decisions=[_engine_decision(a, by_id[a.id]) for a in pending],
-            # Answering only checkpoints approves nothing.
-            approved_by_id=member.user_id if changes else None,
+            run.id, interrupt_ids=interrupt_ids, decisions=decisions,
+            approved_by_id=approved_by_id, dispatch=dispatch,
         )
         return await self.get(access, run.id, acted=True)
 
@@ -617,7 +626,14 @@ class AgentService:
             actor_type=AuthorType.USER,
             actor_user_id=member.user_id,
         )
+        queued = run.status is RunStatus.QUEUED
+        if queued:
+            # Persist cancellation before a dispatcher can recover this queued work.
+            run.status, run.error = RunStatus.FAILED, reason
+            run.updated_at = run.finished_at = _now()
         await self.session.commit()
+        if queued:
+            return await self.get(access, run.id, acted=True)
         await self.runner.stop(run.id, reason)
         # If nothing recorded the stop (it hadn't started, or was cut off by a restart), do it.
         await self.session.refresh(run)
@@ -832,19 +848,30 @@ async def resume_limited(session: AsyncSession, runner: AgentRunner, run: AgentR
         workspace_id=run.workspace_id, project_id=run.project_id, action="agent_run.continued",
         target=str(run.id), actor_type=AuthorType.USER, actor_user_id=run.requested_by_id,
     )
+    dispatch = runner.prepare_dispatch(session, run, {"kind": "continue", "message": run.message})
     await session.commit()
-    await runner.continue_run(run.id, run.message)
+    await runner.continue_run(run.id, run.message, dispatch=dispatch)
 
 
 async def continue_due_runs(session: AsyncSession, runner: AgentRunner) -> int:
     """Runs whose person asked to continue once the limit reset, and it has: continued. Every
     minute, with the automations."""
-    due = list(await session.scalars(
-        select(AgentRun).where(
-            AgentRun.status == RunStatus.FAILED, AgentRun.error_kind == "model_limit",
-            AgentRun.continue_at_reset.is_(True), AgentRun.resumes_at <= _now(),
-        ).with_for_update(skip_locked=True)
-    ))
-    for run in due:
-        await resume_limited(session, runner, run)
-    return len(due)
+    conditions = (
+        AgentRun.status == RunStatus.FAILED, AgentRun.error_kind == "model_limit",
+        AgentRun.continue_at_reset.is_(True), AgentRun.resumes_at <= _now(),
+    )
+    # Enumerate internal scheduler references, then lock/recheck each workspace's run.
+    # Committing one continuation releases locks; a snapshot of locked ORM rows
+    # would let another worker continue a later run from the same stale snapshot.
+    due = list((await session.execute(
+        select(AgentRun.workspace_id, AgentRun.id).where(*conditions)
+    )).all())
+    continued = 0
+    for workspace_id, run_id in due:
+        run = await session.scalar(select(AgentRun).where(
+            AgentRun.workspace_id == workspace_id, AgentRun.id == run_id, *conditions,
+        ).with_for_update(skip_locked=True).execution_options(populate_existing=True))
+        if run is not None:
+            await resume_limited(session, runner, run)
+            continued += 1
+    return continued
