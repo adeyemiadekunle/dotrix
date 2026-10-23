@@ -10,6 +10,7 @@ what the run page shows (steps) and what the run used (tokens).
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -70,14 +71,27 @@ class Parsed:
 
 
 class CodingTool(Protocol):
+    """What the runner and sandboxes need from a coding tool; nothing outside this module names one."""
+
     agent: CodingAgent
+    name: str  # as people read it: run steps, commits, PRs
     key_env: str  # the model key's environment variable
     provider_type: str  # its OpenShell provider profile
     api_host: str  # where its model API is (the Docker sandbox lets it through, nothing else)
     base_url_env: str  # a proxy in front of the provider, when this is set
+    state_dir: str | None  # under $HOME: the conversation saved between turns, None when it can't resume
+    browser: bool  # it can use the sandbox's browser (Playwright MCP)
 
     def command(self, model: str | None, browser: bool = False) -> list[str]: ...
+    def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]: ...
+    def sandbox_env(self, model_key: str) -> dict[str, str]: ...
+    def server_key(self, settings: Settings) -> str | None: ...
+    def model(self, settings: Settings) -> str | None: ...
     def parse(self, line: str, usage: Usage) -> Parsed: ...
+
+
+def _secret(value: Any) -> str | None:
+    return value.get_secret_value() if value is not None else None
 
 
 def _clip(text: str, limit: int = MAX_STEP) -> str:
@@ -141,10 +155,25 @@ def _describe_claude_tool(name: str, args: dict[str, Any]) -> str | None:
 
 class ClaudeCode:
     agent = CodingAgent.CLAUDE_CODE
+    name = "Claude Code"
     key_env = "ANTHROPIC_API_KEY"
     provider_type = "dotrix-claude-code"
     api_host = "api.anthropic.com"
     base_url_env = "ANTHROPIC_BASE_URL"
+    state_dir = ".claude"
+    browser = True
+
+    def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
+        return ["--resume", str(session)] if resumed else ["--session-id", str(session)]
+
+    def sandbox_env(self, model_key: str) -> dict[str, str]:
+        return {self.key_env: model_key}
+
+    def server_key(self, settings: Settings) -> str | None:
+        return _secret(settings.anthropic_api_key)
+
+    def model(self, settings: Settings) -> str | None:
+        return settings.coding_claude_model
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
         """`browser`: give it the browser (a sandbox with the coding image; not the local one)."""
@@ -211,12 +240,27 @@ class ClaudeCode:
 
 class Codex:
     agent = CodingAgent.CODEX
+    name = "Codex"
     key_env = "OPENAI_API_KEY"
     provider_type = "dotrix-codex"
     api_host = "api.openai.com"
     base_url_env = "OPENAI_BASE_URL"
+    state_dir = None  # `--ephemeral`: each turn starts afresh
+    browser = False  # not yet
 
-    def command(self, model: str | None, browser: bool = False) -> list[str]:  # no browser for Codex yet
+    def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
+        return []
+
+    def sandbox_env(self, model_key: str) -> dict[str, str]:
+        return {self.key_env: model_key, "CODEX_API_KEY": model_key}  # CODEX_API_KEY: what `codex exec` reads
+
+    def server_key(self, settings: Settings) -> str | None:
+        return _secret(settings.openai_api_key)
+
+    def model(self, settings: Settings) -> str | None:
+        return settings.coding_codex_model
+
+    def command(self, model: str | None, browser: bool = False) -> list[str]:
         argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral"]
         return argv + (["-c", f'model="{model}"'] if model else []) + ["-"]
 
@@ -264,8 +308,7 @@ TOOLS: dict[CodingAgent, CodingTool] = {CodingAgent.CLAUDE_CODE: ClaudeCode(), C
 
 
 def model_key(settings: Settings, agent: CodingAgent) -> str | None:
-    secret = settings.anthropic_api_key if agent is CodingAgent.CLAUDE_CODE else settings.openai_api_key
-    return secret.get_secret_value() if secret is not None else None
+    return TOOLS[agent].server_key(settings)
 
 
 def choose_agent(settings: Settings) -> CodingAgent | None:
@@ -281,4 +324,4 @@ def choose_agent(settings: Settings) -> CodingAgent | None:
 
 
 def model_for(settings: Settings, agent: CodingAgent) -> str | None:
-    return settings.coding_claude_model if agent is CodingAgent.CLAUDE_CODE else settings.coding_codex_model
+    return TOOLS[agent].model(settings)

@@ -3,6 +3,7 @@ the key the server has, what a run's changes may not touch, and stopping a proce
 import asyncio
 import json
 import sys
+import uuid
 
 from pydantic import SecretStr
 
@@ -10,7 +11,7 @@ from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.coding import guard
 from dotrix_backend.modules.coding.models import CodingAgent
 from dotrix_backend.modules.coding.sandbox import run_process, sandbox_policy
-from dotrix_backend.modules.coding.tools import ClaudeCode, Codex, Usage, choose_agent
+from dotrix_backend.modules.coding.tools import TOOLS, ClaudeCode, Codex, Usage, choose_agent
 
 
 def _settings(**values) -> Settings:
@@ -79,6 +80,20 @@ def test_the_tool_follows_the_key_the_server_has() -> None:
     assert choose_agent(_settings(**both)) is CodingAgent.CLAUDE_CODE
     assert choose_agent(_settings(**both, coding_agent="codex")) is CodingAgent.CODEX
     assert choose_agent(_settings(openai_api_key=SecretStr("o"), coding_agent="claude-code")) is None
+
+
+def test_each_tool_says_how_it_resumes_and_reaches_its_model() -> None:
+    session = uuid.uuid4()
+    claude, codex = TOOLS[CodingAgent.CLAUDE_CODE], TOOLS[CodingAgent.CODEX]
+    assert claude.session_args(session, resumed=False) == ["--session-id", str(session)]
+    assert claude.session_args(session, resumed=True) == ["--resume", str(session)]
+    assert claude.state_dir == ".claude" and claude.browser
+    assert codex.session_args(session, resumed=True) == [] and codex.state_dir is None and not codex.browser
+    assert claude.sandbox_env("k") == {"ANTHROPIC_API_KEY": "k"}
+    assert codex.sandbox_env("k") == {"OPENAI_API_KEY": "k", "CODEX_API_KEY": "k"}
+    keys = _settings(anthropic_api_key=SecretStr("a"), coding_claude_model="m1", coding_codex_model="m2")
+    assert claude.server_key(keys) == "a" and codex.server_key(keys) is None
+    assert (claude.model(keys), codex.model(keys)) == ("m1", "m2")
 
 
 def test_what_a_run_may_not_change() -> None:

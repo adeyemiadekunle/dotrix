@@ -489,11 +489,9 @@ class DockerSandbox:
             # The agent's environment: the proxy, and the key (passed by name from ours, never on argv).
             proxy = f"http://egress:{EGRESS_PORT}"
             # localhost stays local: the agent's own dev server, opened by its browser.
-            env = {tool.key_env: model_key, "HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "https_proxy": proxy,
+            env = {**tool.sandbox_env(model_key), "HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "https_proxy": proxy,
                    "http_proxy": proxy, "NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1",
                    "HOME": DOCKER_HOME, "LANG": "C.UTF-8"}
-            if tool.key_env == "OPENAI_API_KEY":
-                env["CODEX_API_KEY"] = model_key  # what `codex exec` reads
             if os.environ.get(tool.base_url_env):
                 env[tool.base_url_env] = os.environ[tool.base_url_env]
             # --init: a reaper as PID 1, so what a stopped turn leaves behind doesn't linger as zombies.
@@ -540,9 +538,7 @@ class LocalSandbox:
         await asyncio.to_thread(shutil.copytree, source, root / "repo", symlinks=True)
         (root / "home").mkdir()
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(root / "home"), "LANG": "C.UTF-8",
-               tool.key_env: model_key}
-        if tool.key_env == "OPENAI_API_KEY":
-            env["CODEX_API_KEY"] = model_key  # what `codex exec` reads
+               **tool.sandbox_env(model_key)}
         for name in ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL"):  # a proxy in front of the provider
             if os.environ.get(name):
                 env[name] = os.environ[name]
