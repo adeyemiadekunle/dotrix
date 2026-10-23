@@ -2,6 +2,7 @@
 
 Guidance for Claude Code working in this repo. The product is **dotrix** (formerly pmagent), in code too: packages `dotrix_*` and `@dotrix/*`, the `dotrix` CLI, `DOTRIX_` settings, `.dotrix/` in a linked checkout. Product spec: [docs/prd.md](docs/prd.md).
 Engine notes: [docs/engine.md](docs/engine.md). Agents v2 spec: [docs/agents-v2.md](docs/agents-v2.md).
+Proposed direction (2026-10-22, see Direction below): [strategy and roadmap](docs/dotrix-product-strategy-and-roadmap.md), [durable agent harness](docs/dotrix-durable-agent-harness.md), [hybrid execution](docs/dotrix-hybrid-execution-architecture.md), [Repository Knowledge skill](docs/dotrix-repository-knowledge-skill.md).
 
 ## Repo map
 
@@ -102,6 +103,7 @@ apps/backend/
 │   │   ├── research/            web research for agent runs: sources per run (S1, S2, …), the page cache per workspace, web limits and Tavily credits, report claims checked against what was read
 │   │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
 │   │   ├── code/                connected repos' checkouts for agents (checkouts.py: shallow fetch with the installation token, swap, size cap, prune; service.py: sync and record, a run's checkout), the sync_repository job
+│   │   ├── execution/           durable dispatch (`run_dispatches`): intent committed with the run change, published after commit, republished by the worker's sweep, accepted in the transaction that starts the run; no leases yet
 │   │   ├── coding/              coding runs: "Start coding" (service.py: ask, approve, stop), the brief (brief.py), Claude Code and Codex headless (tools.py: commands, JSON events), the sandbox (sandbox.py: Docker, OpenShell, or local; the policy; the Docker egress proxy in infra/coding), the worker (runner.py: clone, run, patch, guard.py, push, PR, Reviewer), the run_coding job
 │   │   └── connectors/          the GitHub App (github_app.py: app JWT, installation tokens), installations per workspace, each project's connected repo, the webhook (FR-10); GitLab and doc sources planned (FR-12)
 │   ├── jobs.py                  background jobs by name (send_email, send_password_reset, index_knowledge, run_automations, email_notifications, ...); where they run: core/jobs.py
@@ -204,7 +206,7 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 - **Theme:** Settings → Appearance (System / Light / Dark, the accent, density, motion) is kept in the store's preferences in this browser and applied before the first paint (`applyPrefs` in `core/theme.ts`).
 - The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@dotrix/ui/lib/utils` and `@/hooks/…` → `@dotrix/ui/hooks/…`.
 
-## Where things stand (2026-10-10)
+## Where things stand (2026-10-23)
 
 Built and in use (details live in the code and its docstrings; this list is only the map):
 - **Accounts:** email + password, magic links, GitHub sign-in, verification, password reset, sessions (browsers and the desktop app) and API tokens, profile and photo, notification settings, rate limits, Sendly email with templates.
@@ -215,8 +217,18 @@ Built and in use (details live in the code and its docstrings; this list is only
 - **Code:** the GitHub App connection, checkouts agents read, coding runs in a sandbox (Claude Code or Codex) with sessions, follow-ups, PRs, and the Reviewer. Sandboxes: Docker (a container per run on an internal network whose only way out is an egress proxy to the model API; `infra/coding`), OpenShell, or local for development. Subprocesses (git, the sandbox) also run on Windows' selector loop, through threads.
 - **Web:** the whole UI on seeded data at `/w/dotrix`, and a real workspace wired to the API everywhere (Chat and coding through TanStack Query); the agents panel, faces, corner notices, Home's ask box. Chat has a Chat / Code switch; message boxes pick the project and agent with @ (`components/AtPicker.tsx`); the Code tab starts a session (@ or / picks one of your issues; any open one in a personal workspace) and shows each session's turns, repo, branch, commit, pull request, and changed files (the desktop-style side panel was seeded-only; it returns with C below).
 - **CLI:** device login, linking a checkout, the mirror, chat / brief / triage / review / run / jobs with inline approvals (and "always allow"), the issue board, the MCP server for Claude Code and Codex.
+- **Durable runs (2026-10-22, roadmap E03 in part):** in worker mode, agent and coding runs are dispatched through `modules/execution` (#138): a superseded generation or a stopped queued run never starts. A coding run whose queue job ended while it still says running, or whose push or PR response was lost, becomes `recovery_required` (#139): its checkout path and intended branch and commit are recorded, and no later turn builds on it. Detection only: no leases, automatic resume, or way to resolve it in the product yet.
 
-Not being extended (kept working only): the CLI's local engine, the desktop app.
+Not being extended (kept working only): the CLI's local engine, the desktop app (the hybrid execution design proposes a desktop runner; see Direction).
+
+## Direction (proposed 2026-10-22, not yet decided in full)
+
+The four docs linked at the top propose: one conversation with Discuss / Plan / Build / Review modes and hidden specialists (DeepAgents on LangGraph); a durable run ledger (outbox, leases and fencing, persisted events with cursor replay, reconciliation before retry); coding through OpenCode behind an adapter, run locally by a desktop runner in a worktree by default, cloud optional; a Repository Knowledge skill keeping a sourced, coverage-tracked wiki fresh. First goal: one coding run interrupted on purpose, recovered, and reviewed in the same conversation (M1).
+
+Open before building on it:
+- **Coding runtime.** The docs pick OpenCode; what is built and verified is Claude Code (and Codex) in the Docker / OpenShell sandbox (Plan: coding agent, below). Decide whether OpenCode replaces them or becomes a second adapter, and put the adapter interface in front of the existing runner either way.
+- **Where coding runs.** Local-first needs the desktop app, frozen above; the Docker sandbox is the isolation already enforced. Decide the first provider (roadmap E01).
+- Until decided, keep extending the existing coding path, and keep new durability work runtime-neutral.
 
 ## Plan: coding agent (design, 2026-10-10)
 
