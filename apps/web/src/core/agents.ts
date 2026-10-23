@@ -1,7 +1,7 @@
 // dotrix's agent actions on the seeded data: deciding an agent's proposed changes, answering a
 // checkpoint, chatting (a canned reply after a short "working" pause), and coding sessions.
 // When the API is wired, each becomes a call (runs, approvals, coding) and the replies stream.
-import { D, S, me, mutate, proj, render, task, who } from "../data/store";
+import { D, S, me, mutate, proj, render, task, toolName, who } from "../data/store";
 import type { ChatMessage, CodingSession, ProposedChange, Thread } from "../data/types";
 import { runContinued } from "../data/account";
 import { isLive, live } from "../data/live";
@@ -294,7 +294,7 @@ export function decideCoding(cs: CodingSession, approve: boolean, reason = "") {
       project: cs.project,
     });
   });
-  toast(approve ? `${cs.tool === "codex" ? "Codex" : "Claude Code"} is coding ${task(cs.task)!.key}` : "Coding rejected", { ms: 2200 });
+  toast(approve ? `${toolName(cs.tool)} is coding ${task(cs.task)!.key}` : "Coding rejected", { ms: 2200 });
 }
 export function stopCoding(cs: CodingSession) {
   mutate(() => {

@@ -23,7 +23,7 @@ import { Ic } from "../core/icons";
 import { openModal, restore, snapshot } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, TODAY, ago, diffD, fmtDate, parse, relDate, uid } from "../core/utils";
-import { D, S, commentsOf, isOver, logAct, me, mutate, pColor, proj, render, save, task, who, people } from "../data/store";
+import { D, S, commentsOf, isOver, logAct, me, mutate, pColor, proj, render, save, task, toolName, who, people } from "../data/store";
 import type { CodingSession, Comment, Subtask, Task } from "../data/types";
 import { CellAssignee, CellDue, CellPrio, CellProject, CellStatus } from "../components/TaskList";
 import { Av, CommentText, FT, FilePrev, Lbl, ProgBar, fileType, fsize } from "../ui/helpers";
@@ -580,7 +580,7 @@ function CodingSection({ t }: { t: Task }) {
   const start = (tool: "claude-code" | "codex") => {
     S.ui.pop = null;
     if (!startCoding(t, tool)) return;
-    toast(`${tool === "codex" ? "Codex" : "Claude Code"} will start once someone approves`, { action: "Open Chat", onAction: () => openInChat("tab=coding") });
+    toast(`${toolName(tool)} will start once someone approves`, { action: "Open Chat", onAction: () => openInChat("tab=coding") });
   };
   const label: Record<string, [string, string]> = {
     awaiting_approval: ["Waiting for approval", "amber"],
@@ -609,7 +609,7 @@ function CodingSection({ t }: { t: Task }) {
         <div className="panel" style={{ padding: "10px 12px" }}>
           <div className="row" style={{ gap: 8 }}>
             <Av id={`agent:${latest.tool}`} cls="sm" tip={false} />
-            <b style={{ fontWeight: 500, fontSize: 13 }}>{latest.tool === "codex" ? "Codex" : "Claude Code"}</b>
+            <b style={{ fontWeight: 500, fontSize: 13 }}>{toolName(latest.tool)}</b>
             <span className={`badge ${label[latest.status]![1]}`}>{label[latest.status]![0]}</span>
             <span className="sp" />
             <span className="faint" style={{ fontSize: 11.5 }}>

@@ -73,6 +73,7 @@ export const AGENTS: Agent[] = [
 export const CODING_TOOLS = [
   { id: "agent:claude-code", name: "Claude Code", c: "#C0612B" },
   { id: "agent:codex", name: "Codex", c: "#1D1C1A" },
+  { id: "agent:opencode", name: "OpenCode", c: "#3D6B8C" },
 ];
 
 const diffNav = ` # Navigation

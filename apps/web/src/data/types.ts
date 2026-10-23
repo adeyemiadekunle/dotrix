@@ -226,7 +226,7 @@ export interface CodingSession {
   id: string;
   project: string;
   task: string;
-  tool: "claude-code" | "codex";
+  tool: "claude-code" | "codex" | "opencode";
   status: "awaiting_approval" | "queued" | "running" | "pr_opened" | "no_changes" | "failed" | "recovery_required" | "stopped" | "rejected";
   by: string;
   at: number;

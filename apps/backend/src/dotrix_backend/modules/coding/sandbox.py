@@ -539,9 +539,8 @@ class LocalSandbox:
         (root / "home").mkdir()
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(root / "home"), "LANG": "C.UTF-8",
                **tool.sandbox_env(model_key)}
-        for name in ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL"):  # a proxy in front of the provider
-            if os.environ.get(name):
-                env[name] = os.environ[name]
+        if os.environ.get(tool.base_url_env):  # a proxy in front of the provider
+            env[tool.base_url_env] = os.environ[tool.base_url_env]
         return LocalSession(root, env)
 
 
