@@ -506,8 +506,8 @@ class CodingWorker:
                 stdin=(brief + (BROWSER_RULE if browser else "")).encode(), on_line=on_line,
                 timeout=self.settings.coding_timeout_minutes * 60, cancel=cancel,
             )
-            if result.code == 0 and not result.cancelled and not result.timed_out and not failed:
-                await self._totals(box, tool, tool_session, usage, reported, cost_before)
+            # However the turn ended: a stopped or failed one was paid for too.
+            await self._totals(box, tool, tool_session, usage, reported, cost_before)
         finally:
             watcher.cancel()
             await flush()
@@ -520,6 +520,8 @@ class CodingWorker:
         if failed or result.code != 0:
             detail = failed or (result.stderr.strip().splitlines() or [f"exit code {result.code}"])[-1]
             raise RunFailed(f"{tool.name} didn't finish: {detail[:500]}")
+        if budget and usage.total > budget:  # over it only in the totals (OpenCode's last step): nothing is pushed
+            raise _Stopped(f"Stopped at the token budget ({budget:,} tokens)")
         return summary, (reported[-1] if reported else None)
 
     async def _totals(

@@ -51,6 +51,8 @@ class ScriptedOpenCode(ScriptedClaude):
     """Stands in for `opencode run --format json`: the same edits, as OpenCode 2's events. Its last
     step has no `step_finish` (as in the real one); `session export` gives it, with the cost."""
 
+    error: str | None = None
+
     def lines(self) -> list[str]:
         def event(kind: str, **part: Any) -> dict[str, Any]:
             return {"type": kind, "sessionID": "ses_x", "part": {"sessionID": "ses_x", **part}}
@@ -62,6 +64,8 @@ class ScriptedOpenCode(ScriptedClaude):
                              state={"status": "completed", "input": {"path": f"/sandbox/repo/{path}"}}),
                        event("step_finish", messageID=f"m-{path}", reason="tool-calls", tokens=tokens)]
         events += [event("step_start", messageID="m-last"), event("text", messageID="m-last", text=self.result)]
+        if self.error:  # e.g. the provider refused mid-turn
+            events.append({"type": "error", "sessionID": "ses_x", "error": {"type": "provider.auth", "message": self.error}})
         return [json.dumps(e) + "\n" for e in events]
 
     def totals(self) -> str:
@@ -718,3 +722,30 @@ async def test_opencode_codes_on_the_model_the_server_names(
     assert issue["status"] == "review" and issue["assignee_agent"] == "coding-agent"
     [pr] = github.pulls
     assert "Written by OpenCode" in pr["body"]
+
+
+async def _opencode_turn(db_client: AsyncClient, coding, *, budget: int | None = None, error: str | None = None) -> dict:
+    ada, _, ws, kun, _, sandbox = coding
+    settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
+    settings.coding_agent, settings.coding_opencode_model = "opencode", "anthropic:claude-haiku-5-5"
+    if budget is not None:
+        settings.coding_token_budget = budget
+    opencode = sandbox.agent = ScriptedOpenCode()
+    opencode.edits, opencode.error = {"src/refunds.py": "def refund(amount):\n    return amount\n"}, error
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    return await _approve(db_client, base, run, ada.headers)
+
+
+async def test_opencode_s_last_step_counts_against_the_token_budget(db_client: AsyncClient, coding, github) -> None:
+    # The events say 1,200 tokens, under the budget; the totals add the last step (550), over it.
+    run = await _opencode_turn(db_client, coding, budget=1500)
+    assert run["status"] == "stopped" and "token budget" in (run["error"] or ""), run
+    assert run["input_tokens"] + run["output_tokens"] == 1750 and run["pr_number"] is None and github.pulls == []
+
+
+async def test_a_failed_opencode_turn_keeps_its_usage(db_client: AsyncClient, coding, github) -> None:
+    run = await _opencode_turn(db_client, coding, error="invalid x-api-key")
+    assert run["status"] == "failed" and "invalid x-api-key" in (run["error"] or ""), run
+    assert (run["input_tokens"], run["output_tokens"], run["cost_usd"]) == (1500, 250, 0.2) and github.pulls == []
