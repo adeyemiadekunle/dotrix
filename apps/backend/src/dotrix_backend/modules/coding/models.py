@@ -45,6 +45,7 @@ class CodingRunStatus(enum.StrEnum):
     PR_OPENED = "pr_opened"  # done: the PR is up, a person reviews and merges it
     NO_CHANGES = "no_changes"  # done: the agent changed nothing
     FAILED = "failed"
+    RECOVERY_REQUIRED = "recovery_required"  # outcome may be external; inspect before another turn
     STOPPED = "stopped"
 
 
@@ -66,7 +67,10 @@ class PrState(enum.StrEnum):
     CLOSED = "closed"
 
 
-ACTIVE = frozenset({CodingRunStatus.AWAITING_APPROVAL, CodingRunStatus.QUEUED, CodingRunStatus.RUNNING})
+ACTIVE = frozenset({
+    CodingRunStatus.AWAITING_APPROVAL, CodingRunStatus.QUEUED,
+    CodingRunStatus.RUNNING, CodingRunStatus.RECOVERY_REQUIRED,
+})
 
 
 class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
@@ -93,6 +97,9 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     repo_full_name: Mapped[str] = mapped_column(String(200))
     base_branch: Mapped[str] = mapped_column(String(200))
     base_sha: Mapped[str | None] = mapped_column(String(40))
+    # A worker-local recovery reference, not sent to clients. The filesystem may
+    # be unavailable after host loss, so its presence does not prove work survived.
+    workspace_path: Mapped[str | None] = mapped_column(String(1024))
     branch: Mapped[str | None] = mapped_column(String(200))
     commit_sha: Mapped[str | None] = mapped_column(String(40))
     pr_number: Mapped[int | None] = mapped_column(Integer)

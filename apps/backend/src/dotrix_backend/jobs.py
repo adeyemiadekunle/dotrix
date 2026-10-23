@@ -80,7 +80,10 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
             "device_authorizations": await DeviceAuthorizationRepository(session).delete_stale(token_cutoff),
             "invites": await InviteRepository(session).delete_stale(invite_cutoff),
             "web_pages": await delete_stale_pages(session, at - KEEP_PAGES_FOR),
-            "cut_off_coding_runs": await end_cut_off_runs(session, ctx.settings),
+            # Worker-mode coding runs use queue-state reconciliation. Age alone
+            # cannot prove an external push or PR creation failed.
+            "cut_off_coding_runs": await end_cut_off_runs(session, ctx.settings)
+            if ctx.settings.jobs != "worker" else 0,
             "github_deliveries": await delete_stale_deliveries(session, token_cutoff),
         }
         await session.commit()

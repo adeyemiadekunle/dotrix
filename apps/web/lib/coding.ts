@@ -23,6 +23,7 @@ export const STATUS_LABELS: Record<CodingRunStatus, string> = {
   pr_opened: "PR opened",
   no_changes: "No changes",
   failed: "Failed",
+  recovery_required: "Needs reconciliation",
   stopped: "Stopped",
 };
 

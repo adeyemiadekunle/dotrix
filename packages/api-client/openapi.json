@@ -21808,6 +21808,7 @@
           "pr_opened",
           "no_changes",
           "failed",
+          "recovery_required",
           "stopped"
         ],
         "title": "CodingRunStatus"

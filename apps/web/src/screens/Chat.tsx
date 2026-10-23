@@ -169,10 +169,11 @@ const STATUS: Record<CodingSession["status"], [string, string]> = {
   pr_opened: ["PR opened", "green"],
   no_changes: ["No changes", ""],
   failed: ["Failed", "red"],
+  recovery_required: ["Needs reconciliation", "amber"],
   stopped: ["Stopped", ""],
   rejected: ["Rejected", "red"],
 };
-const BUSY: CodingSession["status"][] = ["awaiting_approval", "queued", "running"];
+const BUSY: CodingSession["status"][] = ["awaiting_approval", "queued", "running", "recovery_required"];
 
 function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
   const [label, c] = STATUS[cs.status];
@@ -1185,6 +1186,19 @@ function Session({ cs }: { cs: CodingSession }) {
               )}
             </div>
           )}
+          {latest?.status === "recovery_required" && (
+            <div className="change" role="status">
+              <div className="change-h">
+                <Ic n="shield-check" s={14} />
+                <b style={{ fontWeight: 500 }}>Coding outcome needs reconciliation</b>
+              </div>
+              <div className="change-f">
+                <span className="faint" style={{ fontSize: 12 }}>
+                  {latest.error || "Check the branch, PR, and workspace reference before another coding turn."}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="chat-input">
@@ -1192,7 +1206,13 @@ function Session({ cs }: { cs: CodingSession }) {
           <textarea
             rows={2}
             placeholder={
-              cs.state === "closed" ? "This session is closed" : busy ? "A turn is waiting or working…" : `Ask ${tool} for a follow-up on the same branch`
+              cs.state === "closed"
+                ? "This session is closed"
+                : cs.status === "recovery_required"
+                  ? "Reconcile the previous turn before continuing"
+                  : busy
+                    ? "A turn is waiting or working…"
+                    : `Ask ${tool} for a follow-up on the same branch`
             }
             value={ask}
             disabled={busy}

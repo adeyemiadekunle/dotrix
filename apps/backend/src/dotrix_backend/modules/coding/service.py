@@ -63,6 +63,7 @@ CODING_AGENTS = frozenset({AgentAssignee.CODING_AGENT, AgentAssignee.CLAUDE_CODE
 
 STATUS_WORDS = {
     CodingRunStatus.NO_CHANGES: "It changed nothing.", CodingRunStatus.FAILED: "It failed.",
+    CodingRunStatus.RECOVERY_REQUIRED: "Its result needs reconciliation.",
     CodingRunStatus.STOPPED: "It was stopped.", CodingRunStatus.REJECTED: "It was rejected.",
     CodingRunStatus.PR_OPENED: "It opened the PR.",
 }
@@ -240,6 +241,8 @@ class CodingService:
         run = await self._get(access.project, run_id, for_update=True)
         if not self._can_stop(run, access):
             raise Forbidden("Only whoever asked for this run, or an owner or admin, can stop it")
+        if run.status is CodingRunStatus.RECOVERY_REQUIRED:
+            raise Conflict("The worker's outcome is uncertain; inspect its branch and PR before resolving this run")
         if run.status not in ACTIVE:
             raise Conflict("This coding run has finished")
         run.stop_requested = True  # a running one: the worker sees it within seconds and stops the agent
@@ -434,7 +437,8 @@ class CodingService:
             created_at=run.created_at, decided_at=run.decided_at, started_at=run.started_at,
             finished_at=run.finished_at,
             can_decide=run.status is CodingRunStatus.AWAITING_APPROVAL and can(access.member, Permission.APPROVE_ACTIONS),
-            can_stop=run.status in ACTIVE and self._can_stop(run, access),
+            can_stop=run.status in ACTIVE and run.status is not CodingRunStatus.RECOVERY_REQUIRED
+            and self._can_stop(run, access),
         )
 
     def _audit(self, project: Project, access: ProjectAccess, action: str, run: CodingRun) -> None:
