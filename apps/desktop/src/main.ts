@@ -3,6 +3,8 @@
 import { app, BrowserWindow, shell } from "electron";
 import path from "node:path";
 
+import { sandboxEnv } from "./sandbox";
+
 const WEB_URL = process.env.DOTRIX_WEB_URL ?? "http://localhost:3000";
 
 function createWindow(): void {
@@ -27,6 +29,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // Anything the app starts (the coding runner) uses the sandbox runtime bundled here.
+  Object.assign(process.env, sandboxEnv());
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

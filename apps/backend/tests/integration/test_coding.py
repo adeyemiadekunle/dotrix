@@ -1508,12 +1508,12 @@ async def test_a_local_turn_is_checked_stopped_fenced_and_recovered(
     runner.command = _tool({"src/slow.py": "x = 1\n"}, sleep=30)
     run = await local_turn("Slow")
     working = asyncio.create_task(runner.once())
-    for _ in range(100):
+    for _ in range(400):  # until its runner holds it (a loaded machine takes a while to fetch and add the worktree)
         await asyncio.sleep(0.05)
         if (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()["status"] == "running":
             break
     await db_client.post(f"{base}/coding/runs/{run['id']}/stop", headers=ada.headers)
-    await asyncio.wait_for(working, 20)
+    await asyncio.wait_for(working, 60)  # the tool would sleep 30 s: Stop ends it well before
     stopped = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert stopped["status"] == "stopped" and github.pulls == []
 

@@ -7,9 +7,9 @@ config).
 
 Each turn gets a worktree of its own outside the checkout (`~/.dotrix/worktrees/...`), on the
 session's branch or the base branch as the remote has it, so your working copy and its changes are
-never touched. A worktree separates directories, it isn't a security boundary: with `srt` (the
-sandbox runtime) installed the tool runs inside it (writes only to the worktree, network only to the
-model's API), otherwise the turn says it isn't isolated. Worktrees are kept after the turn (nothing
+never touched. A worktree separates directories, it isn't a security boundary: the tool runs inside
+`srt`, the sandbox runtime that comes with dotrix (`dotrix_cli.sandbox`): writes only to the worktree,
+network only to the model's API. Where it can't run, the turn says it isn't isolated. Worktrees are kept after the turn (nothing
 is deleted that you might want); `git worktree prune` and removing the folder clean them up.
 """
 from __future__ import annotations
@@ -27,6 +27,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
+
+from . import sandbox as sandbox_runtime
 
 TOOLS = ("claude-code", "opencode")
 # What a sandboxed tool may reach: the model providers' APIs, and the package registries tests need.
@@ -75,7 +77,8 @@ def found_tools() -> list[str]:
 
 
 def has_srt() -> bool:
-    return shutil.which("srt") is not None
+    """Whether srt can sandbox a tool here (it, and on Linux what it needs: `dotrix_cli.sandbox`)."""
+    return sandbox_runtime.check().ready
 
 
 @dataclass
@@ -158,7 +161,7 @@ class LocalRunner:
     def isolation(self) -> str:
         if self.sandbox == "srt":
             if not has_srt():
-                raise RuntimeError("srt isn't installed: npm install -g @anthropic-ai/sandbox-runtime")
+                raise RuntimeError("The sandbox runtime can't run here: " + "; ".join(sandbox_runtime.check().missing))
             return "srt"
         return "srt" if self.sandbox == "auto" and has_srt() else "none"
 
@@ -246,7 +249,7 @@ class LocalRunner:
         base_sha = (await git(tree, "rev-parse", "HEAD")).strip()
         isolation = self.isolation
         pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]}"
-                        + ("" if isolation == "srt" else " (not isolated: install srt to sandbox the tool)")})
+                        + ("" if isolation == "srt" else " (not isolated: `dotrix sandbox install` to sandbox the tool)")})
         if await beat({"base_sha": base_sha}):
             await report("stopped", base_sha=base_sha)
             return
@@ -260,7 +263,8 @@ class LocalRunner:
         out = Outcome()
         process = await asyncio.create_subprocess_exec(
             *argv, cwd=tree, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE, env=_env(), start_new_session=os.name != "nt",
+            stderr=asyncio.subprocess.PIPE, env={**_env(), **(sandbox_runtime.env() if isolation == "srt" else {})},
+            start_new_session=os.name != "nt",
         )
         assert process.stdin and process.stdout and process.stderr
         process.stdin.write(run["brief"].encode())
@@ -326,7 +330,9 @@ class LocalRunner:
             },
             "network": {"allowedDomains": ALLOWED_DOMAINS, "deniedDomains": []},
         }, indent=2), encoding="utf-8")
-        return ["srt", "--settings", str(settings), "--", *argv]
+        srt = sandbox_runtime.command()
+        assert srt is not None
+        return [*srt, "--settings", str(settings), "--", *argv]
 
 
 def _lost(exc: Exception) -> bool:

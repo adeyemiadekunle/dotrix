@@ -207,8 +207,14 @@ The `dotrix` command installs on its own (Python 3.11+ and [uv](https://docs.ast
 
 ```bash
 uv tool install "git+https://github.com/adeyemiadekunle/dotrix#subdirectory=apps/cli"
+dotrix sandbox install     # the sandbox runtime local coding turns run in (needs Node 22.12+)
 ```
 
+- The sandbox runtime ([srt](https://github.com/anthropics/sandbox-runtime)) comes with dotrix: a pinned
+  version installed into `~/.dotrix/tools` (`dotrix runner` installs it too, the first time it's missing),
+  never a global npm install. On Linux it also needs `bubblewrap` and `socat`
+  (`sudo apt-get install bubblewrap socat`); `dotrix sandbox check` says what's missing. The desktop app
+  carries its own copy and needs nothing installed.
 - On Windows, run `uv tool update-shell` once (then open a new terminal) so `dotrix` is on your PATH.
 - Without uv: `pipx install "git+https://github.com/adeyemiadekunle/dotrix#subdirectory=apps/cli"`.
 - Point it at your server with `DOTRIX_API_URL` (or `--api-url` on `login`). The default is
@@ -229,6 +235,8 @@ dotrix issue list --mine                       # your issues (or --as claude-cod
 dotrix issue claim KUN-42 --as claude-code     # coding tools act as themselves and stop at review
 dotrix issue done KUN-42                       # only a person closes
 dotrix handoff install --register              # Claude Code / Codex via MCP: board, documents, graph
+dotrix runner                                  # code your local turns on this computer, in worktrees, sandboxed by srt
+dotrix code KUN-42                             # ask Kai to code an issue here (--cloud: on the platform)
 dotrix logout
 ```
 

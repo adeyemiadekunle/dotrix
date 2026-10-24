@@ -40,7 +40,10 @@ def test_claude_code_runs_commands_only_inside_the_sandbox() -> None:
     assert Tool.named("opencode", isolated=False).argv[:2] == ["opencode", "run"]
 
 
-def test_srt_writes_only_to_the_worktree_and_reaches_only_model_apis(tmp_path: Path) -> None:
+def test_srt_writes_only_to_the_worktree_and_reaches_only_model_apis(tmp_path: Path, monkeypatch) -> None:
+    from dotrix_cli import sandbox
+
+    monkeypatch.setattr(sandbox, "command", lambda: ["srt"])
     runner = LocalRunner(api=None, repo=tmp_path, workspace_id="w", project_id="p")  # type: ignore[arg-type]
     tree = tmp_path / "trees" / "kun-1-abc123-1"
     tree.mkdir(parents=True)
@@ -51,3 +54,43 @@ def test_srt_writes_only_to_the_worktree_and_reaches_only_model_apis(tmp_path: P
     assert "~/.ssh" in settings["filesystem"]["denyRead"]
     assert settings["network"]["allowedDomains"] == ALLOWED_DOMAINS and "github.com" not in ALLOWED_DOMAINS
     assert not Path(argv[2]).is_relative_to(tree)  # the settings never land in the worktree (or the patch)
+
+
+def test_the_sandbox_runtime_comes_with_dotrix(tmp_path: Path, monkeypatch) -> None:
+    from dotrix_cli import sandbox
+
+    monkeypatch.setenv("DOTRIX_TOOLS_DIR", str(tmp_path / "tools"))
+    monkeypatch.delenv("DOTRIX_SRT", raising=False)
+    monkeypatch.delenv("DOTRIX_SRT_NODE", raising=False)
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: None)  # nothing on this machine
+    assert sandbox.command() is None and not sandbox.check().ready
+    assert any("Node 22.12" in m for m in sandbox.check().missing)
+    try:
+        sandbox.install()
+        raise AssertionError("installed without npm")
+    except RuntimeError as exc:
+        assert "Node 22.12" in str(exc)
+
+    # The copy dotrix installed, run with Node directly (no shim, no global install).
+    cli = sandbox.installed_cli()
+    cli.parent.mkdir(parents=True)
+    cli.write_text("// srt")
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: f"/usr/bin/{name}")
+    assert sandbox.command() == ["/usr/bin/node", str(cli)] and sandbox.VERSION in str(cli)
+    assert sandbox.env() == {}
+
+    # The desktop app's own copy, run by its executable as Node, wins.
+    bundled = tmp_path / "app" / "cli.js"
+    bundled.parent.mkdir()
+    bundled.write_text("// srt")
+    monkeypatch.setenv("DOTRIX_SRT", str(bundled))
+    monkeypatch.setenv("DOTRIX_SRT_NODE", "/Applications/dotrix.app/dotrix")
+    assert sandbox.command() == ["/Applications/dotrix.app/dotrix", str(bundled)]
+    assert sandbox.env() == {"ELECTRON_RUN_AS_NODE": "1"}
+
+
+def test_the_cli_and_the_desktop_app_pin_the_same_sandbox_runtime() -> None:
+    from dotrix_cli import sandbox
+
+    desktop = json.loads((Path(__file__).parents[2] / "desktop" / "package.json").read_text())
+    assert desktop["dependencies"][sandbox.PACKAGE] == sandbox.VERSION

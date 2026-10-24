@@ -274,19 +274,23 @@ codes on its requester's computer instead of a worker's sandbox; everything else
 - **Keys and credentials (decided).** The tool runs with what is signed in on that machine (Claude Code's
   login, OpenCode's config). The platform never sends a provider key or GitHub token to a device, and the
   runner strips `DOTRIX_TOKEN` from the tool's environment.
-- **Isolation.** A worktree isn't a security boundary. With `srt` installed (`--sandbox auto`, the default,
-  or `srt` to require it) the tool runs inside it: writes only to the worktree, the tools' own state and
+- **Isolation.** A worktree isn't a security boundary. The tool runs inside `srt`, which comes with dotrix
+  (`dotrix_cli/sandbox.py`: a pinned version the CLI installs into `~/.dotrix/tools` with `dotrix sandbox
+  install`, or `dotrix runner` the first time; the desktop app ships the same version and points the runner
+  at it with `DOTRIX_SRT`). `--sandbox auto`, the default, uses it when it can run (Node 22.12+; on Linux
+  bubblewrap and socat), `srt` requires it: writes only to the worktree, the tools' own state and
   `/tmp`; no reads of `~/.ssh`, `~/.aws` and other credentials; network only to the model APIs and package
   registries. Claude Code may run commands only inside it (`--allowedTools Bash`); without it, edits only.
-  A turn without `srt` says so in its events. Checked: the settings file's shape against srt's README;
-  not yet run under srt on macOS or Linux here.
+  A turn without `srt` says so in its events. Checked for real on Linux (bubblewrap): writing in the
+  worktree works; writing outside it, reading `~/.ssh`, and reaching github.com are refused. Not yet
+  checked: macOS, and reaching the allowed hosts (behind this container's own proxy srt's bridge refused it).
 - **The result.** `.../result` carries the patch (`git diff --cached --binary` against the turn's base),
   the summary and usage. The platform reads the paths from the patch itself (`git apply --numstat`, renames
   included), runs the guard, and then treats it as a cloud turn's: Manual waits as changes ready; Accept
   edits and Auto accept it for the requester. Accepted, the worker's publish-only pass applies it to the
   branch as it is, checks it again, pushes, and opens or updates the PR. Reverts are always that pass.
 
-Not yet: the desktop app's runner, a folder with no remote (branch and diff, no PR), `srt` run for real.
+Not yet: the desktop app's runner, a folder with no remote (branch and diff, no PR), `srt` on macOS.
 
 ## Local-file projects
 

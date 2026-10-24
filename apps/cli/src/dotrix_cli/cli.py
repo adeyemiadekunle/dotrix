@@ -38,6 +38,7 @@ from dotrix_engine.ingest import ingest_doc
 from dotrix_engine.jobs import get_job, list_jobs, resume_job, start_job
 
 from . import repo as repo_facts
+from . import sandbox as sandbox_runtime
 from .agent_client import ApprovalNotAllowed, Outcome, PlatformAgent
 from .board import CODING_AGENTS, PlatformBoard
 from .platform import (
@@ -504,6 +505,14 @@ def runner_command(
     if sandbox not in ("auto", "srt", "none"):
         _fail("--sandbox is auto, srt, or none")
     config, state, client = _linked(project)
+    if sandbox != "none" and sandbox_runtime.command() is None:  # it comes with dotrix: installed the first time
+        typer.echo(f"Installing the sandbox runtime ({sandbox_runtime.PACKAGE}@{sandbox_runtime.VERSION})…")
+        try:
+            sandbox_runtime.install()
+        except RuntimeError as exc:
+            if sandbox == "srt":
+                _fail(str(exc))
+            typer.secho(f"{exc}. Turns won't be isolated until it is.", fg=typer.colors.YELLOW, err=True)
     runner = LocalRunner(
         _AsyncApi(client), Path(config.root_dir), state.workspace_id, state.project_id, tool=tool, command=command,
         sandbox=sandbox, echo=typer.echo, **({"name": name} if name else {}), **({"worktrees": worktrees} if worktrees else {}),
@@ -512,7 +521,8 @@ def runner_command(
         registered = asyncio.run(runner.register())
     except (PlatformError, RuntimeError) as exc:
         _fail(str(exc))
-    isolated = "isolated by srt" if registered["isolation"] == "srt" else "NOT isolated (install srt: npm i -g @anthropic-ai/sandbox-runtime)"
+    isolated = "isolated by srt" if registered["isolation"] == "srt" else (
+        "NOT isolated: " + ("; ".join(sandbox_runtime.check().missing) or "--sandbox none"))
     typer.echo(f"{registered['name']}: coding {state.project_key} turns with {', '.join(registered['tools'])}, {isolated}")
     try:
         if once:
@@ -525,6 +535,32 @@ def runner_command(
         typer.echo("Stopped; a turn in progress needs recovery once its lease lapses")
     except PlatformError as exc:
         _fail(str(exc))
+
+
+sandbox_app = typer.Typer(help="The sandbox runtime (srt) that local turns code in; it comes with dotrix.")
+app.add_typer(sandbox_app, name="sandbox")
+
+
+@sandbox_app.command("install")
+def sandbox_install():
+    """Install the pinned sandbox runtime into ~/.dotrix/tools (needs Node 22.12+ with npm)."""
+    try:
+        cli_js = sandbox_runtime.install()
+    except RuntimeError as exc:
+        _fail(str(exc))
+    typer.echo(f"{sandbox_runtime.PACKAGE}@{sandbox_runtime.VERSION} at {cli_js.parent.parent}")
+    sandbox_check()
+
+
+@sandbox_app.command("check")
+def sandbox_check():
+    """Whether local turns can be isolated here, and what to install if not."""
+    found = sandbox_runtime.check()
+    if found.ready:
+        typer.echo(f"Ready: {' '.join(found.srt or [])}")
+        return
+    typer.secho("Not ready. Missing:\n  " + "\n  ".join(found.missing), fg=typer.colors.YELLOW)
+    raise typer.Exit(1)
 
 
 @app.command("code")
