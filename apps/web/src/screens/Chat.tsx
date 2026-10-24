@@ -1207,7 +1207,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                   className="cpill pick"
                   onClick={codeHere}
                   disabled={!slug || !pkey || adding}
-                  aria-label="Code on this computer"
+                  aria-label="Code locally: choose a folder"
                   data-tip={
                     hereRunner?.state === "failed"
                       ? (hereRunner.message ?? "This computer's runner stopped")
@@ -1215,11 +1215,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                   }
                 >
                   <Ic n="folder-plus" s={12} />
-                  {adding || hereRunner?.state === "starting"
-                    ? "Starting…"
-                    : hereRunner?.state === "failed"
-                      ? "Runner stopped: choose again"
-                      : "Code on this computer…"}
+                  {adding || hereRunner?.state === "starting" ? "Starting…" : hereRunner?.state === "failed" ? "Runner stopped: choose again" : "Local"}
                 </button>
               )}
               <span className="sp" />

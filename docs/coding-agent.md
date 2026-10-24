@@ -309,7 +309,7 @@ The desktop app codes local turns itself, with no Python or CLI to install:
   own dependencies (`uv export --package dotrix`), into `apps/desktop/resources/dotrix`
   (`pnpm --filter @dotrix/desktop bundle-cli`; built on each platform for that platform). srt is
   bundled already (above).
-- **Folders.** In a new coding session, "Code on this computer…" opens a folder picker for a checkout
+- **Folders.** In a new coding session, "Local" opens a folder picker for a checkout
   of the project's repository. The app links it (`dotrix link`), runs `dotrix runner --json` there in
   the background, restarts it after a failure (three tries, then it waits), and starts it again on the
   next launch (`apps/desktop/src/runner.ts`).
