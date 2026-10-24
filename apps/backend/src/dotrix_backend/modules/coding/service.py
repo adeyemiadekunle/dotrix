@@ -33,6 +33,7 @@ from dotrix_backend.modules.workspaces.permissions import Permission, can
 from .brief import build_brief
 from .models import (
     ACTIVE,
+    CODING_AGENT_NAME,
     CodingOrigin,
     CodingRun,
     CodingRunEvent,
@@ -220,7 +221,7 @@ class CodingService:
         # The issue is the coding tool's now (its own rules: it may move it to review, never done).
         issue = await IssueService(self.session).get(access.project, run.issue_key)
         change = IssueUpdate(assignee_agent=run.agent.assignee, assignee_user_id=None,
-                             note=f"Coding run approved: {run.agent.value} is working on it")
+                             note=f"Coding run approved: {CODING_AGENT_NAME} is working on it")
         if issue.status is not IssueStatus.IN_PROGRESS:
             change.status = IssueStatus.IN_PROGRESS
         await IssueService(self.session).update(

@@ -61,7 +61,7 @@ export interface Task {
   project: string;
   title: string;
   status: StatusId;
-  /** a person (m1…), or a coding agent (agent:claude-code, agent:codex) */
+  /** a person (m1…), or Kai, the coding agent (agent:coding-agent; older issues: agent:claude-code, agent:codex) */
   assignee: string | null;
   priority: PriorityId;
   due: string | null;

@@ -76,8 +76,8 @@ async def create_issue(data: IssueCreate, access: Editor, session: SessionDep, c
     """Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance
     criteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,
     or bug; other types may sit under an epic. Assigning the built-in coding agent needs the
-    instruct-coding-agent permission. Assigning a coding tool (`coding-agent`, `claude-code`,
-    `codex`) also starts a coding session, waiting for approval, where coding is set up."""
+    instruct-coding-agent permission. Assigning Kai, the coding agent (`coding-agent`; its
+    older names `claude-code` and `codex` still work), also starts a coding session, waiting for approval, where coding is set up."""
     issue = await IssueService(session).create(access.project, _actor(access, data.as_agent), data)
     if data.as_agent is None and data.assignee_agent in CODING_AGENTS:
         await coding.start_for_assignment(access, issue.key)

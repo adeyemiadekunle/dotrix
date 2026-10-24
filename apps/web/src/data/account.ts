@@ -94,7 +94,7 @@ export async function workspaceRenamed(name: string) {
 export const GRANTABLE: [Schemas["Permission"], string, string][] = [
   ["knowledge:write", "Edit documents", "Change the project's knowledge directly."],
   ["agents:approve", "Approve agents' changes", "Approve or reject what an agent proposes."],
-  ["agents:code", "Start coding", "Ask Claude Code or Codex to work on a task."],
+  ["agents:code", "Start coding", "Ask Kai, the coding agent, to work on a task."],
   ["agents:choose_model", "Choose the agents' model", "Bigger models cost more."],
 ];
 export async function memberPermissionsSaved(perms: Schemas["Permission"][]) {

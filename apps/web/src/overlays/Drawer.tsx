@@ -1,7 +1,7 @@
 // Task drawer: a side panel or
 // full page with the task's fields, description, subtasks (each with its own view), attachments,
 // comments (@mentions, reactions), and activity. dotrix adds the issue type, and coding: "Start
-// coding" asks Claude Code or Codex to work on it, approved like any agent change.
+// coding" asks Kai, the coding agent, to work on it, approved like any agent change.
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { applyPatch, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
@@ -24,6 +24,7 @@ import { openModal, restore, snapshot } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, TODAY, ago, diffD, fmtDate, parse, relDate, uid } from "../core/utils";
 import { D, S, commentsOf, isOver, logAct, me, mutate, pColor, proj, render, save, task, toolName, who, people } from "../data/store";
+import { CODING_AGENT } from "../data/seed-dotrix";
 import type { CodingSession, Comment, Subtask, Task } from "../data/types";
 import { CellAssignee, CellDue, CellPrio, CellProject, CellStatus } from "../components/TaskList";
 import { Av, CommentText, FT, FilePrev, Lbl, ProgBar, fileType, fsize } from "../ui/helpers";
@@ -577,10 +578,10 @@ function CodingSection({ t }: { t: Task }) {
       }))
     : D().coding.filter((c) => c.task === t.id);
   const latest = sessions[0];
-  const start = (tool: "claude-code" | "codex") => {
+  const start = () => {
     S.ui.pop = null;
-    if (!startCoding(t, tool)) return;
-    toast(`${toolName(tool)} will start once someone approves`, { action: "Open Chat", onAction: () => openInChat("tab=coding") });
+    if (!startCoding(t, "opencode")) return;
+    toast(`${CODING_AGENT.name} will start once someone approves`, { action: "Open Chat", onAction: () => openInChat("tab=coding") });
   };
   const label: Record<string, [string, string]> = {
     awaiting_approval: ["Waiting for approval", "amber"],
@@ -599,7 +600,7 @@ function CodingSection({ t }: { t: Task }) {
         <h3>Coding</h3>
         <span className="cnt">{sessions.length}</span>
         <div className="acts">
-          <button className="btn btn-sm btn-ghost" onClick={() => start("claude-code")}>
+          <button className="btn btn-sm btn-ghost" onClick={start}>
             <Ic n="bot" s={13} />
             Start coding
           </button>
@@ -636,7 +637,7 @@ function CodingSection({ t }: { t: Task }) {
         </div>
       ) : (
         <p className="faint" style={{ fontSize: 12.5, margin: "4px 0" }}>
-          Claude Code or Codex can work on this in a sandbox and open a pull request. Someone who may approve agent changes starts it.
+          {CODING_AGENT.name}, the coding agent, can work on this in a sandbox and open a pull request. Someone who may approve agent changes starts it.
         </p>
       )}
     </div>

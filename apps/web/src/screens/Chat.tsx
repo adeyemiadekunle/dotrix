@@ -1396,7 +1396,7 @@ export function Chat() {
                     <Empty
                       icon="code"
                       title={S.ui.showArchivedSessions ? "No archived sessions" : "No coding sessions"}
-                      text={S.ui.showArchivedSessions ? "Archived sessions show here." : "Use “Start coding” on a task, or assign it to Claude Code or Codex."}
+                      text={S.ui.showArchivedSessions ? "Archived sessions show here." : "Use “Start coding” on a task, or assign it to Kai."}
                       cls="sm"
                     />
                   )

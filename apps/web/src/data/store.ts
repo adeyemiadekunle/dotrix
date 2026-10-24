@@ -205,7 +205,7 @@ export function taskProg(t: Task) {
   return ({ backlog: 0, todo: 5, progress: 45, blocked: 45, review: 80 } as Record<string, number>)[t.status] ?? 0;
 }
 
-/** Anyone who acts: a member, an agent (auto, research…), or a coding tool (agent:claude-code). */
+/** Anyone who acts: a member, an agent (auto, research…), or Kai, the coding agent (agent:coding-agent). */
 export function who(id: string | null | undefined): { id: string; name: string; c: string; agent: boolean } | null {
   if (!id) return null;
   const m = mem(id);
@@ -217,7 +217,7 @@ export function who(id: string | null | undefined): { id: string; name: string; 
   return null;
 }
 
-/** A coding session's tool by name ("claude-code" → "Claude Code"). */
+/** Who a coding session's engine codes as ("opencode" → "Kai"). */
 export const toolName = (tool: string) => who(`agent:${tool}`)?.name ?? tool;
 
 /* ---------- activity ---------- */

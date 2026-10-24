@@ -64,6 +64,7 @@ from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
 from . import guard
 from .models import (
+    CODING_AGENT_NAME,
     CodingRun,
     CodingRunEvent,
     CodingRunStatus,
@@ -270,7 +271,7 @@ class CodingWorker:
             keys = await run_keys(session, self.secrets, run.workspace_id, run.requested_by_id)
             key = run_key(tool, self.settings, keys.keys)
             if key is None:
-                raise RunFailed(f"There's no {tool.provider} key for {tool.name} here any more "
+                raise RunFailed(f"There's no {tool.provider} key for {CODING_AGENT_NAME} ({tool.name}) here any more "
                                 "(Settings → Models, or your own in Account → Your models)")
 
         # 1. Our checkout, with a token for this repo only (an hour long, never stored). With a fork
@@ -326,7 +327,7 @@ class CodingWorker:
         try:
             baseline = (await box.exec(["git", "rev-parse", "HEAD"], timeout=60)).stdout.strip()
             where = "kept from the last turn" if warm else self.sandbox.kind
-            await self._update(run_id, step=f"Sandbox ready ({where}); {tool.name} is "
+            await self._update(run_id, step=f"Sandbox ready ({where}); {CODING_AGENT_NAME} is "
                                + ("continuing the session" if resumed else "working"))
             extra = tool.session_args(claude_session, resumed)
             summary, reported = await self._code(run_id, box, tool, model, claude_session, brief, extra,
@@ -371,8 +372,8 @@ class CodingWorker:
             if branch == ref.default_branch:
                 raise RunFailed("Refusing to push to the default branch")
             heading = f"{issue_key}: {title}" + (f" (turn {turn})" if turn > 1 else "")
-            message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({tool.name})"
-            await run_git(host, "-c", f"user.name={tool.name} via dotrix", "-c", f"user.email={BOT_EMAIL}",
+            message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({CODING_AGENT_NAME}, on {tool.name})"
+            await run_git(host, "-c", f"user.name={CODING_AGENT_NAME} via dotrix", "-c", f"user.email={BOT_EMAIL}",
                           "commit", "-q", "--no-verify", "-m", message)
             commit_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
             await self._update(run_id, step=f"Pushing {branch}")
@@ -519,12 +520,12 @@ class CodingWorker:
         if result.timed_out:
             raise _Stopped(f"Stopped at the time limit ({self.settings.coding_timeout_minutes} minutes)")
         if result.cancelled and failed and not stop_reason:
-            raise RunFailed(f"{tool.name} didn't finish: {failed}")
+            raise RunFailed(f"{CODING_AGENT_NAME} didn't finish ({tool.name}): {failed}")
         if result.cancelled:
             raise _Stopped(stop_reason[0] if stop_reason else "Stopped")
         if failed or result.code != 0:
             detail = failed or (result.stderr.strip().splitlines() or [f"exit code {result.code}"])[-1]
-            raise RunFailed(f"{tool.name} didn't finish: {detail[:500]}")
+            raise RunFailed(f"{CODING_AGENT_NAME} didn't finish ({tool.name}): {detail[:500]}")
         if budget and usage.total > budget:  # over it only in the totals (OpenCode's last step): nothing is pushed
             raise _Stopped(f"Stopped at the token budget ({budget:,} tokens)")
         return summary, (reported[-1] if reported else None)
@@ -894,7 +895,7 @@ def _pr_body(
         (summary or "The agent left no summary.").strip()[:20_000],
         "",
         "---",
-        f"Written by {tool_name} in a dotrix coding run for {key} ({run_id}), asked for and approved on "
+        f"Written by {CODING_AGENT_NAME} (on {tool_name}) in a dotrix coding run for {key} ({run_id}), asked for and approved on "
         f"dotrix. {len(files)} file{'s' if len(files) != 1 else ''} changed. A person reviews and merges it.",
     ])
 

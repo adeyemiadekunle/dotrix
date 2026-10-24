@@ -2623,8 +2623,8 @@ export interface paths {
          * @description Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance
          *     criteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,
          *     or bug; other types may sit under an epic. Assigning the built-in coding agent needs the
-         *     instruct-coding-agent permission. Assigning a coding tool (`coding-agent`, `claude-code`,
-         *     `codex`) also starts a coding session, waiting for approval, where coding is set up.
+         *     instruct-coding-agent permission. Assigning Kai, the coding agent (`coding-agent`; its
+         *     older names `claude-code` and `codex` still work), also starts a coding session, waiting for approval, where coding is set up.
          */
         post: operations["create_issue"];
         delete?: never;
@@ -3300,7 +3300,7 @@ export interface paths {
         put?: never;
         /**
          * Start Coding
-         * @description Ask for a coding run on an issue: Claude Code (or Codex) codes it in a sandbox on a new
+         * @description Ask for a coding run on an issue: Kai, the coding agent, codes it in a sandbox on a new
          *     branch, and the platform opens a PR. It waits for someone who may approve agent changes;
          *     the brief it will get is in the run. People who may instruct the coding agent. 409
          *     `coding_unavailable` (not set up, or no connected repo), `coding_busy` (one is already open).
@@ -4655,7 +4655,7 @@ export interface components {
         CodingAvailability: {
             /** Available */
             available: boolean;
-            /** @description Who would code: Claude Code with an Anthropic key, else Codex; OpenCode when the server names it */
+            /** @description The engine Kai, the coding agent, would code on: OpenCode when the server names it, else Claude Code with an Anthropic key, else Codex */
             agent: components["schemas"]["CodingAgent"] | null;
             /**
              * Sandbox

@@ -60,7 +60,7 @@ async def coding_availability(access: ProjectViewer, coding: Coding) -> CodingAv
 
 @router.post("/issues/{key}/runs", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422))
 async def start_coding(key: str, data: CodingRunCreate, access: CodingInstructor, coding: Coding) -> CodingRunRead:
-    """Ask for a coding run on an issue: Claude Code (or Codex) codes it in a sandbox on a new
+    """Ask for a coding run on an issue: Kai, the coding agent, codes it in a sandbox on a new
     branch, and the platform opens a PR. It waits for someone who may approve agent changes;
     the brief it will get is in the run. People who may instruct the coding agent. 409
     `coding_unavailable` (not set up, or no connected repo), `coding_busy` (one is already open)."""

@@ -223,7 +223,7 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
 
     # The issue is the coding tool's, in review, with the PR linked; a person closes it.
     issue = (await db_client.get(f"{base}/issues/{story['key']}", headers=ada.headers)).json()
-    assert issue["status"] == "review" and issue["assignee_agent"] == "claude-code"
+    assert issue["status"] == "review" and issue["assignee_agent"] == "coding-agent"  # Kai, whatever the engine
     assert {"kind": "pr", "url": run["pr_url"], "title": "PR #1: Refund a payment"} in issue["links"]
 
     # The Reviewer read the PR in a conversation of its own.
@@ -723,7 +723,7 @@ async def test_opencode_codes_on_the_model_the_server_names(
     issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=ada.headers)).json()
     assert issue["status"] == "review" and issue["assignee_agent"] == "coding-agent"
     [pr] = github.pulls
-    assert "Written by OpenCode" in pr["body"]
+    assert "Written by Kai (on OpenCode)" in pr["body"]
 
 
 async def _opencode_turn(db_client: AsyncClient, coding, *, budget: int | None = None, error: str | None = None) -> dict:

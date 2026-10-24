@@ -2342,7 +2342,7 @@ function Body({ sec }: { sec: string }) {
             <SRow t="Approve agents' changes" d="Approve or reject what an agent proposes.">
               <PTog k="mApprove" def={false} />
             </SRow>
-            <SRow t="Start coding" d="Ask Claude Code or Codex to work on a task.">
+            <SRow t="Start coding" d="Ask Kai, the coding agent, to work on a task.">
               <PTog k="mCoding" def={false} />
             </SRow>
             <SRow t="Choose the agents' model" d="Bigger models cost more.">
