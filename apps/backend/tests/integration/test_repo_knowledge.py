@@ -137,3 +137,47 @@ async def test_a_moved_project_keeps_its_inventory(db_client: AsyncClient, githu
     after = (await db_client.get(base, headers=ada.headers)).json()
     assert after["snapshot"]["id"] == before["snapshot"]["id"] and after["statuses"] == before["statuses"]
     assert len((await db_client.get(f"{base}/paths", headers=ada.headers)).json()["paths"]) == 10
+
+
+async def test_explaining_the_repository_reads_marks_and_cites(
+    db_client: AsyncClient, github_world, github, origin: Path, agent_script
+) -> None:
+    from langchain_core.messages import ToolMessage
+
+    from dotrix_engine.testing import tool_call
+
+    ada, cat, ws, kun, _ = await github_world()
+    base = f"{ws}/projects/{kun['id']}/repository/knowledge"
+    await _connect(db_client, ws, kun, ada.headers)
+    page = ("# Architecture\n\nPayments go through one provider class (observed) `src/payments.py:1`, "
+            "routes are listed in one place `src/api/routes.py:1`.\n\n## Gaps and questions\n- Who owns refunds?\n")
+    model = agent_script.say(
+        tool_call("repo_coverage", call_id="c1"),
+        tool_call("repo_paths", call_id="c2", domain="architecture"),
+        tool_call("repo_mark_read", call_id="c3", paths=["src/payments.py", "src/api/routes.py", "src/nope.py"]),
+        tool_call("repo_check_page", call_id="c4", content=page + "Also `src/payments.py:40` and `src/gone.py:1`."),
+        tool_call("repo_check_page", call_id="c5", content=page),
+        tool_call("write_file", call_id="c6", file_path="/dotrix/docs/wiki/architecture.md", content=page),
+        "Explained the architecture; data, delivery, and the rest are still to read.",
+    )
+    assert (await db_client.post(f"{base}/explain", json={}, headers=cat.headers)).status_code == 403
+    assert (await db_client.post(f"{base}/explain", json={"domains": ["vibes"]}, headers=ada.headers)).status_code == 422
+    res = await db_client.post(f"{base}/explain", json={"domains": ["architecture"]}, headers=ada.headers)
+    assert res.status_code == 202, res.text
+    run = res.json()
+    assert run["mode"] == "docs.repository" and run["agent"] == "documentation"
+    assert run["status"] == "awaiting_approval", run  # the page waits for a person, like any document
+    assert {"repo_coverage", "repo_paths", "repo_mark_read", "repo_check_page"} <= set(model.tools_received[0])
+    assert "Start with: architecture." in model.received[0][-1].content
+
+    said = {m.tool_call_id: m.content for m in model.received[-1] if isinstance(m, ToolMessage)}
+    assert '"status": "pending"' in said["c1"] and "src/payments.py" in said["c2"]
+    assert '"marked": 2' in said["c3"] and "src/nope.py" in said["c3"]
+    assert "the file has 2 lines" in said["c4"] and "src/gone.py:1`: no such path" in said["c4"]
+    assert '"ok": true' in said["c5"]
+
+    coverage = (await db_client.get(base, headers=cat.headers)).json()
+    architecture = next(d for d in coverage["domains"] if d["domain"] == "architecture")
+    assert architecture["analyzed"] == 2 and architecture["status"] == "covered"  # its two source files
+    read = (await db_client.get(f"{base}/paths?status=analyzed", headers=cat.headers)).json()["paths"]
+    assert {p["path"] for p in read} == {"src/payments.py", "src/api/routes.py"}

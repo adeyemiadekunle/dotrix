@@ -2,11 +2,13 @@
 // Every required domain shows its evidence or a named gap, and what isn't read says why.
 import { useState, type ReactNode } from "react";
 
-import { useRepoCoverage, useRepoPaths, useTakeInventory, type DomainCoverage, type PathStatus } from "@/lib/repo-knowledge";
+import { useExplainRepository, useRepoCoverage, useRepoPaths, useTakeInventory, type DomainCoverage, type PathStatus } from "@/lib/repo-knowledge";
 import { allowed } from "../core/can";
 import { Ic } from "../core/icons";
 import { ago } from "../core/utils";
 import { live } from "../data/live";
+import { proj } from "../data/store";
+import { go } from "../core/nav";
 import { Empty } from "../ui/helpers";
 
 const STATES: Record<DomainCoverage["status"], [string, string]> = {
@@ -31,6 +33,8 @@ export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
   const paths = useRepoPaths(scope, picked ?? {}, picked !== null);
   const c = coverage.data;
   const canTake = allowed("knowledge:write");
+  const canExplain = canTake; // (everyone who edits documents may chat)
+  const explain = useExplainRepository(scope, (thread) => go("chat", {}, { search: `thread=${thread}&project=${proj(pid)?.key ?? ""}` }));
   return (
     <>
       <div className="toolbar">
@@ -40,6 +44,12 @@ export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
           <button className="btn btn-sm btn-secondary" disabled={take.isPending} onClick={() => take.mutate()}>
             <Ic n="refresh-cw" s={12} />
             Take inventory now
+          </button>
+        )}
+        {canExplain && c?.snapshot && !c.discovery_complete && (
+          <button className="btn btn-sm btn-primary" disabled={explain.isPending} onClick={() => explain.mutate([])}>
+            <Ic n="book-open" s={12} />
+            Explain the repository
           </button>
         )}
       </div>

@@ -145,6 +145,25 @@ _ALL = (
         Stage("tests", "The tests to run."),
         Stage("hand_off", "The brief for Claude Code or Codex (Phase 5)."),
     ),
+    _p(
+        "docs.repository", "Explain the repository", None,
+        Stage("scope", "Call `repo_coverage`: the commit, and each domain's status. Work on the domains with "
+                       "paths still to read (the ones the person named first, if they did), a few per run."),
+        Stage("read", "For one domain, `repo_paths(domain)` lists what's left to read. Read with `code_read` and "
+                      "`code_search` (the most telling files first; skim the rest), and call `repo_mark_read` with "
+                      "the paths you read, as you go, so a cut-off run resumes where it stopped."),
+        Stage("draft", "Draft /dotrix/docs/wiki/<domain>.md (e.g. docs/wiki/architecture.md): a short overview, "
+                       "then sections, each claim with its source as `path:line` or `path:start-end`, and its basis: "
+                       "(observed) in code or configuration, (declared: <document>) in an approved document, "
+                       "(inferred) from evidence, or (unknown). Behaviour in the code is never a requirement unless a "
+                       "document says so. End with \"Gaps and questions\": what the repository can't say, and whom to "
+                       "ask. Keep a person's edits to an existing page; say where the code now disagrees."),
+        Stage("check", "Call `repo_check_page` with the draft and fix every citation it reports; then write the "
+                       "page (`write_file`, or `edit_file` on an existing one: it waits for approval like any "
+                       "document)."),
+        Stage("report", "Say which domains you explained, what's still to read (it continues on the next run), and "
+                        "the most important gaps."),
+    ),
 )
 
 PIPELINES: dict[str, Pipeline] = {p.name: p for p in _ALL}
@@ -160,7 +179,7 @@ DEFAULTS: dict[str, str] = {
 }
 
 # Modes a run can ask for (`mode` on a run): the pipelines a person starts from an entry point.
-MODES = ("pm.triage", "reviewer.issue")
+MODES = ("pm.triage", "reviewer.issue", "docs.repository")
 
 
 def instructions(name: str, *, can_steer: bool) -> str:

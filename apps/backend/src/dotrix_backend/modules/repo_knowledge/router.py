@@ -7,11 +7,13 @@ from fastapi import APIRouter, Depends, Query, Request, status
 
 from dotrix_backend.api.deps import SessionDep
 from dotrix_backend.core.openapi import errors
+from dotrix_backend.modules.agents.router import Agents
+from dotrix_backend.modules.agents.schemas import AgentRunRead
 from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.projects.deps import KnowledgeEditor, ProjectViewer
 
 from .models import PathStatus
-from .schemas import RepoCoverageRead, RepoPathPage, RepoSnapshotRead
+from .schemas import RepoCoverageRead, RepoExplainRequest, RepoPathPage, RepoSnapshotRead
 from .service import PAGE_MAX, RepoKnowledgeService
 
 router = APIRouter(
@@ -40,6 +42,19 @@ async def take_repository_inventory(access: KnowledgeEditor, session: SessionDep
     """List every tracked path at the repository's current commit, classified (nothing in it is
     run). Taken once per commit; it's also taken after each push. People who edit documents."""
     return await RepoKnowledgeService(session, checkouts).snapshot(access.project)
+
+
+@router.post("/explain", status_code=status.HTTP_202_ACCEPTED, responses=errors(403, 409, 422, 503))
+async def explain_repository(
+    data: RepoExplainRequest, access: KnowledgeEditor, session: SessionDep, checkouts: Checkouts, agents: Agents,
+) -> AgentRunRead:
+    """Have the documentation agent explain the repository in the project's wiki (docs/wiki/), domain
+    by domain: it reads what the inventory has left (taken first if the commit is new), records what
+    it read, and proposes pages that cite their sources and name their gaps, each waiting for approval
+    like any document. A new conversation; another run continues where this one stopped. People who
+    edit documents."""
+    await RepoKnowledgeService(session, checkouts).snapshot(access.project)
+    return await agents.explain_repository(access, data.domains)
 
 
 @router.get("/paths", responses=errors(422))

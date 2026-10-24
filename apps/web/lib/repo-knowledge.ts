@@ -47,3 +47,20 @@ export function useTakeInventory(scope: Scope | undefined) {
     onSettled: () => void queryClient.invalidateQueries({ queryKey: key(scope) }),
   });
 }
+
+/** The documentation agent explains the repository in the wiki: a new conversation, opened in Chat. */
+export function useExplainRepository(scope: Scope | undefined, opened: (threadId: string) => void) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (domains: string[]) =>
+      unwrap(
+        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/explain", {
+          params: { path: path(scope!) },
+          body: { domains },
+        }),
+      ),
+    onSuccess: (run) => opened(run.thread_id),
+    onError: (e) => toast.error(errorMessage(e)),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: key(scope) }),
+  });
+}

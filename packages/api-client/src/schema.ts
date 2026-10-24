@@ -3330,6 +3330,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/explain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explain Repository
+         * @description Have the documentation agent explain the repository in the project's wiki (docs/wiki/), domain
+         *     by domain: it reads what the inventory has left (taken first if the commit is new), records what
+         *     it read, and proposes pages that cite their sources and name their gaps, each waiting for approval
+         *     like any document. A new conversation; another run continues where this one stopped. People who
+         *     edit documents.
+         */
+        post: operations["explain_repository"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/paths": {
         parameters: {
             query?: never;
@@ -7039,6 +7063,14 @@ export interface components {
              * @default
              */
             description: string;
+        };
+        /** RepoExplainRequest */
+        RepoExplainRequest: {
+            /**
+             * Domains
+             * @description Domains to start with (the coverage's `domain`s); none: the agent picks
+             */
+            domains?: string[];
         };
         /**
          * RepoOption
@@ -18942,6 +18974,87 @@ export interface operations {
             };
             /** @description Request body or parameters failed validation */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    explain_repository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoExplainRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

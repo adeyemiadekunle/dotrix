@@ -4,7 +4,9 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from dotrix_engine.inventory import DOMAINS
 
 from .models import PathStatus
 
@@ -60,3 +62,16 @@ class RepoPathRead(BaseModel):
 class RepoPathPage(BaseModel):
     paths: list[RepoPathRead]
     next: str | None = Field(description="Pass as `after` for the next page; null on the last")
+
+
+class RepoExplainRequest(BaseModel):
+    domains: list[str] = Field(default_factory=list, max_length=12,
+                               description="Domains to start with (the coverage's `domain`s); none: the agent picks")
+
+    @field_validator("domains")
+    @classmethod
+    def _known(cls, domains: list[str]) -> list[str]:
+        unknown = [d for d in domains if d not in DOMAINS]
+        if unknown:
+            raise ValueError(f"Unknown domain {unknown[0]!r}; use one of {', '.join(DOMAINS)}")
+        return list(dict.fromkeys(domains))
