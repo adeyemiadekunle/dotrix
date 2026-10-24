@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 import os
 import shutil
@@ -17,7 +18,7 @@ import stat
 import subprocess
 import sys
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -66,6 +67,12 @@ class CodeCheckouts:
             return (await run_git(root, "rev-parse", "HEAD")).strip() or None
         except CheckoutError:
             return None
+
+    @contextlib.asynccontextmanager
+    async def held(self, project_id: uuid.UUID) -> AsyncIterator[None]:
+        """No sync swaps the project's checkout while this is held (for reads that span many commands)."""
+        async with self._locks.setdefault(project_id, asyncio.Lock()):
+            yield
 
     async def sync(self, ref: RepoRef) -> str:
         """Fetch the default branch's latest commit and swap it in; returns its sha."""

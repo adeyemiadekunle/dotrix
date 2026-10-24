@@ -122,3 +122,18 @@ async def test_a_push_takes_a_new_inventory_and_unchanged_content_stays_read(
     assert statuses == {"src/api/routes.py": "analyzed", "src/payments.py": "pending", "src/refunds.py": "pending"}
     architecture = next(d for d in coverage["domains"] if d["domain"] == "architecture")
     assert architecture["status"] == "partial" and architecture["analyzed"] == 1
+
+
+async def test_a_moved_project_keeps_its_inventory(db_client: AsyncClient, github_world, github, origin: Path) -> None:
+    ada, _, ws, kun, _ = await github_world()
+    await _connect(db_client, ws, kun, ada.headers)
+    before = (await db_client.get(f"{ws}/projects/{kun['id']}/repository/knowledge", headers=ada.headers)).json()
+    personal = next(w for w in (await db_client.get("/v1/workspaces", headers=ada.headers)).json()
+                    if w["kind"] == "personal")
+    moved = await db_client.post(f"{ws}/projects/{kun['id']}/move", json={"workspace_id": personal["id"]},
+                                 headers=ada.headers)
+    assert moved.status_code == 200, moved.text
+    base = f"/v1/workspaces/{personal['id']}/projects/{kun['id']}/repository/knowledge"
+    after = (await db_client.get(base, headers=ada.headers)).json()
+    assert after["snapshot"]["id"] == before["snapshot"]["id"] and after["statuses"] == before["statuses"]
+    assert len((await db_client.get(f"{base}/paths", headers=ada.headers)).json()["paths"]) == 10

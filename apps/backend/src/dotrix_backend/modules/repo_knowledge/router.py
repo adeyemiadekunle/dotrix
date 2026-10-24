@@ -35,7 +35,7 @@ async def repository_coverage(access: ProjectViewer, session: SessionDep, checko
     return await RepoKnowledgeService(session, checkouts).coverage(access.project)
 
 
-@router.post("/inventory", status_code=status.HTTP_201_CREATED, responses=errors(403, 422))
+@router.post("/inventory", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422))
 async def take_repository_inventory(access: KnowledgeEditor, session: SessionDep, checkouts: Checkouts) -> RepoSnapshotRead:
     """List every tracked path at the repository's current commit, classified (nothing in it is
     run). Taken once per commit; it's also taken after each push. People who edit documents."""

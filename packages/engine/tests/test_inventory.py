@@ -35,3 +35,32 @@ def test_what_isnt_read_stays_listed_with_why() -> None:
 
 def test_every_domain_names_its_gap() -> None:
     assert set(GAP_HINTS) == set(DOMAINS) and len(DOMAINS) == 12
+
+
+async def test_a_checkout_that_moves_while_read_is_read_again(tmp_path, monkeypatch) -> None:
+    import subprocess
+
+    from dotrix_engine import inventory
+
+    def git(*args: str) -> str:
+        return subprocess.run(["git", "-C", str(tmp_path), "-c", "user.email=a@b.c", "-c", "user.name=A", *args],
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    git("init", "-q")
+    (tmp_path / "a.py").write_text("A = 1\n")
+    git("add", "-A")
+    git("commit", "-qm", "one")
+    read, calls = inventory._read, []
+
+    async def moving(root, commit):
+        calls.append(commit)
+        if len(calls) == 1:  # a sync lands halfway through the first read
+            (tmp_path / "b.py").write_text("B = 2\n")
+            git("add", "-A")
+            git("commit", "-qm", "two")
+        return await read(root, commit)
+
+    monkeypatch.setattr(inventory, "_read", moving)
+    taken = await inventory.take_inventory(tmp_path)
+    assert taken.commit == git("rev-parse", "HEAD") and len(calls) == 2
+    assert [p.path for p in taken.paths] == ["a.py", "b.py"] and taken.paths[0].size == 6

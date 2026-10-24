@@ -8,6 +8,7 @@ coverage separately: a domain with no evidence in the repository is a named gap,
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, func, insert, select
@@ -15,11 +16,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid_utils.compat import uuid7
 
-from dotrix_backend.core.errors import Unprocessable
+from dotrix_backend.core.errors import Conflict, Unprocessable
 from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.code.service import CodeService
 from dotrix_backend.modules.projects.models import Project
-from dotrix_engine.inventory import DOMAINS, GAP_HINTS, POLICY_VERSION, take_inventory
+from dotrix_engine.inventory import (
+    DOMAINS,
+    GAP_HINTS,
+    POLICY_VERSION,
+    CheckoutMoved,
+    take_inventory,
+)
 
 from .models import PathStatus, RepoPath, RepoSnapshot
 from .schemas import DomainCoverage, RepoCoverageRead, RepoPathPage, RepoPathRead, RepoSnapshotRead
@@ -42,10 +49,17 @@ class RepoKnowledgeService:
         checkout = await CodeService(self.session, self.checkouts).ensure(project.workspace_id, project.id)
         if checkout is None:
             raise Unprocessable("Connect the project's GitHub repository first (or its checkout failed: see its settings)")
-        existing = await self._at(project, checkout.sha)
+        workspace_id, project_id = project.workspace_id, project.id  # (a rollback below expires `project`)
+        existing = await self._at(workspace_id, project_id, checkout.sha)
         if existing is not None:
             return RepoSnapshotRead.model_validate(existing)
-        inventory = await take_inventory(checkout.root)
+        async with self.checkouts.held(project_id):  # one commit's files throughout, never a sync's swap halfway
+            try:
+                inventory = await take_inventory(checkout.root)
+            except CheckoutMoved as exc:
+                raise Conflict("The repository changed while it was read; try again in a moment") from exc
+        if inventory.commit != checkout.sha and (existing := await self._at(workspace_id, project_id, inventory.commit)):
+            return RepoSnapshotRead.model_validate(existing)  # a push landed meanwhile, and its sync took it
         previous = await self._latest(project)
         # Content the skill already read, unchanged since: still read.
         kept: dict[tuple[str, str], tuple[datetime | None, object]] = {}
@@ -65,7 +79,7 @@ class RepoKnowledgeService:
             await self.session.flush()
         except IntegrityError:  # taken meanwhile (a push and a person at once): that one stands
             await self.session.rollback()
-            found = await self._at(project, checkout.sha)
+            found = await self._at(workspace_id, project_id, inventory.commit)
             assert found is not None
             return RepoSnapshotRead.model_validate(found)
         rows = []
@@ -143,9 +157,9 @@ class RepoKnowledgeService:
             RepoSnapshot.workspace_id == project.workspace_id, RepoSnapshot.project_id == project.id,
         ).order_by(RepoSnapshot.created_at.desc()).limit(1))
 
-    async def _at(self, project: Project, commit: str) -> RepoSnapshot | None:
+    async def _at(self, workspace_id: uuid.UUID, project_id: uuid.UUID, commit: str) -> RepoSnapshot | None:
         return await self.session.scalar(select(RepoSnapshot).where(
-            RepoSnapshot.workspace_id == project.workspace_id, RepoSnapshot.project_id == project.id,
+            RepoSnapshot.workspace_id == workspace_id, RepoSnapshot.project_id == project_id,
             RepoSnapshot.commit_sha == commit, RepoSnapshot.policy_version == POLICY_VERSION,
         ))
 
