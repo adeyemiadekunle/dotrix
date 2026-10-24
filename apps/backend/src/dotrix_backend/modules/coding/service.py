@@ -16,8 +16,9 @@ from dotrix_backend.core.storage import BlobStorage, StorageUnavailable
 from dotrix_backend.modules.agents.queue import RunQueue
 from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
-from dotrix_backend.modules.connectors.github_app import GitHubAppClient
+from dotrix_backend.modules.connectors.github_app import GitHubApp, GitHubAppClient
 from dotrix_backend.modules.connectors.models import ConnectedRepo
+from dotrix_backend.modules.execution.models import RunDispatch
 from dotrix_backend.modules.execution.service import RunDispatcher, record_dispatch
 from dotrix_backend.modules.issues.models import AgentAssignee, Issue, IssueStatus, IssueType
 from dotrix_backend.modules.issues.schemas import IssueRead, IssueUpdate
@@ -42,6 +43,7 @@ from .models import (
     CodingSessionState,
     PrState,
 )
+from .recovery import Recovered, discard, lease_live, recover
 from .schemas import (
     CodingAvailability,
     CodingDecision,
@@ -49,6 +51,7 @@ from .schemas import (
     CodingEventPage,
     CodingEventRead,
     CodingFollowUp,
+    CodingRecover,
     CodingRunCreate,
     CodingRunRead,
     CodingScreenshot,
@@ -228,10 +231,44 @@ class CodingService:
             access.project, run.issue_key, IssueActor(access.member, coding_instructed=True), change, commit=False,
         )
         self._audit(access.project, access, "coding.approved", run)
-        dispatch = None
-        if isinstance(self.jobs, QueuedJobs):
-            dispatch = record_dispatch(self.session, run, {}, queue_name=self.jobs.queue_name)
+        dispatch = self._dispatch(self.session, run)
         await self.session.commit()
+        await self._send(run, dispatch)
+        await self.session.refresh(run)
+        return self._read(run, access)
+
+    async def recover(self, access: ProjectAccess, run_id: uuid.UUID, data: CodingRecover, app: GitHubApp) -> CodingRunRead:
+        """Settle a run whose outcome is uncertain: check GitHub (adopt or open its PR, or run the
+        turn again when nothing was published), or discard it after looking yourself."""
+        run = await self._get(access.project, run_id, for_update=True)
+        if not self._can_stop(run, access):
+            raise Forbidden("Only whoever asked for this run, or an owner or admin, can recover it")
+        if run.status is not CodingRunStatus.RECOVERY_REQUIRED:
+            raise Conflict("This coding run doesn't need recovering")
+        if lease_live(run):
+            raise Conflict("Its worker may still be working on it; try again in a couple of minutes")
+        if data.action == "discard":
+            await discard(self.session, run, by=access.member.user_id)
+        else:
+            dispatches: list[RunDispatch | None] = []
+
+            async def requeue(session: AsyncSession, run: CodingRun) -> None:
+                dispatches.append(self._dispatch(session, run))
+
+            if await recover(self.session, app, self.settings, run, requeue, by=access.member.user_id) \
+                    is Recovered.RETRIED:
+                await self._send(run, dispatches[0])
+        await self.session.refresh(run)
+        return self._read(run, access)
+
+    def _dispatch(self, session: AsyncSession, run: CodingRun) -> RunDispatch | None:
+        """A queued run's dispatch, in the caller's transaction, when a worker runs it."""
+        if isinstance(self.jobs, QueuedJobs):
+            return record_dispatch(session, run, {}, queue_name=self.jobs.queue_name)
+        return None
+
+    async def _send(self, run: CodingRun, dispatch: RunDispatch | None) -> None:
+        """After the commit: wake the worker, or run it here."""
         if dispatch is not None:
             # The service's transaction is complete; use a fresh session for the
             # best-effort publication. The worker sweep recovers any missed wake-up.
@@ -242,15 +279,13 @@ class CodingService:
                 ).kick(dispatch.workspace_id, dispatch.id)
         else:
             await self.jobs.enqueue("run_coding", run_id=str(run.id))
-        await self.session.refresh(run)
-        return self._read(run, access)
 
     async def stop(self, access: ProjectAccess, run_id: uuid.UUID) -> CodingRunRead:
         run = await self._get(access.project, run_id, for_update=True)
         if not self._can_stop(run, access):
             raise Forbidden("Only whoever asked for this run, or an owner or admin, can stop it")
         if run.status is CodingRunStatus.RECOVERY_REQUIRED:
-            raise Conflict("The worker's outcome is uncertain; inspect its branch and PR before resolving this run")
+            raise Conflict("Its outcome is uncertain: recover it (check GitHub, or discard it) instead")
         if run.status not in ACTIVE:
             raise Conflict("This coding run has finished")
         run.stop_requested = True  # a running one: the worker sees it within seconds and stops the agent
@@ -447,6 +482,7 @@ class CodingService:
             can_decide=run.status is CodingRunStatus.AWAITING_APPROVAL and can(access.member, Permission.APPROVE_ACTIONS),
             can_stop=run.status in ACTIVE and run.status is not CodingRunStatus.RECOVERY_REQUIRED
             and self._can_stop(run, access),
+            can_recover=run.status is CodingRunStatus.RECOVERY_REQUIRED and self._can_stop(run, access),
         )
 
     def _audit(self, project: Project, access: ProjectAccess, action: str, run: CodingRun) -> None:

@@ -26,11 +26,11 @@ import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.crypto import Secrets
@@ -161,6 +161,7 @@ class CodingWorker:
     pool: WarmPool = field(default_factory=lambda: WarmPool(30 * 60, 3))  # sessions' sandboxes between turns
     slots: RunSlots = field(default_factory=lambda: RunSlots(0))  # coding runs working at once (0: no limit)
     _reaper: asyncio.Task[None] | None = field(default=None, repr=False)
+    _leases: dict[uuid.UUID, int] = field(default_factory=dict, repr=False)  # run -> the lease token this worker holds
 
     async def execute(
         self, run_id: uuid.UUID, *, operation: DispatchOperation | None = None,
@@ -185,10 +186,16 @@ class CodingWorker:
             work = Path(tempfile.mkdtemp(prefix="dotrix-coding-"))
             run.workspace_path = str(work)
             run.status, run.started_at = CodingRunStatus.RUNNING, datetime.now(UTC)
+            # The lease: renewed while this worker works, and a newer token fences this one off.
+            run.lease_token += 1
+            run.lease_expires_at = run.started_at + timedelta(seconds=self.settings.coding_lease_seconds)
+            token = run.lease_token
             # A failed commit may have succeeded on the server before the
             # connection was lost. Leave this empty directory for reconciliation.
             await session.commit()
         assert work is not None
+        self._leases[run_id] = token
+        heartbeat = asyncio.create_task(self._hold_lease(run_id, token))
         try:
             try:
                 async with self.slots.take(
@@ -224,7 +231,45 @@ class CodingWorker:
             else:
                 await self._end(run_id, CodingRunStatus.FAILED, error="Something went wrong running the coding agent")
         finally:
+            heartbeat.cancel()
+            await self._release_lease(run_id, token)
             await self._cleanup_finished_workspace(run_id, work)
+
+    async def _hold_lease(self, run_id: uuid.UUID, token: int) -> None:
+        """Renew the lease while the run works; stop once another worker holds it or it ended."""
+        lease = self.settings.coding_lease_seconds
+        while True:
+            await asyncio.sleep(lease / 3)
+            try:
+                async with self.session_factory() as session:
+                    renewed = await session.execute(update(CodingRun).where(
+                        CodingRun.id == run_id, CodingRun.lease_token == token,
+                        CodingRun.status == CodingRunStatus.RUNNING,
+                    ).values(lease_expires_at=datetime.now(UTC) + timedelta(seconds=lease)))
+                    await session.commit()
+            except Exception:
+                # The database may be back before the lease runs out; if it isn't, recovery takes over.
+                logger.warning("coding run %s: couldn't renew its lease", run_id, exc_info=True)
+                continue
+            if not renewed.rowcount:  # type: ignore[attr-defined]
+                logger.info("coding run %s: lease lost (token %s); this worker stops writing", run_id, token)
+                return
+
+    async def _release_lease(self, run_id: uuid.UUID, token: int) -> None:
+        self._leases.pop(run_id, None)
+        try:
+            async with self.session_factory() as session:
+                await session.execute(update(CodingRun).where(
+                    CodingRun.id == run_id, CodingRun.lease_token == token,
+                ).values(lease_expires_at=None))
+                await session.commit()
+        except Exception:
+            logger.warning("coding run %s: couldn't release its lease (it expires)", run_id, exc_info=True)
+
+    def _holds(self, run: CodingRun) -> bool:
+        """Whether this worker still holds the run's lease (a newer attempt fences it off)."""
+        token = self._leases.get(run.id)
+        return token is None or run.lease_token == token
 
     async def _cleanup_finished_workspace(self, run_id: uuid.UUID, work: Path) -> None:
         """Keep uncertain work intact; remove only a confirmed terminal run's own path."""
@@ -376,7 +421,7 @@ class CodingWorker:
                 if run.stop_requested:
                     raise _Stopped("Stopped before pushing")
                 issue_key, run_short, turn = run.issue_key, run.id.hex[-6:], run.turn  # the id's random end: its start is a timestamp shared for hours
-                title = await _issue_title(session, run)
+                title = await issue_title(session, run)
             branch = session_branch or f"dotrix/{issue_key.lower()}-{_slug(title)}-{run_short}"
             if branch == ref.default_branch:
                 raise RunFailed("Refusing to push to the default branch")
@@ -406,7 +451,7 @@ class CodingWorker:
                 pr = await self.app.create_pull_request(
                     ref.installation_id, ref.full_name, head=push.head + branch, base=ref.default_branch,
                     title=f"{issue_key}: {title}",
-                    body=_pr_body(summary, issue_key, run_id, tool.name, files, guard.ci_sensitive(paths)),
+                    body=pr_body(summary, issue_key, run_id, tool.name, files, guard.ci_sensitive(paths)),
                     token=token,
                 )
             publication.pr = pr
@@ -415,6 +460,8 @@ class CodingWorker:
                     CodingRun.id == run_id,
                 ).with_for_update())
                 assert run is not None
+                if not self._holds(run):
+                    raise _ReconciliationRequired()  # a newer attempt finds the PR on GitHub
                 run.branch, run.commit_sha, run.files_changed = branch, commit_sha, files
                 run.pr_number, run.pr_url = pr.number, pr.html_url
                 run.pr_state = run.pr_state or PrState.OPEN
@@ -424,7 +471,7 @@ class CodingWorker:
                     await session.commit()
                     raise _ReconciliationRequired()
                 await self._finish(session, run, CodingRunStatus.PR_OPENED, summary=summary)
-                await self._issue_to_review(session, run, title, opened=session_pr is None)
+                await issue_to_review(session, run, title, opened=session_pr is None)
             await self._review(run_id, title, files, changes.stdout)
         finally:
             # The conversation moved on even when the turn didn't push: save it for the next turn.
@@ -680,8 +727,16 @@ class CodingWorker:
                 await self.pool.close(session_id)
 
     async def stop_requested(self, run_id: uuid.UUID) -> bool:
+        """Stop asked for, or this worker no longer holds the run (recovery or another worker has it)."""
         async with self.session_factory() as session:
-            return bool(await session.scalar(select(CodingRun.stop_requested).where(CodingRun.id == run_id)))
+            found = (await session.execute(select(
+                CodingRun.stop_requested, CodingRun.status, CodingRun.lease_token,
+            ).where(CodingRun.id == run_id))).first()
+        if found is None:
+            return True
+        stop, status, token = found
+        mine = self._leases.get(run_id)
+        return bool(stop) or (mine is not None and (token != mine or status is not CodingRunStatus.RUNNING))
 
     async def reconciliation_required(self, run_id: uuid.UUID) -> bool:
         async with self.session_factory() as session:
@@ -693,7 +748,7 @@ class CodingWorker:
         """Check authority immediately before irreversible GitHub side effects."""
         async with self.session_factory() as session:
             run = await session.get(CodingRun, run_id)
-            if run is None or run.status is not CodingRunStatus.RUNNING:
+            if run is None or run.status is not CodingRunStatus.RUNNING or not self._holds(run):
                 raise _ReconciliationRequired()
             if run.stop_requested:
                 raise _Stopped("Stopped before publishing changes")
@@ -706,7 +761,7 @@ class CodingWorker:
             run = await session.scalar(select(CodingRun).where(
                 CodingRun.id == run_id,
             ).with_for_update())
-            if run is None or run.status is not CodingRunStatus.RUNNING:
+            if run is None or run.status is not CodingRunStatus.RUNNING or not self._holds(run):
                 raise _ReconciliationRequired()
             if run.stop_requested:
                 raise _Stopped("Stopped before publishing changes")
@@ -725,7 +780,7 @@ class CodingWorker:
             ).with_for_update())
             if run is None:
                 return
-            if run.status is not CodingRunStatus.RUNNING:
+            if run.status is not CodingRunStatus.RUNNING or not self._holds(run):
                 raise _ReconciliationRequired()
             added = list(events or [])
             if step:
@@ -751,7 +806,7 @@ class CodingWorker:
             run = await session.scalar(select(CodingRun).where(
                 CodingRun.id == run_id,
             ).with_for_update())
-            if run is not None and run.status in (CodingRunStatus.QUEUED, CodingRunStatus.RUNNING):
+            if run is not None and run.status in (CodingRunStatus.QUEUED, CodingRunStatus.RUNNING) and self._holds(run):
                 await self._finish(session, run, status, error=error, summary=summary)
 
     async def _record_uncertain_publication(self, run_id: uuid.UUID, publication: _Publication) -> None:
@@ -760,7 +815,7 @@ class CodingWorker:
             run = await session.scalar(select(CodingRun).where(
                 CodingRun.id == run_id,
             ).with_for_update())
-            if run is None or run.status not in (
+            if run is None or not self._holds(run) or run.status not in (
                 CodingRunStatus.RUNNING, CodingRunStatus.RECOVERY_REQUIRED,
             ):
                 return
@@ -781,7 +836,7 @@ class CodingWorker:
 
     async def _finish(self, session: AsyncSession, run: CodingRun, status: CodingRunStatus, *,
                       error: str | None = None, summary: str | None = None) -> None:
-        if run.status not in (CodingRunStatus.QUEUED, CodingRunStatus.RUNNING):
+        if run.status not in (CodingRunStatus.QUEUED, CodingRunStatus.RUNNING) or not self._holds(run):
             raise _ReconciliationRequired()
         run.status, run.finished_at = status, datetime.now(UTC)
         run.error = error[:1000] if error else None
@@ -795,27 +850,6 @@ class CodingWorker:
                      "tokens": run.input_tokens + run.output_tokens},
         )
         await session.commit()
-
-    async def _issue_to_review(self, session: AsyncSession, run: CodingRun, title: str, *, opened: bool) -> None:
-        """Link the PR on the issue and move it to review, as the coding tool acting for whoever asked."""
-        project = await session.get(Project, run.project_id)
-        member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
-            if run.requested_by_id else None
-        if project is None or member is None:
-            return
-        issues = IssueService(session)
-        try:
-            issue = await issues.get(project, run.issue_key)
-            links = [Link.model_validate(link) for link in issue.links]
-            if not any(link.url == run.pr_url for link in links):
-                links.append(Link(kind="pr", url=run.pr_url or "", title=f"PR #{run.pr_number}: {title}"[:200]))
-            said = f"Opened PR #{run.pr_number} for review" if opened else f"Pushed turn {run.turn} to PR #{run.pr_number}"
-            await issues.update(project, run.issue_key, IssueActor(member, agent=run.agent.assignee,
-                                                                   approved_by_id=run.decided_by_id),
-                                IssueUpdate(status=IssueStatus.REVIEW, links=links,
-                                            note=f"{said}: {run.pr_url}"))
-        except DomainError as exc:  # reassigned or closed meanwhile: the PR still stands
-            logger.info("coding run %s: issue %s not moved to review: %s", run.id, run.issue_key, exc.detail)
 
     async def _review(self, run_id: uuid.UUID, title: str, files: list[dict[str, Any]], diff: str) -> None:
         """The Reviewer reads the PR (read-only) in a conversation of its own; failures don't
@@ -884,13 +918,13 @@ def _slug(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40].strip("-") or "change"
 
 
-async def _issue_title(session: AsyncSession, run: CodingRun) -> str:
+async def issue_title(session: AsyncSession, run: CodingRun) -> str:
     from dotrix_backend.modules.issues.models import Issue
 
     return await session.scalar(select(Issue.title).where(Issue.id == run.issue_id)) or run.issue_key
 
 
-def _pr_body(
+def pr_body(
     summary: str | None, key: str, run_id: uuid.UUID, tool_name: str, files: list[dict[str, Any]], ci_sensitive: list[str]
 ) -> str:
     warning = [
@@ -927,6 +961,28 @@ def build_coding_worker(
         secrets=Secrets.from_settings(settings), pool=WarmPool(settings.coding_idle_minutes * 60, settings.coding_warm_max),
         slots=RunSlots(settings.coding_max_runs),
     )
+
+
+async def issue_to_review(session: AsyncSession, run: CodingRun, title: str, *, opened: bool) -> None:
+    """Link the PR on the issue and move it to review, as the coding tool acting for whoever asked."""
+    project = await session.get(Project, run.project_id)
+    member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
+        if run.requested_by_id else None
+    if project is None or member is None:
+        return
+    issues = IssueService(session)
+    try:
+        issue = await issues.get(project, run.issue_key)
+        links = [Link.model_validate(link) for link in issue.links]
+        if not any(link.url == run.pr_url for link in links):
+            links.append(Link(kind="pr", url=run.pr_url or "", title=f"PR #{run.pr_number}: {title}"[:200]))
+        said = f"Opened PR #{run.pr_number} for review" if opened else f"Pushed turn {run.turn} to PR #{run.pr_number}"
+        await issues.update(project, run.issue_key, IssueActor(member, agent=run.agent.assignee,
+                                                               approved_by_id=run.decided_by_id),
+                            IssueUpdate(status=IssueStatus.REVIEW, links=links,
+                                        note=f"{said}: {run.pr_url}"))
+    except DomainError as exc:  # reassigned or closed meanwhile: the PR still stands
+        logger.info("coding run %s: issue %s not moved to review: %s", run.id, run.issue_key, exc.detail)
 
 
 async def end_cut_off_runs(session: AsyncSession, settings: Settings, *, everything: bool = False) -> int:

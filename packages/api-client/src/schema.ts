@@ -3486,6 +3486,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recover Coding Run
+         * @description Settle a coding run whose outcome is uncertain (`recovery_required`), once its worker's lease has
+         *     run out: check GitHub (the push landed: its PR is adopted, or opened; nothing was published: the
+         *     turn runs again, twice at most), or discard it. Whoever asked for it, or owners and admins.
+         */
+        post: operations["recover_coding_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns": {
         parameters: {
             query?: never;
@@ -4736,6 +4758,15 @@ export interface components {
          * @enum {string}
          */
         CodingOrigin: "start" | "assigned" | "follow_up";
+        /** CodingRecover */
+        CodingRecover: {
+            /**
+             * Action
+             * @description `check`: look at GitHub and settle it (adopt or open its PR, or run the turn again when nothing was published); `discard`: end it as failed, having looked yourself
+             * @enum {string}
+             */
+            action: "check" | "discard";
+        };
         /** CodingRunCreate */
         CodingRunCreate: {
             /**
@@ -4868,6 +4899,12 @@ export interface components {
              * @description Whether you may stop it now
              */
             can_stop: boolean;
+            /**
+             * Can Recover
+             * @description Whether you may recover it now (its outcome is uncertain)
+             * @default false
+             */
+            can_recover: boolean;
         };
         /**
          * CodingRunStatus
@@ -19165,6 +19202,88 @@ export interface operations {
             };
             /** @description Validation Error */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    recover_coding_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coding_run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodingRecover"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

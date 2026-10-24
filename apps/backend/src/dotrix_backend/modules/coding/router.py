@@ -10,6 +10,7 @@ from dotrix_backend.api.deps import SessionDep, SettingsDep, require_permission
 from dotrix_backend.core.jobs import Jobs, get_jobs
 from dotrix_backend.core.openapi import errors
 from dotrix_backend.core.storage import BlobStorage, get_storage, optional_storage
+from dotrix_backend.modules.connectors.github_app import GitHubApp, get_github_app
 from dotrix_backend.modules.projects.deps import (
     ProjectAccess,
     ProjectViewer,
@@ -23,6 +24,7 @@ from .schemas import (
     CodingDecision,
     CodingEventPage,
     CodingFollowUp,
+    CodingRecover,
     CodingRunCreate,
     CodingRunRead,
     CodingSessionRead,
@@ -142,6 +144,17 @@ async def stop_coding_run(coding_run_id: uuid.UUID, access: ProjectViewer, codin
     """Request that a waiting or running coding turn stop. A push already in flight may need
     reconciliation. Whoever asked for it, or owners and admins."""
     return await coding.stop(access, coding_run_id)
+
+
+@router.post("/runs/{coding_run_id}/recover", responses=errors(403, 409, 503))
+async def recover_coding_run(
+    coding_run_id: uuid.UUID, data: CodingRecover, access: ProjectViewer, coding: Coding,
+    app: Annotated[GitHubApp, Depends(get_github_app)],
+) -> CodingRunRead:
+    """Settle a coding run whose outcome is uncertain (`recovery_required`), once its worker's lease has
+    run out: check GitHub (the push landed: its PR is adopted, or opened; nothing was published: the
+    turn runs again, twice at most), or discard it. Whoever asked for it, or owners and admins."""
+    return await coding.recover(access, coding_run_id, data, app)
 
 
 @router.get("/sessions/{session_id}")

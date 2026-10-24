@@ -29,6 +29,7 @@ import {
   useDecideCoding,
   useFollowUp,
   useStartCoding,
+  useRecoverCoding,
   useStopCoding,
   type CodingSession,
 } from "@/lib/coding";
@@ -169,7 +170,7 @@ const STATUS: Record<CodingSession["status"], [string, string]> = {
   pr_opened: ["PR opened", "green"],
   no_changes: ["No changes", ""],
   failed: ["Failed", "red"],
-  recovery_required: ["Needs reconciliation", "amber"],
+  recovery_required: ["Needs recovery", "amber"],
   stopped: ["Stopped", ""],
   rejected: ["Rejected", "red"],
 };
@@ -878,6 +879,7 @@ function Session({ cs }: { cs: CodingSession }) {
   const latest = turns.at(-1);
   const decide = useDecideCoding(scope, cs.issue_key);
   const stop = useStopCoding(scope, cs.issue_key);
+  const recover = useRecoverCoding(scope, cs.issue_key);
   const follow = useFollowUp(scope, cs.session_id, cs.issue_key);
   const t = isLive() ? { id: cs.issue_key, key: cs.issue_key } : D().tasks.find((x) => x.key === cs.issue_key);
   const p = proj(cs.project_id);
@@ -1190,12 +1192,32 @@ function Session({ cs }: { cs: CodingSession }) {
             <div className="change" role="status">
               <div className="change-h">
                 <Ic n="shield-check" s={14} />
-                <b style={{ fontWeight: 500 }}>Coding outcome needs reconciliation</b>
+                <b style={{ fontWeight: 500 }}>This turn was cut off before it finished</b>
               </div>
               <div className="change-f">
                 <span className="faint" style={{ fontSize: 12 }}>
-                  {latest.error || "Check the branch, PR, and workspace reference before another coding turn."}
+                  {latest.error || "Check GitHub to see what it published before another turn."}
                 </span>
+                <span className="sp" />
+                {latest.can_recover && (
+                  <>
+                    <button
+                      className="btn btn-sm btn-secondary"
+                      disabled={recover.isPending}
+                      onClick={() => recover.mutate({ runId: latest.id, action: "discard" })}
+                    >
+                      Discard
+                    </button>
+                    <button
+                      className="btn btn-sm btn-primary"
+                      disabled={recover.isPending}
+                      onClick={() => recover.mutate({ runId: latest.id, action: "check" })}
+                    >
+                      <Ic n="refresh-cw" s={12} />
+                      Check and recover
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1209,7 +1231,7 @@ function Session({ cs }: { cs: CodingSession }) {
               cs.state === "closed"
                 ? "This session is closed"
                 : cs.status === "recovery_required"
-                  ? "Reconcile the previous turn before continuing"
+                  ? "Recover the previous turn before continuing"
                   : busy
                     ? "A turn is waiting or working…"
                     : `Ask ${tool} for a follow-up on the same branch`

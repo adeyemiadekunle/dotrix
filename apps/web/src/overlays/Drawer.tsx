@@ -590,7 +590,7 @@ function CodingSection({ t }: { t: Task }) {
     pr_opened: ["PR opened", "green"],
     no_changes: ["No changes", ""],
     failed: ["Failed", "red"],
-    recovery_required: ["Needs reconciliation", "amber"],
+    recovery_required: ["Needs recovery", "amber"],
     stopped: ["Stopped", ""],
     rejected: ["Rejected", "red"],
   };

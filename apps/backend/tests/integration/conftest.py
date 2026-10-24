@@ -47,6 +47,8 @@ class FakeGitHub:
         self.forks: list[dict[str, Any]] = []  # forks asked for
         self.synced: list[tuple[str, str]] = []  # forks' branches brought up to their upstream
         self.codes = {"code-1", "code-2", "code-3"}
+        self.branch_heads: Any = None  # (repo, branch) -> the commit it points at, or None; set by a test
+        self.fail_pulls = 0  # how many PR requests to answer with a 502 (a reply lost on the way)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -102,7 +104,21 @@ class FakeGitHub:
             self.synced.append((path.removeprefix("/repos/").removesuffix("/merge-upstream"),
                                 json.loads(request.content)["branch"]))
             return httpx.Response(200, json={"merge_type": "fast-forward"})
+        if "/git/ref/heads/" in path and request.method == "GET":
+            full_name, branch = path.removeprefix("/repos/").split("/git/ref/heads/", 1)
+            sha = self.branch_heads(full_name, branch) if self.branch_heads else None
+            return httpx.Response(200, json={"object": {"sha": sha}}) if sha else httpx.Response(404)
+        if path.startswith("/repos/") and path.endswith("/pulls") and request.method == "GET":
+            full_name = path.removeprefix("/repos/").removesuffix("/pulls")
+            owner, _, branch = request.url.params["head"].partition(":")
+            found = [{"number": n, "html_url": f"https://github.com/{full_name}/pull/{n}",
+                      "head": {"ref": p["head"].split(":")[-1]}}
+                     for n, p in enumerate(self.pulls, 1) if p["repo"] == full_name]
+            return httpx.Response(200, json=found if branch else [])  # GitHub checks the owner; the client the branch
         if path.startswith("/repos/") and path.endswith("/pulls") and request.method == "POST":
+            if self.fail_pulls:
+                self.fail_pulls -= 1
+                return httpx.Response(502)
             full_name = path.removeprefix("/repos/").removesuffix("/pulls")
             self.pulls.append({"repo": full_name, **json.loads(request.content)})
             number = len(self.pulls)

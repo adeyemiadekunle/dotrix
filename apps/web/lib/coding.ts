@@ -23,7 +23,7 @@ export const STATUS_LABELS: Record<CodingRunStatus, string> = {
   pr_opened: "PR opened",
   no_changes: "No changes",
   failed: "Failed",
-  recovery_required: "Needs reconciliation",
+  recovery_required: "Needs recovery",
   stopped: "Stopped",
 };
 
@@ -107,6 +107,18 @@ export function useStopCoding(scope: Scope | undefined, issueKey: string) {
     unwrap(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/stop", {
         params: { path: { ...path(s), coding_run_id: runId } },
+      }),
+    ),
+  );
+}
+
+/** Settle a run whose outcome is uncertain: check GitHub (adopt or open its PR, or run the turn again), or discard it. */
+export function useRecoverCoding(scope: Scope | undefined, issueKey: string) {
+  return useCodingMutation(scope, issueKey, (s, { runId, action }: { runId: string; action: "check" | "discard" }) =>
+    unwrap(
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/recover", {
+        params: { path: { ...path(s), coding_run_id: runId } },
+        body: { action },
       }),
     ),
   );

@@ -150,6 +150,32 @@ def mark_coding_recovery_required(
     return True
 
 
+async def expire_coding_leases(session_factory: SessionFactory, *, limit: int = 50) -> int:
+    """Running coding runs whose worker stopped renewing its lease (it, or its host, died): their
+    outcome is uncertain, so they need recovery. Never assumes they failed."""
+    now = datetime.now(UTC)
+    async with session_factory() as session:
+        candidates = list((await session.execute(select(CodingRun.workspace_id, CodingRun.id).where(
+            CodingRun.status == CodingRunStatus.RUNNING, CodingRun.lease_expires_at < now,
+        ).order_by(CodingRun.lease_expires_at).limit(limit))).all())
+    expired = 0
+    for workspace_id, run_id in candidates:
+        async with session_factory() as session:
+            run = await session.scalar(select(CodingRun).where(
+                CodingRun.workspace_id == workspace_id, CodingRun.id == run_id,
+            ).with_for_update(skip_locked=True))
+            if run is None or run.lease_expires_at is None or run.lease_expires_at >= now:
+                continue  # renewed meanwhile, or another sweep has it
+            if mark_coding_recovery_required(
+                session, run, source="lease_expired",
+                reason="Its worker stopped renewing its lease (it or its host stopped). Recovery checks "
+                       "GitHub before anything runs again.",
+            ):
+                await session.commit()
+                expired += 1
+    return expired
+
+
 class RunDispatcher:
     def __init__(self, session_factory: SessionFactory, queue: RunQueue) -> None:
         self.session_factory, self.queue = session_factory, queue

@@ -10,7 +10,8 @@ import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Protocol
+from typing import Annotated, Any, Protocol
+from urllib.parse import quote
 
 import httpx
 import jwt
@@ -76,6 +77,8 @@ class GitHubApp(Protocol):
     async def create_repository(
         self, installation_id: int, org: str, name: str, *, private: bool, description: str
     ) -> Repo: ...
+    async def branch_head(self, full_name: str, branch: str, *, token: str) -> str | None: ...
+    async def find_pull_request(self, full_name: str, head: str, *, token: str) -> PullRequest | None: ...
     async def org_installation(self, org: str) -> int: ...
     async def fork(self, installation_id: int, full_name: str, *, org: str, name: str) -> Repo: ...
     async def sync_fork(self, full_name: str, branch: str, *, token: str) -> None: ...
@@ -188,6 +191,25 @@ class GitHubAppClient:
             raise Forbidden("The GitHub App can't open pull requests there: it needs Pull requests (write)")
         raise GitHubUnavailable(f"GitHub didn't open the pull request ({res.status_code})")
 
+    async def branch_head(self, full_name: str, branch: str, *, token: str) -> str | None:
+        """The commit `branch` points at in `full_name`, or None when there's no such branch."""
+        try:
+            data = await self._get(f"/repos/{full_name}/git/ref/heads/{quote(branch, safe='/')}", token)
+        except NotFound:
+            return None
+        return str(data["object"]["sha"])
+
+    async def find_pull_request(self, full_name: str, head: str, *, token: str) -> PullRequest | None:
+        """The latest pull request into `full_name` from `head` ("owner:branch", the owner even for the
+        same repo: GitHub ignores a bare branch name), open or not."""
+        branch = head.split(":", 1)[1]
+        found = await self._get(f"/repos/{full_name}/pulls?state=all&head={quote(head, safe='')}", token)
+        pulls = sorted((p for p in found if (p.get("head") or {}).get("ref") == branch),
+                       key=lambda p: int(p["number"])) if isinstance(found, list) else []
+        if not pulls:
+            return None
+        return PullRequest(number=int(pulls[-1]["number"]), html_url=str(pulls[-1]["html_url"]))
+
     async def org_installation(self, org: str) -> int:
         """The app's installation on an organisation (where coding runs' forks live)."""
         async with httpx.AsyncClient(transport=self.transport, timeout=15) as http:
@@ -267,7 +289,7 @@ class GitHubAppClient:
             raise GitHubUnavailable("GitHub didn't give the app access; check its ID and private key")
         return str(res.json()["token"])
 
-    async def _get(self, path: str, token: str) -> dict:
+    async def _get(self, path: str, token: str) -> Any:
         async with httpx.AsyncClient(transport=self.transport, timeout=15) as http:
             try:
                 res = await http.get(f"{API_URL}{path}", headers={**HEADERS, "Authorization": f"Bearer {token}"})

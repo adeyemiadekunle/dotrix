@@ -18,6 +18,7 @@ from typing import Any
 from arq import cron, func
 from arq.connections import RedisSettings
 from arq.worker import Function, Retry, run_worker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .core.crypto import Secrets
 from .core.email import build_email_sender
@@ -33,8 +34,15 @@ from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner
 from .modules.agents.streams import RedisRunStreams
 from .modules.code.checkouts import build_checkouts
+from .modules.coding.models import CodingRun
+from .modules.coding.recovery import recover_uncertain_runs
 from .modules.coding.runner import build_coding_worker
-from .modules.execution.service import RunDispatcher, load_operation
+from .modules.execution.service import (
+    RunDispatcher,
+    expire_coding_leases,
+    load_operation,
+    record_dispatch,
+)
 from .modules.research.service import build_web_research
 from .modules.search.embeddings import build_embedder
 
@@ -143,9 +151,18 @@ async def dispatch_runs(ctx: dict[str, Any]) -> None:
 
 
 async def reconcile_coding_runs(ctx: dict[str, Any]) -> None:
-    """Surface accepted coding jobs whose queue process ended without a result."""
+    """Surface coding runs whose worker ended without a result (its queue job ended, or its lease ran
+    out), then settle each from what GitHub shows, once; the rest wait for a person's Recover."""
     runner: AgentRunner = ctx["runner"]
-    await RunDispatcher(runner.session_factory, RunQueue(ctx["redis"])).reconcile_coding()
+    queue = RunQueue(ctx["redis"])
+    await RunDispatcher(runner.session_factory, queue).reconcile_coding()
+    await expire_coding_leases(runner.session_factory)
+    coding = ctx["jobs"].coding
+    if coding is not None and coding.app is not None:
+        async def requeue(session: AsyncSession, run: CodingRun) -> None:
+            record_dispatch(session, run, {}, queue_name=queue.queue_name)  # the dispatch sweep publishes it
+
+        await recover_uncertain_runs(runner.session_factory, coding.app, coding.settings, requeue)
 
 
 async def cleanup(ctx: dict[str, Any]) -> None:

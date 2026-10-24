@@ -17826,6 +17826,135 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/recover": {
+      "post": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Recover Coding Run",
+        "description": "Settle a coding run whose outcome is uncertain (`recovery_required`), once its worker's lease has\nrun out: check GitHub (the push landed: its PR is adopted, or opened; nothing was published: the\nturn runs again, twice at most), or discard it. Whoever asked for it, or owners and admins.",
+        "operationId": "recover_coding_run",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "coding_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Coding Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodingRecover"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingRunRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns": {
       "post": {
         "tags": [
@@ -21401,6 +21530,24 @@
         ],
         "title": "CodingOrigin"
       },
+      "CodingRecover": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "check",
+              "discard"
+            ],
+            "title": "Action",
+            "description": "`check`: look at GitHub and settle it (adopt or open its PR, or run the turn again when nothing was published); `discard`: end it as failed, having looked yourself"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "CodingRecover"
+      },
       "CodingRunCreate": {
         "properties": {
           "note": {
@@ -21755,6 +21902,12 @@
             "type": "boolean",
             "title": "Can Stop",
             "description": "Whether you may stop it now"
+          },
+          "can_recover": {
+            "type": "boolean",
+            "title": "Can Recover",
+            "description": "Whether you may recover it now (its outcome is uncertain)",
+            "default": false
           }
         },
         "type": "object",

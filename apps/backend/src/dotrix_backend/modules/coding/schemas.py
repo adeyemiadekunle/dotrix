@@ -32,6 +32,12 @@ class CodingDecision(BaseModel):
     reason: str | None = Field(default=None, max_length=1_000)
 
 
+class CodingRecover(BaseModel):
+    action: Literal["check", "discard"] = Field(description=(
+        "`check`: look at GitHub and settle it (adopt or open its PR, or run the turn again when nothing "
+        "was published); `discard`: end it as failed, having looked yourself"))
+
+
 class CodingEvent(BaseModel):
     at: datetime
     kind: str = Field(description="`step`, `text` (the agent's words), `tool` (what it did), `error`")
@@ -97,6 +103,7 @@ class CodingRunRead(BaseModel):
     finished_at: datetime | None
     can_decide: bool = Field(description="Whether you may approve or reject it now")
     can_stop: bool = Field(description="Whether you may stop it now")
+    can_recover: bool = Field(default=False, description="Whether you may recover it now (its outcome is uncertain)")
 
 
 class CodingSessionUpdate(BaseModel):
