@@ -216,6 +216,17 @@ async def test_a_page_goes_stale_when_the_code_it_cites_changes(
     assert stale == [{"path": "src/payments.py", "why": "changed"}, {"path": "src/api/routes.py", "why": "removed"},
                      {"path": "README.md", "why": "unread"}]  # package.json is unchanged: still read
 
+    # Whoever edits documents hears about it; members who don't, don't.
+    said = [n for n in (await db_client.get(f"{ws}/notifications", headers=ada.headers)).json() if n["kind"] == "stale"]
+    assert len(said) == 1 and said[0]["count"] == 1 and "architecture.md" in said[0]["title"]
+    assert "kunemi/api" in said[0]["title"]
+    assert not [n for n in (await db_client.get(f"{ws}/notifications", headers=cat.headers)).json() if n["kind"] == "stale"]
+    # A push that changes nothing the page cites says nothing more.
+    third = _commit(origin, {"tests/test_payments.py": "def test_it():\n    assert 1\n"})
+    assert (await deliver("push", {**push, "after": third})).status_code == 202
+    again = [n for n in (await db_client.get(f"{ws}/notifications", headers=ada.headers)).json() if n["kind"] == "stale"]
+    assert len(again) == 1
+
     # Refreshing starts with the stale pages.
     model = agent_script.say("Updated the architecture page.")
     run = await db_client.post(f"{base}/explain", json={"refresh": True}, headers=ada.headers)
@@ -223,3 +234,71 @@ async def test_a_page_goes_stale_when_the_code_it_cites_changes(
     assert "stale pages up to date" in model.received[0][-1].content
     assert "docs/wiki/architecture.md" in model.received[0][-1].content
     assert "repo_stale_pages" in model.tools_received[0]
+
+
+async def test_runs_and_kai_start_from_the_repository_s_wiki(
+    db_client: AsyncClient, github_world, github, origin: Path, agent_script
+) -> None:
+    from dotrix_backend.modules.coding.brief import build_brief
+    from dotrix_backend.modules.issues.service import IssueService
+    from dotrix_backend.modules.projects.models import Project
+
+    ada, _, ws, kun, _ = await github_world()
+    await _connect(db_client, ws, kun, ada.headers)
+    files = f"{ws}/projects/{kun['id']}/knowledge/files/docs/wiki"
+    await db_client.put(f"{files}/architecture.md", headers=ada.headers,
+                        json={"content": "# Architecture\n\nOne provider class `src/payments.py:1`.\n"})
+    await db_client.put(f"{files}/data.md", headers=ada.headers,
+                        json={"content": "# Data\n\nRides live in one table `migrations/001_init.sql:1`.\n"})
+
+    # A chat run's context pack says what the wiki covers and what's stale.
+    model = agent_script.say("Payments go through one provider class.")
+    run = await db_client.post(f"{ws}/projects/{kun['id']}/agent/runs", headers=ada.headers,
+                               json={"message": "How do payments work?"})
+    assert run.status_code in (200, 201, 202), run.text
+    pack = "\n".join(str(m.content) for m in model.received[0])
+    assert "## Repository knowledge (kunemi/api at" in pack and "Stale pages: docs/wiki/architecture.md" in pack
+    assert "no evidence in the code: " in pack and "decisions" in pack
+
+    # Kai's brief carries the pages that bear on the issue (and always how the code is laid out).
+    issue = (await db_client.post(f"{ws}/projects/{kun['id']}/issues", headers=ada.headers,
+                                  json={"type": "task", "title": "Add a rides table index"})).json()
+    factory = db_client._transport.app.state.jobs.ctx.session_factory  # type: ignore[attr-defined]
+    async with factory() as session:
+        project = await session.get(Project, uuid.UUID(kun["id"]))
+        read = await IssueService(session).get(project, issue["key"])
+        brief = await build_brief(session, project, read, None)
+    assert "## How this repository works (from its wiki)" in brief
+    assert '<data source="docs/wiki/data.md">' in brief and "docs/wiki/architecture.md" in brief
+    assert brief.index("docs/wiki/data.md") < brief.index("docs/wiki/architecture.md")  # the closer page first
+
+
+async def test_dependencies_come_from_manifests_and_their_lockfiles(
+    db_client: AsyncClient, github_world, deliver, github, origin: Path, agent_script
+) -> None:
+    from langchain_core.messages import ToolMessage
+
+    from dotrix_engine.testing import tool_call
+
+    ada, cat, ws, kun, _ = await github_world()
+    base = f"{ws}/projects/{kun['id']}/repository/knowledge"
+    _commit(origin, {
+        "package.json": '{"name": "kunemi", "dependencies": {"react": "^19.0.0"}, "devDependencies": {"vite": "^6"}}\n',
+        "pnpm-lock.yaml": "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      react:\n"
+                          "        specifier: ^19.0.0\n        version: 19.1.0\n",
+        "requirements.txt": "fastapi==0.115.6\n",
+    })
+    await _connect(db_client, ws, kun, ada.headers)
+    found = (await db_client.get(f"{base}/dependencies", headers=cat.headers)).json()
+    deps = {d["name"]: d for d in found["dependencies"]}
+    assert found["commit_sha"] == _git(origin, "rev-parse", "HEAD") and found["unread"] == []
+    assert deps["react"] | {} == {"ecosystem": "npm", "name": "react", "declared": "^19.0.0", "locked": "19.1.0",
+                                  "scope": "runtime", "manifest": "package.json", "lockfile": "pnpm-lock.yaml"}
+    assert deps["vite"]["scope"] == "dev" and deps["vite"]["locked"] is None
+    assert deps["fastapi"]["ecosystem"] == "pypi" and deps["fastapi"]["locked"] == "0.115.6"
+
+    # The discovery run reads them too, compactly, instead of the lockfile.
+    model = agent_script.say(tool_call("repo_dependencies", call_id="d1"), "Two npm packages and one Python one.")
+    assert (await db_client.post(f"{base}/explain", json={"domains": ["dependencies"]}, headers=ada.headers)).status_code == 202
+    said = {m.tool_call_id: m.content for m in model.received[-1] if isinstance(m, ToolMessage)}
+    assert "react ^19.0.0 -> 19.1.0 [runtime]" in said["d1"] and "vite ^6 (not locked) [dev]" in said["d1"]

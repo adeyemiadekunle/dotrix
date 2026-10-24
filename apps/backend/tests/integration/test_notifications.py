@@ -75,7 +75,7 @@ async def test_changes_waiting_notify_whoever_may_approve(world, db_client: Asyn
     assert note["resolved"] and not note["read"]
     assert await _counts(db_client, ws, bob) == {
         "unread": 0,
-        "by_kind": {"approval": 0, "checkpoint": 0, "assigned": 0, "finding": 0, "mention": 0, "decided": 0, "watching": 0, "limit": 0},
+        "by_kind": {"approval": 0, "checkpoint": 0, "assigned": 0, "finding": 0, "mention": 0, "decided": 0, "watching": 0, "limit": 0, "stale": 0},
     }
 
 
@@ -184,7 +184,7 @@ async def test_mentions_in_comments_and_chat(world, db_client: AsyncClient, agen
 async def test_turning_kinds_off(world, db_client: AsyncClient, agent_script) -> None:
     ada, bob, _, _, ws, base = await world()
     defaults = (await db_client.get("/v1/me/notification-settings", headers=bob.headers)).json()
-    assert defaults == {"mention": True, "assigned": True, "finding": True, "decided": True, "watching": True,
+    assert defaults == {"mention": True, "assigned": True, "finding": True, "decided": True, "watching": True, "stale": True,
                         "email": "immediately"}
     await db_client.post(f"{base}/issues", json={"title": "Ship it", "assignee_user_id": bob.id}, headers=ada.headers)
     agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
@@ -195,7 +195,7 @@ async def test_turning_kinds_off(world, db_client: AsyncClient, agent_script) ->
     res = await db_client.put(
         "/v1/me/notification-settings", json={"mention": True, "assigned": False, "finding": True}, headers=bob.headers
     )
-    assert res.json() == {"mention": True, "assigned": False, "finding": True, "decided": True, "watching": True,
+    assert res.json() == {"mention": True, "assigned": False, "finding": True, "decided": True, "watching": True, "stale": True,
                           "email": "immediately"}
     assert [n["kind"] for n in await _notifications(db_client, ws, bob)] == ["approval"]
     counts = await _counts(db_client, ws, bob)

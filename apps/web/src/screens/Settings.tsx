@@ -1982,7 +1982,9 @@ function LiveNotifs({ sec }: { sec: string }) {
         toast(`Your notification settings didn't save: ${errText(e)}`, { kind: "err" });
       });
   };
-  const T = (k: "mention" | "assigned" | "watching" | "finding" | "decided", label: string) => <Tog on={v[k]} set={(on) => put({ [k]: on })} label={label} />;
+  const T = (k: "mention" | "assigned" | "watching" | "finding" | "decided" | "stale", label: string) => (
+    <Tog on={v[k]} set={(on) => put({ [k]: on })} label={label} />
+  );
   const always = (what: string) => <Tog on set={() => toast(`${what} always come through`, { kind: "info" })} label={what} />;
   switch (sec) {
     case "notif-email":
@@ -2040,6 +2042,9 @@ function LiveNotifs({ sec }: { sec: string }) {
           </SRow>
           <SRow t="Decisions on my requests" d="When someone else approves or rejects a change you asked for.">
             {T("decided", "Decisions")}
+          </SRow>
+          <SRow t="Wiki pages out of date" d="When a push changes code that the project's wiki pages cite (if you edit documents).">
+            {T("stale", "Out-of-date pages")}
           </SRow>
         </>
       );

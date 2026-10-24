@@ -58,6 +58,15 @@ export function useRepoPages(scope: Scope | undefined) {
   });
 }
 
+/** Each manifest's direct dependencies with what its lockfile pins (read only when asked: it reads the checkout). */
+export function useRepoDependencies(scope: Scope | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: [...key(scope), "dependencies"],
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/dependencies", { params: { path: path(scope!) } })),
+    enabled: Boolean(scope) && enabled,
+  });
+}
+
 /** The documentation agent explains the repository in the wiki: a new conversation, opened in Chat. */
 export function useExplainRepository(scope: Scope | undefined, opened: (threadId: string) => void) {
   const queryClient = useQueryClient();

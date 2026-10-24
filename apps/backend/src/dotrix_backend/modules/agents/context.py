@@ -27,6 +27,7 @@ from dotrix_backend.modules.knowledge.models import KnowledgeFile, KnowledgeVers
 from dotrix_backend.modules.knowledge.repository import KnowledgeRepository
 from dotrix_backend.modules.knowledge.service import describe_file
 from dotrix_backend.modules.projects.models import Project
+from dotrix_backend.modules.repo_knowledge.service import RepoKnowledgeService
 from dotrix_backend.modules.search.models import ChunkSource
 from dotrix_backend.modules.search.service import KnowledgeIndex
 from dotrix_engine.graph import find_references
@@ -104,10 +105,20 @@ async def build_context_pack(
         focused = await _focused_index(session, project, files, run.message, embedder)
     parts += [
         "" if focused else index, _decisions(files), await _board(session, project), focused,
-        await _stale(session, project), changes,
+        await _stale(session, project), await _repository(session, project), changes,
     ]
     pack = "\n\n".join(p for p in parts if p)
     return pack
+
+
+async def _repository(session: AsyncSession, project: Project) -> str:
+    """The connected repository's wiki: what it covers, and which pages are stale."""
+    try:
+        return await RepoKnowledgeService(session, None).summary(project)
+    except Exception:  # the map is a bonus: a run never fails for it
+        logger.exception("couldn't summarise the repository knowledge of project %s", project.id)
+        await session.rollback()
+        return ""
 
 
 async def _stale(session: AsyncSession, project: Project) -> str:

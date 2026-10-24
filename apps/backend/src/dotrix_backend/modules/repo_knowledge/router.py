@@ -15,6 +15,7 @@ from dotrix_backend.modules.projects.deps import KnowledgeEditor, ProjectViewer
 from .models import PathStatus
 from .schemas import (
     RepoCoverageRead,
+    RepoDependenciesRead,
     RepoExplainRequest,
     RepoPagesRead,
     RepoPathPage,
@@ -63,6 +64,16 @@ async def explain_repository(
     await service.snapshot(access.project)
     stale = [p.path for p in (await service.pages(access.project)).pages if p.stale] if data.refresh else []
     return await agents.explain_repository(access, data.domains, stale=stale)
+
+
+@router.get("/dependencies", responses=errors(422))
+async def list_repository_dependencies(
+    access: ProjectViewer, session: SessionDep, checkouts: Checkouts,
+) -> RepoDependenciesRead:
+    """Each manifest's direct dependencies (package.json, pyproject.toml, requirements*.txt,
+    Cargo.toml, go.mod) with the version its lockfile pins, read without running anything; files
+    that couldn't be read are listed with why. Anyone who sees the project."""
+    return await RepoKnowledgeService(session, checkouts).dependencies(access.project)
 
 
 @router.get("/pages")

@@ -11,6 +11,7 @@ from dotrix_backend.modules.graph.service import GraphService
 from dotrix_backend.modules.issues.schemas import IssueRead
 from dotrix_backend.modules.knowledge.service import KnowledgeService
 from dotrix_backend.modules.projects.models import Project
+from dotrix_backend.modules.repo_knowledge.service import RepoKnowledgeService
 
 MAX_DOCUMENTS = 4
 DOCUMENT_CHARS = 6_000
@@ -66,6 +67,15 @@ async def build_brief(
         for path, content in documents:
             clipped = content if len(content) <= DOCUMENT_CHARS else content[:DOCUMENT_CHARS] + "\n…(cut)"
             parts.append(f'<data source="{path}">\n{clipped.strip()}\n</data>')
+    wiki = await RepoKnowledgeService(session, None).relevant(project, f"{issue.title}\n{issue.description}")
+    if wiki:
+        parts += ["", "## How this repository works (from its wiki)",
+                  "Each claim cites its source as `path:line`; check the code when it matters, and where a "
+                  "page is marked stale, trust the code over the page."]
+        for path, content, stale in wiki:
+            clipped = content if len(content) <= DOCUMENT_CHARS else content[:DOCUMENT_CHARS] + "\n…(cut)"
+            note = f" (stale: {', '.join(stale[:5])})" if stale else ""
+            parts.append(f'<data source="{path}{note}">\n{clipped.strip()}\n</data>')
     parts += ["", RULES]
     return "\n".join(parts)
 

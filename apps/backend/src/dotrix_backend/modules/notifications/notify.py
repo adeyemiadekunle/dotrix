@@ -148,6 +148,14 @@ class Notifier:
                       actor_user_id=actor_user_id, actor_agent=actor_agent,
                       excerpt=_excerpt(excerpt) if excerpt else None)
 
+    async def stale_pages(self, project: Project, pages: list[str], repo: str, at: datetime) -> None:
+        """A push changed code that wiki pages cite: everyone who may edit documents and sees the project."""
+        count = len(pages)
+        title = (f"{count} wiki page{'s' if count != 1 else ''} out of date after a push to {repo}: "
+                 + ", ".join(p.removeprefix("docs/wiki/") for p in pages))
+        for user_id in await self._members_who(project, Permission.EDIT_KNOWLEDGE):
+            self._add(project, user_id, NotificationKind.STALE, at, title=title, count=count, actor_agent=None)
+
     async def _can_see(self, project: Project, user_ids: list[uuid.UUID]) -> list[uuid.UUID]:
         if not user_ids:
             return []
@@ -163,12 +171,16 @@ class Notifier:
         return seen
 
     async def _approvers(self, project: Project) -> list[uuid.UUID]:
+        return await self._members_who(project, Permission.APPROVE_ACTIONS)
+
+    async def _members_who(self, project: Project, permission: Permission) -> list[uuid.UUID]:
+        """Members who hold `permission` and see the project."""
         members = await self.session.scalars(
             select(Membership)
             .options(selectinload(Membership.workspace))
             .where(Membership.workspace_id == project.workspace_id)
         )
-        candidates = [m for m in members if can(m, Permission.APPROVE_ACTIONS)]
+        candidates = [m for m in members if can(m, permission)]
         visible = []
         for member in candidates:
             seen = await self.session.scalar(

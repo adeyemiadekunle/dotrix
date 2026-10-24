@@ -7,10 +7,12 @@ coverage separately: a domain with no evidence in the repository is a named gap,
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.exc import IntegrityError
@@ -21,7 +23,9 @@ from dotrix_backend.core.errors import Conflict, Unprocessable
 from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.code.service import CodeService
 from dotrix_backend.modules.knowledge.models import KnowledgeFile
+from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.models import Project
+from dotrix_engine.dependencies import read_dependencies
 from dotrix_engine.inventory import (
     DOMAINS,
     GAP_HINTS,
@@ -32,14 +36,17 @@ from dotrix_engine.inventory import (
 
 from .models import PathStatus, RepoPath, RepoSnapshot
 from .schemas import (
+    DependencyRead,
     DomainCoverage,
     RepoCoverageRead,
+    RepoDependenciesRead,
     RepoPageRead,
     RepoPagesRead,
     RepoPathPage,
     RepoPathRead,
     RepoSnapshotRead,
     StaleSource,
+    UnreadFile,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,9 +54,15 @@ logger = logging.getLogger(__name__)
 WIKI = "docs/wiki/"  # where the skill's pages live
 # `path:12` or `path:12-40`, in backticks (the citation format the skill asks for)
 CITATION = re.compile(r"`([^`\s:]+):(\d+)(?:-(\d+))?`")
+_ALWAYS = (WIKI + "architecture.md", WIKI + "quality.md")  # what a coding brief always wants, when written
 KEEP_SNAPSHOTS = 3  # a project's latest few: enough to compare, without a row per path per push forever
 PAGE_MAX = 500
 _OPEN = (PathStatus.PENDING, PathStatus.UNSUPPORTED, PathStatus.INACCESSIBLE)
+
+
+def _stale_sources(pages: RepoPagesRead) -> dict[str, set[tuple[str, str]]]:
+    """Each page's cited paths that changed or left the repository (never read isn't a push's doing)."""
+    return {p.path: {(s.path, s.why) for s in p.stale if s.why != "unread"} for p in pages.pages}
 
 
 class RepoKnowledgeService:
@@ -75,6 +88,7 @@ class RepoKnowledgeService:
         if inventory.commit != checkout.sha and (existing := await self._at(workspace_id, project_id, inventory.commit)):
             return RepoSnapshotRead.model_validate(existing)  # a push landed meanwhile, and its sync took it
         previous = await self._latest(project)
+        stale_before = _stale_sources(await self.pages(project)) if previous is not None else {}
         # Content the skill already read, unchanged since: still read.
         kept: dict[tuple[str, str], tuple[datetime | None, object]] = {}
         if previous is not None:
@@ -108,6 +122,11 @@ class RepoKnowledgeService:
         for start in range(0, len(rows), 1000):
             await self.session.execute(insert(RepoPath), rows[start:start + 1000])
         await self._prune(project)
+        if previous is not None:  # pages the new commit made stale (not ones that already were)
+            stale_now = _stale_sources(await self.pages(project))
+            newly = [page for page, sources in stale_now.items() if sources - stale_before.get(page, set())]
+            if newly:
+                await Notifier(self.session).stale_pages(project, newly, checkout.full_name, datetime.now(UTC))
         await self.session.commit()
         logger.info("inventory of %s at %s: %d paths", checkout.full_name, inventory.commit[:7], len(rows))
         return RepoSnapshotRead.model_validate(row)
@@ -150,10 +169,7 @@ class RepoKnowledgeService:
         """Each wiki page, stale when a path it cites changed since it was read, left the repository,
         or was never read. Read when asked, from the pages as they are now: a person's edit counts."""
         snap = await self._latest(project)
-        files = list(await self.session.scalars(select(KnowledgeFile).where(
-            KnowledgeFile.workspace_id == project.workspace_id, KnowledgeFile.project_id == project.id,
-            KnowledgeFile.path.startswith(WIKI, autoescape=True), KnowledgeFile.deleted.is_(False),
-        ).order_by(KnowledgeFile.path)))
+        files = await self._wiki(project)
         cited = {f.path: list(dict.fromkeys(m.group(1) for m in CITATION.finditer(f.content))) for f in files}
         wanted = {p for paths in cited.values() for p in paths}
         status: dict[str, PathStatus] = {}
@@ -180,6 +196,74 @@ class RepoKnowledgeService:
             pages.append(RepoPageRead(path=f.path, version=f.version, updated_at=f.updated_at,
                                       citations=len(CITATION.findall(f.content)), stale=stale))
         return RepoPagesRead(commit_sha=snap.commit_sha if snap else None, pages=pages)
+
+    async def relevant(self, project: Project, text: str, *, limit: int = 3) -> list[tuple[str, str, list[str]]]:
+        """The wiki pages that bear on `text` (an issue, a question): (path, content, why it's stale).
+        Pages sharing the text's words first; the architecture and quality pages break ties, so a
+        coding brief always says how the code is laid out and tested when the wiki does."""
+        files = {f.path: f for f in await self._wiki(project)}
+        if not files:
+            return []
+        words = {w for w in re.findall(r"[a-z][a-z0-9_]{3,}", text.lower())}
+        def score(f: KnowledgeFile) -> tuple[int, int]:
+            body = f.content.lower()
+            return (sum(1 for w in words if w in body), int(f.path in _ALWAYS))
+        ranked = sorted(files.values(), key=score, reverse=True)
+        chosen = [f for f in ranked if score(f) != (0, 0)][:limit]
+        stale = {p.path: [f"{s.path} {s.why}" for s in p.stale if s.why != "unread"] for p in (await self.pages(project)).pages}
+        return [(f.path, f.content, stale.get(f.path, [])) for f in chosen]
+
+    async def summary(self, project: Project) -> str:
+        """What the repository's knowledge covers, in a few lines, for an agent run's context pack."""
+        coverage = await self.coverage(project)
+        if coverage.snapshot is None:
+            return ""
+        by: dict[str, list[str]] = {}
+        for d in coverage.domains:
+            by.setdefault(d.status, []).append(d.title.split(":")[0].lower())
+        words = {"covered": "read", "partial": "partly read", "pending": "not read yet", "gap": "no evidence in the code"}
+        lines = [
+            f"## Repository knowledge ({coverage.snapshot.repo_full_name} at {coverage.snapshot.commit_sha[:7]})",
+            "Pages under docs/wiki/ explain the code, each claim with its source (`path:line`): read the one "
+            "you need before exploring the code, and check its sources when it's stale.",
+            "Domains: " + "; ".join(f"{words[k]}: {', '.join(v)}" for k, v in by.items() if k in words) + ".",
+        ]
+        stale = [p for p in (await self.pages(project)).pages if p.stale]
+        if stale:
+            lines.append("Stale pages: " + "; ".join(
+                f"{p.path} ({', '.join(f'{s.path} {s.why}' for s in p.stale[:3])})" for p in stale[:5]))
+        return "\n".join(lines)
+
+    async def dependencies(self, project: Project, root: Path | None = None) -> RepoDependenciesRead:
+        """The manifests' direct dependencies and their locked versions, at the checkout's commit
+        (`root`: a run's checkout; else this server's, synced if needed)."""
+        snap = await self._latest(project)
+        if snap is None:
+            return RepoDependenciesRead(commit_sha=None, dependencies=[], unread=[])
+        if root is None:
+            if self.checkouts is None:
+                raise Unprocessable("Reading code isn't set up on this server")
+            checkout = await CodeService(self.session, self.checkouts).ensure(project.workspace_id, project.id)
+            if checkout is None:
+                raise Unprocessable("Connect the project's GitHub repository first (or its checkout failed: see its settings)")
+            root = Path(checkout.root)
+        paths = list(await self.session.scalars(select(RepoPath.path).where(
+            RepoPath.workspace_id == project.workspace_id, RepoPath.snapshot_id == snap.id,
+            RepoPath.kinds.overlap(["manifest", "lockfile"]),
+        )))
+        found = await asyncio.to_thread(read_dependencies, root, paths)
+        commit = (await self.checkouts.head(project.workspace_id, project.id)) if self.checkouts else None
+        return RepoDependenciesRead(
+            commit_sha=commit or snap.commit_sha,
+            dependencies=[DependencyRead(**vars(d)) for d in found.dependencies],
+            unread=[UnreadFile(path=p, reason=r) for p, r in found.unread],
+        )
+
+    async def _wiki(self, project: Project) -> list[KnowledgeFile]:
+        return list(await self.session.scalars(select(KnowledgeFile).where(
+            KnowledgeFile.workspace_id == project.workspace_id, KnowledgeFile.project_id == project.id,
+            KnowledgeFile.path.startswith(WIKI, autoescape=True), KnowledgeFile.deleted.is_(False),
+        ).order_by(KnowledgeFile.path)))
 
     async def paths(self, project: Project, *, status: PathStatus | None, domain: str | None, prefix: str | None,
                     after: str | None, limit: int) -> RepoPathPage:

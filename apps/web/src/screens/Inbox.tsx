@@ -56,6 +56,7 @@ const TYPE_IC: Record<string, string> = {
   finding: "search-check",
   decided: "check-check",
   limit: "gauge",
+  stale: "file-clock",
 };
 
 function toggleRead(id: string) {
@@ -247,6 +248,12 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
             Open the session
           </button>
         )}
+        {n.type === "stale" && p && (
+          <button className="btn btn-sm btn-secondary" onClick={() => go("project", { id: p.key, tab: "knowledge" }, { search: "view=coverage" })}>
+            <Ic n="book-open" s={14} />
+            Open coverage
+          </button>
+        )}
         {t && (
           <button className="btn btn-sm btn-ghost" onClick={() => openTask(t.id)}>
             <Ic n="panel-right-open" s={14} />
@@ -342,7 +349,7 @@ const TABS: [string, string, NotifType[] | null][] = [
   ["all", "All", null],
   ["needs", "Needs you", ["approval", "checkpoint", "limit"]],
   ["mentions", "Mentions", PEOPLE],
-  ["updates", "Updates", ["finding", "decided", "update"]],
+  ["updates", "Updates", ["finding", "decided", "update", "stale"]],
 ];
 const ALL_TYPES = TABS.flatMap(([, , ts]) => ts ?? []);
 // Approvals and plans stay unread until decided.
