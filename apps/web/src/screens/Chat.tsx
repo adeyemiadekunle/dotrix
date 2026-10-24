@@ -228,7 +228,8 @@ function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
 function SessionCard({ cs }: { cs: CodingSession }) {
   const ws = wsId();
   const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
-  const latest = (useCodingSession(scope, cs.session_id).data ?? []).at(-1);
+  const turns = useCodingSession(scope, cs.session_id).data ?? [];
+  const latest = turns.at(-1);
   const decide = useDecideCoding(scope, cs.issue_key);
   const stop = useStopCoding(scope, cs.issue_key);
   const recover = useRecoverCoding(scope, cs.issue_key);
@@ -265,6 +266,22 @@ function SessionCard({ cs }: { cs: CodingSession }) {
           </span>
         )}
       </div>
+      {/* Each turn here: what Kai was asked (the conversation's own messages to it), and what it said back. */}
+      {turns.some((t) => t.note || t.summary || t.error) && (
+        <div className="change-b" style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }} aria-label="Turns">
+          {turns.map((t) => (
+            <div key={t.id}>
+              {t.note && (
+                <div className="muted">
+                  <b style={{ fontWeight: 500 }}>Turn {t.turn}:</b> {t.note}
+                </div>
+              )}
+              {t.summary && <Markdown>{t.summary}</Markdown>}
+              {t.error && <div style={{ color: "var(--red)" }}>{t.error}</div>}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="change-f row" style={{ gap: 6 }}>
         {latest?.can_decide && (
           <>
@@ -835,6 +852,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const kaiScope = useMemo(() => (ws && kai ? { workspaceId: ws, projectId: kai.project_id } : undefined), [ws, kai]);
   const followUp = useFollowUp(kaiScope, kai?.session_id ?? "", kai?.issue_key ?? "", approval);
   const [toKaiPicked, setToKai] = useState<boolean | null>(null);
+  const addressed = useRef(false); // an agent was picked or @mentioned for the message being sent
   const toKai = mode === "build" && Boolean(kai) && !kaiBusy && (toKaiPicked ?? true);
   const [panelSet, setPanel] = useStoredFlag("dotrix.chat.kaiPanel");
   const panel = Boolean(kai) && panelSet;
@@ -963,10 +981,20 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           <Composer
             placeholder={toKai && kai ? `Tell ${CODING_AGENT.name} what to do next on ${kai.issue_key}` : `Ask ${agentName(agent)}, or type @ to pick an agent`}
             agent={agent}
-            setAgent={setAgent}
+            setAgent={(h) => {
+              // Picking an agent, or @mentioning one, addresses the agents, not Kai.
+              addressed.current = true;
+              setToKai(false);
+              setAgent(h);
+            }}
             model={modelName(last?.conversation_model) || undefined}
             context={p?.name ?? "All projects"}
-            onSend={(q, a) => (toKai ? followUp.mutate(q) : say(q, a))}
+            onSend={(q, a) => {
+              const named = addressed.current;
+              addressed.current = false;
+              if (toKai && !named) followUp.mutate(q);
+              else say(q, a);
+            }}
             mode={projectId ? mode : undefined}
             setMode={projectId ? setMode : undefined}
             approval={projectId ? approval : undefined}
