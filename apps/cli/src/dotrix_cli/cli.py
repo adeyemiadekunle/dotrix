@@ -42,6 +42,7 @@ from . import sandbox as sandbox_runtime
 from .agent_client import ApprovalNotAllowed, Outcome, PlatformAgent
 from .board import CODING_AGENTS, PlatformBoard
 from .platform import (
+    CLIENT_NAME,
     KeychainUnavailable,
     KeyringStore,
     PlatformClient,
@@ -89,6 +90,12 @@ def _echo_protection(report: dict) -> None:
             "  They remain in earlier commits; if the repo is public, treat that content as exposed.",
             fg=typer.colors.YELLOW,
         )
+
+
+def _json_line(event: dict) -> None:
+    """One JSON object per line on stdout, flushed: what a program running this one reads."""
+    sys.stdout.write(json.dumps(event) + "\n")
+    sys.stdout.flush()
 
 
 def _fail(msg: str) -> None:
@@ -494,6 +501,7 @@ def runner_command(
     poll: float = typer.Option(5.0, "--poll", help="Seconds between asks for a turn"),
     name: str = typer.Option(None, "--name", help="This checkout's name on the platform (default: the hostname and folder)"),
     worktrees: Path = typer.Option(None, "--worktrees", help="Where turns' worktrees go (default: ~/.dotrix/worktrees)"),
+    as_json: bool = typer.Option(False, "--json", help="A JSON line per event, for a program running this one (the desktop app)"),
 ):
     """Code your local turns on this computer: each in a worktree of this checkout, with the coding
     tool signed in here (never a key or token from the platform). The platform pushes what's accepted.
@@ -502,11 +510,17 @@ def runner_command(
 
     from .runner import LocalRunner
 
+    def say(text: str) -> None:
+        if as_json:
+            _json_line({"event": "log", "text": text})
+        else:
+            typer.echo(text)
+
     if sandbox not in ("auto", "srt", "none"):
         _fail("--sandbox is auto, srt, or none")
     config, state, client = _linked(project)
     if sandbox != "none" and sandbox_runtime.command() is None:  # it comes with dotrix: installed the first time
-        typer.echo(f"Installing the sandbox runtime ({sandbox_runtime.PACKAGE}@{sandbox_runtime.VERSION})…")
+        say(f"Installing the sandbox runtime ({sandbox_runtime.PACKAGE}@{sandbox_runtime.VERSION})…")
         try:
             sandbox_runtime.install()
         except RuntimeError as exc:
@@ -515,7 +529,7 @@ def runner_command(
             typer.secho(f"{exc}. Turns won't be isolated until it is.", fg=typer.colors.YELLOW, err=True)
     if sandbox != "none" and sys.platform == "win32" and sandbox_runtime.command() and sys.stdin.isatty() \
             and sandbox_runtime.windows_setup_missing():
-        typer.echo("Setting up the sandbox on this machine (once; Windows asks for an administrator)…")
+        say("Setting up the sandbox on this machine (once; Windows asks for an administrator)…")
         try:
             sandbox_runtime.setup_windows()
         except RuntimeError as exc:
@@ -524,7 +538,8 @@ def runner_command(
             typer.secho(f"{exc}. Turns won't be isolated until it is.", fg=typer.colors.YELLOW, err=True)
     runner = LocalRunner(
         _AsyncApi(client), Path(config.root_dir), state.workspace_id, state.project_id, tool=tool, command=command,
-        sandbox=sandbox, echo=typer.echo, **({"name": name} if name else {}), **({"worktrees": worktrees} if worktrees else {}),
+        sandbox=sandbox, echo=say,
+        notify=_json_line if as_json else (lambda event: None), **({"name": name} if name else {}), **({"worktrees": worktrees} if worktrees else {}),
     )
     try:
         registered = asyncio.run(runner.register())
@@ -532,16 +547,16 @@ def runner_command(
         _fail(str(exc))
     isolated = "isolated by srt" if registered["isolation"] == "srt" else (
         "NOT isolated: " + ("; ".join(sandbox_runtime.check().missing) or "--sandbox none"))
-    typer.echo(f"{registered['name']}: coding {state.project_key} turns with {', '.join(registered['tools'])}, {isolated}")
+    say(f"{registered['name']}: coding {state.project_key} turns with {', '.join(registered['tools'])}, {isolated}")
     try:
         if once:
             if not asyncio.run(runner.once()):
-                typer.echo("Nothing waits for this computer")
+                say("Nothing waits for this computer")
         else:
-            typer.echo("Waiting for turns (Ctrl-C to stop)…")
+            say("Waiting for turns (Ctrl-C to stop)…")
             asyncio.run(runner.serve(poll_seconds=poll))
     except KeyboardInterrupt:
-        typer.echo("Stopped; a turn in progress needs recovery once its lease lapses")
+        say("Stopped; a turn in progress needs recovery once its lease lapses")
     except PlatformError as exc:
         _fail(str(exc))
 
@@ -1180,6 +1195,8 @@ def _echo_pull(result) -> None:
 def login(
     url: str | None = ApiUrlOpt,
     no_browser: bool = typer.Option(False, "--no-browser", help="Just print the link."),
+    as_json: bool = typer.Option(False, "--json", help="A JSON line per step, for a program running this one (no browser)"),
+    client_name: str = typer.Option(CLIENT_NAME, "--client-name", hidden=True),
 ):
     """Sign in to the platform with a one-time code you approve in the browser.
     The token is stored in your OS keychain, never in a file."""
@@ -1187,10 +1204,14 @@ def login(
     client = PlatformClient(target)
 
     def show(code: str, uri: str, complete: str) -> None:
+        if as_json:
+            _json_line({"event": "code", "user_code": code, "verification_uri": uri, "verification_uri_complete": complete})
+            return
         typer.echo(f"To sign in, open {uri} and enter code:  {code}")
         typer.echo(f"(or open {complete})  Waiting for approval…")
 
-    credential = _platform_call(lambda: device_login(client, show=show, open_browser=not no_browser))
+    credential = _platform_call(lambda: device_login(client, show=show, open_browser=not (no_browser or as_json),
+                                                     client_name=client_name[:100]))
     try:
         KeyringStore().set(target, credential)
     except KeychainUnavailable as exc:
@@ -1202,6 +1223,9 @@ def login(
                 pass
         _fail(str(exc))
     me = _platform_call(lambda: PlatformClient(target, credential.token).get("/me"))
+    if as_json:
+        _json_line({"event": "signed_in", "api_url": target, "email": me["email"]})
+        return
     typer.secho(f"Signed in to {target} as {me['email']}", fg=typer.colors.GREEN)
 
 
@@ -1224,8 +1248,22 @@ def logout(url: str | None = ApiUrlOpt):
 
 
 @app.command()
-def whoami(url: str | None = ApiUrlOpt):
+def whoami(
+    url: str | None = ApiUrlOpt,
+    as_json: bool = typer.Option(False, "--json", help="As JSON: who, and on which platform"),
+):
     """Who you're signed in as, and your workspaces."""
+    if as_json:
+        target = api_url(url)
+        credential = KeyringStore().get(target)
+        me = None
+        if credential is not None:
+            try:
+                me = PlatformClient(target, credential.token).get("/me")
+            except PlatformError:
+                me = None
+        _json_line({"api_url": target, "signed_in": me is not None, "email": me and me["email"]})
+        return
     client = _platform_call(lambda: PlatformClient.signed_in(url))
     me = _platform_call(lambda: client.get("/me"))
     typer.echo(f"{me['display_name']} <{me['email']}> on {client.url}")

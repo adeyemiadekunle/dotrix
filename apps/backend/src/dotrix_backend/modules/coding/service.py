@@ -676,7 +676,8 @@ class CodingService:
             and run.pr_state not in (PrState.MERGED, PrState.CLOSED) and run.requested_by_id == access.member.user_id
             and can(access.member, Permission.INSTRUCT_CODING_AGENT),
             accepted_by_id=run.accepted_by_id, accepted_at=run.accepted_at, revert_of=run.revert_of,
-            location=run.location, runner_name=run.runner_name,
+            location=run.location, runner_name=run.runner_name, runner_id=run.runner_id,
+            worktree=run.worktree if run.requested_by_id == access.member.user_id else None,
             can_stop=run.status in ACTIVE and run.status is not CodingRunStatus.RECOVERY_REQUIRED
             and self._can_stop(run, access),
             can_recover=run.status is CodingRunStatus.RECOVERY_REQUIRED and self._can_stop(run, access),

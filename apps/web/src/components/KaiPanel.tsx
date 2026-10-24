@@ -1,14 +1,18 @@
 // Kai's work beside a conversation or a session: the turn's Changes (each file's diff), its Files (the
 // repository as the turn leaves it, any file before and after), and its Terminal (each command with its
-// output). The same for cloud and local turns: everything comes from the platform (lib/coding.ts).
+// output). The same for cloud and local turns: everything comes from the platform (lib/coding.ts), except
+// a turn coding on this computer in the desktop app, whose Files are its worktree as it is now
+// (core/desktop.ts), with the folder a click away.
 import { useMemo, useState } from "react";
 
 import { useCodingDiff, useCodingEvents, useCodingFile, useCodingSession, useCodingTree, type CodingRun, type CodingSession } from "@/lib/coding";
 
+import { desktop, useDesktopRunners, worktreeHere } from "../core/desktop";
 import { Ic } from "../core/icons";
 import { buildTree, parseDiff, terminal, type DiffFile, type DiffHunk, type TreeNode } from "../core/kaiWork";
 import { CODING_AGENT } from "../data/seed-dotrix";
 import { live } from "../data/live";
+import { toast } from "../ui/toast";
 import { Splitter, useStoredSize } from "../ui/splitter";
 
 type Tab = "changes" | "files" | "terminal";
@@ -26,6 +30,7 @@ export function KaiPanel({ cs, onClose }: { cs: CodingSession; onClose: () => vo
   const files = useMemo(() => parseDiff(diff.data?.diff ?? ""), [diff.data?.diff]);
   const events = useCodingEvents(scope, run, tab === "terminal");
   const commands = useMemo(() => terminal(events.data ?? run?.events ?? []), [events.data, run?.events]);
+  const worktree = worktreeHere(run, useDesktopRunners());
   const TABS: [Tab, string, number][] = [
     ["changes", "Changes", files.length],
     ["files", "Files", 0],
@@ -48,6 +53,7 @@ export function KaiPanel({ cs, onClose }: { cs: CodingSession; onClose: () => vo
             ))}
           </select>
         )}
+        {worktree && <WorktreeButtons worktree={worktree} />}
         <button className="ibtn ibtn-sm" onClick={onClose} aria-label="Close the panel">
           <Ic n="x" s={14} />
         </button>
@@ -66,7 +72,7 @@ export function KaiPanel({ cs, onClose }: { cs: CodingSession; onClose: () => vo
         ) : tab === "changes" ? (
           <Changes files={files} loading={diff.isLoading} turn={run} />
         ) : tab === "files" ? (
-          <Files scope={scope} run={run} diffs={files} />
+          <Files scope={scope} run={run} diffs={files} worktree={worktree} />
         ) : (
           <Terminal entries={commands} working={run.status === "running"} />
         )}
@@ -142,12 +148,48 @@ function Hunks({ hunks }: { hunks: DiffHunk[] }) {
 
 /* ---------- Files: the repository as the turn leaves it ---------- */
 
-function Files({ scope, run, diffs }: { scope: { workspaceId: string; projectId: string } | undefined; run: CodingRun; diffs: DiffFile[] }) {
-  const tree = useCodingTree(scope, run, true);
+function WorktreeButtons({ worktree }: { worktree: string }) {
+  const act = (fn: (tree: string) => Promise<void>) => () =>
+    void fn(worktree).catch((e: unknown) => toast(e instanceof Error ? e.message : "The worktree can't be opened"));
+  const bridge = desktop()!;
+  return (
+    <>
+      <button className="ibtn ibtn-sm" onClick={act(bridge.worktree.open)} aria-label="Open the worktree" data-tip={`Open ${worktree}`}>
+        <Ic n="folder-open" s={14} />
+      </button>
+      <button className="ibtn ibtn-sm" onClick={act(bridge.worktree.reveal)} aria-label="Show the worktree in its folder" data-tip="Show in folder">
+        <Ic n="external-link" s={14} />
+      </button>
+    </>
+  );
+}
+
+function Files({
+  scope,
+  run,
+  diffs,
+  worktree,
+}: {
+  scope: { workspaceId: string; projectId: string } | undefined;
+  run: CodingRun;
+  diffs: DiffFile[];
+  worktree: string | null;
+}) {
+  const tree = useCodingTree(scope, run, true, worktree);
   const [open, setOpen] = useState<string | null>(null);
   const [changedOnly, setChangedOnly] = useState(false);
   const root = useMemo(() => buildTree((tree.data?.entries ?? []).filter((e) => !changedOnly || e.status !== "unchanged")), [tree.data, changedOnly]);
-  if (open) return <FileView scope={scope} run={run} path={open} diff={diffs.find((d) => d.path === open)} onBack={() => setOpen(null)} />;
+  if (open)
+    return (
+      <FileView
+        scope={scope}
+        run={run}
+        path={open}
+        diff={worktree ? undefined : diffs.find((d) => d.path === open)}
+        worktree={worktree}
+        onBack={() => setOpen(null)}
+      />
+    );
   if (!run.base_sha) return <p className="muted">The files show once the turn starts on a commit.</p>;
   if (tree.isLoading) return <p className="muted">Loading the files…</p>;
   if (tree.error) return <p className="muted">{tree.error instanceof Error ? tree.error.message : "The files can't be read here."}</p>;
@@ -157,6 +199,7 @@ function Files({ scope, run, diffs }: { scope: { workspaceId: string; projectId:
         <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
         Changed only ({root.changed})
         <span className="sp" />
+        {worktree && <span data-tip={worktree}>Live on this computer ·</span>}
         <span className="mono">{run.base_sha.slice(0, 7)}</span>
       </label>
       <div className="kp-tree mono" role="tree" aria-label="Files">
@@ -200,15 +243,17 @@ function FileView({
   run,
   path,
   diff,
+  worktree,
   onBack,
 }: {
   scope: { workspaceId: string; projectId: string } | undefined;
   run: CodingRun;
   path: string;
   diff: DiffFile | undefined;
+  worktree: string | null;
   onBack: () => void;
 }) {
-  const file = useCodingFile(scope, run.id, path);
+  const file = useCodingFile(scope, run.id, path, worktree);
   const [view, setView] = useState<"file" | "diff">(diff ? "diff" : "file");
   const text = file.data?.after ?? file.data?.before ?? "";
   return (

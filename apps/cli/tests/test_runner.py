@@ -218,6 +218,7 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
 
     started = time.monotonic()
     calls: list[tuple[float, str, dict]] = []
+    notified: list[dict] = []
 
     class Api:
         async def post(self, path: str, body=None):
@@ -228,7 +229,7 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
               "[{'type': 'text', 'text': 'Looking at a.txt'}]}}), flush=True); time.sleep(4)")
     runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
                          command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}", sandbox="none",
-                         worktrees=tmp_path / "trees", echo=lambda _: None)
+                         worktrees=tmp_path / "trees", echo=lambda _: None, notify=notified.append)
     await runner.work({"run_id": "run-000001", "project_id": "p", "lease_token": 1, "lease_seconds": 120,
                        "issue_key": "KUN-1", "turn": 1, "title": "x", "base_branch": "main", "branch": None,
                        "tool": "claude-code", "brief": "x"})
@@ -236,6 +237,10 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     sent = next(at for at, body in beats if any(e["text"] == "Looking at a.txt" for e in body["events"]))
     result = next(at for at, kind, _ in calls if kind == "result")
     assert sent < 3.5 < result, calls  # while the tool still worked, not at the 40 s lease beat or the end
+    # Where the turn's worktree is: to the platform (the desktop app opens it) and to whatever runs this.
+    tree = beats[0][1]["worktree"]
+    assert Path(tree).is_relative_to(tmp_path / "trees") and notified == [
+        {"event": "turn", "run_id": "run-000001", "issue_key": "KUN-1", "turn": 1, "worktree": tree}]
 
 
 def test_tool_calls_read_as_a_cloud_turns_do_so_the_terminal_panel_lists_them(tmp_path: Path) -> None:

@@ -301,7 +301,29 @@ codes on its requester's computer instead of a worker's sandbox; everything else
   edits and Auto accept it for the requester. Accepted, the worker's publish-only pass applies it to the
   branch as it is, checks it again, pushes, and opens or updates the PR. Reverts are always that pass.
 
-Not yet: the desktop app's runner, a folder with no remote (branch and diff, no PR), `srt` run on a real Mac and Windows machine.
+### The desktop app's runner
+
+The desktop app codes local turns itself, with no Python or CLI to install:
+
+- **The CLI, bundled.** `apps/cli/scripts/standalone.py` builds the CLI with PyInstaller from only its
+  own dependencies (`uv export --package dotrix`), into `apps/desktop/resources/dotrix`
+  (`pnpm --filter @dotrix/desktop bundle-cli`; built on each platform for that platform). srt is
+  bundled already (above).
+- **Folders.** In a new coding session, "Code on this computer…" opens a folder picker for a checkout
+  of the project's repository. The app links it (`dotrix link`), runs `dotrix runner --json` there in
+  the background, restarts it after a failure (three tries, then it waits), and starts it again on the
+  next launch (`apps/desktop/src/runner.ts`).
+- **Signing in.** The first time, the CLI signs in with a device code (`dotrix login --json`): the app
+  opens the approval page in a window of its own, where the person is already signed in. The token
+  stays in the OS keychain; the app never sees it.
+- **The live worktree.** The runner reports each turn's worktree on its heartbeat (`coding_runs.worktree`,
+  shown only to whoever asked for the turn). When one of this app's runners claimed the turn, Kai's panel
+  reads Files from that worktree as it is now, every few seconds while the turn works, with Open and
+  Show in folder (`apps/desktop/src/worktree.ts`). Only folders inside `~/.dotrix/worktrees` are read
+  or opened, symlinks out of them refused, and only the app's own page may ask.
+
+Not yet: the standalone build run (and signed) on a real Mac and Windows machine, a folder with no remote
+(branch and diff, no PR), `srt` run on a real Mac and Windows machine.
 
 ## Local-file projects
 
@@ -411,8 +433,8 @@ conversation. On a real model (needs Docker, the coding image, the GitHub App, a
     `output-error` event paired with its `Ran …` by `ref` (Claude Code's tool results, OpenCode's tool
     state, Codex's command items; 8,000 characters, mostly the end), and so does the local runner.
 - [x] The web's Code tab wired to the API (with Chat).
-- [ ] Subagent events nested; usage per session; live text rather than polling; the desktop app showing
-  a local turn's live worktree (with its runner).
+- [x] The desktop app showing a local turn's live worktree (with its runner).
+- [ ] Subagent events nested; usage per session; live text rather than polling.
 
 **Phase D: running apps and MCP.**
 - [x] The agent's browser (2026-10-10): Playwright MCP (`playwright-mcp`, Playwright's Chromium) in the

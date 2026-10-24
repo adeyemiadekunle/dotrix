@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { api, errorMessage, unwrap } from "@/lib/api";
 import type { Scope } from "@/lib/issues";
+import { desktop } from "@/src/core/desktop";
 
 export type CodingRun = Schemas["CodingRunRead"];
 export type CodingRunStatus = Schemas["CodingRunStatus"];
@@ -257,34 +258,48 @@ export function useCodingDiff(scope: Scope | undefined, run: Pick<CodingRun, "id
 }
 
 /** Every file as a turn leaves the repository (the panel's Files). */
-export function useCodingTree(scope: Scope | undefined, run: Pick<CodingRun, "id" | "status" | "base_sha"> | undefined, enabled: boolean) {
-  return useQuery({
-    queryKey: ["coding-run", scope?.projectId, run?.id, "tree", run?.status],
-    queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/tree", {
-          params: { path: { ...path(scope!), coding_run_id: run!.id } },
-        }),
-      ),
+export function useCodingTree(
+  scope: Scope | undefined,
+  run: Pick<CodingRun, "id" | "status" | "base_sha"> | undefined,
+  enabled: boolean,
+  worktree: string | null = null,
+) {
+  // A turn coding on this computer (the desktop app): its worktree as it is now, read every few seconds.
+  const here = worktree ? desktop() : null;
+  return useQuery<CodingTree>({
+    queryKey: ["coding-run", scope?.projectId, run?.id, "tree", run?.status, worktree],
+    queryFn: async () =>
+      here
+        ? { base_sha: run!.base_sha ?? "", ...(await here.worktree.tree(worktree!)) }
+        : unwrap(
+            api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/tree", {
+              params: { path: { ...path(scope!), coding_run_id: run!.id } },
+            }),
+          ),
     enabled: Boolean(scope && run?.base_sha) && enabled,
     retry: false,
-    staleTime: 30_000,
+    staleTime: here ? 0 : 30_000,
+    refetchInterval: here && run?.status === "running" ? 3000 : false,
   });
 }
 
-/** One file before a turn and after it. */
-export function useCodingFile(scope: Scope | undefined, runId: string | undefined, filePath: string | null) {
-  return useQuery({
-    queryKey: ["coding-run", scope?.projectId, runId, "file", filePath],
+/** One file before a turn and after it (on this computer: in its worktree, as it is now). */
+export function useCodingFile(scope: Scope | undefined, runId: string | undefined, filePath: string | null, worktree: string | null = null) {
+  const here = worktree ? desktop() : null;
+  return useQuery<CodingFile>({
+    queryKey: ["coding-run", scope?.projectId, runId, "file", filePath, worktree],
     queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/file", {
-          params: { path: { ...path(scope!), coding_run_id: runId! }, query: { path: filePath! } },
-        }),
-      ),
+      here
+        ? here.worktree.file(worktree!, filePath!)
+        : unwrap(
+            api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/file", {
+              params: { path: { ...path(scope!), coding_run_id: runId! }, query: { path: filePath! } },
+            }),
+          ),
     enabled: Boolean(scope && runId && filePath),
     retry: false,
-    staleTime: 30_000,
+    staleTime: here ? 0 : 30_000,
+    refetchInterval: here ? 3000 : false,
   });
 }
 

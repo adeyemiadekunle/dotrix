@@ -155,6 +155,9 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # A local turn: the runner that claimed it (its lease is the run's, like a worker's).
     runner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("coding_runners.id", ondelete="SET NULL"))
     runner_name: Mapped[str | None] = mapped_column(String(100))  # kept when the runner is revoked
+    # A local turn: its worktree's path on that computer (the desktop app opens it), shown only to
+    # whoever asked for the turn.
+    worktree: Mapped[str | None] = mapped_column(String(1024))
     pr_number: Mapped[int | None] = mapped_column(Integer)
     pr_url: Mapped[str | None] = mapped_column(String(300))
     pr_state: Mapped[PrState | None] = mapped_column(str_enum(PrState, 16))  # kept current by the webhook

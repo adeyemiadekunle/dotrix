@@ -37,3 +37,6 @@ test-results/
 
 # The GitHub App private key (DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH)
 *.pem
+
+# The desktop app's bundled dotrix CLI (pnpm --filter @dotrix/desktop bundle-cli)
+apps/desktop/resources/dotrix/

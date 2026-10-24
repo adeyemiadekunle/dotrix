@@ -228,6 +228,8 @@ class LocalRunner:
     name: str = ""
     remote: str = "origin"
     echo: Callable[[str], None] = print
+    # What happens, for a program running this one (the desktop app, `--json`): a dict per event.
+    notify: Callable[[dict[str, Any]], None] = lambda event: None
     runner_id: str | None = None
     beat_seconds: float | None = None  # between heartbeats while the tool works (default: a third of the lease)
     # What the agent did reaches the platform this soon (a heartbeat as soon as events wait this long),
@@ -266,6 +268,8 @@ class LocalRunner:
             "isolation": self.isolation, "project_ids": [self.project_id],
         })
         self.runner_id = runner["id"]
+        self.notify({"event": "registered", "runner_id": runner["id"], "name": runner["name"],
+                     "isolation": runner["isolation"], "tools": runner["tools"]})
         return runner
 
     async def once(self) -> bool:
@@ -275,7 +279,10 @@ class LocalRunner:
         claimed = await self.api.post(f"{self.base}/{self.runner_id}/claim")
         if not claimed.get("run"):
             return False
-        await self.work(claimed["run"])
+        try:
+            await self.work(claimed["run"])
+        finally:
+            self.notify({"event": "done", "run_id": claimed["run"]["run_id"]})
         return True
 
     async def serve(self, *, poll_seconds: float = 5, stop: asyncio.Event | None = None) -> None:
@@ -335,7 +342,9 @@ class LocalRunner:
         isolation = self.isolation
         pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]}"
                         + ("" if isolation == "srt" else " (not isolated: `dotrix sandbox install` to sandbox the tool)")})
-        if await beat({"base_sha": base_sha}):
+        self.notify({"event": "turn", "run_id": run["run_id"], "issue_key": run["issue_key"], "turn": run["turn"],
+                     "worktree": str(tree)})
+        if await beat({"base_sha": base_sha, "worktree": str(tree)}):
             await report("stopped", base_sha=base_sha)
             return
 

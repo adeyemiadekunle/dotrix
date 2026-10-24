@@ -3,6 +3,7 @@
 // and the changes it proposes; and Kai's coding sessions: inline in the conversation that started them, else listed beside the conversations. Conversations
 // and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
 // URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?session=ID (a coding session), ?tab=coding (a new one), ?q=, ?agent=.
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import {
@@ -47,6 +48,7 @@ import type { Scope } from "@/lib/issues";
 import { LimitNotice } from "../components/LimitNotice";
 import { approvalModes, defaultApproval } from "../core/can";
 import { openPop, openTask } from "../core/actions";
+import { desktop, useDesktopRunners } from "../core/desktop";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { MOD, ago, greeting } from "../core/utils";
@@ -59,6 +61,7 @@ import { openDocument } from "./Knowledge";
 import { Av, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
+import { toast } from "../ui/toast";
 import { CODING_AGENT } from "../data/seed-dotrix";
 import { KaiPanel } from "../components/KaiPanel";
 import { useAtPicker } from "../components/AtPicker";
@@ -1064,6 +1067,26 @@ function NewSession({ issue0 }: { issue0: string | null }) {
   const [where, setWhere] = useState<"cloud" | "local" | null>(null);
   const location = where ?? (avail && !avail.available && avail.local_available ? "local" : "cloud");
   const ready = location === "local" ? avail?.local_available : avail?.available;
+  // In the desktop app, a folder of this computer's picked here starts its runner (core/desktop.ts).
+  const here = desktop();
+  const runners = useDesktopRunners();
+  const slug = live.slug;
+  const pkey = pid ? proj(pid)?.key : undefined;
+  const hereRunner = runners.find((r) => r.workspace === slug && r.projectKey === pkey);
+  const [adding, setAdding] = useState(false);
+  const qc = useQueryClient();
+  const hereState = runners.map((r) => `${r.projectKey}:${r.state}`).join();
+  useEffect(() => {
+    if (pid) void qc.invalidateQueries({ queryKey: ["coding", pid] }); // a runner registered or stopped
+  }, [hereState, pid, qc]);
+  const codeHere = () => {
+    if (!here || !slug || !pkey) return;
+    setAdding(true);
+    here.runners
+      .add(slug, pkey)
+      .catch((e: unknown) => toast(e instanceof Error ? e.message : "This computer's runner didn't start", { kind: "err" }))
+      .finally(() => setAdding(false));
+  };
   const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location);
   const found = menu === null ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes(menu.toLowerCase())).slice(0, 8);
   const go_ = () => {
@@ -1173,11 +1196,31 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                   {avail.available && avail.agent ? AGENT_NAMES[avail.agent] : "Coding is off"}
                 </span>
               )}
-              {avail && location === "local" && !avail.local_available && (
+              {avail && location === "local" && !avail.local_available && !here && (
                 <span className="cpill" data-tip={avail.local_reason ?? undefined}>
                   <Ic n="laptop" s={12} />
                   Not on this computer yet
                 </span>
+              )}
+              {avail && location === "local" && !avail.local_available && here && (
+                <button
+                  className="cpill pick"
+                  onClick={codeHere}
+                  disabled={!slug || !pkey || adding}
+                  aria-label="Code on this computer"
+                  data-tip={
+                    hereRunner?.state === "failed"
+                      ? (hereRunner.message ?? "This computer's runner stopped")
+                      : "Choose your checkout of the project's repository: this app codes its turns there, in a worktree"
+                  }
+                >
+                  <Ic n="folder-plus" s={12} />
+                  {adding || hereRunner?.state === "starting"
+                    ? "Starting…"
+                    : hereRunner?.state === "failed"
+                      ? "Runner stopped: choose again"
+                      : "Code on this computer…"}
+                </button>
               )}
               <span className="sp" />
               <span className="faint hide-m" style={{ fontSize: 11 }}>
