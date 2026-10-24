@@ -8,7 +8,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_valida
 
 from dotrix_engine.catalog import action_for
 
-from .models import ApprovalStatus, RunKind, RunStatus
+from .models import ApprovalStatus, RunKind, RunStatus, WorkMode
 
 # `auto` (the Project Manager) or any agent handle the project has (built-in or custom).
 AgentChoice = Annotated[str, Field(pattern=r"^(auto|[a-z][a-z0-9-]{1,30})$")]
@@ -32,6 +32,13 @@ class RunCreate(BaseModel):
         description="For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; "
         "needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use "
         "the project's model.",
+    )
+    work_mode: WorkMode | None = Field(
+        default=None,
+        description="How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, "
+        "`.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with "
+        "its evidence). Changes wait for approval in every mode; only `build` engages Kai. Omit for no mode "
+        "(as before work modes: no plans or evidence tools)",
     )
     mentions: list[uuid.UUID] = Field(
         default_factory=list, max_length=20,
@@ -301,6 +308,7 @@ class AgentRunRead(BaseModel):
         default=None, description="The pipeline the leading agent followed for this run (pm.triage, reviewer.issue); "
         "null: its own"
     )
+    work_mode: WorkMode | None = Field(default=None, description="How the person was working when they sent it")
     conversation_model: str | None = Field(
         default=None,
         description="The model the conversation runs on (fixed when it started); null on older conversations, "
@@ -363,6 +371,29 @@ class DecisionsRequest(BaseModel):
 
 class ThreadRename(BaseModel):
     title: str = Field(min_length=1, max_length=120)
+
+
+class PlanTaskRead(BaseModel):
+    title: str
+    detail: str
+    depends_on: list[int] = Field(description="The tasks (numbers, from 1) this one needs first")
+
+
+class PlanRead(BaseModel):
+    """A version of a conversation's plan, saved in Plan mode."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    thread_id: uuid.UUID
+    version: int
+    run_id: uuid.UUID = Field(description="The run that saved it")
+    title: str
+    summary: str
+    acceptance_criteria: list[str]
+    tasks: list[PlanTaskRead]
+    open_questions: list[str]
+    created_at: datetime
 
 
 class ThreadRead(BaseModel):

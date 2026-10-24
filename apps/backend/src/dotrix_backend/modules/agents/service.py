@@ -42,6 +42,7 @@ from .models import (
     AgentRun,
     AgentRunOutput,
     ApprovalStatus,
+    ConversationPlan,
     RunKind,
     RunStatus,
 )
@@ -58,6 +59,7 @@ from .schemas import (
     Decision,
     DecisionsRequest,
     OutputItemUpdate,
+    PlanRead,
     RunBreakdown,
     RunCreate,
     RunFileRead,
@@ -227,6 +229,7 @@ class AgentService:
             title=(title or title_from_message(data.message)) if data.thread_id is None else None,
             agent=None if data.agent in ("auto", PM_ROLE) else data.agent,
             mode=mode,
+            work_mode=data.work_mode,
             automation_id=automation_id,
             conversation_model=model,
             requested_by_id=member.user_id,
@@ -249,6 +252,7 @@ class AgentService:
             instructed_by_id=member.user_id,
             details={"kind": kind.value, "thread_id": str(thread_id), "agent": data.agent, "model": model,
                      **({"mode": mode} if mode else {}),
+                     **({"work_mode": data.work_mode.value} if data.work_mode else {}),
                      **({"automation_id": str(automation_id)} if automation_id else {})},
         )
         dispatch = self.runner.prepare_dispatch(
@@ -742,6 +746,19 @@ class AgentService:
         first.title = data.title.strip()
         await self.session.commit()
         return ThreadRead(thread_id=thread_id, title=first.title)
+
+    async def plans(self, access: ProjectAccess, thread_id: uuid.UUID) -> list[PlanRead]:
+        """A conversation's plan versions, first to latest, for whoever sees the conversation."""
+        seen = await self.session.scalar(select(AgentRun.id).where(
+            AgentRun.project_id == access.project.id, AgentRun.thread_id == thread_id, runs_visible_to(access.member),
+        ).limit(1))
+        if seen is None:
+            raise NotFound("Conversation not found")
+        rows = await self.session.scalars(select(ConversationPlan).where(
+            ConversationPlan.workspace_id == access.project.workspace_id, ConversationPlan.project_id == access.project.id,
+            ConversationPlan.thread_id == thread_id,
+        ).order_by(ConversationPlan.version))
+        return [PlanRead.model_validate(row) for row in rows]
 
     async def check_run(self, access: ProjectAccess, run_id: uuid.UUID) -> None:
         found = await self.session.scalar(

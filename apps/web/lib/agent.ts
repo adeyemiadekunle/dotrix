@@ -16,6 +16,16 @@ export type WorkspaceApproval = Schemas["WorkspaceApprovalRead"];
 export type Decision = Schemas["Decision"];
 
 export type AgentId = NonNullable<Schemas["RunCreate"]["agent"]>;
+export type WorkMode = NonNullable<Schemas["RunCreate"]["work_mode"]>;
+export type Plan = Schemas["PlanRead"];
+
+/** How you're working in a project's conversation. Changes always wait for your approval; only Build hands code to Kai. */
+export const WORK_MODES: [WorkMode, string, string][] = [
+  ["discuss", "Discuss", "Talk it through: the agents advise; no coding"],
+  ["plan", "Plan", "A plan to build from: acceptance criteria, tasks, open questions; no coding"],
+  ["build", "Build", "Do it: changes wait for your approval, and code goes to Kai"],
+  ["review", "Review", "What changed, with its evidence; no coding"],
+];
 export type ModelOption = Schemas["ModelOption"];
 
 export const isActive = (run: Pick<Run, "status">) => run.status === "queued" || run.status === "running";
@@ -182,16 +192,31 @@ export function useSendMessage(scope: Scope | undefined) {
         agent = "auto",
         model,
         mentions = [],
-      }: { message: string; threadId: string | null; agent?: AgentId; model?: string | null; mentions?: string[] },
+        workMode = null,
+      }: { message: string; threadId: string | null; agent?: AgentId; model?: string | null; mentions?: string[]; workMode?: WorkMode | null },
     ) =>
       unwrap(
         api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs", {
           params: { path: path(s) },
           // The model only for a new conversation: an existing one keeps its own.
-          body: { message, thread_id: threadId, agent, model: threadId ? null : (model ?? null), mentions },
+          body: { message, thread_id: threadId, agent, model: threadId ? null : (model ?? null), mentions, work_mode: workMode },
         }),
       ),
   );
+}
+
+/** A conversation's plan versions, first to latest; `stamp` (its finished runs) refetches them after a run. */
+export function useThreadPlans(scope: Scope | undefined, threadId: string | null, stamp: number) {
+  return useQuery({
+    queryKey: ["agent", scope?.projectId, "plans", threadId, stamp],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}/plans", {
+          params: { path: { ...path(scope!), thread_id: threadId! } },
+        }),
+      ),
+    enabled: Boolean(scope && threadId),
+  });
 }
 
 export function useBriefing(scope: Scope | undefined) {

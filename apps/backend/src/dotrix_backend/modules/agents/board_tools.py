@@ -71,6 +71,11 @@ class BoardContext:
     policy: AgentPolicy | None = None  # the run's agent contracts (built-ins when None)
     # The run's standing rules (changes without a person approving them); None: every change asks.
     unattended: Unattended | None = None
+    # Whether Kai may be engaged: false outside Build mode (work_modes.py), so issues can't be handed to it.
+    coding: bool = True
+
+
+CODING_REFUSED = "Assigning Kai starts coding, which needs Build mode: say so, and that the person can switch to Build"
 
 
 def _assignee(value: str | None) -> dict[str, Any]:
@@ -214,6 +219,9 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
             assignee: A user ID, or "coding-agent" (Kai, the coding agent).
         """
 
+        if assignee in {a.value for a in AgentAssignee} and not ctx.coding:
+            return {"error": CODING_REFUSED}
+
         async def fn(service: IssueService, project: Any, actor: IssueActor) -> Any:
             data = IssueCreate(
                 type=type, title=title, description=description, priority=priority, parent=parent,
@@ -261,6 +269,8 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
             if value is not None
         }
         fields.update(_assignee(assignee))
+        if fields.get("assignee_agent") and not ctx.coding:
+            return {"error": CODING_REFUSED}
 
         async def fn(service: IssueService, project: Any, actor: IssueActor) -> Any:
             return _detail(await service.update(project, key, actor, IssueUpdate(**fields)))

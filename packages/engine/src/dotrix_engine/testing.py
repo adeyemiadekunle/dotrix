@@ -107,6 +107,7 @@ class RuleBasedChatModel(_StreamsReplies, GenericFakeChatModel):
       for approval); after the tool runs, it confirms.
     - "plan: <step>; <step>; ..." stops at a checkpoint with those steps, for the person to
       continue, change the plan, or stop; then it says what it heard.
+    - "save plan: <title>; <task>; <task>..." saves the conversation's plan (Plan mode's `save_plan`).
     - "research: <question>" searches the web, reads the first result, and records a report:
       one claim quoted from the page and one that isn't on it (the check marks it unsupported).
     - anything else is echoed: "Test model reply: <message>".
@@ -130,6 +131,12 @@ class RuleBasedChatModel(_StreamsReplies, GenericFakeChatModel):
             return tool_call("create_issue", type="task", title=title, priority="medium")
         if lowered.startswith("research:"):
             return tool_call("web_search", query=text.split(":", 1)[1].strip() or "research")
+        if lowered.startswith("save plan:"):
+            title, *tasks = [s.strip() for s in text.split(":", 1)[1].split(";") if s.strip()] or ["A plan"]
+            return tool_call("save_plan", title=title, summary=f"The plan for {title}.",
+                             acceptance_criteria=[f"{title} works"],
+                             tasks=[{"title": t, "depends_on": [i] if i else []} for i, t in enumerate(tasks or ["Do it"])],
+                             open_questions=[])
         if lowered.startswith("plan:"):
             steps = [s.strip() for s in text.split(":", 1)[1].split(";") if s.strip()] or ["Do it"]
             return tool_call("checkpoint", summary="A plan for this request", plan=steps)
@@ -147,6 +154,8 @@ class RuleBasedChatModel(_StreamsReplies, GenericFakeChatModel):
                  "quotes": [{"source": label.group(1), "text": text}]}
                 for claim, text in claims
             ])
+        if name == "save_plan":
+            return AIMessage(content="Saved the plan; switch to Build to carry it out.")
         if name == "submit_result":
             return AIMessage(content="Research done: the findings and their sources are below.")
         return AIMessage(content=f"Done. {content[:200]}")

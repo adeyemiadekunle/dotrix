@@ -112,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 summarize_after_tokens=settings.summarize_after_tokens,
                 unattended_limits=(settings.unattended_changes_per_run, settings.unattended_changes_per_day),
                 secrets=app.state.secrets,
+                settings=settings,
                 inline=settings.jobs == "inline",
                 queue=queue,
                 streams=streams,

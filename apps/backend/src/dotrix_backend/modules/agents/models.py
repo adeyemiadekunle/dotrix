@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,6 +26,16 @@ if TYPE_CHECKING:
 class RunKind(enum.StrEnum):
     CHAT = "chat"
     BRIEFING = "briefing"  # read-only: any write is rejected automatically
+
+
+class WorkMode(enum.StrEnum):
+    """How the person is working in the conversation (dotrix_engine.work_modes). Changes wait for
+    approval in every mode; only Build engages Kai (agents/work_modes.py)."""
+
+    DISCUSS = "discuss"  # advice
+    PLAN = "plan"  # a versioned plan (conversation_plans)
+    BUILD = "build"  # what they asked: code goes to Kai
+    REVIEW = "review"  # what changed, with its evidence
 
 
 class RunStatus(enum.StrEnum):
@@ -80,6 +90,9 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # A pipeline the leading agent follows for this run instead of its own
     # (dotrix_engine.pipelines.MODES: triaging a report, reviewing an issue); null: its own.
     mode: Mapped[str | None] = mapped_column(String(32))
+    # How the person was working when they sent it; null: as before work modes (every tool, writes
+    # approved one by one), which the CLI and API clients that don't send one still get.
+    work_mode: Mapped[WorkMode | None] = mapped_column(str_enum(WorkMode, 16))
     # Started by an automation (modules/automations), not a person at the time; still instructed
     # by the person who set the automation up (requested_by_id).
     automation_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -135,6 +148,26 @@ class AgentApproval(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     run: Mapped[AgentRun] = relationship(back_populates="approvals", lazy="raise")
+
+
+class ConversationPlan(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """A version of a conversation's plan, saved in Plan mode (`save_plan`): what Build works from.
+    Seen by whoever sees the conversation."""
+
+    __tablename__ = "conversation_plans"
+    __table_args__ = (UniqueConstraint("thread_id", "version"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    thread_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(String(200))
+    summary: Mapped[str] = mapped_column(Text)
+    acceptance_criteria: Mapped[list[str]] = mapped_column(JSONB)
+    # [{"title", "detail", "depends_on": [task numbers, from 1]}]
+    tasks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    open_questions: Mapped[list[str]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class AgentRunOutput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):

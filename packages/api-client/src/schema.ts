@@ -1857,6 +1857,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Thread Plans
+         * @description A conversation's plan versions (saved in Plan mode), first to latest. Whoever sees the conversation.
+         */
+        get: operations["list_thread_plans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}": {
         parameters: {
             query?: never;
@@ -4118,6 +4138,8 @@ export interface components {
              * @description The pipeline the leading agent followed for this run (pm.triage, reviewer.issue); null: its own
              */
             mode?: string | null;
+            /** @description How the person was working when they sent it */
+            work_mode?: components["schemas"]["WorkMode"] | null;
             /**
              * Conversation Model
              * @description The model the conversation runs on (fixed when it started); null on older conversations, which use the project's model
@@ -4899,6 +4921,16 @@ export interface components {
              * @description Whether you may stop it now
              */
             can_stop: boolean;
+            /**
+             * Thread Id
+             * @description The conversation it was started from (Build mode)
+             */
+            thread_id?: string | null;
+            /**
+             * Plan Id
+             * @description The plan version it builds from
+             */
+            plan_id?: string | null;
             /**
              * Can Recover
              * @description Whether you may recover it now (its outcome is uncertain)
@@ -6440,6 +6472,57 @@ export interface components {
             models: string[];
         };
         /**
+         * PlanRead
+         * @description A version of a conversation's plan, saved in Plan mode.
+         */
+        PlanRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Thread Id
+             * Format: uuid
+             */
+            thread_id: string;
+            /** Version */
+            version: number;
+            /**
+             * Run Id
+             * Format: uuid
+             * @description The run that saved it
+             */
+            run_id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Acceptance Criteria */
+            acceptance_criteria: string[];
+            /** Tasks */
+            tasks: components["schemas"]["PlanTaskRead"][];
+            /** Open Questions */
+            open_questions: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** PlanTaskRead */
+        PlanTaskRead: {
+            /** Title */
+            title: string;
+            /** Detail */
+            detail: string;
+            /**
+             * Depends On
+             * @description The tasks (numbers, from 1) this one needs first
+             */
+            depends_on: number[];
+        };
+        /**
          * PrState
          * @enum {string}
          */
@@ -6903,6 +6986,8 @@ export interface components {
              * @description For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model.
              */
             model?: string | null;
+            /** @description How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, `.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with its evidence). Changes wait for approval in every mode; only `build` engages Kai. Omit for no mode (as before work modes: no plans or evidence tools) */
+            work_mode?: components["schemas"]["WorkMode"] | null;
             /**
              * Mentions
              * @description People @mentioned (user ids). Each is told if "@Their Name" is in the text and they can see the project; others are ignored
@@ -7432,6 +7517,13 @@ export interface components {
              */
             flagged: string[];
         };
+        /**
+         * WorkMode
+         * @description How the person is working in the conversation (dotrix_engine.work_modes). Changes wait for
+         *     approval in every mode; only Build engages Kai (agents/work_modes.py).
+         * @enum {string}
+         */
+        WorkMode: "discuss" | "plan" | "build" | "review";
         /**
          * WorkspaceAgentUsage
          * @description What the agents did across the workspace's projects in a period (owners and admins).
@@ -13632,6 +13724,66 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": unknown;
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_thread_plans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanRead"][];
                 };
             };
             /** @description Missing, invalid, or expired credentials */

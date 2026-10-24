@@ -15,11 +15,15 @@ import {
   useSendMessage,
   useStopRun,
   useThread,
+  useThreadPlans,
   useWorkspaceThreads,
   wasStopped,
+  WORK_MODES,
   type AgentId,
+  type Plan,
   type Run,
   type RunStreamState,
+  type WorkMode,
 } from "@/lib/agent";
 import {
   AGENT_NAMES,
@@ -250,7 +254,7 @@ function refsOf(
   return { tasks, docs };
 }
 
-function Message({ m, projectId, children }: { m: Msg; projectId: string | null; children?: React.ReactNode }) {
+function Message({ m, projectId, tag, children }: { m: Msg; projectId: string | null; tag?: string; children?: React.ReactNode }) {
   const w = who(m.by);
   const agent = m.role === "agent" ? D().agents.find((a) => a.handle === m.by) : null;
   const [openSteps, setOpenSteps] = useState(false);
@@ -268,6 +272,7 @@ function Message({ m, projectId, children }: { m: Msg; projectId: string | null;
           <b>{m.role === "agent" ? (agent?.name ?? agentName(m.by)) : m.by === D().me ? "You" : w?.name}</b>
           {agent && <span className="role">{agent.role}</span>}
           <time>{ago(m.at)}</time>
+          {tag && <span className="badge">{tag}</span>}
           {m.tokens && admin ? <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span> : null}
         </div>
         {m.activity && m.activity.length > 0 && (
@@ -341,6 +346,7 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
       <Message
         m={{ id: run.id, role: "user", by: run.requested_by_id ?? D().me, at: ms(run.created_at), text: run.message || runTitle(run) }}
         projectId={projectId}
+        tag={WORK_MODES.find(([v]) => v === run.work_mode)?.[1]}
       />
       {shows && (reply.text || run.approvals?.length || limited) ? (
         <Message m={reply} projectId={projectId}>
@@ -360,6 +366,75 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
 }
 
 const MODELS_ICON = "cpu";
+const MODE_ICONS: Record<WorkMode, string> = { discuss: "message-circle", plan: "list-checks", build: "hammer", review: "eye" };
+
+/** A version of the conversation's plan; the latest can be built (a Build message naming its version). */
+function PlanCard({ plan, latest, busy, onBuild }: { plan: Plan; latest: boolean; busy: boolean; onBuild: () => void }) {
+  return (
+    <div className="change" role="group" aria-label={`Plan version ${plan.version}`} style={{ margin: "4px 0 12px 36px" }}>
+      <div className="change-h">
+        <Ic n="list-checks" s={14} />
+        <b style={{ fontWeight: 500 }}>{plan.title}</b>
+        <span className="badge">Plan v{plan.version}</span>
+      </div>
+      <div style={{ padding: "8px 12px", fontSize: 13 }}>
+        <p style={{ margin: "0 0 8px" }}>{plan.summary}</p>
+        {plan.acceptance_criteria.length > 0 && (
+          <>
+            <div className="faint" style={{ fontSize: 11.5 }}>
+              Acceptance criteria
+            </div>
+            <ul style={{ margin: "2px 0 8px", paddingLeft: 18 }}>
+              {plan.acceptance_criteria.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        <div className="faint" style={{ fontSize: 11.5 }}>
+          Tasks
+        </div>
+        <ol style={{ margin: "2px 0 8px", paddingLeft: 18 }}>
+          {plan.tasks.map((t, i) => (
+            <li key={i}>
+              {t.title}
+              {t.depends_on.length > 0 && <span className="faint"> · after {t.depends_on.join(", ")}</span>}
+              {t.detail && (
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {t.detail}
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+        {plan.open_questions.length > 0 && (
+          <>
+            <div className="faint" style={{ fontSize: 11.5 }}>
+              Open questions
+            </div>
+            <ul style={{ margin: "2px 0 0", paddingLeft: 18 }}>
+              {plan.open_questions.map((q) => (
+                <li key={q}>{q}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+      {latest && (
+        <div className="change-f">
+          <span className="faint" style={{ fontSize: 12 }}>
+            Building asks for your approval before anything changes, and Kai's coding before it starts.
+          </span>
+          <span className="sp" />
+          <button className="btn btn-sm btn-primary" disabled={busy} onClick={onBuild}>
+            <Ic n="hammer" s={12} />
+            Build this plan
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Pick({
   value,
@@ -403,6 +478,8 @@ function Composer({
   context,
   contexts,
   setContext,
+  mode,
+  setMode,
 }: {
   placeholder: string;
   onSend: (text: string, agent: string) => void;
@@ -416,6 +493,8 @@ function Composer({
   context?: string;
   contexts?: [string, string][];
   setContext?: (v: string) => void;
+  mode?: WorkMode;
+  setMode?: (m: WorkMode) => void;
 }) {
   const [text, setText] = useState(initial);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -478,6 +557,17 @@ function Composer({
               </span>
             )
           )}
+          {mode && setMode && (
+            <span data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
+              <Pick
+                value={mode}
+                onChange={(v) => setMode(v as WorkMode)}
+                options={WORK_MODES.map(([v, l]): [string, string] => [v, l])}
+                label="Mode"
+                lead={<Ic n={MODE_ICONS[mode]} s={12} />}
+              />
+            </span>
+          )}
           <Pick
             value={agent}
             onChange={setAgent}
@@ -524,13 +614,22 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const stopCross = useStopCross(ws);
   const [picked, setAgent] = useState<string | null>(null);
   const agent = picked ?? handleOf(last?.agent);
+  // How you're working: what you picked, else how the conversation was going, else Discuss.
+  const [pickedMode, setMode] = useState<WorkMode | null>(null);
+  const mode = pickedMode ?? last?.work_mode ?? "discuss";
+  const plans = useThreadPlans(scope, projectId ? id : null, runs.filter((r) => !isActive(r)).length).data ?? [];
+  const latestPlan = plans.at(-1);
   const end = useRef<HTMLDivElement>(null);
   const busy = active && !stream.text;
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   }, [id, runs.length, busy, stream.text]);
-  const say = (message: string, a: string) =>
-    projectId ? send.mutate({ message, threadId: id, agent: a as AgentId }) : sendCross.mutate({ message, thread_id: id, agent: a as AgentId });
+  const say = (message: string, a: string, m: WorkMode = mode) =>
+    projectId ? send.mutate({ message, threadId: id, agent: a as AgentId, workMode: m }) : sendCross.mutate({ message, thread_id: id, agent: a as AgentId });
+  const build = (plan: Plan) => {
+    setMode("build");
+    say(`Build plan version ${plan.version}: ${plan.title}`, agent, "build");
+  };
   const halt = () => last && (projectId ? stop.mutate(last.id) : stopCross.mutate(last.id));
   const about = [...new Set(runs.flatMap((r) => r.project_ids ?? []))].map((pid) => proj(pid)?.name).filter(Boolean);
   // The address named a project (or "across"), so the list wasn't needed to open it; the runs say if it exists.
@@ -570,7 +669,14 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
       <div className="chat-scroll">
         <div className="chat-col">
           {runs.map((r) => (
-            <RunMessages key={r.id} run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
+            <div key={r.id}>
+              <RunMessages run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
+              {plans
+                .filter((pl) => pl.run_id === r.id)
+                .map((pl) => (
+                  <PlanCard key={pl.id} plan={pl} latest={pl.id === latestPlan?.id} busy={active} onBuild={() => build(pl)} />
+                ))}
+            </div>
           ))}
           {active && (
             <div className="chat-msg">
@@ -607,7 +713,9 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           setAgent={setAgent}
           model={modelName(last?.conversation_model) || undefined}
           context={p?.name ?? "All projects"}
-          onSend={say}
+          onSend={(q, a) => say(q, a)}
+          mode={projectId ? mode : undefined}
+          setMode={projectId ? setMode : undefined}
           autoFocus
         />
         {!projectId && (
@@ -629,6 +737,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   const models = useModels(ws).data ?? [];
   const [chosen, setModel] = useState<string | null>(null);
   const model = chosen ?? models[0]?.id ?? "";
+  const [mode, setMode] = useState<WorkMode>("discuss");
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
   const send = useSendMessage(scope);
   const sendCross = useSendCross(ws);
@@ -636,7 +745,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
     S.ui.chatAgent = a;
     const body = { agent: a as AgentId, model: model || null };
     const started = pid
-      ? send.mutateAsync({ message: text, threadId: null, ...body }).then((run) => `thread=${run.thread_id}&project=${proj(pid)?.key}`)
+      ? send.mutateAsync({ message: text, threadId: null, ...body, workMode: mode }).then((run) => `thread=${run.thread_id}&project=${proj(pid)?.key}`)
       : sendCross.mutateAsync({ message: text, thread_id: null, project_ids: picked, ...body }).then((run) => `thread=${run.thread_id}&across=1`);
     started.then(open, () => {});
   };
@@ -678,6 +787,8 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           context={pid}
           contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "All projects"]]}
           setContext={setPid}
+          mode={pid ? mode : undefined}
+          setMode={pid ? setMode : undefined}
           onSend={start}
           autoFocus
           initial={q}

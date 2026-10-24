@@ -105,10 +105,15 @@ class CodingService:
             reason = "Connect the project's GitHub repository first (project settings → Repository)"
         return CodingAvailability(available=reason is None, agent=agent, sandbox=sandbox, reason=reason)
 
-    async def start(self, access: ProjectAccess, key: str, data: CodingRunCreate) -> CodingRunRead:
-        """Ask for a coding run on an issue: a new session, waiting for an approval."""
+    async def start(
+        self, access: ProjectAccess, key: str, data: CodingRunCreate, *,
+        thread_id: uuid.UUID | None = None, plan_id: uuid.UUID | None = None,
+    ) -> CodingRunRead:
+        """Ask for a coding run on an issue: a new session, waiting for an approval. From a
+        conversation in Build mode: that conversation, and the plan version it builds from."""
         issue = await self._codable(access.project, access.member.user_id, key)
         run = await self._create(access.project, access.member, issue, data.note, CodingOrigin.START)
+        run.thread_id, run.plan_id = thread_id, plan_id
         await self.session.commit()
         return self._read(run, access)
 
@@ -483,6 +488,7 @@ class CodingService:
             can_stop=run.status in ACTIVE and run.status is not CodingRunStatus.RECOVERY_REQUIRED
             and self._can_stop(run, access),
             can_recover=run.status is CodingRunStatus.RECOVERY_REQUIRED and self._can_stop(run, access),
+            thread_id=run.thread_id, plan_id=run.plan_id,
         )
 
     def _audit(self, project: Project, access: ProjectAccess, action: str, run: CodingRun) -> None:

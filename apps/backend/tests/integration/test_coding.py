@@ -31,6 +31,7 @@ from dotrix_backend.modules.coding.sandbox import ExecResult, LocalSandbox, Loca
 from dotrix_backend.modules.coding.warm import WarmPool
 from dotrix_backend.modules.connectors.github_app import get_github_app
 from dotrix_backend.modules.execution.service import expire_coding_leases
+from dotrix_engine.testing import tool_call
 
 
 def _git(root: Path, *args: str) -> str:
@@ -1041,3 +1042,54 @@ async def test_a_worker_that_lost_its_lease_is_fenced_off(db_client: AsyncClient
 
     # (one after the other: the test's connection is shared)
     assert [await asyncio.create_task(sees_stop(t)) for t in (1, 2)] == [True, False]
+
+
+# -- work modes: Build hands issues to Kai from the conversation; Review reads what came of it -----
+
+
+async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidence(
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Refunds"})).json()
+    agent_script.say(tool_call("save_plan", title="Refunds", summary="Refund within a week.",
+                               acceptance_criteria=["refund() returns the amount"], tasks=[{"title": "Add refund()"}]),
+                     "Saved the plan.")
+    planned = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                                    json={"message": "Plan refunds", "work_mode": "plan"})).json()
+    thread = planned["thread_id"]
+    plan = (await db_client.get(f"{base}/agent/threads/{thread}/plans", headers=ada.headers)).json()[0]
+
+    # Discussing can't start coding: the tool isn't there.
+    model = agent_script.say("I'd add refund() to the payment provider.")
+    await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                         json={"message": "How would you do it?", "work_mode": "discuss", "thread_id": thread})
+    assert "start_coding" not in model.tools_received[0]
+
+    model = agent_script.say(tool_call("start_coding", issue_key=issue["key"], note="Task 1 of the plan"),
+                             "Asked Kai; it waits for an approval.")
+    built = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                                  json={"message": "Build the plan", "work_mode": "build", "thread_id": thread})).json()
+    assert built["status"] == "completed", built
+    [run] = (await db_client.get(f"{base}/coding/runs?issue_key={issue['key']}", headers=ada.headers)).json()
+    assert run["status"] == "awaiting_approval" and run["thread_id"] == thread and run["plan_id"] == plan["id"]
+    assert run["requested_by_id"] == ada.id and "Task 1 of the plan" in run["brief"]
+    audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
+    assert any(e["action"] == "coding.requested_in_conversation" for e in audit)
+
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    agent_script.say("Looks right.")  # the Reviewer, on the PR
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+
+    model = agent_script.say(tool_call("coding_evidence"), "Kai opened PR #1; the tests weren't run by us.")
+    await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                         json={"message": "What changed?", "work_mode": "review", "thread_id": thread})
+    evidence = [m.content for m in model.received[1] if m.type == "tool"][-1]  # (the thread's history comes first)
+    assert "pr_opened" in evidence and "src/payments.py (+2 -1)" in evidence and "pull/1" in evidence
+
+    # Cat may chat but not instruct Kai: Build says so instead of asking for a run.
+    model = agent_script.say(tool_call("start_coding", issue_key=issue["key"]), "You can't ask Kai here.")
+    await db_client.post(f"{base}/agent/runs", headers=cat.headers, json={"message": "Build it", "work_mode": "build"})
+    refused = next(m.content for m in model.received[1] if m.type == "tool")
+    assert "can't instruct Kai" in refused

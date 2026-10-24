@@ -239,6 +239,7 @@ async def db_client(
         inline=True,
         checkouts=checkouts,
         secrets=app.state.secrets,
+        settings=app.state.settings,
     )
     app.state.jobs = InlineJobs(
         JobContext(shared_session, app.state.settings, outbox, storage, checkouts=checkouts, runner=runner), JOBS
