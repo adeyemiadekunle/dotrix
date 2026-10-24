@@ -111,6 +111,18 @@ export async function memberPermissionsSaved(perms: Schemas["Permission"][]) {
   render();
 }
 
+/** The highest approval mode people may work in here: owners raise it, owners and admins lower it. */
+export async function approvalCap(mode: "manual" | "accept_edits" | "auto") {
+  try {
+    const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { approval_mode_cap: mode } }));
+    live.ws = { ...live.ws!, approval_mode_cap: w.approval_mode_cap, default_approval_mode: w.default_approval_mode };
+    toast("Approval modes updated");
+  } catch (e) {
+    failed("The highest approval mode", e);
+  }
+  render();
+}
+
 /** Pause (owners and admins) or resume (owners) every agent's changes without approval. */
 export async function unattendedPaused(on: boolean) {
   const was = !!live.ws!.unattended_paused;

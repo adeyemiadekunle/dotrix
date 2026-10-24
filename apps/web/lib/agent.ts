@@ -18,6 +18,14 @@ export type Decision = Schemas["Decision"];
 export type AgentId = NonNullable<Schemas["RunCreate"]["agent"]>;
 export type WorkMode = NonNullable<Schemas["RunCreate"]["work_mode"]>;
 export type Plan = Schemas["PlanRead"];
+export type ApprovalMode = NonNullable<Schemas["RunCreate"]["approval_mode"]>;
+
+/** How much goes through without waiting, for chat changes and coding alike (never above the workspace's cap). */
+export const APPROVAL_MODES: [ApprovalMode, string, string][] = [
+  ["manual", "Manual", "Every change waits for a yes; coding waits for an approver"],
+  ["accept_edits", "Accept edits", "What you ask for goes through, approved by you; coding starts at once"],
+  ["auto", "Auto", "The same, and checkpoints don't pause"],
+];
 
 /** How you're working in a project's conversation. Changes always wait for your approval; only Build hands code to Kai. */
 export const WORK_MODES: [WorkMode, string, string][] = [
@@ -193,13 +201,22 @@ export function useSendMessage(scope: Scope | undefined) {
         model,
         mentions = [],
         workMode = null,
-      }: { message: string; threadId: string | null; agent?: AgentId; model?: string | null; mentions?: string[]; workMode?: WorkMode | null },
+        approvalMode = null,
+      }: {
+        message: string;
+        threadId: string | null;
+        agent?: AgentId;
+        model?: string | null;
+        mentions?: string[];
+        workMode?: WorkMode | null;
+        approvalMode?: ApprovalMode | null;
+      },
     ) =>
       unwrap(
         api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs", {
           params: { path: path(s) },
           // The model only for a new conversation: an existing one keeps its own.
-          body: { message, thread_id: threadId, agent, model: threadId ? null : (model ?? null), mentions, work_mode: workMode },
+          body: { message, thread_id: threadId, agent, model: threadId ? null : (model ?? null), mentions, work_mode: workMode, approval_mode: approvalMode },
         }),
       ),
   );

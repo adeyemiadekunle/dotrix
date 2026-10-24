@@ -19,7 +19,9 @@ import {
   useWorkspaceThreads,
   wasStopped,
   WORK_MODES,
+  APPROVAL_MODES,
   type AgentId,
+  type ApprovalMode,
   type Plan,
   type Run,
   type RunStreamState,
@@ -40,6 +42,7 @@ import {
 import { useCrossConversations, useCrossStream, useCrossThread, useSendCross, useStopCross } from "@/lib/conversations";
 import type { Scope } from "@/lib/issues";
 import { LimitNotice } from "../components/LimitNotice";
+import { approvalModes, defaultApproval } from "../core/can";
 import { openPop, openTask } from "../core/actions";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
@@ -480,6 +483,8 @@ function Composer({
   setContext,
   mode,
   setMode,
+  approval,
+  setApproval,
 }: {
   placeholder: string;
   onSend: (text: string, agent: string) => void;
@@ -495,7 +500,10 @@ function Composer({
   setContext?: (v: string) => void;
   mode?: WorkMode;
   setMode?: (m: WorkMode) => void;
+  approval?: ApprovalMode;
+  setApproval?: (m: ApprovalMode) => void;
 }) {
+  const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
   const [text, setText] = useState(initial);
   const ref = useRef<HTMLTextAreaElement>(null);
   const a = D().agents.find((x) => x.handle === agent);
@@ -568,6 +576,17 @@ function Composer({
               />
             </span>
           )}
+          {approval && setApproval && approvals.length > 1 && (
+            <span data-tip={APPROVAL_MODES.find(([v]) => v === approval)?.[2]}>
+              <Pick
+                value={approval}
+                onChange={(v) => setApproval(v as ApprovalMode)}
+                options={approvals.map(([v, l]): [string, string] => [v, l])}
+                label="Approvals"
+                lead={<Ic n={approval === "manual" ? "shield-check" : "zap"} s={12} />}
+              />
+            </span>
+          )}
           <Pick
             value={agent}
             onChange={setAgent}
@@ -617,6 +636,10 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   // How you're working: what you picked, else how the conversation was going, else Discuss.
   const [pickedMode, setMode] = useState<WorkMode | null>(null);
   const mode = pickedMode ?? last?.work_mode ?? "discuss";
+  // How much goes through without waiting: what you picked, else how the conversation was going (if you still may), else the default.
+  const [pickedApproval, setApproval] = useState<ApprovalMode | null>(null);
+  const lastApproval = last?.approval_mode && approvalModes().includes(last.approval_mode) ? last.approval_mode : null;
+  const approval = pickedApproval ?? lastApproval ?? defaultApproval();
   const plans = useThreadPlans(scope, projectId ? id : null, runs.filter((r) => !isActive(r)).length).data ?? [];
   const latestPlan = plans.at(-1);
   const end = useRef<HTMLDivElement>(null);
@@ -625,7 +648,9 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
     end.current?.scrollIntoView({ block: "end" });
   }, [id, runs.length, busy, stream.text]);
   const say = (message: string, a: string, m: WorkMode = mode) =>
-    projectId ? send.mutate({ message, threadId: id, agent: a as AgentId, workMode: m }) : sendCross.mutate({ message, thread_id: id, agent: a as AgentId });
+    projectId
+      ? send.mutate({ message, threadId: id, agent: a as AgentId, workMode: m, approvalMode: approval })
+      : sendCross.mutate({ message, thread_id: id, agent: a as AgentId });
   const build = (plan: Plan) => {
     setMode("build");
     say(`Build plan version ${plan.version}: ${plan.title}`, agent, "build");
@@ -716,6 +741,8 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           onSend={(q, a) => say(q, a)}
           mode={projectId ? mode : undefined}
           setMode={projectId ? setMode : undefined}
+          approval={projectId ? approval : undefined}
+          setApproval={projectId ? setApproval : undefined}
           autoFocus
         />
         {!projectId && (
@@ -738,6 +765,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   const [chosen, setModel] = useState<string | null>(null);
   const model = chosen ?? models[0]?.id ?? "";
   const [mode, setMode] = useState<WorkMode>("discuss");
+  const [approval, setApproval] = useState<ApprovalMode>(defaultApproval());
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
   const send = useSendMessage(scope);
   const sendCross = useSendCross(ws);
@@ -745,7 +773,9 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
     S.ui.chatAgent = a;
     const body = { agent: a as AgentId, model: model || null };
     const started = pid
-      ? send.mutateAsync({ message: text, threadId: null, ...body, workMode: mode }).then((run) => `thread=${run.thread_id}&project=${proj(pid)?.key}`)
+      ? send
+          .mutateAsync({ message: text, threadId: null, ...body, workMode: mode, approvalMode: approval })
+          .then((run) => `thread=${run.thread_id}&project=${proj(pid)?.key}`)
       : sendCross.mutateAsync({ message: text, thread_id: null, project_ids: picked, ...body }).then((run) => `thread=${run.thread_id}&across=1`);
     started.then(open, () => {});
   };
@@ -789,6 +819,8 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           setContext={setPid}
           mode={pid ? mode : undefined}
           setMode={pid ? setMode : undefined}
+          approval={pid ? approval : undefined}
+          setApproval={pid ? setApproval : undefined}
           onSend={start}
           autoFocus
           initial={q}
@@ -834,7 +866,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
   const pid = t?.project;
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
   const avail = useCodingAvailability(scope).data;
-  const start = useStartCoding(scope, t?.key ?? "");
+  const start = useStartCoding(scope, t?.key ?? "", defaultApproval());
   const found = menu === null ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes(menu.toLowerCase())).slice(0, 8);
   const go_ = () => {
     if (!t) return;
@@ -991,7 +1023,7 @@ function Session({ cs }: { cs: CodingSession }) {
   const decide = useDecideCoding(scope, cs.issue_key);
   const stop = useStopCoding(scope, cs.issue_key);
   const recover = useRecoverCoding(scope, cs.issue_key);
-  const follow = useFollowUp(scope, cs.session_id, cs.issue_key);
+  const follow = useFollowUp(scope, cs.session_id, cs.issue_key, defaultApproval());
   const t = isLive() ? { id: cs.issue_key, key: cs.issue_key } : D().tasks.find((x) => x.key === cs.issue_key);
   const p = proj(cs.project_id);
   const tool = AGENT_NAMES[cs.agent];

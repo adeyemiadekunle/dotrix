@@ -20058,6 +20058,11 @@
             ],
             "description": "How the person was working when they sent it"
           },
+          "approval_mode": {
+            "$ref": "#/components/schemas/ApprovalMode",
+            "description": "The approval mode in effect when it was sent",
+            "default": "manual"
+          },
           "conversation_model": {
             "anyOf": [
               {
@@ -20484,6 +20489,15 @@
           "last_used_at"
         ],
         "title": "ApiTokenRead"
+      },
+      "ApprovalMode": {
+        "type": "string",
+        "enum": [
+          "manual",
+          "accept_edits",
+          "auto"
+        ],
+        "title": "ApprovalMode"
       },
       "ApprovalRead": {
         "properties": {
@@ -21627,6 +21641,17 @@
             "minLength": 1,
             "title": "Message",
             "description": "What to do in this turn"
+          },
+          "approval_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes"
           }
         },
         "type": "object",
@@ -21676,6 +21701,17 @@
             ],
             "title": "Note",
             "description": "Anything to add to the issue for the agent"
+          },
+          "approval_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes"
           }
         },
         "type": "object",
@@ -22029,6 +22065,11 @@
             ],
             "title": "Thread Id",
             "description": "The conversation it was started from (Build mode)"
+          },
+          "approval_mode": {
+            "$ref": "#/components/schemas/ApprovalMode",
+            "description": "The approval mode it was asked in",
+            "default": "manual"
           },
           "plan_id": {
             "anyOf": [
@@ -26924,6 +26965,17 @@
             ],
             "description": "How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, `.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with its evidence). Changes wait for approval in every mode; only `build` engages Kai. Omit for no mode (as before work modes: no plans or evidence tools)"
           },
+          "approval_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How much goes through without waiting: `manual` (every change waits for a yes; the default), `accept_edits` (what you ask for goes through, recorded as approved by you, and coding starts at once), `auto` (the same, and checkpoints don't pause). Never above the workspace's cap, and Manual for people who may not approve agent changes"
+          },
           "mentions": {
             "items": {
               "type": "string",
@@ -28970,6 +29022,17 @@
             ],
             "title": "Personal Keys",
             "description": "Let people's own model keys run what they start here (owners and admins)"
+          },
+          "approval_mode_cap": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The highest approval mode people may work in: `manual` (every change waits for a yes), `accept_edits` (what a person asks for goes through, and coding starts at once), `auto` (the same, and checkpoints don't pause). Owners raise it; owners and admins lower it"
           }
         },
         "type": "object",
@@ -29019,6 +29082,16 @@
             "title": "Personal Keys",
             "description": "People's own model keys run what they start here (else the workspace's key)",
             "default": true
+          },
+          "approval_mode_cap": {
+            "$ref": "#/components/schemas/ApprovalMode",
+            "description": "The highest approval mode people may work in here (Manual while changes without approval are paused)",
+            "default": "manual"
+          },
+          "default_approval_mode": {
+            "$ref": "#/components/schemas/ApprovalMode",
+            "description": "What a new conversation or coding session starts on in the app: Accept edits in a personal workspace, Manual in an organisation (never above the cap)",
+            "default": "manual"
           },
           "role": {
             "$ref": "#/components/schemas/Role"

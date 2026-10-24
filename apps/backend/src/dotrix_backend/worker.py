@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .core.crypto import Secrets
 from .core.email import build_email_sender
-from .core.jobs import QUEUE_NAME, JobContext, JobFunction
+from .core.jobs import QUEUE_NAME, JobContext, JobFunction, QueuedJobs
 from .core.logging import configure_logging
 from .core.settings import get_settings
 from .core.storage import build_storage
@@ -92,6 +92,8 @@ async def startup(ctx: dict[str, Any]) -> None:
         stop_reasons=RunQueue(redis),
         streams=RedisRunStreams(redis),
     )
+    # A coding run asked for from a conversation that starts at once: dispatched like any other.
+    ctx["runner"].jobs = QueuedJobs(redis, session_factory=sessionmaker)
     logger.info("worker ready (queue %s)", QUEUE_NAME)
 
 

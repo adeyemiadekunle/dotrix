@@ -40,6 +40,8 @@ These hold whatever the implementation does, and whatever the approval mode.
 
 ## Approval modes
 
+Built (2026-10-24): the start gate, one setting with chat's (`workspaces/approval_modes.py`), the workspace cap, and the person's limit. Not yet: the accept gate (A2), reverts, and CI-sensitive files falling back to Manual.
+
 Each session has a mode, like Claude Code's permission modes, picked when it starts and changeable
 while it runs (by whoever started it, within the limits). The mode decides two gates: **start** (a
 turn may run, and spend tokens) and **accept** (a turn's commit may leave the sandbox and be pushed).
@@ -47,7 +49,7 @@ turn may run, and spend tokens) and **accept** (a turn's commit may leave the sa
 | Mode | Turn starts | Turn's commit is pushed | Who may pick it |
 |---|---|---|---|
 | **Manual** (default) | after an approver approves it | after an approver accepts its diff | anyone who may instruct the coding agent (`agents:code`) |
-| **Accept edits** | the first turn after an approval; follow-ups at once | at once, after the guard | people who may also approve agent changes (`agents:approve`) |
+| **Accept edits** | at once, approved by whoever asked (decided 2026-10-24: their instruction is the approval) | at once, after the guard | people who may also approve agent changes (`agents:approve`) |
 | **Auto** | at once | at once, after the guard | the same, and only where an owner has turned Auto on |
 
 - **Workspace limit.** Owners set the highest mode the workspace allows (Settings → Agents → Coding):

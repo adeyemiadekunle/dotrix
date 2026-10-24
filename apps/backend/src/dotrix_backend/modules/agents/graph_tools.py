@@ -21,7 +21,7 @@ from dotrix_backend.modules.projects.repository import ProjectRepository
 
 from .board_tools import BoardContext
 from .storage_backend import current_agent_role
-from .unattended import REFUSED
+from .unattended import REFUSED, audit_action
 
 GRAPH_TOOLS_GUIDE = """
 ## How things connect
@@ -142,7 +142,7 @@ def build_graph_tools(ctx: BoardContext) -> list[Callable]:
                 return {"error": exc.detail}
             if rule is not None:
                 AuditLog(session).record(
-                    workspace_id=ctx.workspace_id, project_id=ctx.project_id, action="graph.link.allowed",
+                    workspace_id=ctx.workspace_id, project_id=ctx.project_id, action=audit_action("graph.link", rule),
                     target=f"{data.source} {data.kind.value} {data.target}"[:300], actor_type=AuthorType.AGENT,
                     agent=agent, instructed_by_id=ctx.instructed_by_id, approved_by_id=approved_by_id,
                     details={"rule": rule},

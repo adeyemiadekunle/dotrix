@@ -30,6 +30,7 @@ from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.repository import ProjectRepository
+from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
@@ -54,6 +55,8 @@ class ModeContext:
     thread_id: uuid.UUID
     run_id: uuid.UUID
     instructed_by_id: uuid.UUID | None
+    approval: ApprovalMode | None = None  # the run's approval mode: Kai starts at once when it goes through
+    jobs: Any = None  # where a coding run that starts at once goes (None: it waits for an approval)
 
 
 class PlanTask(BaseModel):
@@ -138,8 +141,9 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
             ConversationPlan.workspace_id == ctx.workspace_id, ConversationPlan.thread_id == ctx.thread_id,
         ).order_by(ConversationPlan.version.desc()).limit(1))
         try:
-            run = await CodingService(session, ctx.settings, _NO_JOBS).start(
-                ProjectAccess(project, member), ask.issue_key, CodingRunCreate(note=ask.note),
+            approval = ctx.approval if ctx.jobs is not None else None
+            run = await CodingService(session, ctx.settings, ctx.jobs or _NO_JOBS).start(
+                ProjectAccess(project, member), ask.issue_key, CodingRunCreate(note=ask.note, approval_mode=approval),
                 thread_id=ctx.thread_id, plan_id=plan_id,
             )
         except DomainError as exc:  # not available here, busy, no such issue, ...
@@ -151,8 +155,10 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
                      **({"plan_id": str(plan_id)} if plan_id else {})},
         )
         await session.commit()
+    waiting = run.status.value == "awaiting_approval"
     return {"coding_run_id": str(run.id), "issue_key": run.issue_key, "status": run.status.value,
-            "said": "Waiting for a person's approval before Kai starts"}
+            "said": "Waiting for a person's approval before Kai starts" if waiting
+            else "Kai has started (your approval mode lets it start at once); the PR is where it's reviewed"}
 
 
 async def _coding_evidence(ctx: ModeContext) -> dict[str, Any]:

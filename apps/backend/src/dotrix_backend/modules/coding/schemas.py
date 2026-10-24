@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
+
 from .models import CodingAgent, CodingOrigin, CodingRunStatus, CodingSessionState, PrState
 
 
@@ -19,12 +21,18 @@ class CodingAvailability(BaseModel):
     reason: str | None = Field(description="Why not, when it isn't available")
 
 
+_APPROVAL = ("`manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved "
+             "by you), never above the workspace's cap, and Manual unless you may approve agent changes")
+
+
 class CodingRunCreate(BaseModel):
     note: str | None = Field(default=None, max_length=5_000, description="Anything to add to the issue for the agent")
+    approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
 
 
 class CodingFollowUp(BaseModel):
     message: str = Field(min_length=1, max_length=5_000, description="What to do in this turn")
+    approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
 
 
 class CodingDecision(BaseModel):
@@ -104,6 +112,7 @@ class CodingRunRead(BaseModel):
     can_decide: bool = Field(description="Whether you may approve or reject it now")
     can_stop: bool = Field(description="Whether you may stop it now")
     thread_id: uuid.UUID | None = Field(default=None, description="The conversation it was started from (Build mode)")
+    approval_mode: ApprovalMode = Field(default=ApprovalMode.MANUAL, description="The approval mode it was asked in")
     plan_id: uuid.UUID | None = Field(default=None, description="The plan version it builds from")
     can_recover: bool = Field(default=False, description="Whether you may recover it now (its outcome is uncertain)")
 

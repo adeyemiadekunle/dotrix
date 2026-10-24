@@ -50,6 +50,7 @@ from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import ProjectRepository, visible_to
 from dotrix_backend.modules.research.service import RunWeb, WebResearch, check_report
 from dotrix_backend.modules.rules.service import WorkspaceRules, WorkspaceSkills, layered
+from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode, effective, goes_through
 from dotrix_backend.modules.workspaces.models import Workspace
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine import approvals as hitl
@@ -71,7 +72,7 @@ from .models import AgentApproval, AgentRun, AgentRunOutput, ApprovalStatus, Run
 from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
-from .unattended import Unattended, changes_today, effective_specs
+from .unattended import Unattended, accepting, changes_today, effective_specs
 from .usage import TokenBudgetExceeded, TokenUsage, merge_breakdown
 from .work_modes import ModeContext, codes, lead_tools
 from .workspace_runs import WORKSPACE_GUIDE, build_workspace_pack, build_workspace_tools, read_only
@@ -200,6 +201,9 @@ class AgentRunner:
         self.session_factory = session_factory
         # The server's settings, for asking Kai to code from a conversation (None: Build can't).
         self.settings = settings
+        # Where a coding run asked for from a conversation goes when it starts at once (set once the
+        # app's jobs exist; None: it waits for an approval).
+        self.jobs: Any = None
         # Reads workspaces' own model provider keys (model_keys); unconfigured: none can be read.
         self.secrets = secrets or Secrets(None)
         # Changes agents may make under standing rules: per run step, per workspace per day.
@@ -229,9 +233,11 @@ class AgentRunner:
 
     async def _unattended_specs(
         self, session: Any, run: AgentRun, specs: list[AgentSpec], resolved: dict[str, Any]
-    ) -> tuple[list[AgentSpec], int]:
-        """The run's contracts with the standing rules it may not use turned back into ask, and
-        how many changes it may make without approval (unattended.py)."""
+    ) -> tuple[list[AgentSpec], int, dict[str, frozenset[str]], ApprovalMode | None]:
+        """The run's contracts with the standing rules it may not use turned back into ask (and
+        what the person may change themselves turned into allow, when their approval mode lets it
+        go through), how many changes it may make without approval (unattended.py), what turned,
+        and the mode in effect now (the cap or a pause may have lowered it since it was asked)."""
         per_run, per_day = self.unattended_limits
         left = min(per_run, max(0, per_day - await changes_today(session, run.workspace_id)))
         members = MembershipRepository(session)
@@ -251,7 +257,13 @@ class AgentRunner:
             briefing=run.kind is RunKind.BRIEFING,
             automation=None if run.automation_id is None else bool(automation and automation.unattended),
         )
-        return specs, left
+        accepted: dict[str, frozenset[str]] = {}
+        mode = None
+        if run.automation_id is None and run.kind is not RunKind.BRIEFING and instructor is not None:
+            mode = effective(ApprovalMode(run.approval_mode) if run.approval_mode else None, instructor)
+            if goes_through(mode):
+                specs, accepted = accepting(specs, instructor)
+        return specs, left, accepted, mode
 
     async def _code(
         self, workspace_id: uuid.UUID, project_id: uuid.UUID, context: str
@@ -447,11 +459,12 @@ class AgentRunner:
                 lead = run.agent  # None: Auto (the Project Manager)
                 mode = run.mode
                 work_mode = run.work_mode
-                specs, unattended_left = await self._unattended_specs(session, run, specs, resolved)
+                specs, unattended_left, accepted, approval = await self._unattended_specs(session, run, specs, resolved)
                 policy = AgentPolicy(specs)
                 versions = {handle: agent.version for handle, agent in resolved.items()}
                 unattended = Unattended(
-                    policy, {h: a.author_id for h, a in resolved.items() if a.author_id}, versions, unattended_left
+                    policy, {h: a.author_id for h, a in resolved.items() if a.author_id}, versions, unattended_left,
+                    accepted=accepted, instructor_id=run.requested_by_id, mode=approval.value if approval else None,
                 )
                 prior_web = (run.usage or {}).get("web")
 
@@ -487,6 +500,7 @@ class AgentRunner:
             read_tools, pm_write_tools, _ = build_board_tools(board_context)
             mode_tools = lead_tools(work_mode, ModeContext(
                 self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
+                approval=approval, jobs=self.jobs,
             ))
             if self.web is not None:
                 run_web = await self.web.for_run(
@@ -527,6 +541,7 @@ class AgentRunner:
                 mode=mode,
                 work_mode=work_mode.value if work_mode else None,
                 lead_tools=mode_tools,
+                checkpoints=approval is not ApprovalMode.AUTO,
                 result_sink=lambda schema, items: results.append((schema, items)),
                 # Stages show as live activity from the `stage` calls themselves (activity.py);
                 # here they split the run's tokens by stage.

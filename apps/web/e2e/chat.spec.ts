@@ -47,6 +47,7 @@ test("the agents answer, and a change waits for approval before it happens", asy
   // A new conversation for the change: it waits, and nothing happens until it's approved.
   await conversations.getByRole("button", { name: "New chat in Kumove" }).click();
   await expect(page).not.toHaveURL(/thread=/);
+  await page.getByLabel("Approvals", { exact: true }).selectOption("manual"); // a personal workspace starts on Accept edits
   await page.getByLabel("Message").fill("Create issue: Add dark mode");
   await page.getByLabel("Message").press("Enter");
   await expect(page.getByText("1 change waits for your approval")).toBeVisible();
@@ -60,6 +61,21 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await expect(async () => {
     await page.goto(`/w/${slugOf(page)}/p/KUM/board`);
     await expect(page.getByText("Add dark mode")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+});
+
+test("in Accept edits what you ask for goes through, approved by you", async ({ page }) => {
+  await signUp(page);
+  await addProject(page, "Kumove", "KUM");
+  await openChat(page, "?project=KUM");
+  await expect(page.getByLabel("Approvals", { exact: true })).toHaveValue("accept_edits"); // your own workspace's default
+  await page.getByLabel("Message").fill("Create issue: Add search");
+  await page.getByLabel("Message").press("Enter");
+  await expect(page.getByText(/Done\./)).toBeVisible();
+  await expect(page.getByText("1 change waits for your approval")).toHaveCount(0);
+  await expect(async () => {
+    await page.goto(`/w/${slugOf(page)}/p/KUM/board`);
+    await expect(page.getByText("Add search")).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
 });
 

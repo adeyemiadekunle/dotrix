@@ -47,6 +47,9 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Whether people's own model keys (Account → Models) run what they start here; otherwise
     # every run uses the workspace's key. A personal workspace always uses its owner's.
     personal_keys: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # The highest approval mode its people may work in (approval_modes.py: manual, accept_edits,
+    # auto); null: Auto in a personal workspace, Manual in an organisation.
+    approval_mode_cap: Mapped[str | None] = mapped_column(String(16))
 
 
 class Membership(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):

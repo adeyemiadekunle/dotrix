@@ -103,6 +103,9 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     agent: Mapped[CodingAgent] = mapped_column(str_enum(CodingAgent, 16))
     model: Mapped[str | None] = mapped_column(String(100))  # the tool's own default when null
     status: Mapped[CodingRunStatus] = mapped_column(str_enum(CodingRunStatus, 24), index=True)
+    # The approval mode this turn was asked in (workspaces/approval_modes.py): Manual waits for an
+    # approver; Accept edits and Auto start at once, approved by whoever asked.
+    approval_mode: Mapped[str] = mapped_column(String(16), default="manual", server_default="manual")
     dispatch_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # The worker's lease while it runs: `lease_token` goes up each time a worker takes the run (so
     # it counts attempts) and fences the earlier one off, whose writes and pushes then stop.

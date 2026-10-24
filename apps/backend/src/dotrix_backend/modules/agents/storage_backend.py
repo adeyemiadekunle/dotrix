@@ -54,7 +54,7 @@ from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_engine.agent import role_for_agent_name
 from dotrix_engine.contracts import AgentPolicy
 
-from .unattended import Unattended
+from .unattended import Unattended, audit_action
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -203,7 +203,7 @@ class PlatformKnowledgeBackend(BackendProtocol):
                 return f"Error: {exc.detail}"
             if rule is not None:
                 AuditLog(session).record(
-                    workspace_id=self.workspace_id, project_id=self.project_id, action="knowledge.write.allowed",
+                    workspace_id=self.workspace_id, project_id=self.project_id, action=audit_action("knowledge.write", rule),
                     target=path, actor_type=AuthorType.AGENT, agent=agent, instructed_by_id=self.instructed_by_id,
                     approved_by_id=approved_by_id, details={"rule": rule},
                 )

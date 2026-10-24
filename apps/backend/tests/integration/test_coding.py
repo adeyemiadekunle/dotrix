@@ -1116,3 +1116,45 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     gone = await _start_coding(ctx, StartCoding(issue_key=other["key"]))
     assert "gone" in gone["error"]
     assert (await db_client.get(f"{base}/coding/runs?issue={other['key']}", headers=ada.headers)).json() == []
+
+
+# -- approval modes: in Accept edits a coding turn starts at once, approved by whoever asked ---------
+
+
+async def test_accept_edits_starts_kai_at_once_and_manual_still_waits(
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.patch(ws, json={"approval_mode_cap": "accept_edits",
+                                    "member_permissions": ["agents:code"]}, headers=ada.headers)
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Refunds"})).json()
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    agent_script.say("Looks right.")  # the Reviewer, on the PR
+    started = await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers,
+                                   json={"approval_mode": "auto"})
+    assert started.status_code == 201, started.text
+    run = started.json()
+    assert run["approval_mode"] == "accept_edits" and run["status"] == "pr_opened", run  # capped, and it ran
+    assert run["decided_by_id"] == ada.id and run["decision_reason"].startswith("Started at once")
+    audit = [e for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json() if e["action"] == "coding.approved"]
+    assert audit[0]["details"]["approval_mode"] == "accept_edits"
+
+    # Cat may instruct Kai but not approve agent changes: Manual, so it waits.
+    other = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Other"})).json()
+    theirs = (await db_client.post(f"{base}/coding/issues/{other['key']}/runs", headers=cat.headers,
+                                   json={"approval_mode": "accept_edits"})).json()
+    assert theirs["approval_mode"] == "manual" and theirs["status"] == "awaiting_approval"
+    await db_client.post(f"{base}/coding/runs/{theirs['id']}/decision", json={"decision": "reject"}, headers=ada.headers)
+
+    # Build in Accept edits: Kai starts at once from the conversation too.
+    third = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Third"})).json()
+    model = agent_script.say(tool_call("start_coding", issue_key=third["key"]), "Kai has started.", "Looks right.")
+    await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
+        "message": "Build it", "work_mode": "build", "approval_mode": "accept_edits",
+    })
+    # (here the coding run, and its Reviewer, run inside the tool call: search every call for its result)
+    said = [m.content for call in model.received for m in call if m.type == "tool" and m.name == "start_coding"]
+    assert said and "Kai has started" in said[-1]
+    [built] = (await db_client.get(f"{base}/coding/runs?issue={third['key']}", headers=ada.headers)).json()
+    assert built["approval_mode"] == "accept_edits" and built["status"] in ("pr_opened", "no_changes", "running")

@@ -28,6 +28,7 @@ from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import visible_to
+from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode, effective, goes_through
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 
@@ -109,13 +110,14 @@ class CodingService:
         self, access: ProjectAccess, key: str, data: CodingRunCreate, *,
         thread_id: uuid.UUID | None = None, plan_id: uuid.UUID | None = None,
     ) -> CodingRunRead:
-        """Ask for a coding run on an issue: a new session, waiting for an approval. From a
-        conversation in Build mode: that conversation, and the plan version it builds from."""
+        """Ask for a coding run on an issue: a new session, waiting for an approval (or started at
+        once, when the person's approval mode lets it go through). From a conversation in Build mode:
+        that conversation, and the plan version it builds from."""
         issue = await self._codable(access.project, access.member.user_id, key)
-        run = await self._create(access.project, access.member, issue, data.note, CodingOrigin.START)
+        run = await self._create(access.project, access.member, issue, data.note, CodingOrigin.START,
+                                 approval=data.approval_mode)
         run.thread_id, run.plan_id = thread_id, plan_id
-        await self.session.commit()
-        return self._read(run, access)
+        return await self._settle(access, run)
 
     async def start_for_assignment(self, access: ProjectAccess, key: str) -> CodingRunRead | None:
         """An issue was just assigned to a coding tool: start a session in the background (waiting for
@@ -147,8 +149,22 @@ class CodingService:
         run = await self._create(
             access.project, access.member, issue, data.message, CodingOrigin.FOLLOW_UP,
             session_id=session_id, turn=latest.turn + 1, earlier=earlier, carry=with_branch,
+            approval=data.approval_mode,
         )
+        return await self._settle(access, run)
+
+    async def _settle(self, access: ProjectAccess, run: CodingRun) -> CodingRunRead:
+        """Commit a new turn: it waits for an approval, or starts at once under the person's mode."""
+        if not goes_through(ApprovalMode(run.approval_mode)):
+            await self.session.commit()
+            return self._read(run, access)
+        # Their instruction is the approval (their mode needs the right to approve agent changes).
+        run.decided_by_id, run.decided_at = access.member.user_id, datetime.now(UTC)
+        run.decision_reason = f"Started at once ({run.approval_mode.replace('_', ' ')})"
+        dispatch = await self._queue(access, run)
         await self.session.commit()
+        await self._send(run, dispatch)
+        await self.session.refresh(run)
         return self._read(run, access)
 
     async def _codable(self, project: Project, user_id: uuid.UUID, key: str, *, busy_ok: bool = False) -> IssueRead:
@@ -170,7 +186,7 @@ class CodingService:
     async def _create(
         self, project: Project, member: Membership, issue: IssueRead, note: str | None, origin: CodingOrigin, *,
         session_id: uuid.UUID | None = None, turn: int = 1, earlier: list[tuple[int, str]] | None = None,
-        carry: CodingRun | None = None,
+        carry: CodingRun | None = None, approval: ApprovalMode | None = None,
     ) -> CodingRun:
         agent = choose_agent(self.settings, await key_providers(self.session, project.workspace_id, member.user_id))
         assert agent is not None
@@ -185,6 +201,8 @@ class CodingService:
             brief=await build_brief(self.session, project, issue, note, earlier),
             note=note, repo_full_name=repo.full_name, base_branch=repo.default_branch,
             requested_by_id=member.user_id, created_at=datetime.now(UTC),
+            # The mode this turn was asked in, as far as the workspace and the person allow.
+            approval_mode=effective(approval, member).value,
         )
         if carry is not None:  # the session's branch and PR: this turn builds on them
             run.branch, run.pr_number, run.pr_url, run.pr_state = carry.branch, carry.pr_number, carry.pr_url, carry.pr_state
@@ -196,6 +214,8 @@ class CodingService:
             details={"run_id": str(run.id), "session_id": str(run.session_id), "turn": turn,
                      "origin": origin.value, "agent": agent.value},
         )
+        if goes_through(ApprovalMode(run.approval_mode)):
+            return run  # it starts at once: nobody waits on it
         await Notifier(self.session).coding_waiting(
             project, run.id, issue.id, f"Coding {issue.key}: {issue.title}", run.created_at, agent.value,
             requester_id=member.user_id,
@@ -221,6 +241,14 @@ class CodingService:
             self._audit(access.project, access, "coding.rejected", run)
             await self.session.commit()
             return self._read(run, access)
+        dispatch = await self._queue(access, run)
+        await self.session.commit()
+        await self._send(run, dispatch)
+        await self.session.refresh(run)
+        return self._read(run, access)
+
+    async def _queue(self, access: ProjectAccess, run: CodingRun) -> RunDispatch | None:
+        """An approved run, queued (not committed): the issue is Kai's, audited, its dispatch recorded."""
         # The run codes on its requester's keys, not the approver's.
         available = await self.availability(access.project, run.requested_by_id)
         if not available.available:
@@ -236,11 +264,7 @@ class CodingService:
             access.project, run.issue_key, IssueActor(access.member, coding_instructed=True), change, commit=False,
         )
         self._audit(access.project, access, "coding.approved", run)
-        dispatch = self._dispatch(self.session, run)
-        await self.session.commit()
-        await self._send(run, dispatch)
-        await self.session.refresh(run)
-        return self._read(run, access)
+        return self._dispatch(self.session, run)
 
     async def recover(self, access: ProjectAccess, run_id: uuid.UUID, data: CodingRecover, app: GitHubApp) -> CodingRunRead:
         """Settle a run whose outcome is uncertain: check GitHub (adopt or open its PR, or run the
@@ -488,7 +512,7 @@ class CodingService:
             can_stop=run.status in ACTIVE and run.status is not CodingRunStatus.RECOVERY_REQUIRED
             and self._can_stop(run, access),
             can_recover=run.status is CodingRunStatus.RECOVERY_REQUIRED and self._can_stop(run, access),
-            thread_id=run.thread_id, plan_id=run.plan_id,
+            thread_id=run.thread_id, plan_id=run.plan_id, approval_mode=run.approval_mode or "manual",
         )
 
     def _audit(self, project: Project, access: ProjectAccess, action: str, run: CodingRun) -> None:
@@ -496,5 +520,6 @@ class CodingService:
             workspace_id=project.workspace_id, project_id=project.id, action=action, target=run.issue_key,
             actor_type=AuthorType.USER, actor_user_id=access.member.user_id,
             instructed_by_id=run.requested_by_id, approved_by_id=run.decided_by_id,
-            details={"run_id": str(run.id), "agent": run.agent.value, "reason": run.decision_reason},
+            details={"run_id": str(run.id), "agent": run.agent.value, "reason": run.decision_reason,
+                     "approval_mode": run.approval_mode or "manual"},
         )

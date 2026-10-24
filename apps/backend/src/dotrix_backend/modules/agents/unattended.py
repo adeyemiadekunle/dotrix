@@ -8,6 +8,11 @@ longer an owner. During the run, `Unattended.grant` says whether one change may 
 rule's author is recorded as its approver, with the rule (agent, action, version), and a cap per
 run step and per workspace per day stops the rest (a workspace past its daily cap runs with every
 change asking, as if paused).
+
+The person's approval mode (workspaces/approval_modes.py) is the other way through: in Accept
+edits or Auto, `accepting` turns the changes they may make themselves from ask into allow, and
+`grant` records them as the approver (audited as `<action>.accepted`, not counted against the
+caps, which are for changes no one asked for at the time). An owner's block still blocks.
 """
 from __future__ import annotations
 
@@ -70,6 +75,27 @@ def effective_specs(
     return out
 
 
+def accepting(specs: list[AgentSpec], instructor: Membership | None) -> tuple[list[AgentSpec], dict[str, frozenset[str]]]:
+    """The contracts with what `instructor` may do themselves turned from ask into allow (their
+    approval mode lets it go through), and which actions that turned, by agent."""
+    if instructor is None:
+        return specs, {}
+    mine = [a for a in ACTIONS if can(instructor, _NEEDS[a])]
+    out, turned = [], {}
+    for spec in specs:
+        added = frozenset(a for a in mine if spec.rule(a) == "ask")
+        out.append(spec.allowing(added))
+        if added:
+            turned[spec.handle] = added
+    return out, turned
+
+
+def audit_action(action: str, rule: dict[str, Any]) -> str:
+    """How a change made without a pause is audited: `.accepted` under the person's approval mode,
+    `.allowed` under an owner's standing rule."""
+    return f"{action}.accepted" if rule.get("mode") else f"{action}.allowed"
+
+
 async def changes_today(session: AsyncSession, workspace_id: uuid.UUID) -> int:
     """Changes made under standing rules in this workspace since midnight UTC."""
     midnight = datetime.combine(datetime.now(UTC).date(), time(), tzinfo=UTC)
@@ -94,9 +120,15 @@ class Unattended:
     versions: dict[str, int | None]
     left: int
     made: int = field(default=0)
+    # The person's approval mode: the actions it turned into allow, by agent, and whose they are.
+    accepted: dict[str, frozenset[str]] = field(default_factory=dict)
+    instructor_id: uuid.UUID | None = None
+    mode: str | None = None
 
     def grant(self, agent: str, action: str) -> tuple[uuid.UUID, dict[str, Any]] | str:
         """(approver, rule) when `agent` may take `action` now without asking, else why not."""
+        if self.instructor_id is not None and action in self.accepted.get(agent, frozenset()):
+            return self.instructor_id, {"agent": agent, "action": action, "mode": self.mode}
         approver = self.authors.get(agent)
         if not self.policy.allowed(agent, action) or approver is None:
             return REFUSED
