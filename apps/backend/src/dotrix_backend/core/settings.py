@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,10 +11,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # (uvicorn at the root, alembic in apps/backend). Real env vars take precedence.
 REPO_ROOT_ENV = Path(__file__).resolve().parents[5] / ".env"
 
-# An empty value (`KEY=` in .env, or a Compose variable left unset) is the same as no value.
 _CONFIG = SettingsConfigDict(
-    env_prefix="DOTRIX_", env_file=(REPO_ROOT_ENV, ".env"), extra="ignore", env_ignore_empty=True
+    env_prefix="DOTRIX_", env_file=(REPO_ROOT_ENV, ".env"), extra="ignore"
 )
+# Settings where an empty value means something of its own, not "unset" (see Settings._empty_is_unset).
+EMPTY_MEANS_SOMETHING = frozenset({"embedding_model"})
 
 
 class DatabaseSettings(BaseSettings):
@@ -29,6 +30,16 @@ class DatabaseSettings(BaseSettings):
 
 class Settings(DatabaseSettings):
     model_config = _CONFIG
+
+    @model_validator(mode="before")
+    @classmethod
+    def _empty_is_unset(cls, data: Any) -> Any:
+        """An empty value (`KEY=` in .env, or a Compose variable left blank) is the same as no value,
+        so the default applies, except where empty is a choice (an empty embedding model: search
+        by keywords only)."""
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if v != "" or k in EMPTY_MEANS_SOMETHING}
+        return data
 
     # "staging" and "production" are deployed: secure cookies, and the checks in _safe_for_production.
     env: Literal["development", "test", "staging", "production"] = "development"

@@ -94,3 +94,13 @@ async def test_the_docker_sandbox_uses_the_machine_s_limits_and_runtime(tmp_path
     assert "sk-test" not in " ".join(agent)  # the key goes by name, never on argv
     plain = DockerSandbox(_settings())
     assert (plain.memory, plain.cpus, plain.runtime) == ("4g", 2.0, None)  # unchanged defaults
+
+
+def test_a_blank_setting_is_unset_except_where_empty_is_a_choice(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Compose passes a variable left blank as "": it means the default, never an invalid value.
+    for name in ("DOTRIX_CODING_FORK_OWNER", "DOTRIX_CODING_DOCKER_RUNTIME", "ANTHROPIC_API_KEY"):
+        monkeypatch.setenv(name, "")
+    monkeypatch.setenv("DOTRIX_EMBEDDING_MODEL", "")  # empty: search by keywords only
+    settings = _settings()
+    assert (settings.coding_fork_owner, settings.coding_docker_runtime, settings.anthropic_api_key) == (None, None, None)
+    assert settings.embedding_model == ""
