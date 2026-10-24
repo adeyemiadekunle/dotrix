@@ -21,6 +21,7 @@ from dotrix_backend.core.errors import Conflict, Unprocessable
 from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.code.service import CodeService
 from dotrix_backend.modules.knowledge.models import KnowledgeFile
+from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.models import Project
 from dotrix_engine.inventory import (
     DOMAINS,
@@ -52,6 +53,11 @@ PAGE_MAX = 500
 _OPEN = (PathStatus.PENDING, PathStatus.UNSUPPORTED, PathStatus.INACCESSIBLE)
 
 
+def _stale_sources(pages: RepoPagesRead) -> dict[str, set[tuple[str, str]]]:
+    """Each page's cited paths that changed or left the repository (never read isn't a push's doing)."""
+    return {p.path: {(s.path, s.why) for s in p.stale if s.why != "unread"} for p in pages.pages}
+
+
 class RepoKnowledgeService:
     def __init__(self, session: AsyncSession, checkouts: CodeCheckouts | None) -> None:
         self.session, self.checkouts = session, checkouts
@@ -75,6 +81,7 @@ class RepoKnowledgeService:
         if inventory.commit != checkout.sha and (existing := await self._at(workspace_id, project_id, inventory.commit)):
             return RepoSnapshotRead.model_validate(existing)  # a push landed meanwhile, and its sync took it
         previous = await self._latest(project)
+        stale_before = _stale_sources(await self.pages(project)) if previous is not None else {}
         # Content the skill already read, unchanged since: still read.
         kept: dict[tuple[str, str], tuple[datetime | None, object]] = {}
         if previous is not None:
@@ -108,6 +115,11 @@ class RepoKnowledgeService:
         for start in range(0, len(rows), 1000):
             await self.session.execute(insert(RepoPath), rows[start:start + 1000])
         await self._prune(project)
+        if previous is not None:  # pages the new commit made stale (not ones that already were)
+            stale_now = _stale_sources(await self.pages(project))
+            newly = [page for page, sources in stale_now.items() if sources - stale_before.get(page, set())]
+            if newly:
+                await Notifier(self.session).stale_pages(project, newly, checkout.full_name, datetime.now(UTC))
         await self.session.commit()
         logger.info("inventory of %s at %s: %d paths", checkout.full_name, inventory.commit[:7], len(rows))
         return RepoSnapshotRead.model_validate(row)

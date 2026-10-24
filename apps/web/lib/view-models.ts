@@ -174,6 +174,7 @@ export const NOTIF_IN: Record<string, NotifType> = {
   finding: "finding",
   decided: "decided",
   limit: "limit",
+  stale: "stale",
 };
 export function toNotif(n: Schemas["NotificationRead"]): Notif {
   return {

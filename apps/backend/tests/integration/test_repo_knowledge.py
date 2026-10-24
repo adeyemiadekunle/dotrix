@@ -216,6 +216,17 @@ async def test_a_page_goes_stale_when_the_code_it_cites_changes(
     assert stale == [{"path": "src/payments.py", "why": "changed"}, {"path": "src/api/routes.py", "why": "removed"},
                      {"path": "README.md", "why": "unread"}]  # package.json is unchanged: still read
 
+    # Whoever edits documents hears about it; members who don't, don't.
+    said = [n for n in (await db_client.get(f"{ws}/notifications", headers=ada.headers)).json() if n["kind"] == "stale"]
+    assert len(said) == 1 and said[0]["count"] == 1 and "architecture.md" in said[0]["title"]
+    assert "kunemi/api" in said[0]["title"]
+    assert not [n for n in (await db_client.get(f"{ws}/notifications", headers=cat.headers)).json() if n["kind"] == "stale"]
+    # A push that changes nothing the page cites says nothing more.
+    third = _commit(origin, {"tests/test_payments.py": "def test_it():\n    assert 1\n"})
+    assert (await deliver("push", {**push, "after": third})).status_code == 202
+    again = [n for n in (await db_client.get(f"{ws}/notifications", headers=ada.headers)).json() if n["kind"] == "stale"]
+    assert len(again) == 1
+
     # Refreshing starts with the stale pages.
     model = agent_script.say("Updated the architecture page.")
     run = await db_client.post(f"{base}/explain", json={"refresh": True}, headers=ada.headers)

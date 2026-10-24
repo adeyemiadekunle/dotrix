@@ -25924,7 +25924,8 @@
           "mention",
           "decided",
           "watching",
-          "limit"
+          "limit",
+          "stale"
         ],
         "title": "NotificationKind"
       },
@@ -26123,6 +26124,12 @@
             "type": "boolean",
             "title": "Watching",
             "description": "An issue you watch changes or gets a comment",
+            "default": true
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "description": "A push changes code the project's wiki pages cite",
             "default": true
           },
           "email": {

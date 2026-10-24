@@ -6400,7 +6400,7 @@ export interface components {
          * NotificationKind
          * @enum {string}
          */
-        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention" | "decided" | "watching" | "limit";
+        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention" | "decided" | "watching" | "limit" | "stale";
         /**
          * NotificationRead
          * @description Something that waits for you or happened to you. `kind` says which: changes waiting for
@@ -6517,6 +6517,12 @@ export interface components {
              * @default true
              */
             watching: boolean;
+            /**
+             * Stale
+             * @description A push changes code the project's wiki pages cite
+             * @default true
+             */
+            stale: boolean;
             /**
              * Email
              * @description Emails: as things happen (batched, one per run), a daily digest at 08:00 UTC, or none
