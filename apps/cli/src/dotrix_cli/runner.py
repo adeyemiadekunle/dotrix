@@ -15,6 +15,7 @@ is deleted that you might want); `git worktree prune` and removing the folder cl
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import platform as platform_info
@@ -146,7 +147,9 @@ class LocalRunner:
     command: str | None = None  # instead of a known tool: any command (brief on stdin, output as events)
     sandbox: str = "auto"  # "auto" (srt when installed), "srt", or "none"
     worktrees: Path = field(default_factory=lambda: Path.home() / ".dotrix" / "worktrees")
-    name: str = field(default_factory=socket.gethostname)
+    # This checkout's name on the platform. One registration per checkout: two runners on one computer
+    # (for two projects) never share one, so neither claims the other's turns.
+    name: str = ""
     remote: str = "origin"
     echo: Callable[[str], None] = print
     runner_id: str | None = None
@@ -169,6 +172,11 @@ class LocalRunner:
     @property
     def base(self) -> str:
         return f"/workspaces/{self.workspace_id}/coding/runners"
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            where = hashlib.sha256(str(self.repo.resolve()).encode()).hexdigest()[:6]
+            self.name = f"{socket.gethostname()} · {self.repo.name} ({where})"[:100]
 
     async def register(self) -> dict[str, Any]:
         tools = self.tools()
@@ -230,6 +238,9 @@ class LocalRunner:
                     raise LeaseLost() from exc
                 raise
 
+        if run["project_id"] != self.project_id:  # never code a turn against another project's checkout
+            await report("failed", error="Claimed by a runner for another project's checkout; ask again")
+            return
         ref = run.get("branch") or run["base_branch"]
         self.echo(f"{run['issue_key']} turn {run['turn']}: {run['title']}")
         try:
@@ -275,12 +286,14 @@ class LocalRunner:
         errors = asyncio.create_task(process.stderr.read())
         stopped = False
 
+        def take(line: str) -> None:
+            before = len(out.events)
+            parse_line(line, out)
+            pending.extend(out.events[before:])
+
         async def read() -> None:
             assert process.stdout
-            async for raw in process.stdout:
-                before = len(out.events)
-                parse_line(raw.decode(errors="replace"), out)
-                pending.extend(out.events[before:])
+            await read_lines(process.stdout, take)
 
         reading = asyncio.create_task(read())
         last = time.monotonic()
@@ -298,6 +311,11 @@ class LocalRunner:
             raise
         finally:
             _remove(leftovers)  # the Windows launcher holds the tool's keys: never left behind
+        if not reading.cancelled() and (failed := reading.exception()) is not None:
+            await _terminate(process)  # its output can't be read: stop it rather than let its pipe fill
+            await process.wait()
+            await report("failed", base_sha=base_sha, error=f"Couldn't read {tool.name}'s output: {failed}")
+            return
         code = await process.wait()
         stderr = (await errors).decode(errors="replace").strip()
         if stopped:
@@ -333,6 +351,30 @@ class LocalRunner:
             argv = sandbox_runtime.windows_launcher(launcher, argv, _env())
             leftovers.append(launcher)
         return [*srt, "--settings", str(settings), "--", *argv], leftovers
+
+
+MAX_LINE = 4_000_000  # longer output lines are cut here (events keep 4,000 characters of a line anyway)
+
+
+async def read_lines(stream: asyncio.StreamReader, take: Callable[[str], None]) -> None:
+    """Every line of the tool's output, however long: read a chunk at a time (a line over the
+    stream's limit would end `readline`), each cut at MAX_LINE."""
+    buffer = b""
+    while chunk := await stream.read(65536):
+        buffer += chunk
+        while (end := buffer.find(b"\n")) >= 0:
+            take(buffer[:min(end, MAX_LINE)].decode(errors="replace"))
+            buffer = buffer[end + 1:]
+        if len(buffer) > MAX_LINE:  # a line without an end yet: keep its start, skip the rest
+            take(buffer[:MAX_LINE].decode(errors="replace"))
+            while chunk := await stream.read(65536):
+                if (end := chunk.find(b"\n")) >= 0:
+                    buffer = chunk[end + 1:]
+                    break
+            else:
+                buffer = b""
+    if buffer:
+        take(buffer.decode(errors="replace"))
 
 
 def _lost(exc: Exception) -> bool:

@@ -1477,6 +1477,21 @@ async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushe
     assert turn["status"] == "pr_opened" and turn["base_sha"] == done["commit_sha"] and len(github.pulls) == 1
     assert _git(origin, "rev-parse", f"{done['branch']}~1") == done["commit_sha"]
 
+    # On a server that codes only locally (no cloud sandbox), a pushed local turn is still reverted (the
+    # platform pushes the revert, nothing codes), and the session keeps coding on her computer.
+    db_client._transport.app.state.settings.coding_sandbox = "off"  # type: ignore[attr-defined]
+    assert not (await db_client.get(f"{base}/coding", headers=ada.headers)).json()["available"]
+    asked = await db_client.post(f"{base}/coding/runs/{turn['id']}/revert", json={}, headers=ada.headers)
+    assert asked.status_code == 201, asked.text
+    agent_script.say("Fine.")
+    reverted = await _approve(db_client, base, asked.json(), ada.headers)
+    assert reverted["status"] == "pr_opened" and reverted["location"] == "cloud", reverted
+    assert _git(origin, "show", f"{done['branch']}:src/refunds.py") == "def refund(a):\n    return a"
+    after = (await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", json={"message": "Again"},
+                                  headers=ada.headers)).json()
+    assert after["location"] == "local", after
+    await db_client.post(f"{base}/coding/runs/{after['id']}/stop", headers=ada.headers)
+
     # Her runner claims only her turns: Cat's (on the platform) isn't one of them; revoked, it claims nothing.
     assert (await db_client.get(f"{ws}/coding/runners", headers=cat.headers)).json() == []
     assert (await db_client.delete(f"{ws}/coding/runners/{registered['id']}", headers=ada.headers)).status_code == 204

@@ -147,11 +147,16 @@ class CodingService:
         ).order_by(CodingRunner.last_seen_at.desc()).limit(1)) if user_id else None
         if runner is None:
             return None, f"Run `dotrix runner` in a checkout of {project.key} on your computer first"
+        return runner, await self._publishable(project)
+
+    async def _publishable(self, project: Project) -> str | None:
+        """Why the platform can't push to the project's repository (None: it can): what a local turn
+        and a revert need, whatever coding is set up on the server."""
         if not GitHubAppClient(self.settings).configured:
-            return runner, "The dotrix GitHub App isn't set up on this server"
+            return "The dotrix GitHub App isn't set up on this server"
         if await self._repo(project) is None:
-            return runner, "Connect the project's GitHub repository first (project settings → Repository)"
-        return runner, None
+            return "Connect the project's GitHub repository first (project settings → Repository)"
+        return None
 
     async def start(
         self, access: ProjectAccess, key: str, data: CodingRunCreate, *,
@@ -183,7 +188,11 @@ class CodingService:
     async def follow_up(self, access: ProjectAccess, session_id: uuid.UUID, data: CodingFollowUp) -> CodingRunRead:
         """Another turn in a session: the same agent, on the session's branch, pushing to its PR
         (or opening one, if no turn has yet). It waits for an approval like the first."""
-        location = data.location or (await self._turns(access, session_id))[-1].location  # the session's, unless told
+        # Where the session codes, unless told: its latest turn that coded (a revert codes nowhere).
+        location = data.location or next(
+            (t.location for t in reversed(await self._turns(access, session_id)) if t.revert_of is None),
+            CodingLocation.CLOUD,
+        )
         turns, issue, with_branch, earlier = await self._next_turn(access, session_id, location=location)
         run = await self._create(
             access.project, access.member, issue, data.message, CodingOrigin.FOLLOW_UP,
@@ -203,7 +212,7 @@ class CodingService:
             raise Conflict("Its PR is merged or closed: revert it on GitHub")
         # Wherever the session codes, a revert is a publish-only pass on the platform.
         turns, issue, with_branch, earlier = await self._next_turn(access, target.session_id,
-                                                                   location=CodingLocation.CLOUD)
+                                                                   location=CodingLocation.CLOUD, publish_only=True)
         if any(t.revert_of == target.id and t.status is CodingRunStatus.PR_OPENED for t in turns):
             raise Conflict(f"Turn {target.turn} is already reverted")
         if with_branch is None or with_branch.branch != target.branch:
@@ -211,13 +220,13 @@ class CodingService:
         run = await self._create(
             access.project, access.member, issue, f"Revert turn {target.turn} ({target.commit_sha[:7]})",
             CodingOrigin.FOLLOW_UP, session_id=target.session_id, turn=turns[-1].turn + 1, earlier=earlier,
-            carry=with_branch, approval=data.approval_mode, location=CodingLocation.CLOUD,
+            carry=with_branch, approval=data.approval_mode, location=CodingLocation.CLOUD, agent=target.agent,
         )
         run.revert_of = target.id
         return await self._settle(access, run)
 
     async def _next_turn(
-        self, access: ProjectAccess, session_id: uuid.UUID, *, location: CodingLocation,
+        self, access: ProjectAccess, session_id: uuid.UUID, *, location: CodingLocation, publish_only: bool = False,
     ) -> tuple[list[CodingRun], IssueRead, CodingRun | None, list[tuple[int, str]]]:
         """What a new turn in a session builds on: its turns, its issue, the branch and PR it carries
         on (None: a new one from the default branch), and what the earlier turns did."""
@@ -226,7 +235,8 @@ class CodingService:
             raise Forbidden("Only whoever started this session can continue it")
         if any(t.status in ACTIVE for t in turns):
             raise CodingBusy("This session has a turn waiting or working; follow up once it's done")
-        issue = await self._codable(access.project, access.member.user_id, turns[-1].issue_key, location=location)
+        issue = await self._codable(access.project, access.member.user_id, turns[-1].issue_key, location=location,
+                                    publish_only=publish_only)
         with_branch = next((t for t in reversed(turns) if t.branch and t.pr_number), None)
         if with_branch is not None and with_branch.pr_state in (PrState.MERGED, PrState.CLOSED):
             with_branch = None  # its PR is merged or closed: this turn starts a new branch and PR from the default branch
@@ -250,9 +260,12 @@ class CodingService:
 
     async def _codable(
         self, project: Project, user_id: uuid.UUID, key: str, *, busy_ok: bool = False,
-        location: CodingLocation = CodingLocation.CLOUD,
+        location: CodingLocation = CodingLocation.CLOUD, publish_only: bool = False,
     ) -> IssueRead:
-        if location is CodingLocation.LOCAL:
+        if publish_only:  # a revert: the platform pushes it, no coding tool runs anywhere
+            if why := await self._publishable(project):
+                raise CodingUnavailable(why)
+        elif location is CodingLocation.LOCAL:
             _, why = await self.local_availability(project, user_id)
             if why:
                 raise CodingUnavailable(why)
@@ -276,10 +289,12 @@ class CodingService:
         self, project: Project, member: Membership, issue: IssueRead, note: str | None, origin: CodingOrigin, *,
         session_id: uuid.UUID | None = None, turn: int = 1, earlier: list[tuple[int, str]] | None = None,
         carry: CodingRun | None = None, approval: ApprovalMode | None = None,
-        location: CodingLocation = CodingLocation.CLOUD,
+        location: CodingLocation = CodingLocation.CLOUD, agent: CodingAgent | None = None,
     ) -> CodingRun:
         model: str | None = None
-        if location is CodingLocation.LOCAL:  # whichever tool that computer has, on its own default model
+        if agent is not None:  # a revert: the session's engine, on record only (nothing runs it)
+            pass
+        elif location is CodingLocation.LOCAL:  # whichever tool that computer has, on its own default model
             runner, _ = await self.local_availability(project, member.user_id)
             agent = CodingAgent(runner.tools[0]) if runner and runner.tools else CodingAgent.CLAUDE_CODE
         else:
@@ -372,8 +387,11 @@ class CodingService:
 
     async def _queue(self, access: ProjectAccess, run: CodingRun) -> RunDispatch | None:
         """An approved run, queued (not committed): the issue is Kai's, audited, its dispatch recorded."""
-        # The run codes on its requester's keys (or computer), not the approver's.
-        if run.location is CodingLocation.LOCAL:
+        # The run codes on its requester's keys (or computer), not the approver's; a revert codes nowhere.
+        if run.revert_of is not None:
+            if why := await self._publishable(access.project):
+                raise CodingUnavailable(why)
+        elif run.location is CodingLocation.LOCAL:
             _, why = await self.local_availability(access.project, run.requested_by_id)
             if why:
                 raise CodingUnavailable(why)

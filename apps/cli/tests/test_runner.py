@@ -160,3 +160,41 @@ def test_on_windows_the_tool_runs_through_the_launcher_and_it_is_removed(tmp_pat
     assert leftovers[0].exists() and not leftovers[0].is_relative_to(tree)  # never in the worktree (or its patch)
     runner_module._remove(leftovers)
     assert not leftovers[0].exists()
+
+
+async def test_output_lines_of_any_length_are_read() -> None:
+    import asyncio
+
+    from dotrix_cli.runner import MAX_LINE, read_lines
+
+    stream = asyncio.StreamReader()  # its default limit is 64 KiB: `readline` would fail on these
+    huge = json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "x" * 200_000}]}})
+    stream.feed_data(huge.encode() + b"\n" + b"y" * (MAX_LINE + 10) + b"\nafter\nlast without an end")
+    stream.feed_eof()
+    lines: list[str] = []
+    await read_lines(stream, lines.append)
+    assert lines[0] == huge and len(lines[1]) == MAX_LINE and lines[2:] == ["after", "last without an end"]
+
+
+def test_each_checkout_registers_as_its_own_runner(tmp_path: Path) -> None:
+    (tmp_path / "a" / "api").mkdir(parents=True)
+    (tmp_path / "b" / "api").mkdir(parents=True)
+    one = LocalRunner(api=None, repo=tmp_path / "a" / "api", workspace_id="w", project_id="p1")  # type: ignore[arg-type]
+    two = LocalRunner(api=None, repo=tmp_path / "b" / "api", workspace_id="w", project_id="p2")  # type: ignore[arg-type]
+    assert one.name != two.name and "api" in one.name
+    assert LocalRunner(api=None, repo=tmp_path, workspace_id="w", project_id="p", name="laptop").name == "laptop"  # type: ignore[arg-type]
+
+
+async def test_a_turn_for_another_project_is_never_coded_here(tmp_path: Path) -> None:
+    posted: list[tuple[str, dict]] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            posted.append((path, body))
+
+    runner = LocalRunner(api=Api(), repo=tmp_path, workspace_id="w", project_id="mine", runner_id="r1")
+    await runner.work({"run_id": "run-1", "project_id": "theirs", "lease_token": 1, "lease_seconds": 120,
+                       "issue_key": "MOB-1", "turn": 1, "title": "x", "base_branch": "main", "branch": None,
+                       "tool": "claude-code", "brief": "x"})
+    [(path, body)] = posted
+    assert path.endswith("/runs/run-1/result") and body["outcome"] == "failed" and "another project" in body["error"]

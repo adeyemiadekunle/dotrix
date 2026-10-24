@@ -492,7 +492,7 @@ def runner_command(
     sandbox: str = typer.Option("auto", "--sandbox", help="auto (srt when installed), srt, or none"),
     once: bool = typer.Option(False, "--once", help="Code at most one waiting turn, then exit"),
     poll: float = typer.Option(5.0, "--poll", help="Seconds between asks for a turn"),
-    name: str = typer.Option(None, "--name", help="This computer's name on the platform (default: its hostname)"),
+    name: str = typer.Option(None, "--name", help="This checkout's name on the platform (default: the hostname and folder)"),
     worktrees: Path = typer.Option(None, "--worktrees", help="Where turns' worktrees go (default: ~/.dotrix/worktrees)"),
 ):
     """Code your local turns on this computer: each in a worktree of this checkout, with the coding
