@@ -24,6 +24,7 @@ class _Warm:
     box: SandboxSession
     workspace_id: uuid.UUID
     used: float  # time.monotonic() when its last turn ended
+    credential: str = ""  # which key it was opened with (a digest, never the key)
 
 
 async def close_quietly(box: SandboxSession) -> None:
@@ -38,18 +39,25 @@ class WarmPool:
         self.idle_seconds, self.per_workspace = idle_seconds, per_workspace
         self._boxes: dict[uuid.UUID, _Warm] = {}
 
-    def take(self, session_id: uuid.UUID) -> SandboxSession | None:
-        """The session's warm sandbox, out of the pool for the turn (or None)."""
+    async def take(self, session_id: uuid.UUID, credential: str = "") -> SandboxSession | None:
+        """The session's warm sandbox, out of the pool for the turn (or None). One opened with
+        another key (the person's own changed, or personal keys were turned off) is closed instead:
+        a sandbox holds its key from when it opened, so the turn needs a fresh one."""
         found = self._boxes.pop(session_id, None)
+        if found is not None and found.credential != credential:
+            await close_quietly(found.box)
+            return None
         return found.box if found else None
 
-    async def put(self, session_id: uuid.UUID, workspace_id: uuid.UUID, box: SandboxSession) -> list[uuid.UUID]:
+    async def put(
+        self, session_id: uuid.UUID, workspace_id: uuid.UUID, box: SandboxSession, credential: str = "",
+    ) -> list[uuid.UUID]:
         """Keep a session's sandbox after its turn; the sessions whose sandboxes were closed to stay
         within the workspace's limit (this one, when the limit is 0)."""
         if self.per_workspace <= 0:
             await close_quietly(box)
             return [session_id]
-        self._boxes[session_id] = _Warm(box, workspace_id, time.monotonic())
+        self._boxes[session_id] = _Warm(box, workspace_id, time.monotonic(), credential)
         mine = sorted((w.used, sid) for sid, w in self._boxes.items() if w.workspace_id == workspace_id)
         closed: list[uuid.UUID] = []
         while len(mine) > self.per_workspace:

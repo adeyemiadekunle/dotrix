@@ -304,7 +304,8 @@ class CodingWorker:
         #    the session's transcript restored so a tool that can resume (Claude Code) continues its
         #    conversation.
         resumable = tool.resumes
-        box = self.pool.take(session_id)
+        credential = hashlib.sha256(key.encode()).hexdigest()  # which key the sandbox holds, for the pool
+        box = await self.pool.take(session_id, credential)
         warm = False
         if box is not None:
             here = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=60)
@@ -429,7 +430,7 @@ class CodingWorker:
                 except Exception:
                     keep = False
             if keep:
-                for closed in await self.pool.put(session_id, workspace_id, box):
+                for closed in await self.pool.put(session_id, workspace_id, box, credential):
                     await self._session(closed, state=CodingSessionState.IDLE)
                 if session_id in self.pool.sessions():
                     await self._session(session_id, state=CodingSessionState.WARM)
