@@ -78,6 +78,34 @@ test("the agent picked answers, and the conversation keeps it", async ({ page })
   await expect(page.getByLabel("Agent", { exact: true })).toHaveValue("research");
 });
 
+test("one conversation moves from Discuss to Plan to Build, and the plan is kept to build from", async ({ page }) => {
+  await signUp(page);
+  await addProject(page, "Kumove", "KUM");
+  await openChat(page, "?project=KUM");
+
+  const mode = page.getByLabel("Mode", { exact: true });
+  await expect(mode).toHaveValue("discuss"); // a new conversation starts by talking it through
+  await page.getByLabel("Message").fill("How would refunds work?");
+  await page.getByLabel("Message").press("Enter");
+  await expect(page.getByText("Test model reply: How would refunds work?")).toBeVisible();
+  await expect(page.locator(".chat-msg.user .badge").last()).toHaveText("Discuss");
+
+  await mode.selectOption("plan");
+  await page.getByLabel("Message").fill("Save plan: Refunds; Add refund(); Test it");
+  await page.getByLabel("Message").press("Enter");
+  const card = page.getByRole("group", { name: "Plan version 1" });
+  await expect(card.getByText("Refunds", { exact: true })).toBeVisible();
+  await expect(card.getByText("Test it")).toBeVisible();
+  await expect(card.getByText("after 1")).toBeVisible();
+  await expect(page.getByText("Saved the plan; switch to Build to carry it out.")).toBeVisible();
+
+  // Building from the plan says which version, in Build mode; the conversation then stays in Build.
+  await card.getByRole("button", { name: "Build this plan" }).click();
+  await expect(page.getByText("Test model reply: Build plan version 1: Refunds")).toBeVisible();
+  await expect(page.locator(".chat-msg.user .badge").last()).toHaveText("Build");
+  await expect(mode).toHaveValue("build");
+});
+
 test("ask across projects: the conversation reads only and is listed apart, with its projects", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");

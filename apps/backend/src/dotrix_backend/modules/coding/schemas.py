@@ -103,6 +103,8 @@ class CodingRunRead(BaseModel):
     finished_at: datetime | None
     can_decide: bool = Field(description="Whether you may approve or reject it now")
     can_stop: bool = Field(description="Whether you may stop it now")
+    thread_id: uuid.UUID | None = Field(default=None, description="The conversation it was started from (Build mode)")
+    plan_id: uuid.UUID | None = Field(default=None, description="The plan version it builds from")
     can_recover: bool = Field(default=False, description="Whether you may recover it now (its outcome is uncertain)")
 
 

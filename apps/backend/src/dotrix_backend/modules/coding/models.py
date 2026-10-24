@@ -94,6 +94,9 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # A session is a run and its follow-ups (turns), on one branch and one PR: the first turn's id.
     session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     turn: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # Started from a conversation in Build mode: that conversation, and the plan version it built from.
+    thread_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
+    plan_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("conversation_plans.id", ondelete="SET NULL"))
     origin: Mapped[CodingOrigin] = mapped_column(
         str_enum(CodingOrigin, 16), default=CodingOrigin.START, server_default=CodingOrigin.START.value
     )

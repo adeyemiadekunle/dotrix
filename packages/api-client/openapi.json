@@ -8464,6 +8464,109 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}/plans": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Thread Plans",
+        "description": "A conversation's plan versions (saved in Plan mode), first to latest. Whoever sees the conversation.",
+        "operationId": "list_thread_plans",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PlanRead"
+                  },
+                  "title": "Response List Thread Plans"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}": {
       "patch": {
         "tags": [
@@ -19944,6 +20047,17 @@
             "title": "Mode",
             "description": "The pipeline the leading agent followed for this run (pm.triage, reviewer.issue); null: its own"
           },
+          "work_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the person was working when they sent it"
+          },
           "conversation_model": {
             "anyOf": [
               {
@@ -21902,6 +22016,32 @@
             "type": "boolean",
             "title": "Can Stop",
             "description": "Whether you may stop it now"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id",
+            "description": "The conversation it was started from (Build mode)"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id",
+            "description": "The plan version it builds from"
           },
           "can_recover": {
             "type": "boolean",
@@ -25622,6 +25762,106 @@
         "title": "PersonalModelsRead",
         "description": "Your own keys and default model (Account \u2192 Models)."
       },
+      "PlanRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "thread_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Thread Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Run Id",
+            "description": "The run that saved it"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "acceptance_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Acceptance Criteria"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/PlanTaskRead"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "open_questions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Open Questions"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "thread_id",
+          "version",
+          "run_id",
+          "title",
+          "summary",
+          "acceptance_criteria",
+          "tasks",
+          "open_questions",
+          "created_at"
+        ],
+        "title": "PlanRead",
+        "description": "A version of a conversation's plan, saved in Plan mode."
+      },
+      "PlanTaskRead": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "depends_on": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Depends On",
+            "description": "The tasks (numbers, from 1) this one needs first"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "detail",
+          "depends_on"
+        ],
+        "title": "PlanTaskRead"
+      },
       "PrState": {
         "type": "string",
         "enum": [
@@ -26672,6 +26912,17 @@
             ],
             "title": "Model",
             "description": "For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model."
+          },
+          "work_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, `.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with its evidence). Changes wait for approval in every mode; only `build` engages Kai. Omit for no mode (as before work modes: no plans or evidence tools)"
           },
           "mentions": {
             "items": {
@@ -27846,6 +28097,17 @@
           "flagged"
         ],
         "title": "WebUsageRead"
+      },
+      "WorkMode": {
+        "type": "string",
+        "enum": [
+          "discuss",
+          "plan",
+          "build",
+          "review"
+        ],
+        "title": "WorkMode",
+        "description": "How the person is working in the conversation (dotrix_engine.work_modes). Changes wait for\napproval in every mode; only Build engages Kai (agents/work_modes.py)."
       },
       "WorkspaceAgentUsage": {
         "properties": {

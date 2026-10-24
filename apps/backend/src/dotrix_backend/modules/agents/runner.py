@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.crypto import Secrets
 from dotrix_backend.core.errors import Conflict
+from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.agent_definitions.preferences import preferences_for, with_preferences
 from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from dotrix_backend.modules.audit.service import AuditLog
@@ -72,6 +73,7 @@ from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
 from .unattended import Unattended, changes_today, effective_specs
 from .usage import TokenBudgetExceeded, TokenUsage, merge_breakdown
+from .work_modes import ModeContext, codes, lead_tools
 from .workspace_runs import WORKSPACE_GUIDE, build_workspace_pack, build_workspace_tools, read_only
 
 CHECKPOINT_TOOL = "checkpoint"  # the engine's checkpoint tool (dotrix_engine.pipelines)
@@ -193,8 +195,11 @@ class AgentRunner:
         checkouts: CodeCheckouts | None = None,
         unattended_limits: tuple[int, int] = (20, 200),
         secrets: Secrets | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self.session_factory = session_factory
+        # The server's settings, for asking Kai to code from a conversation (None: Build can't).
+        self.settings = settings
         # Reads workspaces' own model provider keys (model_keys); unconfigured: none can be read.
         self.secrets = secrets or Secrets(None)
         # Changes agents may make under standing rules: per run step, per workspace per day.
@@ -441,6 +446,7 @@ class AgentRunner:
                 choice = self.model_factory(project, run.model, keys=keys)
                 lead = run.agent  # None: Auto (the Project Manager)
                 mode = run.mode
+                work_mode = run.work_mode
                 specs, unattended_left = await self._unattended_specs(session, run, specs, resolved)
                 policy = AgentPolicy(specs)
                 versions = {handle: agent.version for handle, agent in resolved.items()}
@@ -476,8 +482,12 @@ class AgentRunner:
                 approved_by_id=approved_by_id,
                 policy=policy,
                 unattended=unattended,
+                coding=codes(work_mode),  # only Build engages Kai
             )
             read_tools, pm_write_tools, _ = build_board_tools(board_context)
+            mode_tools = lead_tools(work_mode, ModeContext(
+                self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
+            ))
             if self.web is not None:
                 run_web = await self.web.for_run(
                     self.session_factory, workspace_id=workspace_id, project_id=project_id, run_id=run_id,
@@ -515,6 +525,8 @@ class AgentRunner:
                 summarize_after_tokens=self.summarize_after_tokens,
                 lead=lead,
                 mode=mode,
+                work_mode=work_mode.value if work_mode else None,
+                lead_tools=mode_tools,
                 result_sink=lambda schema, items: results.append((schema, items)),
                 # Stages show as live activity from the `stage` calls themselves (activity.py);
                 # here they split the run's tokens by stage.

@@ -87,6 +87,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         summarize_after_tokens=settings.summarize_after_tokens,
         unattended_limits=(settings.unattended_changes_per_run, settings.unattended_changes_per_day),
         secrets=Secrets.from_settings(settings),
+        settings=settings,
         inline=True,  # this process executes the runs
         stop_reasons=RunQueue(redis),
         streams=RedisRunStreams(redis),

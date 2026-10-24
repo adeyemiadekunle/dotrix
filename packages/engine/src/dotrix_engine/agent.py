@@ -37,6 +37,7 @@ from .outputs import ResultSink, StageSink, result_instructions, result_tool, st
 from .pipelines import MODES, PIPELINES, checkpoint_tool
 from .pipelines import instructions as pipeline_instructions
 from .web import WEB_GUIDE
+from .work_modes import guide as work_mode_guide
 
 # Tools that change task state, gated exactly like write_file/edit_file.
 TASK_WRITE_TOOLS = ("create_task", "update_task", "comment_task")
@@ -371,6 +372,8 @@ def build_team(
     result_sink: ResultSink | None = None,
     stage_sink: StageSink | None = None,
     mode: str | None = None,
+    work_mode: str | None = None,
+    lead_tools: list | None = None,
 ):
     """The Project Manager plus the specialists, over any storage backend.
 
@@ -404,8 +407,12 @@ def build_team(
     is a pipeline from `pipelines.MODES` the leading agent follows for this run instead of its
     own (with that pipeline's output). The agent talking to the person gets `checkpoint` when
     its pipeline has a checkpoint stage: it pauses like a write, for the person to continue,
-    change the plan, or stop.
+    change the plan, or stop. `work_mode` (`work_modes.WORK_MODES`) tells the agent talking to the
+    person how the person is working (Discuss, Plan, Build, Review); the caller gives the tools
+    that mode allows. `lead_tools` are that agent's alone (whatever its contract lists).
     """
+    if work_mode is not None:
+        work_mode_guide(work_mode)  # an unknown mode fails here
     if mode is not None and mode not in MODES:
         raise ValueError(f"Unknown mode {mode!r}; use one of {', '.join(MODES)}")
     specs = list(agents) if agents else builtin_specs()
@@ -510,6 +517,10 @@ blockers, and documentation status. A briefing never writes.
         if output and result_sink is not None and spec.handle == speaker:
             tools.append(result_tool(output, result_sink))
             text += result_instructions(output)
+        if spec.handle == speaker:
+            tools.extend(lead_tools or [])
+            if work_mode is not None:
+                text += work_mode_guide(work_mode)
         return tools, text
 
     def gate(spec: AgentSpec, box: dict[str, list[Any]]) -> dict[str, Any]:

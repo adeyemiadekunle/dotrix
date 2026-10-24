@@ -31,6 +31,7 @@ from .schemas import (
     DecisionsRequest,
     ModelOption,
     OutputItemUpdate,
+    PlanRead,
     RunCreate,
     ThreadRead,
     ThreadRename,
@@ -166,6 +167,12 @@ async def stream_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> Stre
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/threads/{thread_id}/plans", responses=errors(404))
+async def list_thread_plans(thread_id: uuid.UUID, access: Chatter, agents: Agents) -> list[PlanRead]:
+    """A conversation's plan versions (saved in Plan mode), first to latest. Whoever sees the conversation."""
+    return await agents.plans(access, thread_id)
 
 
 @router.patch("/threads/{thread_id}", responses=errors(422))
