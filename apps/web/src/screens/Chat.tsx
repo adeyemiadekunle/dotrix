@@ -58,6 +58,7 @@ import { Av, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { CODING_AGENT } from "../data/seed-dotrix";
+import { kaiWork } from "../core/kaiWork";
 import { useAtPicker } from "../components/AtPicker";
 import { Splitter, useStoredFlag, useStoredSize } from "../ui/splitter";
 
@@ -227,7 +228,8 @@ function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
 function SessionCard({ cs }: { cs: CodingSession }) {
   const ws = wsId();
   const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
-  const latest = (useCodingSession(scope, cs.session_id).data ?? []).at(-1);
+  const turns = useCodingSession(scope, cs.session_id).data ?? [];
+  const latest = turns.at(-1);
   const decide = useDecideCoding(scope, cs.issue_key);
   const stop = useStopCoding(scope, cs.issue_key);
   const recover = useRecoverCoding(scope, cs.issue_key);
@@ -264,6 +266,22 @@ function SessionCard({ cs }: { cs: CodingSession }) {
           </span>
         )}
       </div>
+      {/* Each turn here: what Kai was asked (the conversation's own messages to it), and what it said back. */}
+      {turns.some((t) => t.note || t.summary || t.error) && (
+        <div className="change-b" style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }} aria-label="Turns">
+          {turns.map((t) => (
+            <div key={t.id}>
+              {t.note && (
+                <div className="muted">
+                  <b style={{ fontWeight: 500 }}>Turn {t.turn}:</b> {t.note}
+                </div>
+              )}
+              {t.summary && <Markdown>{t.summary}</Markdown>}
+              {t.error && <div style={{ color: "var(--red)" }}>{t.error}</div>}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="change-f row" style={{ gap: 6 }}>
         {latest?.can_decide && (
           <>
@@ -292,6 +310,84 @@ function SessionCard({ cs }: { cs: CodingSession }) {
         </button>
       </div>
     </div>
+  );
+}
+
+/** What Kai did in a session, beside its conversation: the latest turn's changes, every file the session
+ * changed (by folder), and the commands it ran. From the session's turns (each carries its latest events). */
+function KaiPanel({ cs, onClose }: { cs: CodingSession; onClose: () => void }) {
+  const ws = wsId();
+  const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
+  const turns = useCodingSession(scope, cs.session_id).data ?? [];
+  const [tab, setTab] = useState<"changes" | "files" | "terminal">("changes");
+  const latest = turns.at(-1);
+  const work = kaiWork(turns);
+  const TABS: [typeof tab, string, number][] = [
+    ["changes", "Changes", work.latest.length],
+    ["files", "Files", work.files],
+    ["terminal", "Terminal", work.commands.length],
+  ];
+  return (
+    <aside className="kai-panel" aria-label={`${CODING_AGENT.name}'s work`}>
+      <div className="row" style={{ height: 46, padding: "0 12px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
+        <b className="trunc" style={{ fontWeight: 600, fontSize: 13 }}>
+          {CODING_AGENT.name} · <span className="mono">{cs.issue_key}</span>
+        </b>
+        <span className="sp" />
+        <button className="ibtn ibtn-sm" onClick={onClose} aria-label="Close the panel">
+          <Ic n="x" s={14} />
+        </button>
+      </div>
+      <div className="seg" role="tablist" aria-label="Kai's work" style={{ margin: "8px 12px" }}>
+        {TABS.map(([id, label, n]) => (
+          <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>
+            {label}
+            {n > 0 && <span className="faint"> {n}</span>}
+          </button>
+        ))}
+      </div>
+      <div className="kai-panel-body mono" style={{ fontSize: 12 }}>
+        {tab === "changes" &&
+          (work.latest.length ? (
+            work.latest.map((f) => (
+              <div key={f.path} className="row" style={{ gap: 8, padding: "2px 0" }}>
+                <span className="grow trunc">{f.path}</span>
+                <span style={{ color: "var(--green)" }}>+{f.added}</span>
+                <span style={{ color: "var(--red)" }}>-{f.removed}</span>
+              </div>
+            ))
+          ) : (
+            <p className="muted">{latest ? `Turn ${latest.turn} changed no files yet.` : "Nothing yet."}</p>
+          ))}
+        {tab === "files" &&
+          (work.folders.length ? (
+            work.folders.map(([folder, files]) => (
+              <div key={folder} style={{ marginBottom: 6 }}>
+                <div className="faint">{folder}/</div>
+                {files.map((f) => (
+                  <div key={f.path} className="row" style={{ gap: 8, padding: "1px 0 1px 12px" }}>
+                    <span className="grow trunc">{f.path.slice(f.path.lastIndexOf("/") + 1)}</span>
+                    <span className="faint">turn {f.turn}</span>
+                  </div>
+                ))}
+              </div>
+            ))
+          ) : (
+            <p className="muted">No files changed yet.</p>
+          ))}
+        {tab === "terminal" &&
+          (work.commands.length ? (
+            work.commands.map((c, i) => (
+              <div key={i} style={{ padding: "2px 0" }}>
+                <span className="faint">{c.turn} $ </span>
+                {c.text}
+              </div>
+            ))
+          ) : (
+            <p className="muted">No commands run yet.</p>
+          ))}
+      </div>
+    </aside>
   );
 }
 
@@ -750,6 +846,16 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   // Kai's sessions started from this conversation, each after the message that started it.
   const coded = (useCodingSessions(ws, Boolean(projectId)).data ?? []).filter((c) => c.thread_id === id);
   const anchorOf = (c: CodingSession) => runs.filter((r) => ms(r.created_at) <= ms(c.started_at)).at(-1)?.id ?? last?.id;
+  // Kai's latest session here: what Build mode's messages go to (its next turn), and what the panel shows.
+  const kai = [...coded].filter((c) => c.state !== "closed" && !c.archived).sort((a, b) => ms(b.updated_at) - ms(a.updated_at))[0] ?? null;
+  const kaiBusy = Boolean(kai && BUSY.includes(kai.status));
+  const kaiScope = useMemo(() => (ws && kai ? { workspaceId: ws, projectId: kai.project_id } : undefined), [ws, kai]);
+  const followUp = useFollowUp(kaiScope, kai?.session_id ?? "", kai?.issue_key ?? "", approval);
+  const [toKaiPicked, setToKai] = useState<boolean | null>(null);
+  const addressed = useRef(false); // an agent was picked or @mentioned for the message being sent
+  const toKai = mode === "build" && Boolean(kai) && !kaiBusy && (toKaiPicked ?? true);
+  const [panelSet, setPanel] = useStoredFlag("dotrix.chat.kaiPanel");
+  const panel = Boolean(kai) && panelSet;
   const latestPlan = plans.at(-1);
   const end = useRef<HTMLDivElement>(null);
   const busy = active && !stream.text;
@@ -769,103 +875,141 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   // The address named a project (or "across"), so the list wasn't needed to open it; the runs say if it exists.
   if ((projectId ? own.isFetched : cross.isFetched) && runs.length === 0) return <Pending text={MISSING_THREAD} />;
   return (
-    <>
-      <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
-        <button className="ibtn ibtn-sm" onClick={() => open(p ? `project=${p.key}` : "")} aria-label="Back to conversations">
-          <Ic n="arrow-left" s={15} />
-        </button>
-        <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
-          {title || (runs[0] ? (runs[0].title ?? runTitle(runs[0])) : "")}
-        </b>
-        <span className="sp" />
-        {p ? (
-          <button className="pillbtn" onClick={() => go("project", { id: p.key, tab: "overview" })}>
-            <PIcon p={p} s={12} />
-            {p.name}
+    <div className="conv">
+      <div className="conv-main">
+        <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
+          <button className="ibtn ibtn-sm" onClick={() => open(p ? `project=${p.key}` : "")} aria-label="Back to conversations">
+            <Ic n="arrow-left" s={15} />
           </button>
-        ) : (
-          <span className="pillbtn">
-            <Ic n="layers" s={13} />
-            {about.join(", ") || "All projects"}
+          <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
+            {title || (runs[0] ? (runs[0].title ?? runTitle(runs[0])) : "")}
+          </b>
+          <span className="sp" />
+          {p ? (
+            <button className="pillbtn" onClick={() => go("project", { id: p.key, tab: "overview" })}>
+              <PIcon p={p} s={12} />
+              {p.name}
+            </button>
+          ) : (
+            <span className="pillbtn">
+              <Ic n="layers" s={13} />
+              {about.join(", ") || "All projects"}
+            </span>
+          )}
+          <span className="chat-faces hide-m" aria-label="Agents in this conversation">
+            {[...new Set(runs.map((r) => handleOf(r.agent)))].map((h) => {
+              const ag = D().agents.find((x) => x.handle === h);
+              return ag ? (
+                <span key={h} data-tip={`${ag.name} · ${ag.role}`}>
+                  <Face c={ag.c} size={20} mood={moodOf(h)} />
+                </span>
+              ) : null;
+            })}
           </span>
-        )}
-        <span className="chat-faces hide-m" aria-label="Agents in this conversation">
-          {[...new Set(runs.map((r) => handleOf(r.agent)))].map((h) => {
-            const ag = D().agents.find((x) => x.handle === h);
-            return ag ? (
-              <span key={h} data-tip={`${ag.name} · ${ag.role}`}>
-                <Face c={ag.c} size={20} mood={moodOf(h)} />
-              </span>
-            ) : null;
-          })}
-        </span>
-      </div>
-      <div className="chat-scroll">
-        <div className="chat-col">
-          {runs.map((r) => (
-            <div key={r.id}>
-              <RunMessages run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
-              {plans
-                .filter((pl) => pl.run_id === r.id)
-                .map((pl) => (
-                  <PlanCard key={pl.id} plan={pl} latest={pl.id === latestPlan?.id} busy={active} onBuild={() => build(pl)} />
-                ))}
-              {coded
-                .filter((c) => anchorOf(c) === r.id)
-                .map((c) => (
-                  <SessionCard key={c.session_id} cs={c} />
-                ))}
-            </div>
-          ))}
-          {active && (
-            <div className="chat-msg">
-              <Face c={D().agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={26} mood="working" />
-              <div className="body">
-                {busy && (
-                  <div className="who">
-                    <b>{agentName(agent)}</b>
-                    <span className="role">{D().agents.find((a) => a.handle === agent)?.role}</span>
+          {kai && (
+            <button
+              className={`ibtn ibtn-sm ${panel ? "on" : ""}`}
+              onClick={() => setPanel(!panel)}
+              aria-pressed={panel}
+              aria-label={`${CODING_AGENT.name}'s work`}
+              data-tip={`${CODING_AGENT.name}'s work: changes, files, terminal`}
+            >
+              <Ic n="panel-right" s={15} />
+            </button>
+          )}
+        </div>
+        <div className="chat-scroll">
+          <div className="chat-col">
+            {runs.map((r) => (
+              <div key={r.id}>
+                <RunMessages run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
+                {plans
+                  .filter((pl) => pl.run_id === r.id)
+                  .map((pl) => (
+                    <PlanCard key={pl.id} plan={pl} latest={pl.id === latestPlan?.id} busy={active} onBuild={() => build(pl)} />
+                  ))}
+                {coded
+                  .filter((c) => anchorOf(c) === r.id)
+                  .map((c) => (
+                    <SessionCard key={c.session_id} cs={c} />
+                  ))}
+              </div>
+            ))}
+            {active && (
+              <div className="chat-msg">
+                <Face c={D().agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={26} mood="working" />
+                <div className="body">
+                  {busy && (
+                    <div className="who">
+                      <b>{agentName(agent)}</b>
+                      <span className="role">{D().agents.find((a) => a.handle === agent)?.role}</span>
+                    </div>
+                  )}
+                  <div className="row muted" style={{ gap: 8, fontSize: 12.5, marginTop: 6 }}>
+                    <span className="chat-typing">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    {stream.activity ?? `${agentName(agent)} is reading the project's documents…`}
+                    <span className="sp" />
+                    <button className="btn btn-sm btn-ghost" onClick={halt}>
+                      Stop
+                    </button>
                   </div>
-                )}
-                <div className="row muted" style={{ gap: 8, fontSize: 12.5, marginTop: 6 }}>
-                  <span className="chat-typing">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  {stream.activity ?? `${agentName(agent)} is reading the project's documents…`}
-                  <span className="sp" />
-                  <button className="btn btn-sm btn-ghost" onClick={halt}>
-                    Stop
-                  </button>
                 </div>
               </div>
+            )}
+            <div ref={end} />
+          </div>
+        </div>
+        <div className="chat-input">
+          {mode === "build" && kai && (
+            <div className="row" style={{ gap: 8, marginBottom: 6, fontSize: 12 }}>
+              <span className="muted">Send to</span>
+              <div className="seg" role="radiogroup" aria-label="Send to">
+                <button role="radio" aria-checked={toKai} className={toKai ? "on" : ""} disabled={kaiBusy} onClick={() => setToKai(true)}>
+                  {CODING_AGENT.name} on {kai.issue_key}
+                </button>
+                <button role="radio" aria-checked={!toKai} className={!toKai ? "on" : ""} onClick={() => setToKai(false)}>
+                  The agents
+                </button>
+              </div>
+              {kaiBusy && <span className="faint">{CODING_AGENT.name} is still on the last turn</span>}
             </div>
           )}
-          <div ref={end} />
+          <Composer
+            placeholder={toKai && kai ? `Tell ${CODING_AGENT.name} what to do next on ${kai.issue_key}` : `Ask ${agentName(agent)}, or type @ to pick an agent`}
+            agent={agent}
+            setAgent={(h) => {
+              // Picking an agent, or @mentioning one, addresses the agents, not Kai.
+              addressed.current = true;
+              setToKai(false);
+              setAgent(h);
+            }}
+            model={modelName(last?.conversation_model) || undefined}
+            context={p?.name ?? "All projects"}
+            onSend={(q, a) => {
+              const named = addressed.current;
+              addressed.current = false;
+              if (toKai && !named) followUp.mutate(q);
+              else say(q, a);
+            }}
+            mode={projectId ? mode : undefined}
+            setMode={projectId ? setMode : undefined}
+            approval={projectId ? approval : undefined}
+            setApproval={projectId ? setApproval : undefined}
+            autoFocus
+          />
+          {!projectId && (
+            <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
+              <Ic n="lock" s={11} /> In all projects the agents only read; for a change they'll say which project's chat to ask in.
+            </div>
+          )}
         </div>
       </div>
-      <div className="chat-input">
-        <Composer
-          placeholder={`Ask ${agentName(agent)}, or type @ to pick an agent`}
-          agent={agent}
-          setAgent={setAgent}
-          model={modelName(last?.conversation_model) || undefined}
-          context={p?.name ?? "All projects"}
-          onSend={(q, a) => say(q, a)}
-          mode={projectId ? mode : undefined}
-          setMode={projectId ? setMode : undefined}
-          approval={projectId ? approval : undefined}
-          setApproval={projectId ? setApproval : undefined}
-          autoFocus
-        />
-        {!projectId && (
-          <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
-            <Ic n="lock" s={11} /> In all projects the agents only read; for a change they'll say which project's chat to ask in.
-          </div>
-        )}
-      </div>
-    </>
+      {panel && kai && <KaiPanel cs={kai} onClose={() => setPanel(false)} />}
+    </div>
   );
 }
 
