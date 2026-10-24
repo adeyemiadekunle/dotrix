@@ -27,6 +27,7 @@ from .modules.execution.service import accept_operation, load_operation
 from .modules.invites.repository import InviteRepository
 from .modules.notifications.emails import NotificationEmails
 from .modules.projects.models import Project
+from .modules.repo_knowledge.service import RepoKnowledgeService
 from .modules.research.service import KEEP_PAGES_FOR, delete_stale_pages
 from .modules.search.service import KnowledgeIndex
 
@@ -101,7 +102,13 @@ async def sync_repository(ctx: JobContext, *, project_id: str) -> None:
     if ctx.checkouts is None:
         return
     async with ctx.session_factory() as session:
-        await CodeService(session, ctx.checkouts).sync(uuid.UUID(project_id))
+        sha = await CodeService(session, ctx.checkouts).sync(uuid.UUID(project_id))
+        project = await session.get(Project, uuid.UUID(project_id)) if sha else None
+        if project is not None:
+            try:  # the new commit's inventory: what the repository's knowledge has to cover now
+                await RepoKnowledgeService(session, ctx.checkouts).snapshot(project)
+            except Exception:
+                logger.warning("couldn't take %s's inventory", project_id, exc_info=True)
 
 
 async def run_coding(

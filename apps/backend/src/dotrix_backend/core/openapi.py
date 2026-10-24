@@ -114,6 +114,12 @@ TAGS: list[dict[str, str]] = [
         "and the Reviewer reads the PR. Never the default branch, never `.dotrix/`, never merged by an agent.",
     },
     {
+        "name": "repository knowledge",
+        "description": "What a connected repository's knowledge covers: every tracked path at a commit, "
+        "classified without running anything (what it is, which domains it's evidence for, read or not and why), "
+        "and each required domain's coverage or named gap.",
+    },
+    {
         "name": "graph",
         "description": "The project graph: how requirements, issues, decisions (ADRs), documents, and modules "
         "relate, derived from what they say and kept current; impact, paths, and documents that may be stale.",

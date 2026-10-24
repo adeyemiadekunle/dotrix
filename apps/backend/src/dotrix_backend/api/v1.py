@@ -36,6 +36,7 @@ from dotrix_backend.modules.model_keys.router import router as model_keys
 from dotrix_backend.modules.notifications.router import router as notifications
 from dotrix_backend.modules.notifications.router import settings_router as notification_settings
 from dotrix_backend.modules.projects.router import router as projects
+from dotrix_backend.modules.repo_knowledge.router import router as repository_knowledge
 from dotrix_backend.modules.rules.router import router as rules
 from dotrix_backend.modules.search.router import router as search
 from dotrix_backend.modules.search.router import workspace_router as workspace_search
@@ -75,6 +76,7 @@ for module_router in (
     notification_settings,
     workspace_github,
     project_repository,
+    repository_knowledge,
     coding,
     workspace_coding,
     github_webhook,

@@ -105,7 +105,18 @@ export function Project() {
   } else if (tab === "overview") body = <ProjectOverview p={p} />;
   else if (tab === "knowledge")
     body = (
-      <Knowledge p={p} view={params.tab === "files" || search.get("view") === "files" ? "files" : search.get("view") === "lessons" ? "lessons" : "docs"} />
+      <Knowledge
+        p={p}
+        view={
+          params.tab === "files" || search.get("view") === "files"
+            ? "files"
+            : search.get("view") === "lessons"
+              ? "lessons"
+              : search.get("view") === "coverage"
+                ? "coverage"
+                : "docs"
+        }
+      />
     );
   else if (tab === "activity") body = <ProjectActivity p={p} />;
   else body = <TaskViewBody type={tab} k={key} p={p} />;
