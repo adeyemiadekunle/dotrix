@@ -4237,7 +4237,7 @@ export interface components {
             error: string | null;
             /**
              * Error Kind
-             * @description `model_limit`: it stopped at its model's limit and can be continued (`.../continue`)
+             * @description `model_limit`: it stopped at its model's limit; `interrupted`: its worker stopped again and again. Either can be continued (`.../continue`)
              */
             error_kind?: string | null;
             /**
