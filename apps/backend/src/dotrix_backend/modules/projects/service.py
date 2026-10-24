@@ -29,6 +29,7 @@ from dotrix_backend.modules.issues.models import (
 )
 from dotrix_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
 from dotrix_backend.modules.knowledge.service import KnowledgeService
+from dotrix_backend.modules.repo_knowledge.models import RepoPath, RepoSnapshot
 from dotrix_backend.modules.research.models import ResearchSource
 from dotrix_backend.modules.search.models import KnowledgeChunk
 from dotrix_backend.modules.workspaces.models import Membership, Role
@@ -54,7 +55,7 @@ class RepoTaken(Conflict):
 # too: it belongs to the workspace, not the project.
 _PROJECT_ROWS = (
     KnowledgeFile, KnowledgeVersion, Issue, AgentRun, AgentApproval, AgentRunOutput, ResearchSource, Document,
-    KnowledgeChunk, ProjectMember, IssueAttachment,
+    KnowledgeChunk, ProjectMember, IssueAttachment, RepoSnapshot,
 )
 
 
@@ -227,6 +228,10 @@ class ProjectService:
         issues = select(Issue.id).where(Issue.project_id == project.id).scalar_subquery()
         await self.session.execute(
             update(IssueEvent).where(IssueEvent.issue_id.in_(issues)).values(workspace_id=target_id)
+        )
+        snapshots = select(RepoSnapshot.id).where(RepoSnapshot.project_id == project.id).scalar_subquery()
+        await self.session.execute(
+            update(RepoPath).where(RepoPath.snapshot_id.in_(snapshots)).values(workspace_id=target_id)
         )
         project.workspace_id = target_id
         # Only people in the new workspace stay on a restricted project's list.

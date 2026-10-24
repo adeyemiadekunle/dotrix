@@ -16691,6 +16691,546 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge": {
+      "get": {
+        "tags": [
+          "repository knowledge"
+        ],
+        "summary": "Repository Coverage",
+        "description": "What the connected repository's knowledge covers at its latest inventory: paths by status,\nand each required domain (evidence, pending, or a named gap). Anyone who sees the project.",
+        "operationId": "repository_coverage",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoCoverageRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/inventory": {
+      "post": {
+        "tags": [
+          "repository knowledge"
+        ],
+        "summary": "Take Repository Inventory",
+        "description": "List every tracked path at the repository's current commit, classified (nothing in it is\nrun). Taken once per commit; it's also taken after each push. People who edit documents.",
+        "operationId": "take_repository_inventory",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoSnapshotRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/explain": {
+      "post": {
+        "tags": [
+          "repository knowledge"
+        ],
+        "summary": "Explain Repository",
+        "description": "Have the documentation agent explain the repository in the project's wiki (docs/wiki/), domain\nby domain: it reads what the inventory has left (taken first if the commit is new), records what\nit read, and proposes pages that cite their sources and name their gaps, each waiting for approval\nlike any document. A new conversation; another run continues where this one stopped. People who\nedit documents.",
+        "operationId": "explain_repository",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoExplainRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/pages": {
+      "get": {
+        "tags": [
+          "repository knowledge"
+        ],
+        "summary": "List Repository Pages",
+        "description": "The repository wiki's pages (docs/wiki/) and whether each is stale: a path it cites changed\nsince it was read, left the repository, or was never read. Anyone who sees the project.",
+        "operationId": "list_repository_pages",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoPagesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/paths": {
+      "get": {
+        "tags": [
+          "repository knowledge"
+        ],
+        "summary": "List Repository Paths",
+        "description": "The latest inventory's paths, in path order: what each is, its domains, and its status\n(with why, when it isn't read). Anyone who sees the project.",
+        "operationId": "list_repository_paths",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PathStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 24
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One of the coverage's domains",
+              "title": "Domain"
+            },
+            "description": "One of the coverage's domains"
+          },
+          {
+            "name": "prefix",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only paths under this one",
+              "title": "Prefix"
+            },
+            "description": "Only paths under this one"
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `next` of the page before",
+              "title": "After"
+            },
+            "description": "The `next` of the page before"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoPathPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding": {
       "get": {
         "tags": [
@@ -22830,6 +23370,65 @@
         ],
         "title": "DocumentStatus"
       },
+      "DomainCoverage": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "gap",
+              "pending",
+              "partial",
+              "covered"
+            ],
+            "title": "Status",
+            "description": "`gap`: nothing in the repository is evidence for it (see `gap`); `pending`: its paths are listed, none read yet; `partial`: some read; `covered`: every readable one read"
+          },
+          "paths": {
+            "type": "integer",
+            "title": "Paths",
+            "description": "Paths that are evidence for it (excluded ones aside)"
+          },
+          "analyzed": {
+            "type": "integer",
+            "title": "Analyzed"
+          },
+          "excluded": {
+            "type": "integer",
+            "title": "Excluded",
+            "description": "Paths for it that are listed but not read (with why)"
+          },
+          "gap": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap",
+            "description": "What's missing, and what to ask for, when it's a gap"
+          }
+        },
+        "type": "object",
+        "required": [
+          "domain",
+          "title",
+          "status",
+          "paths",
+          "analyzed",
+          "excluded"
+        ],
+        "title": "DomainCoverage"
+      },
       "EdgeKind": {
         "type": "string",
         "enum": [
@@ -25705,6 +26304,17 @@
         ],
         "title": "PathRead"
       },
+      "PathStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "analyzed",
+          "excluded",
+          "unsupported",
+          "inaccessible"
+        ],
+        "title": "PathStatus"
+      },
       "PathStep": {
         "properties": {
           "node": {
@@ -26723,6 +27333,57 @@
         ],
         "title": "RepoConnect"
       },
+      "RepoCoverageRead": {
+        "properties": {
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepoSnapshotRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the repository's first inventory"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/PathStatus"
+            },
+            "type": "object",
+            "title": "Statuses",
+            "description": "Paths by status"
+          },
+          "inventory_complete": {
+            "type": "boolean",
+            "title": "Inventory Complete",
+            "description": "Every tracked path at the commit is listed"
+          },
+          "discovery_complete": {
+            "type": "boolean",
+            "title": "Discovery Complete",
+            "description": "Nothing in scope is still pending, unsupported, or inaccessible (gaps can remain)"
+          },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/DomainCoverage"
+            },
+            "type": "array",
+            "title": "Domains"
+          }
+        },
+        "type": "object",
+        "required": [
+          "snapshot",
+          "inventory_complete",
+          "discovery_complete"
+        ],
+        "title": "RepoCoverageRead",
+        "description": "What the repository's knowledge covers at its latest snapshot: path coverage and domain\ncoverage, separately. Reading a file isn't proof its meaning was understood."
+      },
       "RepoCreate": {
         "properties": {
           "installation_ref": {
@@ -26756,6 +27417,27 @@
           "name"
         ],
         "title": "RepoCreate"
+      },
+      "RepoExplainRequest": {
+        "properties": {
+          "domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Domains",
+            "description": "Domains to start with (the coverage's `domain`s); none: the agent picks"
+          },
+          "refresh": {
+            "type": "boolean",
+            "title": "Refresh",
+            "description": "Update the stale pages first (`GET .../pages`)",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "RepoExplainRequest"
       },
       "RepoOption": {
         "properties": {
@@ -26809,6 +27491,220 @@
         ],
         "title": "RepoOption",
         "description": "A repo one of the workspace's installations can see, and which project uses it, if any."
+      },
+      "RepoPageRead": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "The wiki page, e.g. docs/wiki/architecture.md"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "citations": {
+            "type": "integer",
+            "title": "Citations",
+            "description": "`path:line` citations on the page"
+          },
+          "stale": {
+            "items": {
+              "$ref": "#/components/schemas/StaleSource"
+            },
+            "type": "array",
+            "title": "Stale",
+            "description": "Cited paths that make it stale (empty: fresh)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "version",
+          "updated_at",
+          "citations",
+          "stale"
+        ],
+        "title": "RepoPageRead"
+      },
+      "RepoPagesRead": {
+        "properties": {
+          "commit_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Sha"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/RepoPageRead"
+            },
+            "type": "array",
+            "title": "Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "commit_sha",
+          "pages"
+        ],
+        "title": "RepoPagesRead",
+        "description": "The repository wiki's pages and whether each still matches the code at the latest inventory."
+      },
+      "RepoPathPage": {
+        "properties": {
+          "paths": {
+            "items": {
+              "$ref": "#/components/schemas/RepoPathRead"
+            },
+            "type": "array",
+            "title": "Paths"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next",
+            "description": "Pass as `after` for the next page; null on the last"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paths",
+          "next"
+        ],
+        "title": "RepoPathPage"
+      },
+      "RepoPathRead": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Kinds"
+          },
+          "domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Domains"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PathStatus"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "analyzed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analyzed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "size",
+          "language",
+          "kinds",
+          "domains",
+          "status",
+          "reason",
+          "analyzed_at"
+        ],
+        "title": "RepoPathRead"
+      },
+      "RepoSnapshotRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "repo_full_name": {
+            "type": "string",
+            "title": "Repo Full Name"
+          },
+          "commit_sha": {
+            "type": "string",
+            "title": "Commit Sha"
+          },
+          "policy_version": {
+            "type": "string",
+            "title": "Policy Version",
+            "description": "The classification rules it was taken with"
+          },
+          "path_count": {
+            "type": "integer",
+            "title": "Path Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "repo_full_name",
+          "commit_sha",
+          "policy_version",
+          "path_count",
+          "created_at"
+        ],
+        "title": "RepoSnapshotRead"
       },
       "RestoreRequest": {
         "properties": {
@@ -27532,6 +28428,30 @@
           "reasons"
         ],
         "title": "StaleRead"
+      },
+      "StaleSource": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "why": {
+            "type": "string",
+            "enum": [
+              "changed",
+              "removed",
+              "unread"
+            ],
+            "title": "Why",
+            "description": "`changed`: its content changed since it was read; `removed`: no longer in the repository; `unread`: cited but never read"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "why"
+        ],
+        "title": "StaleSource"
       },
       "SubgraphRead": {
         "properties": {
@@ -29185,6 +30105,10 @@
     {
       "name": "coding",
       "description": "Coding runs: an issue handed to Claude Code (or Codex, by the server's model key) in a sandbox, approved first; the platform pushes a new branch and opens a PR, the issue moves to review, and the Reviewer reads the PR. Never the default branch, never `.dotrix/`, never merged by an agent."
+    },
+    {
+      "name": "repository knowledge",
+      "description": "What a connected repository's knowledge covers: every tracked path at a commit, classified without running anything (what it is, which domains it's evidence for, read or not and why), and each required domain's coverage or named gap."
     },
     {
       "name": "graph",

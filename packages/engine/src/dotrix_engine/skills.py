@@ -46,6 +46,19 @@ Description: Work out what broke a build or a test run, and who should look at i
    or the environment.
 5. Report one finding with the cause, the evidence, the files, and a suggested fix.
 """,
+    "repository-knowledge": """# Skill: explain the repository
+Description: Turn the connected repository into sourced wiki pages, domain by domain, with its gaps.
+
+## Steps
+1. `repo_stale_pages` first: update pages whose cited code changed. Then `repo_coverage`: the
+   domains with paths still to read; take a few per run.
+2. For each, `repo_paths(domain)` lists them; read the telling ones, and `repo_mark_read` as you go.
+3. Write docs/wiki/<domain>.md: each claim cited as `path:line`, with its basis: (observed),
+   (declared: <document>), (inferred), or (unknown). Code behaviour isn't a requirement unless a
+   document says so.
+4. End each page with its gaps and questions, and whom to ask; keep people's edits.
+5. `repo_check_page` on the draft before you write it: every citation must resolve.
+""",
     "break-down-a-feature": """# Skill: break a feature into stories
 Description: Turn a requirement into an epic and stories a coding agent can work from.
 

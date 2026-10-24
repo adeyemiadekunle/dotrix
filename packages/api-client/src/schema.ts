@@ -3288,6 +3288,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Repository Coverage
+         * @description What the connected repository's knowledge covers at its latest inventory: paths by status,
+         *     and each required domain (evidence, pending, or a named gap). Anyone who sees the project.
+         */
+        get: operations["repository_coverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take Repository Inventory
+         * @description List every tracked path at the repository's current commit, classified (nothing in it is
+         *     run). Taken once per commit; it's also taken after each push. People who edit documents.
+         */
+        post: operations["take_repository_inventory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/explain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explain Repository
+         * @description Have the documentation agent explain the repository in the project's wiki (docs/wiki/), domain
+         *     by domain: it reads what the inventory has left (taken first if the commit is new), records what
+         *     it read, and proposes pages that cite their sources and name their gaps, each waiting for approval
+         *     like any document. A new conversation; another run continues where this one stopped. People who
+         *     edit documents.
+         */
+        post: operations["explain_repository"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Repository Pages
+         * @description The repository wiki's pages (docs/wiki/) and whether each is stale: a path it cites changed
+         *     since it was read, left the repository, or was never read. Anyone who sees the project.
+         */
+        get: operations["list_repository_pages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Repository Paths
+         * @description The latest inventory's paths, in path order: what each is, its domains, and its status
+         *     (with why, when it isn't read). Anyone who sees the project.
+         */
+        get: operations["list_repository_paths"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding": {
         parameters: {
             query?: never;
@@ -5269,6 +5377,36 @@ export interface components {
          * @enum {string}
          */
         DocumentStatus: "converting" | "ready" | "failed";
+        /** DomainCoverage */
+        DomainCoverage: {
+            /** Domain */
+            domain: string;
+            /** Title */
+            title: string;
+            /**
+             * Status
+             * @description `gap`: nothing in the repository is evidence for it (see `gap`); `pending`: its paths are listed, none read yet; `partial`: some read; `covered`: every readable one read
+             * @enum {string}
+             */
+            status: "gap" | "pending" | "partial" | "covered";
+            /**
+             * Paths
+             * @description Paths that are evidence for it (excluded ones aside)
+             */
+            paths: number;
+            /** Analyzed */
+            analyzed: number;
+            /**
+             * Excluded
+             * @description Paths for it that are listed but not read (with why)
+             */
+            excluded: number;
+            /**
+             * Gap
+             * @description What's missing, and what to ask for, when it's a gap
+             */
+            gap?: string | null;
+        };
         /**
          * EdgeKind
          * @enum {string}
@@ -6456,6 +6594,11 @@ export interface components {
             /** Steps */
             steps: components["schemas"]["PathStep"][];
         };
+        /**
+         * PathStatus
+         * @enum {string}
+         */
+        PathStatus: "pending" | "analyzed" | "excluded" | "unsupported" | "inaccessible";
         /** PathStep */
         PathStep: {
             node: components["schemas"]["NodeRead"];
@@ -6893,6 +7036,34 @@ export interface components {
             /** Github Repo Id */
             github_repo_id: number;
         };
+        /**
+         * RepoCoverageRead
+         * @description What the repository's knowledge covers at its latest snapshot: path coverage and domain
+         *     coverage, separately. Reading a file isn't proof its meaning was understood.
+         */
+        RepoCoverageRead: {
+            /** @description Null until the repository's first inventory */
+            snapshot: components["schemas"]["RepoSnapshotRead"] | null;
+            /**
+             * Statuses
+             * @description Paths by status
+             */
+            statuses?: {
+                [key: string]: number;
+            };
+            /**
+             * Inventory Complete
+             * @description Every tracked path at the commit is listed
+             */
+            inventory_complete: boolean;
+            /**
+             * Discovery Complete
+             * @description Nothing in scope is still pending, unsupported, or inaccessible (gaps can remain)
+             */
+            discovery_complete: boolean;
+            /** Domains */
+            domains?: components["schemas"]["DomainCoverage"][];
+        };
         /** RepoCreate */
         RepoCreate: {
             /**
@@ -6913,6 +7084,20 @@ export interface components {
              * @default
              */
             description: string;
+        };
+        /** RepoExplainRequest */
+        RepoExplainRequest: {
+            /**
+             * Domains
+             * @description Domains to start with (the coverage's `domain`s); none: the agent picks
+             */
+            domains?: string[];
+            /**
+             * Refresh
+             * @description Update the stale pages first (`GET .../pages`)
+             * @default false
+             */
+            refresh: boolean;
         };
         /**
          * RepoOption
@@ -6939,6 +7124,93 @@ export interface components {
              * @description The project here it's connected to, if any
              */
             project_key: string | null;
+        };
+        /** RepoPageRead */
+        RepoPageRead: {
+            /**
+             * Path
+             * @description The wiki page, e.g. docs/wiki/architecture.md
+             */
+            path: string;
+            /** Version */
+            version: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Citations
+             * @description `path:line` citations on the page
+             */
+            citations: number;
+            /**
+             * Stale
+             * @description Cited paths that make it stale (empty: fresh)
+             */
+            stale: components["schemas"]["StaleSource"][];
+        };
+        /**
+         * RepoPagesRead
+         * @description The repository wiki's pages and whether each still matches the code at the latest inventory.
+         */
+        RepoPagesRead: {
+            /** Commit Sha */
+            commit_sha: string | null;
+            /** Pages */
+            pages: components["schemas"]["RepoPageRead"][];
+        };
+        /** RepoPathPage */
+        RepoPathPage: {
+            /** Paths */
+            paths: components["schemas"]["RepoPathRead"][];
+            /**
+             * Next
+             * @description Pass as `after` for the next page; null on the last
+             */
+            next: string | null;
+        };
+        /** RepoPathRead */
+        RepoPathRead: {
+            /** Path */
+            path: string;
+            /** Size */
+            size: number;
+            /** Language */
+            language: string | null;
+            /** Kinds */
+            kinds: string[];
+            /** Domains */
+            domains: string[];
+            status: components["schemas"]["PathStatus"];
+            /** Reason */
+            reason: string | null;
+            /** Analyzed At */
+            analyzed_at: string | null;
+        };
+        /** RepoSnapshotRead */
+        RepoSnapshotRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Repo Full Name */
+            repo_full_name: string;
+            /** Commit Sha */
+            commit_sha: string;
+            /**
+             * Policy Version
+             * @description The classification rules it was taken with
+             */
+            policy_version: string;
+            /** Path Count */
+            path_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** RestoreRequest */
         RestoreRequest: {
@@ -7287,6 +7559,17 @@ export interface components {
             node: components["schemas"]["NodeRead"];
             /** Reasons */
             reasons: string[];
+        };
+        /** StaleSource */
+        StaleSource: {
+            /** Path */
+            path: string;
+            /**
+             * Why
+             * @description `changed`: its content changed since it was read; `removed`: no longer in the repository; `unread`: cited but never read
+             * @enum {string}
+             */
+            why: "changed" | "removed" | "unread";
         };
         /**
          * SubgraphRead
@@ -18645,6 +18928,314 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    repository_coverage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoCoverageRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    take_repository_inventory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoSnapshotRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    explain_repository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoExplainRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_repository_pages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoPagesRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_repository_paths: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["PathStatus"] | null;
+                /** @description One of the coverage's domains */
+                domain?: string | null;
+                /** @description Only paths under this one */
+                prefix?: string | null;
+                /** @description The `next` of the page before */
+                after?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoPathPage"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;

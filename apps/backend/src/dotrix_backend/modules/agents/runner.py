@@ -48,6 +48,8 @@ from dotrix_backend.modules.model_keys.service import ModelKeys, PersonalKeys, r
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import ProjectRepository, visible_to
+from dotrix_backend.modules.repo_knowledge.tools import MODE as REPO_MODE
+from dotrix_backend.modules.repo_knowledge.tools import RepoContext, repo_tools
 from dotrix_backend.modules.research.service import RunWeb, WebResearch, check_report
 from dotrix_backend.modules.rules.service import WorkspaceRules, WorkspaceSkills, layered
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode, effective, goes_through
@@ -502,6 +504,11 @@ class AgentRunner:
                 self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
                 approval=approval, jobs=self.jobs,
             ))
+            if mode == REPO_MODE:  # explaining the repository: its inventory, to read and to cite
+                mode_tools = [*mode_tools, *repo_tools(RepoContext(
+                    self.session_factory, workspace_id, project_id, run_id,
+                    self.checkouts.path(workspace_id, project_id) if self.checkouts is not None else None,
+                ))]
             if self.web is not None:
                 run_web = await self.web.for_run(
                     self.session_factory, workspace_id=workspace_id, project_id=project_id, run_id=run_id,
