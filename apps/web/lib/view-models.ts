@@ -50,7 +50,8 @@ const TINTS = Object.values(PCOLORS);
 export const hashTint = (s: string) => TINTS[[...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % TINTS.length]!;
 export const ms = (s: string | null | undefined) => (s ? new Date(s).getTime() : Date.now());
 /** An agent or Kai (the coding agent) as the store names it ("auto", "research", "agent:coding-agent"). */
-export const agentId = (a: string | null | undefined) => (a ? (a.includes("code") || a === "codex" ? `agent:${a}` : (AGENT_IN[a] ?? a)) : null);
+const CODING_IDS = new Set(["coding-agent", "claude-code", "codex", "opencode"]);
+export const agentId = (a: string | null | undefined) => (a ? (CODING_IDS.has(a) ? `agent:${a}` : (AGENT_IN[a] ?? a)) : null);
 export const actor = (user: string | null | undefined, agent: string | null | undefined) => user ?? agentId(agent) ?? "";
 
 export function toMember(m: Schemas["MemberRead"]): Member {

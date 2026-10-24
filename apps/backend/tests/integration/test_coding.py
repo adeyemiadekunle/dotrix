@@ -235,6 +235,29 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert {"coding.requested", "coding.approved", "coding.pr_opened"} <= set(actions)
 
 
+async def test_an_approver_who_cant_instruct_the_coding_agent_still_approves_its_run(
+    db_client: AsyncClient, coding, claude: ScriptedClaude
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    # Cat may approve agents' changes, not instruct the coding agent: approving Ada's run is enough.
+    assert (await db_client.patch(ws, json={"member_permissions": ["agents:approve"]}, headers=ada.headers)).status_code == 200
+    story = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Refund a payment"})).json()
+    run = (await db_client.post(f"{base}/coding/issues/{story['key']}/runs", json={}, headers=ada.headers)).json()
+    assert (await db_client.post(f"{base}/coding/issues/{story['key']}/runs", json={},
+                                 headers=cat.headers)).status_code in (403, 409)
+
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    done = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=cat.headers)
+    assert done.status_code == 200, done.text
+    issue = (await db_client.get(f"{base}/issues/{story['key']}", headers=ada.headers)).json()
+    assert issue["assignee_agent"] == "coding-agent"
+    # Assigning Kai by hand still needs the right to instruct it.
+    other = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "t"})).json()
+    refused = await db_client.patch(f"{base}/issues/{other['key']}", json={"assignee_agent": "coding-agent"}, headers=cat.headers)
+    assert refused.status_code == 403
+
+
 async def test_changes_to_dotrix_or_workflows_are_never_pushed(
     db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
 ) -> None:

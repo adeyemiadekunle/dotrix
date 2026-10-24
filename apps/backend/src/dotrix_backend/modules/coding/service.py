@@ -225,7 +225,7 @@ class CodingService:
         if issue.status is not IssueStatus.IN_PROGRESS:
             change.status = IssueStatus.IN_PROGRESS
         await IssueService(self.session).update(
-            access.project, run.issue_key, IssueActor(access.member), change, commit=False,
+            access.project, run.issue_key, IssueActor(access.member, coding_instructed=True), change, commit=False,
         )
         self._audit(access.project, access, "coding.approved", run)
         dispatch = None

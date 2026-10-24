@@ -107,6 +107,9 @@ class IssueActor:
     approved_by_id: uuid.UUID | None = None
     # The run's agent contracts (built-ins when None): which issues each agent may open or edit.
     policy: AgentPolicy | None = None
+    # An approved coding run hands the issue to Kai: whoever asked for the run was allowed to instruct
+    # the coding agent when they asked, so the approver needs only the right to approve.
+    coding_instructed: bool = False
 
     @property
     def user_id(self) -> uuid.UUID:
@@ -1053,7 +1056,8 @@ class IssueService:
 
     @staticmethod
     def _check_assignment(actor: IssueActor, agent: AgentAssignee | None) -> None:
-        if agent is AgentAssignee.CODING_AGENT and not can(actor.member, Permission.INSTRUCT_CODING_AGENT):
+        if (agent is AgentAssignee.CODING_AGENT and not actor.coding_instructed
+                and not can(actor.member, Permission.INSTRUCT_CODING_AGENT)):
             raise Forbidden("Your role can't instruct the coding agent")
 
     @staticmethod
