@@ -1236,6 +1236,22 @@ async def test_manual_changes_wait_and_rejected_ones_never_reach_github(
     assert {"coding.changes_ready", "coding.changes_rejected", "coding.stop_requested"} <= set(actions)
 
 
+async def test_accepted_changes_are_pushed_without_a_model_key(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    """Pushing what's ready runs no model: a key removed while the changes waited doesn't lose them."""
+    ada, *_ = coding
+    base, run = await _asked(db_client, coding)
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()["status"] == "changes_ready"
+    db_client._transport.app.state.settings.anthropic_api_key = None  # type: ignore[attr-defined]
+    agent_script.say("Fine.")
+    done = await _approve(db_client, base, run, ada.headers)
+    assert done["status"] == "pr_opened" and len(github.pulls) == 1, done
+    assert _git(origin, "show", f"{done['branch']}:src/refunds.py") == "def refund(amount):\n    return amount"
+
+
 async def test_a_pushed_turn_is_reverted_on_its_branch(
     db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
 ) -> None:

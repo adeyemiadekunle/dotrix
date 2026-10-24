@@ -332,15 +332,21 @@ class CodingWorker:
             revert = (reverting.turn, reverting.commit_sha) if reverting is not None and reverting.commit_sha else None
             if run.revert_of and revert is None:
                 raise RunFailed("The turn to revert has no pushed commit")
+            # Pushing what's ready runs no model: it needs neither the tool nor a key (one removed
+            # while the changes waited mustn't lose them).
+            publish_only = accepted is not None or revert is not None
             tool = tool_for(agent, model)
-            if tool is None:
-                raise RunFailed(f"OpenCode can't run {model or 'without a model'} here")
-            # The same key chat would use for this person: their own, the workspace's, or the server's.
-            keys = await run_keys(session, self.secrets, run.workspace_id, run.requested_by_id)
-            key = run_key(tool, self.settings, keys.keys)
-            if key is None:
-                raise RunFailed(f"There's no {tool.provider} key for {CODING_AGENT_NAME} ({tool.name}) here any more "
-                                "(Settings → Models, or your own in Account → Your models)")
+            tool_name = tool.name if tool is not None else agent.value
+            key: str | None = None
+            if not publish_only:
+                if tool is None:
+                    raise RunFailed(f"OpenCode can't run {model or 'without a model'} here")
+                # The same key chat would use for this person: their own, the workspace's, or the server's.
+                keys = await run_keys(session, self.secrets, run.workspace_id, run.requested_by_id)
+                key = run_key(tool, self.settings, keys.keys)
+                if key is None:
+                    raise RunFailed(f"There's no {tool.provider} key for {CODING_AGENT_NAME} ({tool.name}) here any "
+                                    "more (Settings → Models, or your own in Account → Your models)")
 
         # 1. Our checkout, with a token for this repo only (an hour long, never stored). With a fork
         # owner, the branch goes to the app's fork: the PR's CI then gets none of the repo's secrets,
@@ -367,10 +373,11 @@ class CodingWorker:
 
         await self._update(run_id, base_sha=base_sha, step=f"Checked out {session_branch}" if session_branch
                            else "Checked out the repository")
-        if accepted is not None or revert is not None:
-            await self._publish_only(run_id, work, host, source, ref, push, token, tool.name, session_branch,
+        if publish_only:
+            await self._publish_only(run_id, work, host, source, ref, push, token, tool_name, session_branch,
                                      session_pr, publication, accepted=accepted, revert=revert)
             return
+        assert tool is not None and key is not None
 
         # 2. The agent's sandbox: the session's warm one when its files still match the branch (nobody
         #    pushed in between), else a fresh one with the tracked files and a history of its own, and
