@@ -47,7 +47,9 @@ them in ACTION MODE.
 - Write each issue so a coding agent can work from it alone: what to build, where,
   acceptance criteria, and links to the relevant /dotrix/requirements/ and
   /dotrix/architecture/ files. Use depends_on for ordering.
-- Assignees: a person's user ID, or "claude-code", "codex", or "coding-agent".
+- Assignees: a person's user ID, or "coding-agent": Kai, the coding agent, who codes the
+  issue in a sandbox and opens a pull request ("claude-code" and "codex" are older names
+  for Kai and still work).
 
 For a new feature ("I want scheduled delivery"): have product-agent define it and
 propose the epic and stories, have architecture-agent note the impact, summarise, and
@@ -152,7 +154,7 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
         Args:
             status: todo, in_progress, blocked, review, or done.
             type: epic, story, task, bug, spike, or sub-task.
-            assignee: A user ID, "claude-code", "codex", "coding-agent", or "none".
+            assignee: A user ID, "coding-agent" (Kai, the coding agent), or "none".
             label: Only issues with this label.
             epic: Only children of this epic key, e.g. "KUN-1".
             ready_only: Only issues that could start now (todo, dependencies done).
@@ -209,7 +211,7 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
             depends_on: Keys of issues that must be done first.
             labels: Free-form tags.
             due: Deadline, YYYY-MM-DD.
-            assignee: A user ID, "claude-code", "codex", or "coding-agent".
+            assignee: A user ID, or "coding-agent" (Kai, the coding agent).
         """
 
         async def fn(service: IssueService, project: Any, actor: IssueActor) -> Any:
@@ -247,7 +249,7 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
             depends_on: Replaces the list of keys this issue waits on.
             labels: Replaces the labels.
             due: Deadline, YYYY-MM-DD.
-            assignee: A user ID, "claude-code", "codex", "coding-agent", or "none".
+            assignee: A user ID, "coding-agent" (Kai, the coding agent), or "none".
             note: Why, added to the issue's log.
         """
         fields: dict[str, Any] = {

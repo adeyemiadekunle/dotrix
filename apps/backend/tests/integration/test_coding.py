@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -15,12 +16,21 @@ import pytest
 from cryptography.fernet import Fernet
 from httpx import AsyncClient
 from pydantic import SecretStr
+from sqlalchemy import update
 
 from dotrix_backend.core.crypto import Secrets
-from dotrix_backend.modules.coding.runner import SHOTS_LIST, CodingWorker
+from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
+from dotrix_backend.modules.coding.recovery import recover_uncertain_runs
+from dotrix_backend.modules.coding.runner import (
+    _LEASE,
+    SHOTS_LIST,
+    CodingWorker,
+    _ReconciliationRequired,
+)
 from dotrix_backend.modules.coding.sandbox import ExecResult, LocalSandbox, LocalSession
 from dotrix_backend.modules.coding.warm import WarmPool
 from dotrix_backend.modules.connectors.github_app import get_github_app
+from dotrix_backend.modules.execution.service import expire_coding_leases
 
 
 def _git(root: Path, *args: str) -> str:
@@ -223,7 +233,7 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
 
     # The issue is the coding tool's, in review, with the PR linked; a person closes it.
     issue = (await db_client.get(f"{base}/issues/{story['key']}", headers=ada.headers)).json()
-    assert issue["status"] == "review" and issue["assignee_agent"] == "claude-code"
+    assert issue["status"] == "review" and issue["assignee_agent"] == "coding-agent"  # Kai, whatever the engine
     assert {"kind": "pr", "url": run["pr_url"], "title": "PR #1: Refund a payment"} in issue["links"]
 
     # The Reviewer read the PR in a conversation of its own.
@@ -233,6 +243,29 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
 
     actions = [e["action"] for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()]
     assert {"coding.requested", "coding.approved", "coding.pr_opened"} <= set(actions)
+
+
+async def test_an_approver_who_cant_instruct_the_coding_agent_still_approves_its_run(
+    db_client: AsyncClient, coding, claude: ScriptedClaude
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    # Cat may approve agents' changes, not instruct the coding agent: approving Ada's run is enough.
+    assert (await db_client.patch(ws, json={"member_permissions": ["agents:approve"]}, headers=ada.headers)).status_code == 200
+    story = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Refund a payment"})).json()
+    run = (await db_client.post(f"{base}/coding/issues/{story['key']}/runs", json={}, headers=ada.headers)).json()
+    assert (await db_client.post(f"{base}/coding/issues/{story['key']}/runs", json={},
+                                 headers=cat.headers)).status_code in (403, 409)
+
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    done = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=cat.headers)
+    assert done.status_code == 200, done.text
+    issue = (await db_client.get(f"{base}/issues/{story['key']}", headers=ada.headers)).json()
+    assert issue["assignee_agent"] == "coding-agent"
+    # Assigning Kai by hand still needs the right to instruct it.
+    other = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "t"})).json()
+    refused = await db_client.patch(f"{base}/issues/{other['key']}", json={"assignee_agent": "coding-agent"}, headers=cat.headers)
+    assert refused.status_code == 403
 
 
 async def test_changes_to_dotrix_or_workflows_are_never_pushed(
@@ -723,7 +756,7 @@ async def test_opencode_codes_on_the_model_the_server_names(
     issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=ada.headers)).json()
     assert issue["status"] == "review" and issue["assignee_agent"] == "coding-agent"
     [pr] = github.pulls
-    assert "Written by OpenCode" in pr["body"]
+    assert "Written by Kai (on OpenCode)" in pr["body"]
 
 
 async def _opencode_turn(db_client: AsyncClient, coding, *, budget: int | None = None, error: str | None = None) -> dict:
@@ -800,3 +833,211 @@ async def test_coding_runs_on_the_same_keys_as_chat(db_client: AsyncClient, codi
         assert claude.env["ANTHROPIC_API_KEY"] == server_key
     finally:
         settings.server_model_keys = True
+
+
+# -- recovery: leases, fencing, and settling an uncertain run from what GitHub shows ---------------
+
+
+async def _set_run(db_client: AsyncClient, run_id: str, **values: Any) -> None:
+    factory = db_client._transport.app.state.jobs.ctx.session_factory  # type: ignore[attr-defined]
+    async with factory() as session:
+        await session.execute(update(CodingRun).where(CodingRun.id == uuid.UUID(run_id)).values(**values))
+        await session.commit()
+
+
+async def _asked(db_client: AsyncClient, coding, title: str = "Refund a payment") -> tuple[str, dict[str, Any]]:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": title})).json()
+    run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={}, headers=ada.headers)).json()
+    assert run["status"] == "awaiting_approval", run
+    return base, run
+
+
+def _heads(origin: Path):
+    def head(full_name: str, branch: str) -> str | None:
+        found = subprocess.run(["git", "-C", str(origin), "rev-parse", "--verify", "-q", f"refs/heads/{branch}"],
+                               capture_output=True, text=True)
+        return found.stdout.strip() or None
+    return head
+
+
+async def test_a_run_cut_off_before_it_published_runs_again(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
+) -> None:
+    ada, cat, *_ = coding
+    github.branch_heads = _heads(origin)
+    base, run = await _asked(db_client, coding)
+    # Its worker took it and died: the lease ran out, nothing reached GitHub.
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING, lease_token=1, decided_by_id=ada.id,
+                   lease_expires_at=datetime.now(UTC) - timedelta(seconds=5), started_at=datetime.now(UTC))
+    assert await expire_coding_leases(db_client._transport.app.state.jobs.ctx.session_factory) == 1  # type: ignore[attr-defined]
+    seen = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert seen["status"] == "recovery_required" and seen["can_recover"] and not seen["can_stop"]
+    assert "lease" in seen["error"]
+    # Cat didn't ask for it; Stop isn't how it's settled.
+    assert not (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).json()["can_recover"]
+    assert (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
+                                 headers=cat.headers)).status_code == 403
+    assert (await db_client.post(f"{base}/coding/runs/{run['id']}/stop", headers=ada.headers)).status_code == 409
+
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    recovered = await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"}, headers=ada.headers)
+    assert recovered.status_code == 200, recovered.text
+    done = recovered.json()
+    assert done["status"] == "pr_opened" and done["pr_number"] == 1, done  # the turn ran again, on a new lease
+    assert "Recovered: nothing was published; running the turn again" in [e["text"] for e in done["events"]]
+    assert _git(origin, "rev-parse", done["branch"]) == done["commit_sha"]
+    async with db_client._transport.app.state.jobs.ctx.session_factory() as session:  # type: ignore[attr-defined]
+        row = await session.get(CodingRun, uuid.UUID(run["id"]))
+        assert row is not None and row.lease_token == 2 and row.lease_expires_at is None  # released when it ended
+    audit = (await db_client.get(f"{coding[2]}/audit", headers=ada.headers)).json()
+    assert any(e["action"] == "coding.recovered" and e["details"]["outcome"] == "retried" for e in audit)
+
+
+async def test_a_lost_pr_reply_is_settled_from_github(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
+) -> None:
+    ada, *_ = coding
+    github.branch_heads = _heads(origin)
+    base, run = await _asked(db_client, coding)
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    github.fail_pulls = 1  # the push lands; the PR request's reply is lost
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert run["status"] == "recovery_required" and run["pr_number"] is None and run["can_recover"]
+    assert _git(origin, "rev-parse", run["branch"]) == run["commit_sha"]
+
+    # The push landed and no PR is there: recovery opens it, as the approved run would have.
+    opened = (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
+                                   headers=ada.headers)).json()
+    assert opened["status"] == "pr_opened" and opened["pr_number"] == 1, opened
+    [pr] = github.pulls
+    assert pr["head"] == run["branch"] and pr["base"] == "main"
+    issue = (await db_client.get(f"{base}/issues/{run['issue_key']}", headers=ada.headers)).json()
+    assert issue["status"] == "review" and any(link["url"] == opened["pr_url"] for link in issue["links"])
+
+    # Had the PR been opened with its reply lost, recovery finds it rather than opening another,
+    # as it is now (closed meanwhile, say: the next turn then starts a new branch and PR).
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RECOVERY_REQUIRED, pr_number=None, pr_url=None)
+    github.pulls[0]["state"] = "closed"
+    adopted = (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
+                                    headers=ada.headers)).json()
+    assert adopted["status"] == "pr_opened" and adopted["pr_number"] == 1 and len(github.pulls) == 1
+    assert adopted["pr_state"] == "closed"
+    assert (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
+                                 headers=ada.headers)).status_code == 409  # settled
+
+
+async def test_a_stopped_run_is_never_published_or_run_again_by_recovery(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
+) -> None:
+    ada, *_ = coding
+    github.branch_heads = _heads(origin)
+    base, run = await _asked(db_client, coding)
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    github.fail_pulls = 1
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    # Stopped after its push, before its PR (the Stop that came in as the reply was lost).
+    await _set_run(db_client, run["id"], stop_requested=True)
+    stopped = (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
+                                    headers=ada.headers)).json()
+    assert stopped["status"] == "stopped" and "no PR was opened" in stopped["error"] and not github.pulls
+    # And one stopped before it published anything isn't run again.
+    _, other = await _asked(db_client, coding, "Another")
+    await _set_run(db_client, other["id"], status=CodingRunStatus.RECOVERY_REQUIRED, lease_token=1, stop_requested=True)
+    again = (await db_client.post(f"{base}/coding/runs/{other['id']}/recover", json={"action": "check"},
+                                  headers=ada.headers)).json()
+    assert again["status"] == "stopped" and again["error"] == "Stopped before it published anything"
+
+
+async def test_a_branch_that_moved_on_waits_for_a_person(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
+) -> None:
+    ada, *_ = coding
+    base, run = await _asked(db_client, coding)
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    github.fail_pulls = 1
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    github.branch_heads = lambda full_name, branch: "f" * 40  # neither this turn's commit nor its base
+    unclear = (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
+                                    headers=ada.headers)).json()
+    assert unclear["status"] == "recovery_required" and "moved on" in unclear["error"] and not github.pulls
+    discarded = (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "discard"},
+                                      headers=ada.headers)).json()
+    assert discarded["status"] == "failed" and discarded["error"].startswith("Discarded")
+
+
+async def test_recovery_waits_for_a_live_lease_and_gives_up_after_two_attempts(
+    db_client: AsyncClient, coding, github, origin: Path
+) -> None:
+    ada, *_ = coding
+    github.branch_heads = _heads(origin)
+    base, run = await _asked(db_client, coding)
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RECOVERY_REQUIRED, lease_token=2,
+                   lease_expires_at=datetime.now(UTC) + timedelta(seconds=60))
+    busy = await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"}, headers=ada.headers)
+    assert busy.status_code == 409 and "still be working" in busy.json()["detail"]
+    await _set_run(db_client, run["id"], lease_expires_at=None)
+    failed = (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
+                                   headers=ada.headers)).json()
+    assert failed["status"] == "failed" and failed["error"].startswith("Cut off 2 times")
+
+
+async def test_the_sweep_settles_each_uncertain_run_once(db_client: AsyncClient, coding, github, origin: Path) -> None:
+    github.branch_heads = _heads(origin)
+    _, run = await _asked(db_client, coding)
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RECOVERY_REQUIRED, lease_token=1)
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    factory, worker = app.state.jobs.ctx.session_factory, app.state.jobs.ctx.coding
+    queued: list[uuid.UUID] = []
+
+    async def requeue(session, row) -> None:
+        queued.append(row.id)
+
+    assert await recover_uncertain_runs(factory, worker.app, worker.settings, requeue) == 1
+    assert queued == [uuid.UUID(run["id"])]
+    async with factory() as session:
+        row = await session.get(CodingRun, uuid.UUID(run["id"]))
+        assert row is not None and row.status is CodingRunStatus.QUEUED and row.recovery_checked_at is not None
+        row.status = CodingRunStatus.RECOVERY_REQUIRED  # cut off again: a person settles it this time
+        await session.commit()
+    assert await recover_uncertain_runs(factory, worker.app, worker.settings, requeue) == 0
+
+
+async def test_a_worker_that_lost_its_lease_is_fenced_off(db_client: AsyncClient, coding, github) -> None:
+    _, run = await _asked(db_client, coding)
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    worker, settings = app.state.jobs.ctx.coding, app.state.settings
+    run_id = uuid.UUID(run["id"])
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING, lease_token=1,
+                   lease_expires_at=datetime.now(UTC) + timedelta(seconds=1))
+    lease = _LEASE.set(1)  # this test's task is the worker's attempt with token 1
+    before, settings.coding_lease_seconds = settings.coding_lease_seconds, 0.3  # renewed every 0.1 s
+    try:
+        holding = asyncio.create_task(worker._hold_lease(run_id, 1))
+        await asyncio.sleep(0.25)
+        async with app.state.jobs.ctx.session_factory() as session:
+            row = await session.get(CodingRun, run_id)
+            assert row is not None and row.lease_expires_at < datetime.now(UTC) + timedelta(seconds=0.35)  # renewed
+        assert not await worker.stop_requested(run_id)
+        # Recovery gave the run to another attempt: this worker's lease is gone.
+        await _set_run(db_client, run["id"], lease_token=2)
+        await asyncio.wait_for(holding, 1)  # it stops renewing
+    finally:
+        settings.coding_lease_seconds = before
+    assert await worker.stop_requested(run_id)
+    with pytest.raises(_ReconciliationRequired):
+        await worker._ensure_running(run_id)
+    await worker._end(run_id, CodingRunStatus.FAILED, error="stale")
+    assert (await db_client.get(f"{coding[2]}/projects/{coding[3]['id']}/coding/runs/{run['id']}",
+                                headers=coding[0].headers)).json()["status"] == "running"  # untouched
+    _LEASE.reset(lease)
+
+    # Two attempts on one worker (the first one cut off, still alive): each keeps its own token.
+    async def sees_stop(token: int) -> bool:
+        _LEASE.set(token)
+        return await worker.stop_requested(run_id)
+
+    # (one after the other: the test's connection is shared)
+    assert [await asyncio.create_task(sees_stop(t)) for t in (1, 2)] == [True, False]

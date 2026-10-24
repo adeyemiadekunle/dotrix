@@ -12,7 +12,8 @@ from .models import CodingAgent, CodingOrigin, CodingRunStatus, CodingSessionSta
 class CodingAvailability(BaseModel):
     available: bool
     agent: CodingAgent | None = Field(
-        description="Who would code: Claude Code with an Anthropic key, else Codex; OpenCode when the server names it"
+        description="The engine Kai, the coding agent, would code on: OpenCode when the server names it, "
+        "else Claude Code with an Anthropic key, else Codex"
     )
     sandbox: str | None = Field(description="`docker`, `openshell`, or `local` (development, no isolation)")
     reason: str | None = Field(description="Why not, when it isn't available")
@@ -29,6 +30,12 @@ class CodingFollowUp(BaseModel):
 class CodingDecision(BaseModel):
     decision: Literal["approve", "reject"]
     reason: str | None = Field(default=None, max_length=1_000)
+
+
+class CodingRecover(BaseModel):
+    action: Literal["check", "discard"] = Field(description=(
+        "`check`: look at GitHub and settle it (adopt or open its PR, or run the turn again when nothing "
+        "was published); `discard`: end it as failed, having looked yourself"))
 
 
 class CodingEvent(BaseModel):
@@ -96,6 +103,7 @@ class CodingRunRead(BaseModel):
     finished_at: datetime | None
     can_decide: bool = Field(description="Whether you may approve or reject it now")
     can_stop: bool = Field(description="Whether you may stop it now")
+    can_recover: bool = Field(default=False, description="Whether you may recover it now (its outcome is uncertain)")
 
 
 class CodingSessionUpdate(BaseModel):

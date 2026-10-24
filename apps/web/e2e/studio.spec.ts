@@ -54,7 +54,7 @@ test("the agents panel shows who needs you, and approving from it settles the ch
   await page.goto("/w/dotrix");
   const panel = page.getByRole("complementary", { name: "Agents" });
   await expect(panel.getByText("Nova", { exact: true })).toBeVisible();
-  const claude = panel.locator(".ap-row", { hasText: "Claude Code" });
+  const claude = panel.locator(".ap-row", { hasText: "Kai" }); // the coding agent, whichever engine codes
   await expect(claude.getByText("Needs you")).toBeVisible();
   await claude.getByRole("button", { name: "Approve" }).click();
   await expect(claude.getByText("Working")).toBeVisible();

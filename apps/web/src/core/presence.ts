@@ -3,8 +3,8 @@
 // One place for the agents panel, the corner notices, and the faces' moods.
 import { decideChange, decideCoding } from "./agents";
 import { D, S, task } from "../data/store";
-import { CODING_TOOLS } from "../data/seed-dotrix";
-import type { ChatMessage, CodingSession, ProposedChange, Thread } from "../data/types";
+import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
+import type { ChatMessage, ProposedChange, Thread } from "../data/types";
 import type { Mood } from "../ui/face";
 
 export type State = "working" | "needs" | "blocked" | "idle";
@@ -51,8 +51,6 @@ export function waitingChanges(): Waiting[] {
 /** Approvals and checkpoints from the API's notifications (a real workspace has no seeded threads). */
 const pendingNotifs = () => D().notifs.filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read && n.by);
 
-const toolOf = (cs: CodingSession) => `agent:${cs.tool}`;
-
 export function presence(): Presence[] {
   const waiting = waitingChanges();
   const notifs = pendingNotifs();
@@ -81,13 +79,16 @@ export function presence(): Presence[] {
     if (n) return { ...base, state: "needs", mood: "needs", now: n.text };
     return { ...base, state: "idle", mood: "idle", now: READY[a.handle] ?? (a.desc || "Ready") };
   });
-  // Coding tools appear while they have a session to show.
+  // Kai, the coding agent, appears while it has a session to show: one row, whichever engine codes,
+  // for the session that matters most (waiting on you, then working, then one it couldn't finish).
   const tools: Presence[] = [];
-  for (const t of CODING_TOOLS) {
-    const cs = D().coding.find((x) => toolOf(x) === t.id && ["running", "queued", "awaiting_approval", "failed"].includes(x.status));
-    if (!cs) continue;
+  const rank = { awaiting_approval: 0, running: 1, queued: 1, failed: 2 } as Record<string, number>;
+  const cs = D()
+    .coding.filter((x) => x.status in rank)
+    .sort((a, b) => rank[a.status]! - rank[b.status]!)[0];
+  if (cs) {
     const key = task(cs.task)?.key ?? "";
-    const base = { id: t.id, name: t.name, role: "Coding", c: t.c, session: cs.id };
+    const base = { id: CODING_AGENT.id, name: CODING_AGENT.name, role: "Coding", c: CODING_AGENT.c, session: cs.id };
     if (cs.status === "awaiting_approval")
       tools.push({ ...base, state: "needs", mood: "needs", now: `Waiting for approval to code ${key}`, approve: () => decideCoding(cs, true) });
     else if (cs.status === "failed") tools.push({ ...base, state: "blocked", mood: "blocked", now: `Couldn't finish ${key}` });
@@ -98,7 +99,8 @@ export function presence(): Presence[] {
 
 /** The mood a face shows for an agent handle (or coding tool) anywhere in the app. */
 export function moodOf(id: string): Mood {
-  return presence().find((p) => p.id === id)?.mood ?? "idle";
+  const who = CODING_TOOLS.some((c) => c.id === id) ? CODING_AGENT.id : id; // every engine's id is Kai
+  return presence().find((p) => p.id === who)?.mood ?? "idle";
 }
 
 /** Today's agent work, for the panel's footer: replies and the tokens they used. */

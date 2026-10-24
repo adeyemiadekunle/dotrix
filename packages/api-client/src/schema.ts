@@ -2623,8 +2623,8 @@ export interface paths {
          * @description Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance
          *     criteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,
          *     or bug; other types may sit under an epic. Assigning the built-in coding agent needs the
-         *     instruct-coding-agent permission. Assigning a coding tool (`coding-agent`, `claude-code`,
-         *     `codex`) also starts a coding session, waiting for approval, where coding is set up.
+         *     instruct-coding-agent permission. Assigning Kai, the coding agent (`coding-agent`; its
+         *     older names `claude-code` and `codex` still work), also starts a coding session, waiting for approval, where coding is set up.
          */
         post: operations["create_issue"];
         delete?: never;
@@ -3300,7 +3300,7 @@ export interface paths {
         put?: never;
         /**
          * Start Coding
-         * @description Ask for a coding run on an issue: Claude Code (or Codex) codes it in a sandbox on a new
+         * @description Ask for a coding run on an issue: Kai, the coding agent, codes it in a sandbox on a new
          *     branch, and the platform opens a PR. It waits for someone who may approve agent changes;
          *     the brief it will get is in the run. People who may instruct the coding agent. 409
          *     `coding_unavailable` (not set up, or no connected repo), `coding_busy` (one is already open).
@@ -3480,6 +3480,28 @@ export interface paths {
          *     reconciliation. Whoever asked for it, or owners and admins.
          */
         post: operations["stop_coding_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recover Coding Run
+         * @description Settle a coding run whose outcome is uncertain (`recovery_required`), once its worker's lease has
+         *     run out: check GitHub (the push landed: its PR is adopted, or opened; nothing was published: the
+         *     turn runs again, twice at most), or discard it. Whoever asked for it, or owners and admins.
+         */
+        post: operations["recover_coding_run"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4655,7 +4677,7 @@ export interface components {
         CodingAvailability: {
             /** Available */
             available: boolean;
-            /** @description Who would code: Claude Code with an Anthropic key, else Codex; OpenCode when the server names it */
+            /** @description The engine Kai, the coding agent, would code on: OpenCode when the server names it, else Claude Code with an Anthropic key, else Codex */
             agent: components["schemas"]["CodingAgent"] | null;
             /**
              * Sandbox
@@ -4736,6 +4758,15 @@ export interface components {
          * @enum {string}
          */
         CodingOrigin: "start" | "assigned" | "follow_up";
+        /** CodingRecover */
+        CodingRecover: {
+            /**
+             * Action
+             * @description `check`: look at GitHub and settle it (adopt or open its PR, or run the turn again when nothing was published); `discard`: end it as failed, having looked yourself
+             * @enum {string}
+             */
+            action: "check" | "discard";
+        };
         /** CodingRunCreate */
         CodingRunCreate: {
             /**
@@ -4868,6 +4899,12 @@ export interface components {
              * @description Whether you may stop it now
              */
             can_stop: boolean;
+            /**
+             * Can Recover
+             * @description Whether you may recover it now (its outcome is uncertain)
+             * @default false
+             */
+            can_recover: boolean;
         };
         /**
          * CodingRunStatus
@@ -19165,6 +19202,88 @@ export interface operations {
             };
             /** @description Validation Error */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    recover_coding_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coding_run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodingRecover"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

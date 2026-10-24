@@ -30,6 +30,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from dotrix_backend.db.base import Base, UUIDPrimaryKeyMixin, WorkspaceScopedMixin, str_enum
 from dotrix_backend.modules.issues.models import AgentAssignee
 
+# The coding agent as people meet it: one teammate beside Nova and the specialists, whatever engine
+# codes for it (OpenCode; Claude Code and Codex as the server's fallbacks). Engines stay a detail.
+CODING_AGENT_NAME = "Kai"
+
 
 class CodingAgent(enum.StrEnum):
     """The coding tools we wrap; which one runs follows the model key the server has."""
@@ -40,9 +44,9 @@ class CodingAgent(enum.StrEnum):
 
     @property
     def assignee(self) -> AgentAssignee:
-        """Who an issue shows as working on it: the tool, where people can assign it by name, else
-        the built-in coding agent (OpenCode)."""
-        return AgentAssignee(self.value) if self.value in AgentAssignee._value2member_map_ else AgentAssignee.CODING_AGENT
+        """Who an issue shows as working on it: Kai, the built-in coding agent, whichever engine
+        codes (issues once given to `claude-code` or `codex` by name keep them)."""
+        return AgentAssignee.CODING_AGENT
 
 
 class CodingRunStatus(enum.StrEnum):
@@ -97,6 +101,12 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     model: Mapped[str | None] = mapped_column(String(100))  # the tool's own default when null
     status: Mapped[CodingRunStatus] = mapped_column(str_enum(CodingRunStatus, 24), index=True)
     dispatch_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # The worker's lease while it runs: `lease_token` goes up each time a worker takes the run (so
+    # it counts attempts) and fences the earlier one off, whose writes and pushes then stop.
+    lease_token: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # When recovery last looked at GitHub for this run (automatic recovery looks once).
+    recovery_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # What the agent is told: the issue, its acceptance criteria, linked documents (as data).
     # Fixed when asked for, so the approver sees exactly what will be sent.
     brief: Mapped[str] = mapped_column(Text)

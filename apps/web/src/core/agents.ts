@@ -197,7 +197,7 @@ export function repoName(url: string | undefined): string | undefined {
 }
 
 /** Ask a coding tool to work on an issue: a session waiting for someone to approve it. Its id, or null. */
-export function startCoding(t: { id: string; key: string; title: string; project: string }, tool: "claude-code" | "codex", note = ""): string | null {
+export function startCoding(t: { id: string; key: string; title: string; project: string }, tool: CodingSession["tool"], note = ""): string | null {
   if (agentsNotWired()) return null;
   const id = uid("cs");
   const ask = note.trim() || t.title;

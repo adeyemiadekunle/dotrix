@@ -153,7 +153,7 @@ def build_workspace_tools(
             project: The project's key, e.g. "KUN".
             status: todo, in_progress, blocked, review, or done.
             type: epic, story, task, bug, spike, or sub-task.
-            assignee: A user ID, "claude-code", "codex", "coding-agent", or "none".
+            assignee: A user ID, "coding-agent" (Kai, the coding agent), or "none".
             label: Only issues with this label.
             epic: Only children of this epic key.
             ready_only: Only issues that could start now.

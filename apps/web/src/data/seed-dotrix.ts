@@ -69,12 +69,10 @@ export const AGENTS: Agent[] = [
     tools: ["knowledge.write"],
   },
 ];
-/** Coding tools: assignable like people, they open pull requests. */
-export const CODING_TOOLS = [
-  { id: "agent:claude-code", name: "Claude Code", c: "#C0612B" },
-  { id: "agent:codex", name: "Codex", c: "#1D1C1A" },
-  { id: "agent:opencode", name: "OpenCode", c: "#3D6B8C" },
-];
+/** Kai, the coding agent: assignable like people, it opens pull requests. Whatever engine codes for it
+ * (OpenCode; Claude Code or Codex underneath), people see Kai, so every engine's id answers to Kai. */
+export const CODING_AGENT = { id: "agent:coding-agent", name: "Kai", c: "#3D6B8C" };
+export const CODING_TOOLS = [CODING_AGENT, ...["claude-code", "codex", "opencode"].map((engine) => ({ ...CODING_AGENT, id: `agent:${engine}` }))];
 
 const diffNav = ` # Navigation
 

@@ -48,6 +48,7 @@ import {
 import { currentSlug, go } from "../core/nav";
 import { MOD, MONL, TODAY, WD, addD, dOff, diffD, fmtDate, iso, parse } from "../core/utils";
 import { D, S, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, visibleProjects, people } from "../data/store";
+import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
 import type { Task } from "../data/types";
 import { Av, PrIcon, StIcon } from "../ui/helpers";
 import { FIELDS, viewChange, viewOf } from "../shell/viewEngine";
@@ -289,14 +290,13 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
                 html: <Av id={m.id} cls="sm" tip={false} />,
                 on: t?.assignee === m.id,
               })),
-              // dotrix: coding tools are assignable; assigning one starts a coding session (with approval)
+              // dotrix: Kai, the coding agent, is assignable; assigning Kai starts a coding session (with approval)
               {
-                id: "agent:claude-code",
-                name: "Claude Code",
-                html: <Av id="agent:claude-code" cls="sm" tip={false} />,
-                on: t?.assignee === "agent:claude-code",
+                id: CODING_AGENT.id,
+                name: CODING_AGENT.name,
+                html: <Av id={CODING_AGENT.id} cls="sm" tip={false} />,
+                on: !!t?.assignee && CODING_TOOLS.some((c) => c.id === t.assignee),
               },
-              { id: "agent:codex", name: "Codex", html: <Av id="agent:codex" cls="sm" tip={false} />, on: t?.assignee === "agent:codex" },
             ]}
             onPick={pick("assignee")}
           />
