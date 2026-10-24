@@ -398,6 +398,12 @@ class LocalRunner:
             await _terminate(process)
             self.echo(f"  The platform gave the turn to another attempt; left {tree} as it is")
             raise
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            # The runner itself is stopping (Ctrl-C, or the desktop app stopping it): the tool runs in a
+            # group of its own, so it would go on without anyone to report it. Stop it first.
+            reading.cancel()
+            await asyncio.shield(_terminate(process))
+            raise
         finally:
             _remove(leftovers)  # the Windows launcher holds the tool's keys: never left behind
         if not reading.cancelled() and (failed := reading.exception()) is not None:

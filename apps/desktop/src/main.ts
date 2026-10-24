@@ -80,7 +80,16 @@ app.whenReady().then(() => {
   });
 });
 
-app.on("before-quit", () => runners.stopAll());
+// A turn in progress is stopped (the tool with it) before the app goes, not left coding unwatched.
+let stopped = false;
+app.on("before-quit", (event) => {
+  if (stopped || !runners.running) return;
+  event.preventDefault();
+  void runners.stopAll().finally(() => {
+    stopped = true;
+    app.quit();
+  });
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

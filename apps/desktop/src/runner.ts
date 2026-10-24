@@ -89,9 +89,14 @@ export class Runners {
     this.changed();
   }
 
-  stopAll(): void {
+  /** Stop every runner (quitting): resolves once they, and the tools they started, have ended. */
+  async stopAll(): Promise<void> {
     this.quitting = true;
-    for (const child of this.processes.values()) terminate(child);
+    await Promise.all([...this.processes.values()].map(terminate));
+  }
+
+  get running(): boolean {
+    return this.processes.size > 0;
   }
 
   private env(): NodeJS.ProcessEnv {
@@ -127,6 +132,16 @@ export class Runners {
       });
       let approval: BrowserWindow | null = null;
       let errors = "";
+      let settled = false;
+      const settle = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        if (approval && !approval.isDestroyed()) approval.close();
+        if (error) reject(error);
+        else resolve();
+      };
+      // The CLI can't start (missing from the bundle, not executable): say so, rather than throw in here.
+      child.on("error", (error) => settle(new Error(`The dotrix CLI couldn't start: ${error.message}`)));
       child.stderr?.on("data", (chunk) => (errors += String(chunk)));
       readline.createInterface({ input: child.stdout! }).on("line", (line) => {
         const event = parse(line);
@@ -146,11 +161,7 @@ export class Runners {
           void shell.openExternal(url);
         }
       });
-      child.on("close", (code) => {
-        if (approval && !approval.isDestroyed()) approval.close();
-        if (code === 0) resolve();
-        else reject(new Error(lastLine(errors) ?? "Signing in didn't finish"));
-      });
+      child.on("close", (code) => settle(code === 0 ? undefined : new Error(lastLine(errors) ?? "Signing in didn't finish")));
     });
   }
 
@@ -168,7 +179,7 @@ export class Runners {
     if (!(await this.signedIn())) await this.signIn(parent);
     const linked = await this.cli(["link", folder, "--workspace", workspace, "--project", projectKey, "--api-url", this.apiUrl]);
     if (linked.code !== 0) throw new Error(lastLine(linked.stderr) ?? `Couldn't link ${folder} to ${projectKey}`);
-    this.remove(folder);
+    await this.remove(folder); // a runner already there for it ends first, or the new one couldn't start
     const status: RunnerStatus = { folder, workspace, projectKey, state: "starting" };
     this.statuses.set(folder, status);
     this.save();
@@ -177,19 +188,21 @@ export class Runners {
     return status;
   }
 
-  remove(folder: string): void {
+  /** Stop a folder's runner and forget the folder; resolves once its process has ended. */
+  async remove(folder: string): Promise<void> {
     const child = this.processes.get(folder);
     this.statuses.delete(folder);
     this.failures.delete(folder);
-    if (child) terminate(child);
     this.save();
     this.changed();
+    if (child) await terminate(child);
   }
 
-  restart(folder: string): void {
+  async restart(folder: string): Promise<void> {
     const child = this.processes.get(folder);
-    if (child) terminate(child);
-    else if (this.statuses.has(folder)) this.start(folder);
+    if (child) await terminate(child);
+    this.failures.delete(folder);
+    this.start(folder);
   }
 
   private start(folder: string): void {
@@ -293,12 +306,18 @@ export function sameOrigin(url: string, other: string): boolean {
   }
 }
 
-function terminate(child: ChildProcess): void {
-  if (child.exitCode !== null) return;
-  if (process.platform === "win32" && child.pid) {
+/** Stop a runner, and with it the coding tool it started; resolves once the runner has ended. On
+ *  Windows the whole tree goes at once. Elsewhere SIGINT lets the CLI stop the tool's own process group
+ *  first (dotrix_cli: runner.py), and SIGKILL follows only if it hasn't ended in 10 s. */
+function terminate(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null || !child.pid) return Promise.resolve();
+  const ended = new Promise<void>((resolve) => child.once("close", () => resolve()));
+  if (process.platform === "win32") {
     execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true }, () => undefined);
   } else {
-    child.kill("SIGINT"); // the runner reports a turn in progress as stopped where it can
-    setTimeout(() => child.exitCode === null && child.kill("SIGKILL"), 10_000);
+    child.kill("SIGINT");
+    const kill = setTimeout(() => child.exitCode === null && child.kill("SIGKILL"), 10_000);
+    void ended.then(() => clearTimeout(kill));
   }
+  return ended;
 }
