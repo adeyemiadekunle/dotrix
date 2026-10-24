@@ -453,6 +453,7 @@ class DockerSandbox:
     def __init__(self, settings: Settings) -> None:
         self.bin = settings.docker_bin
         self.image = settings.coding_image
+        self.memory, self.cpus, self.runtime = settings.coding_memory, settings.coding_cpus, settings.coding_docker_runtime
 
     def cli_env(self, **extra: str) -> dict[str, str]:
         """The CLI finds its daemon in the worker's environment; nothing else of ours reaches it."""
@@ -498,7 +499,8 @@ class DockerSandbox:
             await self.cli("run", "-d", "--init", "--name", name, "--label", label, "--network", name, "--read-only",
                            "--tmpfs", "/tmp:rw,exec,size=1g", "--mount", f"type=volume,dst={DOCKER_HOME}",
                            "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--user", DOCKER_UID,
-                           "--memory", "4g", "--cpus", "2", "--pids-limit", "512",
+                           "--memory", self.memory, "--cpus", f"{self.cpus:g}", "--pids-limit", "512",
+                           *(["--runtime", self.runtime] if self.runtime else []),
                            *[a for k in env for a in ("-e", k)], "-w", DOCKER_HOME, self.image, "sleep", "infinity",
                            env=self.cli_env(**env))
             await self.cli("exec", "-i", "-w", DOCKER_HOME, name, "tar", "-x", "-f", "-",

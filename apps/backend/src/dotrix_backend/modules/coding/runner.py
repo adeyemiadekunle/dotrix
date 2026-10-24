@@ -71,6 +71,7 @@ from .models import (
     PrState,
 )
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
+from .slots import RunSlots, Stopped
 from .tools import BROWSER_RULE, CodingTool, Usage, tool_for
 from .warm import WarmPool, close_quietly
 
@@ -156,6 +157,7 @@ class CodingWorker:
     storage: BlobStorage | None = None  # where the agent's screenshots go (none: they stay in the sandbox)
     secrets: Secrets = field(default_factory=lambda: Secrets(None))  # encrypts saved transcripts
     pool: WarmPool = field(default_factory=lambda: WarmPool(30 * 60, 3))  # sessions' sandboxes between turns
+    slots: RunSlots = field(default_factory=lambda: RunSlots(0))  # coding runs working at once (0: no limit)
     _reaper: asyncio.Task[None] | None = field(default=None, repr=False)
 
     async def execute(
@@ -186,7 +188,14 @@ class CodingWorker:
             await session.commit()
         assert work is not None
         try:
-            await self._run(run_id, work, publication)
+            try:
+                async with self.slots.take(
+                    on_wait=lambda: self._update(run_id, step="Waiting for a free sandbox"),
+                    stopped=lambda: self.stop_requested(run_id),
+                ):
+                    await self._run(run_id, work, publication)
+            except Stopped:
+                raise _Stopped("Stopped while waiting for a free sandbox") from None
         except _ReconciliationRequired:
             if publication.attempted:
                 await self._record_uncertain_publication(run_id, publication)
@@ -910,6 +919,7 @@ def build_coding_worker(
     return CodingWorker(
         session_factory, settings, sandbox, app if app.configured else None, reviewer=reviewer, storage=storage,
         secrets=Secrets.from_settings(settings), pool=WarmPool(settings.coding_idle_minutes * 60, settings.coding_warm_max),
+        slots=RunSlots(settings.coding_max_runs),
     )
 
 
