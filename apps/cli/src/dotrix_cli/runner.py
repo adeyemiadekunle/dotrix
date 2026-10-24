@@ -83,6 +83,50 @@ class Outcome:
     events: list[dict[str, str]] = field(default_factory=list)
     summary: str | None = None
     usage: dict[str, Any] = field(default_factory=dict)
+    root: Path | None = None  # the worktree: paths the tool names are shown relative to it
+
+
+MAX_STEP = 160
+
+
+def _clip(text: str, limit: int = MAX_STEP) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _relative(path: str, root: Path | None) -> str:
+    """A path the tool named, relative to the worktree when it's inside it (as a cloud turn shows them)."""
+    if root is not None and path and Path(path).is_absolute():
+        try:
+            return Path(path).resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            return path
+    return path.removeprefix("./")
+
+
+def describe(tool: str, args: dict[str, Any], root: Path | None = None) -> str | None:
+    """What a tool call did, in the words a cloud turn's events use (`coding/tools.py`): the app's
+    Terminal panel lists the `Ran …` ones, so local and cloud turns read the same."""
+    path = _relative(str(args.get("file_path") or args.get("path") or ""), root)
+    match tool:
+        case "Bash" | "shell" | "bash":
+            return f"Ran {_clip(str(args.get('command', '')))}"
+        case "Edit" | "MultiEdit" | "edit":
+            return f"Edited {path}"
+        case "Write" | "write":
+            return f"Wrote {path}"
+        case "Read" | "read":
+            return f"Read {path}"
+        case "Glob" | "Grep" | "glob" | "grep":
+            return f"Searched for {_clip(str(args.get('pattern', '')), 80)}"
+        case "execute":
+            return "Ran a script"
+        case "subagent":
+            return f"Asked a subagent to {_clip(str(args.get('description', '')), 120)}"
+        case "TodoWrite" | "skill":
+            return None
+        case _:
+            return f"Used {tool}"
 
 
 def parse_line(line: str, out: Outcome) -> None:
@@ -102,10 +146,8 @@ def parse_line(line: str, out: Outcome) -> None:
         for item in (event.get("message") or {}).get("content") or []:
             if item.get("type") == "text" and item.get("text"):
                 out.events.append({"kind": "text", "text": item["text"][:4000]})
-            elif item.get("type") == "tool_use":
-                args = item.get("input") or {}
-                target = args.get("file_path") or args.get("command") or args.get("pattern") or ""
-                out.events.append({"kind": "tool", "text": f"{item.get('name')} {target}".strip()[:4000]})
+            elif item.get("type") == "tool_use" and (said := describe(str(item.get("name")), item.get("input") or {}, out.root)):
+                out.events.append({"kind": "tool", "text": said})
     elif kind == "result":  # Claude Code's last event
         out.summary = event.get("result") or out.summary
         usage = event.get("usage") or {}
@@ -120,8 +162,8 @@ def parse_line(line: str, out: Outcome) -> None:
             out.summary = text
     elif kind == "tool_use":
         part = event.get("part") or {}
-        args = (part.get("state") or {}).get("input") or {}
-        out.events.append({"kind": "tool", "text": f"{part.get('tool')} {args.get('path') or args.get('command') or ''}".strip()})
+        if said := describe(str(part.get("tool")), (part.get("state") or {}).get("input") or {}, out.root):
+            out.events.append({"kind": "tool", "text": said})
     elif kind == "error":
         error = event.get("error") or {}
         out.events.append({"kind": "error", "text": str(error.get("message") or error)[:4000]})
@@ -272,7 +314,7 @@ class LocalRunner:
         # The tool by its full path: on Windows `claude` and `opencode` are .cmd files, found only that way.
         tool_argv = [shutil.which(tool.argv[0]) or tool.argv[0], *tool.argv[1:]]
         argv, leftovers = self._sandboxed(tool_argv, tree) if isolation == "srt" else (tool_argv, [])
-        out = Outcome()
+        out = Outcome(root=tree)
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv, cwd=tree, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,

@@ -21,7 +21,7 @@ def test_claude_codes_stream_becomes_events_and_a_summary() -> None:
                            "total_cost_usd": 0.03, "usage": {"input_tokens": 120, "output_tokens": 40}}), out)
     parse_line("plain text from a wrapper\n", out)
     assert [(e["kind"], e["text"]) for e in out.events] == [
-        ("text", "Adding refund()"), ("tool", "Edit src/pay.py"), ("tool", "Bash pytest -q"),
+        ("text", "Adding refund()"), ("tool", "Edited src/pay.py"), ("tool", "Ran pytest -q"),
         ("text", "plain text from a wrapper"),
     ]
     assert out.summary == "Done; tests pass." and out.usage == {"input_tokens": 120, "output_tokens": 40, "cost_usd": 0.03}
@@ -32,7 +32,7 @@ def test_opencode_events_and_errors() -> None:
     parse_line(json.dumps({"type": "tool_use", "part": {"tool": "edit", "state": {"input": {"path": "a.py"}}}}), out)
     parse_line(json.dumps({"type": "text", "part": {"text": "Changed a.py"}}), out)
     parse_line(json.dumps({"type": "error", "error": {"message": "provider refused"}}), out)
-    assert [e["text"] for e in out.events] == ["edit a.py", "Changed a.py", "provider refused"]
+    assert [e["text"] for e in out.events] == ["Edited a.py", "Changed a.py", "provider refused"]
     assert out.summary == "Changed a.py"
 
 
@@ -236,3 +236,17 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     sent = next(at for at, body in beats if any(e["text"] == "Looking at a.txt" for e in body["events"]))
     result = next(at for at, kind, _ in calls if kind == "result")
     assert sent < 3.5 < result, calls  # while the tool still worked, not at the 40 s lease beat or the end
+
+
+def test_tool_calls_read_as_a_cloud_turns_do_so_the_terminal_panel_lists_them(tmp_path: Path) -> None:
+    """The app's Terminal panel lists a turn's `Ran …` events (web/src/core/kaiWork.ts), and paths
+    are shown from the worktree's root, as for a cloud turn (backend coding/tools.py)."""
+    out = Outcome(root=tmp_path)
+    parse_line(json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "name": "Bash", "input": {"command": "pnpm   test\n  --run"}},
+        {"type": "tool_use", "name": "Write", "input": {"file_path": str(tmp_path / "src" / "new.ts")}},
+        {"type": "tool_use", "name": "Read", "input": {"file_path": "/etc/hosts"}},
+        {"type": "tool_use", "name": "TodoWrite", "input": {}},
+    ]}}), out)
+    parse_line(json.dumps({"type": "tool_use", "part": {"tool": "shell", "state": {"input": {"command": "pytest"}}}}), out)
+    assert [e["text"] for e in out.events] == ["Ran pnpm test --run", "Wrote src/new.ts", "Read /etc/hosts", "Ran pytest"]

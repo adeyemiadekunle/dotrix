@@ -1452,7 +1452,7 @@ async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushe
     assert [f["path"] for f in ready["files_changed"]] == ["src/refunds.py"]
     assert ready["summary"] == "Added refunds; tests pass." and ready["base_sha"] == _git(origin, "rev-parse", "main")
     texts = [e["text"] for e in ready["events"]]
-    assert "On ada-laptop (a worktree only, not isolated)" in texts and "Edit src/refunds.py" in texts
+    assert "On ada-laptop (a worktree only, not isolated)" in texts and "Edited src/refunds.py" in texts
     assert any(t.startswith("Worktree on main at") and "not isolated" in t for t in texts)
     # Her checkout is as she left it; nothing reached GitHub; the worktree is kept, outside it.
     assert _git(checkout, "status", "--porcelain") == "?? notes.txt" and not (checkout / "src/refunds.py").exists()
