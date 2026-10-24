@@ -8,7 +8,14 @@ from pydantic import BaseModel, Field
 
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 
-from .models import CodingAgent, CodingOrigin, CodingRunStatus, CodingSessionState, PrState
+from .models import (
+    CodingAgent,
+    CodingLocation,
+    CodingOrigin,
+    CodingRunStatus,
+    CodingSessionState,
+    PrState,
+)
 
 
 class CodingAvailability(BaseModel):
@@ -19,20 +26,29 @@ class CodingAvailability(BaseModel):
     )
     sandbox: str | None = Field(description="`docker`, `openshell`, or `local` (development, no isolation)")
     reason: str | None = Field(description="Why not, when it isn't available")
+    local_available: bool = Field(default=False, description="Whether you can code here on your own computer")
+    local_runner: str | None = Field(default=None, description="Your computer that would code (the one seen last)")
+    local_reason: str | None = Field(default=None, description="Why not on your computer")
 
 
 _APPROVAL = ("`manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved "
              "by you), never above the workspace's cap, and Manual unless you may approve agent changes")
 
 
+_LOCATION = ("Where it codes: `cloud` (a sandbox on the platform) or `local` (your own computer, through "
+             "`dotrix runner` in a checkout of the project). A follow-up stays where its session is unless told.")
+
+
 class CodingRunCreate(BaseModel):
     note: str | None = Field(default=None, max_length=5_000, description="Anything to add to the issue for the agent")
     approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
+    location: CodingLocation = Field(default=CodingLocation.CLOUD, description=_LOCATION)
 
 
 class CodingFollowUp(BaseModel):
     message: str = Field(min_length=1, max_length=5_000, description="What to do in this turn")
     approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
+    location: CodingLocation | None = Field(default=None, description=_LOCATION)
 
 
 class CodingDecision(BaseModel):
@@ -123,6 +139,8 @@ class CodingRunRead(BaseModel):
     accepted_by_id: uuid.UUID | None = Field(default=None, description="Manual: who accepted its changes before they were pushed")
     accepted_at: datetime | None = None
     revert_of: uuid.UUID | None = Field(default=None, description="The turn this one reverts")
+    location: CodingLocation = Field(default=CodingLocation.CLOUD, description="Where it codes")
+    runner_name: str | None = Field(default=None, description="A local turn: the computer that claimed it")
 
 
 class CodingSessionUpdate(BaseModel):
@@ -159,5 +177,76 @@ class CodingSessionRead(BaseModel):
         description="The conversation it was started from (Build mode), when that conversation is yours: "
         "its turns show there, inline. Null: a session of its own.",
     )
+    location: CodingLocation = Field(default=CodingLocation.CLOUD, description="Where its latest turn codes")
     started_at: datetime
     updated_at: datetime
+
+
+class CodingRunnerCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100, description="This computer's name; registering it again updates it")
+    platform: str | None = Field(default=None, max_length=40)
+    tools: list[CodingAgent] = Field(default_factory=list, max_length=5, description="Coding tools found, preferred first")
+    isolation: Literal["srt", "none"] = Field(description="`srt` (the sandbox runtime) or `none` (a worktree only)")
+    project_ids: list[uuid.UUID] = Field(default_factory=list, max_length=200, description="Projects it has checkouts of")
+
+
+class CodingRunnerRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    platform: str | None
+    tools: list[str]
+    isolation: str
+    project_ids: list[uuid.UUID]
+    created_at: datetime
+    last_seen_at: datetime
+    online: bool = Field(description="Seen in the last couple of minutes")
+
+
+class RunnerEvent(BaseModel):
+    kind: Literal["step", "text", "tool", "error"]
+    text: str = Field(max_length=4_000)
+
+
+class CodingClaim(BaseModel):
+    """A local turn this runner now holds: code it in a worktree, then report the result."""
+
+    run_id: uuid.UUID
+    project_id: uuid.UUID
+    session_id: uuid.UUID
+    lease_token: int = Field(description="Send it with every heartbeat and the result; a newer one fences this off")
+    lease_seconds: int = Field(description="Heartbeat well within this, or the turn needs recovery")
+    issue_key: str
+    title: str
+    turn: int
+    brief: str = Field(description="Exactly what the agent is told")
+    tool: CodingAgent = Field(description="The tool to code with")
+    repo_full_name: str
+    base_branch: str
+    branch: str | None = Field(description="The session's branch to build on (a follow-up), else the base branch")
+
+
+class CodingClaimed(BaseModel):
+    run: CodingClaim | None = Field(description="None: nothing waits for this runner")
+
+
+class RunnerHeartbeat(BaseModel):
+    lease_token: int
+    events: list[RunnerEvent] = Field(default_factory=list, max_length=200)
+    base_sha: str | None = Field(default=None, min_length=40, max_length=40)
+
+
+class RunnerHeartbeatRead(BaseModel):
+    stop: bool = Field(description="Stop the agent and report `stopped`")
+
+
+class RunnerResult(BaseModel):
+    lease_token: int
+    outcome: Literal["changes", "no_changes", "failed", "stopped"]
+    patch: str | None = Field(default=None, max_length=20_000_000, description="`git diff --cached --binary` against base_sha")
+    base_sha: str | None = Field(default=None, min_length=40, max_length=40)
+    summary: str | None = Field(default=None, max_length=20_000)
+    error: str | None = Field(default=None, max_length=2_000)
+    events: list[RunnerEvent] = Field(default_factory=list, max_length=200)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    cost_usd: float | None = Field(default=None, ge=0)

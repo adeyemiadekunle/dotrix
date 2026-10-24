@@ -38,15 +38,19 @@ from .models import (
     ACTIVE,
     CODING_AGENT_NAME,
     WAITING,
+    CodingAgent,
+    CodingLocation,
     CodingOrigin,
     CodingRun,
     CodingRunEvent,
+    CodingRunner,
     CodingRunStatus,
     CodingSession,
     CodingSessionState,
     PrState,
 )
 from .recovery import Recovered, discard, lease_live, recover
+from .runner import needs_worker
 from .schemas import (
     CodingAvailability,
     CodingDecision,
@@ -129,7 +133,30 @@ class CodingService:
             reason = "The dotrix GitHub App isn't set up on this server"
         elif await self._repo(project) is None:
             reason = "Connect the project's GitHub repository first (project settings → Repository)"
-        return CodingAvailability(available=reason is None, agent=agent, sandbox=sandbox, reason=reason)
+        runner, local_reason = await self.local_availability(project, user_id)
+        return CodingAvailability(available=reason is None, agent=agent, sandbox=sandbox, reason=reason,
+                                  local_available=local_reason is None, local_runner=runner.name if runner else None,
+                                  local_reason=local_reason)
+
+    async def local_availability(self, project: Project, user_id: uuid.UUID | None) -> tuple[CodingRunner | None, str | None]:
+        """Whether `user_id` can code here on their own computer: the runner that would (the one seen
+        last), or why not. Its result is pushed by the platform, so the repo must be connected."""
+        runner = await self.session.scalar(select(CodingRunner).where(
+            CodingRunner.workspace_id == project.workspace_id, CodingRunner.user_id == user_id,
+            CodingRunner.revoked_at.is_(None), CodingRunner.project_ids.contains([str(project.id)]),
+        ).order_by(CodingRunner.last_seen_at.desc()).limit(1)) if user_id else None
+        if runner is None:
+            return None, f"Run `dotrix runner` in a checkout of {project.key} on your computer first"
+        return runner, await self._publishable(project)
+
+    async def _publishable(self, project: Project) -> str | None:
+        """Why the platform can't push to the project's repository (None: it can): what a local turn
+        and a revert need, whatever coding is set up on the server."""
+        if not GitHubAppClient(self.settings).configured:
+            return "The dotrix GitHub App isn't set up on this server"
+        if await self._repo(project) is None:
+            return "Connect the project's GitHub repository first (project settings → Repository)"
+        return None
 
     async def start(
         self, access: ProjectAccess, key: str, data: CodingRunCreate, *,
@@ -138,9 +165,9 @@ class CodingService:
         """Ask for a coding run on an issue: a new session, waiting for an approval (or started at
         once, when the person's approval mode lets it go through). From a conversation in Build mode:
         that conversation, and the plan version it builds from."""
-        issue = await self._codable(access.project, access.member.user_id, key)
+        issue = await self._codable(access.project, access.member.user_id, key, location=data.location)
         run = await self._create(access.project, access.member, issue, data.note, CodingOrigin.START,
-                                 approval=data.approval_mode)
+                                 approval=data.approval_mode, location=data.location)
         run.thread_id, run.plan_id = thread_id, plan_id
         return await self._settle(access, run)
 
@@ -161,11 +188,16 @@ class CodingService:
     async def follow_up(self, access: ProjectAccess, session_id: uuid.UUID, data: CodingFollowUp) -> CodingRunRead:
         """Another turn in a session: the same agent, on the session's branch, pushing to its PR
         (or opening one, if no turn has yet). It waits for an approval like the first."""
-        turns, issue, with_branch, earlier = await self._next_turn(access, session_id)
+        # Where the session codes, unless told: its latest turn that coded (a revert codes nowhere).
+        location = data.location or next(
+            (t.location for t in reversed(await self._turns(access, session_id)) if t.revert_of is None),
+            CodingLocation.CLOUD,
+        )
+        turns, issue, with_branch, earlier = await self._next_turn(access, session_id, location=location)
         run = await self._create(
             access.project, access.member, issue, data.message, CodingOrigin.FOLLOW_UP,
             session_id=session_id, turn=turns[-1].turn + 1, earlier=earlier, carry=with_branch,
-            approval=data.approval_mode,
+            approval=data.approval_mode, location=location,
         )
         return await self._settle(access, run)
 
@@ -178,7 +210,9 @@ class CodingService:
             raise Conflict("Only a turn that pushed its changes can be reverted")
         if target.pr_state in (PrState.MERGED, PrState.CLOSED):
             raise Conflict("Its PR is merged or closed: revert it on GitHub")
-        turns, issue, with_branch, earlier = await self._next_turn(access, target.session_id)
+        # Wherever the session codes, a revert is a publish-only pass on the platform.
+        turns, issue, with_branch, earlier = await self._next_turn(access, target.session_id,
+                                                                   location=CodingLocation.CLOUD, publish_only=True)
         if any(t.revert_of == target.id and t.status is CodingRunStatus.PR_OPENED for t in turns):
             raise Conflict(f"Turn {target.turn} is already reverted")
         if with_branch is None or with_branch.branch != target.branch:
@@ -186,13 +220,13 @@ class CodingService:
         run = await self._create(
             access.project, access.member, issue, f"Revert turn {target.turn} ({target.commit_sha[:7]})",
             CodingOrigin.FOLLOW_UP, session_id=target.session_id, turn=turns[-1].turn + 1, earlier=earlier,
-            carry=with_branch, approval=data.approval_mode,
+            carry=with_branch, approval=data.approval_mode, location=CodingLocation.CLOUD, agent=target.agent,
         )
         run.revert_of = target.id
         return await self._settle(access, run)
 
     async def _next_turn(
-        self, access: ProjectAccess, session_id: uuid.UUID,
+        self, access: ProjectAccess, session_id: uuid.UUID, *, location: CodingLocation, publish_only: bool = False,
     ) -> tuple[list[CodingRun], IssueRead, CodingRun | None, list[tuple[int, str]]]:
         """What a new turn in a session builds on: its turns, its issue, the branch and PR it carries
         on (None: a new one from the default branch), and what the earlier turns did."""
@@ -201,7 +235,8 @@ class CodingService:
             raise Forbidden("Only whoever started this session can continue it")
         if any(t.status in ACTIVE for t in turns):
             raise CodingBusy("This session has a turn waiting or working; follow up once it's done")
-        issue = await self._codable(access.project, access.member.user_id, turns[-1].issue_key, busy_ok=False)
+        issue = await self._codable(access.project, access.member.user_id, turns[-1].issue_key, location=location,
+                                    publish_only=publish_only)
         with_branch = next((t for t in reversed(turns) if t.branch and t.pr_number), None)
         if with_branch is not None and with_branch.pr_state in (PrState.MERGED, PrState.CLOSED):
             with_branch = None  # its PR is merged or closed: this turn starts a new branch and PR from the default branch
@@ -223,10 +258,21 @@ class CodingService:
         await self.session.refresh(run)
         return self._read(run, access)
 
-    async def _codable(self, project: Project, user_id: uuid.UUID, key: str, *, busy_ok: bool = False) -> IssueRead:
-        available = await self.availability(project, user_id)
-        if not available.available or available.agent is None:
-            raise CodingUnavailable(available.reason or "Coding runs aren't available")
+    async def _codable(
+        self, project: Project, user_id: uuid.UUID, key: str, *, busy_ok: bool = False,
+        location: CodingLocation = CodingLocation.CLOUD, publish_only: bool = False,
+    ) -> IssueRead:
+        if publish_only:  # a revert: the platform pushes it, no coding tool runs anywhere
+            if why := await self._publishable(project):
+                raise CodingUnavailable(why)
+        elif location is CodingLocation.LOCAL:
+            _, why = await self.local_availability(project, user_id)
+            if why:
+                raise CodingUnavailable(why)
+        else:
+            available = await self.availability(project, user_id)
+            if not available.available or available.agent is None:
+                raise CodingUnavailable(available.reason or "Coding runs aren't available")
         issue = await IssueService(self.session).get(project, key)
         if issue.type is IssueType.EPIC:
             raise Unprocessable("An epic is too big for one coding run: start one on each of its stories")
@@ -243,16 +289,25 @@ class CodingService:
         self, project: Project, member: Membership, issue: IssueRead, note: str | None, origin: CodingOrigin, *,
         session_id: uuid.UUID | None = None, turn: int = 1, earlier: list[tuple[int, str]] | None = None,
         carry: CodingRun | None = None, approval: ApprovalMode | None = None,
+        location: CodingLocation = CodingLocation.CLOUD, agent: CodingAgent | None = None,
     ) -> CodingRun:
-        agent = choose_agent(self.settings, await key_providers(self.session, project.workspace_id, member.user_id))
-        assert agent is not None
+        model: str | None = None
+        if agent is not None:  # a revert: the session's engine, on record only (nothing runs it)
+            pass
+        elif location is CodingLocation.LOCAL:  # whichever tool that computer has, on its own default model
+            runner, _ = await self.local_availability(project, member.user_id)
+            agent = CodingAgent(runner.tools[0]) if runner and runner.tools else CodingAgent.CLAUDE_CODE
+        else:
+            found = choose_agent(self.settings, await key_providers(self.session, project.workspace_id, member.user_id))
+            assert found is not None
+            agent, model = found, model_for(self.settings, found)
         repo = await self._repo(project)
         assert repo is not None
         run_id = uuid7()
         run = CodingRun(
             id=run_id, session_id=session_id or run_id,  # a new session is named after its first turn
             workspace_id=project.workspace_id, project_id=project.id, issue_id=issue.id, issue_key=issue.key,
-            turn=turn, origin=origin, agent=agent, model=model_for(self.settings, agent),
+            turn=turn, origin=origin, agent=agent, model=model, location=location,
             status=CodingRunStatus.AWAITING_APPROVAL,
             brief=await build_brief(self.session, project, issue, note, earlier),
             note=note, repo_full_name=repo.full_name, base_branch=repo.default_branch,
@@ -332,10 +387,18 @@ class CodingService:
 
     async def _queue(self, access: ProjectAccess, run: CodingRun) -> RunDispatch | None:
         """An approved run, queued (not committed): the issue is Kai's, audited, its dispatch recorded."""
-        # The run codes on its requester's keys, not the approver's.
-        available = await self.availability(access.project, run.requested_by_id)
-        if not available.available:
-            raise CodingUnavailable(available.reason or "Coding runs aren't available")
+        # The run codes on its requester's keys (or computer), not the approver's; a revert codes nowhere.
+        if run.revert_of is not None:
+            if why := await self._publishable(access.project):
+                raise CodingUnavailable(why)
+        elif run.location is CodingLocation.LOCAL:
+            _, why = await self.local_availability(access.project, run.requested_by_id)
+            if why:
+                raise CodingUnavailable(why)
+        else:
+            available = await self.availability(access.project, run.requested_by_id)
+            if not available.available:
+                raise CodingUnavailable(available.reason or "Coding runs aren't available")
         run.status = CodingRunStatus.QUEUED
         # The issue is the coding tool's now (its own rules: it may move it to review, never done).
         issue = await IssueService(self.session).get(access.project, run.issue_key)
@@ -375,12 +438,16 @@ class CodingService:
 
     def _dispatch(self, session: AsyncSession, run: CodingRun) -> RunDispatch | None:
         """A queued run's dispatch, in the caller's transaction, when a worker runs it."""
+        if not needs_worker(run):
+            return None  # a local turn: its runner claims it
         if isinstance(self.jobs, QueuedJobs):
             return record_dispatch(session, run, {}, queue_name=self.jobs.queue_name)
         return None
 
     async def _send(self, run: CodingRun, dispatch: RunDispatch | None) -> None:
-        """After the commit: wake the worker, or run it here."""
+        """After the commit: wake the worker, or run it here (a local turn: its runner claims it)."""
+        if not needs_worker(run):
+            return
         if dispatch is not None:
             # The service's transaction is complete; use a fresh session for the
             # best-effort publication. The worker sweep recovers any missed wake-up.
@@ -530,7 +597,7 @@ class CodingService:
                     session_id=run.session_id, project_id=run.project_id, project_key=project_key,
                     project_name=project_name, issue_key=run.issue_key, issue_title=issue_title, agent=run.agent,
                     status=run.status, turns=run.turn, branch=run.branch, pr_number=run.pr_number,
-                    pr_url=run.pr_url, pr_state=run.pr_state, started_at=run.created_at,
+                    pr_url=run.pr_url, pr_state=run.pr_state, started_at=run.created_at, location=run.location,
                     updated_at=run.finished_at or run.started_at or run.created_at,
                 )
             else:
@@ -605,6 +672,7 @@ class CodingService:
             and run.pr_state not in (PrState.MERGED, PrState.CLOSED) and run.requested_by_id == access.member.user_id
             and can(access.member, Permission.INSTRUCT_CODING_AGENT),
             accepted_by_id=run.accepted_by_id, accepted_at=run.accepted_at, revert_of=run.revert_of,
+            location=run.location, runner_name=run.runner_name,
             can_stop=run.status in ACTIVE and run.status is not CodingRunStatus.RECOVERY_REQUIRED
             and self._can_stop(run, access),
             can_recover=run.status is CodingRunStatus.RECOVERY_REQUIRED and self._can_stop(run, access),

@@ -36,7 +36,7 @@ from .modules.agents.streams import RedisRunStreams
 from .modules.code.checkouts import build_checkouts
 from .modules.coding.models import CodingRun
 from .modules.coding.recovery import recover_uncertain_runs
-from .modules.coding.runner import build_coding_worker
+from .modules.coding.runner import build_coding_worker, needs_worker
 from .modules.execution.service import (
     RunDispatcher,
     expire_agent_leases,
@@ -167,7 +167,8 @@ async def reconcile_coding_runs(ctx: dict[str, Any]) -> None:
     coding = ctx["jobs"].coding
     if coding is not None and coding.app is not None:
         async def requeue(session: AsyncSession, run: CodingRun) -> None:
-            record_dispatch(session, run, {}, queue_name=queue.queue_name)  # the dispatch sweep publishes it
+            if needs_worker(run):  # a local turn waits for its runner to claim it again
+                record_dispatch(session, run, {}, queue_name=queue.queue_name)  # the dispatch sweep publishes it
 
         await recover_uncertain_runs(runner.session_factory, coding.app, coding.settings, requeue)
 

@@ -31,6 +31,13 @@ export const STATUS_LABELS: Record<CodingRunStatus, string> = {
 
 export const PR_LABELS: Record<PrState, string> = { open: "Open", merged: "Merged", closed: "Closed" };
 
+/** A turn's status in words, saying where a local one waits. */
+export function statusLabel(run: Pick<CodingRun, "status" | "location" | "runner_name">): string {
+  if (run.location === "local" && run.status === "queued") return "Waiting for your computer";
+  if (run.location === "local" && run.status === "running") return `Coding on ${run.runner_name ?? "your computer"}`;
+  return STATUS_LABELS[run.status];
+}
+
 /** Where a session opens: Chat's Coding tab. */
 export function sessionHref(workspaceSlug: string, projectKey: string, sessionId: string): string {
   return `/w/${workspaceSlug}/chat?tab=coding&project=${projectKey}&session=${sessionId}`;
@@ -82,12 +89,15 @@ function useCodingMutation<T, R = CodingRun>(scope: Scope | undefined, issueKey:
   });
 }
 
-export function useStartCoding(scope: Scope | undefined, issueKey: string, approvalMode: ApprovalMode | null = null) {
+export type CodingLocation = Schemas["CodingLocation"];
+
+/** Ask Kai to code an issue: on the platform (`cloud`) or on your own computer (`local`, through `dotrix runner`). */
+export function useStartCoding(scope: Scope | undefined, issueKey: string, approvalMode: ApprovalMode | null = null, location: CodingLocation = "cloud") {
   return useCodingMutation(scope, issueKey, (s, note: string | null) =>
     unwrap(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/issues/{key}/runs", {
         params: { path: { ...path(s), key: issueKey } },
-        body: { note, approval_mode: approvalMode },
+        body: { note, approval_mode: approvalMode, location },
       }),
     ),
   );

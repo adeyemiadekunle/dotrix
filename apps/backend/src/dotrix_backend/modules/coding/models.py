@@ -70,6 +70,14 @@ class CodingOrigin(enum.StrEnum):
     FOLLOW_UP = "follow_up"  # a follow-up in an existing session
 
 
+class CodingLocation(enum.StrEnum):
+    """Where a turn codes. Either way the platform keeps its record, approvals, and events, and
+    pushes what's accepted with the GitHub App: a local turn hands back a patch, never pushes."""
+
+    CLOUD = "cloud"  # a worker's sandbox, on a checkout of the connected repo
+    LOCAL = "local"  # the requester's own computer (`dotrix runner`), in a worktree of their checkout
+
+
 class CodingSessionState(enum.StrEnum):
     WARM = "warm"  # its sandbox is up, between turns
     IDLE = "idle"  # no sandbox: the next turn starts one and resumes from the saved transcript
@@ -138,6 +146,12 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Set on a pushed turn being reverted: the revert commit goes on the session's branch.
     revert_of: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("coding_runs.id", ondelete="SET NULL"))
+    location: Mapped[CodingLocation] = mapped_column(
+        str_enum(CodingLocation, 8), default=CodingLocation.CLOUD, server_default=CodingLocation.CLOUD.value
+    )
+    # A local turn: the runner that claimed it (its lease is the run's, like a worker's).
+    runner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("coding_runners.id", ondelete="SET NULL"))
+    runner_name: Mapped[str | None] = mapped_column(String(100))  # kept when the runner is revoked
     pr_number: Mapped[int | None] = mapped_column(Integer)
     pr_url: Mapped[str | None] = mapped_column(String(300))
     pr_state: Mapped[PrState | None] = mapped_column(str_enum(PrState, 16))  # kept current by the webhook
@@ -204,3 +218,22 @@ class CodingSession(WorkspaceScopedMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CodingRunner(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """A person's computer that codes their local turns (`dotrix runner` in a checkout). It only ever
+    claims its owner's runs, in the projects it serves, and never holds a provider key or GitHub
+    token from the platform: it codes with the tools signed in on that machine and hands back a patch."""
+
+    __tablename__ = "coding_runners"
+    __table_args__ = (UniqueConstraint("workspace_id", "user_id", "name"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100))  # the machine's name, as its owner sees it
+    platform: Mapped[str | None] = mapped_column(String(40))  # e.g. "darwin", "linux"
+    tools: Mapped[list[str]] = mapped_column(JSONB, default=list)  # coding tools found there, preferred first
+    isolation: Mapped[str] = mapped_column(String(16), default="none")  # "srt", or "none" (a worktree only)
+    project_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)  # the projects it has checkouts of
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -38,6 +38,7 @@ from dotrix_engine.ingest import ingest_doc
 from dotrix_engine.jobs import get_job, list_jobs, resume_job, start_job
 
 from . import repo as repo_facts
+from . import sandbox as sandbox_runtime
 from .agent_client import ApprovalNotAllowed, Outcome, PlatformAgent
 from .board import CODING_AGENTS, PlatformBoard
 from .platform import (
@@ -466,6 +467,131 @@ def jobs_stop(job_id: str = typer.Argument(...), project: str = ProjectOpt):
     _, agent = _platform_agent(project)
     run = _platform_call(lambda: agent.stop(job_id))
     typer.echo(f"Run {job_id} -> {run['status']}: {run.get('error') or ''}".rstrip(": "))
+
+
+# ---------------------------------------------------------------------------
+# Coding on this computer
+# ---------------------------------------------------------------------------
+class _AsyncApi:
+    """The platform client for the runner's async loop (each call in a thread)."""
+
+    def __init__(self, client: PlatformClient) -> None:
+        self.client = client
+
+    async def post(self, path: str, body: object = None) -> object:
+        import asyncio
+
+        return await asyncio.to_thread(self.client.post, path, body)
+
+
+@app.command("runner")
+def runner_command(
+    project: str = ProjectOpt,
+    tool: str = typer.Option(None, "--tool", help="claude-code or opencode (default: the first found here)"),
+    command: str = typer.Option(None, "--command", help="Any other command instead: the brief on stdin, its output as events"),
+    sandbox: str = typer.Option("auto", "--sandbox", help="auto (srt when installed), srt, or none"),
+    once: bool = typer.Option(False, "--once", help="Code at most one waiting turn, then exit"),
+    poll: float = typer.Option(5.0, "--poll", help="Seconds between asks for a turn"),
+    name: str = typer.Option(None, "--name", help="This checkout's name on the platform (default: the hostname and folder)"),
+    worktrees: Path = typer.Option(None, "--worktrees", help="Where turns' worktrees go (default: ~/.dotrix/worktrees)"),
+):
+    """Code your local turns on this computer: each in a worktree of this checkout, with the coding
+    tool signed in here (never a key or token from the platform). The platform pushes what's accepted.
+    Start a local turn with `dotrix code KEY`, or "On my computer" in the web app."""
+    import asyncio
+
+    from .runner import LocalRunner
+
+    if sandbox not in ("auto", "srt", "none"):
+        _fail("--sandbox is auto, srt, or none")
+    config, state, client = _linked(project)
+    if sandbox != "none" and sandbox_runtime.command() is None:  # it comes with dotrix: installed the first time
+        typer.echo(f"Installing the sandbox runtime ({sandbox_runtime.PACKAGE}@{sandbox_runtime.VERSION})…")
+        try:
+            sandbox_runtime.install()
+        except RuntimeError as exc:
+            if sandbox == "srt":
+                _fail(str(exc))
+            typer.secho(f"{exc}. Turns won't be isolated until it is.", fg=typer.colors.YELLOW, err=True)
+    if sandbox != "none" and sys.platform == "win32" and sandbox_runtime.command() and sys.stdin.isatty() \
+            and sandbox_runtime.windows_setup_missing():
+        typer.echo("Setting up the sandbox on this machine (once; Windows asks for an administrator)…")
+        try:
+            sandbox_runtime.setup_windows()
+        except RuntimeError as exc:
+            if sandbox == "srt":
+                _fail(str(exc))
+            typer.secho(f"{exc}. Turns won't be isolated until it is.", fg=typer.colors.YELLOW, err=True)
+    runner = LocalRunner(
+        _AsyncApi(client), Path(config.root_dir), state.workspace_id, state.project_id, tool=tool, command=command,
+        sandbox=sandbox, echo=typer.echo, **({"name": name} if name else {}), **({"worktrees": worktrees} if worktrees else {}),
+    )
+    try:
+        registered = asyncio.run(runner.register())
+    except (PlatformError, RuntimeError) as exc:
+        _fail(str(exc))
+    isolated = "isolated by srt" if registered["isolation"] == "srt" else (
+        "NOT isolated: " + ("; ".join(sandbox_runtime.check().missing) or "--sandbox none"))
+    typer.echo(f"{registered['name']}: coding {state.project_key} turns with {', '.join(registered['tools'])}, {isolated}")
+    try:
+        if once:
+            if not asyncio.run(runner.once()):
+                typer.echo("Nothing waits for this computer")
+        else:
+            typer.echo("Waiting for turns (Ctrl-C to stop)…")
+            asyncio.run(runner.serve(poll_seconds=poll))
+    except KeyboardInterrupt:
+        typer.echo("Stopped; a turn in progress needs recovery once its lease lapses")
+    except PlatformError as exc:
+        _fail(str(exc))
+
+
+sandbox_app = typer.Typer(help="The sandbox runtime (srt) that local turns code in; it comes with dotrix.")
+app.add_typer(sandbox_app, name="sandbox")
+
+
+@sandbox_app.command("install")
+def sandbox_install():
+    """Install the pinned sandbox runtime into ~/.dotrix/tools (needs Node 22.12+ with npm); on
+    Windows also its one-time setup for this machine (one administrator prompt)."""
+    try:
+        cli_js = sandbox_runtime.install()
+        typer.echo(f"{sandbox_runtime.PACKAGE}@{sandbox_runtime.VERSION} at {cli_js.parent.parent}")
+        if sys.platform == "win32" and sandbox_runtime.windows_setup_missing():
+            typer.echo("Setting up the sandbox on this machine (once; Windows asks for an administrator)…")
+            sandbox_runtime.setup_windows()
+    except RuntimeError as exc:
+        _fail(str(exc))
+    sandbox_check()
+
+
+@sandbox_app.command("check")
+def sandbox_check():
+    """Whether local turns can be isolated here, and what to install if not."""
+    found = sandbox_runtime.check()
+    if found.ready:
+        typer.echo(f"Ready: {' '.join(found.srt or [])}")
+        return
+    typer.secho("Not ready. Missing:\n  " + "\n  ".join(found.missing), fg=typer.colors.YELLOW)
+    raise typer.Exit(1)
+
+
+@app.command("code")
+def code_command(
+    key: str = typer.Argument(..., help="The issue, e.g. KUN-42"),
+    note: str = typer.Option(None, "--note", help="Anything to add for the agent"),
+    cloud: bool = typer.Option(False, "--cloud", help="Code in the platform's sandbox instead of on this computer"),
+    project: str = ProjectOpt,
+):
+    """Ask Kai to code an issue: on this computer (run `dotrix runner` here), or with --cloud on the
+    platform. It waits for an approval unless your approval mode lets it start at once."""
+    _, state, client = _linked(project)
+    base = f"/workspaces/{state.workspace_id}/projects/{state.project_id}/coding"
+    run = _platform_call(lambda: client.post(f"{base}/issues/{key.strip().upper()}/runs",
+                                             {"note": note, "location": "cloud" if cloud else "local"}))
+    where = "the platform" if cloud else "your computer"
+    waiting = "waits for an approval" if run["status"] == "awaiting_approval" else "is queued"
+    typer.echo(f"{run['issue_key']}: Kai's turn on {where} {waiting} (run {run['id']})")
 
 
 # ---------------------------------------------------------------------------
