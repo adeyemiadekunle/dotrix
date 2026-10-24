@@ -203,11 +203,19 @@ async def follow_kept(
 async def follow_run(
     streams: Any, session_factory: SessionFactory, workspace_id: uuid.UUID, run_id: uuid.UUID,
 ) -> AsyncIterator[tuple[str, str]]:
-    """The live stream while there is one; once it's gone and the run is still active, the kept
-    events (`follow_kept`), so a client never stops at a stream that died with its worker."""
+    """The live stream while there is one; when there's none, or it was lost, and the run is still
+    active, the kept events (`follow_kept`), so a client never stops at a stream that died with
+    its worker. A live stream that ended cleanly ended its step: nothing more to read."""
+    seen = False
     async for event, data in streams.follow(run_id):
         if event == "end":
+            if seen:
+                yield ("end", "")
+                return
+            break  # there was no live stream here
+        if event == "lost":
             break
+        seen = True
         yield (event, data)
     async with session_factory() as session:
         status = await session.scalar(select(AgentRun.status).where(
