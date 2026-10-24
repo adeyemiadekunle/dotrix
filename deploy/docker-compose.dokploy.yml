@@ -1,0 +1,137 @@
+# dotrix on one VPS with Dokploy (a "Docker Compose" service from this repo; deploy/README.md).
+# Fill the variables in Dokploy's Environment tab (deploy/dokploy.env.example lists them); give the
+# `web` service your domain on port 80. Nothing here is published on the host: Traefik routes in.
+#
+# Sized for 6 vCPUs and 12 GB: two coding runs at once, 3 GB and 2 CPUs each.
+
+x-dotrix: &dotrix
+  image: dotrix-backend:${DOTRIX_VERSION:-latest}
+  restart: unless-stopped
+  environment: &dotrix-env
+    DOTRIX_ENV: production
+    DOTRIX_APP_URL: ${DOTRIX_APP_URL:?your https:// address, e.g. https://dotrix.example.com}
+    DOTRIX_CORS_ORIGINS: '["${DOTRIX_APP_URL}"]'
+    DOTRIX_DATABASE_URL: postgresql+asyncpg://dotrix:${POSTGRES_PASSWORD:?}@postgres:5432/dotrix
+    DOTRIX_REDIS_URL: redis://redis:6379/0
+    DOTRIX_JOBS: worker
+    DOTRIX_RATE_LIMITS: redis
+    # Traefik and nginx, on Docker's private networks.
+    DOTRIX_TRUSTED_PROXIES: '["127.0.0.1", "172.16.0.0/12", "10.0.0.0/8"]'
+    DOTRIX_JWT_SECRET: ${DOTRIX_JWT_SECRET:?}
+    DOTRIX_ENCRYPTION_KEY: ${DOTRIX_ENCRYPTION_KEY:?}
+    DOTRIX_S3_ENDPOINT_URL: http://minio:9000
+    DOTRIX_S3_ACCESS_KEY: ${MINIO_ROOT_USER:?}
+    DOTRIX_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?}
+    DOTRIX_SENDLY_API_KEY: ${DOTRIX_SENDLY_API_KEY:?}
+    DOTRIX_EMAIL_FROM: ${DOTRIX_EMAIL_FROM:?}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+    DOTRIX_GITHUB_APP_ID: ${DOTRIX_GITHUB_APP_ID:-}
+    DOTRIX_GITHUB_APP_SLUG: ${DOTRIX_GITHUB_APP_SLUG:-}
+    DOTRIX_GITHUB_APP_PRIVATE_KEY: ${DOTRIX_GITHUB_APP_PRIVATE_KEY:-}
+    DOTRIX_GITHUB_WEBHOOK_SECRET: ${DOTRIX_GITHUB_WEBHOOK_SECRET:-}
+    DOTRIX_GITHUB_CLIENT_ID: ${DOTRIX_GITHUB_CLIENT_ID:-}
+    DOTRIX_GITHUB_CLIENT_SECRET: ${DOTRIX_GITHUB_CLIENT_SECRET:-}
+    DOTRIX_TAVILY_API_KEY: ${DOTRIX_TAVILY_API_KEY:-}
+    # Coding runs (the worker): sandboxes on this host's Docker, through the socket proxy below.
+    DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
+    DOTRIX_CODING_IMAGE: dotrix-coding:${DOTRIX_VERSION:-latest}
+    DOTRIX_CODING_FORK_OWNER: ${DOTRIX_CODING_FORK_OWNER:?the GitHub organisation coding branches go to (deploy/README.md)}
+    DOTRIX_CODING_MAX_RUNS: ${DOTRIX_CODING_MAX_RUNS:-2}
+    DOTRIX_CODING_MEMORY: ${DOTRIX_CODING_MEMORY:-3g}
+    DOTRIX_CODING_CPUS: ${DOTRIX_CODING_CPUS:-2}
+    DOTRIX_CODING_WARM_MAX: ${DOTRIX_CODING_WARM_MAX:-1}
+    DOTRIX_CODING_IDLE_MINUTES: ${DOTRIX_CODING_IDLE_MINUTES:-15}
+    DOTRIX_CODING_DOCKER_RUNTIME: ${DOTRIX_CODING_DOCKER_RUNTIME:-}
+    DOCKER_HOST: tcp://docker-proxy:2375
+
+services:
+  # The images, built on this host (so its Docker has the coding image the worker starts).
+  backend-image:
+    image: dotrix-backend:${DOTRIX_VERSION:-latest}
+    build: { context: .., dockerfile: deploy/backend.Dockerfile }
+    command: ["true"]
+    restart: "no"
+  coding-image:
+    image: dotrix-coding:${DOTRIX_VERSION:-latest}
+    build: { context: ../infra/coding }
+    command: ["true"]
+    restart: "no"
+
+  web:
+    build: { context: .., dockerfile: deploy/web.Dockerfile }
+    restart: unless-stopped
+    depends_on: [api]
+
+  migrate:
+    <<: *dotrix
+    restart: "no"
+    working_dir: /app/apps/backend
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      backend-image: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *dotrix
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_started }
+      minio: { condition: service_started }
+
+  worker:
+    <<: *dotrix
+    command: ["python", "-m", "dotrix_backend.worker"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      coding-image: { condition: service_completed_successfully }
+      docker-proxy: { condition: service_started }
+      redis: { condition: service_started }
+
+  # Only what the coding sandbox needs from Docker (containers, exec, networks, volumes, images),
+  # and only the worker can reach it. The socket itself is never mounted into dotrix's containers.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      EXEC: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      IMAGES: 1
+      POST: 1
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+
+  postgres:
+    image: pgvector/pgvector:pg17-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dotrix
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: dotrix
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dotrix -d dotrix"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+    volumes: [miniodata:/data]
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

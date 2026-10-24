@@ -64,7 +64,8 @@ Each run gets:
   and refuses everything else, GitHub and package registries included.
 - **The agent's container:** a read-only system, `/tmp` and the repo's volume writable, all
   capabilities dropped, `no-new-privileges`, the image's `sandbox` user (uid 1500), 4 GB of
-  memory, 2 CPUs, 512 processes. The repo is copied in as a tar extracted by that user.
+  memory and 2 CPUs (`DOTRIX_CODING_MEMORY`, `DOTRIX_CODING_CPUS`; `DOTRIX_CODING_DOCKER_RUNTIME=runsc`
+  for gVisor), 512 processes. The repo is copied in as a tar extracted by that user.
 - **Cleanup:** both containers, the volume, and the network are removed when the run ends,
   however it ends. Each carries the label `dotrix.run=<run id>`
   (`docker ps -a --filter label=dotrix.run` finds any a crash left behind).

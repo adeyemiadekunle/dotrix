@@ -1,0 +1,18 @@
+# What the deploy images never need from the checkout (deploy/backend.Dockerfile, deploy/web.Dockerfile).
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.turbo
+**/dist
+**/dist-e2e
+**/*.tsbuildinfo
+.git
+.env
+.env.*
+!.env.example
+.dotrix
+apps/desktop
+docs
