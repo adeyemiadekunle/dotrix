@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +14,8 @@ REPO_ROOT_ENV = Path(__file__).resolve().parents[5] / ".env"
 _CONFIG = SettingsConfigDict(
     env_prefix="DOTRIX_", env_file=(REPO_ROOT_ENV, ".env"), extra="ignore"
 )
+# Settings where an empty value means something of its own, not "unset" (see Settings._empty_is_unset).
+EMPTY_MEANS_SOMETHING = frozenset({"embedding_model"})
 
 
 class DatabaseSettings(BaseSettings):
@@ -28,6 +30,16 @@ class DatabaseSettings(BaseSettings):
 
 class Settings(DatabaseSettings):
     model_config = _CONFIG
+
+    @model_validator(mode="before")
+    @classmethod
+    def _empty_is_unset(cls, data: Any) -> Any:
+        """An empty value (`KEY=` in .env, or a Compose variable left blank) is the same as no value,
+        so the default applies, except where empty is a choice (an empty embedding model: search
+        by keywords only)."""
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if v != "" or k in EMPTY_MEANS_SOMETHING}
+        return data
 
     # "staging" and "production" are deployed: secure cookies, and the checks in _safe_for_production.
     env: Literal["development", "test", "staging", "production"] = "development"
@@ -127,6 +139,14 @@ class Settings(DatabaseSettings):
     # many per workspace (0: never kept; each turn starts fresh and resumes from the saved transcript).
     coding_idle_minutes: int = Field(default=30, ge=1, le=24 * 60)
     coding_warm_max: int = Field(default=3, ge=0, le=50)
+    # Coding runs working at once in one worker; the rest wait for a free sandbox ("Waiting for a
+    # free sandbox"). 0: no limit. Size it to the machine: each run may use the memory and CPUs below.
+    coding_max_runs: int = Field(default=0, ge=0, le=100)
+    # Each Docker sandbox's limits, and its container runtime ("runsc" for gVisor, once installed
+    # and registered on the host; unset: Docker's default).
+    coding_memory: str = Field(default="4g", pattern=r"^[1-9][0-9]*[mg]$")
+    coding_cpus: float = Field(default=2.0, gt=0, le=64)
+    coding_docker_runtime: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.-]{1,64}$")
     # Tokens (input + output) one coding run may use before it's stopped; 0: no limit.
     coding_token_budget: int = Field(default=3_000_000, ge=0)
     # The GitHub organisation coding branches are pushed to: the app forks each repo there (it needs
