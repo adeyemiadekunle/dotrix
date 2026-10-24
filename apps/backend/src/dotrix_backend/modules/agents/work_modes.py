@@ -104,6 +104,8 @@ async def _save_plan(ctx: ModeContext, plan: SavePlan) -> dict[str, Any]:
         if any(d < 1 or d > count or d == number for d in task.depends_on):
             return {"error": f"Task {number} depends on a task that isn't in the plan (tasks are 1 to {count})"}
     async with ctx.session_factory() as session:
+        if not await _sees(session, ctx):
+            return {"error": "The project or the person who asked is gone"}
         latest = await session.scalar(select(func.max(ConversationPlan.version)).where(
             ConversationPlan.workspace_id == ctx.workspace_id, ConversationPlan.thread_id == ctx.thread_id,
         ))
@@ -127,7 +129,8 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
         project = await ProjectRepository(session).get(ctx.workspace_id, ctx.project_id)
         member = await MembershipRepository(session).get(ctx.workspace_id, ctx.instructed_by_id) \
             if ctx.instructed_by_id else None
-        if project is None or member is None:
+        # Checked now, not when the message was sent: they may have lost the project meanwhile.
+        if project is None or member is None or not await ProjectRepository(session).can_see(project, member.user_id):
             return {"error": "The project or the person who asked is gone"}
         if not can(member, Permission.INSTRUCT_CODING_AGENT):
             return {"error": "The person you're working for can't instruct Kai; say so, and suggest who can"}
@@ -156,9 +159,16 @@ async def _coding_evidence(ctx: ModeContext) -> dict[str, Any]:
     from dotrix_backend.modules.coding.models import CodingRun
 
     async with ctx.session_factory() as session:
+        if not await _sees(session, ctx):
+            return {"error": "The project or the person who asked is gone"}
+        # Every turn of the sessions this conversation started: follow-ups (from the Code tab, say)
+        # build on the same branch and PR.
+        sessions = select(CodingRun.session_id).where(
+            CodingRun.workspace_id == ctx.workspace_id, CodingRun.thread_id == ctx.thread_id,
+        )
         runs = list(await session.scalars(select(CodingRun).where(
             CodingRun.workspace_id == ctx.workspace_id, CodingRun.project_id == ctx.project_id,
-            CodingRun.thread_id == ctx.thread_id,
+            CodingRun.session_id.in_(sessions),
         ).order_by(CodingRun.created_at.desc()).limit(EVIDENCE_RUNS)))
     if not runs:
         return {"runs": [], "said": "No coding has been started from this conversation"}
@@ -168,6 +178,12 @@ async def _coding_evidence(ctx: ModeContext) -> dict[str, Any]:
         "files_changed": [f"{f['path']} (+{f.get('added', 0)} -{f.get('removed', 0)})" for f in r.files_changed[:60]],
         "kai_reported": (r.summary or "")[:3000] or None, "error": r.error,
     } for r in runs]}
+
+
+async def _sees(session: AsyncSession, ctx: ModeContext) -> bool:
+    """Whether the person the run works for still sees the project (they may have lost it since)."""
+    project = await ProjectRepository(session).get(ctx.workspace_id, ctx.project_id)
+    return bool(project and ctx.instructed_by_id and await ProjectRepository(session).can_see(project, ctx.instructed_by_id))
 
 
 class _NoJobs:

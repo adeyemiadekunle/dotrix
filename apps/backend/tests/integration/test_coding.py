@@ -1072,7 +1072,7 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     built = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
                                   json={"message": "Build the plan", "work_mode": "build", "thread_id": thread})).json()
     assert built["status"] == "completed", built
-    [run] = (await db_client.get(f"{base}/coding/runs?issue_key={issue['key']}", headers=ada.headers)).json()
+    [run] = (await db_client.get(f"{base}/coding/runs?issue={issue['key']}", headers=ada.headers)).json()
     assert run["status"] == "awaiting_approval" and run["thread_id"] == thread and run["plan_id"] == plan["id"]
     assert run["requested_by_id"] == ada.id and "Task 1 of the plan" in run["brief"]
     audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
@@ -1088,8 +1088,31 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     evidence = [m.content for m in model.received[1] if m.type == "tool"][-1]  # (the thread's history comes first)
     assert "pr_opened" in evidence and "src/payments.py (+2 -1)" in evidence and "pull/1" in evidence
 
+    # A follow-up from the Code tab is the same session: Review sees it too.
+    turn = await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", headers=ada.headers,
+                                json={"message": "Handle partial refunds"})
+    assert turn.status_code == 201, turn.text
+    model = agent_script.say(tool_call("coding_evidence"), "Turn 2 waits for an approval.")
+    await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                         json={"message": "And now?", "work_mode": "review", "thread_id": thread})
+    evidence = [m.content for m in model.received[1] if m.type == "tool"][-1]
+    assert '"turn": 2' in evidence and "awaiting_approval" in evidence
+
     # Cat may chat but not instruct Kai: Build says so instead of asking for a run.
     model = agent_script.say(tool_call("start_coding", issue_key=issue["key"]), "You can't ask Kai here.")
     await db_client.post(f"{base}/agent/runs", headers=cat.headers, json={"message": "Build it", "work_mode": "build"})
     refused = next(m.content for m in model.received[1] if m.type == "tool")
     assert "can't instruct Kai" in refused
+
+    # Someone who lost the project after sending a Build message can't ask Kai for it.
+    from dotrix_backend.modules.agents.work_modes import ModeContext, StartCoding, _start_coding
+
+    other = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Other"})).json()
+    await db_client.patch(ws, json={"member_permissions": ["agents:code"]}, headers=ada.headers)  # Cat may instruct Kai
+    assert (await db_client.patch(base, json={"access": "restricted"}, headers=ada.headers)).status_code == 200
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    ctx = ModeContext(app.state.jobs.ctx.session_factory, app.state.settings, uuid.UUID(ws.split("/")[-1]),
+                      uuid.UUID(kun["id"]), uuid.uuid4(), uuid.UUID(built["id"]), uuid.UUID(cat.id))
+    gone = await _start_coding(ctx, StartCoding(issue_key=other["key"]))
+    assert "gone" in gone["error"]
+    assert (await db_client.get(f"{base}/coding/runs?issue={other['key']}", headers=ada.headers)).json() == []
