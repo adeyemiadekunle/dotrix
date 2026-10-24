@@ -37,6 +37,7 @@ from dotrix_engine.outputs import ACTIONS as OUTPUT_ACTIONS
 from dotrix_engine.permissions import DOCS, REVIEWER
 from dotrix_engine.web.note import note_path, render_note
 
+from .events import events_after
 from .models import (
     ACTIVE_STATUSES,
     AgentApproval,
@@ -63,6 +64,8 @@ from .schemas import (
     PlanRead,
     RunBreakdown,
     RunCreate,
+    RunEventPage,
+    RunEventRead,
     RunFileRead,
     RunOutputItem,
     RunOutputRead,
@@ -611,8 +614,8 @@ class AgentService:
         )
         if run is None:
             raise NotFound("Run not found")
-        if run.status is not RunStatus.FAILED or run.error_kind != "model_limit":
-            raise NothingToContinue("Only a run that stopped at its model's limit can be continued")
+        if run.status is not RunStatus.FAILED or run.error_kind not in ("model_limit", "interrupted"):
+            raise NothingToContinue("Only a run that stopped at its model's limit, or was interrupted, can be continued")
         later = await self.session.scalar(
             select(AgentRun.id).where(AgentRun.thread_id == run.thread_id, AgentRun.created_at > run.created_at)
         )
@@ -781,6 +784,16 @@ class AgentService:
         ).order_by(ConversationPlan.version))
         return [PlanRead.model_validate(row) for row in rows]
 
+    async def run_events(self, access: ProjectAccess, run_id: uuid.UUID, after: int, limit: int) -> RunEventPage:
+        """A run's kept events after `after` (events.py), for whoever may open the run."""
+        run = await self.session.scalar(select(AgentRun).where(
+            AgentRun.project_id == access.project.id, AgentRun.id == run_id, run_openable_by(access.member)))
+        if run is None:
+            raise NotFound("Run not found")
+        rows = await events_after(self.session, run, after, limit)
+        return RunEventPage(events=[RunEventRead.model_validate(r) for r in rows],
+                            active=run.status in (RunStatus.QUEUED, RunStatus.RUNNING))
+
     async def check_run(self, access: ProjectAccess, run_id: uuid.UUID) -> None:
         found = await self.session.scalar(
             select(AgentRun.id).where(
@@ -879,16 +892,19 @@ def _breakdown(run: AgentRun) -> RunBreakdown:
 
 
 async def resume_limited(session: AsyncSession, runner: AgentRunner, run: AgentRun) -> None:
-    """Queue a run that stopped at its model's limit to go on from its last checkpoint."""
+    """Queue a run that stopped at its model's limit (or was interrupted) to go on from its last
+    checkpoint. An interrupted one asks for approval before every change, as a recovered attempt does."""
+    recovered = run.error_kind == "interrupted"
     run.status, run.error, run.error_kind = RunStatus.QUEUED, None, None
     run.continue_at_reset, run.finished_at, run.updated_at = False, None, _now()
     AuditLog(session).record(
         workspace_id=run.workspace_id, project_id=run.project_id, action="agent_run.continued",
         target=str(run.id), actor_type=AuthorType.USER, actor_user_id=run.requested_by_id,
     )
-    dispatch = runner.prepare_dispatch(session, run, {"kind": "continue", "message": run.message})
+    payload = {"kind": "continue", "message": run.message, **({"recovered": True} if recovered else {})}
+    dispatch = runner.prepare_dispatch(session, run, payload)
     await session.commit()
-    await runner.continue_run(run.id, run.message, dispatch=dispatch)
+    await runner.continue_run(run.id, run.message, dispatch=dispatch, recovered=recovered)
 
 
 async def continue_due_runs(session: AsyncSession, runner: AgentRunner) -> int:

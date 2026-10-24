@@ -38,8 +38,15 @@ from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_engine.contracts import PM_HANDLE, AgentSpec
 
 from .board_tools import BoardContext, build_board_tools
+from .events import events_after
 from .models import ACTIVE_STATUSES, AgentRun, RunKind, RunStatus
-from .schemas import AgentRunRead, WorkspaceConversation, WorkspaceRunCreate
+from .schemas import (
+    AgentRunRead,
+    RunEventPage,
+    RunEventRead,
+    WorkspaceConversation,
+    WorkspaceRunCreate,
+)
 from .storage_backend import SessionFactory
 from .titles import title_from_message
 
@@ -311,6 +318,12 @@ class WorkspaceRunService:
 
     async def get(self, member: Membership, run_id: uuid.UUID) -> AgentRunRead:
         return _read(member, await self._run(member, run_id))
+
+    async def run_events(self, member: Membership, run_id: uuid.UUID, after: int, limit: int) -> RunEventPage:
+        run = await self._run(member, run_id, lock=False)
+        rows = await events_after(self.session, run, after, limit)
+        return RunEventPage(events=[RunEventRead.model_validate(r) for r in rows],
+                            active=run.status in (RunStatus.QUEUED, RunStatus.RUNNING))
 
     async def check_run(self, member: Membership, run_id: uuid.UUID) -> None:
         await self._run(member, run_id, lock=False)

@@ -1,18 +1,63 @@
 # Coding runs: sandbox setup
 
-"Start coding" on an issue runs Claude Code (or Codex) on a copy of the project's repo in a
-sandbox. The worker then pushes a new branch and opens a PR through the dotrix GitHub App. This
-folder holds what the sandbox needs: the image, and the OpenShell provider profiles for the model
-keys.
+Kai, the coding agent, works on an issue in a sandbox: from "Start coding" on the issue, Build
+mode in Chat, or a session in Chat's Code tab. Underneath, Kai is one of three headless tools,
+each behind `CodingTool` (`apps/backend/src/dotrix_backend/modules/coding/tools.py`):
+
+| Tool | Runs on | Chosen by |
+| --- | --- | --- |
+| Claude Code | Anthropic | `DOTRIX_CODING_AGENT=auto` (the default) with an Anthropic key, or `claude-code` |
+| Codex | OpenAI | `auto` with only an OpenAI key, or `codex` |
+| OpenCode 2 (pinned in the image) | Anthropic, OpenAI, or Google | `opencode`, with `DOTRIX_CODING_OPENCODE_MODEL=provider:model`; `auto` never picks it |
+
+The worker gives the tool a copy of the repo and a brief, reads its changes back, then pushes a
+new branch and opens a PR through the dotrix GitHub App. This folder holds what the sandbox
+needs: the image (all three tools, git, Playwright MCP for the agent's own browser, and the
+egress proxy) and the OpenShell provider profiles for the model keys.
+
+## A run, from start to PR
+
+1. **Approval.** In Manual a run waits for an approver. In Accept edits and Auto it starts at
+   once, approved by whoever asked (the workspace's cap and the person's own rights apply, as in
+   chat).
+2. **Keys.** The run codes on its requester's key: their own, where the organisation allows
+   personal keys, else the workspace's (Settings → Models), else the server's when
+   `DOTRIX_SERVER_MODEL_KEYS` lends it. Never the approver's.
+3. **The brief.** The issue and its acceptance criteria, its epic and what it waits on, the
+   documents it links to in the project graph, and the repository's wiki pages that bear on it
+   (`coding/brief.py`). Issue and document text is wrapped as data, never instructions.
+4. **The sandbox.** The worker fetches the repo with an installation token scoped to that one
+   repo, then gives the agent the tracked files and a fresh git history with no remote.
+5. **The turn.** The tool works headless. Its events stream into the session (`coding_events`),
+   and Stop signals it inside the sandbox (SIGINT, then SIGKILL after 5 seconds).
+6. **The changes.** The worker reads them back as a patch and checks them (`coding/guard.py`).
+   It refuses anything under `.dotrix/` or `.git`, and CI configuration: all of `.github/`,
+   other CI systems' folders (`.circleci`, `.gitlab`, `.buildkite`, …) and root files
+   (`.gitlab-ci.yml`, `Jenkinsfile`, …). Files CI runs without being CI configuration (build
+   scripts, test setup) are named on the PR for a person to review first.
+7. **The push.** A new branch (`dotrix/<key>-<title>-<id>`, never the default branch, never
+   forced), then the PR. The issue moves to review and the Reviewer reads the PR. A person
+   merges.
+
+**Sessions.** A session keeps its sandbox warm between turns (`DOTRIX_CODING_WARM_MAX` per
+workspace, closed after `DOTRIX_CODING_IDLE_MINUTES`). Claude Code's transcript and OpenCode's
+session export are saved, encrypted, and restored into a fresh sandbox, so a follow-up resumes
+where the last turn stopped, on the same branch and PR (it needs storage and
+`DOTRIX_ENCRYPTION_KEY`; without them a new sandbox starts the tool afresh). The agent's browser steps and
+screenshots are kept per turn.
+
+**Leases and recovery.** The worker holds a run's lease while it works
+(`DOTRIX_CODING_LEASE_SECONDS`, renewed every third of it); a newer attempt fences an older one
+off. A run whose worker stopped, or whose push or PR response was lost, becomes
+`recovery_required` and is settled from what GitHub shows (`coding/recovery.py`):
+- its PR is adopted, or opened, when the branch is at the recorded commit;
+- the turn runs again, twice in all, when nothing was published;
+- anything else waits for Recover in the Code tab.
 
 ## How a run is contained
 
-- **No GitHub token in the sandbox.** The worker fetches the repo with an installation token
-  scoped to that one repo, then gives the agent the tracked files and a fresh git history of
-  their own, with no remote. Afterwards it reads the agent's changes back as a patch and checks
-  them: nothing under `.dotrix/`, `.github/workflows/`, or `.git`. Only then does it commit,
-  push a new branch (`dotrix/<key>-<title>-<id>`, never the default branch, never forced), and
-  open the PR. Merging is a person's job.
+- **No GitHub token in the sandbox.** See the steps above: the agent never has a remote, and
+  only the worker pushes, after the guard.
 - **Branches live on a fork.** With `DOTRIX_CODING_FORK_OWNER` set (required in staging and
   production), the app forks each repo into that organisation (`<owner>-<repo>`), pushes the
   branch there, and opens the PR from the fork. GitHub gives a fork's PR no secrets, so the
@@ -25,25 +70,43 @@ keys.
   3. On each repo (or its organisation), under Settings → Actions → General: keep "Send secrets
      to workflows from fork pull requests" off. Set "Require approval for fork pull request
      workflows" to all outside collaborators, so a person approves before checks run.
-- **Network.** The policy (`sandbox_policy()` in
-  `apps/backend/src/dotrix_backend/modules/coding/sandbox.py`) adds no network rules of its
-  own. The provider attached to each run allows the model API only (api.anthropic.com or
-  api.openai.com), and only for the coding tool's binaries. Everything else is blocked,
-  including GitHub and package registries. To let the agent install dependencies, add rules for
-  your registries to that policy.
-- **Filesystem.** The sandbox's working directory, which holds the repo, is writable, and so is
-  `/tmp`. The system is read-only (Landlock, `hard_requirement`). The agent runs as an
-  unprivileged user.
-- **Credentials.** The model key becomes an OpenShell provider for the length of the run.
-  OpenShell keeps the key and gives the sandbox a placeholder, which its proxy swaps for the key
-  only on requests to the model API. The key never sits in the sandbox's filesystem.
+- **Network.** The only host a run reaches is its tool's model API. That is api.anthropic.com,
+  api.openai.com, or generativelanguage.googleapis.com, or the host of `ANTHROPIC_BASE_URL`,
+  `OPENAI_BASE_URL` or `GOOGLE_GEMINI_BASE_URL`. GitHub, package registries, and everything else
+  are blocked. To let the agent install dependencies, add your registries to the Docker egress
+  allowlist and OpenShell's policy (`sandbox_policy()` in `coding/sandbox.py`).
+- **OpenCode's own settings are ours.** Its config comes from `OPENCODE_CONFIG_CONTENT` (that
+  provider only; `webfetch`, `websearch` and `question` denied). A repo's `opencode.json` never
+  loads (`OPENCODE_DISABLE_PROJECT_CONFIG`), and no model list is fetched.
+- **Filesystem.** The repo and `/tmp` are writable; the system is read-only. The agent runs as
+  the image's unprivileged `sandbox` user (uid 1500).
 - **Limits.** Each run stops at `DOTRIX_CODING_TIMEOUT_MINUTES` (30 by default), at
-  `DOTRIX_CODING_TOKEN_BUDGET` tokens, or when someone presses Stop. The sandbox is deleted
-  when the run ends, however it ends.
+  `DOTRIX_CODING_TOKEN_BUDGET` tokens (3,000,000), or when someone presses Stop. A worker runs at
+  most `DOTRIX_CODING_MAX_RUNS` at once (0: no limit); the rest wait for a free sandbox.
 - **Guarding the default branch.** The worker never pushes to the default branch. GitHub can
   enforce that as well: add a ruleset or branch protection to the default branch (require a pull
   request with one approval). The app's token can't add workflows, because the app has no
   Workflows permission.
+
+## Settings
+
+| Setting | Default | What |
+| --- | --- | --- |
+| `DOTRIX_CODING_SANDBOX` | `off` | `docker`, `openshell`, or `local` (development only: no isolation; production refuses it) |
+| `DOTRIX_CODING_IMAGE` | `dotrix-coding:latest` | The image built from this folder |
+| `DOTRIX_CODING_AGENT` | `auto` | `claude-code`, `codex`, or `opencode` |
+| `DOTRIX_CODING_CLAUDE_MODEL`, `DOTRIX_CODING_CODEX_MODEL` | the tool's default | A model for Claude Code or Codex |
+| `DOTRIX_CODING_OPENCODE_MODEL` | none | Required for OpenCode, e.g. `anthropic:claude-sonnet-5-5` |
+| `DOTRIX_CODING_TIMEOUT_MINUTES` | 30 | Per turn |
+| `DOTRIX_CODING_TOKEN_BUDGET` | 3,000,000 | Per turn |
+| `DOTRIX_CODING_LEASE_SECONDS` | 120 | A lapsed lease means recovery, found within about this long |
+| `DOTRIX_CODING_WARM_MAX`, `DOTRIX_CODING_IDLE_MINUTES` | 3, 30 | Warm sandboxes kept per workspace, and for how long idle (0: every turn starts fresh and resumes from the saved session) |
+| `DOTRIX_CODING_MAX_RUNS` | 0 | Runs working at once per worker (0: no limit) |
+| `DOTRIX_CODING_MEMORY`, `DOTRIX_CODING_CPUS` | `4g`, 2 | Each Docker sandbox |
+| `DOTRIX_CODING_DOCKER_RUNTIME` | Docker's | `runsc` for gVisor |
+| `DOTRIX_CODING_FORK_OWNER` | none | The organisation branches are pushed to as a fork (required in staging and production) |
+
+You also need the GitHub App, with Contents (write) and Pull requests (write).
 
 ## Set up Docker (the simplest: once per machine that runs agents)
 
@@ -60,20 +123,19 @@ keys.
    DOTRIX_CODING_AGENT=opencode
    DOTRIX_CODING_OPENCODE_MODEL=anthropic:claude-sonnet-5-5   # or openai:…, google_genai:…
    ```
+   The server's key is only the fallback: runs use the requester's or the workspace's key first
+   (above).
 
 Each run gets:
 - **A network with no route out** (`docker network create --internal`), and on it the agent's
   container and an **egress proxy** (`egress-proxy.mjs`, from the same image, also on the default
-  network). The agent's `HTTPS_PROXY` points at it; it tunnels to the tool's model API
-  (api.anthropic.com or api.openai.com, generativelanguage.googleapis.com for OpenCode on Google,
-  or the host of `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL`)
-  and refuses everything else, GitHub and package registries included.
+  network). The agent's `HTTPS_PROXY` points at it; it tunnels to the tool's model API only
+  (above) and refuses everything else.
 - **The agent's container:** a read-only system, `/tmp` and the repo's volume writable, all
-  capabilities dropped, `no-new-privileges`, the image's `sandbox` user (uid 1500), 4 GB of
-  memory and 2 CPUs (`DOTRIX_CODING_MEMORY`, `DOTRIX_CODING_CPUS`; `DOTRIX_CODING_DOCKER_RUNTIME=runsc`
-  for gVisor), 512 processes. The repo is copied in as a tar extracted by that user.
-- **Cleanup:** both containers, the volume, and the network are removed when the run ends,
-  however it ends. Each carries the label `dotrix.run=<run id>`
+  capabilities dropped, `no-new-privileges`, the `sandbox` user, `DOTRIX_CODING_MEMORY` and
+  `DOTRIX_CODING_CPUS`, 512 processes. The repo is copied in as a tar extracted by that user.
+- **Cleanup:** both containers, the volume, and the network are removed when the run (or, for a
+  warm session, the session) ends, however it ends. Each carries the label `dotrix.run=<run id>`
   (`docker ps -a --filter label=dotrix.run` finds any a crash left behind).
 
 Compared with OpenShell, the model key is in the agent's environment rather than swapped in by
@@ -106,12 +168,27 @@ checks all of this against a real container (it's skipped where the image isn't 
    DOTRIX_CODING_IMAGE=dotrix-coding:latest
    ANTHROPIC_API_KEY=...   # Claude Code; with only OPENAI_API_KEY, Codex codes instead
    ```
-   You also need the GitHub App, with Contents (write) and Pull requests (write); see CLAUDE.md
-   step 5. Add `DOTRIX_CODING_FORK_OWNER` for the fork (above); it's required in staging and production.
+   Add `DOTRIX_CODING_FORK_OWNER` for the fork (above); it's required in staging and production.
+   OpenShell keeps each run's key as a provider for the length of the run and gives the sandbox
+   a placeholder, which its proxy swaps for the key only on requests to the model API from the
+   tool's binary.
 
 For development without OpenShell, `DOTRIX_CODING_SANDBOX=local` runs the agent in a
 temporary folder on your machine. **It has no isolation**, and production refuses to start with
 it.
+
+## Status
+
+- **Checked:** Claude Code in the Docker sandbox on a real model (a turn, resume across two
+  containers, Stop, cumulative cost) and the whole flow to a PR and the Reviewer. OpenCode was
+  checked against fake Anthropic and OpenAI-compatible APIs (turns, resume in a fresh sandbox,
+  Stop, base URLs), and through the egress proxy to the real api.anthropic.com.
+- **Not yet:**
+  - OpenCode on a real model, and its image in the Docker sandbox.
+  - The OpenCode profiles on an OpenShell gateway.
+  - OpenCode's browser.
+  - Codex (needs an OpenAI key).
+  - Coding runs through Dokploy's Docker proxy (see [deploy/README.md](../../deploy/README.md)).
 
 ## Check a sandbox by hand
 

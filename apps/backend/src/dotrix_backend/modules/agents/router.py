@@ -20,6 +20,8 @@ from dotrix_backend.modules.projects.deps import (
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
 
+from .events import PAGE_MAX as EVENTS_PAGE_MAX
+from .events import follow_run
 from .llm import available_models
 from .models import RunKind
 from .runner import AgentRunner
@@ -33,6 +35,7 @@ from .schemas import (
     OutputItemUpdate,
     PlanRead,
     RunCreate,
+    RunEventPage,
     ThreadRead,
     ThreadRename,
     TriageRequest,
@@ -143,6 +146,18 @@ async def stop_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> AgentR
     return await agents.stop(access, run_id)
 
 
+@router.get("/runs/{run_id}/events")
+async def list_run_events(
+    run_id: uuid.UUID, access: Chatter, agents: Agents,
+    after: Annotated[int, Query(ge=0, description="The last `seq` you have (0: from the start)")] = 0,
+    limit: Annotated[int, Query(ge=1, le=EVENTS_PAGE_MAX)] = 200,
+) -> RunEventPage:
+    """What a run did, kept after it: each attempt at a step, its reply as written (about a
+    second's worth a piece), what the agents were doing, and each step's outcome, in order. Pass
+    the last `seq` you have as `after` to pick up where you were; `active` says more will come."""
+    return await agents.run_events(access, run_id, after, limit)
+
+
 @router.get(
     "/runs/{run_id}/stream",
     response_class=StreamingResponse,
@@ -154,9 +169,10 @@ async def stream_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> Stre
     meanwhile ("Reading roadmap.md"); each replaces the last. If the run isn't working right
     now it's just `end`: read the run for its saved reply. `ping` events keep the connection open."""
     await agents.check_run(access, run_id)
+    runner = agents.runner
 
     async def events():
-        async for event, data in agents.runner.streams.follow(run_id):
+        async for event, data in follow_run(runner.streams, runner.session_factory, access.project.workspace_id, run_id):
             if event == "ping":
                 yield ": ping\n\n"
                 continue
@@ -217,10 +233,11 @@ async def always_allow_approval(
 
 @router.post("/runs/{run_id}/continue", responses=errors(409))
 async def continue_run(run_id: uuid.UUID, data: ContinueRun, access: Chatter, agents: Agents) -> AgentRunRead:
-    """Continue a run that stopped at its model's limit (`error_kind: model_limit`) from where it
-    stopped, without sending the message again: now, or once the limit resets (`when_reset`,
-    when the provider said when: `resumes_at`). Only whoever asked. 409 `nothing_to_continue`
-    for any other run, or when the conversation went on since."""
+    """Continue a run that stopped at its model's limit (`error_kind: model_limit`), or was
+    interrupted (`interrupted`: its worker stopped again and again), from where it stopped, without
+    sending the message again: now, or once a limit resets (`when_reset`, when the provider said
+    when: `resumes_at`). An interrupted run asks for approval before every change it makes. Only
+    whoever asked. 409 `nothing_to_continue` for any other run, or when the conversation went on since."""
     return await agents.continue_run(access, run_id, data)
 
 
@@ -366,6 +383,16 @@ async def stop_workspace_run(run_id: uuid.UUID, member: WorkspaceChatter, runs: 
     return await runs.stop(member, run_id)
 
 
+@conversations_router.get("/runs/{run_id}/events")
+async def list_workspace_run_events(
+    run_id: uuid.UUID, member: WorkspaceChatter, runs: WorkspaceRuns,
+    after: Annotated[int, Query(ge=0, description="The last `seq` you have (0: from the start)")] = 0,
+    limit: Annotated[int, Query(ge=1, le=EVENTS_PAGE_MAX)] = 200,
+) -> RunEventPage:
+    """A run's kept events, as for a project's runs (`after` picks up where you were)."""
+    return await runs.run_events(member, run_id, after, limit)
+
+
 @conversations_router.get(
     "/runs/{run_id}/stream",
     response_class=StreamingResponse,
@@ -374,9 +401,10 @@ async def stop_workspace_run(run_id: uuid.UUID, member: WorkspaceChatter, runs: 
 async def stream_workspace_run(run_id: uuid.UUID, member: WorkspaceChatter, runs: WorkspaceRuns) -> StreamingResponse:
     """The reply as it's written, as server-sent events (the same events as a project's runs)."""
     await runs.check_run(member, run_id)
+    runner = runs.runner
 
     async def events():
-        async for event, data in runs.runner.streams.follow(run_id):
+        async for event, data in follow_run(runner.streams, runner.session_factory, member.workspace_id, run_id):
             if event == "ping":
                 yield ": ping\n\n"
                 continue

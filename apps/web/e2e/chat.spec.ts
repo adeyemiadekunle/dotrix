@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { signUp } from "./helpers";
 
-// Chat on the API: conversations in a project and across projects, and the Code tab's sessions.
+// Chat on the API: conversations in a project and across projects, and Kai's coding sessions in the same list.
 // The e2e backend runs the agents on a rule-based model: "Create issue: <title>" asks to create
 // that issue (which waits for approval); anything else is echoed back.
 
@@ -41,6 +41,9 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await box.press("Enter");
   await expect(page).toHaveURL(/thread=.*project=KUM/);
   await expect(page.getByText("Test model reply: What's open?")).toBeVisible();
+  // What the agents did stays with the reply (kept after the run), folded until asked for.
+  await page.getByRole("button", { name: "Steps" }).first().click();
+  await expect(page.getByRole("list", { name: "Steps" })).toBeVisible();
   const conversations = page.getByRole("navigation", { name: "Conversations" });
   await expect(conversations.getByText("What's open", { exact: true })).toBeVisible();
 
@@ -141,15 +144,16 @@ test("ask across projects: the conversation reads only and is listed apart, with
   await expect(conversations.getByRole("button", { name: /How are both projects doing/ })).toContainText(/ALP|KUM/);
 });
 
-test("Chat's Code tab lists coding sessions, and switching back to Chat keeps the conversations", async ({ page }) => {
+test("one list for conversations and coding sessions: a new session starts from it, and New chat goes back", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await openChat(page);
-  await page.getByRole("tab", { name: "Code" }).click();
+  await expect(page.getByRole("tab", { name: "Code" })).toHaveCount(0); // no separate Code tab
+  await page.getByRole("button", { name: "New coding session" }).click();
   await expect(page).toHaveURL(/tab=coding/);
-  await expect(page.getByText("No coding sessions", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Start a coding session" })).toBeVisible();
-  await page.getByRole("tab", { name: "Chat" }).click();
+  await expect(page.getByRole("navigation", { name: "Conversations" })).toBeVisible(); // the same list beside it
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(page).not.toHaveURL(/tab=coding/);
   await expect(page.getByLabel("Message")).toBeVisible();
 });

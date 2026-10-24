@@ -39,6 +39,7 @@ from .modules.coding.recovery import recover_uncertain_runs
 from .modules.coding.runner import build_coding_worker
 from .modules.execution.service import (
     RunDispatcher,
+    expire_agent_leases,
     expire_coding_leases,
     load_operation,
     record_dispatch,
@@ -148,9 +149,12 @@ async def coding_run(
 
 
 async def dispatch_runs(ctx: dict[str, Any]) -> None:
-    """Recover committed intent whose queue publication/acceptance was interrupted."""
+    """Recover committed intent whose queue publication/acceptance was interrupted, and agent runs
+    whose worker stopped (their lease lapsed): they go on from their last checkpoint."""
     runner: AgentRunner = ctx["runner"]
-    await RunDispatcher(runner.session_factory, RunQueue(ctx["redis"])).sweep()
+    queue = RunQueue(ctx["redis"])
+    await expire_agent_leases(runner.session_factory, queue_name=queue.queue_name)
+    await RunDispatcher(runner.session_factory, queue).sweep()
 
 
 async def reconcile_coding_runs(ctx: dict[str, Any]) -> None:

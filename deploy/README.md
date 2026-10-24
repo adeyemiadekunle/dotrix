@@ -38,12 +38,32 @@ little memory, but keep it low on one machine.
 4. **Deploy.** The first deploy builds the three images on the VPS (the backend, the web app, and
    the coding image the worker starts), runs the migrations, then starts everything.
 
+## What survives a restart
+
+Runs execute in the `worker`, never in the API, so redeploying either loses nothing that
+matters:
+- **Chat runs** hold a lease the worker renews (`DOTRIX_AGENT_LEASE_SECONDS`, 90 by default).
+  When a worker stops, the next one picks the run up from its last checkpoint within about a
+  minute and a half. A resumed run asks for approval before any change, so nothing goes through
+  twice. After three tries the run shows Continue to whoever asked.
+- **Coding runs** hold a lease too (`DOTRIX_CODING_LEASE_SECONDS`). One whose worker stopped is
+  settled from what GitHub shows: its PR is adopted when the push landed, the turn runs again
+  when nothing was published, and anything unclear waits for Recover in the Code tab.
+- **What a run did** is kept in Postgres as it happens, so a reload, a redeploy of the API, or
+  Redis restarting doesn't lose a reply mid-way.
+
+Redis is still needed (the queue, live streams, rate limits); its data can be lost without
+losing runs.
+
 ## Coding sandboxes on the VPS
 
 The worker starts each run's containers on the VPS's Docker. It reaches Docker only through
 `docker-proxy` (`tecnativa/docker-socket-proxy`), which allows containers, exec, networks, volumes,
 and images, and nothing else; the socket itself is never mounted into a dotrix container. Each
-run's agent container has no route out except its egress proxy, which reaches only the model API.
+run's agent container has no route out except its egress proxy, which reaches only the model API
+of the tool Kai runs: Claude Code and Codex by default, or OpenCode on the provider set in
+`DOTRIX_CODING_OPENCODE_MODEL` (`DOTRIX_CODING_AGENT=opencode`). Runs use the requester's own key
+where the organisation allows it, else the workspace's (Settings → Models), else the server's.
 
 **In Dokploy's container list** you'll see each run's two containers (label `dotrix.run=<run id>`)
 for as long as it lasts. Leave them to dotrix: stop a run with Stop in dotrix, not in Dokploy.

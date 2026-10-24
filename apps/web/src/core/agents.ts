@@ -433,7 +433,7 @@ export function deleteSession(id: string) {
     danger: true,
     run: () => {
       mutate(() => (D().coding = D().coding.filter((c) => c.id !== id)));
-      if (new URLSearchParams(location.search).get("session") === id) go("chat", {}, { search: "tab=coding" });
+      if (new URLSearchParams(location.search).get("session") === id) go("chat");
       toast("Session deleted");
     },
   });

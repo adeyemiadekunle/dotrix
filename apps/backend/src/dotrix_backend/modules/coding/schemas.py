@@ -146,5 +146,10 @@ class CodingSessionRead(BaseModel):
     title: str = Field(default="", description="Its own name when renamed, else its issue's title")
     pinned: bool = False
     archived: bool = False
+    thread_id: uuid.UUID | None = Field(
+        default=None,
+        description="The conversation it was started from (Build mode), when that conversation is yours: "
+        "its turns show there, inline. Null: a session of its own.",
+    )
     started_at: datetime
     updated_at: datetime

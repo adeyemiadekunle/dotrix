@@ -9,6 +9,7 @@ paused run resumes from exactly where it stopped.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import difflib
 import logging
 import uuid
@@ -18,8 +19,14 @@ from types import SimpleNamespace
 from typing import Any
 
 from deepagents.backends import CompositeBackend, StateBackend
-from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
-from sqlalchemy import select
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    RemoveMessage,
+    SystemMessage,
+    ToolMessage,
+)
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.crypto import Secrets
@@ -66,11 +73,20 @@ from dotrix_engine.templates import TEMPLATES_GUIDE, default_templates
 from .activity import activity_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
 from .context import build_context_pack
+from .events import RecordingStream, RunRecorder, add_event
 from .findings import dedupe_findings
 from .graph_tools import GRAPH_TOOLS_GUIDE, build_graph_tools
 from .knowledge_tools import KNOWLEDGE_TOOLS_GUIDE, build_knowledge_tools
 from .llm import PROVIDERS, ModelFactory, limit_error, limit_resets_in
-from .models import AgentApproval, AgentRun, AgentRunOutput, ApprovalStatus, RunKind, RunStatus
+from .models import (
+    AgentApproval,
+    AgentRun,
+    AgentRunOutput,
+    ApprovalStatus,
+    RunEventKind,
+    RunKind,
+    RunStatus,
+)
 from .queue import RunQueue
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
@@ -82,6 +98,15 @@ from .workspace_runs import WORKSPACE_GUIDE, build_workspace_pack, build_workspa
 CHECKPOINT_TOOL = "checkpoint"  # the engine's checkpoint tool (dotrix_engine.pipelines)
 
 logger = logging.getLogger(__name__)
+
+# The attempt this task is running (its lease token); a newer attempt fences it off.
+_LEASE: contextvars.ContextVar[int | None] = contextvars.ContextVar("agent_lease", default=None)
+DEFAULT_LEASE_SECONDS = 90
+CUT_OFF_TOOL = (
+    "Cut off: the worker running this conversation stopped while this ran, so it may or may not have "
+    "taken effect. Check (read the document or the issue) before repeating any change; repeated "
+    "changes wait for a person's approval."
+)
 
 # What coding agents read in a repo; agents read them as data about its conventions.
 CONVENTION_FILES = ("AGENTS.md", "CLAUDE.md")
@@ -232,14 +257,77 @@ class AgentRunner:
         # Local mode: background tasks by run, so a person can stop one; and why it was stopped.
         self._running: dict[uuid.UUID, asyncio.Task[None]] = {}
         self._stopped: dict[uuid.UUID, str] = {}
+        # Runs whose lease another attempt took: this worker stops, and records nothing more.
+        self._fenced: set[uuid.UUID] = set()
+
+    @property
+    def lease_seconds(self) -> int:
+        return self.settings.agent_lease_seconds if self.settings is not None else DEFAULT_LEASE_SECONDS
+
+    def _take_lease(self, run: AgentRun) -> int:
+        """In the transaction that makes the run RUNNING: a new attempt's lease (fences off any older one)."""
+        run.lease_token = (run.lease_token or 0) + 1
+        run.lease_expires_at = _now() + timedelta(seconds=self.lease_seconds)
+        _LEASE.set(run.lease_token)
+        return run.lease_token
+
+    def _hold_lease(self, run_id: uuid.UUID, token: int) -> asyncio.Task[None]:
+        """Renew the lease while the run works. Lost (another attempt took it): stop this attempt."""
+        attempt = asyncio.current_task()
+
+        async def renew() -> None:
+            while True:
+                await asyncio.sleep(self.lease_seconds / 3)
+                try:
+                    async with self.session_factory() as session:
+                        held = await session.execute(update(AgentRun).where(
+                            AgentRun.id == run_id, AgentRun.lease_token == token,
+                            AgentRun.status == RunStatus.RUNNING,
+                        ).values(lease_expires_at=_now() + timedelta(seconds=self.lease_seconds)))
+                        await session.commit()
+                except Exception:
+                    logger.warning("agent run %s: couldn't renew its lease", run_id, exc_info=True)
+                    continue
+                if held.rowcount == 0:
+                    logger.info("agent run %s: lease lost (attempt %s); this worker stops", run_id, token)
+                    self._fenced.add(run_id)
+                    if attempt is not None:
+                        attempt.cancel()
+                    return
+
+        return asyncio.create_task(renew())
+
+    async def _record(
+        self, run_id: uuid.UUID, workspace_id: uuid.UUID, token: int, payload: dict[str, Any],
+    ) -> RecordingStream:
+        """The step's live stream, every piece of it also kept (events.py)."""
+        recording = RecordingStream(await self.streams.open(run_id),
+                                    RunRecorder(self.session_factory, workspace_id, run_id, token))
+        await recording.begin({"attempt": token, "step": payload["kind"], "recovered": bool(payload.get("recovered"))})
+        return recording
+
+    async def _release_lease(self, run_id: uuid.UUID, token: int, holder: asyncio.Task[None] | None) -> None:
+        if holder is not None:
+            holder.cancel()
+        try:
+            async with self.session_factory() as session:
+                await session.execute(update(AgentRun).where(
+                    AgentRun.id == run_id, AgentRun.lease_token == token,
+                ).values(lease_expires_at=None))
+                await session.commit()
+        except Exception:
+            logger.warning("agent run %s: couldn't release its lease (it expires)", run_id, exc_info=True)
 
     async def _unattended_specs(
-        self, session: Any, run: AgentRun, specs: list[AgentSpec], resolved: dict[str, Any]
+        self, session: Any, run: AgentRun, specs: list[AgentSpec], resolved: dict[str, Any],
+        recovered: bool = False,
     ) -> tuple[list[AgentSpec], int, dict[str, frozenset[str]], ApprovalMode | None]:
         """The run's contracts with the standing rules it may not use turned back into ask (and
         what the person may change themselves turned into allow, when their approval mode lets it
         go through), how many changes it may make without approval (unattended.py), what turned,
-        and the mode in effect now (the cap or a pause may have lowered it since it was asked)."""
+        and the mode in effect now (the cap or a pause may have lowered it since it was asked).
+        A recovered attempt (its worker stopped) asks for every change: one the cut-off attempt
+        already made then waits for a person instead of going through twice."""
         per_run, per_day = self.unattended_limits
         left = min(per_run, max(0, per_day - await changes_today(session, run.workspace_id)))
         members = MembershipRepository(session)
@@ -255,12 +343,14 @@ class AgentRunner:
             authors=authors,
             instructor=instructor,
             # Past the day's cap, every change asks: as if paused.
-            paused=bool(workspace and workspace.unattended_paused) or left <= 0,
+            paused=bool(workspace and workspace.unattended_paused) or left <= 0 or recovered,
             briefing=run.kind is RunKind.BRIEFING,
             automation=None if run.automation_id is None else bool(automation and automation.unattended),
         )
         accepted: dict[str, frozenset[str]] = {}
         mode = None
+        if recovered:
+            return specs, 0, accepted, ApprovalMode.MANUAL
         if run.automation_id is None and run.kind is not RunKind.BRIEFING and instructor is not None:
             mode = effective(ApprovalMode(run.approval_mode) if run.approval_mode else None, instructor)
             if goes_through(mode):
@@ -334,11 +424,12 @@ class AgentRunner:
         )
 
     async def continue_run(
-        self, run_id: uuid.UUID, message: str, *, dispatch: RunDispatch | None = None,
+        self, run_id: uuid.UUID, message: str, *, dispatch: RunDispatch | None = None, recovered: bool = False,
     ) -> None:
-        """Pick up a run that stopped at a model's limit from its last checkpoint (the person's
-        message isn't sent again)."""
-        await self._dispatch(run_id, {"kind": "continue", "message": message}, dispatch)
+        """Pick up a run that stopped at a model's limit, or was interrupted, from its last checkpoint
+        (the person's message isn't sent again)."""
+        payload = {"kind": "continue", "message": message, **({"recovered": True} if recovered else {})}
+        await self._dispatch(run_id, payload, dispatch)
 
     async def _dispatch(
         self, run_id: uuid.UUID, payload: dict[str, Any], dispatch: RunDispatch | None = None,
@@ -404,6 +495,7 @@ class AgentRunner:
         results: list[tuple[str, list[dict[str, Any]]]] = []  # what the leading agent submitted
         run_web: RunWeb | None = None
         executing = False
+        recording: RecordingStream | None = None
         try:
             async with self.session_factory() as session:
                 query = select(AgentRun).where(AgentRun.id == run_id)
@@ -416,7 +508,7 @@ class AgentRunner:
                 if not await accept_operation(session, run, operation, retry=retry_operation):
                     return
                 # A previous attempt was cut off, or the person continues one that stopped at a limit.
-                retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue"
+                retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue" or bool(payload.get("recovered"))
                 project = await ProjectRepository(session).get(run.workspace_id, run.project_id)
                 assert project is not None
                 # The agents in effect for this project: its overrides, the workspace's, the built-ins.
@@ -437,6 +529,7 @@ class AgentRunner:
                         person = await session.get(User, run.requested_by_id)
                         specs = with_preferences(specs, prefs, person.display_name if person else "the person")
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
+                token = self._take_lease(run)
                 run.model = run.conversation_model or project.model
                 run.agent_version = lead_agent.version
                 # The budget covers every step of the run: what earlier steps used counts. The
@@ -449,6 +542,7 @@ class AgentRunner:
                 )
                 await session.commit()
                 executing = True
+                holder = self._hold_lease(run_id, token)
                 rules = await self._rules(session, project.id, list(resolved), workspace_id=project.workspace_id)
                 context = await build_context_pack(session, project, run, self.embedder)
                 kind, thread_id = run.kind, run.thread_id
@@ -461,7 +555,9 @@ class AgentRunner:
                 lead = run.agent  # None: Auto (the Project Manager)
                 mode = run.mode
                 work_mode = run.work_mode
-                specs, unattended_left, accepted, approval = await self._unattended_specs(session, run, specs, resolved)
+                specs, unattended_left, accepted, approval = await self._unattended_specs(
+                    session, run, specs, resolved, recovered=bool(payload.get("recovered")),
+                )
                 policy = AgentPolicy(specs)
                 versions = {handle: agent.version for handle, agent in resolved.items()}
                 unattended = Unattended(
@@ -567,7 +663,7 @@ class AgentRunner:
                 if resuming
                 else {"messages": [{"role": "user", "content": payload["message"]}]}
             )
-            stream = await self.streams.open(run_id)
+            stream = recording = await self._record(run_id, workspace_id, token, payload)
             result = None
             if retry:
                 graph_input, result = await _continue_from_checkpoint(agent, config, payload, graph_input)
@@ -588,10 +684,16 @@ class AgentRunner:
                         run_id, NO_REPLY_AFTER_DECISIONS_ERROR if resuming else NO_REPLY_ERROR, usage
                     )
                     return
+            await recording.flush()  # the reply's last words before its outcome
             if results:
                 await self._save_outputs(run_id, speaker, results)
             await self._finish(run_id, result, usage, speaker)
         except asyncio.CancelledError:
+            if recording is not None:
+                await recording.flush()
+            if run_id in self._fenced:  # a newer attempt has the run: it records the outcome
+                self._fenced.discard(run_id)
+                return
             reason = self._stopped.pop(run_id, None)
             if reason is None and self.stop_reasons is not None:
                 reason = await self.stop_reasons.stop_reason(run_id)
@@ -604,9 +706,13 @@ class AgentRunner:
             # last checkpoint.
             raise
         except TokenBudgetExceeded as exc:
+            if recording is not None:
+                await recording.flush()
             logger.info("agent run %s: %s", run_id, exc)
             await self._fail(run_id, BUDGET_ERROR.format(used=exc.used, budget=exc.budget), usage)
         except Exception as exc:
+            if recording is not None:
+                await recording.flush()
             if (budget := _budget_error(exc)) is not None:  # raised inside a tool (a subagent)
                 logger.info("agent run %s: %s", run_id, budget)
                 await self._fail(run_id, BUDGET_ERROR.format(used=budget.used, budget=budget.budget), usage)
@@ -618,8 +724,12 @@ class AgentRunner:
         finally:
             if run_web is not None:
                 await run_web.aclose()
+            if recording is not None:
+                await recording.close()
             if executing:
                 await self.streams.close(run_id)
+                await self._release_lease(run_id, token, holder)
+            _LEASE.set(None)
 
     async def _execute_across(
         self, run_id: uuid.UUID, payload: dict[str, Any],
@@ -629,6 +739,7 @@ class AgentRunner:
         it, so nothing waits for approval; anything that tries to write is refused."""
         usage = TokenUsage()
         executing = False
+        recording: RecordingStream | None = None
         try:
             async with self.session_factory() as session:
                 query = select(AgentRun).where(AgentRun.id == run_id)
@@ -639,7 +750,7 @@ class AgentRunner:
                     return
                 if not await accept_operation(session, run, operation, retry=retry_operation):
                     return
-                retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue"
+                retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue" or bool(payload.get("recovered"))
                 member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
                     if run.requested_by_id else None
                 if member is None:
@@ -665,12 +776,14 @@ class AgentRunner:
                     return
                 specs = [read_only(a.spec) for a in resolved.values()]
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
+                token = self._take_lease(run)
                 run.model = run.conversation_model
                 run.agent_version = lead_agent.version
                 run.token_budget = lead_agent.spec.budget_tokens or self.token_budget
                 usage = TokenUsage(budget=run.token_budget, used=(run.input_tokens or 0) + (run.output_tokens or 0))
                 await session.commit()
                 executing = True
+                holder = self._hold_lease(run_id, token)
                 workspace_rules = await WorkspaceRules(session).texts(run.workspace_id)
                 rules = layered({h: t for h, t in workspace_rules.items() if h in ("base", *resolved)}, {})
                 context = await build_workspace_pack(session, projects, visible)
@@ -702,7 +815,7 @@ class AgentRunner:
             config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": RECURSION_LIMIT,
                       "callbacks": [usage]}
             graph_input: Any = {"messages": [{"role": "user", "content": payload["message"]}]}
-            stream = await self.streams.open(run_id)
+            stream = recording = await self._record(run_id, workspace_id, token, payload)
             result = None
             if retry:
                 graph_input, result = await _continue_from_checkpoint(agent, config, payload, graph_input)
@@ -716,18 +829,27 @@ class AgentRunner:
             if not _reply(result):
                 await self._fail(run_id, NO_REPLY_ERROR, usage)
                 return
+            await recording.flush()
             async with self.session_factory() as session:
-                run = await session.get(AgentRun, run_id)
+                run = await session.get(AgentRun, run_id, with_for_update=True)
                 assert run is not None
+                if _fenced_off(run):
+                    return
                 tokens = _add_tokens(run, usage)
                 run.reply, run.status = _reply(result), RunStatus.COMPLETED
                 run.updated_at = run.finished_at = _now()
+                await add_event(session, run, RunEventKind.STATUS, {"status": "completed", "pending": 0})
                 AuditLog(session).record(
                     workspace_id=run.workspace_id, action="agent_run.completed", target=str(run.id),
                     actor_type=AuthorType.AGENT, agent=speaker, instructed_by_id=run.requested_by_id, details=tokens,
                 )
                 await session.commit()
         except asyncio.CancelledError:
+            if recording is not None:
+                await recording.flush()
+            if run_id in self._fenced:  # a newer attempt has the run: it records the outcome
+                self._fenced.discard(run_id)
+                return
             reason = self._stopped.pop(run_id, None)
             if reason is None and self.stop_reasons is not None:
                 reason = await self.stop_reasons.stop_reason(run_id)
@@ -738,8 +860,12 @@ class AgentRunner:
                 await self._fail(run_id, "Stopped because the server shut down; send the message again", usage)
             raise
         except TokenBudgetExceeded as exc:
+            if recording is not None:
+                await recording.flush()
             await self._fail(run_id, BUDGET_ERROR.format(used=exc.used, budget=exc.budget), usage)
         except Exception as exc:
+            if recording is not None:
+                await recording.flush()
             if (budget := _budget_error(exc)) is not None:
                 await self._fail(run_id, BUDGET_ERROR.format(used=budget.used, budget=budget.budget), usage)
                 return
@@ -748,8 +874,12 @@ class AgentRunner:
             logger.exception("agent run %s (across projects) failed", run_id)
             await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}", usage)
         finally:
+            if recording is not None:
+                await recording.close()
             if executing:
                 await self.streams.close(run_id)
+                await self._release_lease(run_id, token, holder)
+            _LEASE.set(None)
 
     async def _settle(self, agent: Any, kind: RunKind, config: dict, stream: Stream, result: dict) -> dict:
         """A briefing is read-only: any write it attempts is rejected so it can carry on."""
@@ -763,8 +893,10 @@ class AgentRunner:
 
     async def _finish(self, run_id: uuid.UUID, result: dict, usage: TokenUsage, speaker: str = PM_ROLE) -> None:
         async with self.session_factory() as session:
-            run = await session.get(AgentRun, run_id)
+            run = await session.get(AgentRun, run_id, with_for_update=True)
             assert run is not None
+            if _fenced_off(run):
+                return
             now = _now()
             tokens = _add_tokens(run, usage)
             pending = hitl.pending_actions(result)
@@ -799,6 +931,7 @@ class AgentRunner:
                 action_name = "agent_run.completed"
                 await _changes_approved(session, run)
             run.updated_at = now
+            await add_event(session, run, RunEventKind.STATUS, {"status": run.status.value, "pending": len(pending)})
             await _notify(session, run, pending, speaker, now)
             AuditLog(session).record(
                 workspace_id=run.workspace_id,
@@ -846,7 +979,7 @@ class AgentRunner:
         wait = limit_resets_in(exc)
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id)
-            if run is None:
+            if run is None or _fenced_off(run):
                 return True
             now = _now()
             run.error_kind = "model_limit"
@@ -862,12 +995,13 @@ class AgentRunner:
     async def _fail(self, run_id: uuid.UUID, error: str, usage: TokenUsage) -> None:
         """Stopped and failed runs keep the tokens they used."""
         async with self.session_factory() as session:
-            run = await session.get(AgentRun, run_id)
-            if run is None:
+            run = await session.get(AgentRun, run_id, with_for_update=True)
+            if run is None or _fenced_off(run):
                 return
             tokens = _add_tokens(run, usage)
             run.status, run.error = RunStatus.FAILED, error[:2000]
             run.updated_at = run.finished_at = _now()
+            await add_event(session, run, RunEventKind.STATUS, {"status": "failed", "error": run.error})
             AuditLog(session).record(
                 workspace_id=run.workspace_id,
                 project_id=run.project_id,
@@ -886,7 +1020,7 @@ class AgentRunner:
         repeat an open finding or issue are settled as such (findings.py)."""
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id)
-            if run is None:
+            if run is None or _fenced_off(run):
                 return
             for schema, items in results:
                 if schema == "finding":
@@ -985,6 +1119,15 @@ async def _notify(session: Any, run: AgentRun, pending: list[dict], speaker: str
         open_findings = sum(1 for output in outputs for item in output.items if item.get("state") == "open")
         if open_findings:
             notifier.findings(project, run.requested_by_id, run.id, title, open_findings, now, speaker)
+
+
+def _fenced_off(run: AgentRun) -> bool:
+    """Whether a newer attempt holds the run: this one records nothing (its outcome is the newer one's)."""
+    token = _LEASE.get()
+    if token is not None and run.lease_token != token:
+        logger.info("agent run %s: attempt %s was fenced off by attempt %s", run.id, token, run.lease_token)
+        return True
+    return False
 
 
 async def mark_interrupted_runs(session_factory: SessionFactory) -> None:
@@ -1118,6 +1261,18 @@ def _activities(update: dict) -> list[str]:
     return labels
 
 
+def _unanswered_calls(values: dict) -> list[dict]:
+    """The last model message's tool calls that have no result yet."""
+    messages = list(values.get("messages") or [])
+    answered = set()
+    for message in reversed(messages):
+        if getattr(message, "type", None) == "tool":
+            answered.add(message.tool_call_id)
+        elif getattr(message, "type", None) == "ai":
+            return [c for c in (message.tool_calls or []) if c.get("id") not in answered]
+    return []
+
+
 def _last_user_message(values: dict) -> str | None:
     for message in reversed(values.get("messages") or []):
         if getattr(message, "type", None) == "human" and not _is_follow_up(message):
@@ -1134,6 +1289,16 @@ async def _continue_from_checkpoint(
     if payload["kind"] == "resume" and state.interrupts:
         return graph_input, None  # the decisions weren't applied yet: apply them
     if state.next:
+        if payload.get("recovered") and "tools" in state.next:
+            # Its worker stopped while tools ran: one may have taken effect already. Rather than
+            # running them again unasked, each unanswered call says so; the agent checks, and any
+            # change it repeats asks for approval (a recovered attempt runs in Manual).
+            cut = _unanswered_calls(state.values)
+            if cut:
+                await agent.aupdate_state(config, {"messages": [
+                    ToolMessage(content=CUT_OFF_TOOL, tool_call_id=call["id"], name=call.get("name"))
+                    for call in cut
+                ]}, as_node="tools")
         return None, None  # continue the pending steps from the last checkpoint
     if payload["kind"] == "start" and _last_user_message(state.values) != payload["message"]:
         return graph_input, None  # the message never reached the graph: send it now

@@ -69,13 +69,19 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     status: Mapped[RunStatus] = mapped_column(str_enum(RunStatus, 24))
     # Each start/resume/continue has one immutable worker dispatch operation.
     dispatch_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # The attempt working on it now (each start, resume, or recovery takes the next token) and
+    # until when, renewed while it works; a lapsed lease means its worker stopped (the sweep
+    # resumes it from its last checkpoint). A newer token fences an older attempt off.
+    lease_token: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     message: Mapped[str] = mapped_column(Text)
     # The conversation's title, on its first run only (a placeholder, then the model's title).
     title: Mapped[str | None] = mapped_column(String(120))
     reply: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
     # Why it failed, when that's something to act on: "model_limit" (a provider refused for its
-    # rate limit, quota, or credit). Such a run can be continued from where it stopped.
+    # rate limit, quota, or credit) or "interrupted" (its worker stopped, again and again). Such a
+    # run can be continued from where it stopped.
     error_kind: Mapped[str | None] = mapped_column(String(32))
     resumes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # when the limit resets, if said
     continue_at_reset: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
@@ -187,4 +193,26 @@ class AgentRunOutput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     # A report saved as a research note: the note's path in `.dotrix/` (null: not saved).
     note: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RunEventKind(enum.StrEnum):
+    STEP = "step"  # an attempt at a step began (start, resume, continue; recovered or not): its text starts over
+    TEXT = "text"  # a piece of the reply, as written (coalesced: about a second's worth)
+    ACTIVITY = "activity"  # what the agents were doing ("Reading roadmap.md")
+    STATUS = "status"  # the run's outcome for the step: awaiting_approval, completed, failed
+
+
+class AgentRunEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """What a run did, as it happened, kept after it (events.py): a client that reconnects, or
+    reloads, picks up where it was (`seq`), and the steps stay readable once the run is done."""
+
+    __tablename__ = "agent_run_events"
+    __table_args__ = (UniqueConstraint("run_id", "seq"),)
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)  # 1, 2, … per run
+    attempt: Mapped[int] = mapped_column(Integer)  # the run's lease token when it was written
+    kind: Mapped[RunEventKind] = mapped_column(str_enum(RunEventKind, 16))
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

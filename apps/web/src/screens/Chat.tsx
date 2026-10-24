@@ -1,8 +1,8 @@
 // dotrix's workspace Chat: conversations grouped by project (and
 // "All projects"), a new chat with project, agent, and model; replies with what the agent did
-// and the changes it proposes; and the Coding tab, coding sessions with their turns. Conversations
+// and the changes it proposes; and Kai's coding sessions: inline in the conversation that started them, else listed beside the conversations. Conversations
 // and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
-// URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?tab=coding&session=ID, ?q=, ?agent=.
+// URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?session=ID (a coding session), ?tab=coding (a new one), ?q=, ?agent=.
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import {
@@ -10,6 +10,7 @@ import {
   modelName,
   runTitle,
   useContinueRun,
+  useRunSteps,
   useModels,
   useRunStream,
   useSendMessage,
@@ -53,9 +54,10 @@ import { D, S, canSee, me, pColor, proj, projByKey, render, task, visibleProject
 import { Markdown } from "@/components/markdown";
 import { RunApprovals } from "../components/RunApprovals";
 import { openDocument } from "./Knowledge";
-import { Av, Empty, PIcon } from "../ui/helpers";
+import { Av, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
+import { CODING_AGENT } from "../data/seed-dotrix";
 import { useAtPicker } from "../components/AtPicker";
 import { Splitter, useStoredFlag, useStoredSize } from "../ui/splitter";
 
@@ -190,7 +192,7 @@ function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
       <button
         className={`sitem ${on ? "on" : ""}`}
         style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start", width: "100%" }}
-        onClick={() => open(`tab=coding&session=${cs.session_id}`)}
+        onClick={() => open(`session=${cs.session_id}`)}
       >
         <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
           <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
@@ -217,6 +219,78 @@ function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
       >
         <Ic n="ellipsis" s={14} />
       </button>
+    </div>
+  );
+}
+
+/** Kai's session, inline in the conversation it was started from: its latest turn, and what you can do about it. */
+function SessionCard({ cs }: { cs: CodingSession }) {
+  const ws = wsId();
+  const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
+  const latest = (useCodingSession(scope, cs.session_id).data ?? []).at(-1);
+  const decide = useDecideCoding(scope, cs.issue_key);
+  const stop = useStopCoding(scope, cs.issue_key);
+  const recover = useRecoverCoding(scope, cs.issue_key);
+  const [label, c] = STATUS[cs.status];
+  const files = latest?.files_changed ?? [];
+  return (
+    <div className="change" role="group" aria-label={`Kai on ${cs.issue_key}`} style={{ margin: "4px 0 12px 36px" }}>
+      <div className="change-h">
+        <Ic n="code" s={14} />
+        <b style={{ fontWeight: 500 }}>
+          {CODING_AGENT.name} · <span className="mono">{cs.issue_key}</span> {cs.title || cs.issue_title}
+        </b>
+        <span className="sp" />
+        <span className={`badge ${c}`}>{label}</span>
+      </div>
+      <div className="change-b row muted" style={{ gap: 10, flexWrap: "wrap", fontSize: 12.5 }}>
+        <span>
+          Turn {cs.turns} · {ago(ms(cs.updated_at))}
+        </span>
+        {cs.branch && (
+          <span className="row" style={{ gap: 4 }}>
+            <Ic n="git-branch" s={12} />
+            <code>{cs.branch}</code>
+          </span>
+        )}
+        {cs.pr_url && cs.pr_number && (
+          <a href={cs.pr_url} target="_blank" rel="noreferrer" style={{ color: "var(--acc)" }}>
+            PR #{cs.pr_number}
+          </a>
+        )}
+        {files.length > 0 && (
+          <span>
+            {files.length} file{files.length === 1 ? "" : "s"} changed
+          </span>
+        )}
+      </div>
+      <div className="change-f row" style={{ gap: 6 }}>
+        {latest?.can_decide && (
+          <>
+            <button className="btn btn-sm btn-ghost" disabled={decide.isPending} onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}>
+              Reject
+            </button>
+            <button className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}>
+              Approve
+            </button>
+          </>
+        )}
+        {latest?.can_stop && (
+          <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
+            Stop
+          </button>
+        )}
+        {latest?.can_recover && (
+          <button className="btn btn-sm btn-secondary" disabled={recover.isPending} onClick={() => recover.mutate({ runId: latest.id, action: "check" })}>
+            Check and recover
+          </button>
+        )}
+        <span className="sp" />
+        <button className="btn btn-sm btn-ghost" onClick={() => open(`session=${cs.session_id}`)}>
+          Open the session
+          <Ic n="arrow-right" s={12} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -332,6 +406,7 @@ function Message({ m, projectId, tag, children }: { m: Msg; projectId: string | 
 function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: string | null; scope: Scope | undefined; stream: RunStreamState | null }) {
   const cont = useContinueRun(scope);
   const limited = run.error_kind === "model_limit";
+  const interrupted = run.status === "failed" && run.error_kind === "interrupted";
   const failed = run.status === "failed" && !limited;
   const text = stream ? stream.text : (run.reply ?? "");
   const reply: Msg = {
@@ -354,6 +429,7 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
       {shows && (reply.text || run.approvals?.length || limited) ? (
         <Message m={reply} projectId={projectId}>
           {projectId && <RunApprovals run={run} scope={scope} />}
+          {projectId && !stream && <RunSteps scope={scope} runId={run.id} />}
           {limited && projectId && (
             <LimitNotice
               said={run.error ?? undefined}
@@ -362,9 +438,39 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
               onContinue={(whenReset) => cont.mutate({ runId: run.id, whenReset })}
             />
           )}
+          {interrupted && projectId && run.requested_by_id === D().me && (
+            <div className="row" style={{ gap: 8, marginTop: 8 }}>
+              <span className="muted" style={{ fontSize: 12.5 }}>
+                It goes on from where it stopped; any change it repeats waits for your approval.
+              </span>
+              <button className="btn btn-sm btn-secondary" disabled={cont.isPending} onClick={() => cont.mutate({ runId: run.id, whenReset: false })}>
+                <Ic n="play" s={12} />
+                Continue
+              </button>
+            </div>
+          )}
         </Message>
       ) : null}
     </>
+  );
+}
+
+/** What the agents did for a reply (kept after the run), folded until asked for. */
+function RunSteps({ scope, runId }: { scope: Scope | undefined; runId: string }) {
+  const [open, setOpen] = useState(false);
+  const steps = useRunSteps(scope, runId, open);
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button className="btn btn-sm btn-ghost" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
+        Steps
+      </button>
+      {open && (
+        <ol className="muted" style={{ fontSize: 12.5, margin: "4px 0 0 20px" }} aria-label="Steps">
+          {steps.data?.length ? steps.data.map((label, i) => <li key={i}>{label}</li>) : <li>{steps.isLoading ? "Loading…" : "No steps kept"}</li>}
+        </ol>
+      )}
+    </div>
   );
 }
 
@@ -641,6 +747,9 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const lastApproval = last?.approval_mode && approvalModes().includes(last.approval_mode) ? last.approval_mode : null;
   const approval = pickedApproval ?? lastApproval ?? defaultApproval();
   const plans = useThreadPlans(scope, projectId ? id : null, runs.filter((r) => !isActive(r)).length).data ?? [];
+  // Kai's sessions started from this conversation, each after the message that started it.
+  const coded = (useCodingSessions(ws, Boolean(projectId)).data ?? []).filter((c) => c.thread_id === id);
+  const anchorOf = (c: CodingSession) => runs.filter((r) => ms(r.created_at) <= ms(c.started_at)).at(-1)?.id ?? last?.id;
   const latestPlan = plans.at(-1);
   const end = useRef<HTMLDivElement>(null);
   const busy = active && !stream.text;
@@ -700,6 +809,11 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
                 .filter((pl) => pl.run_id === r.id)
                 .map((pl) => (
                   <PlanCard key={pl.id} plan={pl} latest={pl.id === latestPlan?.id} busy={active} onBuild={() => build(pl)} />
+                ))}
+              {coded
+                .filter((c) => anchorOf(c) === r.id)
+                .map((c) => (
+                  <SessionCard key={c.session_id} cs={c} />
                 ))}
             </div>
           ))}
@@ -872,7 +986,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
     if (!t) return;
     if (avail?.available === false || start.isPending) return;
     start.mutateAsync(note.trim() || null).then(
-      (run) => open(`tab=coding&session=${run.session_id}`),
+      (run) => open(`session=${run.session_id}`),
       () => {},
     );
   };
@@ -1076,7 +1190,11 @@ function Session({ cs }: { cs: CodingSession }) {
   return (
     <>
       <div className="row cs-head">
-        <button className="ibtn ibtn-sm" onClick={() => open("tab=coding")} aria-label="Back to sessions">
+        <button
+          className="ibtn ibtn-sm"
+          onClick={() => open(cs.thread_id ? `thread=${cs.thread_id}&project=${cs.project_key}` : "")}
+          aria-label={cs.thread_id ? "Back to the conversation" : "Back to conversations"}
+        >
           <Ic n="arrow-left" s={15} />
         </button>
         <button
@@ -1414,11 +1532,12 @@ const Pending = ({ text }: { text: string }) => (
 export function Chat() {
   const { search } = useRoute();
   const ws = wsId();
-  const coding = search.get("tab") === "coding";
   const projectKey = search.get("project");
   const across = search.get("across") === "1";
   const threadId = search.get("thread");
   const sessionId = search.get("session");
+  // A new coding session (`?tab=coding`, as "Start coding" links it); otherwise a conversation.
+  const newSession = search.get("tab") === "coding" && !sessionId;
   const q = S.ui.chatQ.toLowerCase();
   const ps = visibleProjects().filter(canSee);
   const { rows, loaded } = useRows(ws);
@@ -1431,20 +1550,37 @@ export function Chat() {
       ? { id: threadId, projectId: row ? row.projectId : across ? null : (projByKey(projectKey!)?.id ?? null), title: row?.title ?? "" }
       : null;
   const cs = allSessions.find((c) => c.session_id === sessionId) ?? null;
-  const threads = rows.filter((r) => !q || r.title.toLowerCase().includes(q)).sort((a, b) => b.at - a.at);
-  const visibleSessions = allSessions.filter((c) => !q || `${c.issue_key} ${c.title ?? c.issue_title}`.toLowerCase().includes(q));
-  const archivedCount = visibleSessions.filter((c) => c.archived).length;
-  // Archived ones only on request; pinned first, then the latest.
-  const sessions = visibleSessions
-    .filter((c) => c.archived === Boolean(S.ui.showArchivedSessions))
-    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || ms(b.updated_at) - ms(a.updated_at));
-  const waitingCoding = allSessions.filter((c) => c.status === "awaiting_approval").length;
-  const hasSel = Boolean(threadId || sessionId || projectKey || across || search.get("q") || search.get("new"));
+  // Conversations waiting on a decision, Kai's in them included.
+  const waitingIn = new Set(allSessions.filter((c) => c.thread_id && c.status === "awaiting_approval").map((c) => c.thread_id));
+  const threads = rows
+    .filter((r) => !q || r.title.toLowerCase().includes(q))
+    .map((r) => (waitingIn.has(r.id) ? { ...r, waiting: true } : r))
+    .sort((a, b) => b.at - a.at);
+  // Sessions started from a conversation show in it; the others are listed beside the conversations.
+  const ownSessions = allSessions.filter((c) => !c.thread_id && (!q || `${c.issue_key} ${c.title ?? c.issue_title}`.toLowerCase().includes(q)));
+  const archivedCount = ownSessions.filter((c) => c.archived).length;
+  const sessions = ownSessions.filter((c) => c.archived === Boolean(S.ui.showArchivedSessions));
+  const hasSel = Boolean(threadId || sessionId || projectKey || across || newSession || search.get("q") || search.get("new"));
   // Column widths, dragged by their edges and kept in this browser.
   const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 300, 220, 480);
   // The list folds to a rail (like the sidebar) to give the conversation or session the room; not on phones.
   const [listMinSet, setListMin] = useStoredFlag("dotrix.chat.listMin");
   const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;
+  // A project's conversations and its own coding sessions, together: pinned sessions first, then the latest.
+  const itemsOf = (projectId: string) =>
+    [
+      ...threads
+        .filter((t) => t.projectId === projectId)
+        .map((t) => ({ key: t.id, at: t.at, pinned: false, el: <ThreadRow key={t.id} row={t} on={threadId === t.id} /> })),
+      ...sessions
+        .filter((c) => c.project_id === projectId)
+        .map((c) => ({
+          key: c.session_id,
+          at: ms(c.updated_at),
+          pinned: c.pinned,
+          el: <SessionRow key={c.session_id} cs={c} on={sessionId === c.session_id} />,
+        })),
+    ].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.at - a.at);
   return (
     <div className="page flush">
       <div className={`chat-grid ${hasSel ? "has-sel" : ""}`} style={css({ "--list-w": listMin ? "52px" : `${listW}px` })}>
@@ -1454,67 +1590,20 @@ export function Chat() {
               <button className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
                 <Ic n="panel-left-open" s={16} />
               </button>
-              <button
-                className={`ibtn ${!coding ? "on" : ""}`}
-                onClick={() => open("")}
-                aria-label="Chat"
-                aria-pressed={!coding}
-                data-tip="Chat"
-                data-tip-pos="right"
-              >
-                <Ic n="message-square" s={15} />
-              </button>
-              <button
-                className={`ibtn ${coding ? "on" : ""}`}
-                onClick={() => open("tab=coding")}
-                aria-label={waitingCoding ? `Code, ${waitingCoding} waiting for approval` : "Code"}
-                aria-pressed={coding}
-                data-tip="Code"
-                data-tip-pos="right"
-                style={{ position: "relative" }}
-              >
-                <Ic n="code" s={15} />
-                {waitingCoding > 0 && <span className="badge amber seg-n">{waitingCoding}</span>}
-              </button>
-              <button
-                className="ibtn"
-                onClick={() => open(coding ? "tab=coding" : "new=1")}
-                aria-label={coding ? "New session" : "New chat"}
-                data-tip={coding ? "New session" : "New chat"}
-                data-tip-pos="right"
-              >
+              <button className="ibtn" onClick={() => open("new=1")} aria-label="New chat" data-tip="New chat" data-tip-pos="right">
                 <Ic n="square-pen" s={15} />
+              </button>
+              <button className="ibtn" onClick={() => open("tab=coding")} aria-label="New coding session" data-tip="New coding session" data-tip-pos="right">
+                <Ic n="code" s={15} />
               </button>
             </div>
           ) : (
             <>
               <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(d) => setListW((w) => w + d)} />
               <div style={{ padding: "18px 14px 8px" }} className="row">
-                <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>{coding ? "Code" : "Chat"}</h1>
+                <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Chat</h1>
                 <span className="sp" />
-                <div className="seg seg-icons" role="tablist" aria-label="Chat or code">
-                  <button role="tab" aria-selected={!coding} className={!coding ? "on" : ""} onClick={() => open("")} aria-label="Chat" data-tip="Chat">
-                    <Ic n="message-square" s={14} />
-                  </button>
-                  <button
-                    role="tab"
-                    aria-selected={coding}
-                    className={coding ? "on" : ""}
-                    onClick={() => open("tab=coding")}
-                    aria-label={waitingCoding ? `Code, ${waitingCoding} waiting for approval` : "Code"}
-                    data-tip="Code"
-                  >
-                    <Ic n="code" s={14} />
-                    {waitingCoding > 0 && <span className="badge amber seg-n">{waitingCoding}</span>}
-                  </button>
-                </div>
-                <button
-                  className="ibtn ibtn-sm chat-fold"
-                  onClick={() => setListMin(true)}
-                  aria-label="Hide the list"
-                  data-tip="Hide the list"
-                  style={{ marginLeft: 6 }}
-                >
+                <button className="ibtn ibtn-sm chat-fold" onClick={() => setListMin(true)} aria-label="Hide the list" data-tip="Hide the list">
                   <Ic n="panel-left-close" s={15} />
                 </button>
               </div>
@@ -1524,76 +1613,48 @@ export function Chat() {
                   <input
                     className="input search-sm"
                     style={{ width: "100%" }}
-                    placeholder={coding ? "Find a session" : "Find a conversation"}
+                    placeholder="Find a conversation or session"
                     value={S.ui.chatQ}
                     onChange={(e) => ((S.ui.chatQ = e.target.value), render())}
                     aria-label="Find"
                   />
                 </div>
-                {/* Start something new, under the search: a conversation, or a coding session on the Code tab. */}
-                <button
-                  className={`sitem chat-new ${(coding ? !sessionId : !threadId && !projectKey && !across) ? "on" : ""}`}
-                  onClick={() => open(coding ? "tab=coding" : "new=1")}
-                >
-                  <Ic n={coding ? "code" : "square-pen"} s={15} />
-                  <span className="trunc">{coding ? "New session" : "New chat"}</span>
+                {/* Start something new, under the search: a conversation, or Kai on an issue. */}
+                <button className={`sitem chat-new ${!hasSel || search.get("new") ? "on" : ""}`} onClick={() => open("new=1")}>
+                  <Ic n="square-pen" s={15} />
+                  <span className="trunc">New chat</span>
+                </button>
+                <button className={`sitem chat-new ${newSession ? "on" : ""}`} onClick={() => open("tab=coding")}>
+                  <Ic n="code" s={15} />
+                  <span className="trunc">New coding session</span>
                 </button>
               </div>
-              <nav className="chat-list" aria-label={coding ? "Coding sessions" : "Conversations"}>
-                {coding ? (
-                  sessions.length ? (
-                    ps
-                      .filter((p) => sessions.some((c) => c.project_id === p.id))
-                      .map((p) => (
-                        <div key={p.id} className="chat-group">
-                          <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
-                            <span className="pdot" style={css({ "--c": pColor(p), width: 7, height: 7 })} />
-                            {p.name}
-                          </div>
-                          {sessions
-                            .filter((c) => c.project_id === p.id)
-                            .map((c) => (
-                              <SessionRow key={c.session_id} cs={c} on={sessionId === c.session_id} />
-                            ))}
+              <nav className="chat-list" aria-label="Conversations">
+                {ps.map((p) => {
+                  const list = itemsOf(p.id);
+                  if (!list.length && q) return null;
+                  return (
+                    <Group key={p.id} title={p.name} color={pColor(p)} onNew={() => open(`project=${p.key}`)}>
+                      {list.length ? (
+                        list.map((i) => i.el)
+                      ) : (
+                        <div className="faint" style={{ fontSize: 12, padding: "2px 8px 4px" }}>
+                          No conversations yet
                         </div>
-                      ))
-                  ) : (
-                    <Empty
-                      icon="code"
-                      title={S.ui.showArchivedSessions ? "No archived sessions" : "No coding sessions"}
-                      text={S.ui.showArchivedSessions ? "Archived sessions show here." : "Use “Start coding” on a task, or assign it to Kai."}
-                      cls="sm"
-                    />
-                  )
-                ) : (
-                  <>
-                    {ps.map((p) => {
-                      const list = threads.filter((t) => t.projectId === p.id);
-                      if (!list.length && q) return null;
-                      return (
-                        <Group key={p.id} title={p.name} color={pColor(p)} onNew={() => open(`project=${p.key}`)}>
-                          {list.length ? (
-                            list.map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />)
-                          ) : (
-                            <div className="faint" style={{ fontSize: 12, padding: "2px 8px 4px" }}>
-                              No conversations yet
-                            </div>
-                          )}
-                        </Group>
-                      );
-                    })}
-                    <Group title="Conversations" icon={<Ic n="layers" s={12} />} onNew={() => open("across=1")}>
-                      {threads
-                        .filter((t) => !t.projectId)
-                        .map((t) => (
-                          <ThreadRow key={t.id} row={t} on={threadId === t.id} />
-                        ))}
+                      )}
                     </Group>
-                  </>
-                )}
-                {coding && (archivedCount > 0 || S.ui.showArchivedSessions) && (
+                  );
+                })}
+                <Group title="Conversations" icon={<Ic n="layers" s={12} />} onNew={() => open("across=1")}>
+                  {threads
+                    .filter((t) => !t.projectId)
+                    .map((t) => (
+                      <ThreadRow key={t.id} row={t} on={threadId === t.id} />
+                    ))}
+                </Group>
+                {(archivedCount > 0 || S.ui.showArchivedSessions) && (
                   <button className="linkbtn cs-archived" onClick={() => ((S.ui.showArchivedSessions = !S.ui.showArchivedSessions), render())}>
-                    {S.ui.showArchivedSessions ? "Back to sessions" : `Show archived (${archivedCount})`}
+                    {S.ui.showArchivedSessions ? "Hide archived sessions" : `Show archived sessions (${archivedCount})`}
                   </button>
                 )}
               </nav>
@@ -1601,16 +1662,14 @@ export function Chat() {
           )}
         </aside>
         <section className="chat-main">
-          {coding ? (
-            sessionId ? (
-              cs ? (
-                <Session key={cs.session_id} cs={cs} />
-              ) : (
-                <Pending text={sessionsQ.isFetched ? "This session isn't here: it was deleted, or isn't one you can see." : "Loading the session…"} />
-              )
+          {sessionId ? (
+            cs ? (
+              <Session key={cs.session_id} cs={cs} />
             ) : (
-              <NewSession key={search.get("issue") ?? ""} issue0={search.get("issue")} />
+              <Pending text={sessionsQ.isFetched ? "This session isn't here: it was deleted, or isn't one you can see." : "Loading the session…"} />
             )
+          ) : newSession ? (
+            <NewSession key={search.get("issue") ?? ""} issue0={search.get("issue")} />
           ) : threadId ? (
             thread ? (
               <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />

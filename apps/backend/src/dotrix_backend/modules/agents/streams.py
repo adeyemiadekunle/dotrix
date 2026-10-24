@@ -193,7 +193,8 @@ class RedisRunStreams:
                         continue
                     quiet_since = loop.time()
                     if not await self.redis.exists(keys.active):
-                        break  # the end message was missed (or the worker died)
+                        yield ("lost", "")  # the end message was missed, or the worker died
+                        return
                     yield ("ping", "")
                     continue
                 quiet_since = loop.time()
