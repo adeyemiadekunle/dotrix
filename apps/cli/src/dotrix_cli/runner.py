@@ -34,6 +34,7 @@ from . import sandbox as sandbox_runtime
 
 TOOLS = ("claude-code", "opencode")
 EVENTS_PER_BEAT = 50
+EVENTS_SECONDS = 2.0  # waiting events go out this often (the lease is renewed every third of it regardless)
 STOP_GRACE_SECONDS = 5
 
 
@@ -154,6 +155,9 @@ class LocalRunner:
     echo: Callable[[str], None] = print
     runner_id: str | None = None
     beat_seconds: float | None = None  # between heartbeats while the tool works (default: a third of the lease)
+    # What the agent did reaches the platform this soon (a heartbeat as soon as events wait this long),
+    # so the turn's view in the app keeps up as it does for a cloud turn.
+    events_seconds: float = EVENTS_SECONDS
 
     @property
     def isolation(self) -> str:
@@ -299,8 +303,9 @@ class LocalRunner:
         last = time.monotonic()
         try:
             while not reading.done():
-                await asyncio.wait({reading}, timeout=min(1.0, beat_every))
-                if time.monotonic() - last >= beat_every or len(pending) >= EVENTS_PER_BEAT:
+                await asyncio.wait({reading}, timeout=min(1.0, beat_every, self.events_seconds))
+                since = time.monotonic() - last
+                if since >= beat_every or len(pending) >= EVENTS_PER_BEAT or (pending and since >= self.events_seconds):
                     last = time.monotonic()
                     if await beat():
                         stopped = True

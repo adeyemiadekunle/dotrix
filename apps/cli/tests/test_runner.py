@@ -198,3 +198,41 @@ async def test_a_turn_for_another_project_is_never_coded_here(tmp_path: Path) ->
                        "tool": "claude-code", "brief": "x"})
     [(path, body)] = posted
     assert path.endswith("/runs/run-1/result") and body["outcome"] == "failed" and "another project" in body["error"]
+
+
+async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path: Path) -> None:
+    """The lease is renewed every third of it (40 s by default); events waiting go out every couple
+    of seconds anyway, so a local turn's view keeps up like a cloud turn's."""
+    import shlex
+    import subprocess
+    import sys
+    import time
+
+    origin = tmp_path / "origin"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
+    (origin / "a.txt").write_text("a\n")
+    subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(origin), "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "1"], check=True)
+    checkout = tmp_path / "checkout"
+    subprocess.run(["git", "clone", "-q", str(origin), str(checkout)], check=True)
+
+    started = time.monotonic()
+    calls: list[tuple[float, str, dict]] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            calls.append((time.monotonic() - started, path.rsplit("/", 1)[-1], body or {}))
+            return {"stop": False}
+
+    script = ("import json, time; print(json.dumps({'type': 'assistant', 'message': {'content': "
+              "[{'type': 'text', 'text': 'Looking at a.txt'}]}}), flush=True); time.sleep(4)")
+    runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
+                         command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}", sandbox="none",
+                         worktrees=tmp_path / "trees", echo=lambda _: None)
+    await runner.work({"run_id": "run-000001", "project_id": "p", "lease_token": 1, "lease_seconds": 120,
+                       "issue_key": "KUN-1", "turn": 1, "title": "x", "base_branch": "main", "branch": None,
+                       "tool": "claude-code", "brief": "x"})
+    beats = [(at, body) for at, kind, body in calls if kind == "heartbeat"]
+    sent = next(at for at, body in beats if any(e["text"] == "Looking at a.txt" for e in body["events"]))
+    result = next(at for at, kind, _ in calls if kind == "result")
+    assert sent < 3.5 < result, calls  # while the tool still worked, not at the 40 s lease beat or the end

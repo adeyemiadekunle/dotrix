@@ -264,7 +264,9 @@ codes on its requester's computer instead of a worker's sandbox; everything else
   `POST /workspaces/{ws}/coding/runners/{id}/claim`. It claims only its owner's approved local turns, in
   those projects, checked again at claim time (they may have lost the project or the right to instruct Kai).
 - **Lease and fencing.** A claim is a new lease (`lease_token` + 1, `DOTRIX_CODING_LEASE_SECONDS`), renewed
-  by `.../runs/{run}/heartbeat`, which also carries the agent's events and answers whether to stop. A
+  by `.../runs/{run}/heartbeat`, which also carries the agent's events and answers whether to stop. It renews every
+  third of the lease, and sooner whenever events wait (about every 2 s), so a local turn's view in the app
+  keeps up as a cloud turn's does (both are polled; neither streams tokens yet). A
   newer token fences the runner off (409 `lease_lost`): it stops the tool and writes nothing more. A
   lapsed lease makes the turn `recovery_required` like a worker's; recovery queues it again for the
   runner (never for a worker), within the same attempt cap.
