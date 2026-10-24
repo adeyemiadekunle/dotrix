@@ -5506,6 +5506,16 @@ export interface components {
              * @description A local turn: the computer that claimed it
              */
             runner_name?: string | null;
+            /**
+             * Runner Id
+             * @description A local turn: the runner that claimed it
+             */
+            runner_id?: string | null;
+            /**
+             * Worktree
+             * @description A local turn: its worktree on that computer (only to whoever asked for it)
+             */
+            worktree?: string | null;
         };
         /**
          * CodingRunStatus
@@ -8020,6 +8030,11 @@ export interface components {
             events?: components["schemas"]["RunnerEvent"][];
             /** Base Sha */
             base_sha?: string | null;
+            /**
+             * Worktree
+             * @description The turn's worktree on this computer
+             */
+            worktree?: string | null;
         };
         /** RunnerHeartbeatRead */
         RunnerHeartbeatRead: {

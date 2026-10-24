@@ -145,6 +145,8 @@ class CodingRunRead(BaseModel):
     revert_of: uuid.UUID | None = Field(default=None, description="The turn this one reverts")
     location: CodingLocation = Field(default=CodingLocation.CLOUD, description="Where it codes")
     runner_name: str | None = Field(default=None, description="A local turn: the computer that claimed it")
+    runner_id: uuid.UUID | None = Field(default=None, description="A local turn: the runner that claimed it")
+    worktree: str | None = Field(default=None, description="A local turn: its worktree on that computer (only to whoever asked for it)")
 
 
 class CodingSessionUpdate(BaseModel):
@@ -238,6 +240,7 @@ class RunnerHeartbeat(BaseModel):
     lease_token: int
     events: list[RunnerEvent] = Field(default_factory=list, max_length=200)
     base_sha: str | None = Field(default=None, min_length=40, max_length=40)
+    worktree: str | None = Field(default=None, max_length=1024, description="The turn's worktree on this computer")
 
 
 class RunnerHeartbeatRead(BaseModel):

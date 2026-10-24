@@ -229,12 +229,13 @@ def device_login(
     open_browser: bool = True,
     sleep: Callable[[float], None] | None = None,
     scopes: list[str] | None = None,
+    client_name: str = CLIENT_NAME,
 ) -> Credential:
     """Start a device login, let the user approve it in the browser, and return the token.
 
     `show(user_code, verification_uri, verification_uri_complete)` tells the user what to do.
     """
-    start = client.post("/auth/device/code", {"client_name": CLIENT_NAME, "scopes": scopes or ["read", "write"]})
+    start = client.post("/auth/device/code", {"client_name": client_name, "scopes": scopes or ["read", "write"]})
     show(start["user_code"], start["verification_uri"], start["verification_uri_complete"])
     if open_browser:
         try:

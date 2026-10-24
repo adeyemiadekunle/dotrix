@@ -218,6 +218,7 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
 
     started = time.monotonic()
     calls: list[tuple[float, str, dict]] = []
+    notified: list[dict] = []
 
     class Api:
         async def post(self, path: str, body=None):
@@ -228,7 +229,7 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
               "[{'type': 'text', 'text': 'Looking at a.txt'}]}}), flush=True); time.sleep(4)")
     runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
                          command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}", sandbox="none",
-                         worktrees=tmp_path / "trees", echo=lambda _: None)
+                         worktrees=tmp_path / "trees", echo=lambda _: None, notify=notified.append)
     await runner.work({"run_id": "run-000001", "project_id": "p", "lease_token": 1, "lease_seconds": 120,
                        "issue_key": "KUN-1", "turn": 1, "title": "x", "base_branch": "main", "branch": None,
                        "tool": "claude-code", "brief": "x"})
@@ -236,6 +237,10 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     sent = next(at for at, body in beats if any(e["text"] == "Looking at a.txt" for e in body["events"]))
     result = next(at for at, kind, _ in calls if kind == "result")
     assert sent < 3.5 < result, calls  # while the tool still worked, not at the 40 s lease beat or the end
+    # Where the turn's worktree is: to the platform (the desktop app opens it) and to whatever runs this.
+    tree = beats[0][1]["worktree"]
+    assert Path(tree).is_relative_to(tmp_path / "trees") and notified == [
+        {"event": "turn", "run_id": "run-000001", "issue_key": "KUN-1", "turn": 1, "worktree": tree}]
 
 
 def test_tool_calls_read_as_a_cloud_turns_do_so_the_terminal_panel_lists_them(tmp_path: Path) -> None:
@@ -269,3 +274,47 @@ def test_a_commands_output_is_kept_with_it_for_the_terminal_panel() -> None:
     assert output["kind"] == "output" and output["ref"] == "t1" and output["text"].endswith("1 passed")
     assert len(output["text"]) < 8_100 and "characters left out" in output["text"]  # its end kept, not the file read
     assert ls["ref"] == ls_out["ref"] == "c9" and ls_out == {"kind": "output-error", "text": "a.py", "ref": "c9"}
+
+
+async def test_stopping_the_runner_stops_the_tool_it_started(tmp_path: Path) -> None:
+    """The tool runs in a process group of its own: when the runner is cancelled (Ctrl-C, or the
+    desktop app stopping it), the tool is stopped too rather than left coding with no one to report it."""
+    import asyncio
+    import os
+    import shlex
+    import subprocess
+    import sys
+
+    import pytest
+
+    origin = tmp_path / "origin"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
+    (origin / "a.txt").write_text("a\n")
+    subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(origin), "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "1"], check=True)
+    checkout = tmp_path / "checkout"
+    subprocess.run(["git", "clone", "-q", str(origin), str(checkout)], check=True)
+    pid_file = tmp_path / "tool.pid"
+
+    class Api:
+        async def post(self, path: str, body=None):
+            return {"stop": False}
+
+    script = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(60)"
+    runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
+                         command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}", sandbox="none",
+                         worktrees=tmp_path / "trees", echo=lambda _: None)
+    work = asyncio.create_task(runner.work({
+        "run_id": "run-000001", "project_id": "p", "lease_token": 1, "lease_seconds": 120, "issue_key": "KUN-1",
+        "turn": 1, "title": "x", "base_branch": "main", "branch": None, "tool": "claude-code", "brief": "x"}))
+    for _ in range(100):
+        if pid_file.exists() and pid_file.read_text():
+            break
+        await asyncio.sleep(0.1)
+    pid = int(pid_file.read_text())
+    work.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await work
+    await asyncio.sleep(0.2)
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)

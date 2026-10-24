@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc && electron .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bundle-cli": "uv run --no-project python ../cli/scripts/standalone.py"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

@@ -1459,6 +1459,10 @@ async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushe
     assert github.pulls == [] and _git(origin, "branch", "--list", "dotrix/*") == ""
     [tree] = (tmp_path / "worktrees" / kun["id"]).iterdir()
     assert (tree / "src/refunds.py").read_text() == "def refund(a):\n    return a\n"
+    # Where it is on her computer (the desktop app opens it): for her, no one else.
+    assert ready["worktree"] == str(tree) and ready["runner_id"] == registered["id"]
+    as_approver = await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)
+    assert as_approver.status_code == 404 or as_approver.json()["worktree"] is None
 
     # Accepted: the platform pushes it (the worker's publish-only pass), as for a cloud turn.
     agent_script.say("Fine.")

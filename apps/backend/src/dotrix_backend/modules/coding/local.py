@@ -164,6 +164,8 @@ class LocalRunners:
         run.lease_expires_at = now + timedelta(seconds=self.settings.coding_lease_seconds)
         if data.base_sha:
             run.base_sha = data.base_sha
+        if data.worktree:
+            run.worktree = data.worktree
         add_events(run, self.session, events=_events(data.events))
         stop = run.stop_requested
         await self.session.commit()

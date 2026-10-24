@@ -24279,6 +24279,31 @@
             ],
             "title": "Runner Name",
             "description": "A local turn: the computer that claimed it"
+          },
+          "runner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runner Id",
+            "description": "A local turn: the runner that claimed it"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worktree",
+            "description": "A local turn: its worktree on that computer (only to whoever asked for it)"
           }
         },
         "type": "object",
@@ -30194,6 +30219,19 @@
               }
             ],
             "title": "Base Sha"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worktree",
+            "description": "The turn's worktree on this computer"
           }
         },
         "type": "object",
