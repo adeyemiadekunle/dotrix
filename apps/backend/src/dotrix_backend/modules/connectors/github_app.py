@@ -39,6 +39,7 @@ class Installation:
 class PullRequest:
     number: int
     html_url: str
+    state: str = "open"  # "open", "closed", or "merged"
 
 
 @dataclass(frozen=True)
@@ -208,7 +209,9 @@ class GitHubAppClient:
                        key=lambda p: int(p["number"])) if isinstance(found, list) else []
         if not pulls:
             return None
-        return PullRequest(number=int(pulls[-1]["number"]), html_url=str(pulls[-1]["html_url"]))
+        latest = pulls[-1]
+        state = "merged" if latest.get("merged_at") else ("closed" if latest.get("state") == "closed" else "open")
+        return PullRequest(number=int(latest["number"]), html_url=str(latest["html_url"]), state=state)
 
     async def org_installation(self, org: str) -> int:
         """The app's installation on an organisation (where coding runs' forks live)."""

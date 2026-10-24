@@ -21,7 +21,12 @@ from sqlalchemy import update
 from dotrix_backend.core.crypto import Secrets
 from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
 from dotrix_backend.modules.coding.recovery import recover_uncertain_runs
-from dotrix_backend.modules.coding.runner import SHOTS_LIST, CodingWorker, _ReconciliationRequired
+from dotrix_backend.modules.coding.runner import (
+    _LEASE,
+    SHOTS_LIST,
+    CodingWorker,
+    _ReconciliationRequired,
+)
 from dotrix_backend.modules.coding.sandbox import ExecResult, LocalSandbox, LocalSession
 from dotrix_backend.modules.coding.warm import WarmPool
 from dotrix_backend.modules.connectors.github_app import get_github_app
@@ -912,13 +917,38 @@ async def test_a_lost_pr_reply_is_settled_from_github(
     issue = (await db_client.get(f"{base}/issues/{run['issue_key']}", headers=ada.headers)).json()
     assert issue["status"] == "review" and any(link["url"] == opened["pr_url"] for link in issue["links"])
 
-    # Had the PR been opened with its reply lost, recovery finds it rather than opening another.
+    # Had the PR been opened with its reply lost, recovery finds it rather than opening another,
+    # as it is now (closed meanwhile, say: the next turn then starts a new branch and PR).
     await _set_run(db_client, run["id"], status=CodingRunStatus.RECOVERY_REQUIRED, pr_number=None, pr_url=None)
+    github.pulls[0]["state"] = "closed"
     adopted = (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
                                     headers=ada.headers)).json()
     assert adopted["status"] == "pr_opened" and adopted["pr_number"] == 1 and len(github.pulls) == 1
+    assert adopted["pr_state"] == "closed"
     assert (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
                                  headers=ada.headers)).status_code == 409  # settled
+
+
+async def test_a_stopped_run_is_never_published_or_run_again_by_recovery(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
+) -> None:
+    ada, *_ = coding
+    github.branch_heads = _heads(origin)
+    base, run = await _asked(db_client, coding)
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    github.fail_pulls = 1
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    # Stopped after its push, before its PR (the Stop that came in as the reply was lost).
+    await _set_run(db_client, run["id"], stop_requested=True)
+    stopped = (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
+                                    headers=ada.headers)).json()
+    assert stopped["status"] == "stopped" and "no PR was opened" in stopped["error"] and not github.pulls
+    # And one stopped before it published anything isn't run again.
+    _, other = await _asked(db_client, coding, "Another")
+    await _set_run(db_client, other["id"], status=CodingRunStatus.RECOVERY_REQUIRED, lease_token=1, stop_requested=True)
+    again = (await db_client.post(f"{base}/coding/runs/{other['id']}/recover", json={"action": "check"},
+                                  headers=ada.headers)).json()
+    assert again["status"] == "stopped" and again["error"] == "Stopped before it published anything"
 
 
 async def test_a_branch_that_moved_on_waits_for_a_person(
@@ -982,7 +1012,7 @@ async def test_a_worker_that_lost_its_lease_is_fenced_off(db_client: AsyncClient
     run_id = uuid.UUID(run["id"])
     await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING, lease_token=1,
                    lease_expires_at=datetime.now(UTC) + timedelta(seconds=1))
-    worker._leases[run_id] = 1
+    lease = _LEASE.set(1)  # this test's task is the worker's attempt with token 1
     before, settings.coding_lease_seconds = settings.coding_lease_seconds, 0.3  # renewed every 0.1 s
     try:
         holding = asyncio.create_task(worker._hold_lease(run_id, 1))
@@ -1002,4 +1032,12 @@ async def test_a_worker_that_lost_its_lease_is_fenced_off(db_client: AsyncClient
     await worker._end(run_id, CodingRunStatus.FAILED, error="stale")
     assert (await db_client.get(f"{coding[2]}/projects/{coding[3]['id']}/coding/runs/{run['id']}",
                                 headers=coding[0].headers)).json()["status"] == "running"  # untouched
-    worker._leases.pop(run_id)
+    _LEASE.reset(lease)
+
+    # Two attempts on one worker (the first one cut off, still alive): each keeps its own token.
+    async def sees_stop(token: int) -> bool:
+        _LEASE.set(token)
+        return await worker.stop_requested(run_id)
+
+    # (one after the other: the test's connection is shared)
+    assert [await asyncio.create_task(sees_stop(t)) for t in (1, 2)] == [True, False]

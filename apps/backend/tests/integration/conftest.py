@@ -112,7 +112,8 @@ class FakeGitHub:
             full_name = path.removeprefix("/repos/").removesuffix("/pulls")
             owner, _, branch = request.url.params["head"].partition(":")
             found = [{"number": n, "html_url": f"https://github.com/{full_name}/pull/{n}",
-                      "head": {"ref": p["head"].split(":")[-1]}}
+                      "head": {"ref": p["head"].split(":")[-1]}, "state": p.get("state", "open"),
+                      "merged_at": p.get("merged_at")}
                      for n, p in enumerate(self.pulls, 1) if p["repo"] == full_name]
             return httpx.Response(200, json=found if branch else [])  # GitHub checks the owner; the client the branch
         if path.startswith("/repos/") and path.endswith("/pulls") and request.method == "POST":

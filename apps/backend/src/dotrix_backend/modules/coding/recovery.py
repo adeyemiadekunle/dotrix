@@ -52,6 +52,7 @@ class Recovered(enum.StrEnum):
     ADOPTED_PR = "adopted_pr"  # the push and its PR landed: the run is done
     OPENED_PR = "opened_pr"  # the push landed, its PR didn't: opened now
     RETRIED = "retried"  # nothing was published: the turn runs again
+    STOPPED = "stopped"  # someone stopped it: nothing more is published, nothing runs again
     FAILED = "failed"  # nothing was published, and it can't run again
     UNCLEAR = "unclear"  # GitHub doesn't settle it: a person looks and discards the run
     DISCARDED = "discarded"
@@ -101,6 +102,9 @@ async def recover(
         pr = await app.find_pull_request(repo.full_name, f"{owner}:{run.branch}", token=token)
         if pr is not None:
             return await _settle(session, run, Recovered.ADOPTED_PR, by, pr=pr)
+        if run.stop_requested:  # stopped after its push: what landed stays, the PR isn't opened
+            return await _settle(session, run, Recovered.STOPPED, by, error=(
+                f"Stopped after pushing {run.branch}; no PR was opened"))
         if (refused := await _refused(session, run)) is not None:
             return await _settle(session, run, Recovered.FAILED, by, error=refused + " The branch is on GitHub.")
         tool = tool_for(run.agent, run.model)
@@ -115,6 +119,8 @@ async def recover(
         return await _settle(session, run, Recovered.OPENED_PR, by, pr=pr)
 
     if run.commit_sha is None or head is None or head == run.base_sha:  # nothing of this turn was published
+        if run.stop_requested:
+            return await _settle(session, run, Recovered.STOPPED, by, error="Stopped before it published anything")
         if run.lease_token >= MAX_ATTEMPTS:
             return await _settle(session, run, Recovered.FAILED, by, error=(
                 f"Cut off {run.lease_token} times before anything was published; ask {CODING_AGENT_NAME} again"))
@@ -192,17 +198,20 @@ async def _settle(
     now = datetime.now(UTC)
     if pr is not None:
         run.pr_number, run.pr_url = pr.number, pr.html_url
-        run.pr_state = run.pr_state or PrState.OPEN
+        run.pr_state = PrState(pr.state)  # it may have been closed or merged since
     if outcome in (Recovered.ADOPTED_PR, Recovered.OPENED_PR):
         run.status, run.finished_at, run.error = CodingRunStatus.PR_OPENED, now, None
     elif outcome in (Recovered.FAILED, Recovered.DISCARDED):
         run.status, run.finished_at, run.error = CodingRunStatus.FAILED, now, error
+    elif outcome is Recovered.STOPPED:
+        run.status, run.finished_at, run.error = CodingRunStatus.STOPPED, now, error
     elif outcome is Recovered.UNCLEAR:
         run.error = error
     said = {
         Recovered.ADOPTED_PR: f"Recovered: the push landed, PR #{run.pr_number}",
         Recovered.OPENED_PR: f"Recovered: the push landed; opened PR #{run.pr_number}",
         Recovered.RETRIED: "Recovered: nothing was published; running the turn again",
+        Recovered.STOPPED: f"Recovered: {error}",
         Recovered.FAILED: f"Recovery ended the run: {error}",
         Recovered.UNCLEAR: "Recovery couldn't tell from GitHub what happened",
         Recovered.DISCARDED: "Discarded after an uncertain outcome",

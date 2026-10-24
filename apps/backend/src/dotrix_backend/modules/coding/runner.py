@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextvars
 import hashlib
 import logging
 import re
@@ -79,6 +80,8 @@ from .warm import WarmPool, close_quietly
 
 logger = logging.getLogger(__name__)
 
+# The lease token of the coding attempt running in this task (None: not under a lease).
+_LEASE: contextvars.ContextVar[int | None] = contextvars.ContextVar("coding_lease", default=None)
 MAX_EVENTS = 300  # kept on the run for quick reads; coding_events has every one
 # The agent's screenshots kept per turn: the newest images it left under /tmp (Playwright MCP's
 # output folder, or where it saved one), each at most this many bytes.
@@ -161,7 +164,6 @@ class CodingWorker:
     pool: WarmPool = field(default_factory=lambda: WarmPool(30 * 60, 3))  # sessions' sandboxes between turns
     slots: RunSlots = field(default_factory=lambda: RunSlots(0))  # coding runs working at once (0: no limit)
     _reaper: asyncio.Task[None] | None = field(default=None, repr=False)
-    _leases: dict[uuid.UUID, int] = field(default_factory=dict, repr=False)  # run -> the lease token this worker holds
 
     async def execute(
         self, run_id: uuid.UUID, *, operation: DispatchOperation | None = None,
@@ -194,7 +196,9 @@ class CodingWorker:
             # connection was lost. Leave this empty directory for reconciliation.
             await session.commit()
         assert work is not None
-        self._leases[run_id] = token
+        # This attempt's own token: the task (and the tasks it starts) see it, a retry of the same
+        # run on this worker sees its own.
+        holding = _LEASE.set(token)
         heartbeat = asyncio.create_task(self._hold_lease(run_id, token))
         try:
             try:
@@ -234,6 +238,7 @@ class CodingWorker:
             heartbeat.cancel()
             await self._release_lease(run_id, token)
             await self._cleanup_finished_workspace(run_id, work)
+            _LEASE.reset(holding)
 
     async def _hold_lease(self, run_id: uuid.UUID, token: int) -> None:
         """Renew the lease while the run works; stop once another worker holds it or it ended."""
@@ -256,7 +261,6 @@ class CodingWorker:
                 return
 
     async def _release_lease(self, run_id: uuid.UUID, token: int) -> None:
-        self._leases.pop(run_id, None)
         try:
             async with self.session_factory() as session:
                 await session.execute(update(CodingRun).where(
@@ -268,7 +272,7 @@ class CodingWorker:
 
     def _holds(self, run: CodingRun) -> bool:
         """Whether this worker still holds the run's lease (a newer attempt fences it off)."""
-        token = self._leases.get(run.id)
+        token = _LEASE.get()
         return token is None or run.lease_token == token
 
     async def _cleanup_finished_workspace(self, run_id: uuid.UUID, work: Path) -> None:
@@ -735,7 +739,7 @@ class CodingWorker:
         if found is None:
             return True
         stop, status, token = found
-        mine = self._leases.get(run_id)
+        mine = _LEASE.get()
         return bool(stop) or (mine is not None and (token != mine or status is not CodingRunStatus.RUNNING))
 
     async def reconciliation_required(self, run_id: uuid.UUID) -> bool:
