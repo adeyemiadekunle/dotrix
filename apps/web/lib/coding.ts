@@ -242,7 +242,8 @@ const ACTIVE_TURN: CodingRunStatus[] = ["queued", "running"];
 /** A turn's changes as a unified diff (the panel's Changes); refreshed while the turn works. */
 export function useCodingDiff(scope: Scope | undefined, run: Pick<CodingRun, "id" | "status"> | undefined) {
   return useQuery({
-    queryKey: ["coding-run", scope?.projectId, run?.id, "diff"],
+    // The status in the key: when the turn moves on (finished, changes ready), the diff is fetched once more.
+    queryKey: ["coding-run", scope?.projectId, run?.id, "diff", run?.status],
     queryFn: () =>
       unwrap(
         api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/diff", {
@@ -250,6 +251,7 @@ export function useCodingDiff(scope: Scope | undefined, run: Pick<CodingRun, "id
         }),
       ),
     enabled: Boolean(scope && run),
+    placeholderData: (previous, query) => (query?.queryKey[2] === run?.id ? previous : undefined), // the same turn's, while its next status loads
     refetchInterval: run && ACTIVE_TURN.includes(run.status) ? 5_000 : false,
   });
 }
@@ -289,7 +291,7 @@ export function useCodingFile(scope: Scope | undefined, runId: string | undefine
 /** Every event of a turn (its commands and their output, for the panel's Terminal), refreshed while it works. */
 export function useCodingEvents(scope: Scope | undefined, run: Pick<CodingRun, "id" | "status"> | undefined, enabled: boolean) {
   return useQuery({
-    queryKey: ["coding-run", scope?.projectId, run?.id, "events"],
+    queryKey: ["coding-run", scope?.projectId, run?.id, "events", run?.status],
     queryFn: async () => {
       const all: CodingEventRead[] = [];
       let after = -1;
@@ -306,6 +308,7 @@ export function useCodingEvents(scope: Scope | undefined, run: Pick<CodingRun, "
       return all;
     },
     enabled: Boolean(scope && run) && enabled,
+    placeholderData: (previous, query) => (query?.queryKey[2] === run?.id ? previous : undefined), // the same turn's, while its next status loads
     refetchInterval: run && ACTIVE_TURN.includes(run.status) ? 2_000 : false,
   });
 }

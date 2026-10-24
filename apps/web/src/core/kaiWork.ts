@@ -30,7 +30,27 @@ export function parseDiff(diff: string): DiffFile[] {
   let hunk: DiffHunk | null = null;
   let oldNo = 0;
   let newNo = 0;
+  // Lines a hunk still has (from its header): while it has any, every line is its content, even one
+  // that starts "+++" or "---" (an added "++x", a removed "--" rule), never a file's header.
+  let oldLeft = 0;
+  let newLeft = 0;
   for (const line of diff.split("\n")) {
+    if (hunk && file && !file.binary && (oldLeft > 0 || newLeft > 0)) {
+      if (line.startsWith("+")) {
+        hunk.lines.push({ kind: "add", text: line.slice(1), old: null, new: newNo++ });
+        file.added++;
+        newLeft--;
+      } else if (line.startsWith("-")) {
+        hunk.lines.push({ kind: "del", text: line.slice(1), old: oldNo++, new: null });
+        file.removed++;
+        oldLeft--;
+      } else if (line.startsWith(" ") || line === "") {
+        hunk.lines.push({ kind: "ctx", text: line.slice(1), old: oldNo++, new: newNo++ });
+        oldLeft--;
+        newLeft--;
+      }
+      continue; // "\ No newline at end of file" and the like: not a line of the file
+    }
     if (line.startsWith("diff --git ")) {
       const m = line.match(/^diff --git ("?)a\/(.+?)\1 ("?)b\/(.+?)\3$/);
       file = { path: unquote(m ? m[4]! : line.slice(11)), status: "modified", binary: false, added: 0, removed: 0, hunks: [] };
@@ -45,21 +65,13 @@ export function parseDiff(diff: string): DiffFile[] {
     } else if (line.startsWith("GIT binary patch") || line.startsWith("Binary files ")) {
       file.binary = true;
     } else if (line.startsWith("@@")) {
-      const m = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      const m = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
       oldNo = m ? Number(m[1]) : 0;
-      newNo = m ? Number(m[2]) : 0;
+      newNo = m ? Number(m[3]) : 0;
+      oldLeft = m ? Number(m[2] ?? 1) : 0;
+      newLeft = m ? Number(m[4] ?? 1) : 0;
       hunk = { header: line, lines: [] };
       file.hunks.push(hunk);
-    } else if (hunk && !file.binary) {
-      if (line.startsWith("+") && !line.startsWith("+++")) {
-        hunk.lines.push({ kind: "add", text: line.slice(1), old: null, new: newNo++ });
-        file.added++;
-      } else if (line.startsWith("-") && !line.startsWith("---")) {
-        hunk.lines.push({ kind: "del", text: line.slice(1), old: oldNo++, new: null });
-        file.removed++;
-      } else if (line.startsWith(" ")) {
-        hunk.lines.push({ kind: "ctx", text: line.slice(1), old: oldNo++, new: newNo++ });
-      }
     }
   }
   return files;

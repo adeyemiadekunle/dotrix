@@ -40,6 +40,34 @@ describe("the panel's helpers", () => {
     ]);
   });
 
+  it("keeps a hunk's lines that start like a file's header", async () => {
+    const { parseDiff } = await import("./kaiWork");
+    const [f] = parseDiff(
+      [
+        "diff --git a/a.c b/a.c",
+        "--- a/a.c",
+        "+++ b/a.c",
+        "@@ -1,2 +1,2 @@",
+        "---",
+        "+++counter;",
+        " end",
+        "\\ No newline at end of file",
+        "diff --git a/b.md b/b.md",
+        "--- a/b.md",
+        "+++ b/b.md",
+        "@@ -1 +1 @@",
+        "-x",
+        "+y",
+      ].join("\n"),
+    );
+    expect(f!.hunks[0]!.lines.map((l) => [l.kind, l.text, l.old, l.new])).toEqual([
+      ["del", "--", 1, null],
+      ["add", "++counter;", null, 1],
+      ["ctx", "end", 2, 2],
+    ]);
+    expect([f!.added, f!.removed]).toEqual([1, 1]);
+  });
+
   it("builds the tree with folders first and counts what changed under each", async () => {
     const { buildTree } = await import("./kaiWork");
     const tree = buildTree([
