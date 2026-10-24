@@ -57,6 +57,7 @@ from dotrix_backend.modules.execution.service import (
 from dotrix_backend.modules.issues.models import IssueStatus
 from dotrix_backend.modules.issues.schemas import IssueUpdate, Link
 from dotrix_backend.modules.issues.service import IssueActor, IssueService
+from dotrix_backend.modules.model_keys.service import run_keys
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
@@ -72,7 +73,7 @@ from .models import (
 )
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
 from .slots import RunSlots, Stopped
-from .tools import BROWSER_RULE, CodingTool, Usage, tool_for
+from .tools import BROWSER_RULE, CodingTool, Usage, run_key, tool_for
 from .warm import WarmPool, close_quietly
 
 logger = logging.getLogger(__name__)
@@ -274,9 +275,12 @@ class CodingWorker:
             tool = tool_for(agent, model)
             if tool is None:
                 raise RunFailed(f"OpenCode can't run {model or 'without a model'} here")
-            key = tool.server_key(self.settings)
+            # The same key chat would use for this person: their own, the workspace's, or the server's.
+            keys = await run_keys(session, self.secrets, run.workspace_id, run.requested_by_id)
+            key = run_key(tool, self.settings, keys.keys)
             if key is None:
-                raise RunFailed(f"The server has no key for {tool.name} any more")
+                raise RunFailed(f"There's no {tool.provider} key for {tool.name} here any more "
+                                "(Settings → Models, or your own in Account → Your models)")
 
         # 1. Our checkout, with a token for this repo only (an hour long, never stored). With a fork
         # owner, the branch goes to the app's fork: the PR's CI then gets none of the repo's secrets,
@@ -309,7 +313,8 @@ class CodingWorker:
         #    the session's transcript restored so a tool that can resume (Claude Code) continues its
         #    conversation.
         resumable = tool.resumes
-        box = self.pool.take(session_id)
+        credential = hashlib.sha256(key.encode()).hexdigest()  # which key the sandbox holds, for the pool
+        box = await self.pool.take(session_id, credential)
         warm = False
         if box is not None:
             here = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=60)
@@ -434,7 +439,7 @@ class CodingWorker:
                 except Exception:
                     keep = False
             if keep:
-                for closed in await self.pool.put(session_id, workspace_id, box):
+                for closed in await self.pool.put(session_id, workspace_id, box, credential):
                     await self._session(closed, state=CodingSessionState.IDLE)
                 if session_id in self.pool.sessions():
                     await self._session(session_id, state=CodingSessionState.WARM)

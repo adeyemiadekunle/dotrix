@@ -55,7 +55,7 @@ Coding = Annotated[CodingService, Depends(get_coding_service)]
 async def coding_availability(access: ProjectViewer, coding: Coding) -> CodingAvailability:
     """Whether this project's issues can be coded here, by which tool, and if not, why not.
     Anyone who sees the project."""
-    return await coding.availability(access.project)
+    return await coding.availability(access.project, access.member.user_id)
 
 
 @router.post("/issues/{key}/runs", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422))

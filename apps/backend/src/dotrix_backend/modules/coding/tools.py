@@ -80,6 +80,7 @@ class CodingTool(Protocol):
 
     agent: CodingAgent
     name: str  # as people read it: run steps, commits, PRs
+    provider: str  # whose model it runs on, as dotrix names it ("anthropic"): the key it takes (`run_key`)
     key_env: str  # the model key's environment variable
     provider_type: str  # its OpenShell provider profile
     api_host: str  # where its model API is (the Docker sandbox lets it through, nothing else)
@@ -177,6 +178,7 @@ def _describe_claude_tool(name: str, args: dict[str, Any]) -> str | None:
 class ClaudeCode(_NoUsageCommand):
     agent = CodingAgent.CLAUDE_CODE
     name = "Claude Code"
+    provider = "anthropic"
     key_env = "ANTHROPIC_API_KEY"
     provider_type = "dotrix-claude-code"
     api_host = "api.anthropic.com"
@@ -268,6 +270,7 @@ class ClaudeCode(_NoUsageCommand):
 class Codex(_NoUsageCommand):
     agent = CodingAgent.CODEX
     name = "Codex"
+    provider = "openai"
     key_env = "OPENAI_API_KEY"
     provider_type = "dotrix-codex"
     api_host = "api.openai.com"
@@ -414,7 +417,8 @@ class OpenCode:
     browser = False  # not yet: Playwright MCP through `OPENCODE_CONFIG_CONTENT` is unchecked
 
     def __init__(self, provider: OpenCodeProvider) -> None:
-        self.provider = provider
+        self.opencode_provider = provider
+        self.provider = provider.name
         self.key_env, self.api_host, self.base_url_env = provider.key_env, provider.api_host, provider.base_url_env
         self.provider_type = f"dotrix-opencode-{provider.opencode}"  # infra/coding/dotrix-opencode-*.yaml
 
@@ -422,13 +426,13 @@ class OpenCode:
         """Its settings, before every command (`env …`): the same in each sandbox, OpenShell's too,
         which passes the sandbox nothing but the key. None of them is a secret."""
         config: dict[str, Any] = {
-            "enabled_providers": [self.provider.opencode],  # not every provider it finds credentials for
+            "enabled_providers": [self.opencode_provider.opencode],  # not every provider it finds credentials for
             "permission": {tool: "deny" for tool in OPENCODE_DENIED},
             "autoupdate": False,
         }
         if base_url := os.environ.get(self.base_url_env, "").rstrip("/"):
             # The URL itself, not `{env:…}`: OpenShell passes the sandbox nothing but the key.
-            config["provider"] = {self.provider.opencode: {"options": {"baseURL": base_url + self.provider.base_url_suffix}}}
+            config["provider"] = {self.opencode_provider.opencode: {"options": {"baseURL": base_url + self.opencode_provider.base_url_suffix}}}
         return [
             f"OPENCODE_CONFIG_CONTENT={json.dumps(config, separators=(',', ':'))}",
             "OPENCODE_DISABLE_PROJECT_CONFIG=1",  # the repo's opencode.json is data, not config
@@ -442,7 +446,7 @@ class OpenCode:
     def command(self, model: str | None, browser: bool = False) -> list[str]:
         argv = ["env", *self._env(), "opencode", "run", "--standalone", "--format", "json", "--auto"]
         if model:
-            argv += ["-m", f"{self.provider.opencode}/{model.partition(':')[2] or model}"]
+            argv += ["-m", f"{self.opencode_provider.opencode}/{model.partition(':')[2] or model}"]
         return argv
 
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
@@ -476,7 +480,7 @@ class OpenCode:
         return {self.key_env: model_key}
 
     def server_key(self, settings: Settings) -> str | None:
-        return _secret(getattr(settings, self.provider.setting, None))
+        return _secret(getattr(settings, self.opencode_provider.setting, None))
 
     def model(self, settings: Settings) -> str | None:
         return settings.coding_opencode_model
@@ -532,20 +536,31 @@ def tool_for(agent: CodingAgent, model: str | None = None) -> CodingTool | None:
     return OpenCode(provider) if provider is not None and (model or "").partition(":")[2] else None
 
 
-def model_key(settings: Settings, agent: CodingAgent) -> str | None:
+def run_key(tool: CodingTool, settings: Settings, keys: dict[str, str]) -> str | None:
+    """The key a run's tool codes with, as chat picks one (`run_keys`): the person's own or the
+    workspace's for its provider (`keys`), else the server's when it lends its keys."""
+    if keys.get(tool.provider):
+        return keys[tool.provider]
+    return tool.server_key(settings) if settings.server_model_keys else None
+
+
+def _can_run(settings: Settings, agent: CodingAgent, providers: frozenset[str] | set[str]) -> bool:
     tool = tool_for(agent, model_for(settings, agent))
-    return tool.server_key(settings) if tool is not None else None
+    return tool is not None and (
+        tool.provider in providers or (settings.server_model_keys and tool.server_key(settings) is not None)
+    )
 
 
-def choose_agent(settings: Settings) -> CodingAgent | None:
-    """Claude Code when the server has an Anthropic key, else Codex with an OpenAI key (or the one
-    `DOTRIX_CODING_AGENT` names, if its key is there: OpenCode only when named, with
-    `DOTRIX_CODING_OPENCODE_MODEL`); None when none can run."""
+def choose_agent(settings: Settings, providers: frozenset[str] | set[str] = frozenset()) -> CodingAgent | None:
+    """Claude Code when there's an Anthropic key, else Codex with an OpenAI key (or the one
+    `DOTRIX_CODING_AGENT` names, if there's a key for it: OpenCode only when named, with
+    `DOTRIX_CODING_OPENCODE_MODEL`); None when none can run. A key is the workspace's or the
+    person's own for that provider (`providers`), or the server's when it lends its keys."""
     if settings.coding_agent != "auto":
         agent = CodingAgent(settings.coding_agent)
-        return agent if model_key(settings, agent) else None
+        return agent if _can_run(settings, agent, providers) else None
     for agent in (CodingAgent.CLAUDE_CODE, CodingAgent.CODEX):
-        if model_key(settings, agent):
+        if _can_run(settings, agent, providers):
             return agent
     return None
 

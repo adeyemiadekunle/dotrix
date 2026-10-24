@@ -27,7 +27,7 @@ async def test_the_pool_keeps_a_few_per_workspace_and_closes_the_oldest() -> Non
     assert await pool.put(d, other, boxes[d]) == []  # another workspace's limit is its own
     assert await pool.put(c, acme, boxes[c]) == [a] and boxes[a].closed  # the least recently used goes
     assert set(pool.sessions()) == {b, c, d}
-    assert pool.take(b) is boxes[b] and pool.take(b) is None  # taken for a turn: out of the pool
+    assert await pool.take(b) is boxes[b] and await pool.take(b) is None  # taken for a turn: out of the pool
     assert pool.idle() == []
 
 
@@ -40,3 +40,12 @@ async def test_idle_sandboxes_are_found_and_a_limit_of_zero_keeps_none() -> None
     none = WarmPool(idle_seconds=3600, per_workspace=0)
     box = Box()
     assert await none.put(s, uuid.uuid4(), box) == [s] and box.closed and none.sessions() == []
+
+
+async def test_a_sandbox_opened_with_another_key_is_closed_not_reused() -> None:
+    pool, session, box = WarmPool(idle_seconds=3600, per_workspace=2), uuid.uuid4(), Box()
+    await pool.put(session, uuid.uuid4(), box, "key-a")
+    assert await pool.take(session, "key-b") is None and box.closed  # the key changed: a fresh sandbox
+    again = Box()
+    await pool.put(session, uuid.uuid4(), again, "key-b")
+    assert await pool.take(session, "key-b") is again and not again.closed
