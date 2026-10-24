@@ -332,6 +332,7 @@ function Message({ m, projectId, tag, children }: { m: Msg; projectId: string | 
 function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: string | null; scope: Scope | undefined; stream: RunStreamState | null }) {
   const cont = useContinueRun(scope);
   const limited = run.error_kind === "model_limit";
+  const interrupted = run.status === "failed" && run.error_kind === "interrupted";
   const failed = run.status === "failed" && !limited;
   const text = stream ? stream.text : (run.reply ?? "");
   const reply: Msg = {
@@ -361,6 +362,17 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
               whenReset={run.continue_at_reset}
               onContinue={(whenReset) => cont.mutate({ runId: run.id, whenReset })}
             />
+          )}
+          {interrupted && projectId && run.requested_by_id === D().me && (
+            <div className="row" style={{ gap: 8, marginTop: 8 }}>
+              <span className="muted" style={{ fontSize: 12.5 }}>
+                It goes on from where it stopped; any change it repeats waits for your approval.
+              </span>
+              <button className="btn btn-sm btn-secondary" disabled={cont.isPending} onClick={() => cont.mutate({ runId: run.id, whenReset: false })}>
+                <Ic n="play" s={12} />
+                Continue
+              </button>
+            </div>
           )}
         </Message>
       ) : null}

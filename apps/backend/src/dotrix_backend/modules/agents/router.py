@@ -217,10 +217,11 @@ async def always_allow_approval(
 
 @router.post("/runs/{run_id}/continue", responses=errors(409))
 async def continue_run(run_id: uuid.UUID, data: ContinueRun, access: Chatter, agents: Agents) -> AgentRunRead:
-    """Continue a run that stopped at its model's limit (`error_kind: model_limit`) from where it
-    stopped, without sending the message again: now, or once the limit resets (`when_reset`,
-    when the provider said when: `resumes_at`). Only whoever asked. 409 `nothing_to_continue`
-    for any other run, or when the conversation went on since."""
+    """Continue a run that stopped at its model's limit (`error_kind: model_limit`), or was
+    interrupted (`interrupted`: its worker stopped again and again), from where it stopped, without
+    sending the message again: now, or once a limit resets (`when_reset`, when the provider said
+    when: `resumes_at`). An interrupted run asks for approval before every change it makes. Only
+    whoever asked. 409 `nothing_to_continue` for any other run, or when the conversation went on since."""
     return await agents.continue_run(access, run_id, data)
 
 

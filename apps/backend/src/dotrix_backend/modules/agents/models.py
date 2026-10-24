@@ -69,13 +69,19 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     status: Mapped[RunStatus] = mapped_column(str_enum(RunStatus, 24))
     # Each start/resume/continue has one immutable worker dispatch operation.
     dispatch_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # The attempt working on it now (each start, resume, or recovery takes the next token) and
+    # until when, renewed while it works; a lapsed lease means its worker stopped (the sweep
+    # resumes it from its last checkpoint). A newer token fences an older attempt off.
+    lease_token: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     message: Mapped[str] = mapped_column(Text)
     # The conversation's title, on its first run only (a placeholder, then the model's title).
     title: Mapped[str | None] = mapped_column(String(120))
     reply: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
     # Why it failed, when that's something to act on: "model_limit" (a provider refused for its
-    # rate limit, quota, or credit). Such a run can be continued from where it stopped.
+    # rate limit, quota, or credit) or "interrupted" (its worker stopped, again and again). Such a
+    # run can be continued from where it stopped.
     error_kind: Mapped[str | None] = mapped_column(String(32))
     resumes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # when the limit resets, if said
     continue_at_reset: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

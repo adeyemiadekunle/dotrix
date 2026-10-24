@@ -303,7 +303,8 @@ class AgentRunRead(BaseModel):
     reply: str | None
     error: str | None
     error_kind: str | None = Field(
-        default=None, description="`model_limit`: it stopped at its model's limit and can be continued (`.../continue`)"
+        default=None, description="`model_limit`: it stopped at its model's limit; `interrupted`: its worker stopped "
+        "again and again. Either can be continued (`.../continue`)",
     )
     resumes_at: datetime | None = Field(default=None, description="When the limit resets, if the provider said")
     continue_at_reset: bool = Field(default=False, description="It continues by itself once the limit resets")

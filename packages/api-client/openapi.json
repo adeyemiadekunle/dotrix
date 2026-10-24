@@ -9013,7 +9013,7 @@
           "agents"
         ],
         "summary": "Continue Run",
-        "description": "Continue a run that stopped at its model's limit (`error_kind: model_limit`) from where it\nstopped, without sending the message again: now, or once the limit resets (`when_reset`,\nwhen the provider said when: `resumes_at`). Only whoever asked. 409 `nothing_to_continue`\nfor any other run, or when the conversation went on since.",
+        "description": "Continue a run that stopped at its model's limit (`error_kind: model_limit`), or was\ninterrupted (`interrupted`: its worker stopped again and again), from where it stopped, without\nsending the message again: now, or once a limit resets (`when_reset`, when the provider said\nwhen: `resumes_at`). An interrupted run asks for approval before every change it makes. Only\nwhoever asked. 409 `nothing_to_continue` for any other run, or when the conversation went on since.",
         "operationId": "continue_run",
         "security": [
           {
@@ -20602,7 +20602,7 @@
               }
             ],
             "title": "Error Kind",
-            "description": "`model_limit`: it stopped at its model's limit and can be continued (`.../continue`)"
+            "description": "`model_limit`: it stopped at its model's limit; `interrupted`: its worker stopped again and again. Either can be continued (`.../continue`)"
           },
           "resumes_at": {
             "anyOf": [

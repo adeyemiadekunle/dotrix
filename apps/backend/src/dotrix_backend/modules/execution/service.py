@@ -2,8 +2,10 @@
 
 The caller records intent in its existing transaction, then attempts publication
 after commit. A worker sweep republishes unaccepted intent using the same arq job
-    ID for each delivery. Acceptance is transactional with the run becoming RUNNING. This does not
-implement leases, side-effect reconciliation, or recovery of running coding jobs.
+    ID for each delivery. Acceptance is transactional with the run becoming RUNNING. Running runs
+hold a lease their worker renews: a lapsed coding lease means recovery (its outcome is uncertain,
+coding/recovery.py); a lapsed agent lease means the run goes on from its last checkpoint, under a
+new dispatch, at most AGENT_MAX_ATTEMPTS times per step (`expire_agent_leases`).
 """
 from __future__ import annotations
 
@@ -39,6 +41,10 @@ DispatchKind = Literal["agent", "coding"]
 PUBLISH_TIMEOUT_SECONDS = 5
 ACK_WAIT_SECONDS = 30
 RECONCILIATION_GRACE_SECONDS = 60
+AGENT_MAX_ATTEMPTS = 3  # attempts per step of an agent run before it's marked interrupted
+INTERRUPTED_ERROR = (
+    "Interrupted: the worker running it stopped {attempts} times. Continue it to go on from where it stopped."
+)
 
 
 @dataclass(frozen=True)
@@ -174,6 +180,54 @@ async def expire_coding_leases(session_factory: SessionFactory, *, limit: int = 
                 await session.commit()
                 expired += 1
     return expired
+
+
+async def expire_agent_leases(session_factory: SessionFactory, *, queue_name: str, limit: int = 50) -> int:
+    """Running agent runs whose worker stopped renewing their lease: each goes on from its last
+    checkpoint under a new dispatch (the cut-off attempt's job, if retried, is a superseded
+    generation and never starts). The new attempt asks for approval before every change, so one
+    the cut-off attempt already made can't go through twice. Past AGENT_MAX_ATTEMPTS: interrupted,
+    for the person to continue."""
+    now = datetime.now(UTC)
+    async with session_factory() as session:
+        candidates = list((await session.execute(select(AgentRun.workspace_id, AgentRun.id).where(
+            AgentRun.status == RunStatus.RUNNING, AgentRun.lease_expires_at < now,
+        ).order_by(AgentRun.lease_expires_at).limit(limit))).all())
+    handled = 0
+    for workspace_id, run_id in candidates:
+        async with session_factory() as session:
+            run = await session.scalar(select(AgentRun).where(
+                AgentRun.workspace_id == workspace_id, AgentRun.id == run_id,
+            ).with_for_update(skip_locked=True))
+            if run is None or run.status is not RunStatus.RUNNING or run.lease_expires_at is None \
+                    or run.lease_expires_at >= now:
+                continue  # renewed meanwhile, finished, or another sweep has it
+            step = await session.scalar(select(RunDispatch).where(
+                RunDispatch.workspace_id == workspace_id, RunDispatch.agent_run_id == run_id,
+                RunDispatch.generation == run.dispatch_generation,
+            ))
+            payload = dict(step.payload) if step is not None else None
+            attempts = int((payload or {}).get("attempt", 1))
+            audit = AuditLog(session)
+            if payload is None or attempts >= AGENT_MAX_ATTEMPTS:
+                run.status, run.error_kind = RunStatus.FAILED, "interrupted"
+                run.error = INTERRUPTED_ERROR.format(attempts=attempts)
+                run.updated_at = run.finished_at = now
+                run.lease_expires_at = None
+                action = "agent_run.interrupted"
+            else:
+                run.status, run.updated_at, run.lease_expires_at = RunStatus.QUEUED, now, None
+                record_dispatch(session, run, {**payload, "recovered": True, "attempt": attempts + 1},
+                                queue_name=queue_name)  # the dispatch sweep publishes it
+                action = "agent_run.recovered"
+            audit.record(
+                workspace_id=run.workspace_id, project_id=run.project_id, action=action, target=str(run.id),
+                actor_type=AuthorType.SYSTEM, instructed_by_id=run.requested_by_id,
+                details={"attempt": attempts, "lease_token": run.lease_token},
+            )
+            await session.commit()
+            handled += 1
+    return handled
 
 
 class RunDispatcher:

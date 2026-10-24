@@ -180,3 +180,33 @@ async def test_a_retried_step_does_not_resend_the_message(db_client: AsyncClient
     again = (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=ada.headers)).json()
     assert again["status"] == "completed" and again["reply"] == "Here's the plan."
     assert len(model.received) == 1  # the model wasn't asked twice
+
+
+async def test_a_run_whose_worker_stopped_goes_on_in_another(worker_mode, db_client: AsyncClient, agent_script) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import update
+
+    from dotrix_backend.modules.agents.models import AgentRun, RunStatus
+    from dotrix_backend.modules.execution.service import RunDispatcher, expire_agent_leases
+
+    ada, _, base, make_worker = await worker_mode()
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    queue, factory = app.state.runner.queue, app.state.runner.session_factory
+    agent_script.say("First answer.", "Second answer.")
+    queued = (await db_client.post(f"{base}/agent/runs", json={"message": "Hi"}, headers=ada.headers)).json()
+    await make_worker().main()
+    # As if its worker had died mid-step: still "running", its lease lapsed.
+    async with factory() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == uuid.UUID(queued["id"])).values(
+            status=RunStatus.RUNNING, lease_expires_at=datetime.now(UTC) - timedelta(seconds=1)))
+        await session.commit()
+    assert await expire_agent_leases(factory, queue_name=queue.queue_name) == 1
+    assert await RunDispatcher(factory, queue).sweep() == 1  # published under a new generation
+    await make_worker().main()
+    done = (await db_client.get(f"{base}/agent/runs/{queued['id']}", headers=ada.headers)).json()
+    # The step had finished: the new attempt records its outcome from the checkpoint, without asking again.
+    assert done["status"] == "completed" and done["reply"] == "First answer."
+    async with factory() as session:
+        row = await session.get(AgentRun, uuid.UUID(queued["id"]))
+        assert row.lease_token == 2 and row.lease_expires_at is None

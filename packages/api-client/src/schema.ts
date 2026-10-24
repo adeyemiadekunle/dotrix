@@ -1980,10 +1980,11 @@ export interface paths {
         put?: never;
         /**
          * Continue Run
-         * @description Continue a run that stopped at its model's limit (`error_kind: model_limit`) from where it
-         *     stopped, without sending the message again: now, or once the limit resets (`when_reset`,
-         *     when the provider said when: `resumes_at`). Only whoever asked. 409 `nothing_to_continue`
-         *     for any other run, or when the conversation went on since.
+         * @description Continue a run that stopped at its model's limit (`error_kind: model_limit`), or was
+         *     interrupted (`interrupted`: its worker stopped again and again), from where it stopped, without
+         *     sending the message again: now, or once a limit resets (`when_reset`, when the provider said
+         *     when: `resumes_at`). An interrupted run asks for approval before every change it makes. Only
+         *     whoever asked. 409 `nothing_to_continue` for any other run, or when the conversation went on since.
          */
         post: operations["continue_run"];
         delete?: never;
