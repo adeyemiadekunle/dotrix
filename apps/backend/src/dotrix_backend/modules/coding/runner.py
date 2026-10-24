@@ -54,7 +54,7 @@ from dotrix_backend.modules.execution.service import (
     accept_operation,
     mark_coding_recovery_required,
 )
-from dotrix_backend.modules.issues.models import AgentAssignee, IssueStatus
+from dotrix_backend.modules.issues.models import IssueStatus
 from dotrix_backend.modules.issues.schemas import IssueUpdate, Link
 from dotrix_backend.modules.issues.service import IssueActor, IssueService
 from dotrix_backend.modules.projects.deps import ProjectAccess
@@ -63,7 +63,6 @@ from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
 from . import guard
 from .models import (
-    CodingAgent,
     CodingRun,
     CodingRunEvent,
     CodingRunStatus,
@@ -73,7 +72,7 @@ from .models import (
 )
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
 from .slots import RunSlots, Stopped
-from .tools import BROWSER_RULE, TOOLS, Usage, model_for, model_key
+from .tools import BROWSER_RULE, CodingTool, Usage, tool_for
 from .warm import WarmPool, close_quietly
 
 logger = logging.getLogger(__name__)
@@ -88,7 +87,6 @@ FLUSH_SECONDS = 2.0
 REAP_SECONDS = 30.0  # how often warm sandboxes are checked for the idle time and closed sessions
 STOP_POLL_SECONDS = 3.0
 FETCH_TIMEOUT = 300
-NAMES = {"claude-code": "Claude Code", "codex": "Codex"}
 BOT_EMAIL = "dotrix-coding@users.noreply.github.com"
 REVIEW_DIFF_CHARS = 14_000
 
@@ -265,7 +263,7 @@ class CodingWorker:
                 raise RunFailed(f"The GitHub App is suspended on {installation.account_login}")
             ref = RepoRef(run.workspace_id, run.project_id, installation.installation_id, repo.full_name,
                           repo.default_branch)
-            github_repo_id, agent, brief = repo.github_repo_id, run.agent, run.brief
+            github_repo_id, agent, brief, model = repo.github_repo_id, run.agent, run.brief, run.model
             workspace_id, session_id = run.workspace_id, run.session_id
             sess = await _session_row(session, run)
             claude_session, transcript_key, cost_before = sess.claude_session, sess.transcript_key, sess.cost_reported
@@ -273,9 +271,12 @@ class CodingWorker:
             await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
             session_branch, session_pr = run.branch, (run.pr_number, run.pr_url) if run.pr_number else None
-            key = model_key(self.settings, agent)
+            tool = tool_for(agent, model)
+            if tool is None:
+                raise RunFailed(f"OpenCode can't run {model or 'without a model'} here")
+            key = tool.server_key(self.settings)
             if key is None:
-                raise RunFailed(f"The server has no key for {NAMES[agent.value]} any more")
+                raise RunFailed(f"The server has no key for {tool.name} any more")
 
         # 1. Our checkout, with a token for this repo only (an hour long, never stored). With a fork
         # owner, the branch goes to the app's fork: the PR's CI then gets none of the repo's secrets,
@@ -305,9 +306,9 @@ class CodingWorker:
 
         # 2. The agent's sandbox: the session's warm one when its files still match the branch (nobody
         #    pushed in between), else a fresh one with the tracked files and a history of its own, and
-        #    the session's transcript restored so Claude Code resumes its conversation.
-        tool = TOOLS[agent]
-        claude = agent is CodingAgent.CLAUDE_CODE
+        #    the session's transcript restored so a tool that can resume (Claude Code) continues its
+        #    conversation.
+        resumable = tool.resumes
         box = self.pool.take(session_id)
         warm = False
         if box is not None:
@@ -316,23 +317,24 @@ class CodingWorker:
             if not warm:
                 await close_quietly(box)
                 box = None
-        resumed = warm and claude
+        resumed = warm and resumable
         if box is None:
             copy = work / "upload" / "repo"
             await _export(host, copy)
             await _baseline(copy)
             box = await self.sandbox.open(run_id, copy, tool, key)
-            if claude and transcript_key:
-                resumed = await self._restore_transcript(box, transcript_key)
+            if resumable and transcript_key:
+                resumed = await self._restore_transcript(box, tool, claude_session, transcript_key)
         keep = False
         reported: float | None = None
         try:
             baseline = (await box.exec(["git", "rev-parse", "HEAD"], timeout=60)).stdout.strip()
             where = "kept from the last turn" if warm else self.sandbox.kind
-            await self._update(run_id, step=f"Sandbox ready ({where}); {NAMES[agent.value]} is "
+            await self._update(run_id, step=f"Sandbox ready ({where}); {tool.name} is "
                                + ("continuing the session" if resumed else "working"))
-            extra = (["--resume", str(claude_session)] if resumed else ["--session-id", str(claude_session)]) if claude else []
-            summary, reported = await self._code(run_id, box, tool, brief, extra, cost_before if resumed else None)
+            extra = tool.session_args(claude_session, resumed)
+            summary, reported = await self._code(run_id, box, tool, model, claude_session, brief, extra,
+                                                 cost_before if resumed else None)
             await self._screenshots(run_id, box)
             changes = await box.exec(
                 ["sh", "-c", "git add -A && git -c core.quotepath=off diff --cached --binary --no-color "
@@ -373,8 +375,8 @@ class CodingWorker:
             if branch == ref.default_branch:
                 raise RunFailed("Refusing to push to the default branch")
             heading = f"{issue_key}: {title}" + (f" (turn {turn})" if turn > 1 else "")
-            message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({NAMES[agent.value]})"
-            await run_git(host, "-c", f"user.name={NAMES[agent.value]} via dotrix", "-c", f"user.email={BOT_EMAIL}",
+            message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({tool.name})"
+            await run_git(host, "-c", f"user.name={tool.name} via dotrix", "-c", f"user.email={BOT_EMAIL}",
                           "commit", "-q", "--no-verify", "-m", message)
             commit_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
             await self._update(run_id, step=f"Pushing {branch}")
@@ -398,7 +400,7 @@ class CodingWorker:
                 pr = await self.app.create_pull_request(
                     ref.installation_id, ref.full_name, head=push.head + branch, base=ref.default_branch,
                     title=f"{issue_key}: {title}",
-                    body=_pr_body(summary, issue_key, run_id, agent.value, files, guard.ci_sensitive(paths)),
+                    body=_pr_body(summary, issue_key, run_id, tool.name, files, guard.ci_sensitive(paths)),
                     token=token,
                 )
             publication.pr = pr
@@ -420,8 +422,8 @@ class CodingWorker:
             await self._review(run_id, title, files, changes.stdout)
         finally:
             # The conversation moved on even when the turn didn't push: save it for the next turn.
-            if claude:
-                await self._save_transcript(box, session_id, workspace_id)
+            if tool.resumes:
+                await self._save_transcript(box, tool, claude_session, session_id, workspace_id)
             if reported is not None:
                 await self._session(session_id, cost_reported=reported)
             # A scanner may have classified the run while the sandbox was
@@ -453,11 +455,12 @@ class CodingWorker:
         return _PushTarget(fork_ref, fork_url, auth_env(fork_url, fork_token), f"{owner}:", fork_token)
 
     async def _code(
-        self, run_id: uuid.UUID, box: SandboxSession, tool: Any, brief: str, extra: list[str], cost_before: float | None,
+        self, run_id: uuid.UUID, box: SandboxSession, tool: CodingTool, model: str | None, tool_session: uuid.UUID,
+        brief: str, extra: list[str], cost_before: float | None,
     ) -> tuple[str | None, float | None]:
-        """Run the tool with the brief, streaming its events into the run: its final message, and the
-        cost it reported. A resumed Claude Code session reports its running total, so the turn's own
-        cost is what it adds to `cost_before`."""
+        """Run the tool with the brief on the run's model (the tool's default when None), streaming its
+        events into the run: its final message, and the cost it reported. A resumed session reports
+        its running total, so the turn's own cost is what it adds to `cost_before`."""
         usage, summary, failed = Usage(), None, None
         reported: list[float] = []
         pending: list[dict[str, Any]] = []
@@ -504,27 +507,53 @@ class CodingWorker:
                     cancel.set()
 
         # The browser comes with the coding image: the Docker and OpenShell sandboxes, not the local one.
-        browser = self.sandbox is not None and self.sandbox.kind != "local" and tool.agent == CodingAgent.CLAUDE_CODE
+        browser = self.sandbox is not None and self.sandbox.kind != "local" and tool.browser
         watcher = asyncio.create_task(watch_stop())
         try:
             result = await box.exec(
-                tool.command(model_for(self.settings, tool.agent), browser=browser) + extra,
+                tool.command(model, browser=browser) + extra,
                 stdin=(brief + (BROWSER_RULE if browser else "")).encode(), on_line=on_line,
                 timeout=self.settings.coding_timeout_minutes * 60, cancel=cancel,
             )
+            # However the turn ended: a stopped or failed one was paid for too.
+            await self._totals(box, tool, tool_session, usage, reported, cost_before)
         finally:
             watcher.cancel()
             await flush()
         if result.timed_out:
             raise _Stopped(f"Stopped at the time limit ({self.settings.coding_timeout_minutes} minutes)")
         if result.cancelled and failed and not stop_reason:
-            raise RunFailed(f"{NAMES[tool.agent.value]} didn't finish: {failed}")
+            raise RunFailed(f"{tool.name} didn't finish: {failed}")
         if result.cancelled:
             raise _Stopped(stop_reason[0] if stop_reason else "Stopped")
         if failed or result.code != 0:
             detail = failed or (result.stderr.strip().splitlines() or [f"exit code {result.code}"])[-1]
-            raise RunFailed(f"{NAMES[tool.agent.value]} didn't finish: {detail[:500]}")
+            raise RunFailed(f"{tool.name} didn't finish: {detail[:500]}")
+        if budget and usage.total > budget:  # over it only in the totals (OpenCode's last step): nothing is pushed
+            raise _Stopped(f"Stopped at the token budget ({budget:,} tokens)")
         return summary, (reported[-1] if reported else None)
+
+    async def _totals(
+        self, box: SandboxSession, tool: CodingTool, tool_session: uuid.UUID, usage: Usage, reported: list[float],
+        cost_before: float | None,
+    ) -> None:
+        """What a tool's events left out of the turn's usage (OpenCode's last step), read after it. A
+        failure here keeps what the events said."""
+        command = tool.usage_command(tool_session)
+        if command is None:
+            return
+        try:
+            out = await box.exec(["sh", "-c", command], timeout=60)
+            if out.code != 0 or out.truncated:
+                return
+            cost = usage.cost_usd
+            tool.read_usage(out.stdout, usage)
+            if usage.cost_usd is not None and usage.cost_usd != cost:  # the session's running total
+                reported.append(usage.cost_usd)
+                if cost_before is not None:
+                    usage.cost_usd = max(0.0, usage.cost_usd - cost_before)
+        except Exception:
+            logger.warning("couldn't read %s's totals", tool.name, exc_info=True)
 
     async def _screenshots(self, run_id: uuid.UUID, box: SandboxSession) -> None:
         """Keep what the agent's browser captured: the newest images under /tmp in the sandbox, into
@@ -581,13 +610,17 @@ class CodingWorker:
                 row.last_active_at = datetime.now(UTC)
             await session.commit()
 
-    async def _save_transcript(self, box: SandboxSession, session_id: uuid.UUID, workspace_id: uuid.UUID) -> None:
-        """Claude Code's transcript (its ~/.claude) into storage, encrypted: what a fresh sandbox
-        restores to resume the session. Skipped without storage or an encryption key."""
+    async def _save_transcript(
+        self, box: SandboxSession, tool: CodingTool, tool_session: uuid.UUID, session_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+    ) -> None:
+        """The tool's transcript (`save_state`: ~/.claude for Claude Code, its exported session for
+        OpenCode) into storage, encrypted: what a fresh sandbox restores to resume the session.
+        Skipped without storage or an encryption key."""
         if self.storage is None or not self.secrets.configured:
             return
         try:
-            packed = await box.exec(["sh", "-c", 'cd "$HOME" && [ -d .claude ] && tar -cz .claude | base64 -w0'], timeout=120)
+            packed = await box.exec(["sh", "-c", tool.save_state(tool_session)], timeout=120)
             if packed.code != 0 or not packed.stdout.strip() or packed.truncated:
                 return
             key = f"coding/{workspace_id}/sessions/{session_id}/transcript"
@@ -596,15 +629,15 @@ class CodingWorker:
         except Exception:
             logger.warning("coding session %s: couldn't save the transcript", session_id, exc_info=True)
 
-    async def _restore_transcript(self, box: SandboxSession, key: str) -> bool:
-        """The session's saved transcript into a fresh sandbox; whether Claude Code can resume."""
+    async def _restore_transcript(self, box: SandboxSession, tool: CodingTool, tool_session: uuid.UUID, key: str) -> bool:
+        """The session's saved transcript into a fresh sandbox; whether the tool can resume."""
         if self.storage is None or not self.secrets.configured:
             return False
         try:
             packed = self.secrets.decrypt((await self.storage.get(key)).decode())
             if not packed:
                 return False
-            done = await box.exec(["sh", "-c", 'cd "$HOME" && base64 -d | tar -xz'], stdin=packed.encode(), timeout=120)
+            done = await box.exec(["sh", "-c", tool.restore_state(tool_session)], stdin=packed.encode(), timeout=120)
             return done.code == 0
         except Exception:
             logger.warning("couldn't restore a coding transcript", exc_info=True)
@@ -771,7 +804,7 @@ class CodingWorker:
             if not any(link.url == run.pr_url for link in links):
                 links.append(Link(kind="pr", url=run.pr_url or "", title=f"PR #{run.pr_number}: {title}"[:200]))
             said = f"Opened PR #{run.pr_number} for review" if opened else f"Pushed turn {run.turn} to PR #{run.pr_number}"
-            await issues.update(project, run.issue_key, IssueActor(member, agent=AgentAssignee(run.agent.value),
+            await issues.update(project, run.issue_key, IssueActor(member, agent=run.agent.assignee,
                                                                    approved_by_id=run.decided_by_id),
                                 IssueUpdate(status=IssueStatus.REVIEW, links=links,
                                             note=f"{said}: {run.pr_url}"))
@@ -852,7 +885,7 @@ async def _issue_title(session: AsyncSession, run: CodingRun) -> str:
 
 
 def _pr_body(
-    summary: str | None, key: str, run_id: uuid.UUID, agent: str, files: list[dict[str, Any]], ci_sensitive: list[str]
+    summary: str | None, key: str, run_id: uuid.UUID, tool_name: str, files: list[dict[str, Any]], ci_sensitive: list[str]
 ) -> str:
     warning = [
         "> [!WARNING]",
@@ -865,7 +898,7 @@ def _pr_body(
         (summary or "The agent left no summary.").strip()[:20_000],
         "",
         "---",
-        f"Written by {NAMES[agent]} in a dotrix coding run for {key} ({run_id}), asked for and approved on "
+        f"Written by {tool_name} in a dotrix coding run for {key} ({run_id}), asked for and approved on "
         f"dotrix. {len(files)} file{'s' if len(files) != 1 else ''} changed. A person reviews and merges it.",
     ])
 

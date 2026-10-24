@@ -6,10 +6,16 @@ what the run page shows (steps) and what the run used (tokens).
   refuses the rest); the sandbox's policy is the boundary for what Bash can reach.
 - Codex: `codex exec --json … -`, the brief on stdin, with Codex's own sandbox off
   (`danger-full-access`) because the run is already in one.
+- OpenCode 2: `opencode run --standalone --format json --auto`, the brief on stdin, on any provider's
+  model (one OpenCode per provider: its key and the one host the sandbox lets it reach). Its config
+  is ours, never the repo's (`OPENCODE_DISABLE_PROJECT_CONFIG`, `OPENCODE_CONFIG_CONTENT`).
 """
 from __future__ import annotations
 
 import json
+import os
+import shlex
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -70,14 +76,43 @@ class Parsed:
 
 
 class CodingTool(Protocol):
+    """What the runner and sandboxes need from a coding tool; nothing outside this module names one."""
+
     agent: CodingAgent
+    name: str  # as people read it: run steps, commits, PRs
     key_env: str  # the model key's environment variable
     provider_type: str  # its OpenShell provider profile
     api_host: str  # where its model API is (the Docker sandbox lets it through, nothing else)
     base_url_env: str  # a proxy in front of the provider, when this is set
+    resumes: bool  # its conversation carries over between turns (saved, and restored in a fresh sandbox)
+    browser: bool  # it can use the sandbox's browser (Playwright MCP)
 
     def command(self, model: str | None, browser: bool = False) -> list[str]: ...
+    def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]: ...
+    # Shell, run in the sandbox: the session's conversation as base64 on stdout, and back from stdin.
+    def save_state(self, session: uuid.UUID) -> str: ...
+    def restore_state(self, session: uuid.UUID) -> str: ...
+    # Shell whose stdout `read_usage` reads after a turn, for totals its events leave out (or None).
+    def usage_command(self, session: uuid.UUID) -> str | None: ...
+    def read_usage(self, output: str, usage: Usage) -> None: ...
+    def sandbox_env(self, model_key: str) -> dict[str, str]: ...
+    def server_key(self, settings: Settings) -> str | None: ...
+    def model(self, settings: Settings) -> str | None: ...
     def parse(self, line: str, usage: Usage) -> Parsed: ...
+
+
+class _NoUsageCommand:
+    """Tools whose events already carry every token and the cost."""
+
+    def usage_command(self, session: uuid.UUID) -> str | None:
+        return None
+
+    def read_usage(self, output: str, usage: Usage) -> None:
+        return None
+
+
+def _secret(value: Any) -> str | None:
+    return value.get_secret_value() if value is not None else None
 
 
 def _clip(text: str, limit: int = MAX_STEP) -> str:
@@ -139,12 +174,33 @@ def _describe_claude_tool(name: str, args: dict[str, Any]) -> str | None:
             return f"Used {name}"
 
 
-class ClaudeCode:
+class ClaudeCode(_NoUsageCommand):
     agent = CodingAgent.CLAUDE_CODE
+    name = "Claude Code"
     key_env = "ANTHROPIC_API_KEY"
     provider_type = "dotrix-claude-code"
     api_host = "api.anthropic.com"
     base_url_env = "ANTHROPIC_BASE_URL"
+    resumes = True
+    browser = True
+
+    def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
+        return ["--resume", str(session)] if resumed else ["--session-id", str(session)]
+
+    def save_state(self, session: uuid.UUID) -> str:  # its transcript: ~/.claude
+        return 'cd "$HOME" && [ -d .claude ] && tar -cz .claude | base64 -w0'
+
+    def restore_state(self, session: uuid.UUID) -> str:
+        return 'cd "$HOME" && base64 -d | tar -xz'
+
+    def sandbox_env(self, model_key: str) -> dict[str, str]:
+        return {self.key_env: model_key}
+
+    def server_key(self, settings: Settings) -> str | None:
+        return _secret(settings.anthropic_api_key)
+
+    def model(self, settings: Settings) -> str | None:
+        return settings.coding_claude_model
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
         """`browser`: give it the browser (a sandbox with the coding image; not the local one)."""
@@ -209,14 +265,35 @@ class ClaudeCode:
         return out
 
 
-class Codex:
+class Codex(_NoUsageCommand):
     agent = CodingAgent.CODEX
+    name = "Codex"
     key_env = "OPENAI_API_KEY"
     provider_type = "dotrix-codex"
     api_host = "api.openai.com"
     base_url_env = "OPENAI_BASE_URL"
+    resumes = False  # `--ephemeral`: each turn starts afresh
+    browser = False  # not yet
 
-    def command(self, model: str | None, browser: bool = False) -> list[str]:  # no browser for Codex yet
+    def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
+        return []
+
+    def save_state(self, session: uuid.UUID) -> str:
+        raise NotImplementedError("Codex doesn't resume")
+
+    def restore_state(self, session: uuid.UUID) -> str:
+        raise NotImplementedError("Codex doesn't resume")
+
+    def sandbox_env(self, model_key: str) -> dict[str, str]:
+        return {self.key_env: model_key, "CODEX_API_KEY": model_key}  # CODEX_API_KEY: what `codex exec` reads
+
+    def server_key(self, settings: Settings) -> str | None:
+        return _secret(settings.openai_api_key)
+
+    def model(self, settings: Settings) -> str | None:
+        return settings.coding_codex_model
+
+    def command(self, model: str | None, browser: bool = False) -> list[str]:
         argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral"]
         return argv + (["-c", f'model="{model}"'] if model else []) + ["-"]
 
@@ -249,6 +326,189 @@ class Codex:
         return out
 
 
+@dataclass(frozen=True)
+class OpenCodeProvider:
+    """A provider OpenCode can run on: dotrix's name for it (as in "anthropic:claude-sonnet-5-5",
+    and in `run_keys`), OpenCode's, and what the sandbox needs to let it through."""
+
+    name: str
+    opencode: str  # OpenCode's provider id ("anthropic/claude-sonnet-5-5")
+    label: str
+    key_env: str  # the key's variable, which OpenCode reads
+    api_host: str
+    base_url_env: str  # a proxy in front of the provider, when this is set
+    setting: str  # Settings attribute with the server's key
+    # What OpenCode's SDK wants after the base URL that Claude Code and Codex take (Anthropic's SDK
+    # in OpenCode posts to `{baseURL}/messages`; Claude Code to `{ANTHROPIC_BASE_URL}/v1/messages`).
+    base_url_suffix: str = ""
+
+
+OPENCODE_PROVIDERS = {
+    p.name: p for p in (
+        OpenCodeProvider("anthropic", "anthropic", "Anthropic", "ANTHROPIC_API_KEY", "api.anthropic.com",
+                         "ANTHROPIC_BASE_URL", "anthropic_api_key", "/v1"),
+        OpenCodeProvider("openai", "openai", "OpenAI", "OPENAI_API_KEY", "api.openai.com",
+                         "OPENAI_BASE_URL", "openai_api_key"),
+        OpenCodeProvider("google_genai", "google", "Google", "GOOGLE_API_KEY", "generativelanguage.googleapis.com",
+                         "GOOGLE_GEMINI_BASE_URL", "google_api_key"),
+    )
+}
+# Never offered to the model: the sandbox can't reach the web, and a run has nobody to answer.
+OPENCODE_DENIED = ("webfetch", "websearch", "question")
+OPENCODE_DATA = ".local/share/opencode"  # under $HOME; also holds a git copy of the worktree, so never saved whole
+
+
+def opencode_session(session: uuid.UUID) -> str:
+    """OpenCode's id for a dotrix session: `-s` makes the session with it, then continues it."""
+    return f"ses_{session.hex}"
+
+
+def _describe_opencode_tool(name: str, args: dict[str, Any]) -> str | None:
+    path = _relative(str(args.get("path") or ""))
+    match name:
+        case "shell":
+            return f"Ran {_clip(str(args.get('command', '')), 160)}"
+        case "edit":
+            return f"Edited {path}"
+        case "write":
+            return f"Wrote {path}"
+        case "read":
+            return f"Read {path}"
+        case "glob" | "grep":
+            return f"Searched for {_clip(str(args.get('pattern', '')), 80)}"
+        case "execute":
+            return "Ran a script"
+        case "subagent":
+            return f"Asked a subagent to {_clip(str(args.get('description', '')), 120)}"
+        case "skill":
+            return None
+        case _:
+            return f"Used {name}"
+
+
+def _tokens(part: dict[str, Any]) -> tuple[int, int]:
+    tokens = part.get("tokens") or {}
+    cache = tokens.get("cache") or {}
+    return (int(tokens.get("input") or 0) + int(cache.get("read") or 0) + int(cache.get("write") or 0),
+            int(tokens.get("output") or 0) + int(tokens.get("reasoning") or 0))
+
+
+# After a turn: the session's running cost and this turn's steps (each step is an assistant message;
+# the last one never reaches the event stream), read in the sandbox so a long session's export never
+# has to come back whole.
+_OPENCODE_TOTALS = (
+    "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s);let turn=[];"
+    "for(const m of d.messages||[]){if(m.type==='user')turn=[];"
+    "else if(m.type==='assistant')turn.push({id:m.id,tokens:m.tokens})}"
+    "console.log(JSON.stringify({cost:(d.info||{}).cost,turn}))})"
+)
+
+
+class OpenCode:
+    """OpenCode 2 on one provider. Checked against a fake model (2.1.4): the brief on stdin, `-s` our
+    session id, events `step_start` / `text` / `tool_use` / `step_finish` / `error`, SIGINT stops it."""
+
+    agent = CodingAgent.OPENCODE
+    name = "OpenCode"
+    resumes = True
+    browser = False  # not yet: Playwright MCP through `OPENCODE_CONFIG_CONTENT` is unchecked
+
+    def __init__(self, provider: OpenCodeProvider) -> None:
+        self.provider = provider
+        self.key_env, self.api_host, self.base_url_env = provider.key_env, provider.api_host, provider.base_url_env
+        self.provider_type = f"dotrix-opencode-{provider.opencode}"  # infra/coding/dotrix-opencode-*.yaml
+
+    def _env(self) -> list[str]:
+        """Its settings, before every command (`env …`): the same in each sandbox, OpenShell's too,
+        which passes the sandbox nothing but the key. None of them is a secret."""
+        config: dict[str, Any] = {
+            "enabled_providers": [self.provider.opencode],  # not every provider it finds credentials for
+            "permission": {tool: "deny" for tool in OPENCODE_DENIED},
+            "autoupdate": False,
+        }
+        if base_url := os.environ.get(self.base_url_env, "").rstrip("/"):
+            # The URL itself, not `{env:…}`: OpenShell passes the sandbox nothing but the key.
+            config["provider"] = {self.provider.opencode: {"options": {"baseURL": base_url + self.provider.base_url_suffix}}}
+        return [
+            f"OPENCODE_CONFIG_CONTENT={json.dumps(config, separators=(',', ':'))}",
+            "OPENCODE_DISABLE_PROJECT_CONFIG=1",  # the repo's opencode.json is data, not config
+            "OPENCODE_DISABLE_MODELS_FETCH=1",  # its built-in model list: the sandbox reaches one host only
+            "OPENCODE_DISABLE_AUTOUPDATE=1",
+        ]
+
+    def _shell(self, args: str) -> str:
+        return "env " + " ".join(shlex.quote(pair) for pair in self._env()) + f" opencode {args}"
+
+    def command(self, model: str | None, browser: bool = False) -> list[str]:
+        argv = ["env", *self._env(), "opencode", "run", "--standalone", "--format", "json", "--auto"]
+        if model:
+            argv += ["-m", f"{self.provider.opencode}/{model.partition(':')[2] or model}"]
+        return argv
+
+    def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
+        return ["-s", opencode_session(session)]  # made the first time, continued after
+
+    def save_state(self, session: uuid.UUID) -> str:
+        sid = shlex.quote(opencode_session(session))
+        return self._shell(f"session export --standalone {sid} </dev/null") + " | gzip | base64 -w0"
+
+    def restore_state(self, session: uuid.UUID) -> str:
+        return ("base64 -d | gunzip > /tmp/opencode-session.json && "
+                + self._shell("session import --standalone /tmp/opencode-session.json </dev/null >/dev/null"))
+
+    def usage_command(self, session: uuid.UUID) -> str | None:
+        sid = shlex.quote(opencode_session(session))
+        return self._shell(f"session export --standalone {sid} </dev/null") + f" | node -e {shlex.quote(_OPENCODE_TOTALS)}"
+
+    def read_usage(self, output: str, usage: Usage) -> None:
+        totals = _json(output.strip().splitlines()[-1] if output.strip() else "")
+        if totals is None:
+            return
+        for step in totals.get("turn") or []:  # the steps the stream didn't report
+            if step.get("id") and step["id"] not in usage._calls:
+                usage._calls[step["id"]] = _tokens(step)
+        usage.input_tokens = sum(i for i, _ in usage._calls.values())
+        usage.output_tokens = sum(o for _, o in usage._calls.values())
+        if totals.get("cost") is not None:
+            usage.cost_usd = float(totals["cost"])  # the session's running total, like Claude Code's
+
+    def sandbox_env(self, model_key: str) -> dict[str, str]:
+        return {self.key_env: model_key}
+
+    def server_key(self, settings: Settings) -> str | None:
+        return _secret(getattr(settings, self.provider.setting, None))
+
+    def model(self, settings: Settings) -> str | None:
+        return settings.coding_opencode_model
+
+    def parse(self, line: str, usage: Usage) -> Parsed:
+        out = Parsed()
+        event = _json(line)
+        if event is None:
+            return out
+        part = event.get("part") or {}
+        match event.get("type"):
+            case "text" if str(part.get("text", "")).strip():
+                out.steps.append(Step("text", _clip(part["text"])))
+                out.summary = str(part["text"])[:20_000]  # the last one is its final message
+            case "tool_use":
+                state = part.get("state") or {}
+                said = _describe_opencode_tool(str(part.get("tool")), state.get("input") or {})
+                if state.get("status") == "error":
+                    out.steps.append(Step("error", _clip(f"{said or part.get('tool')}: {state.get('error') or 'failed'}")))
+                elif said:
+                    out.steps.append(Step("tool", said))
+            case "step_finish":
+                if part.get("messageID"):
+                    usage._calls[part["messageID"]] = _tokens(part)
+                    usage.input_tokens = sum(i for i, _ in usage._calls.values())
+                    usage.output_tokens = sum(o for _, o in usage._calls.values())
+            case "error":
+                error = event.get("error") or {}
+                out.failed = _clip(str(error.get("message") or error.get("type") or "OpenCode stopped"), 500)
+        return out
+
+
 def _json(line: str) -> dict[str, Any] | None:
     line = line.strip()
     if not line.startswith("{"):
@@ -263,14 +523,24 @@ def _json(line: str) -> dict[str, Any] | None:
 TOOLS: dict[CodingAgent, CodingTool] = {CodingAgent.CLAUDE_CODE: ClaudeCode(), CodingAgent.CODEX: Codex()}
 
 
+def tool_for(agent: CodingAgent, model: str | None = None) -> CodingTool | None:
+    """The tool for a run: OpenCode is one per provider, from its model ("anthropic:…"); None
+    when that provider isn't one OpenCode runs on here."""
+    if agent is not CodingAgent.OPENCODE:
+        return TOOLS[agent]
+    provider = OPENCODE_PROVIDERS.get((model or "").partition(":")[0])
+    return OpenCode(provider) if provider is not None and (model or "").partition(":")[2] else None
+
+
 def model_key(settings: Settings, agent: CodingAgent) -> str | None:
-    secret = settings.anthropic_api_key if agent is CodingAgent.CLAUDE_CODE else settings.openai_api_key
-    return secret.get_secret_value() if secret is not None else None
+    tool = tool_for(agent, model_for(settings, agent))
+    return tool.server_key(settings) if tool is not None else None
 
 
 def choose_agent(settings: Settings) -> CodingAgent | None:
     """Claude Code when the server has an Anthropic key, else Codex with an OpenAI key (or the one
-    `DOTRIX_CODING_AGENT` names, if its key is there); None when neither can run."""
+    `DOTRIX_CODING_AGENT` names, if its key is there: OpenCode only when named, with
+    `DOTRIX_CODING_OPENCODE_MODEL`); None when none can run."""
     if settings.coding_agent != "auto":
         agent = CodingAgent(settings.coding_agent)
         return agent if model_key(settings, agent) else None
@@ -281,4 +551,6 @@ def choose_agent(settings: Settings) -> CodingAgent | None:
 
 
 def model_for(settings: Settings, agent: CodingAgent) -> str | None:
-    return settings.coding_claude_model if agent is CodingAgent.CLAUDE_CODE else settings.coding_codex_model
+    if agent is CodingAgent.OPENCODE:
+        return settings.coding_opencode_model
+    return TOOLS[agent].model(settings)

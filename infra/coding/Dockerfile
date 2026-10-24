@@ -1,4 +1,4 @@
-# The image coding runs use in OpenShell (DOTRIX_CODING_IMAGE): Claude Code, Codex, git, and
+# The image coding runs use in OpenShell (DOTRIX_CODING_IMAGE): Claude Code, Codex, OpenCode, git, and
 # common toolchains so the agent can run a project's tests. Add what your projects need.
 #
 #   docker build -t dotrix-coding:latest infra/coding
@@ -11,6 +11,12 @@ FROM node:22-bookworm
 # The CLIs, installed globally; their binaries are what the provider profiles allow to reach
 # the model APIs (see dotrix-claude-code.yaml and dotrix-codex.yaml).
 RUN npm install -g @anthropic-ai/claude-code @openai/codex && claude --version && codex --version
+
+# OpenCode 2 (DOTRIX_CODING_AGENT=opencode): any provider's model. Pinned, because its headless events
+# and session export are what modules/coding/tools.py reads (checked on 2.1.4); its profiles are
+# dotrix-opencode-*.yaml.
+ARG OPENCODE_VERSION=2.1.4
+RUN npm install -g @opencode/cli@${OPENCODE_VERSION} && opencode --version
 
 # A browser for the agent (the platform passes it as an MCP server, `playwright-mcp`): Playwright's
 # Chromium, headless, in a shared folder the unprivileged user can run. It opens the app the agent

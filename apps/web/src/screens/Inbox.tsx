@@ -8,7 +8,7 @@ import { openTask } from "../core/actions";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { ago, dayBucket } from "../core/utils";
-import { D, S, commentsOf, mutate, pColor, proj, render, task, who } from "../data/store";
+import { D, S, commentsOf, mutate, pColor, proj, render, task, toolName, who } from "../data/store";
 import type { Notif, NotifType } from "../data/types";
 import { ChangeCard } from "../components/Changes";
 import { isLive, live, notifsRead } from "../data/live";
@@ -292,7 +292,7 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
             </div>
             <div className="change-b">
               <div className="muted" style={{ marginBottom: 4 }}>
-                {who(cs.by)?.name} asked {cs.tool === "codex" ? "Codex" : "Claude Code"}:
+                {who(cs.by)?.name} asked {toolName(cs.tool)}:
               </div>
               {cs.turns.at(-1)?.ask}
             </div>

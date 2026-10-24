@@ -1,0 +1,32 @@
+# OpenShell provider profile for dotrix's coding runs with OpenCode on Anthropic. Import it once per gateway:
+#   openshell provider profile import -f infra/coding/dotrix-opencode-anthropic.yaml --global
+# Coding runs with DOTRIX_CODING_AGENT=opencode and a Anthropic model attach a provider of this type to
+# each sandbox, made from the run's ANTHROPIC_API_KEY: the sandbox sees a placeholder, and OpenShell's
+# proxy puts the key on requests to api.anthropic.com from OpenCode's binaries only.
+#
+# `binaries` must match the image (infra/coding/Dockerfile installs @opencode/cli with npm; its
+# postinstall puts the platform's native binary in the package, and the server it starts makes the calls).
+# Not yet checked on an OpenShell gateway.
+id: dotrix-opencode-anthropic
+display_name: OpenCode on Anthropic (dotrix)
+description: OpenCode CLI on Anthropic models, for dotrix coding runs
+category: agent
+inference_capable: true
+credentials:
+  - name: api_key
+    description: Anthropic API key used by OpenCode
+    env_vars: [ANTHROPIC_API_KEY]
+    required: true
+    auth_style: header
+    header_name: x-api-key
+discovery:
+  credentials: [api_key]
+endpoints:
+  - host: api.anthropic.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/opencode
+  - /usr/local/lib/node_modules/@opencode/**

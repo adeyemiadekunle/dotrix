@@ -11,7 +11,9 @@ from .models import CodingAgent, CodingOrigin, CodingRunStatus, CodingSessionSta
 
 class CodingAvailability(BaseModel):
     available: bool
-    agent: CodingAgent | None = Field(description="Who would code: Claude Code with an Anthropic key, else Codex")
+    agent: CodingAgent | None = Field(
+        description="Who would code: Claude Code with an Anthropic key, else Codex; OpenCode when the server names it"
+    )
     sandbox: str | None = Field(description="`docker`, `openshell`, or `local` (development, no isolation)")
     reason: str | None = Field(description="Why not, when it isn't available")
 

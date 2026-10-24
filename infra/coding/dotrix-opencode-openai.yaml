@@ -1,0 +1,32 @@
+# OpenShell provider profile for dotrix's coding runs with OpenCode on OpenAI. Import it once per gateway:
+#   openshell provider profile import -f infra/coding/dotrix-opencode-openai.yaml --global
+# Coding runs with DOTRIX_CODING_AGENT=opencode and a OpenAI model attach a provider of this type to
+# each sandbox, made from the run's OPENAI_API_KEY: the sandbox sees a placeholder, and OpenShell's
+# proxy puts the key on requests to api.openai.com from OpenCode's binaries only.
+#
+# `binaries` must match the image (infra/coding/Dockerfile installs @opencode/cli with npm; its
+# postinstall puts the platform's native binary in the package, and the server it starts makes the calls).
+# Not yet checked on an OpenShell gateway.
+id: dotrix-opencode-openai
+display_name: OpenCode on OpenAI (dotrix)
+description: OpenCode CLI on OpenAI models, for dotrix coding runs
+category: agent
+inference_capable: true
+credentials:
+  - name: api_key
+    description: OpenAI API key used by OpenCode
+    env_vars: [OPENAI_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [api_key]
+endpoints:
+  - host: api.openai.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/opencode
+  - /usr/local/lib/node_modules/@opencode/**

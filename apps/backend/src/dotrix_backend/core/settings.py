@@ -128,9 +128,12 @@ class Settings(DatabaseSettings):
     coding_image: str = "dotrix-coding:latest"  # the sandbox image (infra/coding/Dockerfile)
     # Which tool codes: "auto" follows the key the server has (Anthropic: Claude Code, else
     # OpenAI: Codex); naming one needs its key.
-    coding_agent: Literal["auto", "claude-code", "codex"] = "auto"
+    coding_agent: Literal["auto", "claude-code", "codex", "opencode"] = "auto"  # "auto" never picks OpenCode
     coding_claude_model: str | None = None  # Claude Code's default when unset
     coding_codex_model: str | None = None  # Codex's default when unset
+    # OpenCode's model, as everywhere in dotrix ("anthropic:claude-sonnet-5-5"): its provider decides
+    # the key it runs on and the one host the sandbox lets it reach. Required for OpenCode.
+    coding_opencode_model: str | None = None
     coding_timeout_minutes: int = Field(default=30, ge=1, le=240)
     # A session's sandbox stays up between turns (Phase B) until it's unused this long, at most this
     # many per workspace (0: never kept; each turn starts fresh and resumes from the saved transcript).

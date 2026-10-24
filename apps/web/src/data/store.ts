@@ -217,6 +217,9 @@ export function who(id: string | null | undefined): { id: string; name: string; 
   return null;
 }
 
+/** A coding session's tool by name ("claude-code" → "Claude Code"). */
+export const toolName = (tool: string) => who(`agent:${tool}`)?.name ?? tool;
+
 /* ---------- activity ---------- */
 export function logAct(verb: string, t?: Task | null, extra = "") {
   D().activity.unshift({ id: uid("a"), by: D().me, verb, task: t?.id ?? null, project: t?.project ?? null, at: Date.now(), extra });

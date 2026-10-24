@@ -28,6 +28,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from dotrix_backend.db.base import Base, UUIDPrimaryKeyMixin, WorkspaceScopedMixin, str_enum
+from dotrix_backend.modules.issues.models import AgentAssignee
 
 
 class CodingAgent(enum.StrEnum):
@@ -35,6 +36,13 @@ class CodingAgent(enum.StrEnum):
 
     CLAUDE_CODE = "claude-code"
     CODEX = "codex"
+    OPENCODE = "opencode"  # any provider's model (`DOTRIX_CODING_OPENCODE_MODEL`)
+
+    @property
+    def assignee(self) -> AgentAssignee:
+        """Who an issue shows as working on it: the tool, where people can assign it by name, else
+        the built-in coding agent (OpenCode)."""
+        return AgentAssignee(self.value) if self.value in AgentAssignee._value2member_map_ else AgentAssignee.CODING_AGENT
 
 
 class CodingRunStatus(enum.StrEnum):

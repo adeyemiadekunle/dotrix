@@ -3476,7 +3476,8 @@ export interface paths {
         put?: never;
         /**
          * Stop Coding Run
-         * @description Stop a coding run that waits or works; nothing is pushed. Whoever asked for it, or owners and admins.
+         * @description Request that a waiting or running coding turn stop. A push already in flight may need
+         *     reconciliation. Whoever asked for it, or owners and admins.
          */
         post: operations["stop_coding_run"];
         delete?: never;
@@ -4649,12 +4650,12 @@ export interface components {
          * @description The coding tools we wrap; which one runs follows the model key the server has.
          * @enum {string}
          */
-        CodingAgent: "claude-code" | "codex";
+        CodingAgent: "claude-code" | "codex" | "opencode";
         /** CodingAvailability */
         CodingAvailability: {
             /** Available */
             available: boolean;
-            /** @description Who would code: Claude Code with an Anthropic key, else Codex */
+            /** @description Who would code: Claude Code with an Anthropic key, else Codex; OpenCode when the server names it */
             agent: components["schemas"]["CodingAgent"] | null;
             /**
              * Sandbox
