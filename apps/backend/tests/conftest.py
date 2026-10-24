@@ -244,6 +244,7 @@ async def db_client(
     app.state.jobs = InlineJobs(
         JobContext(shared_session, app.state.settings, outbox, storage, checkouts=checkouts, runner=runner), JOBS
     )
+    runner.jobs = app.state.jobs
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 

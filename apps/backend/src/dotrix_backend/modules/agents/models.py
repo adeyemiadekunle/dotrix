@@ -93,6 +93,9 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # How the person was working when they sent it; null: as before work modes (every tool, writes
     # approved one by one), which the CLI and API clients that don't send one still get.
     work_mode: Mapped[WorkMode | None] = mapped_column(str_enum(WorkMode, 16))
+    # The approval mode in effect when it was sent (workspaces/approval_modes.py: manual,
+    # accept_edits, auto); null: Manual. The runner checks it again when it works.
+    approval_mode: Mapped[str | None] = mapped_column(String(16))
     # Started by an automation (modules/automations), not a person at the time; still instructed
     # by the person who set the automation up (requested_by_id).
     automation_id: Mapped[uuid.UUID | None] = mapped_column(

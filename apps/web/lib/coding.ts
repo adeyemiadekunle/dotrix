@@ -9,6 +9,7 @@ export type CodingRun = Schemas["CodingRunRead"];
 export type CodingRunStatus = Schemas["CodingRunStatus"];
 export type CodingSession = Schemas["CodingSessionRead"];
 export type PrState = Schemas["PrState"];
+type ApprovalMode = NonNullable<Schemas["CodingRunCreate"]["approval_mode"]>;
 
 const path = (scope: Scope) => ({ workspace_id: scope.workspaceId, project_id: scope.projectId });
 const runsKey = (scope: Scope | undefined, issueKey?: string | null) => ["coding-runs", scope?.projectId, issueKey];
@@ -80,12 +81,12 @@ function useCodingMutation<T, R = CodingRun>(scope: Scope | undefined, issueKey:
   });
 }
 
-export function useStartCoding(scope: Scope | undefined, issueKey: string) {
+export function useStartCoding(scope: Scope | undefined, issueKey: string, approvalMode: ApprovalMode | null = null) {
   return useCodingMutation(scope, issueKey, (s, note: string | null) =>
     unwrap(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/issues/{key}/runs", {
         params: { path: { ...path(s), key: issueKey } },
-        body: { note },
+        body: { note, approval_mode: approvalMode },
       }),
     ),
   );
@@ -174,12 +175,12 @@ export function useCodingRun(scope: Scope | undefined, runId: string | null | un
 }
 
 /** Another turn in a session: the same agent, on its branch and PR. */
-export function useFollowUp(scope: Scope | undefined, sessionId: string, issueKey: string) {
+export function useFollowUp(scope: Scope | undefined, sessionId: string, issueKey: string, approvalMode: ApprovalMode | null = null) {
   return useCodingMutation(scope, issueKey, (s, message: string) =>
     unwrap(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns", {
         params: { path: { ...path(s), session_id: sessionId } },
-        body: { message },
+        body: { message, approval_mode: approvalMode },
       }),
     ),
   );

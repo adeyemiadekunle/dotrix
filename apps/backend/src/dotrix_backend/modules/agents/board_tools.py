@@ -26,7 +26,7 @@ from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.contracts import AgentPolicy
 
 from .storage_backend import SessionFactory, current_agent_role
-from .unattended import REFUSED, Unattended
+from .unattended import REFUSED, Unattended, audit_action
 
 LOG_ENTRIES_SHOWN = 10
 
@@ -109,7 +109,8 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
             if ctx.instructed_by_id is None or action is None or ctx.unattended is None:
                 return {"error": REFUSED}
             if closes:
-                return {"error": "Closing an issue needs a person: propose it, or move it to review"}
+                return {"error": "Closing an issue needs a person: move it to review, and say they can close it "
+                                 "on the board (or ask again in the Manual approval mode, to approve it here)"}
             granted = ctx.unattended.grant(current_agent_role(), action)
             if isinstance(granted, str):
                 return {"error": granted}
@@ -131,7 +132,7 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
                 if rule is not None:
                     # Allowed without a person approving it: say which standing rule allowed it.
                     AuditLog(session).record(
-                        workspace_id=ctx.workspace_id, project_id=ctx.project_id, action=f"{action}.allowed",
+                        workspace_id=ctx.workspace_id, project_id=ctx.project_id, action=audit_action(action, rule),
                         target=str((result or {}).get("key") or ""), actor_type=AuthorType.AGENT,
                         agent=rule["agent"], instructed_by_id=ctx.instructed_by_id, approved_by_id=approved_by_id,
                         details={"rule": rule},

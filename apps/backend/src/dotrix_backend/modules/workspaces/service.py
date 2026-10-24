@@ -16,6 +16,7 @@ from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.projects.models import ProjectAccessLevel, ProjectMember
 from dotrix_backend.modules.projects.repository import ProjectRepository
 
+from .approval_modes import cap_of, rank
 from .models import Membership, Role, Workspace, WorkspaceKind
 from .permissions import Permission, can
 from .repository import MembershipRepository, WorkspaceRepository
@@ -121,6 +122,13 @@ class WorkspaceService:
                 raise Forbidden("Only owners can let agents act without approval again")
             await self._audit(member, "workspace.unattended_paused" if data.unattended_paused else "workspace.unattended_resumed")
             workspace.unattended_paused = data.unattended_paused
+        if data.approval_mode_cap is not None and data.approval_mode_cap.value != (workspace.approval_mode_cap or ""):
+            before = cap_of(workspace)
+            if rank(data.approval_mode_cap) > rank(before) and member.role is not Role.OWNER:
+                raise Forbidden("Only owners can let people work in a higher approval mode")
+            await self._audit(member, "workspace.approval_mode_cap_changed",
+                              **{"from": before.value, "to": data.approval_mode_cap.value})
+            workspace.approval_mode_cap = data.approval_mode_cap.value
         if data.personal_keys is not None and data.personal_keys != workspace.personal_keys:
             await self._audit(member, "workspace.personal_keys_" + ("allowed" if data.personal_keys else "turned_off"))
             workspace.personal_keys = data.personal_keys

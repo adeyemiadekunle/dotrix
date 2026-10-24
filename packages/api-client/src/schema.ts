@@ -4141,6 +4141,11 @@ export interface components {
             /** @description How the person was working when they sent it */
             work_mode?: components["schemas"]["WorkMode"] | null;
             /**
+             * @description The approval mode in effect when it was sent
+             * @default manual
+             */
+            approval_mode: components["schemas"]["ApprovalMode"];
+            /**
              * Conversation Model
              * @description The model the conversation runs on (fixed when it started); null on older conversations, which use the project's model
              */
@@ -4319,6 +4324,11 @@ export interface components {
             /** Last Used At */
             last_used_at: string | null;
         };
+        /**
+         * ApprovalMode
+         * @enum {string}
+         */
+        ApprovalMode: "manual" | "accept_edits" | "auto";
         /** ApprovalRead */
         ApprovalRead: {
             /**
@@ -4774,6 +4784,8 @@ export interface components {
              * @description What to do in this turn
              */
             message: string;
+            /** @description `manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes */
+            approval_mode?: components["schemas"]["ApprovalMode"] | null;
         };
         /**
          * CodingOrigin
@@ -4796,6 +4808,8 @@ export interface components {
              * @description Anything to add to the issue for the agent
              */
             note?: string | null;
+            /** @description `manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes */
+            approval_mode?: components["schemas"]["ApprovalMode"] | null;
         };
         /** CodingRunRead */
         CodingRunRead: {
@@ -4926,6 +4940,11 @@ export interface components {
              * @description The conversation it was started from (Build mode)
              */
             thread_id?: string | null;
+            /**
+             * @description The approval mode it was asked in
+             * @default manual
+             */
+            approval_mode: components["schemas"]["ApprovalMode"];
             /**
              * Plan Id
              * @description The plan version it builds from
@@ -6988,6 +7007,8 @@ export interface components {
             model?: string | null;
             /** @description How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, `.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with its evidence). Changes wait for approval in every mode; only `build` engages Kai. Omit for no mode (as before work modes: no plans or evidence tools) */
             work_mode?: components["schemas"]["WorkMode"] | null;
+            /** @description How much goes through without waiting: `manual` (every change waits for a yes; the default), `accept_edits` (what you ask for goes through, recorded as approved by you, and coding starts at once), `auto` (the same, and checkpoints don't pause). Never above the workspace's cap, and Manual for people who may not approve agent changes */
+            approval_mode?: components["schemas"]["ApprovalMode"] | null;
             /**
              * Mentions
              * @description People @mentioned (user ids). Each is told if "@Their Name" is in the text and they can see the project; others are ignored
@@ -7930,6 +7951,8 @@ export interface components {
              * @description Let people's own model keys run what they start here (owners and admins)
              */
             personal_keys?: boolean | null;
+            /** @description The highest approval mode people may work in: `manual` (every change waits for a yes), `accept_edits` (what a person asks for goes through, and coding starts at once), `auto` (the same, and checkpoints don't pause). Owners raise it; owners and admins lower it */
+            approval_mode_cap?: components["schemas"]["ApprovalMode"] | null;
         };
         /** WorkspaceWithRole */
         WorkspaceWithRole: {
@@ -7966,6 +7989,16 @@ export interface components {
              * @default true
              */
             personal_keys: boolean;
+            /**
+             * @description The highest approval mode people may work in here (Manual while changes without approval are paused)
+             * @default manual
+             */
+            approval_mode_cap: components["schemas"]["ApprovalMode"];
+            /**
+             * @description What a new conversation or coding session starts on in the app: Accept edits in a personal workspace, Manual in an organisation (never above the cap)
+             * @default manual
+             */
+            default_approval_mode: components["schemas"]["ApprovalMode"];
             role: components["schemas"]["Role"];
             /**
              * Permissions

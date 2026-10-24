@@ -6,6 +6,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
+from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 from dotrix_engine.catalog import action_for
 
 from .models import ApprovalStatus, RunKind, RunStatus, WorkMode
@@ -39,6 +40,13 @@ class RunCreate(BaseModel):
         "`.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with "
         "its evidence). Changes wait for approval in every mode; only `build` engages Kai. Omit for no mode "
         "(as before work modes: no plans or evidence tools)",
+    )
+    approval_mode: ApprovalMode | None = Field(
+        default=None,
+        description="How much goes through without waiting: `manual` (every change waits for a yes; the "
+        "default), `accept_edits` (what you ask for goes through, recorded as approved by you, and coding starts "
+        "at once), `auto` (the same, and checkpoints don't pause). Never above the workspace's cap, and Manual for "
+        "people who may not approve agent changes",
     )
     mentions: list[uuid.UUID] = Field(
         default_factory=list, max_length=20,
@@ -309,6 +317,9 @@ class AgentRunRead(BaseModel):
         "null: its own"
     )
     work_mode: WorkMode | None = Field(default=None, description="How the person was working when they sent it")
+    approval_mode: Annotated[ApprovalMode, BeforeValidator(lambda v: v or "manual")] = Field(
+        default=ApprovalMode.MANUAL, description="The approval mode in effect when it was sent",
+    )
     conversation_model: str | None = Field(
         default=None,
         description="The model the conversation runs on (fixed when it started); null on older conversations, "

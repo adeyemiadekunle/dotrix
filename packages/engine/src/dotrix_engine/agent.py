@@ -374,6 +374,7 @@ def build_team(
     mode: str | None = None,
     work_mode: str | None = None,
     lead_tools: list | None = None,
+    checkpoints: bool = True,
 ):
     """The Project Manager plus the specialists, over any storage backend.
 
@@ -409,7 +410,8 @@ def build_team(
     its pipeline has a checkpoint stage: it pauses like a write, for the person to continue,
     change the plan, or stop. `work_mode` (`work_modes.WORK_MODES`) tells the agent talking to the
     person how the person is working (Discuss, Plan, Build, Review); the caller gives the tools
-    that mode allows. `lead_tools` are that agent's alone (whatever its contract lists).
+    that mode allows. `lead_tools` are that agent's alone (whatever its contract lists). Without
+    `checkpoints` (the person's Auto approval mode), a checkpoint doesn't pause the run.
     """
     if work_mode is not None:
         work_mode_guide(work_mode)  # an unknown mode fails here
@@ -525,7 +527,7 @@ blockers, and documentation status. A briefing never writes.
 
     def gate(spec: AgentSpec, box: dict[str, list[Any]]) -> dict[str, Any]:
         gated = _gate(spec, box)
-        if steers(spec) and stage_sink is not None:
+        if steers(spec) and stage_sink is not None and checkpoints:
             gated["checkpoint"] = _APPROVAL
         return gated
 

@@ -53,6 +53,7 @@ import {
   signInMethods,
   skillSaved,
   unattendedPaused,
+  approvalCap,
   skills,
   tokenCreated,
   tokenRevoked,
@@ -765,7 +766,46 @@ function UnattendedPause() {
           disabled={paused && role !== "owner"}
         />
       </SRow>
+      <ApprovalCap role={role} />
     </div>
+  );
+}
+
+const CAPS: [string, string][] = [
+  ["manual", "Manual: every change waits for a yes"],
+  ["accept_edits", "Accept edits: what people ask for goes through, and coding starts at once"],
+  ["auto", "Auto: the same, and checkpoints don't pause"],
+];
+
+/** The highest approval mode people may work in (only those who may approve agent changes go above Manual). */
+function ApprovalCap({ role }: { role: string | undefined }) {
+  const [demo, setDemo] = useState("manual");
+  const cap = isLive() ? (live.ws?.approval_mode_cap ?? "manual") : demo;
+  const paused = isLive() && !!live.ws?.unattended_paused;
+  const at = CAPS.findIndex(([v]) => v === cap);
+  return (
+    <SRow
+      t="Highest approval mode"
+      d={
+        paused
+          ? "Paused: everyone works in Manual until changes without approval are resumed."
+          : "How much people may let go through without waiting, in chat and coding. Only people who may approve agent changes go above Manual; closing issues, merging, and agent rules always need a person."
+      }
+    >
+      <select
+        className="input"
+        value={cap}
+        aria-label="Highest approval mode"
+        disabled={paused}
+        onChange={(e) => (isLive() ? void approvalCap(e.target.value as "manual" | "accept_edits" | "auto") : setDemo(e.target.value))}
+      >
+        {CAPS.map(([v, l], i) => (
+          <option key={v} value={v} disabled={role !== "owner" && i > at}>
+            {l}
+          </option>
+        ))}
+      </select>
+    </SRow>
   );
 }
 

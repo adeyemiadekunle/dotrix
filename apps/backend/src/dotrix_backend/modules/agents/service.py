@@ -28,6 +28,7 @@ from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import visible_to
 from dotrix_backend.modules.research.models import ResearchSource
+from dotrix_backend.modules.workspaces.approval_modes import effective
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_engine.agent import PM_ROLE
@@ -230,6 +231,8 @@ class AgentService:
             agent=None if data.agent in ("auto", PM_ROLE) else data.agent,
             mode=mode,
             work_mode=data.work_mode,
+            # Automations work in Manual (their own switch governs changes without approval).
+            approval_mode=effective(data.approval_mode if automation_id is None else None, member).value,
             automation_id=automation_id,
             conversation_model=model,
             requested_by_id=member.user_id,

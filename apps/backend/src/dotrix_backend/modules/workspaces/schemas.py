@@ -5,8 +5,9 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
+from .approval_modes import ApprovalMode, cap_of, lowest
 from .models import Role, WorkspaceKind
 from .permissions import MEMBER_GRANTABLE, Permission, effective_permissions, granted_to_members
 
@@ -37,6 +38,12 @@ class WorkspaceUpdate(BaseModel):
     personal_keys: bool | None = Field(
         default=None, description="Let people's own model keys run what they start here (owners and admins)"
     )
+    approval_mode_cap: ApprovalMode | None = Field(
+        default=None,
+        description="The highest approval mode people may work in: `manual` (every change waits for a yes), "
+        "`accept_edits` (what a person asks for goes through, and coding starts at once), `auto` (the same, and "
+        "checkpoints don't pause). Owners raise it; owners and admins lower it",
+    )
 
     @field_validator("member_permissions")
     @classmethod
@@ -66,6 +73,31 @@ class WorkspaceRead(BaseModel):
     personal_keys: bool = Field(
         default=True, description="People's own model keys run what they start here (else the workspace's key)"
     )
+    approval_mode_cap: ApprovalMode = Field(
+        default=ApprovalMode.MANUAL,
+        description="The highest approval mode people may work in here (Manual while changes without approval "
+        "are paused)",
+    )
+    default_approval_mode: ApprovalMode = Field(
+        default=ApprovalMode.MANUAL, validate_default=True,
+        description="What a new conversation or coding session starts on in the app: Accept edits in a personal "
+        "workspace, Manual in an organisation (never above the cap)",
+    )
+
+    @field_validator("approval_mode_cap", mode="before")
+    @classmethod
+    def _cap(cls, value: object, info: ValidationInfo) -> ApprovalMode:
+        # Read from the workspace: its owners' choice (or null), turned into the cap in effect.
+        return cap_of(SimpleNamespace(
+            kind=info.data.get("kind"), unattended_paused=info.data.get("unattended_paused"), approval_mode_cap=value,
+        ))
+
+    @field_validator("default_approval_mode", mode="before")
+    @classmethod
+    def _default(cls, value: object, info: ValidationInfo) -> ApprovalMode:
+        cap = info.data.get("approval_mode_cap", ApprovalMode.MANUAL)
+        wanted = ApprovalMode.ACCEPT_EDITS if info.data.get("kind") is WorkspaceKind.PERSONAL else ApprovalMode.MANUAL
+        return lowest(wanted, cap)
 
     @field_validator("member_permissions", mode="before")
     @classmethod

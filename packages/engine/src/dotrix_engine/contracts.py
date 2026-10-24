@@ -155,6 +155,14 @@ class AgentSpec(BaseModel):
             return self
         return self.model_copy(update={"autonomy": {a: ("ask" if a in drop else r) for a, r in self.autonomy.items()}})
 
+    def allowing(self, actions: Iterable[str]) -> AgentSpec:
+        """This contract with `actions` turned from ask to allow (the person's approval mode lets
+        what they ask for go through); a blocked action stays blocked."""
+        add = {a for a in actions if self.rule(a) == "ask"}
+        if not add:
+            return self
+        return self.model_copy(update={"autonomy": {**self.autonomy, **dict.fromkeys(add, "allow")}})
+
     def folder_access(self, path: str) -> Access:
         """What this agent may do to `path` (relative to `.dotrix/`): the first matching pattern
         in its `access`, else read. People-only folders are always read, whatever it says."""

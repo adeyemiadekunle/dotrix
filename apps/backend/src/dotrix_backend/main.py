@@ -117,6 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 queue=queue,
                 streams=streams,
             )
+            runner.jobs = app.state.jobs
             if isinstance(app.state.jobs, InlineJobs | LocalJobs):
                 # Jobs that start agent runs (automations, the Reviewer after a coding run) need the
                 # runner, made just above.
