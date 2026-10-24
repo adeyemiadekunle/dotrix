@@ -5205,6 +5205,11 @@ export interface components {
              */
             archived: boolean;
             /**
+             * Thread Id
+             * @description The conversation it was started from (Build mode), when that conversation is yours: its turns show there, inline. Null: a session of its own.
+             */
+            thread_id?: string | null;
+            /**
              * Started At
              * Format: date-time
              */

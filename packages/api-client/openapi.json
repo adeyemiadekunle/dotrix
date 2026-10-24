@@ -23136,6 +23136,19 @@
             "title": "Archived",
             "default": false
           },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id",
+            "description": "The conversation it was started from (Build mode), when that conversation is yours: its turns show there, inline. Null: a session of its own."
+          },
           "started_at": {
             "type": "string",
             "format": "date-time",

@@ -1098,6 +1098,14 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     evidence = [m.content for m in model.received[1] if m.type == "tool"][-1]
     assert '"turn": 2' in evidence and "awaiting_approval" in evidence
 
+    # The session belongs to its conversation (shown there, inline), for whoever's conversation it is.
+    [mine] = [s for s in (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
+              if s["session_id"] == run["session_id"]]
+    assert mine["thread_id"] == thread and mine["turns"] == 2
+    [theirs] = [s for s in (await db_client.get(f"{ws}/coding/sessions", headers=cat.headers)).json()
+                if s["session_id"] == run["session_id"]]
+    assert theirs["thread_id"] is None  # another person's conversation isn't named to them
+
     # Cat may chat but not instruct Kai: Build says so instead of asking for a run.
     model = agent_script.say(tool_call("start_coding", issue_key=issue["key"]), "You can't ask Kai here.")
     await db_client.post(f"{base}/agent/runs", headers=cat.headers, json={"message": "Build it", "work_mode": "build"})

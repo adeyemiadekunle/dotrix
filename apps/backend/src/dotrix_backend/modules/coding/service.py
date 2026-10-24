@@ -447,6 +447,9 @@ class CodingService:
                 )
             else:
                 found.started_at = run.created_at
+            # Its conversation, for whoever's it is (conversations are private: nobody else gets its id).
+            if run.thread_id is not None and run.requested_by_id == member.user_id:
+                sessions[run.session_id].thread_id = run.thread_id
         for sid, read in sessions.items():
             row = rows_by_id.get(sid)
             if row is not None:

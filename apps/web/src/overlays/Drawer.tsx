@@ -581,7 +581,7 @@ function CodingSection({ t }: { t: Task }) {
   const start = () => {
     S.ui.pop = null;
     if (!startCoding(t, "opencode")) return;
-    toast(`${CODING_AGENT.name} will start once someone approves`, { action: "Open Chat", onAction: () => openInChat("tab=coding") });
+    toast(`${CODING_AGENT.name} will start once someone approves`, { action: "Open Chat", onAction: () => openInChat("") });
   };
   const label: Record<string, [string, string]> = {
     awaiting_approval: ["Waiting for approval", "amber"],
