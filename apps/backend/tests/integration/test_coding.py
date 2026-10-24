@@ -1374,11 +1374,15 @@ class _RunnerApi:
 
     def __init__(self, db_client: AsyncClient, headers: dict) -> None:
         self.db_client, self.headers = db_client, headers
+        # The test's requests share one database session: a test calling the API while the runner
+        # works takes this lock too, so their requests never overlap.
+        self.lock = asyncio.Lock()
 
     async def post(self, path: str, body: Any = None) -> Any:
         from dotrix_cli.platform import PlatformError
 
-        res = await self.db_client.post(f"/v1{path}", json=body, headers=self.headers)
+        async with self.lock:
+            res = await self.db_client.post(f"/v1{path}", json=body, headers=self.headers)
         if res.status_code >= 400:
             problem = res.json()
             raise PlatformError(res.status_code, str(problem.get("type", "")).rsplit("/", 1)[-1], problem.get("detail", ""))
@@ -1510,9 +1514,12 @@ async def test_a_local_turn_is_checked_stopped_fenced_and_recovered(
     working = asyncio.create_task(runner.once())
     for _ in range(400):  # until its runner holds it (a loaded machine takes a while to fetch and add the worktree)
         await asyncio.sleep(0.05)
-        if (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()["status"] == "running":
+        async with runner.api.lock:
+            seen = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()["status"]
+        if seen == "running":
             break
-    await db_client.post(f"{base}/coding/runs/{run['id']}/stop", headers=ada.headers)
+    async with runner.api.lock:
+        await db_client.post(f"{base}/coding/runs/{run['id']}/stop", headers=ada.headers)
     await asyncio.wait_for(working, 60)  # the tool would sleep 30 s: Stop ends it well before
     stopped = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert stopped["status"] == "stopped" and github.pulls == []

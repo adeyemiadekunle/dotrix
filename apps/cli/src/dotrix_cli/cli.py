@@ -513,6 +513,15 @@ def runner_command(
             if sandbox == "srt":
                 _fail(str(exc))
             typer.secho(f"{exc}. Turns won't be isolated until it is.", fg=typer.colors.YELLOW, err=True)
+    if sandbox != "none" and sys.platform == "win32" and sandbox_runtime.command() and sys.stdin.isatty() \
+            and sandbox_runtime.windows_setup_missing():
+        typer.echo("Setting up the sandbox on this machine (once; Windows asks for an administrator)…")
+        try:
+            sandbox_runtime.setup_windows()
+        except RuntimeError as exc:
+            if sandbox == "srt":
+                _fail(str(exc))
+            typer.secho(f"{exc}. Turns won't be isolated until it is.", fg=typer.colors.YELLOW, err=True)
     runner = LocalRunner(
         _AsyncApi(client), Path(config.root_dir), state.workspace_id, state.project_id, tool=tool, command=command,
         sandbox=sandbox, echo=typer.echo, **({"name": name} if name else {}), **({"worktrees": worktrees} if worktrees else {}),
@@ -543,12 +552,16 @@ app.add_typer(sandbox_app, name="sandbox")
 
 @sandbox_app.command("install")
 def sandbox_install():
-    """Install the pinned sandbox runtime into ~/.dotrix/tools (needs Node 22.12+ with npm)."""
+    """Install the pinned sandbox runtime into ~/.dotrix/tools (needs Node 22.12+ with npm); on
+    Windows also its one-time setup for this machine (one administrator prompt)."""
     try:
         cli_js = sandbox_runtime.install()
+        typer.echo(f"{sandbox_runtime.PACKAGE}@{sandbox_runtime.VERSION} at {cli_js.parent.parent}")
+        if sys.platform == "win32" and sandbox_runtime.windows_setup_missing():
+            typer.echo("Setting up the sandbox on this machine (once; Windows asks for an administrator)…")
+            sandbox_runtime.setup_windows()
     except RuntimeError as exc:
         _fail(str(exc))
-    typer.echo(f"{sandbox_runtime.PACKAGE}@{sandbox_runtime.VERSION} at {cli_js.parent.parent}")
     sandbox_check()
 
 

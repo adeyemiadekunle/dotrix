@@ -281,6 +281,15 @@ codes on its requester's computer instead of a worker's sandbox; everything else
   bubblewrap and socat), `srt` requires it: writes only to the worktree, the tools' own state and
   `/tmp`; no reads of `~/.ssh`, `~/.aws` and other credentials; network only to the model APIs and package
   registries. Claude Code may run commands only inside it (`--allowedTools Bash`); without it, edits only.
+  Per platform (`sandbox.settings`, `sandbox.check`): macOS needs nothing more (its temp
+  folders are writable); Linux needs bubblewrap and socat; Windows (alpha in srt) needs a one-time setup
+  per machine (`srt windows-install`, one administrator prompt), which `dotrix sandbox install` runs and
+  the desktop app offers on first launch, its state read with `srt-win.exe status`. On Windows srt starts
+  the tool as its own account with a fresh environment, so the runner starts it through a launcher (a
+  batch file beside the worktree, removed when the turn ends) that sets its key variables and where its
+  sign-in lives (`CLAUDE_CONFIG_DIR`, the XDG folders, in the person's profile, which the settings let it
+  write). Tools are started by their full path (`claude.cmd` on Windows), and Stop reaches everything
+  they started (a process group: SIGINT on macOS and Linux, Ctrl-Break then `taskkill /T` on Windows).
   A turn without `srt` says so in its events. Checked for real on Linux (bubblewrap): writing in the
   worktree works; writing outside it, reading `~/.ssh`, and reaching github.com are refused. Not yet
   checked: macOS, and reaching the allowed hosts (behind this container's own proxy srt's bridge refused it).
@@ -290,7 +299,7 @@ codes on its requester's computer instead of a worker's sandbox; everything else
   edits and Auto accept it for the requester. Accepted, the worker's publish-only pass applies it to the
   branch as it is, checks it again, pushes, and opens or updates the PR. Reverts are always that pass.
 
-Not yet: the desktop app's runner, a folder with no remote (branch and diff, no PR), `srt` on macOS.
+Not yet: the desktop app's runner, a folder with no remote (branch and diff, no PR), `srt` run on a real Mac and Windows machine.
 
 ## Local-file projects
 

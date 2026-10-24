@@ -22,6 +22,7 @@ import shlex
 import shutil
 import signal
 import socket
+import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -31,12 +32,6 @@ from typing import Any, Protocol
 from . import sandbox as sandbox_runtime
 
 TOOLS = ("claude-code", "opencode")
-# What a sandboxed tool may reach: the model providers' APIs, and the package registries tests need.
-ALLOWED_DOMAINS = [
-    "api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com",
-    "registry.npmjs.org", "pypi.org", "files.pythonhosted.org",
-]
-DENY_READ = ["~/.ssh", "~/.aws", "~/.config/gcloud", "~/.gnupg", "~/.netrc", "~/.docker"]
 EVENTS_PER_BEAT = 50
 STOP_GRACE_SECONDS = 5
 
@@ -259,13 +254,20 @@ class LocalRunner:
         else:
             here = self.tools()
             tool = Tool.named(run["tool"] if run["tool"] in here else here[0], isolated=isolation == "srt")
-        argv = self._sandboxed(tool.argv, tree) if isolation == "srt" else tool.argv
+        # The tool by its full path: on Windows `claude` and `opencode` are .cmd files, found only that way.
+        tool_argv = [shutil.which(tool.argv[0]) or tool.argv[0], *tool.argv[1:]]
+        argv, leftovers = self._sandboxed(tool_argv, tree) if isolation == "srt" else (tool_argv, [])
         out = Outcome()
-        process = await asyncio.create_subprocess_exec(
-            *argv, cwd=tree, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE, env={**_env(), **(sandbox_runtime.env() if isolation == "srt" else {})},
-            start_new_session=os.name != "nt",
-        )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *argv, cwd=tree, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE, env={**_env(), **(sandbox_runtime.env() if isolation == "srt" else {})},
+                **_own_group(),
+            )
+        except OSError as exc:
+            _remove(leftovers)
+            await report("failed", base_sha=base_sha, error=f"Couldn't start {tool.name}: {exc}")
+            return
         assert process.stdin and process.stdout and process.stderr
         process.stdin.write(run["brief"].encode())
         await process.stdin.drain()
@@ -294,6 +296,8 @@ class LocalRunner:
             await _terminate(process)
             self.echo(f"  The platform gave the turn to another attempt; left {tree} as it is")
             raise
+        finally:
+            _remove(leftovers)  # the Windows launcher holds the tool's keys: never left behind
         code = await process.wait()
         stderr = (await errors).decode(errors="replace").strip()
         if stopped:
@@ -316,23 +320,19 @@ class LocalRunner:
         await report("changes", base_sha=base_sha, patch=patch, summary=out.summary or _tail(stderr), **usage)
         self.echo(f"  Changes reported; the worktree stays at {tree}")
 
-    def _sandboxed(self, argv: list[str], tree: Path) -> list[str]:
-        """The tool inside srt: writes only to the worktree (and the tools' own state), reads
-        everything but credentials, network only to model APIs and package registries."""
+    def _sandboxed(self, argv: list[str], tree: Path) -> tuple[list[str], list[Path]]:
+        """The tool inside srt (`sandbox.settings`), and the files to remove when it ends. On Windows
+        it starts through a launcher that gives it its environment (srt starts it with a fresh one)."""
         settings = tree.parent / f"{tree.name}.srt.json"
-        home = Path.home()
-        settings.write_text(json.dumps({
-            "filesystem": {
-                "denyRead": DENY_READ,
-                "allowWrite": [str(tree), str(home / ".claude"), str(home / ".claude.json"),
-                               str(home / ".local" / "share" / "opencode"), "/tmp"],
-                "denyWrite": [],
-            },
-            "network": {"allowedDomains": ALLOWED_DOMAINS, "deniedDomains": []},
-        }, indent=2), encoding="utf-8")
+        settings.write_text(json.dumps(sandbox_runtime.settings(tree), indent=2), encoding="utf-8")
         srt = sandbox_runtime.command()
         assert srt is not None
-        return [*srt, "--settings", str(settings), "--", *argv]
+        leftovers: list[Path] = []
+        if platform_info.system() == "Windows":
+            launcher = tree.parent / f"{tree.name}.launch.cmd"
+            argv = sandbox_runtime.windows_launcher(launcher, argv, _env())
+            leftovers.append(launcher)
+        return [*srt, "--settings", str(settings), "--", *argv], leftovers
 
 
 def _lost(exc: Exception) -> bool:
@@ -349,21 +349,34 @@ def _tail(text: str) -> str | None:
     return lines[-1][:2000] if lines else None
 
 
+def _own_group() -> dict[str, Any]:
+    """Start the tool in a process group of its own, so Stop reaches everything it started."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}  # type: ignore[attr-defined]
+    return {"start_new_session": True}
+
+
+def _remove(paths: list[Path]) -> None:
+    for path in paths:
+        path.unlink(missing_ok=True)
+
+
 async def _terminate(process: asyncio.subprocess.Process) -> None:
-    """Interrupt the tool (and what it started), then kill it if it doesn't end."""
+    """Interrupt the tool (and what it started), then kill the whole tree if it doesn't end."""
     if process.returncode is not None:
         return
     try:
-        if os.name != "nt":
-            os.killpg(process.pid, signal.SIGINT)
+        if os.name == "nt":
+            os.kill(process.pid, signal.CTRL_BREAK_EVENT)  # type: ignore[attr-defined]  # its group's Ctrl-Break
         else:
-            process.terminate()
+            os.killpg(process.pid, signal.SIGINT)
         await asyncio.wait_for(process.wait(), STOP_GRACE_SECONDS)
-    except (TimeoutError, ProcessLookupError):
+    except (TimeoutError, ProcessLookupError, OSError):
         try:
-            if os.name != "nt":
-                os.killpg(process.pid, signal.SIGKILL)
+            if os.name == "nt":  # every process it started, not just the first
+                await asyncio.to_thread(subprocess.run, ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                                        capture_output=True, check=False)
             else:
-                process.kill()
+                os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass

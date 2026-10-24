@@ -8,22 +8,36 @@ version in its own package and points the runner at it through `DOTRIX_SRT`.
 Which copy runs, in order: `DOTRIX_SRT` (a path to srt's `cli.js`, or to an `srt` executable), the
 copy dotrix installed, then an `srt` already on PATH.
 
-srt needs Node 22.12 or later; on Linux also bubblewrap and socat (macOS needs nothing more, and
-Windows support in srt is still alpha).
+srt needs Node 22.12 or later, and per platform:
+- macOS: nothing more (Seatbelt, built in).
+- Linux: bubblewrap and socat.
+- Windows (alpha in srt): a one-time setup per machine, `srt windows-install`, which asks for an
+  administrator once (UAC) and creates the `srt-sandbox` account the tool runs as. `dotrix sandbox
+  install` runs it; `check()` reads its state with srt's own `srt-win.exe status` (no elevation). The
+  tool then starts with a fresh environment and its own profile, so the runner hands it what it needs
+  (its key variables, where its sign-in lives) through a launcher (`windows_launcher`).
 """
 from __future__ import annotations
 
+import json
 import os
 import platform
 import re
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 PACKAGE = "@anthropic-ai/sandbox-runtime"
 VERSION = "0.0.79"  # pinned; the desktop app's package.json pins the same
 MIN_NODE = (22, 12)
+# What a sandboxed tool may reach: the model providers' APIs, and the package registries tests need.
+ALLOWED_DOMAINS = [
+    "api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com",
+    "registry.npmjs.org", "pypi.org", "files.pythonhosted.org",
+]
+DENY_READ = ["~/.ssh", "~/.aws", "~/.config/gcloud", "~/.gnupg", "~/.netrc", "~/.docker"]
 
 
 def tools_dir() -> Path:
@@ -73,6 +87,100 @@ def _run(path: Path) -> list[str] | None:
     return [str(path)] if path.is_file() else None
 
 
+def package_dir() -> Path | None:
+    """The srt package folder of the copy that runs (None: an `srt` from PATH, or none)."""
+    chosen = os.environ.get("DOTRIX_SRT")
+    cli = Path(chosen) if chosen else installed_cli()
+    return cli.parent.parent if cli.suffix == ".js" and cli.is_file() else None
+
+
+def srt_win() -> Path | None:
+    """srt's Windows helper (`srt-win.exe`) in the copy that runs."""
+    found = package_dir()
+    if found is None:
+        return None
+    arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"
+    exe = found / "vendor" / "srt-win" / arch / "srt-win.exe"
+    return exe if exe.is_file() else None
+
+
+def windows_setup_missing() -> str | None:
+    """What the one-time Windows setup lacks (None: done). Read with `srt-win.exe status`, which
+    needs no administrator: the account, its stored credential, and the network filters."""
+    exe = srt_win()
+    if exe is None:
+        return "srt's Windows helper (srt-win.exe): `dotrix sandbox install`"
+    try:
+        done = subprocess.run([str(exe), "status"], capture_output=True, text=True, timeout=60, check=False)
+        status = json.loads(done.stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return "the one-time Windows setup (srt-win.exe status didn't answer): `dotrix sandbox install`"
+    user, wfp = status.get("user") or {}, status.get("wfp") or {}
+    exists = (user.get("user") or {}).get("exists") and user.get("cred_present")
+    # Without an administrator the filters read as `cannot-read`; srt proves them itself when it starts.
+    if not exists or wfp.get("state") not in ("installed", "cannot-read"):
+        return "the one-time Windows setup (one administrator prompt): `dotrix sandbox install`"
+    return None
+
+
+def setup_windows() -> None:
+    """Run srt's one-time Windows setup (`windows-install`): it asks for an administrator once (UAC)."""
+    srt = command()
+    if srt is None:
+        raise RuntimeError("Install the sandbox runtime first: `dotrix sandbox install`")
+    done = subprocess.run([*srt, "windows-install"], env={**os.environ, **env()}, check=False)
+    if done.returncode == 2:
+        raise RuntimeError("The Windows setup was cancelled at the administrator prompt; nothing changed")
+    if done.returncode != 0:
+        raise RuntimeError("srt's Windows setup failed (see above)")
+
+
+def settings(tree: Path, *, home: Path | None = None, system: str | None = None) -> dict[str, object]:
+    """srt's settings for one turn: writes only to the worktree, the coding tools' own state, and
+    temporary files; no reads of credentials; network only to the model APIs and package registries."""
+    home = home or Path.home()
+    system = system or platform.system()
+    tool_state = [home / ".claude", home / ".claude.json", home / ".local" / "share" / "opencode",
+                  home / ".config" / "opencode", home / ".cache" / "opencode"]
+    temporary: list[str] = []
+    if system != "Windows":  # on Windows the tool has the sandbox account's own %TEMP%
+        temporary = sorted({"/tmp", tempfile.gettempdir()} | ({"/private/tmp"} if system == "Darwin" else set()))
+    return {
+        "filesystem": {
+            "denyRead": DENY_READ,
+            "allowWrite": [str(tree), *(str(p) for p in tool_state), *temporary],
+            "denyWrite": [],
+        },
+        "network": {"allowedDomains": ALLOWED_DOMAINS, "deniedDomains": []},
+    }
+
+
+# What the tool may get from this machine's environment inside the Windows sandbox (which starts it
+# with a fresh one): its keys and settings, nothing else.
+FORWARDED = ("ANTHROPIC_", "CLAUDE_", "OPENAI_", "OPENCODE_", "GEMINI_", "GOOGLE_API_KEY")
+
+
+def windows_launcher(path: Path, argv: list[str], environ: dict[str, str], *, home: Path | None = None) -> list[str]:
+    """A batch file that sets the tool's environment and starts it, for the Windows sandbox: the
+    tool's key variables, and where its sign-in and state live (the person's profile, not the
+    sandbox account's). Deleted by the runner when the turn ends."""
+    home = home or Path.home()
+    values = {k: v for k, v in environ.items() if k.startswith(FORWARDED)}
+    values.setdefault("CLAUDE_CONFIG_DIR", str(home / ".claude"))
+    values.setdefault("XDG_CONFIG_HOME", str(home / ".config"))
+    values.setdefault("XDG_DATA_HOME", str(home / ".local" / "share"))
+    values.setdefault("XDG_CACHE_HOME", str(home / ".cache"))
+
+    def quoted(text: str) -> str:
+        return '"' + text.replace("%", "%%").replace('"', '""') + '"'
+
+    lines = ["@echo off"]
+    lines += [f'set "{k}={v.replace("%", "%%")}"' for k, v in sorted(values.items()) if "\n" not in v and '"' not in v]
+    lines += [" ".join(quoted(a) for a in argv), "exit /b %errorlevel%"]
+    path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
+    return ["cmd.exe", "/d", "/c", str(path)]
+
+
 def env() -> dict[str, str]:
     """What srt's own process needs in its environment: run by the desktop app's executable, that
     executable runs as Node only when told to (never set for anything else the app starts)."""
@@ -98,10 +206,13 @@ def check() -> Check:
             missing.append(f"Node {MIN_NODE[0]}.{MIN_NODE[1]} or later (this is {version[0]}.{version[1]})")
         else:
             missing.append("the sandbox runtime: `dotrix sandbox install`")
-    if platform.system() == "Linux":
+    system = platform.system()
+    if system == "Linux":
         for binary, package in (("bwrap", "bubblewrap"), ("socat", "socat")):
             if shutil.which(binary) is None:
                 missing.append(f"{package} (e.g. `sudo apt-get install {package}`)")
+    elif system == "Windows" and srt is not None and (why := windows_setup_missing()):
+        missing.append(why)
     return Check(ready=not missing, srt=srt, missing=missing)
 
 
