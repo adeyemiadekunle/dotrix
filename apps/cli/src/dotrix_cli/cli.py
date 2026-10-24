@@ -469,6 +469,83 @@ def jobs_stop(job_id: str = typer.Argument(...), project: str = ProjectOpt):
 
 
 # ---------------------------------------------------------------------------
+# Coding on this computer
+# ---------------------------------------------------------------------------
+class _AsyncApi:
+    """The platform client for the runner's async loop (each call in a thread)."""
+
+    def __init__(self, client: PlatformClient) -> None:
+        self.client = client
+
+    async def post(self, path: str, body: object = None) -> object:
+        import asyncio
+
+        return await asyncio.to_thread(self.client.post, path, body)
+
+
+@app.command("runner")
+def runner_command(
+    project: str = ProjectOpt,
+    tool: str = typer.Option(None, "--tool", help="claude-code or opencode (default: the first found here)"),
+    command: str = typer.Option(None, "--command", help="Any other command instead: the brief on stdin, its output as events"),
+    sandbox: str = typer.Option("auto", "--sandbox", help="auto (srt when installed), srt, or none"),
+    once: bool = typer.Option(False, "--once", help="Code at most one waiting turn, then exit"),
+    poll: float = typer.Option(5.0, "--poll", help="Seconds between asks for a turn"),
+    name: str = typer.Option(None, "--name", help="This computer's name on the platform (default: its hostname)"),
+    worktrees: Path = typer.Option(None, "--worktrees", help="Where turns' worktrees go (default: ~/.dotrix/worktrees)"),
+):
+    """Code your local turns on this computer: each in a worktree of this checkout, with the coding
+    tool signed in here (never a key or token from the platform). The platform pushes what's accepted.
+    Start a local turn with `dotrix code KEY`, or "On my computer" in the web app."""
+    import asyncio
+
+    from .runner import LocalRunner
+
+    if sandbox not in ("auto", "srt", "none"):
+        _fail("--sandbox is auto, srt, or none")
+    config, state, client = _linked(project)
+    runner = LocalRunner(
+        _AsyncApi(client), Path(config.root_dir), state.workspace_id, state.project_id, tool=tool, command=command,
+        sandbox=sandbox, echo=typer.echo, **({"name": name} if name else {}), **({"worktrees": worktrees} if worktrees else {}),
+    )
+    try:
+        registered = asyncio.run(runner.register())
+    except (PlatformError, RuntimeError) as exc:
+        _fail(str(exc))
+    isolated = "isolated by srt" if registered["isolation"] == "srt" else "NOT isolated (install srt: npm i -g @anthropic-ai/sandbox-runtime)"
+    typer.echo(f"{registered['name']}: coding {state.project_key} turns with {', '.join(registered['tools'])}, {isolated}")
+    try:
+        if once:
+            if not asyncio.run(runner.once()):
+                typer.echo("Nothing waits for this computer")
+        else:
+            typer.echo("Waiting for turns (Ctrl-C to stop)…")
+            asyncio.run(runner.serve(poll_seconds=poll))
+    except KeyboardInterrupt:
+        typer.echo("Stopped; a turn in progress needs recovery once its lease lapses")
+    except PlatformError as exc:
+        _fail(str(exc))
+
+
+@app.command("code")
+def code_command(
+    key: str = typer.Argument(..., help="The issue, e.g. KUN-42"),
+    note: str = typer.Option(None, "--note", help="Anything to add for the agent"),
+    cloud: bool = typer.Option(False, "--cloud", help="Code in the platform's sandbox instead of on this computer"),
+    project: str = ProjectOpt,
+):
+    """Ask Kai to code an issue: on this computer (run `dotrix runner` here), or with --cloud on the
+    platform. It waits for an approval unless your approval mode lets it start at once."""
+    _, state, client = _linked(project)
+    base = f"/workspaces/{state.workspace_id}/projects/{state.project_id}/coding"
+    run = _platform_call(lambda: client.post(f"{base}/issues/{key.strip().upper()}/runs",
+                                             {"note": note, "location": "cloud" if cloud else "local"}))
+    where = "the platform" if cloud else "your computer"
+    waiting = "waits for an approval" if run["status"] == "awaiting_approval" else "is queued"
+    typer.echo(f"{run['issue_key']}: Kai's turn on {where} {waiting} (run {run['id']})")
+
+
+# ---------------------------------------------------------------------------
 # Task board
 # ---------------------------------------------------------------------------
 def _print_task_row(t: T.Task) -> None:

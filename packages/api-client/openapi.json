@@ -19239,6 +19239,558 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/coding/runners": {
+      "post": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Register Coding Runner",
+        "description": "Register this computer to code your local turns (`dotrix runner`), or update it (the same name):\nits coding tools, whether it isolates them (`srt`), and the projects it has checkouts of (those\nyou can't see are left out). It claims only your turns. People who may instruct the coding agent.",
+        "operationId": "register_coding_runner",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodingRunnerCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingRunnerRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "List Coding Runners",
+        "description": "Your computers that code your local turns here, last seen first.",
+        "operationId": "list_coding_runners",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CodingRunnerRead"
+                  },
+                  "title": "Response List Coding Runners"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/coding/runners/{runner_id}": {
+      "delete": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Revoke Coding Runner",
+        "description": "Stop one of your computers from claiming turns. A turn it holds needs recovery once its lease lapses.",
+        "operationId": "revoke_coding_runner",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runner_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Runner Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/coding/runners/{runner_id}/claim": {
+      "post": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Claim Coding Run",
+        "description": "The runner's poll: the oldest approved local turn of yours in a project it serves, now held by\nit under a new lease (`run` is null when none waits). Counts as its heartbeat.",
+        "operationId": "claim_coding_run",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runner_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Runner Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingClaimed"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/coding/runners/{runner_id}/runs/{coding_run_id}/heartbeat": {
+      "post": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Coding Run Heartbeat",
+        "description": "Renew a held turn's lease, with what the agent did since (its events) and the commit it codes\non; says whether to stop. 409 `lease_lost` once this runner no longer holds it.",
+        "operationId": "coding_run_heartbeat",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runner_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Runner Id"
+            }
+          },
+          {
+            "name": "coding_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Coding Run Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunnerHeartbeat"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerHeartbeatRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/coding/runners/{runner_id}/runs/{coding_run_id}/result": {
+      "post": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Report Coding Result",
+        "description": "A held turn's outcome: its changes as a patch against `base_sha`, or none, failed, or stopped.\nChanges are checked (no `.dotrix/`, no CI configuration); in Manual they wait for a person to\naccept them, otherwise they're pushed by the platform. 409 `lease_lost` when no longer held.",
+        "operationId": "report_coding_result",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runner_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Runner Id"
+            }
+          },
+          {
+            "name": "coding_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Coding Run Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunnerResult"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/github/webhook": {
       "post": {
         "tags": [
@@ -22484,6 +23036,36 @@
             ],
             "title": "Reason",
             "description": "Why not, when it isn't available"
+          },
+          "local_available": {
+            "type": "boolean",
+            "title": "Local Available",
+            "description": "Whether you can code here on your own computer",
+            "default": false
+          },
+          "local_runner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Runner",
+            "description": "Your computer that would code (the one seen last)"
+          },
+          "local_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Reason",
+            "description": "Why not on your computer"
           }
         },
         "type": "object",
@@ -22494,6 +23076,114 @@
           "reason"
         ],
         "title": "CodingAvailability"
+      },
+      "CodingClaim": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Run Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "lease_token": {
+            "type": "integer",
+            "title": "Lease Token",
+            "description": "Send it with every heartbeat and the result; a newer one fences this off"
+          },
+          "lease_seconds": {
+            "type": "integer",
+            "title": "Lease Seconds",
+            "description": "Heartbeat well within this, or the turn needs recovery"
+          },
+          "issue_key": {
+            "type": "string",
+            "title": "Issue Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "turn": {
+            "type": "integer",
+            "title": "Turn"
+          },
+          "brief": {
+            "type": "string",
+            "title": "Brief",
+            "description": "Exactly what the agent is told"
+          },
+          "tool": {
+            "$ref": "#/components/schemas/CodingAgent",
+            "description": "The tool to code with"
+          },
+          "repo_full_name": {
+            "type": "string",
+            "title": "Repo Full Name"
+          },
+          "base_branch": {
+            "type": "string",
+            "title": "Base Branch"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch",
+            "description": "The session's branch to build on (a follow-up), else the base branch"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "project_id",
+          "session_id",
+          "lease_token",
+          "lease_seconds",
+          "issue_key",
+          "title",
+          "turn",
+          "brief",
+          "tool",
+          "repo_full_name",
+          "base_branch",
+          "branch"
+        ],
+        "title": "CodingClaim",
+        "description": "A local turn this runner now holds: code it in a worktree, then report the result."
+      },
+      "CodingClaimed": {
+        "properties": {
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodingClaim"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None: nothing waits for this runner"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run"
+        ],
+        "title": "CodingClaimed"
       },
       "CodingDecision": {
         "properties": {
@@ -22628,6 +23318,17 @@
               }
             ],
             "description": "`manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodingLocation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it codes: `cloud` (a sandbox on the platform) or `local` (your own computer, through `dotrix runner` in a checkout of the project). A follow-up stays where its session is unless told."
           }
         },
         "type": "object",
@@ -22635,6 +23336,15 @@
           "message"
         ],
         "title": "CodingFollowUp"
+      },
+      "CodingLocation": {
+        "type": "string",
+        "enum": [
+          "cloud",
+          "local"
+        ],
+        "title": "CodingLocation",
+        "description": "Where a turn codes. Either way the platform keeps its record, approvals, and events, and\npushes what's accepted with the GitHub App: a local turn hands back a patch, never pushes."
       },
       "CodingOrigin": {
         "type": "string",
@@ -22705,6 +23415,11 @@
               }
             ],
             "description": "`manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes"
+          },
+          "location": {
+            "$ref": "#/components/schemas/CodingLocation",
+            "description": "Where it codes: `cloud` (a sandbox on the platform) or `local` (your own computer, through `dotrix runner` in a checkout of the project). A follow-up stays where its session is unless told.",
+            "default": "cloud"
           }
         },
         "type": "object",
@@ -23126,6 +23841,23 @@
             ],
             "title": "Revert Of",
             "description": "The turn this one reverts"
+          },
+          "location": {
+            "$ref": "#/components/schemas/CodingLocation",
+            "description": "Where it codes",
+            "default": "cloud"
+          },
+          "runner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runner Name",
+            "description": "A local turn: the computer that claimed it"
           }
         },
         "type": "object",
@@ -23185,6 +23917,134 @@
           "stopped"
         ],
         "title": "CodingRunStatus"
+      },
+      "CodingRunnerCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "description": "This computer's name; registering it again updates it"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/CodingAgent"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Tools",
+            "description": "Coding tools found, preferred first"
+          },
+          "isolation": {
+            "type": "string",
+            "enum": [
+              "srt",
+              "none"
+            ],
+            "title": "Isolation",
+            "description": "`srt` (the sandbox runtime) or `none` (a worktree only)"
+          },
+          "project_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Project Ids",
+            "description": "Projects it has checkouts of"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "isolation"
+        ],
+        "title": "CodingRunnerCreate"
+      },
+      "CodingRunnerRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tools"
+          },
+          "isolation": {
+            "type": "string",
+            "title": "Isolation"
+          },
+          "project_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Project Ids"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Seen At"
+          },
+          "online": {
+            "type": "boolean",
+            "title": "Online",
+            "description": "Seen in the last couple of minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "platform",
+          "tools",
+          "isolation",
+          "project_ids",
+          "created_at",
+          "last_seen_at",
+          "online"
+        ],
+        "title": "CodingRunnerRead"
       },
       "CodingScreenshot": {
         "properties": {
@@ -23329,6 +24189,11 @@
             ],
             "title": "Thread Id",
             "description": "The conversation it was started from (Build mode), when that conversation is yours: its turns show there, inline. Null: a session of its own."
+          },
+          "location": {
+            "$ref": "#/components/schemas/CodingLocation",
+            "description": "Where its latest turn codes",
+            "default": "cloud"
           },
           "started_at": {
             "type": "string",
@@ -28777,6 +29642,197 @@
           "failed"
         ],
         "title": "RunStatus"
+      },
+      "RunnerEvent": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "step",
+              "text",
+              "tool",
+              "error"
+            ],
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "RunnerEvent"
+      },
+      "RunnerHeartbeat": {
+        "properties": {
+          "lease_token": {
+            "type": "integer",
+            "title": "Lease Token"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RunnerEvent"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Events"
+          },
+          "base_sha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Sha"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lease_token"
+        ],
+        "title": "RunnerHeartbeat"
+      },
+      "RunnerHeartbeatRead": {
+        "properties": {
+          "stop": {
+            "type": "boolean",
+            "title": "Stop",
+            "description": "Stop the agent and report `stopped`"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stop"
+        ],
+        "title": "RunnerHeartbeatRead"
+      },
+      "RunnerResult": {
+        "properties": {
+          "lease_token": {
+            "type": "integer",
+            "title": "Lease Token"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "changes",
+              "no_changes",
+              "failed",
+              "stopped"
+            ],
+            "title": "Outcome"
+          },
+          "patch": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patch",
+            "description": "`git diff --cached --binary` against base_sha"
+          },
+          "base_sha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Sha"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RunnerEvent"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Events"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lease_token",
+          "outcome"
+        ],
+        "title": "RunnerResult"
       },
       "Scope": {
         "type": "string",

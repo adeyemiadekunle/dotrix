@@ -14,7 +14,12 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 
-from dotrix_backend.modules.coding.models import CodingAgent, CodingRun, CodingRunStatus
+from dotrix_backend.modules.coding.models import (
+    CodingAgent,
+    CodingRun,
+    CodingRunner,
+    CodingRunStatus,
+)
 from dotrix_engine.testing import tool_call
 
 SCOPES = ("{workspace_id}",)
@@ -170,8 +175,16 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             created_at=datetime.now(UTC),
         )
         db_session.add(coding_run)
+        # The owner's computer that codes their local turns.
+        runner = CodingRunner(
+            id=uuid.uuid4(), workspace_id=uuid.UUID(team["id"]), user_id=uuid.UUID(owner.id), name="laptop",
+            tools=["claude-code"], isolation="none", project_ids=[project["id"]],
+            created_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
+        )
+        db_session.add(runner)
         await db_session.flush()
         params["coding_run_id"] = params["session_id"] = str(coding_run.id)
+        params["runner_id"] = str(runner.id)
         return World(
             headers=h,
             params=params,
@@ -229,6 +242,13 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
         "POST",
         "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns",
     ): {"message": "x"},
+    ("POST", "/v1/workspaces/{workspace_id}/coding/runners/{runner_id}/runs/{coding_run_id}/heartbeat"): {
+        "lease_token": 1
+    },
+    ("POST", "/v1/workspaces/{workspace_id}/coding/runners/{runner_id}/runs/{coding_run_id}/result"): {
+        "lease_token": 1,
+        "outcome": "no_changes",
+    },
     ("POST", "/v1/workspaces/{workspace_id}/github/installations"): {
         "installation_id": 1,
         "code": "x",
@@ -285,6 +305,7 @@ async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
         "emoji",
         "approval_id",
         "provider",
+        "runner_id",
     }
     routes = _scoped_routes(db_client)
     assert len(routes) > 60  # sanity: the whole API is being walked

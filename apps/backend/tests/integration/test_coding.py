@@ -195,7 +195,9 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     })).json()
 
     availability = (await db_client.get(f"{base}/coding", headers=cat.headers)).json()
-    assert availability == {"available": True, "agent": "claude-code", "sandbox": "local", "reason": None}
+    assert availability == {"available": True, "agent": "claude-code", "sandbox": "local", "reason": None,
+                            "local_available": False, "local_runner": None,
+                            "local_reason": "Run `dotrix runner` in a checkout of KUN on your computer first"}
     # Members can't instruct the coding agent unless the workspace lets them.
     assert (await db_client.post(f"{base}/coding/issues/{story['key']}/runs", json={},
                                  headers=cat.headers)).status_code == 403
@@ -1362,3 +1364,175 @@ async def test_m1_a_run_interrupted_recovered_and_reviewed_in_one_conversation(
     audit = [e for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json() if e["target"] == issue["key"]]
     outcomes = [e["details"]["outcome"] for e in audit if e["action"] == "coding.recovered"]
     assert sorted(outcomes) == ["opened_pr", "retried"]
+
+
+# -- local coding: the person's own computer codes the turn; the platform pushes what's accepted --------
+
+
+class _RunnerApi:
+    """The CLI runner's platform calls, through the test client as Ada."""
+
+    def __init__(self, db_client: AsyncClient, headers: dict) -> None:
+        self.db_client, self.headers = db_client, headers
+
+    async def post(self, path: str, body: Any = None) -> Any:
+        from dotrix_cli.platform import PlatformError
+
+        res = await self.db_client.post(f"/v1{path}", json=body, headers=self.headers)
+        if res.status_code >= 400:
+            problem = res.json()
+            raise PlatformError(res.status_code, str(problem.get("type", "")).rsplit("/", 1)[-1], problem.get("detail", ""))
+        return res.json() if res.content else None
+
+
+def _tool(edits: dict[str, str], *, sleep: float = 0, result: str = "Added refunds; tests pass.") -> str:
+    """A command standing in for Claude Code: reads the brief, edits files, prints stream-json."""
+    import shlex
+    import sys
+
+    script = (
+        "import json, sys, time, pathlib\n"
+        "brief = sys.stdin.read()\n"
+        f"for path, text in {edits!r}.items():\n"
+        "    p = pathlib.Path(path); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(text)\n"
+        "    print(json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'name': 'Edit', 'input': {'file_path': path}}]}}), flush=True)\n"
+        f"time.sleep({sleep})\n"
+        f"print(json.dumps({{'type': 'result', 'subtype': 'success', 'result': {result!r}, 'total_cost_usd': 0.02, 'usage': {{'input_tokens': 10, 'output_tokens': 5}}}}), flush=True)\n"
+    )
+    return f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
+
+
+@pytest.fixture
+def checkout(tmp_path: Path, origin: Path) -> Path:
+    """Ada's own clone of kunemi/api, with work of her own in it."""
+    root = tmp_path / "ada-api"
+    _git(tmp_path, "clone", "-q", str(origin), str(root))
+    (root / "notes.txt").write_text("mine, not committed\n")
+    return root
+
+
+def _local_runner(db_client: AsyncClient, coding, checkout: Path, tmp_path: Path, command: str, **kw: Any):
+    from dotrix_cli.runner import LocalRunner
+
+    ada, _, ws, kun, _, _ = coding
+    return LocalRunner(_RunnerApi(db_client, ada.headers), checkout, ws.split("/")[-1], kun["id"], command=command,
+                       sandbox="none", worktrees=tmp_path / "worktrees", name="ada-laptop", echo=lambda _: None, **kw)
+
+
+async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushes_it(
+    db_client: AsyncClient, coding, github, origin: Path, checkout: Path, tmp_path: Path, agent_script
+) -> None:
+    ada, cat, ws, kun, _, sandbox = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    # Not before a runner of hers serves the project.
+    refused = await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"location": "local"}, headers=ada.headers)
+    assert refused.status_code == 409 and "dotrix runner" in refused.json()["detail"]
+
+    runner = _local_runner(db_client, coding, checkout, tmp_path, _tool({"src/refunds.py": "def refund(a):\n    return a\n"}))
+    registered = await runner.register()
+    assert registered["name"] == "ada-laptop" and registered["isolation"] == "none" and registered["online"]
+    assert (await db_client.get(f"{base}/coding", headers=ada.headers)).json()["local_runner"] == "ada-laptop"
+    assert await runner.once() is False  # nothing waits
+
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"location": "local"},
+                                headers=ada.headers)).json()
+    assert run["location"] == "local" and run["status"] == "awaiting_approval"
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    queued = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert queued["status"] == "queued" and sandbox.opened == 0  # no worker took it: it waits for her computer
+
+    assert await runner.once() is True
+    ready = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert ready["status"] == "changes_ready" and ready["runner_name"] == "ada-laptop", ready
+    assert [f["path"] for f in ready["files_changed"]] == ["src/refunds.py"]
+    assert ready["summary"] == "Added refunds; tests pass." and ready["base_sha"] == _git(origin, "rev-parse", "main")
+    texts = [e["text"] for e in ready["events"]]
+    assert "On ada-laptop (a worktree only, not isolated)" in texts and "Edit src/refunds.py" in texts
+    assert any(t.startswith("Worktree on main at") and "not isolated" in t for t in texts)
+    # Her checkout is as she left it; nothing reached GitHub; the worktree is kept, outside it.
+    assert _git(checkout, "status", "--porcelain") == "?? notes.txt" and not (checkout / "src/refunds.py").exists()
+    assert github.pulls == [] and _git(origin, "branch", "--list", "dotrix/*") == ""
+    [tree] = (tmp_path / "worktrees" / kun["id"]).iterdir()
+    assert (tree / "src/refunds.py").read_text() == "def refund(a):\n    return a\n"
+
+    # Accepted: the platform pushes it (the worker's publish-only pass), as for a cloud turn.
+    agent_script.say("Fine.")
+    done = await _approve(db_client, base, ready, ada.headers)
+    assert done["status"] == "pr_opened" and len(github.pulls) == 1 and sandbox.opened == 0, done
+    assert _git(origin, "show", f"{done['branch']}:src/refunds.py") == "def refund(a):\n    return a"
+
+    # A follow-up stays on her computer, on the session's branch.
+    runner.command = _tool({"src/refunds.py": "def refund(a):\n    return -a\n"})
+    turn = (await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", json={"message": "Negative"},
+                                 headers=ada.headers)).json()
+    assert turn["location"] == "local"
+    await db_client.post(f"{base}/coding/runs/{turn['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    assert await runner.once() is True
+    turn = await _approve(db_client, base, turn, ada.headers)
+    assert turn["status"] == "pr_opened" and turn["base_sha"] == done["commit_sha"] and len(github.pulls) == 1
+    assert _git(origin, "rev-parse", f"{done['branch']}~1") == done["commit_sha"]
+
+    # Her runner claims only her turns: Cat's (on the platform) isn't one of them; revoked, it claims nothing.
+    assert (await db_client.get(f"{ws}/coding/runners", headers=cat.headers)).json() == []
+    assert (await db_client.delete(f"{ws}/coding/runners/{registered['id']}", headers=ada.headers)).status_code == 204
+    with pytest.raises(Exception, match="Runner not found"):
+        await runner.once()
+
+
+async def test_a_local_turn_is_checked_stopped_fenced_and_recovered(
+    db_client: AsyncClient, coding, github, origin: Path, checkout: Path, tmp_path: Path
+) -> None:
+    from dotrix_cli.runner import LeaseLost
+
+    ada, _, ws, kun, _, sandbox = coding
+    base = f"{ws}/projects/{kun['id']}"
+    runner = _local_runner(db_client, coding, checkout, tmp_path, _tool({".github/workflows/ci.yml": "on: push\n"}),
+                           beat_seconds=0.1)
+    await runner.register()
+
+    async def local_turn(title: str) -> dict:
+        task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": title}, headers=ada.headers)).json()
+        run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"location": "local"},
+                                    headers=ada.headers)).json()
+        await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+        return run
+
+    # The guard holds on the platform: CI configuration is never pushed, whoever coded it.
+    run = await local_turn("Tidy CI")
+    await runner.once()
+    failed = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert failed["status"] == "failed" and "CI configuration" in failed["error"]
+
+    # Stop reaches the tool through the heartbeat; what it did is discarded, nothing pushed.
+    runner.command = _tool({"src/slow.py": "x = 1\n"}, sleep=30)
+    run = await local_turn("Slow")
+    working = asyncio.create_task(runner.once())
+    for _ in range(100):
+        await asyncio.sleep(0.05)
+        if (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()["status"] == "running":
+            break
+    await db_client.post(f"{base}/coding/runs/{run['id']}/stop", headers=ada.headers)
+    await asyncio.wait_for(working, 20)
+    stopped = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert stopped["status"] == "stopped" and github.pulls == []
+
+    # Fenced: once the turn is another attempt's, this runner stops writing (and keeps its worktree).
+    run = await local_turn("Fenced")
+    claimed = await runner.api.post(f"{runner.base}/{runner.runner_id}/claim")
+    await _set_run(db_client, run["id"], lease_token=claimed["run"]["lease_token"] + 1)
+    with pytest.raises(LeaseLost):
+        await runner.work(claimed["run"])
+
+    # Cut off (its computer went away mid-turn): the lease lapses, recovery runs it again on her computer.
+    run = await local_turn("Cut off")
+    await runner.api.post(f"{runner.base}/{runner.runner_id}/claim")
+    await _set_run(db_client, run["id"], lease_expires_at=datetime.now(UTC) - timedelta(seconds=5))
+    github.branch_heads = _heads(origin)
+    assert await expire_coding_leases(db_client._transport.app.state.jobs.ctx.session_factory) == 1  # type: ignore[attr-defined]
+    again = (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
+                                  headers=ada.headers)).json()
+    assert again["status"] == "queued" and sandbox.opened == 0, again  # for her runner, not a worker
+    runner.command = _tool({"src/fenced.py": "y = 2\n"})
+    assert await runner.once() is True
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()["status"] == "changes_ready"

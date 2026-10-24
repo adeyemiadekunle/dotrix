@@ -38,6 +38,7 @@ import {
   useStartCoding,
   useRecoverCoding,
   useRevertCoding,
+  statusLabel,
   useStopCoding,
   type CodingSession,
 } from "@/lib/coding";
@@ -191,7 +192,8 @@ const BUSY: CodingSession["status"][] = ["awaiting_approval", "queued", "running
 const WAITING: CodingSession["status"][] = ["awaiting_approval", "changes_ready"];
 
 function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
-  const [label, c] = STATUS[cs.status];
+  const [label0, c] = STATUS[cs.status];
+  const label = cs.location === "local" && cs.status === "queued" ? "Waiting for your computer" : label0;
   return (
     <div className={`cs-row ${on ? "on" : ""}`}>
       <button
@@ -238,7 +240,8 @@ function SessionCard({ cs }: { cs: CodingSession }) {
   const stop = useStopCoding(scope, cs.issue_key);
   const recover = useRecoverCoding(scope, cs.issue_key);
   const revert = useRevertCoding(scope, cs.issue_key, defaultApproval());
-  const [label, c] = STATUS[cs.status];
+  const [label0, c] = STATUS[cs.status];
+  const label = latest ? statusLabel(latest) : label0;
   const files = latest?.files_changed ?? [];
   const ready = latest?.status === "changes_ready";
   return (
@@ -1135,11 +1138,15 @@ function NewSession({ issue0 }: { issue0: string | null }) {
   const pid = t?.project;
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
   const avail = useCodingAvailability(scope).data;
-  const start = useStartCoding(scope, t?.key ?? "", defaultApproval());
+  // On the platform, or on your own computer when one of yours runs `dotrix runner` for this project.
+  const [where, setWhere] = useState<"cloud" | "local" | null>(null);
+  const location = where ?? (avail && !avail.available && avail.local_available ? "local" : "cloud");
+  const ready = location === "local" ? avail?.local_available : avail?.available;
+  const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location);
   const found = menu === null ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes(menu.toLowerCase())).slice(0, 8);
   const go_ = () => {
     if (!t) return;
-    if (avail?.available === false || start.isPending) return;
+    if (ready === false || start.isPending) return;
     start.mutateAsync(note.trim() || null).then(
       (run) => open(`session=${run.session_id}`),
       () => {},
@@ -1223,17 +1230,38 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                   Issue
                 </button>
               )}
-              {avail && (
+              {avail && (avail.local_available || location === "local") && (
+                <button
+                  className="cpill pick"
+                  onClick={() => setWhere(location === "local" ? "cloud" : "local")}
+                  aria-label="Where it codes"
+                  data-tip={
+                    location === "local"
+                      ? "In a worktree of your checkout, with the coding tool signed in there; the platform pushes what's accepted"
+                      : "In a sandbox on the platform"
+                  }
+                >
+                  <Ic n={location === "local" ? "laptop" : "cloud"} s={12} />
+                  {location === "local" ? `On ${avail.local_runner ?? "your computer"}` : "Cloud"}
+                </button>
+              )}
+              {avail && location === "cloud" && (
                 <span className="cpill" data-tip={avail.available ? "The coding tool this server runs" : (avail.reason ?? undefined)}>
                   <Ic n="bot" s={12} />
                   {avail.available && avail.agent ? AGENT_NAMES[avail.agent] : "Coding is off"}
+                </span>
+              )}
+              {avail && location === "local" && !avail.local_available && (
+                <span className="cpill" data-tip={avail.local_reason ?? undefined}>
+                  <Ic n="laptop" s={12} />
+                  Not on this computer yet
                 </span>
               )}
               <span className="sp" />
               <span className="faint hide-m" style={{ fontSize: 11 }}>
                 {MOD}+Enter to start
               </span>
-              <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t || avail?.available === false || start.isPending}>
+              <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t || ready === false || start.isPending}>
                 <Ic n="code" s={13} />
                 Start coding
               </button>
@@ -1298,7 +1326,8 @@ function Session({ cs }: { cs: CodingSession }) {
   const p = proj(cs.project_id);
   const tool = AGENT_NAMES[cs.agent];
   const [ask, setAsk] = useState("");
-  const [label, c] = STATUS[cs.status];
+  const [label0, c] = STATUS[cs.status];
+  const label = latest ? statusLabel(latest) : label0;
   const busy = BUSY.includes(cs.status) || cs.state === "closed";
   // Its details (tool, project, repo, branches, commit, PR) float over the chat from the ⋮: on hover,
   // or pinned by a click until a click elsewhere or Escape.

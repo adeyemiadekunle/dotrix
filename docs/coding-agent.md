@@ -253,6 +253,41 @@ session, not skipped silently. Three kinds:
    egress allowlist only for sessions in that workspace. Never from the repo, and never stdio servers
    from outside the image.
 
+## Coding on your own computer
+
+Built 2026-10-24 for the CLI ([hybrid execution](dotrix-hybrid-execution-architecture.md), phase 3 in part).
+A turn asked for with `location: local` (`dotrix code KEY`, or "On <computer>" in a new coding session)
+codes on its requester's computer instead of a worker's sandbox; everything else is the same turn.
+
+- **The runner.** `dotrix runner` in a linked checkout registers the computer (`coding_runners`, one per
+  person and name: its tools, `srt` or not, the projects it has checkouts of) and polls
+  `POST /workspaces/{ws}/coding/runners/{id}/claim`. It claims only its owner's approved local turns, in
+  those projects, checked again at claim time (they may have lost the project or the right to instruct Kai).
+- **Lease and fencing.** A claim is a new lease (`lease_token` + 1, `DOTRIX_CODING_LEASE_SECONDS`), renewed
+  by `.../runs/{run}/heartbeat`, which also carries the agent's events and answers whether to stop. A
+  newer token fences the runner off (409 `lease_lost`): it stops the tool and writes nothing more. A
+  lapsed lease makes the turn `recovery_required` like a worker's; recovery queues it again for the
+  runner (never for a worker), within the same attempt cap.
+- **The worktree.** Each attempt gets `~/.dotrix/worktrees/<project>/<issue>-<run>-<token>`, detached at the
+  session's branch or the base branch as `origin` has it, so the person's working copy and its changes are
+  never touched. Worktrees are kept afterwards (`git worktree prune` once the folder is removed).
+- **Keys and credentials (decided).** The tool runs with what is signed in on that machine (Claude Code's
+  login, OpenCode's config). The platform never sends a provider key or GitHub token to a device, and the
+  runner strips `DOTRIX_TOKEN` from the tool's environment.
+- **Isolation.** A worktree isn't a security boundary. With `srt` installed (`--sandbox auto`, the default,
+  or `srt` to require it) the tool runs inside it: writes only to the worktree, the tools' own state and
+  `/tmp`; no reads of `~/.ssh`, `~/.aws` and other credentials; network only to the model APIs and package
+  registries. Claude Code may run commands only inside it (`--allowedTools Bash`); without it, edits only.
+  A turn without `srt` says so in its events. Checked: the settings file's shape against srt's README;
+  not yet run under srt on macOS or Linux here.
+- **The result.** `.../result` carries the patch (`git diff --cached --binary` against the turn's base),
+  the summary and usage. The platform reads the paths from the patch itself (`git apply --numstat`, renames
+  included), runs the guard, and then treats it as a cloud turn's: Manual waits as changes ready; Accept
+  edits and Auto accept it for the requester. Accepted, the worker's publish-only pass applies it to the
+  branch as it is, checks it again, pushes, and opens or updates the PR. Reverts are always that pass.
+
+Not yet: the desktop app's runner, a folder with no remote (branch and diff, no PR), `srt` run for real.
+
 ## Local-file projects
 
 A project with no remote gets a bare repo on the platform, under `DOTRIX_CODE_DIR`, created when the

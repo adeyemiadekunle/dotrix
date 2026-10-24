@@ -19,17 +19,24 @@ from dotrix_backend.modules.projects.deps import (
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
 
+from .local import LocalRunners
 from .schemas import (
     CodingAvailability,
+    CodingClaimed,
     CodingDecision,
     CodingEventPage,
     CodingFollowUp,
     CodingRecover,
     CodingRevert,
     CodingRunCreate,
+    CodingRunnerCreate,
+    CodingRunnerRead,
     CodingRunRead,
     CodingSessionRead,
     CodingSessionUpdate,
+    RunnerHeartbeat,
+    RunnerHeartbeatRead,
+    RunnerResult,
 )
 from .service import CodingService
 
@@ -199,3 +206,66 @@ async def list_coding_sessions(
     """The workspace's coding sessions across the projects you can see, pinned first, then the latest
     activity (Chat's Code tab). Guests see none: they see no projects."""
     return await coding.sessions(member, {"exclude": False, "include": None, "only": True}[archived])
+
+
+def get_local_runners(
+    session: SessionDep, settings: SettingsDep, jobs: Annotated[Jobs, Depends(get_jobs)]
+) -> LocalRunners:
+    return LocalRunners(session, settings, jobs)
+
+
+Runners = Annotated[LocalRunners, Depends(get_local_runners)]
+Instructor = Annotated[Membership, Depends(require_permission(Permission.INSTRUCT_CODING_AGENT))]
+
+
+@workspace_router.post("/runners", responses=errors(403, 422))
+async def register_coding_runner(data: CodingRunnerCreate, member: Instructor, runners: Runners) -> CodingRunnerRead:
+    """Register this computer to code your local turns (`dotrix runner`), or update it (the same name):
+    its coding tools, whether it isolates them (`srt`), and the projects it has checkouts of (those
+    you can't see are left out). It claims only your turns. People who may instruct the coding agent."""
+    return await runners.register(member, data)
+
+
+@workspace_router.get("/runners")
+async def list_coding_runners(
+    member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], runners: Runners,
+) -> list[CodingRunnerRead]:
+    """Your computers that code your local turns here, last seen first."""
+    return await runners.list(member)
+
+
+@workspace_router.delete("/runners/{runner_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_coding_runner(
+    runner_id: uuid.UUID, member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], runners: Runners,
+) -> None:
+    """Stop one of your computers from claiming turns. A turn it holds needs recovery once its lease lapses."""
+    await runners.revoke(member, runner_id)
+
+
+@workspace_router.post("/runners/{runner_id}/claim", responses=errors(403))
+async def claim_coding_run(runner_id: uuid.UUID, member: Instructor, runners: Runners) -> CodingClaimed:
+    """The runner's poll: the oldest approved local turn of yours in a project it serves, now held by
+    it under a new lease (`run` is null when none waits). Counts as its heartbeat."""
+    return await runners.claim(member, runner_id)
+
+
+@workspace_router.post("/runners/{runner_id}/runs/{coding_run_id}/heartbeat", responses=errors(403, 409))
+async def coding_run_heartbeat(
+    runner_id: uuid.UUID, coding_run_id: uuid.UUID, data: RunnerHeartbeat, member: Instructor, runners: Runners,
+) -> RunnerHeartbeatRead:
+    """Renew a held turn's lease, with what the agent did since (its events) and the commit it codes
+    on; says whether to stop. 409 `lease_lost` once this runner no longer holds it."""
+    return await runners.heartbeat(member, runner_id, coding_run_id, data)
+
+
+@workspace_router.post(
+    "/runners/{runner_id}/runs/{coding_run_id}/result", status_code=status.HTTP_204_NO_CONTENT,
+    responses=errors(403, 409, 422),
+)
+async def report_coding_result(
+    runner_id: uuid.UUID, coding_run_id: uuid.UUID, data: RunnerResult, member: Instructor, runners: Runners,
+) -> None:
+    """A held turn's outcome: its changes as a patch against `base_sha`, or none, failed, or stopped.
+    Changes are checked (no `.dotrix/`, no CI configuration); in Manual they wait for a person to
+    accept them, otherwise they're pushed by the platform. 409 `lease_lost` when no longer held."""
+    await runners.result(member, runner_id, coding_run_id, data)

@@ -68,6 +68,7 @@ from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from . import guard
 from .models import (
     CODING_AGENT_NAME,
+    CodingLocation,
     CodingRun,
     CodingRunEvent,
     CodingRunStatus,
@@ -179,6 +180,8 @@ class CodingWorker:
             run = await session.scalar(query.with_for_update())
             if run is None or run.status is not CodingRunStatus.QUEUED:
                 return  # stopped before it started, or already handled
+            if not needs_worker(run):
+                return  # a local turn: its runner claims it
             if not await accept_operation(session, run, operation):
                 return
             if run.stop_requested:
@@ -299,8 +302,8 @@ class CodingWorker:
             logger.warning("coding run %s: preserving workspace after cleanup was uncertain", run_id, exc_info=True)
 
     async def _run(self, run_id: uuid.UUID, work: Path, publication: _Publication) -> None:
-        if self.sandbox is None or self.app is None:
-            raise RunFailed("Coding runs aren't set up on this server (DOTRIX_CODING_SANDBOX, the GitHub App)")
+        if self.app is None:
+            raise RunFailed("Coding runs aren't set up on this server (the GitHub App)")
         async with self.session_factory() as session:
             run = await session.get(CodingRun, run_id)
             assert run is not None
@@ -339,6 +342,9 @@ class CodingWorker:
             tool_name = tool.name if tool is not None else agent.value
             key: str | None = None
             if not publish_only:
+                if self.sandbox is None:
+                    raise RunFailed("Cloud coding isn't set up on this server (DOTRIX_CODING_SANDBOX): "
+                                    "code it on your computer")
                 if tool is None:
                     raise RunFailed(f"OpenCode can't run {model or 'without a model'} here")
                 # The same key chat would use for this person: their own, the workspace's, or the server's.
@@ -377,7 +383,7 @@ class CodingWorker:
             await self._publish_only(run_id, work, host, source, ref, push, token, tool_name, session_branch,
                                      session_pr, publication, accepted=accepted, revert=revert)
             return
-        assert tool is not None and key is not None
+        assert tool is not None and key is not None and self.sandbox is not None
 
         # 2. The agent's sandbox: the session's warm one when its files still match the branch (nobody
         #    pushed in between), else a fresh one with the tracked files and a history of its own, and
@@ -480,22 +486,7 @@ class CodingWorker:
                 return False
             if run.stop_requested:
                 raise _Stopped("Stopped before its changes were ready")
-            run.status, run.pending_patch, run.files_changed = CodingRunStatus.CHANGES_READY, diff, files
-            run.summary = summary or run.summary
-            project = await session.get(Project, run.project_id)
-            title = await issue_title(session, run)
-            self._update_in(session, run, step="Changes ready: waiting for a person to accept them")
-            assert project is not None
-            await Notifier(session).coding_waiting(
-                project, run.id, run.issue_id, f"Changes ready for {run.issue_key}: {title}", datetime.now(UTC),
-                run.agent.value, requester_id=run.requested_by_id,
-            )
-            AuditLog(session).record(
-                workspace_id=run.workspace_id, project_id=run.project_id, action="coding.changes_ready",
-                target=run.issue_key, actor_type=AuthorType.AGENT, agent=run.agent.value,
-                instructed_by_id=run.requested_by_id, approved_by_id=run.decided_by_id,
-                details={"run_id": str(run.id), "files": len(files)},
-            )
+            await ready_for_acceptance(session, run, diff, files, summary)
             await session.commit()
         return True
 
@@ -886,28 +877,12 @@ class CodingWorker:
                 return
             if run.status is not CodingRunStatus.RUNNING or not self._holds(run):
                 raise _ReconciliationRequired()
-            self._update_in(session, run, events=events, step=step)
+            add_events(run, session, events=events, step=step)
             if usage is not None:
                 run.input_tokens, run.output_tokens, run.cost_usd = usage.input_tokens, usage.output_tokens, usage.cost_usd
             if base_sha:
                 run.base_sha = base_sha
             await session.commit()
-
-    @staticmethod
-    def _update_in(session: AsyncSession, run: CodingRun, *, events: list[dict[str, Any]] | None = None,
-                   step: str | None = None) -> None:
-        added = list(events or [])
-        if step:
-            added.append({"at": datetime.now(UTC).isoformat(), "kind": "step", "text": step})
-        if added:
-            # All of them in coding_events, in order; the run keeps the latest for quick reads.
-            for event in added:
-                session.add(CodingRunEvent(
-                    workspace_id=run.workspace_id, run_id=run.id, session_id=run.session_id, seq=run.event_count,
-                    at=datetime.fromisoformat(event["at"]), kind=event["kind"], text=event["text"],
-                ))
-                run.event_count += 1
-            run.events = (list(run.events) + added)[-MAX_EVENTS:]
 
     async def _end(self, run_id: uuid.UUID, status: CodingRunStatus, *, error: str | None = None,
                    summary: str | None = None) -> None:
@@ -947,18 +922,7 @@ class CodingWorker:
                       error: str | None = None, summary: str | None = None) -> None:
         if run.status not in (CodingRunStatus.QUEUED, CodingRunStatus.RUNNING) or not self._holds(run):
             raise _ReconciliationRequired()
-        run.status, run.finished_at = status, datetime.now(UTC)
-        run.error = error[:1000] if error else None
-        run.pending_patch = None  # accepted changes are on the branch now, or never will be
-        if summary:
-            run.summary = summary
-        AuditLog(session).record(
-            workspace_id=run.workspace_id, project_id=run.project_id, action=f"coding.{status.value}",
-            target=run.issue_key, actor_type=AuthorType.AGENT, agent=run.agent.value,
-            instructed_by_id=run.requested_by_id, approved_by_id=run.decided_by_id,
-            details={"run_id": str(run.id), "pr_url": run.pr_url, "error": run.error,
-                     "tokens": run.input_tokens + run.output_tokens},
-        )
+        finish_run(session, run, status, error=error, summary=summary)
         await session.commit()
 
     async def _review(self, run_id: uuid.UUID, title: str, files: list[dict[str, Any]], diff: str) -> None:
@@ -991,6 +955,70 @@ class CodingWorker:
                 await session.commit()
         except Exception:
             logger.exception("coding run %s: the Reviewer didn't start", run_id)
+
+
+def needs_worker(run: CodingRun) -> bool:
+    """Whether a queued run is the worker's: a cloud turn, or what's ready to push from either place
+    (accepted changes, a revert). A local turn waiting to code is its runner's, claimed through the API."""
+    return run.location is CodingLocation.CLOUD or run.accepted_at is not None or run.revert_of is not None
+
+
+def add_events(run: CodingRun, session: AsyncSession, *, events: list[dict[str, Any]] | None = None,
+               step: str | None = None) -> None:
+    """Record events on a run (the caller holds its row): every one in coding_events, in order; the
+    run keeps the latest for quick reads."""
+    added = list(events or [])
+    if step:
+        added.append({"at": datetime.now(UTC).isoformat(), "kind": "step", "text": step})
+    for event in added:
+        session.add(CodingRunEvent(
+            workspace_id=run.workspace_id, run_id=run.id, session_id=run.session_id, seq=run.event_count,
+            at=datetime.fromisoformat(event["at"]), kind=event["kind"], text=event["text"],
+        ))
+        run.event_count += 1
+    if added:
+        run.events = (list(run.events) + added)[-MAX_EVENTS:]
+
+
+async def ready_for_acceptance(
+    session: AsyncSession, run: CodingRun, diff: str, files: list[dict[str, Any]], summary: str | None,
+) -> None:
+    """Manual: a turn's checked changes wait for a person (`changes_ready`); its approvers are told.
+    Not committed."""
+    run.status, run.pending_patch, run.files_changed = CodingRunStatus.CHANGES_READY, diff, files
+    run.summary = summary or run.summary
+    run.lease_expires_at = None
+    project = await session.get(Project, run.project_id)
+    title = await issue_title(session, run)
+    add_events(run, session, step="Changes ready: waiting for a person to accept them")
+    assert project is not None
+    await Notifier(session).coding_waiting(
+        project, run.id, run.issue_id, f"Changes ready for {run.issue_key}: {title}", datetime.now(UTC),
+        run.agent.value, requester_id=run.requested_by_id,
+    )
+    AuditLog(session).record(
+        workspace_id=run.workspace_id, project_id=run.project_id, action="coding.changes_ready",
+        target=run.issue_key, actor_type=AuthorType.AGENT, agent=run.agent.value,
+        instructed_by_id=run.requested_by_id, approved_by_id=run.decided_by_id,
+        details={"run_id": str(run.id), "files": len(files), "location": run.location.value},
+    )
+
+
+def finish_run(session: AsyncSession, run: CodingRun, status: CodingRunStatus, *,
+               error: str | None = None, summary: str | None = None) -> None:
+    """End a run (the caller holds it and checked it may): its outcome, audited. Not committed."""
+    run.status, run.finished_at = status, datetime.now(UTC)
+    run.error = error[:1000] if error else None
+    run.pending_patch = None  # accepted changes are on the branch now, or never will be
+    if summary:
+        run.summary = summary
+    AuditLog(session).record(
+        workspace_id=run.workspace_id, project_id=run.project_id, action=f"coding.{status.value}",
+        target=run.issue_key, actor_type=AuthorType.AGENT, agent=run.agent.value,
+        instructed_by_id=run.requested_by_id, approved_by_id=run.decided_by_id,
+        details={"run_id": str(run.id), "pr_url": run.pr_url, "error": run.error,
+                 "tokens": run.input_tokens + run.output_tokens},
+    )
 
 
 async def _stage(work: Path, host: Path, diff: str) -> tuple[list[str], list[dict[str, Any]]]:
@@ -1077,15 +1105,16 @@ def build_coding_worker(
     settings: Settings, session_factory: Callable[[], AbstractAsyncContextManager[AsyncSession]], reviewer: Any = None,
     storage: BlobStorage | None = None,
 ) -> CodingWorker | None:
-    """The coding worker for the process that runs agents (None: coding runs are off)."""
+    """The coding worker for the process that runs agents (None: coding runs are off). Without a
+    sandbox it still pushes what's accepted from local turns (and reverts), when the GitHub App is set up."""
     from dotrix_backend.modules.connectors.github_app import GitHubAppClient
 
     from .sandbox import build_sandbox
 
     sandbox = build_sandbox(settings)
-    if sandbox is None:
-        return None
     app = GitHubAppClient(settings)
+    if sandbox is None and not app.configured:
+        return None
     return CodingWorker(
         session_factory, settings, sandbox, app if app.configured else None, reviewer=reviewer, storage=storage,
         secrets=Secrets.from_settings(settings), pool=WarmPool(settings.coding_idle_minutes * 60, settings.coding_warm_max),

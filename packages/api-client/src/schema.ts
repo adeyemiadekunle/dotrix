@@ -3770,6 +3770,116 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/coding/runners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Coding Runners
+         * @description Your computers that code your local turns here, last seen first.
+         */
+        get: operations["list_coding_runners"];
+        put?: never;
+        /**
+         * Register Coding Runner
+         * @description Register this computer to code your local turns (`dotrix runner`), or update it (the same name):
+         *     its coding tools, whether it isolates them (`srt`), and the projects it has checkouts of (those
+         *     you can't see are left out). It claims only your turns. People who may instruct the coding agent.
+         */
+        post: operations["register_coding_runner"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/coding/runners/{runner_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Coding Runner
+         * @description Stop one of your computers from claiming turns. A turn it holds needs recovery once its lease lapses.
+         */
+        delete: operations["revoke_coding_runner"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/coding/runners/{runner_id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Coding Run
+         * @description The runner's poll: the oldest approved local turn of yours in a project it serves, now held by
+         *     it under a new lease (`run` is null when none waits). Counts as its heartbeat.
+         */
+        post: operations["claim_coding_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/coding/runners/{runner_id}/runs/{coding_run_id}/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Coding Run Heartbeat
+         * @description Renew a held turn's lease, with what the agent did since (its events) and the commit it codes
+         *     on; says whether to stop. 409 `lease_lost` once this runner no longer holds it.
+         */
+        post: operations["coding_run_heartbeat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/coding/runners/{runner_id}/runs/{coding_run_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Coding Result
+         * @description A held turn's outcome: its changes as a patch against `base_sha`, or none, failed, or stopped.
+         *     Changes are checked (no `.dotrix/`, no CI configuration); in Manual they wait for a person to
+         *     accept them, otherwise they're pushed by the platform. 409 `lease_lost` when no longer held.
+         */
+        post: operations["report_coding_result"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/github/webhook": {
         parameters: {
             query?: never;
@@ -4920,6 +5030,80 @@ export interface components {
              * @description Why not, when it isn't available
              */
             reason: string | null;
+            /**
+             * Local Available
+             * @description Whether you can code here on your own computer
+             * @default false
+             */
+            local_available: boolean;
+            /**
+             * Local Runner
+             * @description Your computer that would code (the one seen last)
+             */
+            local_runner?: string | null;
+            /**
+             * Local Reason
+             * @description Why not on your computer
+             */
+            local_reason?: string | null;
+        };
+        /**
+         * CodingClaim
+         * @description A local turn this runner now holds: code it in a worktree, then report the result.
+         */
+        CodingClaim: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Session Id
+             * Format: uuid
+             */
+            session_id: string;
+            /**
+             * Lease Token
+             * @description Send it with every heartbeat and the result; a newer one fences this off
+             */
+            lease_token: number;
+            /**
+             * Lease Seconds
+             * @description Heartbeat well within this, or the turn needs recovery
+             */
+            lease_seconds: number;
+            /** Issue Key */
+            issue_key: string;
+            /** Title */
+            title: string;
+            /** Turn */
+            turn: number;
+            /**
+             * Brief
+             * @description Exactly what the agent is told
+             */
+            brief: string;
+            /** @description The tool to code with */
+            tool: components["schemas"]["CodingAgent"];
+            /** Repo Full Name */
+            repo_full_name: string;
+            /** Base Branch */
+            base_branch: string;
+            /**
+             * Branch
+             * @description The session's branch to build on (a follow-up), else the base branch
+             */
+            branch: string | null;
+        };
+        /** CodingClaimed */
+        CodingClaimed: {
+            /** @description None: nothing waits for this runner */
+            run: components["schemas"]["CodingClaim"] | null;
         };
         /** CodingDecision */
         CodingDecision: {
@@ -4985,7 +5169,16 @@ export interface components {
             message: string;
             /** @description `manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes */
             approval_mode?: components["schemas"]["ApprovalMode"] | null;
+            /** @description Where it codes: `cloud` (a sandbox on the platform) or `local` (your own computer, through `dotrix runner` in a checkout of the project). A follow-up stays where its session is unless told. */
+            location?: components["schemas"]["CodingLocation"] | null;
         };
+        /**
+         * CodingLocation
+         * @description Where a turn codes. Either way the platform keeps its record, approvals, and events, and
+         *     pushes what's accepted with the GitHub App: a local turn hands back a patch, never pushes.
+         * @enum {string}
+         */
+        CodingLocation: "cloud" | "local";
         /**
          * CodingOrigin
          * @enum {string}
@@ -5014,6 +5207,11 @@ export interface components {
             note?: string | null;
             /** @description `manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes */
             approval_mode?: components["schemas"]["ApprovalMode"] | null;
+            /**
+             * @description Where it codes: `cloud` (a sandbox on the platform) or `local` (your own computer, through `dotrix runner` in a checkout of the project). A follow-up stays where its session is unless told.
+             * @default cloud
+             */
+            location: components["schemas"]["CodingLocation"];
         };
         /** CodingRunRead */
         CodingRunRead: {
@@ -5178,12 +5376,81 @@ export interface components {
              * @description The turn this one reverts
              */
             revert_of?: string | null;
+            /**
+             * @description Where it codes
+             * @default cloud
+             */
+            location: components["schemas"]["CodingLocation"];
+            /**
+             * Runner Name
+             * @description A local turn: the computer that claimed it
+             */
+            runner_name?: string | null;
         };
         /**
          * CodingRunStatus
          * @enum {string}
          */
         CodingRunStatus: "awaiting_approval" | "rejected" | "queued" | "running" | "changes_ready" | "pr_opened" | "no_changes" | "failed" | "recovery_required" | "stopped";
+        /** CodingRunnerCreate */
+        CodingRunnerCreate: {
+            /**
+             * Name
+             * @description This computer's name; registering it again updates it
+             */
+            name: string;
+            /** Platform */
+            platform?: string | null;
+            /**
+             * Tools
+             * @description Coding tools found, preferred first
+             */
+            tools?: components["schemas"]["CodingAgent"][];
+            /**
+             * Isolation
+             * @description `srt` (the sandbox runtime) or `none` (a worktree only)
+             * @enum {string}
+             */
+            isolation: "srt" | "none";
+            /**
+             * Project Ids
+             * @description Projects it has checkouts of
+             */
+            project_ids?: string[];
+        };
+        /** CodingRunnerRead */
+        CodingRunnerRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Platform */
+            platform: string | null;
+            /** Tools */
+            tools: string[];
+            /** Isolation */
+            isolation: string;
+            /** Project Ids */
+            project_ids: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Last Seen At
+             * Format: date-time
+             */
+            last_seen_at: string;
+            /**
+             * Online
+             * @description Seen in the last couple of minutes
+             */
+            online: boolean;
+        };
         /** CodingScreenshot */
         CodingScreenshot: {
             /**
@@ -5258,6 +5525,11 @@ export interface components {
              * @description The conversation it was started from (Build mode), when that conversation is yours: its turns show there, inline. Null: a session of its own.
              */
             thread_id?: string | null;
+            /**
+             * @description Where its latest turn codes
+             * @default cloud
+             */
+            location: components["schemas"]["CodingLocation"];
             /**
              * Started At
              * Format: date-time
@@ -7578,6 +7850,62 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "queued" | "running" | "awaiting_approval" | "completed" | "failed";
+        /** RunnerEvent */
+        RunnerEvent: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "step" | "text" | "tool" | "error";
+            /** Text */
+            text: string;
+        };
+        /** RunnerHeartbeat */
+        RunnerHeartbeat: {
+            /** Lease Token */
+            lease_token: number;
+            /** Events */
+            events?: components["schemas"]["RunnerEvent"][];
+            /** Base Sha */
+            base_sha?: string | null;
+        };
+        /** RunnerHeartbeatRead */
+        RunnerHeartbeatRead: {
+            /**
+             * Stop
+             * @description Stop the agent and report `stopped`
+             */
+            stop: boolean;
+        };
+        /** RunnerResult */
+        RunnerResult: {
+            /** Lease Token */
+            lease_token: number;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "changes" | "no_changes" | "failed" | "stopped";
+            /**
+             * Patch
+             * @description `git diff --cached --binary` against base_sha
+             */
+            patch?: string | null;
+            /** Base Sha */
+            base_sha?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Events */
+            events?: components["schemas"]["RunnerEvent"][];
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Cost Usd */
+            cost_usd?: number | null;
+        };
         /**
          * Scope
          * @enum {string}
@@ -20647,6 +20975,368 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_coding_runners: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunnerRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    register_coding_runner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodingRunnerCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunnerRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    revoke_coding_runner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runner_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    claim_coding_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runner_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingClaimed"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    coding_run_heartbeat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runner_id: string;
+                coding_run_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunnerHeartbeat"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerHeartbeatRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    report_coding_result: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runner_id: string;
+                coding_run_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunnerResult"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;
