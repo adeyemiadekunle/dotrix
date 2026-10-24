@@ -1,9 +1,14 @@
 # Coding runs: sandbox setup
 
-"Start coding" on an issue runs Claude Code (or Codex) on a copy of the project's repo in a
-sandbox. The worker then pushes a new branch and opens a PR through the dotrix GitHub App. This
-folder holds what the sandbox needs: the image, and the OpenShell provider profiles for the model
-keys.
+"Start coding" on an issue (or Build mode in Chat) has Kai, the coding agent, work on a copy
+of the project's repo in a sandbox. Underneath, Kai runs Claude Code, Codex, or OpenCode (any
+provider's model; `DOTRIX_CODING_AGENT=opencode`). The worker then pushes a new branch and opens
+a PR through the dotrix GitHub App. This folder holds what the sandbox needs: the image (with all
+three tools and the egress proxy), and the OpenShell provider profiles for the model keys.
+
+A run starts once it's approved: in Manual by an approver; in Accept edits and Auto at once, by
+whoever asked. It holds a lease while it works, and one cut off mid-push is recovered from what
+GitHub shows (see CLAUDE.md, Durable runs).
 
 ## How a run is contained
 

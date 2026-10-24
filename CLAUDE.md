@@ -210,7 +210,7 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
 - **Theme:** Settings → Appearance (System / Light / Dark, the accent, density, motion) is kept in the store's preferences in this browser and applied before the first paint (`applyPrefs` in `core/theme.ts`).
 - The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@dotrix/ui/lib/utils` and `@/hooks/…` → `@dotrix/ui/hooks/…`.
 
-## Where things stand (2026-10-23)
+## Where things stand (2026-10-24)
 
 Built and in use (details live in the code and its docstrings; this list is only the map):
 - **Accounts:** email + password, magic links, GitHub sign-in, verification, password reset, sessions (browsers and the desktop app) and API tokens, profile and photo, notification settings, rate limits, Sendly email with templates.
