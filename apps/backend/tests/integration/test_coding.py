@@ -757,6 +757,8 @@ async def test_coding_runs_on_the_same_keys_as_chat(db_client: AsyncClient, codi
     """The person's own key (where the workspace allows them), else the workspace's, else the
     server's when it lends its keys: who asked for the run decides, not who approves it."""
     ada, cat, ws, kun, _, _ = coding
+    # Fake keys, built like test_model_keys' so no key-shaped literal sits in the source.
+    workspace_key, own_key, server_key = ("sk-ant-test-" + "x" * 20 + who for who in ("WORK", "MINE", "SERV"))
     app = db_client._transport.app  # type: ignore[attr-defined]
     settings = app.state.settings
     app.state.secrets = app.state.runner.secrets = app.state.jobs.ctx.coding.secrets = Secrets(Fernet.generate_key().decode())
@@ -774,27 +776,27 @@ async def test_coding_runs_on_the_same_keys_as_chat(db_client: AsyncClient, codi
     assert gone["available"] is False and "Settings → Models" in gone["reason"]
 
     # The workspace's key.
-    assert (await db_client.put(f"{ws}/model-keys/anthropic", json={"api_key": "sk-ant-workspace-1234"},
+    assert (await db_client.put(f"{ws}/model-keys/anthropic", json={"api_key": workspace_key},
                                 headers=ada.headers)).status_code == 200
     assert (await db_client.get(f"{base}/coding", headers=cat.headers)).json()["agent"] == "claude-code"
     assert (await code("Tidy payments"))["status"] == "pr_opened"
-    assert claude.env["ANTHROPIC_API_KEY"] == "sk-ant-workspace-1234"
+    assert claude.env["ANTHROPIC_API_KEY"] == workspace_key
 
     # Ada's own key, once the workspace lets people's own keys run what they start.
-    assert (await db_client.put("/v1/me/model-keys/anthropic", json={"api_key": "sk-ant-ada-own-key-5678"},
+    assert (await db_client.put("/v1/me/model-keys/anthropic", json={"api_key": own_key},
                                 headers=ada.headers)).status_code == 200
     assert (await db_client.patch(ws, json={"personal_keys": True}, headers=ada.headers)).status_code == 200
     assert (await code("Tidy refunds"))["status"] == "pr_opened"
-    assert claude.env["ANTHROPIC_API_KEY"] == "sk-ant-ada-own-key-5678"
+    assert claude.env["ANTHROPIC_API_KEY"] == own_key
 
     # Without the workspace's key or hers, the server's is used only where it lends its keys.
     assert (await db_client.delete("/v1/me/model-keys/anthropic", headers=ada.headers)).status_code == 200
     assert (await db_client.delete(f"{ws}/model-keys/anthropic", headers=ada.headers)).status_code == 204
-    settings.anthropic_api_key, settings.server_model_keys = SecretStr("sk-ant-server-key-9999"), False
+    settings.anthropic_api_key, settings.server_model_keys = SecretStr(server_key), False
     try:
         assert (await db_client.get(f"{base}/coding", headers=ada.headers)).json()["available"] is False
         settings.server_model_keys = True
         assert (await code("Tidy invoices"))["status"] == "pr_opened"
-        assert claude.env["ANTHROPIC_API_KEY"] == "sk-ant-server-key-9999"
+        assert claude.env["ANTHROPIC_API_KEY"] == server_key
     finally:
         settings.server_model_keys = True
