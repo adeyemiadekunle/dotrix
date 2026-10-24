@@ -21,6 +21,7 @@ from dotrix_backend.modules.coding.tools import (
     choose_agent,
     model_for,
     opencode_session,
+    run_key,
     tool_for,
 )
 
@@ -308,3 +309,20 @@ def test_opencode_s_totals_add_the_step_its_events_left_out() -> None:
     assert (usage.input_tokens, usage.output_tokens, usage.cost_usd) == (2400, 40, 0.5)
     tool.read_usage("not json", usage)  # a failed read keeps what the events said
     assert usage.total == 2440
+
+
+def test_a_run_s_key_is_the_person_s_or_workspace_s_else_the_server_s_when_it_lends() -> None:
+    claude = TOOLS[CodingAgent.CLAUDE_CODE]
+    server = _settings(anthropic_api_key=SecretStr("server"))
+    assert run_key(claude, server, {"anthropic": "theirs"}) == "theirs"
+    assert run_key(claude, server, {"openai": "other"}) == "server"
+    hosted = server.model_copy(update={"server_model_keys": False})  # everyone brings their own
+    assert run_key(claude, hosted, {}) is None
+    # A tool can code where there's a key for its provider: the workspace's or the person's, or the server's.
+    assert choose_agent(_settings()) is None
+    assert choose_agent(_settings(), {"anthropic"}) is CodingAgent.CLAUDE_CODE
+    assert choose_agent(_settings(), {"openai"}) is CodingAgent.CODEX
+    assert choose_agent(hosted) is None and choose_agent(hosted, {"anthropic"}) is CodingAgent.CLAUDE_CODE
+    opencode = _settings(coding_agent="opencode", coding_opencode_model="google_genai:gemini-3-pro")
+    assert choose_agent(opencode, {"anthropic"}) is None and choose_agent(opencode, {"google_genai"}) is CodingAgent.OPENCODE
+    assert tool_for(CodingAgent.OPENCODE, "google_genai:gemini-3-pro").provider == "google_genai"

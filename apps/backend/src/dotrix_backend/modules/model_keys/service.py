@@ -148,6 +148,17 @@ async def run_keys(
     return RunKeys(keys | personal, set(personal))
 
 
+async def key_providers(session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID | None) -> set[str]:
+    """The providers a run here has a key for besides the server's: the workspace's own, and the
+    person's where the workspace allows personal keys (as `run_keys` picks them). Names only."""
+    providers = set(await session.scalars(
+        select(WorkspaceModelKey.provider).where(WorkspaceModelKey.workspace_id == workspace_id)
+    ))
+    if user_id is not None and await personal_keys_allowed(session, workspace_id):
+        providers |= set(await session.scalars(select(UserModelKey.provider).where(UserModelKey.user_id == user_id)))
+    return providers
+
+
 def may_choose(member: Membership, model: str, personal: set[str]) -> bool:
     """Picking a model other than the project's: people the workspace lets choose, or anyone
     whose own key pays for it."""

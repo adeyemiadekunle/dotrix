@@ -22,6 +22,7 @@ from dotrix_backend.modules.execution.service import RunDispatcher, record_dispa
 from dotrix_backend.modules.issues.models import AgentAssignee, Issue, IssueStatus, IssueType
 from dotrix_backend.modules.issues.schemas import IssueRead, IssueUpdate
 from dotrix_backend.modules.issues.service import IssueActor, IssueService
+from dotrix_backend.modules.model_keys.service import key_providers
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
@@ -81,16 +82,19 @@ class CodingService:
     def __init__(self, session: AsyncSession, settings: Settings, jobs: Jobs) -> None:
         self.session, self.settings, self.jobs = session, settings, jobs
 
-    async def availability(self, project: Project) -> CodingAvailability:
-        agent = choose_agent(self.settings)
+    async def availability(self, project: Project, user_id: uuid.UUID | None) -> CodingAvailability:
+        """Whether `user_id` (who asks for the run, and whose own key it may use) can code here."""
+        agent = choose_agent(self.settings, await key_providers(self.session, project.workspace_id, user_id))
         sandbox = None if self.settings.coding_sandbox == "off" else self.settings.coding_sandbox
         reason = None
         if sandbox is None:
             reason = "Coding runs aren't set up on this server (DOTRIX_CODING_SANDBOX)"
         elif agent is None and self.settings.coding_agent == "opencode":
-            reason = "OpenCode needs DOTRIX_CODING_OPENCODE_MODEL and its provider's key on the server"
+            reason = ("OpenCode needs DOTRIX_CODING_OPENCODE_MODEL and a key for its provider "
+                      "(Settings → Models, or your own in Account → Your models)")
         elif agent is None:
-            reason = "The server needs an Anthropic key (Claude Code) or an OpenAI key (Codex)"
+            reason = ("Coding needs an Anthropic key (Claude Code) or an OpenAI key (Codex): "
+                      "Settings → Models, or your own in Account → Your models")
         elif not GitHubAppClient(self.settings).configured:
             reason = "The dotrix GitHub App isn't set up on this server"
         elif await self._repo(project) is None:
@@ -99,7 +103,7 @@ class CodingService:
 
     async def start(self, access: ProjectAccess, key: str, data: CodingRunCreate) -> CodingRunRead:
         """Ask for a coding run on an issue: a new session, waiting for an approval."""
-        issue = await self._codable(access.project, key)
+        issue = await self._codable(access.project, access.member.user_id, key)
         run = await self._create(access.project, access.member, issue, data.note, CodingOrigin.START)
         await self.session.commit()
         return self._read(run, access)
@@ -111,7 +115,7 @@ class CodingService:
         if not can(access.member, Permission.INSTRUCT_CODING_AGENT):
             return None
         try:
-            issue = await self._codable(access.project, key)
+            issue = await self._codable(access.project, access.member.user_id, key)
         except (CodingUnavailable, CodingBusy, Conflict, Unprocessable):
             return None
         run = await self._create(access.project, access.member, issue, None, CodingOrigin.ASSIGNED)
@@ -125,7 +129,7 @@ class CodingService:
         if any(t.status in ACTIVE for t in turns):
             raise CodingBusy("This session has a turn waiting or working; follow up once it's done")
         latest = turns[-1]
-        issue = await self._codable(access.project, latest.issue_key, busy_ok=False)
+        issue = await self._codable(access.project, access.member.user_id, latest.issue_key, busy_ok=False)
         with_branch = next((t for t in reversed(turns) if t.branch and t.pr_number), None)
         if with_branch is not None and with_branch.pr_state in (PrState.MERGED, PrState.CLOSED):
             with_branch = None  # its PR is merged or closed: this turn starts a new branch and PR from the default branch
@@ -138,8 +142,8 @@ class CodingService:
         await self.session.commit()
         return self._read(run, access)
 
-    async def _codable(self, project: Project, key: str, *, busy_ok: bool = False) -> IssueRead:
-        available = await self.availability(project)
+    async def _codable(self, project: Project, user_id: uuid.UUID, key: str, *, busy_ok: bool = False) -> IssueRead:
+        available = await self.availability(project, user_id)
         if not available.available or available.agent is None:
             raise CodingUnavailable(available.reason or "Coding runs aren't available")
         issue = await IssueService(self.session).get(project, key)
@@ -159,7 +163,7 @@ class CodingService:
         session_id: uuid.UUID | None = None, turn: int = 1, earlier: list[tuple[int, str]] | None = None,
         carry: CodingRun | None = None,
     ) -> CodingRun:
-        agent = choose_agent(self.settings)
+        agent = choose_agent(self.settings, await key_providers(self.session, project.workspace_id, member.user_id))
         assert agent is not None
         repo = await self._repo(project)
         assert repo is not None
@@ -208,7 +212,8 @@ class CodingService:
             self._audit(access.project, access, "coding.rejected", run)
             await self.session.commit()
             return self._read(run, access)
-        available = await self.availability(access.project)
+        # The run codes on its requester's keys, not the approver's.
+        available = await self.availability(access.project, run.requested_by_id)
         if not available.available:
             raise CodingUnavailable(available.reason or "Coding runs aren't available")
         run.status = CodingRunStatus.QUEUED

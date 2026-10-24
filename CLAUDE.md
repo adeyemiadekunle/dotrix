@@ -269,7 +269,7 @@ Each phase is usable on its own.
 
 ### Backend (`apps/backend`)
 - [ ] Models: retry on a provider's 429 with backoff; a limit on runs working at once per workspace, with a queue; usage per person (above); continuing a conversation across projects that stopped at a limit (only a project's runs continue today); showing a person the tokens of runs on their own key
-- [ ] Coding runs on the same keys as chat (`run_keys`: the person's, else the workspace's, else the server's): part of the OpenCode switch (Direction), not separate work; Claude Code and Codex stay on the server's keys until then
+- [x] Coding runs on the same keys as chat (2026-10-24): `run_keys` (the person's own where the workspace allows it, else the workspace's, else the server's when `DOTRIX_SERVER_MODEL_KEYS` lends it), for every tool (`CodingTool.provider`, `run_key`); availability counts the requester's providers (`key_providers`), and a run codes on its requester's key, not its approver's
 - [ ] Search embeddings on the workspace's own keys, not only the server's
 - [ ] Coding sessions: tracked in Plan: coding agent (above), phase by phase
 - [ ] PRs on the board: checks shown on the issue; a PR check rejecting `.dotrix/` for PRs from elsewhere; the Reviewer's findings as a PR comment and in `reviews/` (FR-22), bugs proposed for critical ones
