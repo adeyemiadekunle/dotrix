@@ -8369,6 +8369,130 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/events": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Run Events",
+        "description": "What a run did, kept after it: each attempt at a step, its reply as written (about a\nsecond's worth a piece), what the agents were doing, and each step's outcome, in order. Pass\nthe last `seq` you have as `after` to pick up where you were; `active` says more will come.",
+        "operationId": "list_run_events",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "The last `seq` you have (0: from the start)",
+              "default": 0,
+              "title": "After"
+            },
+            "description": "The last `seq` you have (0: from the start)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEventPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/stream": {
       "get": {
         "tags": [
@@ -9813,6 +9937,120 @@
           },
           "409": {
             "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/conversations/runs/{run_id}/events": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Workspace Run Events",
+        "description": "A run's kept events, as for a project's runs (`after` picks up where you were).",
+        "operationId": "list_workspace_run_events",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "The last `seq` you have (0: from the start)",
+              "default": 0,
+              "title": "After"
+            },
+            "description": "The last `seq` you have (0: from the start)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEventPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -28089,6 +28327,75 @@
           "message"
         ],
         "title": "RunCreate"
+      },
+      "RunEventKind": {
+        "type": "string",
+        "enum": [
+          "step",
+          "text",
+          "activity",
+          "status"
+        ],
+        "title": "RunEventKind"
+      },
+      "RunEventPage": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RunEventRead"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active",
+            "description": "The run is still working: more events will come"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events",
+          "active"
+        ],
+        "title": "RunEventPage"
+      },
+      "RunEventRead": {
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "description": "1, 2, \u2026 per run: pass the last one you have as `after`"
+          },
+          "attempt": {
+            "type": "integer",
+            "title": "Attempt",
+            "description": "Which attempt wrote it (a resumed run's later attempts count up)"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RunEventKind",
+            "description": "`step`: an attempt at a step began (its text starts over); `text`: a piece of the reply; `activity`: what the agents were doing; `status`: the step's outcome"
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seq",
+          "attempt",
+          "kind",
+          "data",
+          "created_at"
+        ],
+        "title": "RunEventRead"
       },
       "RunFileRead": {
         "properties": {

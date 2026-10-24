@@ -194,3 +194,25 @@ class AgentRunOutput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # A report saved as a research note: the note's path in `.dotrix/` (null: not saved).
     note: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RunEventKind(enum.StrEnum):
+    STEP = "step"  # an attempt at a step began (start, resume, continue; recovered or not): its text starts over
+    TEXT = "text"  # a piece of the reply, as written (coalesced: about a second's worth)
+    ACTIVITY = "activity"  # what the agents were doing ("Reading roadmap.md")
+    STATUS = "status"  # the run's outcome for the step: awaiting_approval, completed, failed
+
+
+class AgentRunEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """What a run did, as it happened, kept after it (events.py): a client that reconnects, or
+    reloads, picks up where it was (`seq`), and the steps stay readable once the run is done."""
+
+    __tablename__ = "agent_run_events"
+    __table_args__ = (UniqueConstraint("run_id", "seq"),)
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)  # 1, 2, … per run
+    attempt: Mapped[int] = mapped_column(Integer)  # the run's lease token when it was written
+    kind: Mapped[RunEventKind] = mapped_column(str_enum(RunEventKind, 16))
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

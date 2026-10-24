@@ -37,6 +37,7 @@ from dotrix_engine.outputs import ACTIONS as OUTPUT_ACTIONS
 from dotrix_engine.permissions import DOCS, REVIEWER
 from dotrix_engine.web.note import note_path, render_note
 
+from .events import events_after
 from .models import (
     ACTIVE_STATUSES,
     AgentApproval,
@@ -63,6 +64,8 @@ from .schemas import (
     PlanRead,
     RunBreakdown,
     RunCreate,
+    RunEventPage,
+    RunEventRead,
     RunFileRead,
     RunOutputItem,
     RunOutputRead,
@@ -780,6 +783,16 @@ class AgentService:
             ConversationPlan.thread_id == thread_id,
         ).order_by(ConversationPlan.version))
         return [PlanRead.model_validate(row) for row in rows]
+
+    async def run_events(self, access: ProjectAccess, run_id: uuid.UUID, after: int, limit: int) -> RunEventPage:
+        """A run's kept events after `after` (events.py), for whoever may open the run."""
+        run = await self.session.scalar(select(AgentRun).where(
+            AgentRun.project_id == access.project.id, AgentRun.id == run_id, run_openable_by(access.member)))
+        if run is None:
+            raise NotFound("Run not found")
+        rows = await events_after(self.session, run, after, limit)
+        return RunEventPage(events=[RunEventRead.model_validate(r) for r in rows],
+                            active=run.status in (RunStatus.QUEUED, RunStatus.RUNNING))
 
     async def check_run(self, access: ProjectAccess, run_id: uuid.UUID) -> None:
         found = await self.session.scalar(

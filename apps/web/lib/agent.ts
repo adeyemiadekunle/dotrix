@@ -4,7 +4,7 @@
 // when it starts. Runs work in the background, so active ones are polled until they finish or pause.
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { api, ensureSession, errorMessage, unwrap } from "./api";
@@ -312,10 +312,15 @@ export function useRunStream(scope: Scope | undefined, runId: string, active: bo
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
   const [activity, setActivity] = useState<string | null>(null);
+  // A dropped connection reconnects (the server sends the text so far again, from the run's kept
+  // events if its live stream is gone), a little later each time.
+  const [attempt, setAttempt] = useState(0);
+  const failures = useRef(0);
   useEffect(() => {
     if (!scope || !active) return;
     let source: EventSource | undefined;
     let closed = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     // An EventSource can't refresh an expired session itself: check it's current first.
     void ensureSession().then(() => {
       if (closed) return;
@@ -336,14 +341,36 @@ export function useRunStream(scope: Scope | undefined, runId: string, active: bo
         void queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
         void queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
       });
-      stream.onerror = () => stream.close();
+      stream.addEventListener("open", () => (failures.current = 0));
+      stream.onerror = () => {
+        stream.close();
+        if (!closed) retry = setTimeout(() => setAttempt((a) => a + 1), Math.min(1000 * 2 ** failures.current++, 15_000));
+      };
     });
     return () => {
       closed = true;
+      clearTimeout(retry);
       source?.close();
     };
-  }, [scope, runId, active, queryClient]);
+  }, [scope, runId, active, queryClient, attempt]);
   return { text, activity };
+}
+
+export type RunEvent = Schemas["RunEventRead"];
+
+/** What a run did, kept after it: its steps (what the agents were doing), in order. */
+export function useRunSteps(scope: Scope | undefined, runId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["run-events", scope?.workspaceId, runId],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/events", {
+          params: { path: { ...path(scope!), run_id: runId }, query: { limit: 500 } },
+        }),
+      ),
+    enabled: Boolean(scope) && enabled,
+    select: (page) => page.events.filter((e) => e.kind === "activity").map((e) => String(e.data.label ?? "")),
+  });
 }
 
 export function useStopRun(scope: Scope | undefined) {

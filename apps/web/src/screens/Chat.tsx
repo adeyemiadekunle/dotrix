@@ -10,6 +10,7 @@ import {
   modelName,
   runTitle,
   useContinueRun,
+  useRunSteps,
   useModels,
   useRunStream,
   useSendMessage,
@@ -355,6 +356,7 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
       {shows && (reply.text || run.approvals?.length || limited) ? (
         <Message m={reply} projectId={projectId}>
           {projectId && <RunApprovals run={run} scope={scope} />}
+          {projectId && !stream && <RunSteps scope={scope} runId={run.id} />}
           {limited && projectId && (
             <LimitNotice
               said={run.error ?? undefined}
@@ -377,6 +379,25 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
         </Message>
       ) : null}
     </>
+  );
+}
+
+/** What the agents did for a reply (kept after the run), folded until asked for. */
+function RunSteps({ scope, runId }: { scope: Scope | undefined; runId: string }) {
+  const [open, setOpen] = useState(false);
+  const steps = useRunSteps(scope, runId, open);
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button className="btn btn-sm btn-ghost" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
+        Steps
+      </button>
+      {open && (
+        <ol className="muted" style={{ fontSize: 12.5, margin: "4px 0 0 20px" }} aria-label="Steps">
+          {steps.data?.length ? steps.data.map((label, i) => <li key={i}>{label}</li>) : <li>{steps.isLoading ? "Loading…" : "No steps kept"}</li>}
+        </ol>
+      )}
+    </div>
   );
 }
 

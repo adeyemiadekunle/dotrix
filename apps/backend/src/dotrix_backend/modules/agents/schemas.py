@@ -9,7 +9,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_valida
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 from dotrix_engine.catalog import action_for
 
-from .models import ApprovalStatus, RunKind, RunStatus, WorkMode
+from .models import ApprovalStatus, RunEventKind, RunKind, RunStatus, WorkMode
 
 # `auto` (the Project Manager) or any agent handle the project has (built-in or custom).
 AgentChoice = Annotated[str, Field(pattern=r"^(auto|[a-z][a-z0-9-]{1,30})$")]
@@ -418,3 +418,19 @@ class ContinueRun(BaseModel):
         default=False,
         description="Continue it automatically once the limit resets (when the provider said when), instead of now",
     )
+
+
+class RunEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    seq: int = Field(description="1, 2, … per run: pass the last one you have as `after`")
+    attempt: int = Field(description="Which attempt wrote it (a resumed run's later attempts count up)")
+    kind: RunEventKind = Field(description="`step`: an attempt at a step began (its text starts over); `text`: a "
+                               "piece of the reply; `activity`: what the agents were doing; `status`: the step's outcome")
+    data: dict[str, Any]
+    created_at: datetime
+
+
+class RunEventPage(BaseModel):
+    events: list[RunEventRead]
+    active: bool = Field(description="The run is still working: more events will come")

@@ -1834,6 +1834,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Run Events
+         * @description What a run did, kept after it: each attempt at a step, its reply as written (about a
+         *     second's worth a piece), what the agents were doing, and each step's outcome, in order. Pass
+         *     the last `seq` you have as `after` to pick up where you were; `active` says more will come.
+         */
+        get: operations["list_run_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/stream": {
         parameters: {
             query?: never;
@@ -2120,6 +2142,26 @@ export interface paths {
          * @description Stop a run that's still working; the conversation can continue.
          */
         post: operations["stop_workspace_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/conversations/runs/{run_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspace Run Events
+         * @description A run's kept events, as for a project's runs (`after` picks up where you were).
+         */
+        get: operations["list_workspace_run_events"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7357,6 +7399,45 @@ export interface components {
              * @description People @mentioned (user ids). Each is told if "@Their Name" is in the text and they can see the project; others are ignored
              */
             mentions?: string[];
+        };
+        /**
+         * RunEventKind
+         * @enum {string}
+         */
+        RunEventKind: "step" | "text" | "activity" | "status";
+        /** RunEventPage */
+        RunEventPage: {
+            /** Events */
+            events: components["schemas"]["RunEventRead"][];
+            /**
+             * Active
+             * @description The run is still working: more events will come
+             */
+            active: boolean;
+        };
+        /** RunEventRead */
+        RunEventRead: {
+            /**
+             * Seq
+             * @description 1, 2, … per run: pass the last one you have as `after`
+             */
+            seq: number;
+            /**
+             * Attempt
+             * @description Which attempt wrote it (a resumed run's later attempts count up)
+             */
+            attempt: number;
+            /** @description `step`: an attempt at a step began (its text starts over); `text`: a piece of the reply; `activity`: what the agents were doing; `status`: the step's outcome */
+            kind: components["schemas"]["RunEventKind"];
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** RunFileRead */
         RunFileRead: {
@@ -14098,6 +14179,70 @@ export interface operations {
             };
         };
     };
+    list_run_events: {
+        parameters: {
+            query?: {
+                /** @description The last `seq` you have (0: from the start) */
+                after?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunEventPage"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     stream_run: {
         parameters: {
             query?: never;
@@ -14991,6 +15136,69 @@ export interface operations {
             };
             /** @description Conflicts with the current state */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_workspace_run_events: {
+        parameters: {
+            query?: {
+                /** @description The last `seq` you have (0: from the start) */
+                after?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunEventPage"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

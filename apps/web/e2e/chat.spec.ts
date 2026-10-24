@@ -41,6 +41,9 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await box.press("Enter");
   await expect(page).toHaveURL(/thread=.*project=KUM/);
   await expect(page.getByText("Test model reply: What's open?")).toBeVisible();
+  // What the agents did stays with the reply (kept after the run), folded until asked for.
+  await page.getByRole("button", { name: "Steps" }).first().click();
+  await expect(page.getByRole("list", { name: "Steps" })).toBeVisible();
   const conversations = page.getByRole("navigation", { name: "Conversations" });
   await expect(conversations.getByText("What's open", { exact: true })).toBeVisible();
 
