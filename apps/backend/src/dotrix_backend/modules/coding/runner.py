@@ -59,8 +59,10 @@ from dotrix_backend.modules.issues.models import IssueStatus
 from dotrix_backend.modules.issues.schemas import IssueUpdate, Link
 from dotrix_backend.modules.issues.service import IssueActor, IssueService
 from dotrix_backend.modules.model_keys.service import run_keys
+from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
+from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
 from . import guard
@@ -322,15 +324,29 @@ class CodingWorker:
             await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
             session_branch, session_pr = run.branch, (run.pr_number, run.pr_url) if run.pr_number else None
+            # Accepted changes (Manual) are pushed as they were checked; a revert undoes a pushed turn.
+            # Neither runs the agent again.
+            accepted = await session.scalar(select(CodingRun.pending_patch).where(CodingRun.id == run.id)) \
+                if run.accepted_at is not None else None
+            reverting = await session.get(CodingRun, run.revert_of) if run.revert_of else None
+            revert = (reverting.turn, reverting.commit_sha) if reverting is not None and reverting.commit_sha else None
+            if run.revert_of and revert is None:
+                raise RunFailed("The turn to revert has no pushed commit")
+            # Pushing what's ready runs no model: it needs neither the tool nor a key (one removed
+            # while the changes waited mustn't lose them).
+            publish_only = accepted is not None or revert is not None
             tool = tool_for(agent, model)
-            if tool is None:
-                raise RunFailed(f"OpenCode can't run {model or 'without a model'} here")
-            # The same key chat would use for this person: their own, the workspace's, or the server's.
-            keys = await run_keys(session, self.secrets, run.workspace_id, run.requested_by_id)
-            key = run_key(tool, self.settings, keys.keys)
-            if key is None:
-                raise RunFailed(f"There's no {tool.provider} key for {CODING_AGENT_NAME} ({tool.name}) here any more "
-                                "(Settings → Models, or your own in Account → Your models)")
+            tool_name = tool.name if tool is not None else agent.value
+            key: str | None = None
+            if not publish_only:
+                if tool is None:
+                    raise RunFailed(f"OpenCode can't run {model or 'without a model'} here")
+                # The same key chat would use for this person: their own, the workspace's, or the server's.
+                keys = await run_keys(session, self.secrets, run.workspace_id, run.requested_by_id)
+                key = run_key(tool, self.settings, keys.keys)
+                if key is None:
+                    raise RunFailed(f"There's no {tool.provider} key for {CODING_AGENT_NAME} ({tool.name}) here any "
+                                    "more (Settings → Models, or your own in Account → Your models)")
 
         # 1. Our checkout, with a token for this repo only (an hour long, never stored). With a fork
         # owner, the branch goes to the app's fork: the PR's CI then gets none of the repo's secrets,
@@ -357,6 +373,11 @@ class CodingWorker:
 
         await self._update(run_id, base_sha=base_sha, step=f"Checked out {session_branch}" if session_branch
                            else "Checked out the repository")
+        if publish_only:
+            await self._publish_only(run_id, work, host, source, ref, push, token, tool_name, session_branch,
+                                     session_pr, publication, accepted=accepted, revert=revert)
+            return
+        assert tool is not None and key is not None
 
         # 2. The agent's sandbox: the session's warm one when its files still match the branch (nobody
         #    pushed in between), else a fresh one with the tracked files and a history of its own, and
@@ -406,77 +427,23 @@ class CodingWorker:
                 return
 
             # 3. Apply to our checkout and check, before anything leaves this machine.
-            patch = work / "changes.patch"
-            patch.write_bytes(changes.stdout.encode())  # bytes: text mode would add \r before each \n on Windows
-            try:
-                await run_git(host, "apply", "--index", "--binary", "--whitespace=nowarn", str(patch))
-            except CheckoutError as exc:
-                raise RunFailed(f"The agent's changes didn't apply: {exc}") from exc
-            paths = [p for p in (await run_git(host, "diff", "--cached", "--name-only", "--no-renames", "-z")).split("\0") if p]
-            reasons = guard.check(paths)
-            if reasons:
-                raise RunFailed("Not pushed: " + "; ".join(reasons[:5]))
-            files = _numstat(await run_git(host, "diff", "--cached", "--numstat", "--no-renames"))
+            paths, files = await _stage(work, host, changes.stdout)
+
+            async def sandbox_moves_on(heading: str) -> None:
+                # The sandbox's own history moves on with the branch: the next turn's changes are its own.
+                nonlocal keep
+                committed = await box.exec(["git", "-c", "user.name=dotrix", "-c", f"user.email={BOT_EMAIL}", "commit",
+                                            "-q", "--no-verify", "--allow-empty", "-m", heading], timeout=120)
+                keep = committed.code == 0
+
+            # Manual: the checked changes wait for a person to accept them; nothing is pushed yet.
+            if await self._hold_for_acceptance(run_id, changes.stdout, files, summary):
+                await sandbox_moves_on("Changes waiting to be accepted")
+                return
 
             # 4. Commit, push a new branch, open the PR.
-            async with self.session_factory() as session:
-                run = await session.get(CodingRun, run_id)
-                assert run is not None
-                if run.stop_requested:
-                    raise _Stopped("Stopped before pushing")
-                issue_key, run_short, turn = run.issue_key, run.id.hex[-6:], run.turn  # the id's random end: its start is a timestamp shared for hours
-                title = await issue_title(session, run)
-            branch = session_branch or f"dotrix/{issue_key.lower()}-{_slug(title)}-{run_short}"
-            if branch == ref.default_branch:
-                raise RunFailed("Refusing to push to the default branch")
-            heading = f"{issue_key}: {title}" + (f" (turn {turn})" if turn > 1 else "")
-            message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({CODING_AGENT_NAME}, on {tool.name})"
-            await run_git(host, "-c", f"user.name={CODING_AGENT_NAME} via dotrix", "-c", f"user.email={BOT_EMAIL}",
-                          "commit", "-q", "--no-verify", "-m", message)
-            commit_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
-            await self._update(run_id, step=f"Pushing {branch}")
-            if push.fork_token and session_branch is None:
-                # The fork needs the commit we started from (our checkout is shallow).
-                await self.app.sync_fork(push.ref.full_name, ref.default_branch, token=push.fork_token)
-            # Never forced: on the session's branch, this commit sits on top of what's there.
-            await self._prepare_publication(run_id, branch=branch, commit_sha=commit_sha, files=files)
-            publication.branch, publication.commit_sha, publication.files = branch, commit_sha, files
-            publication.attempted = True
-            await run_git(host, "push", "-q", push.url, f"HEAD:refs/heads/{branch}", env=push.env,
-                          timeout=FETCH_TIMEOUT)
-            # The sandbox's own history moves on with the branch: the next turn's changes are its own.
-            committed = await box.exec(["git", "-c", "user.name=dotrix", "-c", f"user.email={BOT_EMAIL}", "commit", "-q",
-                                        "--no-verify", "--allow-empty", "-m", heading], timeout=120)
-            keep = committed.code == 0
-            if session_pr is not None:
-                pr = PullRequest(*session_pr)  # the session's PR shows the new commit
-            else:
-                await self._ensure_running(run_id)
-                pr = await self.app.create_pull_request(
-                    ref.installation_id, ref.full_name, head=push.head + branch, base=ref.default_branch,
-                    title=f"{issue_key}: {title}",
-                    body=pr_body(summary, issue_key, run_id, tool.name, files, guard.ci_sensitive(paths)),
-                    token=token,
-                )
-            publication.pr = pr
-            async with self.session_factory() as session:
-                run = await session.scalar(select(CodingRun).where(
-                    CodingRun.id == run_id,
-                ).with_for_update())
-                assert run is not None
-                if not self._holds(run):
-                    raise _ReconciliationRequired()  # a newer attempt finds the PR on GitHub
-                run.branch, run.commit_sha, run.files_changed = branch, commit_sha, files
-                run.pr_number, run.pr_url = pr.number, pr.html_url
-                run.pr_state = run.pr_state or PrState.OPEN
-                if run.status is CodingRunStatus.RECOVERY_REQUIRED:
-                    # Preserve a PR observed after the scanner classified the
-                    # run, without claiming that execution completed safely.
-                    await session.commit()
-                    raise _ReconciliationRequired()
-                await self._finish(session, run, CodingRunStatus.PR_OPENED, summary=summary)
-                await issue_to_review(session, run, title, opened=session_pr is None)
-            await self._review(run_id, title, files, changes.stdout)
+            await self._publish(run_id, host, ref, push, token, tool.name, summary, files, paths, changes.stdout,
+                                session_branch, session_pr, publication, after_push=sandbox_moves_on)
         finally:
             # The conversation moved on even when the turn didn't push: save it for the next turn.
             if tool.resumes:
@@ -499,6 +466,139 @@ class CodingWorker:
             else:
                 await close_quietly(box)
                 await self._session(session_id, state=CodingSessionState.IDLE)
+
+    async def _hold_for_acceptance(
+        self, run_id: uuid.UUID, diff: str, files: list[dict[str, Any]], summary: str | None,
+    ) -> bool:
+        """In Manual, a turn's checked changes wait for a person (`changes_ready`) instead of being
+        pushed: kept as the patch, its files listed, its approvers told. False: push them now."""
+        async with self.session_factory() as session:
+            run = await session.scalar(select(CodingRun).where(CodingRun.id == run_id).with_for_update())
+            if run is None or run.status is not CodingRunStatus.RUNNING or not self._holds(run):
+                raise _ReconciliationRequired()
+            if run.approval_mode != ApprovalMode.MANUAL.value or run.accepted_at is not None or run.revert_of:
+                return False
+            if run.stop_requested:
+                raise _Stopped("Stopped before its changes were ready")
+            run.status, run.pending_patch, run.files_changed = CodingRunStatus.CHANGES_READY, diff, files
+            run.summary = summary or run.summary
+            project = await session.get(Project, run.project_id)
+            title = await issue_title(session, run)
+            self._update_in(session, run, step="Changes ready: waiting for a person to accept them")
+            assert project is not None
+            await Notifier(session).coding_waiting(
+                project, run.id, run.issue_id, f"Changes ready for {run.issue_key}: {title}", datetime.now(UTC),
+                run.agent.value, requester_id=run.requested_by_id,
+            )
+            AuditLog(session).record(
+                workspace_id=run.workspace_id, project_id=run.project_id, action="coding.changes_ready",
+                target=run.issue_key, actor_type=AuthorType.AGENT, agent=run.agent.value,
+                instructed_by_id=run.requested_by_id, approved_by_id=run.decided_by_id,
+                details={"run_id": str(run.id), "files": len(files)},
+            )
+            await session.commit()
+        return True
+
+    async def _publish_only(
+        self, run_id: uuid.UUID, work: Path, host: Path, source: _PushTarget, ref: RepoRef, push: _PushTarget,
+        token: str, tool_name: str, session_branch: str | None, session_pr: tuple[int, str | None] | None,
+        publication: _Publication, *, accepted: str | None, revert: tuple[int, str] | None,
+    ) -> None:
+        """A turn that doesn't run the agent: accepted changes, applied and checked again on the
+        branch as it is now; or a revert of a pushed turn's commit on the session's branch."""
+        async with self.session_factory() as session:
+            run = await session.get(CodingRun, run_id)
+            assert run is not None
+            summary = run.summary
+        if revert is not None:
+            turn, sha = revert
+            await self._update(run_id, step=f"Reverting turn {turn} ({sha[:7]})")
+            # Its commit and its parent: `git revert` takes the change between them off the branch.
+            await run_git(host, "fetch", "-q", "--depth", "2", "--no-tags", source.url, sha, env=source.env,
+                          timeout=FETCH_TIMEOUT)
+            try:
+                await run_git(host, "revert", "--no-commit", sha)
+            except CheckoutError as exc:
+                raise RunFailed(f"Turn {turn} doesn't revert cleanly: later turns changed the same lines") from exc
+            diff = await run_git(host, "diff", "--cached", "--binary", "--no-color", "--no-renames")
+            paths, files = await _checked(host)
+            summary = f"Reverted turn {turn} ({sha[:7]})."
+        else:
+            assert accepted is not None
+            await self._update(run_id, step="Accepted: pushing the changes")
+            diff = accepted
+            paths, files = await _stage(work, host, accepted)
+        if not paths:
+            await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=summary)
+            return
+        await self._publish(run_id, host, ref, push, token, tool_name, summary, files, paths, diff,
+                            session_branch, session_pr, publication)
+
+    async def _publish(
+        self, run_id: uuid.UUID, host: Path, ref: RepoRef, push: _PushTarget, token: str, tool_name: str,
+        summary: str | None, files: list[dict[str, Any]], paths: list[str], diff: str,
+        session_branch: str | None, session_pr: tuple[int, str | None] | None, publication: _Publication, *,
+        after_push: Callable[[str], Awaitable[None]] | None = None,
+    ) -> None:
+        """Commit what's staged in our checkout, push it (a new branch, or on top of the session's),
+        open the PR (or update the session's), and have the Reviewer look."""
+        assert self.app is not None
+        async with self.session_factory() as session:
+            run = await session.get(CodingRun, run_id)
+            assert run is not None
+            if run.stop_requested:
+                raise _Stopped("Stopped before pushing")
+            issue_key, run_short, turn = run.issue_key, run.id.hex[-6:], run.turn  # the id's random end: its start is a timestamp shared for hours
+            title = await issue_title(session, run)
+        branch = session_branch or f"dotrix/{issue_key.lower()}-{_slug(title)}-{run_short}"
+        if branch == ref.default_branch:
+            raise RunFailed("Refusing to push to the default branch")
+        heading = f"{issue_key}: {title}" + (f" (turn {turn})" if turn > 1 else "")
+        message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({CODING_AGENT_NAME}, on {tool_name})"
+        await run_git(host, "-c", f"user.name={CODING_AGENT_NAME} via dotrix", "-c", f"user.email={BOT_EMAIL}",
+                      "commit", "-q", "--no-verify", "-m", message)
+        commit_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
+        await self._update(run_id, step=f"Pushing {branch}")
+        if push.fork_token and session_branch is None:
+            # The fork needs the commit we started from (our checkout is shallow).
+            await self.app.sync_fork(push.ref.full_name, ref.default_branch, token=push.fork_token)
+        # Never forced: on the session's branch, this commit sits on top of what's there.
+        await self._prepare_publication(run_id, branch=branch, commit_sha=commit_sha, files=files)
+        publication.branch, publication.commit_sha, publication.files = branch, commit_sha, files
+        publication.attempted = True
+        await run_git(host, "push", "-q", push.url, f"HEAD:refs/heads/{branch}", env=push.env,
+                      timeout=FETCH_TIMEOUT)
+        if after_push is not None:
+            await after_push(heading)
+        if session_pr is not None:
+            pr = PullRequest(*session_pr)  # the session's PR shows the new commit
+        else:
+            await self._ensure_running(run_id)
+            pr = await self.app.create_pull_request(
+                ref.installation_id, ref.full_name, head=push.head + branch, base=ref.default_branch,
+                title=f"{issue_key}: {title}",
+                body=pr_body(summary, issue_key, run_id, tool_name, files, guard.ci_sensitive(paths)),
+                token=token,
+            )
+        publication.pr = pr
+        async with self.session_factory() as session:
+            run = await session.scalar(select(CodingRun).where(
+                CodingRun.id == run_id,
+            ).with_for_update())
+            assert run is not None
+            if not self._holds(run):
+                raise _ReconciliationRequired()  # a newer attempt finds the PR on GitHub
+            run.branch, run.commit_sha, run.files_changed = branch, commit_sha, files
+            run.pr_number, run.pr_url = pr.number, pr.html_url
+            run.pr_state = run.pr_state or PrState.OPEN
+            if run.status is CodingRunStatus.RECOVERY_REQUIRED:
+                # Preserve a PR observed after the scanner classified the
+                # run, without claiming that execution completed safely.
+                await session.commit()
+                raise _ReconciliationRequired()
+            await self._finish(session, run, CodingRunStatus.PR_OPENED, summary=summary)
+            await issue_to_review(session, run, title, opened=session_pr is None)
+        await self._review(run_id, title, files, diff)
 
     async def _fork(self, ref: RepoRef, owner: str) -> _PushTarget:
         """The app's fork of the repo in `owner` (made the first time), with a token to push there."""
@@ -786,23 +886,28 @@ class CodingWorker:
                 return
             if run.status is not CodingRunStatus.RUNNING or not self._holds(run):
                 raise _ReconciliationRequired()
-            added = list(events or [])
-            if step:
-                added.append({"at": datetime.now(UTC).isoformat(), "kind": "step", "text": step})
-            if added:
-                # All of them in coding_events, in order; the run keeps the latest for quick reads.
-                for event in added:
-                    session.add(CodingRunEvent(
-                        workspace_id=run.workspace_id, run_id=run.id, session_id=run.session_id, seq=run.event_count,
-                        at=datetime.fromisoformat(event["at"]), kind=event["kind"], text=event["text"],
-                    ))
-                    run.event_count += 1
-                run.events = (list(run.events) + added)[-MAX_EVENTS:]
+            self._update_in(session, run, events=events, step=step)
             if usage is not None:
                 run.input_tokens, run.output_tokens, run.cost_usd = usage.input_tokens, usage.output_tokens, usage.cost_usd
             if base_sha:
                 run.base_sha = base_sha
             await session.commit()
+
+    @staticmethod
+    def _update_in(session: AsyncSession, run: CodingRun, *, events: list[dict[str, Any]] | None = None,
+                   step: str | None = None) -> None:
+        added = list(events or [])
+        if step:
+            added.append({"at": datetime.now(UTC).isoformat(), "kind": "step", "text": step})
+        if added:
+            # All of them in coding_events, in order; the run keeps the latest for quick reads.
+            for event in added:
+                session.add(CodingRunEvent(
+                    workspace_id=run.workspace_id, run_id=run.id, session_id=run.session_id, seq=run.event_count,
+                    at=datetime.fromisoformat(event["at"]), kind=event["kind"], text=event["text"],
+                ))
+                run.event_count += 1
+            run.events = (list(run.events) + added)[-MAX_EVENTS:]
 
     async def _end(self, run_id: uuid.UUID, status: CodingRunStatus, *, error: str | None = None,
                    summary: str | None = None) -> None:
@@ -844,6 +949,7 @@ class CodingWorker:
             raise _ReconciliationRequired()
         run.status, run.finished_at = status, datetime.now(UTC)
         run.error = error[:1000] if error else None
+        run.pending_patch = None  # accepted changes are on the branch now, or never will be
         if summary:
             run.summary = summary
         AuditLog(session).record(
@@ -885,6 +991,26 @@ class CodingWorker:
                 await session.commit()
         except Exception:
             logger.exception("coding run %s: the Reviewer didn't start", run_id)
+
+
+async def _stage(work: Path, host: Path, diff: str) -> tuple[list[str], list[dict[str, Any]]]:
+    """Apply the agent's changes to our checkout's index and check them: the paths and their counts."""
+    patch = work / "changes.patch"
+    patch.write_bytes(diff.encode())  # bytes: text mode would add \r before each \n on Windows
+    try:
+        await run_git(host, "apply", "--index", "--binary", "--whitespace=nowarn", str(patch))
+    except CheckoutError as exc:
+        raise RunFailed(f"The agent's changes didn't apply: {exc}") from exc
+    return await _checked(host)
+
+
+async def _checked(host: Path) -> tuple[list[str], list[dict[str, Any]]]:
+    """What's staged in our checkout, through the guard (it refuses `.dotrix/`, workflows, and more)."""
+    paths = [p for p in (await run_git(host, "diff", "--cached", "--name-only", "--no-renames", "-z")).split("\0") if p]
+    reasons = guard.check(paths)
+    if reasons:
+        raise RunFailed("Not pushed: " + "; ".join(reasons[:5]))
+    return paths, _numstat(await run_git(host, "diff", "--cached", "--numstat", "--no-renames"))
 
 
 async def _export(host: Path, target: Path) -> None:

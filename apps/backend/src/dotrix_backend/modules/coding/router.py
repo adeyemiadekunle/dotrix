@@ -25,6 +25,7 @@ from .schemas import (
     CodingEventPage,
     CodingFollowUp,
     CodingRecover,
+    CodingRevert,
     CodingRunCreate,
     CodingRunRead,
     CodingSessionRead,
@@ -135,8 +136,21 @@ async def decide_coding_run(
     coding_run_id: uuid.UUID, data: CodingDecision, access: CodingApprover, coding: Coding
 ) -> CodingRunRead:
     """Approve a coding run (it starts, and the issue is assigned to the tool) or reject it,
-    with a reason. People who may approve agent changes."""
+    with a reason; or, for a Manual turn whose changes are ready (`changes_ready`), accept them
+    (they're pushed, and the PR opened or updated) or reject them (discarded, nothing pushed).
+    People who may approve agent changes."""
     return await coding.decide(access, coding_run_id, data)
+
+
+@router.post("/runs/{coding_run_id}/revert", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422))
+async def revert_coding_run(
+    coding_run_id: uuid.UUID, data: CodingRevert, access: CodingInstructor, coding: Coding
+) -> CodingRunRead:
+    """Revert a pushed turn: a new turn in its session whose commit undoes it on the session's
+    branch (never forced; the PR keeps its history). It waits for approval like any turn, and the
+    agent doesn't run. Whoever started the session. 409 when its PR is merged or closed, the
+    session has moved to a new branch, it's reverted already, or a turn waits or works."""
+    return await coding.revert(access, coding_run_id, data)
 
 
 @router.post("/runs/{coding_run_id}/stop", responses=errors(403, 409))
@@ -159,7 +173,8 @@ async def recover_coding_run(
 
 @router.get("/sessions/{session_id}")
 async def get_coding_session(session_id: uuid.UUID, access: ProjectViewer, coding: Coding) -> list[CodingRunRead]:
-    """A coding session's turns, first to latest: each a run with what the agent did. Anyone who sees the project."""
+    """A coding session's turns, first to latest: each a run with what the agent did. Sessions are
+    private like conversations: whoever started it, and approvers while a turn waits on them."""
     return await coding.session_turns(access, session_id)
 
 

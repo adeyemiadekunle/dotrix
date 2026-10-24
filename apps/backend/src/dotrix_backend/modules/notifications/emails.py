@@ -17,7 +17,7 @@ from dotrix_backend.core.email import EmailSender
 from dotrix_backend.core.email_templates import EmailContent, render
 from dotrix_backend.modules.agents.models import AgentApproval, ApprovalStatus
 from dotrix_backend.modules.auth.models import User
-from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
+from dotrix_backend.modules.coding.models import WAITING, CodingRun
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import visible_to
 from dotrix_backend.modules.workspaces.models import Membership, Workspace
@@ -173,7 +173,7 @@ class NotificationEmails:
         if n.coding_run_id is not None:
             return await self.session.scalar(
                 select(CodingRun.status).where(CodingRun.id == n.coding_run_id)
-            ) is CodingRunStatus.AWAITING_APPROVAL
+            ) in WAITING
         return bool(await self.session.scalar(select(exists().where(and_(
             AgentApproval.run_id == n.run_id, AgentApproval.status == ApprovalStatus.PENDING,
             AgentApproval.created_at >= n.created_at,

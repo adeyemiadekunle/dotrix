@@ -3616,7 +3616,8 @@ export interface paths {
         };
         /**
          * Get Coding Session
-         * @description A coding session's turns, first to latest: each a run with what the agent did. Anyone who sees the project.
+         * @description A coding session's turns, first to latest: each a run with what the agent did. Sessions are
+         *     private like conversations: whoever started it, and approvers while a turn waits on them.
          */
         get: operations["get_coding_session"];
         put?: never;
@@ -3649,9 +3650,34 @@ export interface paths {
         /**
          * Decide Coding Run
          * @description Approve a coding run (it starts, and the issue is assigned to the tool) or reject it,
-         *     with a reason. People who may approve agent changes.
+         *     with a reason; or, for a Manual turn whose changes are ready (`changes_ready`), accept them
+         *     (they're pushed, and the PR opened or updated) or reject them (discarded, nothing pushed).
+         *     People who may approve agent changes.
          */
         post: operations["decide_coding_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revert Coding Run
+         * @description Revert a pushed turn: a new turn in its session whose commit undoes it on the session's
+         *     branch (never forced; the PR keeps its history). It waits for approval like any turn, and the
+         *     agent doesn't run. Whoever started the session. 409 when its PR is merged or closed, the
+         *     session has moved to a new branch, it's reverted already, or a turn waits or works.
+         */
+        post: operations["revert_coding_run"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4974,6 +5000,11 @@ export interface components {
              */
             action: "check" | "discard";
         };
+        /** CodingRevert */
+        CodingRevert: {
+            /** @description `manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes */
+            approval_mode?: components["schemas"]["ApprovalMode"] | null;
+        };
         /** CodingRunCreate */
         CodingRunCreate: {
             /**
@@ -5129,12 +5160,30 @@ export interface components {
              * @default false
              */
             can_recover: boolean;
+            /**
+             * Can Revert
+             * @description Whether you may revert it now (a pushed turn whose PR is open)
+             * @default false
+             */
+            can_revert: boolean;
+            /**
+             * Accepted By Id
+             * @description Manual: who accepted its changes before they were pushed
+             */
+            accepted_by_id?: string | null;
+            /** Accepted At */
+            accepted_at?: string | null;
+            /**
+             * Revert Of
+             * @description The turn this one reverts
+             */
+            revert_of?: string | null;
         };
         /**
          * CodingRunStatus
          * @enum {string}
          */
-        CodingRunStatus: "awaiting_approval" | "rejected" | "queued" | "running" | "pr_opened" | "no_changes" | "failed" | "recovery_required" | "stopped";
+        CodingRunStatus: "awaiting_approval" | "rejected" | "queued" | "running" | "changes_ready" | "pr_opened" | "no_changes" | "failed" | "recovery_required" | "stopped";
         /** CodingScreenshot */
         CodingScreenshot: {
             /**
@@ -20249,6 +20298,79 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    revert_coding_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coding_run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodingRevert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;

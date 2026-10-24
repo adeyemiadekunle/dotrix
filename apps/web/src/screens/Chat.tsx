@@ -37,6 +37,7 @@ import {
   useFollowUp,
   useStartCoding,
   useRecoverCoding,
+  useRevertCoding,
   useStopCoding,
   type CodingSession,
 } from "@/lib/coding";
@@ -177,6 +178,7 @@ const STATUS: Record<CodingSession["status"], [string, string]> = {
   awaiting_approval: ["Waiting for approval", "amber"],
   queued: ["Queued", ""],
   running: ["Working", "accent"],
+  changes_ready: ["Changes ready", "amber"],
   pr_opened: ["PR opened", "green"],
   no_changes: ["No changes", ""],
   failed: ["Failed", "red"],
@@ -184,7 +186,9 @@ const STATUS: Record<CodingSession["status"], [string, string]> = {
   stopped: ["Stopped", ""],
   rejected: ["Rejected", "red"],
 };
-const BUSY: CodingSession["status"][] = ["awaiting_approval", "queued", "running", "recovery_required"];
+const BUSY: CodingSession["status"][] = ["awaiting_approval", "queued", "running", "recovery_required", "changes_ready"];
+// Waiting on a person: to start, or (Manual) to push what it changed.
+const WAITING: CodingSession["status"][] = ["awaiting_approval", "changes_ready"];
 
 function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
   const [label, c] = STATUS[cs.status];
@@ -233,8 +237,10 @@ function SessionCard({ cs }: { cs: CodingSession }) {
   const decide = useDecideCoding(scope, cs.issue_key);
   const stop = useStopCoding(scope, cs.issue_key);
   const recover = useRecoverCoding(scope, cs.issue_key);
+  const revert = useRevertCoding(scope, cs.issue_key, defaultApproval());
   const [label, c] = STATUS[cs.status];
   const files = latest?.files_changed ?? [];
+  const ready = latest?.status === "changes_ready";
   return (
     <div className="change" role="group" aria-label={`Kai on ${cs.issue_key}`} style={{ margin: "4px 0 12px 36px" }}>
       <div className="change-h">
@@ -286,12 +292,17 @@ function SessionCard({ cs }: { cs: CodingSession }) {
         {latest?.can_decide && (
           <>
             <button className="btn btn-sm btn-ghost" disabled={decide.isPending} onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}>
-              Reject
+              {ready ? "Discard changes" : "Reject"}
             </button>
             <button className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}>
-              Approve
+              {ready ? "Accept and push" : "Approve"}
             </button>
           </>
+        )}
+        {latest?.can_revert && (
+          <button className="btn btn-sm btn-ghost" disabled={revert.isPending} onClick={() => revert.mutate(latest.id)}>
+            Revert this turn
+          </button>
         )}
         {latest?.can_stop && (
           <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
@@ -1281,6 +1292,7 @@ function Session({ cs }: { cs: CodingSession }) {
   const decide = useDecideCoding(scope, cs.issue_key);
   const stop = useStopCoding(scope, cs.issue_key);
   const recover = useRecoverCoding(scope, cs.issue_key);
+  const revert = useRevertCoding(scope, cs.issue_key, defaultApproval());
   const follow = useFollowUp(scope, cs.session_id, cs.issue_key, defaultApproval());
   const t = isLive() ? { id: cs.issue_key, key: cs.issue_key } : D().tasks.find((x) => x.key === cs.issue_key);
   const p = proj(cs.project_id);
@@ -1518,6 +1530,17 @@ function Session({ cs }: { cs: CodingSession }) {
                       </div>
                     )}
                     {turn.error && <div className="faint">{turn.error}</div>}
+                    {turn.can_revert && !busy && (
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        style={{ alignSelf: "flex-start", marginTop: 4 }}
+                        disabled={revert.isPending}
+                        onClick={() => revert.mutate(turn.id)}
+                      >
+                        <Ic n="undo-2" s={12} />
+                        Revert this turn
+                      </button>
+                    )}
                     {(turn.screenshots ?? []).length > 0 && (
                       <div className="cs-shots" aria-label="Screenshots from the browser">
                         {(turn.screenshots ?? []).map((sh) => {
@@ -1568,6 +1591,55 @@ function Session({ cs }: { cs: CodingSession }) {
                     >
                       <Ic n="check" s={13} />
                       Approve
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+          {latest?.status === "changes_ready" && (
+            <div className="change" role="group" aria-label="Changes waiting to be accepted">
+              <div className="change-h">
+                <Ic n="shield-check" s={14} />
+                <b style={{ fontWeight: 500 }}>Changes ready: nothing is pushed until someone accepts them</b>
+              </div>
+              {latest.files_changed.length > 0 && (
+                <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
+                  {latest.files_changed.map((f) => (
+                    <span key={fileOf(f)} className="row" style={{ gap: 8 }}>
+                      <span className="trunc grow">{fileOf(f)}</span>
+                      <span style={{ color: "var(--green)" }}>+{String(f.added ?? 0)}</span>
+                      <span style={{ color: "var(--red)" }}>-{String(f.removed ?? 0)}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="change-f">
+                <span className="faint" style={{ fontSize: 12 }}>
+                  Accepted, they're pushed to {latest.branch ? <code>{latest.branch}</code> : "a new branch"} and the pull request is opened or updated.
+                </span>
+                <span className="sp" />
+                {latest.can_stop && !latest.can_decide && (
+                  <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
+                    Discard
+                  </button>
+                )}
+                {latest.can_decide && (
+                  <>
+                    <button
+                      className="btn btn-sm btn-secondary"
+                      disabled={decide.isPending}
+                      onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
+                    >
+                      Discard
+                    </button>
+                    <button
+                      className="btn btn-sm btn-primary"
+                      disabled={decide.isPending}
+                      onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
+                    >
+                      <Ic n="check" s={13} />
+                      Accept and push
                     </button>
                   </>
                 )}
@@ -1695,7 +1767,7 @@ export function Chat() {
       : null;
   const cs = allSessions.find((c) => c.session_id === sessionId) ?? null;
   // Conversations waiting on a decision, Kai's in them included.
-  const waitingIn = new Set(allSessions.filter((c) => c.thread_id && c.status === "awaiting_approval").map((c) => c.thread_id));
+  const waitingIn = new Set(allSessions.filter((c) => c.thread_id && WAITING.includes(c.status)).map((c) => c.thread_id));
   const threads = rows
     .filter((r) => !q || r.title.toLowerCase().includes(q))
     .map((r) => (waitingIn.has(r.id) ? { ...r, waiting: true } : r))

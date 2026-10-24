@@ -21,6 +21,7 @@ export const STATUS_LABELS: Record<CodingRunStatus, string> = {
   rejected: "Rejected",
   queued: "Starting",
   running: "Coding",
+  changes_ready: "Changes ready",
   pr_opened: "PR opened",
   no_changes: "No changes",
   failed: "Failed",
@@ -35,7 +36,7 @@ export function sessionHref(workspaceSlug: string, projectKey: string, sessionId
   return `/w/${workspaceSlug}/chat?tab=coding&project=${projectKey}&session=${sessionId}`;
 }
 
-const ACTIVE: CodingRunStatus[] = ["awaiting_approval", "queued", "running"];
+const ACTIVE: CodingRunStatus[] = ["awaiting_approval", "queued", "running", "changes_ready"];
 export const isActive = (run: Pick<CodingRun, "status">) => ACTIVE.includes(run.status);
 
 /** Whether this project's issues can be coded here, and by which tool. */
@@ -108,6 +109,18 @@ export function useStopCoding(scope: Scope | undefined, issueKey: string) {
     unwrap(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/stop", {
         params: { path: { ...path(s), coding_run_id: runId } },
+      }),
+    ),
+  );
+}
+
+/** Undo a pushed turn: a new turn whose commit reverts it on the session's branch (approved like any turn). */
+export function useRevertCoding(scope: Scope | undefined, issueKey: string, approvalMode: ApprovalMode | null = null) {
+  return useCodingMutation(scope, issueKey, (s, runId: string) =>
+    unwrap(
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/revert", {
+        params: { path: { ...path(s), coding_run_id: runId } },
+        body: { approval_mode: approvalMode },
       }),
     ),
   );

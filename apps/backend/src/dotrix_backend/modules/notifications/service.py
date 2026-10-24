@@ -10,7 +10,7 @@ from sqlalchemy.orm import aliased
 
 from dotrix_backend.modules.agents.models import AgentApproval, AgentRun, ApprovalStatus
 from dotrix_backend.modules.auth.models import User
-from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
+from dotrix_backend.modules.coding.models import WAITING, CodingRun
 from dotrix_backend.modules.issues.models import Issue
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import visible_to
@@ -24,7 +24,7 @@ DECISIONS = (NotificationKind.APPROVAL, NotificationKind.CHECKPOINT)
 
 def _resolved() -> Any:
     """An approval or checkpoint is resolved once nothing from that pause waits any more (an
-    agent run's changes, or a coding run waiting to start)."""
+    agent run's changes, or a coding run waiting to start or to push)."""
     still_waiting = exists().where(
         AgentApproval.run_id == Notification.run_id,
         AgentApproval.status == ApprovalStatus.PENDING,
@@ -32,7 +32,7 @@ def _resolved() -> Any:
     )
     waiting_run = aliased(CodingRun)  # (the list joins coding_runs itself)
     coding_waiting = exists().where(
-        waiting_run.id == Notification.coding_run_id, waiting_run.status == CodingRunStatus.AWAITING_APPROVAL
+        waiting_run.id == Notification.coding_run_id, waiting_run.status.in_(WAITING)
     )
     return and_(Notification.kind.in_(DECISIONS), not_(still_waiting), not_(coding_waiting))
 
