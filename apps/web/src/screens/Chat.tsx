@@ -1207,7 +1207,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                   className="cpill pick"
                   onClick={codeHere}
                   disabled={!slug || !pkey || adding}
-                  aria-label="Code locally: choose a folder"
+                  aria-label="Local"
                   data-tip={
                     hereRunner?.state === "failed"
                       ? (hereRunner.message ?? "This computer's runner stopped")
