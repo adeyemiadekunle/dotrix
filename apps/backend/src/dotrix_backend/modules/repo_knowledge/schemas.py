@@ -67,6 +67,7 @@ class RepoPathPage(BaseModel):
 class RepoExplainRequest(BaseModel):
     domains: list[str] = Field(default_factory=list, max_length=12,
                                description="Domains to start with (the coverage's `domain`s); none: the agent picks")
+    refresh: bool = Field(default=False, description="Update the stale pages first (`GET .../pages`)")
 
     @field_validator("domains")
     @classmethod
@@ -75,3 +76,25 @@ class RepoExplainRequest(BaseModel):
         if unknown:
             raise ValueError(f"Unknown domain {unknown[0]!r}; use one of {', '.join(DOMAINS)}")
         return list(dict.fromkeys(domains))
+
+
+class StaleSource(BaseModel):
+    path: str
+    why: Literal["changed", "removed", "unread"] = Field(
+        description="`changed`: its content changed since it was read; `removed`: no longer in the repository; "
+        "`unread`: cited but never read")
+
+
+class RepoPageRead(BaseModel):
+    path: str = Field(description="The wiki page, e.g. docs/wiki/architecture.md")
+    version: int
+    updated_at: datetime
+    citations: int = Field(description="`path:line` citations on the page")
+    stale: list[StaleSource] = Field(description="Cited paths that make it stale (empty: fresh)")
+
+
+class RepoPagesRead(BaseModel):
+    """The repository wiki's pages and whether each still matches the code at the latest inventory."""
+
+    commit_sha: str | None
+    pages: list[RepoPageRead]

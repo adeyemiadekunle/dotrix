@@ -16988,6 +16988,85 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/pages": {
+      "get": {
+        "tags": [
+          "repository knowledge"
+        ],
+        "summary": "List Repository Pages",
+        "description": "The repository wiki's pages (docs/wiki/) and whether each is stale: a path it cites changed\nsince it was read, left the repository, or was never read. Anyone who sees the project.",
+        "operationId": "list_repository_pages",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoPagesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/paths": {
       "get": {
         "tags": [
@@ -27349,6 +27428,12 @@
             "maxItems": 12,
             "title": "Domains",
             "description": "Domains to start with (the coverage's `domain`s); none: the agent picks"
+          },
+          "refresh": {
+            "type": "boolean",
+            "title": "Refresh",
+            "description": "Update the stale pages first (`GET .../pages`)",
+            "default": false
           }
         },
         "type": "object",
@@ -27406,6 +27491,75 @@
         ],
         "title": "RepoOption",
         "description": "A repo one of the workspace's installations can see, and which project uses it, if any."
+      },
+      "RepoPageRead": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "The wiki page, e.g. docs/wiki/architecture.md"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "citations": {
+            "type": "integer",
+            "title": "Citations",
+            "description": "`path:line` citations on the page"
+          },
+          "stale": {
+            "items": {
+              "$ref": "#/components/schemas/StaleSource"
+            },
+            "type": "array",
+            "title": "Stale",
+            "description": "Cited paths that make it stale (empty: fresh)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "version",
+          "updated_at",
+          "citations",
+          "stale"
+        ],
+        "title": "RepoPageRead"
+      },
+      "RepoPagesRead": {
+        "properties": {
+          "commit_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Sha"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/RepoPageRead"
+            },
+            "type": "array",
+            "title": "Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "commit_sha",
+          "pages"
+        ],
+        "title": "RepoPagesRead",
+        "description": "The repository wiki's pages and whether each still matches the code at the latest inventory."
       },
       "RepoPathPage": {
         "properties": {
@@ -28274,6 +28428,30 @@
           "reasons"
         ],
         "title": "StaleRead"
+      },
+      "StaleSource": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "why": {
+            "type": "string",
+            "enum": [
+              "changed",
+              "removed",
+              "unread"
+            ],
+            "title": "Why",
+            "description": "`changed`: its content changed since it was read; `removed`: no longer in the repository; `unread`: cited but never read"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "why"
+        ],
+        "title": "StaleSource"
       },
       "SubgraphRead": {
         "properties": {

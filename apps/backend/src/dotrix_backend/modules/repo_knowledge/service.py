@@ -8,6 +8,7 @@ coverage separately: a domain with no evidence in the repository is a named gap,
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -19,6 +20,7 @@ from uuid_utils.compat import uuid7
 from dotrix_backend.core.errors import Conflict, Unprocessable
 from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.code.service import CodeService
+from dotrix_backend.modules.knowledge.models import KnowledgeFile
 from dotrix_backend.modules.projects.models import Project
 from dotrix_engine.inventory import (
     DOMAINS,
@@ -29,10 +31,22 @@ from dotrix_engine.inventory import (
 )
 
 from .models import PathStatus, RepoPath, RepoSnapshot
-from .schemas import DomainCoverage, RepoCoverageRead, RepoPathPage, RepoPathRead, RepoSnapshotRead
+from .schemas import (
+    DomainCoverage,
+    RepoCoverageRead,
+    RepoPageRead,
+    RepoPagesRead,
+    RepoPathPage,
+    RepoPathRead,
+    RepoSnapshotRead,
+    StaleSource,
+)
 
 logger = logging.getLogger(__name__)
 
+WIKI = "docs/wiki/"  # where the skill's pages live
+# `path:12` or `path:12-40`, in backticks (the citation format the skill asks for)
+CITATION = re.compile(r"`([^`\s:]+):(\d+)(?:-(\d+))?`")
 KEEP_SNAPSHOTS = 3  # a project's latest few: enough to compare, without a row per path per push forever
 PAGE_MAX = 500
 _OPEN = (PathStatus.PENDING, PathStatus.UNSUPPORTED, PathStatus.INACCESSIBLE)
@@ -131,6 +145,41 @@ class RepoKnowledgeService:
             discovery_complete=not any(statuses.get(s) for s in _OPEN),
             domains=domains,
         )
+
+    async def pages(self, project: Project) -> RepoPagesRead:
+        """Each wiki page, stale when a path it cites changed since it was read, left the repository,
+        or was never read. Read when asked, from the pages as they are now: a person's edit counts."""
+        snap = await self._latest(project)
+        files = list(await self.session.scalars(select(KnowledgeFile).where(
+            KnowledgeFile.workspace_id == project.workspace_id, KnowledgeFile.project_id == project.id,
+            KnowledgeFile.path.startswith(WIKI, autoescape=True), KnowledgeFile.deleted.is_(False),
+        ).order_by(KnowledgeFile.path)))
+        cited = {f.path: list(dict.fromkeys(m.group(1) for m in CITATION.finditer(f.content))) for f in files}
+        wanted = {p for paths in cited.values() for p in paths}
+        status: dict[str, PathStatus] = {}
+        read_before: set[str] = set()
+        if snap is not None and wanted:
+            status = {path: PathStatus(s) for path, s in await self.session.execute(
+                select(RepoPath.path, RepoPath.status).where(
+                    RepoPath.workspace_id == project.workspace_id, RepoPath.snapshot_id == snap.id,
+                    RepoPath.path.in_(wanted)))}
+            # Read in an earlier inventory and not since: its content changed.
+            read_before = set(await self.session.scalars(select(RepoPath.path).join(
+                RepoSnapshot, RepoSnapshot.id == RepoPath.snapshot_id).where(
+                RepoPath.workspace_id == project.workspace_id, RepoSnapshot.project_id == project.id,
+                RepoSnapshot.id != snap.id, RepoPath.status == PathStatus.ANALYZED, RepoPath.path.in_(wanted))))
+        pages = []
+        for f in files:
+            stale = []
+            for path in cited[f.path] if snap is not None else []:
+                state = status.get(path)
+                if state is None:
+                    stale.append(StaleSource(path=path, why="removed"))
+                elif state is not PathStatus.ANALYZED:
+                    stale.append(StaleSource(path=path, why="changed" if path in read_before else "unread"))
+            pages.append(RepoPageRead(path=f.path, version=f.version, updated_at=f.updated_at,
+                                      citations=len(CITATION.findall(f.content)), stale=stale))
+        return RepoPagesRead(commit_sha=snap.commit_sha if snap else None, pages=pages)
 
     async def paths(self, project: Project, *, status: PathStatus | None, domain: str | None, prefix: str | None,
                     after: str | None, limit: int) -> RepoPathPage:

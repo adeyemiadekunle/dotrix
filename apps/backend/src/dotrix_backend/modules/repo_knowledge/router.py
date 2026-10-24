@@ -13,7 +13,13 @@ from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.projects.deps import KnowledgeEditor, ProjectViewer
 
 from .models import PathStatus
-from .schemas import RepoCoverageRead, RepoExplainRequest, RepoPathPage, RepoSnapshotRead
+from .schemas import (
+    RepoCoverageRead,
+    RepoExplainRequest,
+    RepoPagesRead,
+    RepoPathPage,
+    RepoSnapshotRead,
+)
 from .service import PAGE_MAX, RepoKnowledgeService
 
 router = APIRouter(
@@ -53,8 +59,17 @@ async def explain_repository(
     it read, and proposes pages that cite their sources and name their gaps, each waiting for approval
     like any document. A new conversation; another run continues where this one stopped. People who
     edit documents."""
-    await RepoKnowledgeService(session, checkouts).snapshot(access.project)
-    return await agents.explain_repository(access, data.domains)
+    service = RepoKnowledgeService(session, checkouts)
+    await service.snapshot(access.project)
+    stale = [p.path for p in (await service.pages(access.project)).pages if p.stale] if data.refresh else []
+    return await agents.explain_repository(access, data.domains, stale=stale)
+
+
+@router.get("/pages")
+async def list_repository_pages(access: ProjectViewer, session: SessionDep, checkouts: Checkouts) -> RepoPagesRead:
+    """The repository wiki's pages (docs/wiki/) and whether each is stale: a path it cites changed
+    since it was read, left the repository, or was never read. Anyone who sees the project."""
+    return await RepoKnowledgeService(session, checkouts).pages(access.project)
 
 
 @router.get("/paths", responses=errors(422))

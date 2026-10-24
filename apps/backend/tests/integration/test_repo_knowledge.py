@@ -181,3 +181,45 @@ async def test_explaining_the_repository_reads_marks_and_cites(
     assert architecture["analyzed"] == 2 and architecture["status"] == "covered"  # its two source files
     read = (await db_client.get(f"{base}/paths?status=analyzed", headers=cat.headers)).json()["paths"]
     assert {p["path"] for p in read} == {"src/payments.py", "src/api/routes.py"}
+
+
+async def test_a_page_goes_stale_when_the_code_it_cites_changes(
+    db_client: AsyncClient, github_world, deliver, github, origin: Path, agent_script
+) -> None:
+    ada, cat, ws, kun, _ = await github_world()
+    base = f"{ws}/projects/{kun['id']}/repository/knowledge"
+    await _connect(db_client, ws, kun, ada.headers)
+    first = (await db_client.get(base, headers=ada.headers)).json()["snapshot"]
+    factory = db_client._transport.app.state.jobs.ctx.session_factory  # type: ignore[attr-defined]
+    async with factory() as session:  # the discovery run read these (it marks them itself)
+        await session.execute(update(RepoPath).where(
+            RepoPath.snapshot_id == uuid.UUID(first["id"]),
+            RepoPath.path.in_(["src/payments.py", "src/api/routes.py", "package.json"]),
+        ).values(status=PathStatus.ANALYZED))
+        await session.commit()
+    page = ("# Architecture\n\nOne provider `src/payments.py:1`, routes `src/api/routes.py:1`, "
+            "the package `package.json:1`, the readme `README.md:1-3`, again `src/payments.py:2`.\n")
+    res = await db_client.put(f"{ws}/projects/{kun['id']}/knowledge/files/docs/wiki/architecture.md",
+                              json={"content": page}, headers=ada.headers)
+    assert res.status_code in (200, 201), res.text
+    pages = (await db_client.get(f"{base}/pages", headers=cat.headers)).json()
+    assert [p["path"] for p in pages["pages"]] == ["docs/wiki/architecture.md"]
+    assert pages["pages"][0]["citations"] == 5
+    assert pages["pages"][0]["stale"] == [{"path": "README.md", "why": "unread"}]
+
+    _git(origin, "rm", "-q", "src/api/routes.py")
+    second = _commit(origin, {"src/payments.py": "class PaymentProvider:\n    def refund(self):\n        pass\n"})
+    push = {"ref": "refs/heads/main", "after": second,
+            "repository": {"id": 9001, "full_name": "kunemi/api", "default_branch": "main"}}
+    assert (await deliver("push", push)).status_code == 202
+    stale = (await db_client.get(f"{base}/pages", headers=cat.headers)).json()["pages"][0]["stale"]
+    assert stale == [{"path": "src/payments.py", "why": "changed"}, {"path": "src/api/routes.py", "why": "removed"},
+                     {"path": "README.md", "why": "unread"}]  # package.json is unchanged: still read
+
+    # Refreshing starts with the stale pages.
+    model = agent_script.say("Updated the architecture page.")
+    run = await db_client.post(f"{base}/explain", json={"refresh": True}, headers=ada.headers)
+    assert run.status_code == 202, run.text
+    assert "stale pages up to date" in model.received[0][-1].content
+    assert "docs/wiki/architecture.md" in model.received[0][-1].content
+    assert "repo_stale_pages" in model.tools_received[0]

@@ -11,6 +11,7 @@ export type Coverage = Schemas["RepoCoverageRead"];
 export type DomainCoverage = Schemas["DomainCoverage"];
 export type RepoPath = Schemas["RepoPathRead"];
 export type PathStatus = Schemas["PathStatus"];
+export type RepoPage = Schemas["RepoPageRead"];
 
 const path = (s: Scope) => ({ workspace_id: s.workspaceId, project_id: s.projectId });
 const key = (s: Scope | undefined) => ["repo-knowledge", s?.projectId] as const;
@@ -48,15 +49,24 @@ export function useTakeInventory(scope: Scope | undefined) {
   });
 }
 
+/** The wiki's pages (docs/wiki/), each with the cited paths that make it stale. */
+export function useRepoPages(scope: Scope | undefined) {
+  return useQuery({
+    queryKey: [...key(scope), "pages"],
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/pages", { params: { path: path(scope!) } })),
+    enabled: Boolean(scope),
+  });
+}
+
 /** The documentation agent explains the repository in the wiki: a new conversation, opened in Chat. */
 export function useExplainRepository(scope: Scope | undefined, opened: (threadId: string) => void) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (domains: string[]) =>
+    mutationFn: ({ domains = [], refresh = false }: { domains?: string[]; refresh?: boolean }) =>
       unwrap(
         api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/explain", {
           params: { path: path(scope!) },
-          body: { domains },
+          body: { domains, refresh },
         }),
       ),
     onSuccess: (run) => opened(run.thread_id),

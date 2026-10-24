@@ -2,7 +2,16 @@
 // Every required domain shows its evidence or a named gap, and what isn't read says why.
 import { useState, type ReactNode } from "react";
 
-import { useExplainRepository, useRepoCoverage, useRepoPaths, useTakeInventory, type DomainCoverage, type PathStatus } from "@/lib/repo-knowledge";
+import {
+  useExplainRepository,
+  useRepoCoverage,
+  useRepoPages,
+  useRepoPaths,
+  useTakeInventory,
+  type DomainCoverage,
+  type PathStatus,
+  type RepoPage,
+} from "@/lib/repo-knowledge";
 import { allowed } from "../core/can";
 import { Ic } from "../core/icons";
 import { ago } from "../core/utils";
@@ -25,6 +34,12 @@ const STATUS_WORDS: Record<PathStatus, string> = {
   inaccessible: "Not here",
 };
 
+const STALE_WORDS: Record<RepoPage["stale"][number]["why"], string> = {
+  changed: "changed since read",
+  removed: "removed",
+  unread: "not read yet",
+};
+
 export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
   const scope = live.ws ? { workspaceId: live.ws.id, projectId: pid } : undefined;
   const coverage = useRepoCoverage(scope);
@@ -32,6 +47,8 @@ export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
   const [picked, setPicked] = useState<{ status?: PathStatus; domain?: string } | null>(null);
   const paths = useRepoPaths(scope, picked ?? {}, picked !== null);
   const c = coverage.data;
+  const pages = useRepoPages(scope).data?.pages ?? [];
+  const stale = pages.filter((p) => p.stale.length);
   const canTake = allowed("knowledge:write");
   const canExplain = canTake; // (everyone who edits documents may chat)
   const explain = useExplainRepository(scope, (thread) => go("chat", {}, { search: `thread=${thread}&project=${proj(pid)?.key ?? ""}` }));
@@ -46,8 +63,14 @@ export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
             Take inventory now
           </button>
         )}
+        {canExplain && c?.snapshot && stale.length > 0 && (
+          <button className="btn btn-sm btn-secondary" disabled={explain.isPending} onClick={() => explain.mutate({ refresh: true })}>
+            <Ic n="refresh-cw" s={12} />
+            Refresh {stale.length} stale {stale.length === 1 ? "page" : "pages"}
+          </button>
+        )}
         {canExplain && c?.snapshot && !c.discovery_complete && (
-          <button className="btn btn-sm btn-primary" disabled={explain.isPending} onClick={() => explain.mutate([])}>
+          <button className="btn btn-sm btn-primary" disabled={explain.isPending} onClick={() => explain.mutate({})}>
             <Ic n="book-open" s={12} />
             Explain the repository
           </button>
@@ -101,6 +124,23 @@ export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
                 </div>
               ))}
             </div>
+            {pages.length > 0 && (
+              <div className="panel" style={{ marginTop: 12 }} aria-label="Wiki pages">
+                {pages.map((p) => (
+                  <div key={p.path} className="row" style={{ padding: "8px 14px", gap: 10, borderTop: "1px solid var(--border)" }}>
+                    <div className="grow">
+                      <code>{p.path}</code>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {p.stale.length
+                          ? p.stale.map((s) => `${s.path} (${STALE_WORDS[s.why]})`).join(", ")
+                          : `${p.citations} citations, all read at this commit`}
+                      </div>
+                    </div>
+                    <span className={`badge ${p.stale.length ? "amber" : "green"}`}>{p.stale.length ? "Stale" : "Fresh"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {picked && (
               <div className="panel" style={{ marginTop: 12, padding: "8px 14px" }} aria-label="Paths">
                 <div className="row" style={{ marginBottom: 6 }}>

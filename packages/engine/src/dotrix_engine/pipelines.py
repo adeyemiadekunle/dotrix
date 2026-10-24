@@ -147,8 +147,10 @@ _ALL = (
     ),
     _p(
         "docs.repository", "Explain the repository", None,
-        Stage("scope", "Call `repo_coverage`: the commit, and each domain's status. Work on the domains with "
-                       "paths still to read (the ones the person named first, if they did), a few per run."),
+        Stage("scope", "Call `repo_coverage` (the commit, and each domain's status) and `repo_stale_pages` (pages "
+                       "citing code that changed). Stale pages first: reread their changed paths and update only what "
+                       "changed. Then the domains with paths still to read (the ones the person named first, if they "
+                       "did), a few per run."),
         Stage("read", "For one domain, `repo_paths(domain)` lists what's left to read. Read with `code_read` and "
                       "`code_search` (the most telling files first; skim the rest), and call `repo_mark_read` with "
                       "the paths you read, as you go, so a cut-off run resumes where it stopped."),

@@ -8,7 +8,6 @@ and its approval, like every document.
 """
 from __future__ import annotations
 
-import re
 import uuid
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
@@ -26,13 +25,11 @@ from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_engine.inventory import DOMAINS
 
 from .models import PathStatus, RepoPath, RepoSnapshot
-from .service import RepoKnowledgeService
+from .service import CITATION, RepoKnowledgeService
 
 MODE = "docs.repository"
 PAGE = 100  # paths per `repo_paths` call
 MARK_MAX = 200
-# `path:12` or `path:12-40`, in backticks (the citation format the skill asks for)
-CITATION = re.compile(r"`([^`\s:]+):(\d+)(?:-(\d+))?`")
 
 
 @dataclass(frozen=True)
@@ -62,8 +59,13 @@ def repo_tools(ctx: RepoContext) -> list[Any]:
         """The inventory's commit, and each knowledge domain: how many paths, how many read, or the gap."""
         return await _coverage(ctx)
 
+    async def repo_stale_pages() -> dict[str, Any]:
+        """The wiki's pages that cite paths changed since they were read, removed, or never read."""
+        return await _stale(ctx)
+
     return [
         StructuredTool.from_function(coroutine=repo_coverage, name="repo_coverage"),
+        StructuredTool.from_function(coroutine=repo_stale_pages, name="repo_stale_pages"),
         StructuredTool.from_function(
             coroutine=lambda **kw: _paths(ctx, RepoPaths(**kw)), name="repo_paths", args_schema=RepoPaths,
             description="A domain's paths still to read (pending), a page at a time, with their size and kind.",
@@ -92,6 +94,16 @@ async def _coverage(ctx: RepoContext) -> dict[str, Any]:
         "domains": [{"domain": d.domain, "title": d.title, "status": d.status, "paths": d.paths,
                      "read": d.analyzed, **({"gap": d.gap} if d.gap else {})} for d in coverage.domains],
     }
+
+
+async def _stale(ctx: RepoContext) -> dict[str, Any]:
+    async with ctx.session_factory() as session:
+        project = await ProjectRepository(session).get(ctx.workspace_id, ctx.project_id)
+        if project is None:
+            return {"error": "The project is gone"}
+        pages = await RepoKnowledgeService(session, None).pages(project)
+    stale = [{"page": p.path, "sources": [s.model_dump() for s in p.stale]} for p in pages.pages if p.stale]
+    return {"stale": stale, "fresh": [p.path for p in pages.pages if not p.stale]}
 
 
 async def _paths(ctx: RepoContext, ask: RepoPaths) -> dict[str, Any]:

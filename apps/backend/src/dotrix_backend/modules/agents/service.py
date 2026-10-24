@@ -305,11 +305,16 @@ class AgentService:
             access, RunCreate(message=message, agent=REVIEWER), title=f"Review {issue.key}", mode="reviewer.issue",
         )
 
-    async def explain_repository(self, access: ProjectAccess, domains: list[str]) -> AgentRunRead:
+    async def explain_repository(
+        self, access: ProjectAccess, domains: list[str], *, stale: list[str] | None = None
+    ) -> AgentRunRead:
         """The documentation agent explains the connected repository (pipeline `docs.repository`):
         it reads what the inventory has left, marks it read, and proposes sourced wiki pages, each
         waiting for approval as usual. A new conversation; the next one continues where it stopped."""
         message = EXPLAIN_PROMPT + (f"\n\nStart with: {', '.join(domains)}." if domains else "")
+        if stale:
+            message += (f"\n\nFirst bring these stale pages up to date (`repo_stale_pages` says which cited "
+                        f"paths changed): {', '.join(stale)}.")
         return await self.create_run(
             access, RunCreate(message=message, agent=DOCS), title="Explain the repository", mode="docs.repository",
         )

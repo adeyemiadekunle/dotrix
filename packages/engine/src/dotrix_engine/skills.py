@@ -50,7 +50,8 @@ Description: Work out what broke a build or a test run, and who should look at i
 Description: Turn the connected repository into sourced wiki pages, domain by domain, with its gaps.
 
 ## Steps
-1. `repo_coverage` says which of the 12 domains have paths still to read; take a few per run.
+1. `repo_stale_pages` first: update pages whose cited code changed. Then `repo_coverage`: the
+   domains with paths still to read; take a few per run.
 2. For each, `repo_paths(domain)` lists them; read the telling ones, and `repo_mark_read` as you go.
 3. Write docs/wiki/<domain>.md: each claim cited as `path:line`, with its basis: (observed),
    (declared: <document>), (inferred), or (unknown). Code behaviour isn't a requirement unless a

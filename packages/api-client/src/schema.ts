@@ -3354,6 +3354,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Repository Pages
+         * @description The repository wiki's pages (docs/wiki/) and whether each is stale: a path it cites changed
+         *     since it was read, left the repository, or was never read. Anyone who sees the project.
+         */
+        get: operations["list_repository_pages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/paths": {
         parameters: {
             query?: never;
@@ -7071,6 +7092,12 @@ export interface components {
              * @description Domains to start with (the coverage's `domain`s); none: the agent picks
              */
             domains?: string[];
+            /**
+             * Refresh
+             * @description Update the stale pages first (`GET .../pages`)
+             * @default false
+             */
+            refresh: boolean;
         };
         /**
          * RepoOption
@@ -7097,6 +7124,41 @@ export interface components {
              * @description The project here it's connected to, if any
              */
             project_key: string | null;
+        };
+        /** RepoPageRead */
+        RepoPageRead: {
+            /**
+             * Path
+             * @description The wiki page, e.g. docs/wiki/architecture.md
+             */
+            path: string;
+            /** Version */
+            version: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Citations
+             * @description `path:line` citations on the page
+             */
+            citations: number;
+            /**
+             * Stale
+             * @description Cited paths that make it stale (empty: fresh)
+             */
+            stale: components["schemas"]["StaleSource"][];
+        };
+        /**
+         * RepoPagesRead
+         * @description The repository wiki's pages and whether each still matches the code at the latest inventory.
+         */
+        RepoPagesRead: {
+            /** Commit Sha */
+            commit_sha: string | null;
+            /** Pages */
+            pages: components["schemas"]["RepoPageRead"][];
         };
         /** RepoPathPage */
         RepoPathPage: {
@@ -7497,6 +7559,17 @@ export interface components {
             node: components["schemas"]["NodeRead"];
             /** Reasons */
             reasons: string[];
+        };
+        /** StaleSource */
+        StaleSource: {
+            /** Path */
+            path: string;
+            /**
+             * Why
+             * @description `changed`: its content changed since it was read; `removed`: no longer in the repository; `unread`: cited but never read
+             * @enum {string}
+             */
+            why: "changed" | "removed" | "unread";
         };
         /**
          * SubgraphRead
@@ -19055,6 +19128,56 @@ export interface operations {
             };
             /** @description A dependency (such as file storage) is unavailable or not configured */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_repository_pages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoPagesRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
