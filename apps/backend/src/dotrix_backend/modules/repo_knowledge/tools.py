@@ -28,7 +28,8 @@ from .models import PathStatus, RepoPath, RepoSnapshot
 from .service import CITATION, RepoKnowledgeService
 
 MODE = "docs.repository"
-PAGE = 100  # paths per `repo_paths` call
+PAGE = 100
+DEPENDENCIES_SHOWN = 400  # direct dependencies per call  # paths per `repo_paths` call
 MARK_MAX = 200
 
 
@@ -59,6 +60,11 @@ def repo_tools(ctx: RepoContext) -> list[Any]:
         """The inventory's commit, and each knowledge domain: how many paths, how many read, or the gap."""
         return await _coverage(ctx)
 
+    async def repo_dependencies(manifest: str | None = None) -> dict[str, Any]:
+        """Each manifest's direct dependencies with the version its lockfile pins (read from the
+        files, nothing run), and the files that couldn't be read. `manifest`: only that one."""
+        return await _dependencies(ctx, manifest)
+
     async def repo_stale_pages() -> dict[str, Any]:
         """The wiki's pages that cite paths changed since they were read, removed, or never read."""
         return await _stale(ctx)
@@ -66,6 +72,7 @@ def repo_tools(ctx: RepoContext) -> list[Any]:
     return [
         StructuredTool.from_function(coroutine=repo_coverage, name="repo_coverage"),
         StructuredTool.from_function(coroutine=repo_stale_pages, name="repo_stale_pages"),
+        StructuredTool.from_function(coroutine=repo_dependencies, name="repo_dependencies"),
         StructuredTool.from_function(
             coroutine=lambda **kw: _paths(ctx, RepoPaths(**kw)), name="repo_paths", args_schema=RepoPaths,
             description="A domain's paths still to read (pending), a page at a time, with their size and kind.",
@@ -93,6 +100,26 @@ async def _coverage(ctx: RepoContext) -> dict[str, Any]:
         "commit": coverage.snapshot.commit_sha, "repository": coverage.snapshot.repo_full_name,
         "domains": [{"domain": d.domain, "title": d.title, "status": d.status, "paths": d.paths,
                      "read": d.analyzed, **({"gap": d.gap} if d.gap else {})} for d in coverage.domains],
+    }
+
+
+async def _dependencies(ctx: RepoContext, manifest: str | None) -> dict[str, Any]:
+    if ctx.root is None:
+        return {"error": "The repository isn't checked out for this run"}
+    async with ctx.session_factory() as session:
+        project = await ProjectRepository(session).get(ctx.workspace_id, ctx.project_id)
+        if project is None:
+            return {"error": "The project is gone"}
+        found = await RepoKnowledgeService(session, None).dependencies(project, ctx.root)
+    deps = [d for d in found.dependencies if manifest is None or d.manifest == manifest]
+    by: dict[str, list[str]] = {}
+    for d in deps[:DEPENDENCIES_SHOWN]:
+        pinned = f" -> {d.locked}" if d.locked else " (not locked)"
+        by.setdefault(d.manifest, []).append(f"{d.name} {d.declared or ''}{pinned} [{d.scope}]".replace("  ", " "))
+    return {
+        "commit": found.commit_sha, "manifests": by,
+        **({"more": len(deps) - DEPENDENCIES_SHOWN} if len(deps) > DEPENDENCIES_SHOWN else {}),
+        **({"unread": [u.model_dump() for u in found.unread]} if found.unread else {}),
     }
 
 

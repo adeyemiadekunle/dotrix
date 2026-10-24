@@ -153,7 +153,9 @@ _ALL = (
                        "did), a few per run."),
         Stage("read", "For one domain, `repo_paths(domain)` lists what's left to read. Read with `code_read` and "
                       "`code_search` (the most telling files first; skim the rest), and call `repo_mark_read` with "
-                      "the paths you read, as you go, so a cut-off run resumes where it stopped."),
+                      "the paths you read, as you go, so a cut-off run resumes where it stopped. For dependencies, "
+                      "`repo_dependencies` lists each manifest's direct dependencies and the versions its lockfile "
+                      "pins: cite the manifest, never read a whole lockfile."),
         Stage("draft", "Draft /dotrix/docs/wiki/<domain>.md (e.g. docs/wiki/architecture.md): a short overview, "
                        "then sections, each claim with its source as `path:line` or `path:start-end`, and its basis: "
                        "(observed) in code or configuration, (declared: <document>) in an approved document, "

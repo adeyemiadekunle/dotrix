@@ -98,3 +98,27 @@ class RepoPagesRead(BaseModel):
 
     commit_sha: str | None
     pages: list[RepoPageRead]
+
+
+class DependencyRead(BaseModel):
+    ecosystem: Literal["npm", "pypi", "cargo", "go"]
+    name: str
+    declared: str | None = Field(description="What the manifest asks for: a range, a pin, a path")
+    locked: str | None = Field(description="What the lockfile resolved it to (null: no lockfile, or not in it)")
+    scope: Literal["runtime", "dev", "optional", "peer"]
+    manifest: str
+    lockfile: str | None
+
+
+class UnreadFile(BaseModel):
+    path: str
+    reason: str
+
+
+class RepoDependenciesRead(BaseModel):
+    """Each manifest's direct dependencies with the versions its lockfile pins, read from the
+    checkout without running anything; manifests and lockfiles that couldn't be read, with why."""
+
+    commit_sha: str | None
+    dependencies: list[DependencyRead]
+    unread: list[UnreadFile]

@@ -16988,6 +16988,85 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/dependencies": {
+      "get": {
+        "tags": [
+          "repository knowledge"
+        ],
+        "summary": "List Repository Dependencies",
+        "description": "Each manifest's direct dependencies (package.json, pyproject.toml, requirements*.txt,\nCargo.toml, go.mod) with the version its lockfile pins, read without running anything; files\nthat couldn't be read are listed with why. Anyone who sees the project.",
+        "operationId": "list_repository_dependencies",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoDependenciesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/pages": {
       "get": {
         "tags": [
@@ -23158,6 +23237,84 @@
         "type": "object",
         "title": "DefaultModelSave"
       },
+      "DependencyRead": {
+        "properties": {
+          "ecosystem": {
+            "type": "string",
+            "enum": [
+              "npm",
+              "pypi",
+              "cargo",
+              "go"
+            ],
+            "title": "Ecosystem"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "declared": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared",
+            "description": "What the manifest asks for: a range, a pin, a path"
+          },
+          "locked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked",
+            "description": "What the lockfile resolved it to (null: no lockfile, or not in it)"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "runtime",
+              "dev",
+              "optional",
+              "peer"
+            ],
+            "title": "Scope"
+          },
+          "manifest": {
+            "type": "string",
+            "title": "Manifest"
+          },
+          "lockfile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lockfile"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ecosystem",
+          "name",
+          "declared",
+          "locked",
+          "scope",
+          "manifest",
+          "lockfile"
+        ],
+        "title": "DependencyRead"
+      },
       "DeviceCodeRequest": {
         "properties": {
           "client_name": {
@@ -27425,6 +27582,43 @@
         ],
         "title": "RepoCreate"
       },
+      "RepoDependenciesRead": {
+        "properties": {
+          "commit_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Sha"
+          },
+          "dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/DependencyRead"
+            },
+            "type": "array",
+            "title": "Dependencies"
+          },
+          "unread": {
+            "items": {
+              "$ref": "#/components/schemas/UnreadFile"
+            },
+            "type": "array",
+            "title": "Unread"
+          }
+        },
+        "type": "object",
+        "required": [
+          "commit_sha",
+          "dependencies",
+          "unread"
+        ],
+        "title": "RepoDependenciesRead",
+        "description": "Each manifest's direct dependencies with the versions its lockfile pins, read from the\ncheckout without running anything; manifests and lockfiles that couldn't be read, with why."
+      },
       "RepoExplainRequest": {
         "properties": {
           "domains": {
@@ -28638,6 +28832,24 @@
           "report"
         ],
         "title": "TriageRequest"
+      },
+      "UnreadFile": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "reason"
+        ],
+        "title": "UnreadFile"
       },
       "UserCodeRequest": {
         "properties": {

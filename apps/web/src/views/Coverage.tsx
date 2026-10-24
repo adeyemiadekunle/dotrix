@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import {
   useExplainRepository,
   useRepoCoverage,
+  useRepoDependencies,
   useRepoPages,
   useRepoPaths,
   useTakeInventory,
@@ -49,6 +50,8 @@ export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
   const c = coverage.data;
   const pages = useRepoPages(scope).data?.pages ?? [];
   const stale = pages.filter((p) => p.stale.length);
+  const [showDeps, setShowDeps] = useState(false);
+  const deps = useRepoDependencies(scope, showDeps).data;
   const canTake = allowed("knowledge:write");
   const canExplain = canTake; // (everyone who edits documents may chat)
   const explain = useExplainRepository(scope, (thread) => go("chat", {}, { search: `thread=${thread}&project=${proj(pid)?.key ?? ""}` }));
@@ -141,6 +144,38 @@ export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
                 ))}
               </div>
             )}
+            <div className="panel" style={{ marginTop: 12, padding: "8px 14px" }} aria-label="Dependencies">
+              <div className="row">
+                <b style={{ fontWeight: 500 }}>Dependencies</b>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {deps
+                    ? `${deps.dependencies.length} direct, from ${new Set(deps.dependencies.map((d) => d.manifest)).size} manifests`
+                    : "From manifests and lockfiles"}
+                </span>
+                <span className="sp" />
+                <button className="btn btn-sm btn-ghost" onClick={() => setShowDeps(!showDeps)}>
+                  {showDeps ? "Hide" : "Show"}
+                </button>
+              </div>
+              {showDeps &&
+                deps?.dependencies.slice(0, 200).map((d) => (
+                  <div key={`${d.manifest}:${d.name}:${d.scope}`} className="row" style={{ gap: 8, fontSize: 12.5, padding: "3px 0" }}>
+                    <code className="grow trunc">{d.name}</code>
+                    <span className="faint">{d.declared}</span>
+                    <span>{d.locked ?? "not locked"}</span>
+                    <span className="badge">{d.scope}</span>
+                    <span className="faint trunc" style={{ maxWidth: 220 }}>
+                      {d.manifest}
+                    </span>
+                  </div>
+                ))}
+              {showDeps &&
+                deps?.unread.map((u) => (
+                  <div key={u.path} className="faint" style={{ fontSize: 12 }}>
+                    {u.path}: {u.reason}
+                  </div>
+                ))}
+            </div>
             {picked && (
               <div className="panel" style={{ marginTop: 12, padding: "8px 14px" }} aria-label="Paths">
                 <div className="row" style={{ marginBottom: 6 }}>

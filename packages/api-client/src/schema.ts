@@ -3354,6 +3354,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/dependencies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Repository Dependencies
+         * @description Each manifest's direct dependencies (package.json, pyproject.toml, requirements*.txt,
+         *     Cargo.toml, go.mod) with the version its lockfile pins, read without running anything; files
+         *     that couldn't be read are listed with why. Anyone who sees the project.
+         */
+        get: operations["list_repository_dependencies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/pages": {
         parameters: {
             query?: never;
@@ -5273,6 +5295,35 @@ export interface components {
              */
             default_model?: string | null;
         };
+        /** DependencyRead */
+        DependencyRead: {
+            /**
+             * Ecosystem
+             * @enum {string}
+             */
+            ecosystem: "npm" | "pypi" | "cargo" | "go";
+            /** Name */
+            name: string;
+            /**
+             * Declared
+             * @description What the manifest asks for: a range, a pin, a path
+             */
+            declared: string | null;
+            /**
+             * Locked
+             * @description What the lockfile resolved it to (null: no lockfile, or not in it)
+             */
+            locked: string | null;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "runtime" | "dev" | "optional" | "peer";
+            /** Manifest */
+            manifest: string;
+            /** Lockfile */
+            lockfile: string | null;
+        };
         /** DeviceCodeRequest */
         DeviceCodeRequest: {
             /**
@@ -7091,6 +7142,19 @@ export interface components {
              */
             description: string;
         };
+        /**
+         * RepoDependenciesRead
+         * @description Each manifest's direct dependencies with the versions its lockfile pins, read from the
+         *     checkout without running anything; manifests and lockfiles that couldn't be read, with why.
+         */
+        RepoDependenciesRead: {
+            /** Commit Sha */
+            commit_sha: string | null;
+            /** Dependencies */
+            dependencies: components["schemas"]["DependencyRead"][];
+            /** Unread */
+            unread: components["schemas"]["UnreadFile"][];
+        };
         /** RepoExplainRequest */
         RepoExplainRequest: {
             /**
@@ -7657,6 +7721,13 @@ export interface components {
              * @description The bug report or feature request, as it came in (an email, a support ticket, a note)
              */
             report: string;
+        };
+        /** UnreadFile */
+        UnreadFile: {
+            /** Path */
+            path: string;
+            /** Reason */
+            reason: string;
         };
         /** UserCodeRequest */
         UserCodeRequest: {
@@ -19134,6 +19205,56 @@ export interface operations {
             };
             /** @description A dependency (such as file storage) is unavailable or not configured */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_repository_dependencies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoDependenciesRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
