@@ -232,3 +232,80 @@ export function useDeleteSession(scope: Scope | undefined, sessionId: string, is
     unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}", { params: { path: sessionPath(s, sessionId) } })),
   );
 }
+
+export type CodingTree = Schemas["CodingTree"];
+export type CodingFile = Schemas["CodingFile"];
+type CodingEventRead = Schemas["CodingEventRead"];
+
+const ACTIVE_TURN: CodingRunStatus[] = ["queued", "running"];
+
+/** A turn's changes as a unified diff (the panel's Changes); refreshed while the turn works. */
+export function useCodingDiff(scope: Scope | undefined, run: Pick<CodingRun, "id" | "status"> | undefined) {
+  return useQuery({
+    queryKey: ["coding-run", scope?.projectId, run?.id, "diff"],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/diff", {
+          params: { path: { ...path(scope!), coding_run_id: run!.id } },
+        }),
+      ),
+    enabled: Boolean(scope && run),
+    refetchInterval: run && ACTIVE_TURN.includes(run.status) ? 5_000 : false,
+  });
+}
+
+/** Every file as a turn leaves the repository (the panel's Files). */
+export function useCodingTree(scope: Scope | undefined, run: Pick<CodingRun, "id" | "status" | "base_sha"> | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["coding-run", scope?.projectId, run?.id, "tree", run?.status],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/tree", {
+          params: { path: { ...path(scope!), coding_run_id: run!.id } },
+        }),
+      ),
+    enabled: Boolean(scope && run?.base_sha) && enabled,
+    retry: false,
+    staleTime: 30_000,
+  });
+}
+
+/** One file before a turn and after it. */
+export function useCodingFile(scope: Scope | undefined, runId: string | undefined, filePath: string | null) {
+  return useQuery({
+    queryKey: ["coding-run", scope?.projectId, runId, "file", filePath],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/file", {
+          params: { path: { ...path(scope!), coding_run_id: runId! }, query: { path: filePath! } },
+        }),
+      ),
+    enabled: Boolean(scope && runId && filePath),
+    retry: false,
+    staleTime: 30_000,
+  });
+}
+
+/** Every event of a turn (its commands and their output, for the panel's Terminal), refreshed while it works. */
+export function useCodingEvents(scope: Scope | undefined, run: Pick<CodingRun, "id" | "status"> | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["coding-run", scope?.projectId, run?.id, "events"],
+    queryFn: async () => {
+      const all: CodingEventRead[] = [];
+      let after = -1;
+      for (let page = 0; page < 10; page++) {
+        const got = await unwrap(
+          api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/events", {
+            params: { path: { ...path(scope!), coding_run_id: run!.id }, query: { after, limit: 500 } },
+          }),
+        );
+        all.push(...got.events);
+        if (got.next == null) break;
+        after = got.next;
+      }
+      return all;
+    },
+    enabled: Boolean(scope && run) && enabled,
+    refetchInterval: run && ACTIVE_TURN.includes(run.status) ? 2_000 : false,
+  });
+}

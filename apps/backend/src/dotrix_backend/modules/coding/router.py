@@ -4,12 +4,13 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from dotrix_backend.api.deps import SessionDep, SettingsDep, require_permission
 from dotrix_backend.core.jobs import Jobs, get_jobs
 from dotrix_backend.core.openapi import errors
 from dotrix_backend.core.storage import BlobStorage, get_storage, optional_storage
+from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.connectors.github_app import GitHubApp, get_github_app
 from dotrix_backend.modules.projects.deps import (
     ProjectAccess,
@@ -19,12 +20,15 @@ from dotrix_backend.modules.projects.deps import (
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
 
+from .files import TurnFiles
 from .local import LocalRunners
 from .schemas import (
     CodingAvailability,
     CodingClaimed,
     CodingDecision,
+    CodingDiff,
     CodingEventPage,
+    CodingFile,
     CodingFollowUp,
     CodingRecover,
     CodingRevert,
@@ -34,6 +38,7 @@ from .schemas import (
     CodingRunRead,
     CodingSessionRead,
     CodingSessionUpdate,
+    CodingTree,
     RunnerHeartbeat,
     RunnerHeartbeatRead,
     RunnerResult,
@@ -113,6 +118,44 @@ async def get_coding_screenshot(
     """A screenshot the agent's browser captured in a coding run (the run lists them). Anyone who sees the project."""
     data, content_type = await coding.screenshot(access, coding_run_id, index, storage)
     return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
+
+
+def get_checkouts(request: Request) -> CodeCheckouts | None:
+    return getattr(request.app.state, "checkouts", None)
+
+
+Checkouts = Annotated[CodeCheckouts | None, Depends(get_checkouts)]
+
+
+@router.get("/runs/{coding_run_id}/diff")
+async def get_coding_run_diff(
+    coding_run_id: uuid.UUID, access: ProjectViewer, coding: Coding, session: SessionDep, checkouts: Checkouts,
+) -> CodingDiff:
+    """A turn's changes as a unified diff against the commit it started from, with each file's
+    counts (the session's Changes). Kept after they're pushed or discarded."""
+    run = await coding.run_for(access, coding_run_id)
+    return await TurnFiles(session, checkouts).diff(access, run)
+
+
+@router.get("/runs/{coding_run_id}/tree", responses=errors(409))
+async def get_coding_run_tree(
+    coding_run_id: uuid.UUID, access: ProjectViewer, coding: Coding, session: SessionDep, checkouts: Checkouts,
+) -> CodingTree:
+    """Every file in the repository as a turn leaves it, and how each changed (the session's Files):
+    its starting commit with its changes applied, whether pushed yet or not. 409 `files_unavailable`
+    when the repository can't be read here."""
+    run = await coding.run_for(access, coding_run_id)
+    return await TurnFiles(session, checkouts).tree(access, run)
+
+
+@router.get("/runs/{coding_run_id}/file", responses=errors(409, 422))
+async def get_coding_run_file(
+    coding_run_id: uuid.UUID, access: ProjectViewer, coding: Coding, session: SessionDep, checkouts: Checkouts,
+    path: Annotated[str, Query(max_length=1_000, description="A path in the repository")],
+) -> CodingFile:
+    """One file before a turn and after it (text; not binary files or ones over 1 MB)."""
+    run = await coding.run_for(access, coding_run_id)
+    return await TurnFiles(session, checkouts).file(access, run, path)
 
 
 @router.post("/sessions/{session_id}/close", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 409))

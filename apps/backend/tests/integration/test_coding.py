@@ -1558,3 +1558,69 @@ async def test_a_local_turn_is_checked_stopped_fenced_and_recovered(
     runner.command = _tool({"src/fenced.py": "y = 2\n"})
     assert await runner.once() is True
     assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()["status"] == "changes_ready"
+
+
+# -- the session's Changes, Files, and Terminal: a turn's diff, its tree, files before and after, output --
+
+
+async def test_a_turns_files_diff_and_command_output_are_kept_for_the_panels(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, checkouts, agent_script
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+
+    async def remote(ref) -> tuple[str, None]:
+        return str(origin), None
+
+    checkouts.remote = remote
+    base = f"{ws}/projects/{kun['id']}"
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n",
+                    "tests/test_refund.py": "def test_refund():\n    assert True\n"}
+    scripted = claude.lines
+    command = [  # it ran the tests: the command, then its output (failed, then passed)
+        json.dumps({"type": "assistant", "message": {"id": "m-run", "content": [
+            {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "pytest -q"}},
+            {"type": "tool_use", "id": "toolu_2", "name": "Read", "input": {"file_path": "/sandbox/repo/src/payments.py"}},
+        ]}}) + "\n",
+        json.dumps({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "toolu_2", "content": "class PaymentProvider: ..."},
+            {"type": "tool_result", "tool_use_id": "toolu_1", "is_error": True,
+             "content": [{"type": "text", "text": "1 failed in 0.02s"}]},
+        ]}}) + "\n",
+    ]
+    claude.lines = lambda: [*scripted()[:-1], *command, scripted()[-1]]  # type: ignore[method-assign]
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    ready = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert ready["status"] == "changes_ready"
+
+    # Terminal: the command and its output, paired; a file it read isn't output.
+    events = (await db_client.get(f"{base}/coding/runs/{run['id']}/events", params={"limit": 500},
+                                  headers=ada.headers)).json()["events"]
+    ran = next(e for e in events if e["text"] == "Ran pytest -q")
+    [out] = [e for e in events if e["kind"].startswith("output")]
+    assert ran["ref"] == out["ref"] == "toolu_1" and out["kind"] == "output-error" and out["text"] == "1 failed in 0.02s"
+
+    # Changes: the diff, before anything is pushed. Files: the tree the turn leaves, and a file before and after.
+    diff = (await db_client.get(f"{base}/coding/runs/{run['id']}/diff", headers=ada.headers)).json()
+    assert "+    def refund(self, amount):" in diff["diff"] and diff["base_sha"] == ready["base_sha"]
+    tree = (await db_client.get(f"{base}/coding/runs/{run['id']}/tree", headers=ada.headers)).json()
+    assert {(e["path"], e["status"]) for e in tree["entries"]} == {
+        ("src/payments.py", "modified"), ("tests/test_refund.py", "added")} and not tree["truncated"]
+    file = (await db_client.get(f"{base}/coding/runs/{run['id']}/file", params={"path": "src/payments.py"},
+                                headers=ada.headers)).json()
+    assert file["before"] == "class PaymentProvider:\n    pass\n" and "def refund" in file["after"]
+    assert file["status"] == "modified" and not file["binary"]
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}/file", params={"path": "../etc/passwd"},
+                                headers=ada.headers)).status_code == 422
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}/tree", headers=cat.headers)).status_code == 404
+
+    # Pushed, the diff is still the turn's (the patch waiting to be pushed is gone).
+    agent_script.say("Fine.")
+    done = await _approve(db_client, base, ready, ada.headers)
+    assert done["status"] == "pr_opened"
+    kept = (await db_client.get(f"{base}/coding/runs/{run['id']}/diff", headers=ada.headers)).json()
+    assert kept["diff"] == diff["diff"]
+    after = (await db_client.get(f"{base}/coding/runs/{run['id']}/file", params={"path": "tests/test_refund.py"},
+                                 headers=ada.headers)).json()
+    assert after["status"] == "added" and after["before"] is None and after["after"].startswith("def test_refund")

@@ -261,7 +261,7 @@ def _read(runner: CodingRunner) -> CodingRunnerRead:
 
 def _events(events: list[RunnerEvent]) -> list[dict[str, str]]:
     at = datetime.now(UTC).isoformat()
-    return [{"at": at, "kind": e.kind, "text": e.text} for e in events]
+    return [{"at": at, "kind": e.kind, "text": e.text, **({"ref": e.ref} if e.ref else {})} for e in events]
 
 
 async def patch_files(patch: str) -> tuple[list[str], list[dict[str, object]]]:

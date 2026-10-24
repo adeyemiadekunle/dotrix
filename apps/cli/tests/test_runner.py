@@ -250,3 +250,22 @@ def test_tool_calls_read_as_a_cloud_turns_do_so_the_terminal_panel_lists_them(tm
     ]}}), out)
     parse_line(json.dumps({"type": "tool_use", "part": {"tool": "shell", "state": {"input": {"command": "pytest"}}}}), out)
     assert [e["text"] for e in out.events] == ["Ran pnpm test --run", "Wrote src/new.ts", "Read /etc/hosts", "Ran pytest"]
+
+
+def test_a_commands_output_is_kept_with_it_for_the_terminal_panel() -> None:
+    out = Outcome()
+    parse_line(json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "pytest -q"}},
+        {"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "a.py"}},
+    ]}}), out)
+    parse_line(json.dumps({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "t2", "content": "secret file contents"},
+        {"type": "tool_result", "tool_use_id": "t1", "content": [{"type": "text", "text": "x" * 20_000 + "\n1 passed"}]},
+    ]}}), out)
+    parse_line(json.dumps({"type": "tool_use", "part": {"tool": "shell", "callID": "c9", "state": {
+        "status": "completed", "input": {"command": "ls"}, "output": "a.py\n", "metadata": {"exit": 2}}}}), out)
+    ran, read, output, ls, ls_out = out.events
+    assert ran == {"kind": "tool", "text": "Ran pytest -q", "ref": "t1"} and "ref" not in read
+    assert output["kind"] == "output" and output["ref"] == "t1" and output["text"].endswith("1 passed")
+    assert len(output["text"]) < 8_100 and "characters left out" in output["text"]  # its end kept, not the file read
+    assert ls["ref"] == ls_out["ref"] == "c9" and ls_out == {"kind": "output-error", "text": "a.py", "ref": "c9"}

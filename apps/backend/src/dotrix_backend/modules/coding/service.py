@@ -485,6 +485,10 @@ class CodingService:
         runs = await self.session.scalars(query.order_by(CodingRun.created_at.desc()).limit(MAX_LISTED))
         return [self._read(run, access) for run in runs]
 
+    async def run_for(self, access: ProjectAccess, run_id: uuid.UUID) -> CodingRun:
+        """A run you may see (as for every read: yours, or one waiting on your decision)."""
+        return await self._get(access, run_id)
+
     async def get(self, access: ProjectAccess, run_id: uuid.UUID) -> CodingRunRead:
         return self._read(await self._get(access, run_id), access)
 
@@ -498,7 +502,7 @@ class CodingService:
         )).all()
         page = rows[:limit]
         return CodingEventPage(
-            events=[CodingEventRead(seq=e.seq, at=e.at, kind=e.kind, text=e.text) for e in page],
+            events=[CodingEventRead(seq=e.seq, at=e.at, kind=e.kind, text=e.text, ref=e.ref) for e in page],
             next=page[-1].seq if len(rows) > limit else None,
         )
 

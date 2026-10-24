@@ -84,9 +84,27 @@ class Outcome:
     summary: str | None = None
     usage: dict[str, Any] = field(default_factory=dict)
     root: Path | None = None  # the worktree: paths the tool names are shown relative to it
+    commands: set[str] = field(default_factory=set)  # tool calls that ran a command (their result is its output)
 
 
 MAX_STEP = 160
+MAX_OUTPUT = 8_000  # of a command's output: its start and, mostly, its end (where errors are)
+
+
+def output_event(text: str, ref: str | None, *, failed: bool) -> dict[str, str]:
+    """A command's output as the session's Terminal shows it (as a cloud turn's, `coding/tools.py`)."""
+    text = text.rstrip()
+    if len(text) > MAX_OUTPUT:
+        text = text[:1_500] + f"\n… ({len(text) - MAX_OUTPUT:,} characters left out) …\n" + text[-(MAX_OUTPUT - 1_500):]
+    return {"kind": "output-error" if failed else "output", "text": text, **({"ref": ref} if ref else {})}
+
+
+def _result_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(str(c.get("text", "")) for c in content if isinstance(c, dict) and c.get("type") == "text")
+    return ""
 
 
 def _clip(text: str, limit: int = MAX_STEP) -> str:
@@ -146,8 +164,17 @@ def parse_line(line: str, out: Outcome) -> None:
         for item in (event.get("message") or {}).get("content") or []:
             if item.get("type") == "text" and item.get("text"):
                 out.events.append({"kind": "text", "text": item["text"][:4000]})
-            elif item.get("type") == "tool_use" and (said := describe(str(item.get("name")), item.get("input") or {}, out.root)):
-                out.events.append({"kind": "tool", "text": said})
+            elif item.get("type") == "tool_use":
+                ref = str(item.get("id") or "") if item.get("name") == "Bash" else ""
+                if ref:
+                    out.commands.add(ref)
+                if said := describe(str(item.get("name")), item.get("input") or {}, out.root):
+                    out.events.append({"kind": "tool", "text": said, **({"ref": ref} if ref else {})})
+    elif kind == "user":  # Claude Code's tool results: a command's output is kept
+        for item in (event.get("message") or {}).get("content") or []:
+            if isinstance(item, dict) and item.get("type") == "tool_result" and item.get("tool_use_id") in out.commands:
+                out.events.append(output_event(_result_text(item.get("content")), item["tool_use_id"],
+                                               failed=bool(item.get("is_error"))))
     elif kind == "result":  # Claude Code's last event
         out.summary = event.get("result") or out.summary
         usage = event.get("usage") or {}
@@ -160,10 +187,16 @@ def parse_line(line: str, out: Outcome) -> None:
         if text:
             out.events.append({"kind": "text", "text": text[:4000]})
             out.summary = text
-    elif kind == "tool_use":
+    elif kind == "tool_use":  # OpenCode
         part = event.get("part") or {}
-        if said := describe(str(part.get("tool")), (part.get("state") or {}).get("input") or {}, out.root):
-            out.events.append({"kind": "tool", "text": said})
+        state = part.get("state") or {}
+        command = part.get("tool") in ("shell", "bash")
+        ref = str(part.get("callID") or part.get("id") or "") if command else ""
+        if said := describe(str(part.get("tool")), state.get("input") or {}, out.root):
+            out.events.append({"kind": "tool", "text": said, **({"ref": ref} if ref else {})})
+        if command and state.get("status") in ("completed", "error") and (state.get("output") or state.get("error")):
+            failed = state.get("status") == "error" or (state.get("metadata") or {}).get("exit") not in (0, None)
+            out.events.append(output_event(str(state.get("output") or state.get("error")), ref or None, failed=failed))
     elif kind == "error":
         error = event.get("error") or {}
         out.events.append({"kind": "error", "text": str(error.get("message") or error)[:4000]})

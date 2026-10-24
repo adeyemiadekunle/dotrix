@@ -18153,6 +18153,305 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/diff": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Get Coding Run Diff",
+        "description": "A turn's changes as a unified diff against the commit it started from, with each file's\ncounts (the session's Changes). Kept after they're pushed or discarded.",
+        "operationId": "get_coding_run_diff",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "coding_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Coding Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingDiff"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/tree": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Get Coding Run Tree",
+        "description": "Every file in the repository as a turn leaves it, and how each changed (the session's Files):\nits starting commit with its changes applied, whether pushed yet or not. 409 `files_unavailable`\nwhen the repository can't be read here.",
+        "operationId": "get_coding_run_tree",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "coding_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Coding Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingTree"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/file": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Get Coding Run File",
+        "description": "One file before a turn and after it (text; not binary files or ones over 1 MB).",
+        "operationId": "get_coding_run_file",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "coding_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Coding Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 1000,
+              "description": "A path in the repository",
+              "title": "Path"
+            },
+            "description": "A path in the repository"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingFile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/close": {
       "post": {
         "tags": [
@@ -23214,6 +23513,43 @@
         ],
         "title": "CodingDecision"
       },
+      "CodingDiff": {
+        "properties": {
+          "base_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Sha",
+            "description": "The commit the turn started from"
+          },
+          "diff": {
+            "type": "string",
+            "title": "Diff",
+            "description": "Its changes as a unified diff against base_sha (empty until it has any)"
+          },
+          "files": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Files",
+            "description": "Each changed file, with lines added and removed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_sha",
+          "diff",
+          "files"
+        ],
+        "title": "CodingDiff"
+      },
       "CodingEvent": {
         "properties": {
           "at": {
@@ -23224,11 +23560,23 @@
           "kind": {
             "type": "string",
             "title": "Kind",
-            "description": "`step`, `text` (the agent's words), `tool` (what it did), `error`"
+            "description": "`step`, `text` (the agent's words), `tool` (what it did), `output` / `output-error` (a command's output, and whether it failed), `error`"
           },
           "text": {
             "type": "string",
             "title": "Text"
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref",
+            "description": "Pairs a command (`tool`) with its output: the tool call's id"
           }
         },
         "type": "object",
@@ -23283,11 +23631,23 @@
           "kind": {
             "type": "string",
             "title": "Kind",
-            "description": "`step`, `text` (the agent's words), `tool` (what it did), `error`"
+            "description": "`step`, `text` (the agent's words), `tool` (what it did), `output` / `output-error` (a command's output, and whether it failed), `error`"
           },
           "text": {
             "type": "string",
             "title": "Text"
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref",
+            "description": "Pairs a command (`tool`) with its output: the tool call's id"
           }
         },
         "type": "object",
@@ -23298,6 +23658,67 @@
           "text"
         ],
         "title": "CodingEventRead"
+      },
+      "CodingFile": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "added",
+              "modified",
+              "deleted",
+              "unchanged"
+            ],
+            "title": "Status"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before",
+            "description": "Its text before the turn (none: it didn't exist, or isn't shown)"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After",
+            "description": "Its text after the turn (none: deleted, or isn't shown)"
+          },
+          "binary": {
+            "type": "boolean",
+            "title": "Binary"
+          },
+          "too_large": {
+            "type": "boolean",
+            "title": "Too Large",
+            "description": "Over 1 MB: not shown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "status",
+          "before",
+          "after",
+          "binary",
+          "too_large"
+        ],
+        "title": "CodingFile"
       },
       "CodingFollowUp": {
         "properties": {
@@ -24276,6 +24697,71 @@
         },
         "type": "object",
         "title": "CodingSessionUpdate"
+      },
+      "CodingTree": {
+        "properties": {
+          "base_sha": {
+            "type": "string",
+            "title": "Base Sha"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/CodingTreeEntry"
+            },
+            "type": "array",
+            "title": "Entries",
+            "description": "Every file as the turn leaves the repository, and those it deleted"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "description": "More files than are listed (the first 20,000 are)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_sha",
+          "entries",
+          "truncated"
+        ],
+        "title": "CodingTree"
+      },
+      "CodingTreeEntry": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "added",
+              "modified",
+              "deleted",
+              "unchanged"
+            ],
+            "title": "Status"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size",
+            "description": "In bytes, as the turn leaves it (none for a deleted file)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "status",
+          "size"
+        ],
+        "title": "CodingTreeEntry"
       },
       "CommentCreate": {
         "properties": {
@@ -29651,14 +30137,28 @@
               "step",
               "text",
               "tool",
+              "output",
+              "output-error",
               "error"
             ],
             "title": "Kind"
           },
           "text": {
             "type": "string",
-            "maxLength": 4000,
+            "maxLength": 10000,
             "title": "Text"
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref"
           }
         },
         "type": "object",
