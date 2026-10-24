@@ -40,6 +40,10 @@ class CodingDecision(BaseModel):
     reason: str | None = Field(default=None, max_length=1_000)
 
 
+class CodingRevert(BaseModel):
+    approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
+
+
 class CodingRecover(BaseModel):
     action: Literal["check", "discard"] = Field(description=(
         "`check`: look at GitHub and settle it (adopt or open its PR, or run the turn again when nothing "
@@ -115,6 +119,10 @@ class CodingRunRead(BaseModel):
     approval_mode: ApprovalMode = Field(default=ApprovalMode.MANUAL, description="The approval mode it was asked in")
     plan_id: uuid.UUID | None = Field(default=None, description="The plan version it builds from")
     can_recover: bool = Field(default=False, description="Whether you may recover it now (its outcome is uncertain)")
+    can_revert: bool = Field(default=False, description="Whether you may revert it now (a pushed turn whose PR is open)")
+    accepted_by_id: uuid.UUID | None = Field(default=None, description="Manual: who accepted its changes before they were pushed")
+    accepted_at: datetime | None = None
+    revert_of: uuid.UUID | None = Field(default=None, description="The turn this one reverts")
 
 
 class CodingSessionUpdate(BaseModel):

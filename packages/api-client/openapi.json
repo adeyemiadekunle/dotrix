@@ -18471,7 +18471,7 @@
           "coding"
         ],
         "summary": "Get Coding Session",
-        "description": "A coding session's turns, first to latest: each a run with what the agent did. Anyone who sees the project.",
+        "description": "A coding session's turns, first to latest: each a run with what the agent did. Sessions are\nprivate like conversations: whoever started it, and approvers while a turn waits on them.",
         "operationId": "get_coding_session",
         "security": [
           {
@@ -18564,7 +18564,7 @@
           "coding"
         ],
         "summary": "Decide Coding Run",
-        "description": "Approve a coding run (it starts, and the issue is assigned to the tool) or reject it,\nwith a reason. People who may approve agent changes.",
+        "description": "Approve a coding run (it starts, and the issue is assigned to the tool) or reject it,\nwith a reason; or, for a Manual turn whose changes are ready (`changes_ready`), accept them\n(they're pushed, and the PR opened or updated) or reject them (discarded, nothing pushed).\nPeople who may approve agent changes.",
         "operationId": "decide_coding_run",
         "security": [
           {
@@ -18666,6 +18666,125 @@
           },
           "422": {
             "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/revert": {
+      "post": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Revert Coding Run",
+        "description": "Revert a pushed turn: a new turn in its session whose commit undoes it on the session's\nbranch (never forced; the PR keeps its history). It waits for approval like any turn, and the\nagent doesn't run. Whoever started the session. 409 when its PR is merged or closed, the\nsession has moved to a new branch, it's reverted already, or a turn waits or works.",
+        "operationId": "revert_coding_run",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "coding_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Coding Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodingRevert"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingRunRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22544,6 +22663,23 @@
         ],
         "title": "CodingRecover"
       },
+      "CodingRevert": {
+        "properties": {
+          "approval_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes"
+          }
+        },
+        "type": "object",
+        "title": "CodingRevert"
+      },
       "CodingRunCreate": {
         "properties": {
           "note": {
@@ -22946,6 +23082,50 @@
             "title": "Can Recover",
             "description": "Whether you may recover it now (its outcome is uncertain)",
             "default": false
+          },
+          "can_revert": {
+            "type": "boolean",
+            "title": "Can Revert",
+            "description": "Whether you may revert it now (a pushed turn whose PR is open)",
+            "default": false
+          },
+          "accepted_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted By Id",
+            "description": "Manual: who accepted its changes before they were pushed"
+          },
+          "accepted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted At"
+          },
+          "revert_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revert Of",
+            "description": "The turn this one reverts"
           }
         },
         "type": "object",
@@ -22997,6 +23177,7 @@
           "rejected",
           "queued",
           "running",
+          "changes_ready",
           "pr_opened",
           "no_changes",
           "failed",

@@ -121,7 +121,8 @@ async def recover(
     if run.commit_sha is None or head is None or head == run.base_sha:  # nothing of this turn was published
         if run.stop_requested:
             return await _settle(session, run, Recovered.STOPPED, by, error="Stopped before it published anything")
-        if run.lease_token >= MAX_ATTEMPTS:
+        # Accepted changes (Manual) are pushed in a pass of their own, with attempts of its own.
+        if run.lease_token >= MAX_ATTEMPTS * (2 if run.accepted_at is not None else 1):
             return await _settle(session, run, Recovered.FAILED, by, error=(
                 f"Cut off {run.lease_token} times before anything was published; ask {CODING_AGENT_NAME} again"))
         if (refused := await _refused(session, run)) is not None:

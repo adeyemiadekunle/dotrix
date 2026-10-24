@@ -587,6 +587,7 @@ function CodingSection({ t }: { t: Task }) {
     awaiting_approval: ["Waiting for approval", "amber"],
     queued: ["Queued", ""],
     running: ["Coding", "accent"],
+    changes_ready: ["Changes ready", "amber"],
     pr_opened: ["PR opened", "green"],
     no_changes: ["No changes", ""],
     failed: ["Failed", "red"],

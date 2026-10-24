@@ -40,7 +40,7 @@ These hold whatever the implementation does, and whatever the approval mode.
 
 ## Approval modes
 
-Built (2026-10-24): the start gate, one setting with chat's (`workspaces/approval_modes.py`), the workspace cap, and the person's limit. Not yet: the accept gate (A2), reverts, and CI-sensitive files falling back to Manual.
+Built (2026-10-24): the start gate, one setting with chat's (`workspaces/approval_modes.py`), the workspace cap, and the person's limit; the accept gate (A2: in Manual a turn's checked changes wait as `changes_ready`, kept as a patch, and an approver accepts them through the same decision route, `POST .../coding/runs/{id}/decision`, or discards them; nothing reaches GitHub before that); reverts of pushed turns in every mode (`POST .../coding/runs/{id}/revert`: a new turn whose commit reverts it on the session's branch, approved like any turn, the agent not run). Not yet: CI-sensitive files falling back to Manual, and the mode changed while a session runs.
 
 Each session has a mode, like Claude Code's permission modes, picked when it starts and changeable
 while it runs (by whoever started it, within the limits). The mode decides two gates: **start** (a
@@ -294,15 +294,39 @@ Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
 - [x] Cost as per-turn deltas: done in Phase B (a resumed session reports its running total; the turn's
   cost is what it adds).
 
-**Phase A2: turns in git, and approval modes.**
-- The sandbox gets the session branch with history; one commit per turn; the bundle back through the
-  guard; accept (Manual) or straight through (Accept edits, Auto); push, never forced; the first
-  accepted turn opens the PR.
-- Approval modes: the session's mode, the workspace's limit, the person's limit; reverts for a rejected
-  pushed turn; the mode on each turn and in the audit log.
-- Sessions private like conversations (the visibility rules above).
+**Phase A2: turns in git, and approval modes.** Done 2026-10-24, except where noted.
+- [x] One commit per turn on the session's branch, through the guard, pushed, never forced; the first
+  pushed turn opens the PR (built with B). The sandbox keeps its own history; the platform's checkout
+  is what's pushed (no bundle: the patch is applied to a fresh checkout and checked there).
+- [x] Accept (Manual): the turn stops at `changes_ready` with its patch (`pending_patch`), files, and
+  summary; approvers are notified (`approval`, resolved once decided). Accepted (`accepted_by_id`,
+  `accepted_at`, audited `coding.changes_accepted`), a publish-only pass applies the patch to the branch as
+  it is now, runs the guard again, pushes, and opens or updates the PR; the agent doesn't run again.
+  Rejected or stopped, the patch is dropped and the next turn's brief says those changes aren't on the
+  branch. Accept edits and Auto push straight through.
+- [x] Reverts (`revert_of`): any pushed turn of a session whose PR is open, once; `git revert` on the
+  session's branch, through the guard, as a new turn. A revert that doesn't apply cleanly fails the turn.
+- [x] The mode on each turn and in the audit log; the workspace's and the person's limits (2026-10-24).
+- [x] Sessions private like conversations (the visibility rules above; coding has no automations yet).
+- [ ] CI-sensitive files falling back to Manual; changing a session's mode while it runs.
 
-**Phase B: session lifecycle.** Done 2026-10-10, except the accept step (A2).
+**M1: one run interrupted, recovered, and reviewed in one conversation.** Proven 2026-10-24 by
+`test_m1_a_run_interrupted_recovered_and_reviewed_in_one_conversation` (scripted agent, fake GitHub, a
+real git remote): Build asks Kai from the conversation; the worker dies while the agent works (the
+lease lapses, nothing pushed) and the sweep runs the turn again; accepted, the push lands and the PR's
+reply is lost, and the sweep opens the PR from what GitHub shows; Review reads the outcome in the same
+conversation. On a real model (needs Docker, the coding image, the GitHub App, and a key):
+1. `pnpm db:up`, `pnpm dev:backend`, and `DOTRIX_JOBS=worker DOTRIX_CODING_SANDBOX=docker
+   DOTRIX_CODING_LEASE_SECONDS=30 pnpm dev:worker`; a project connected to a scratch repo.
+2. In Chat, Build mode, Manual: ask for a small change; approve Kai's turn in the conversation.
+3. While its card says Working, kill the worker (`kill -9`, not Ctrl-C) and start it again. Within about
+   a minute the card says Needs recovery, then (the sweep) the turn runs again; Manual stops at Changes ready.
+4. Accept and push. To cut the PR request off too, block api.github.com's PR endpoint for a moment (or kill
+   the worker right after "Pushing …" shows): the sweep opens the PR from the branch at the recorded commit.
+5. Switch the composer to Review and ask what happened: the answer cites the PR, its files, and the turns.
+   The audit log shows `coding.recovered` with `retried` and `opened_pr`.
+
+**Phase B: session lifecycle.** Done 2026-10-10 (the accept step with A2, 2026-10-24).
 - [x] `coding_sessions` (one per session, its id the first turn's): `warm` / `idle` / `closed`, Claude Code's
   conversation id, the saved transcript's key, Claude's running cost. The migration made one for every
   existing session.

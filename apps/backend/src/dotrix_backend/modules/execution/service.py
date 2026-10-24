@@ -146,6 +146,7 @@ def mark_coding_recovery_required(
     if run.status is not CodingRunStatus.RUNNING:
         return False
     run.status, run.error = CodingRunStatus.RECOVERY_REQUIRED, reason
+    run.recovery_checked_at = None  # a new uncertainty: the sweep tries it once (attempts are capped)
     AuditLog(session).record(
         workspace_id=run.workspace_id, project_id=run.project_id,
         action="coding.recovery_required", target=run.issue_key,

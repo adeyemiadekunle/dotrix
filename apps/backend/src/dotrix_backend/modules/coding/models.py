@@ -54,6 +54,9 @@ class CodingRunStatus(enum.StrEnum):
     REJECTED = "rejected"
     QUEUED = "queued"
     RUNNING = "running"
+    # Manual: the turn's changes (checked by the guard, not pushed) wait for a person to accept them;
+    # accepted, they're pushed (a publish-only job), rejected, discarded. Nothing has left the worker.
+    CHANGES_READY = "changes_ready"
     PR_OPENED = "pr_opened"  # done: the PR is up, a person reviews and merges it
     NO_CHANGES = "no_changes"  # done: the agent changed nothing
     FAILED = "failed"
@@ -81,8 +84,10 @@ class PrState(enum.StrEnum):
 
 ACTIVE = frozenset({
     CodingRunStatus.AWAITING_APPROVAL, CodingRunStatus.QUEUED,
-    CodingRunStatus.RUNNING, CodingRunStatus.RECOVERY_REQUIRED,
+    CodingRunStatus.RUNNING, CodingRunStatus.RECOVERY_REQUIRED, CodingRunStatus.CHANGES_READY,
 })
+# Waiting on a person's decision: to start, or to push what it changed.
+WAITING = frozenset({CodingRunStatus.AWAITING_APPROVAL, CodingRunStatus.CHANGES_READY})
 
 
 class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
@@ -126,6 +131,13 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     workspace_path: Mapped[str | None] = mapped_column(String(1024))
     branch: Mapped[str | None] = mapped_column(String(200))
     commit_sha: Mapped[str | None] = mapped_column(String(40))
+    # The turn's changes while they wait to be accepted (`changes_ready`), as a binary patch on the
+    # session's branch; cleared once pushed or rejected. Who accepted them, and when.
+    pending_patch: Mapped[str | None] = mapped_column(Text, deferred=True)
+    accepted_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set on a pushed turn being reverted: the revert commit goes on the session's branch.
+    revert_of: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("coding_runs.id", ondelete="SET NULL"))
     pr_number: Mapped[int | None] = mapped_column(Integer)
     pr_url: Mapped[str | None] = mapped_column(String(300))
     pr_state: Mapped[PrState | None] = mapped_column(str_enum(PrState, 16))  # kept current by the webhook

@@ -16,7 +16,7 @@ import pytest
 from cryptography.fernet import Fernet
 from httpx import AsyncClient
 from pydantic import SecretStr
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from dotrix_backend.core.crypto import Secrets
 from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
@@ -121,6 +121,17 @@ class ScriptedSandbox(LocalSandbox):
         return ScriptedSession(session.root, session.env, self.agent)
 
 
+async def _approve(db_client: AsyncClient, base: str, run: dict, headers: dict) -> dict:
+    """Approve a turn; in Manual its checked changes then wait (`changes_ready`), and are accepted too."""
+    for _ in range(2):
+        res = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=headers)
+        assert res.status_code == 200, res.text
+        read = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=headers)).json()
+        if read["status"] != "changes_ready":
+            break
+    return read
+
+
 @pytest.fixture
 def origin(tmp_path: Path) -> Path:
     """kunemi/api on "GitHub"."""
@@ -198,9 +209,10 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert "Refund within a week of purchase." in run["brief"]  # the requirement it implements, as data
     again = await db_client.post(f"{base}/coding/issues/{story['key']}/runs", json={}, headers=ada.headers)
     assert again.status_code == 409 and again.json()["type"].endswith("/coding_busy")
-    # Cat sees it, can't decide it.
-    seen = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).json()
-    assert not seen["can_decide"] and seen["input_tokens"] is None
+    # Sessions are private like conversations: Cat (who may neither approve nor see Ada's) gets nothing.
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).status_code == 404
+    assert (await db_client.get(f"{base}/coding/runs", headers=cat.headers)).json() == []
+    assert (await db_client.get(f"{ws}/coding/sessions", headers=cat.headers)).json() == []
     assert (await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"},
                                  headers=cat.headers)).status_code == 403
 
@@ -212,8 +224,19 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     done = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"},
                                 headers=ada.headers)
     assert done.status_code == 200, done.text
+    # Manual: the turn's checked changes wait for a person; nothing has reached GitHub yet.
+    ready = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert ready["status"] == "changes_ready" and ready["can_decide"] and ready["branch"] is None, ready
+    assert {f["path"] for f in ready["files_changed"]} == {"src/payments.py", "tests/test_refund.py"}
+    assert ready["summary"].startswith("Added refunds") and github.pulls == []
+    assert _git(origin, "branch", "--list", "dotrix/*") == ""
+    [waiting] = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()[:1]
+    assert waiting["title"].startswith("Changes ready for") and not waiting["resolved"], waiting
+    accepted = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"},
+                                    headers=ada.headers)
+    assert accepted.status_code == 200, accepted.text
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
-    assert run["status"] == "pr_opened", run
+    assert run["status"] == "pr_opened" and run["accepted_by_id"] == ada.id and run["can_revert"], run
     assert run["pr_number"] == 1 and run["pr_url"] == "https://github.com/kunemi/api/pull/1"
     assert run["branch"].startswith(f"dotrix/{story['key'].lower()}-refund-a-payment-")
     assert {f["path"] for f in run["files_changed"]} == {"src/payments.py", "tests/test_refund.py"}
@@ -243,7 +266,8 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert "src/payments.py (+2 -1)" in review["message"] and "<repo_content" in review["message"]
 
     actions = [e["action"] for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()]
-    assert {"coding.requested", "coding.approved", "coding.pr_opened"} <= set(actions)
+    assert {"coding.requested", "coding.approved", "coding.changes_ready", "coding.changes_accepted",
+            "coding.pr_opened"} <= set(actions)
 
 
 async def test_an_approver_who_cant_instruct_the_coding_agent_still_approves_its_run(
@@ -277,7 +301,7 @@ async def test_changes_to_dotrix_or_workflows_are_never_pushed(
     task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Tidy"}, headers=ada.headers)).json()
     claude.edits = {"src/payments.py": "# tidy\n", ".dotrix/requirements/x.md": "# sneaky\n"}
     run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
-    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    await _approve(db_client, base, run, ada.headers)
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["status"] == "failed" and ".dotrix/ stays on the platform" in run["error"]
     assert run["branch"] is None and github.pulls == []
@@ -286,12 +310,12 @@ async def test_changes_to_dotrix_or_workflows_are_never_pushed(
     # Workflows likewise; and a run that changes nothing ends without a PR.
     claude.edits = {".github/workflows/ci.yml": "on: push\n"}
     run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
-    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    await _approve(db_client, base, run, ada.headers)
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["status"] == "failed" and "CI configuration" in run["error"]
     claude.edits = {}
     run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
-    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    await _approve(db_client, base, run, ada.headers)
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["status"] == "no_changes" and github.pulls == []
 
@@ -316,8 +340,9 @@ async def test_rejecting_stopping_and_when_it_isnt_available(
     stopped = (await db_client.post(f"{base}/coding/runs/{run['id']}/stop", headers=cat.headers)).json()
     assert stopped["status"] == "stopped" and sandbox.opened == 0
     assert (await db_client.post(f"{base}/coding/runs/{run['id']}/stop", headers=cat.headers)).status_code == 409
+    # Cat sees their own turn on the issue, not Ada's (sessions are private, like conversations).
     assert [r["status"] for r in (await db_client.get(f"{base}/coding/runs", params={"issue": task["key"]},
-                                                       headers=cat.headers)).json()] == ["stopped", "rejected"]
+                                                       headers=cat.headers)).json()] == ["stopped"]
 
     # MOB has no connected repo; epics are too big; nothing runs without a model key.
     mob_task = (await db_client.post(f"{ws}/projects/{mob['id']}/issues", json={"type": "task", "title": "x"},
@@ -360,15 +385,9 @@ async def test_a_running_agent_is_stopped_and_nothing_is_pushed(
 
     monkeypatch.setattr(CodingWorker, "stop_requested", stop_requested)
     monkeypatch.setattr(ScriptedSession, "exec", slow_exec)
-    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    await _approve(db_client, base, run, ada.headers)
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["status"] == "stopped" and run["error"] == "Stopped by a person" and github.pulls == []
-
-
-async def _approve(db_client: AsyncClient, base: str, run: dict, headers: dict) -> dict:
-    res = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=headers)
-    assert res.status_code == 200, res.text
-    return (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=headers)).json()
 
 
 async def test_with_a_fork_owner_branches_go_to_the_apps_fork(
@@ -397,8 +416,9 @@ async def test_with_a_fork_owner_branches_go_to_the_apps_fork(
     # The branch is on the fork, not the repo; the PR is the repo's, from the fork's branch.
     assert _git(fork, "rev-parse", first["branch"]) == first["commit_sha"]
     assert first["branch"] not in _git(origin, "branch", "--list")
-    assert github.forks == [{"repo": "kunemi/api", "organization": "dotrix-fork", "name": "kunemi-api",
-                             "default_branch_only": True}]
+    # (found again each time the worker takes the turn: once to code, once to push what was accepted)
+    assert github.forks == 2 * [{"repo": "kunemi/api", "organization": "dotrix-fork", "name": "kunemi-api",
+                                 "default_branch_only": True}]
     assert github.synced == [("dotrix-fork/kunemi-api", "main")]
     [pr] = github.pulls
     assert pr["repo"] == "kunemi/api" and pr["head"] == f"dotrix-fork:{first['branch']}" and not pr["maintainer_can_modify"]
@@ -416,7 +436,7 @@ async def test_with_a_fork_owner_branches_go_to_the_apps_fork(
     second = await _approve(db_client, base, second, ada.headers)
     assert second["status"] == "pr_opened" and second["base_sha"] == first["commit_sha"]
     assert _git(fork, "rev-parse", f"{first['branch']}~1") == first["commit_sha"]
-    assert len(github.pulls) == 1 and len(github.forks) == 2 and len(github.synced) == 1
+    assert len(github.pulls) == 1 and len(github.forks) == 4 and len(github.synced) == 1
 
 
 async def test_a_session_continues_on_its_branch_and_pr(
@@ -457,9 +477,10 @@ async def test_a_session_continues_on_its_branch_and_pr(
     assert any("Pushed turn 2 to PR #1" in (e.get("body") or "") for e in issue["log"])
 
     # The session's turns, and the workspace's sessions (Chat's Coding tab).
-    listed = (await db_client.get(f"{base}/coding/sessions/{first['session_id']}", headers=cat.headers)).json()
+    listed = (await db_client.get(f"{base}/coding/sessions/{first['session_id']}", headers=ada.headers)).json()
     assert [t["turn"] for t in listed] == [1, 2]
-    [session] = (await db_client.get(f"{ws}/coding/sessions", headers=cat.headers)).json()
+    assert (await db_client.get(f"{base}/coding/sessions/{first['session_id']}", headers=cat.headers)).status_code == 404
+    [session] = (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
     assert session["session_id"] == first["session_id"] and session["turns"] == 2 and session["project_key"] == "KUN"
     assert session["issue_title"] == "Refunds" and session["status"] == "pr_opened" and session["pr_number"] == 1
 
@@ -569,16 +590,15 @@ async def test_the_agent_s_screenshots_are_kept_and_shown(
     run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={}, headers=ada.headers)).json()
     claude.edits = {"src/payments.py": "class PaymentProvider:\n    def subtract(self): ...\n"}
     agent_script.say("Looks right.")
-    done = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
-    assert done.status_code == 200, done.text
-    run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).json()
+    run = await _approve(db_client, base, run, ada.headers)
     assert run["status"] == "pr_opened", run.get("error")
-    # Images only, whatever the name says, and each once; listed on the run, served to anyone who sees the project.
+    # Images only, whatever the name says, and each once; listed on the run, served to whoever's session it is.
     assert run["screenshots"] == [{"index": 0, "name": "page-subtract.png", "size": len(PNG), "content_type": "image/png"}]
     assert any(e["text"] == "Kept 1 screenshot from the browser" for e in run["events"])
-    shot = await db_client.get(f"{base}/coding/runs/{run['id']}/screenshots/0", headers=cat.headers)
+    shot = await db_client.get(f"{base}/coding/runs/{run['id']}/screenshots/0", headers=ada.headers)
     assert shot.status_code == 200 and shot.content == PNG and shot.headers["content-type"] == "image/png"
-    assert (await db_client.get(f"{base}/coding/runs/{run['id']}/screenshots/1", headers=cat.headers)).status_code == 404
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}/screenshots/1", headers=ada.headers)).status_code == 404
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}/screenshots/0", headers=cat.headers)).status_code == 404
 
 
 async def test_every_event_is_kept_and_read_a_page_at_a_time(
@@ -586,7 +606,7 @@ async def test_every_event_is_kept_and_read_a_page_at_a_time(
 ) -> None:
     """The run keeps its latest 300 events for quick reads; coding_events keeps every one, in order.
     The events come from the agent while it works: a finished run takes no more (#139)."""
-    ada, cat, ws, kun, _, _ = coding
+    ada, _, ws, kun, _, _ = coding
     base = f"{ws}/projects/{kun['id']}"
     issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"title": "Tidy payments"})).json()
     run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={}, headers=ada.headers)).json()
@@ -596,19 +616,16 @@ async def test_every_event_is_kept_and_read_a_page_at_a_time(
     scripted = claude.lines
     claude.lines = lambda: [*scripted()[:1], *steps, *scripted()[1:]]  # type: ignore[method-assign]
     agent_script.say("Fine.")
-    assert (await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"},
-                                 headers=ada.headers)).status_code == 200
-
-    read = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).json()
+    read = await _approve(db_client, base, run, ada.headers)
     assert read["status"] == "pr_opened", read
     total = read["event_count"]
     assert total > 350 and len(read["events"]) == 300 and "Ran step 349" in [e["text"] for e in read["events"]]
-    first = (await db_client.get(f"{base}/coding/runs/{run['id']}/events", params={"limit": 100}, headers=cat.headers)).json()
+    first = (await db_client.get(f"{base}/coding/runs/{run['id']}/events", params={"limit": 100}, headers=ada.headers)).json()
     assert [e["seq"] for e in first["events"]] == list(range(100)) and first["next"] == 99
     seen, after = list(first["events"]), first["next"]
     while after is not None:
         page = (await db_client.get(f"{base}/coding/runs/{run['id']}/events", params={"after": after, "limit": 1000},
-                                    headers=cat.headers)).json()
+                                    headers=ada.headers)).json()
         seen += page["events"]
         after = page["next"]
     assert len(seen) == total and [e["seq"] for e in seen] == list(range(total))
@@ -876,22 +893,24 @@ async def test_a_run_cut_off_before_it_published_runs_again(
     seen = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert seen["status"] == "recovery_required" and seen["can_recover"] and not seen["can_stop"]
     assert "lease" in seen["error"]
-    # Cat didn't ask for it; Stop isn't how it's settled.
-    assert not (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).json()["can_recover"]
+    # Cat didn't ask for it (and doesn't see it); Stop isn't how it's settled.
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).status_code == 404
     assert (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
-                                 headers=cat.headers)).status_code == 403
+                                 headers=cat.headers)).status_code == 404
     assert (await db_client.post(f"{base}/coding/runs/{run['id']}/stop", headers=ada.headers)).status_code == 409
 
     claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
     recovered = await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"}, headers=ada.headers)
     assert recovered.status_code == 200, recovered.text
-    done = recovered.json()
-    assert done["status"] == "pr_opened" and done["pr_number"] == 1, done  # the turn ran again, on a new lease
+    ready = recovered.json()
+    assert ready["status"] == "changes_ready", ready  # the turn ran again, on a new lease (Manual: it waits)
+    done = await _approve(db_client, base, ready, ada.headers)
+    assert done["status"] == "pr_opened" and done["pr_number"] == 1, done
     assert "Recovered: nothing was published; running the turn again" in [e["text"] for e in done["events"]]
     assert _git(origin, "rev-parse", done["branch"]) == done["commit_sha"]
     async with db_client._transport.app.state.jobs.ctx.session_factory() as session:  # type: ignore[attr-defined]
         row = await session.get(CodingRun, uuid.UUID(run["id"]))
-        assert row is not None and row.lease_token == 2 and row.lease_expires_at is None  # released when it ended
+        assert row is not None and row.lease_token == 3 and row.lease_expires_at is None  # coded, pushed; released
     audit = (await db_client.get(f"{coding[2]}/audit", headers=ada.headers)).json()
     assert any(e["action"] == "coding.recovered" and e["details"]["outcome"] == "retried" for e in audit)
 
@@ -904,7 +923,7 @@ async def test_a_lost_pr_reply_is_settled_from_github(
     base, run = await _asked(db_client, coding)
     claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
     github.fail_pulls = 1  # the push lands; the PR request's reply is lost
-    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    await _approve(db_client, base, run, ada.headers)
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["status"] == "recovery_required" and run["pr_number"] is None and run["can_recover"]
     assert _git(origin, "rev-parse", run["branch"]) == run["commit_sha"]
@@ -938,7 +957,7 @@ async def test_a_stopped_run_is_never_published_or_run_again_by_recovery(
     base, run = await _asked(db_client, coding)
     claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
     github.fail_pulls = 1
-    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    await _approve(db_client, base, run, ada.headers)
     # Stopped after its push, before its PR (the Stop that came in as the reply was lost).
     await _set_run(db_client, run["id"], stop_requested=True)
     stopped = (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
@@ -959,7 +978,7 @@ async def test_a_branch_that_moved_on_waits_for_a_person(
     base, run = await _asked(db_client, coding)
     claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
     github.fail_pulls = 1
-    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    await _approve(db_client, base, run, ada.headers)
     github.branch_heads = lambda full_name, branch: "f" * 40  # neither this turn's commit nor its base
     unclear = (await db_client.post(f"{base}/coding/runs/{run['id']}/recover", json={"action": "check"},
                                     headers=ada.headers)).json()
@@ -1080,7 +1099,7 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
 
     claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
     agent_script.say("Looks right.")  # the Reviewer, on the PR
-    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    await _approve(db_client, base, run, ada.headers)
 
     model = agent_script.say(tool_call("coding_evidence"), "Kai opened PR #1; the tests weren't run by us.")
     await db_client.post(f"{base}/agent/runs", headers=ada.headers,
@@ -1102,9 +1121,14 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     [mine] = [s for s in (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
               if s["session_id"] == run["session_id"]]
     assert mine["thread_id"] == thread and mine["turns"] == 2
+    # Cat doesn't see Ada's session; as an approver while a turn waits on them, without her conversation.
+    assert not [s for s in (await db_client.get(f"{ws}/coding/sessions", headers=cat.headers)).json()
+                if s["session_id"] == run["session_id"]]
+    await db_client.patch(ws, json={"member_permissions": ["agents:approve"]}, headers=ada.headers)
     [theirs] = [s for s in (await db_client.get(f"{ws}/coding/sessions", headers=cat.headers)).json()
                 if s["session_id"] == run["session_id"]]
     assert theirs["thread_id"] is None  # another person's conversation isn't named to them
+    await db_client.patch(ws, json={"member_permissions": []}, headers=ada.headers)
 
     # Cat may chat but not instruct Kai: Build says so instead of asking for a run.
     model = agent_script.say(tool_call("start_coding", issue_key=issue["key"]), "You can't ask Kai here.")
@@ -1166,3 +1190,159 @@ async def test_accept_edits_starts_kai_at_once_and_manual_still_waits(
     assert said and "Kai has started" in said[-1]
     [built] = (await db_client.get(f"{base}/coding/runs?issue={third['key']}", headers=ada.headers)).json()
     assert built["approval_mode"] == "accept_edits" and built["status"] in ("pr_opened", "no_changes", "running")
+
+
+# -- A2: in Manual, a turn's changes wait for a person before they're pushed; a pushed turn can be reverted --
+
+
+async def test_manual_changes_wait_and_rejected_ones_never_reach_github(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.patch(ws, json={"member_permissions": ["agents:approve"]}, headers=ada.headers)  # Cat approves
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+
+    # Cat, an approver, opens it while it waits on that decision, and rejects its changes.
+    ready = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).json()
+    assert ready["status"] == "changes_ready" and ready["can_decide"] and not ready["can_stop"]
+    assert (await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", json={"message": "more"},
+                                 headers=ada.headers)).status_code == 409  # a turn waits
+    rejected = await db_client.post(f"{base}/coding/runs/{run['id']}/decision",
+                                    json={"decision": "reject", "reason": "Not this way"}, headers=cat.headers)
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["status"] == "rejected" and "Not this way" in rejected.json()["error"]
+    assert github.pulls == [] and _git(origin, "branch", "--list", "dotrix/*") == ""
+    # Decided: it's Ada's alone again, and her notification says so.
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).status_code == 404
+    [decided] = (await db_client.get(f"{ws}/notifications", params={"kind": "decided"}, headers=ada.headers)).json()
+    assert "Changes for" in decided["title"] and decided["actor_user_id"] == cat.id
+    async with db_client._transport.app.state.jobs.ctx.session_factory() as session:  # type: ignore[attr-defined]
+        kept = await session.scalar(select(CodingRun.pending_patch).where(CodingRun.id == uuid.UUID(run["id"])))
+        assert kept is None  # discarded
+
+    # The next turn knows those changes aren't on the branch.
+    turn = (await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", json={"message": "Try again"},
+                                 headers=ada.headers)).json()
+    assert "rejected and never pushed" in turn["brief"]
+    await db_client.post(f"{base}/coding/runs/{turn['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    # Stopped while its changes wait: discarded too.
+    stopped = (await db_client.post(f"{base}/coding/runs/{turn['id']}/stop", headers=ada.headers)).json()
+    assert stopped["status"] == "stopped" and "discarded" in stopped["error"] and github.pulls == []
+    actions = [e["action"] for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()]
+    assert {"coding.changes_ready", "coding.changes_rejected", "coding.stop_requested"} <= set(actions)
+
+
+async def test_a_pushed_turn_is_reverted_on_its_branch(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    agent_script.say("Fine.", "Fine.", "Fine.")
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    first = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    first = await _approve(db_client, base, first, ada.headers)
+    claude.edits = {"src/refunds.py": "LIMIT = 500\n"}
+    second = (await db_client.post(f"{base}/coding/sessions/{first['session_id']}/turns", json={"message": "A limit"},
+                                   headers=ada.headers)).json()
+    second = await _approve(db_client, base, second, ada.headers)
+    assert first["status"] == second["status"] == "pr_opened" and first["can_revert"]
+
+    # Turn 1 undone: a new turn whose commit reverts it on the branch, turn 2 kept. Nothing runs the agent.
+    asked = await db_client.post(f"{base}/coding/runs/{first['id']}/revert", json={}, headers=ada.headers)
+    assert asked.status_code == 201, asked.text
+    revert = asked.json()
+    assert revert["status"] == "awaiting_approval" and revert["revert_of"] == first["id"] and revert["turn"] == 3
+    briefs = len(claude.briefs)
+    revert = await _approve(db_client, base, revert, ada.headers)  # approving the revert is enough: its diff is known
+    assert revert["status"] == "pr_opened" and revert["summary"].startswith("Reverted turn 1"), revert
+    assert len(claude.briefs) == briefs and revert["pr_number"] == first["pr_number"]
+    assert [f["path"] for f in revert["files_changed"]] == ["src/payments.py"]
+    branch = first["branch"]
+    assert _git(origin, "show", f"{branch}:src/payments.py") == "class PaymentProvider:\n    pass"
+    assert _git(origin, "show", f"{branch}:src/refunds.py") == "LIMIT = 500"
+    assert _git(origin, "rev-parse", f"{branch}~1") == second["commit_sha"]  # on top: never forced
+    assert len(github.pulls) == 1
+
+    # Once only; not by Cat; not once its PR is merged.
+    again = await db_client.post(f"{base}/coding/runs/{first['id']}/revert", json={}, headers=ada.headers)
+    assert again.status_code == 409 and "already reverted" in again.json()["detail"]
+    assert (await db_client.post(f"{base}/coding/runs/{second['id']}/revert", json={},
+                                 headers=cat.headers)).status_code == 403
+    await _set_run(db_client, second["id"], pr_state="merged")
+    merged = await db_client.post(f"{base}/coding/runs/{second['id']}/revert", json={}, headers=ada.headers)
+    assert merged.status_code == 409 and "merged" in merged.json()["detail"]
+
+
+# -- M1: one coding run interrupted on purpose, recovered, and reviewed in the same conversation --------
+
+
+async def test_m1_a_run_interrupted_recovered_and_reviewed_in_one_conversation(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    """Build asks Kai from the conversation; its worker is cut off twice (it dies while the agent works,
+    then the PR's reply is lost after the push); the sweep settles both from GitHub without a person,
+    and Review reads the outcome in the same conversation."""
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    factory, worker = app.state.jobs.ctx.session_factory, app.state.jobs.ctx.coding
+    github.branch_heads = _heads(origin)
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Refunds"})).json()
+
+    agent_script.say(tool_call("start_coding", issue_key=issue["key"]), "Asked Kai; it waits for your approval.")
+    built = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                                  json={"message": "Build refunds", "work_mode": "build"})).json()
+    thread = built["thread_id"]
+    [run] = (await db_client.get(f"{base}/coding/runs?issue={issue['key']}", headers=ada.headers)).json()
+    assert run["thread_id"] == thread
+
+    async def sweep() -> None:
+        """The worker's sweep: lapsed leases become uncertain, uncertain runs are settled from GitHub."""
+        await expire_coding_leases(factory)
+        requeued: list[uuid.UUID] = []
+
+        async def requeue(session, row) -> None:
+            requeued.append(row.id)
+
+        await recover_uncertain_runs(factory, worker.app, worker.settings, requeue)
+        for run_id in requeued:  # what the dispatch would run
+            await worker.execute(run_id)
+
+    # 1. Approved and taken by a worker that dies while the agent works: its lease lapses, nothing is pushed.
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING, lease_token=1, decided_by_id=ada.id,
+                   lease_expires_at=datetime.now(UTC) - timedelta(seconds=5), started_at=datetime.now(UTC))
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    await sweep()  # it runs again on a new lease; Manual: its changes wait
+    ready = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert ready["status"] == "changes_ready", ready
+    assert "Recovered: nothing was published; running the turn again" in [e["text"] for e in ready["events"]]
+
+    # 2. Accepted; the push lands and the PR request's reply is lost: uncertain, never assumed failed.
+    github.fail_pulls = 1
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    cut = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert cut["status"] == "recovery_required" and _git(origin, "rev-parse", cut["branch"]) == cut["commit_sha"]
+    agent_script.say("Looks right.")  # the Reviewer, once the PR is up
+    await sweep()  # the branch is at the recorded commit, no PR: recovery opens it
+    done = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert done["status"] == "pr_opened" and done["pr_number"] == 1 and len(github.pulls) == 1, done
+    assert done["accepted_by_id"] == ada.id
+
+    # 3. Reviewed in the same conversation: Review reads what came of it, and the session is shown there.
+    model = agent_script.say(tool_call("coding_evidence"), "Kai opened PR #1 after two interruptions.")
+    reviewed = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                                     json={"message": "What happened?", "work_mode": "review", "thread_id": thread})).json()
+    assert reviewed["status"] == "completed" and reviewed["thread_id"] == thread
+    evidence = [m.content for m in model.received[1] if m.type == "tool"][-1]
+    assert "pr_opened" in evidence and "pull/1" in evidence and "src/payments.py (+2 -1)" in evidence
+    [session] = [s for s in (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
+                 if s["session_id"] == run["session_id"]]
+    assert session["thread_id"] == thread and session["status"] == "pr_opened"
+    audit = [e for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json() if e["target"] == issue["key"]]
+    outcomes = [e["details"]["outcome"] for e in audit if e["action"] == "coding.recovered"]
+    assert sorted(outcomes) == ["opened_pr", "retried"]

@@ -4,8 +4,9 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid_utils.compat import uuid7
 
@@ -36,6 +37,7 @@ from .brief import build_brief
 from .models import (
     ACTIVE,
     CODING_AGENT_NAME,
+    WAITING,
     CodingOrigin,
     CodingRun,
     CodingRunEvent,
@@ -53,6 +55,7 @@ from .schemas import (
     CodingEventRead,
     CodingFollowUp,
     CodingRecover,
+    CodingRevert,
     CodingRunCreate,
     CodingRunRead,
     CodingScreenshot,
@@ -73,6 +76,28 @@ STATUS_WORDS = {
     CodingRunStatus.STOPPED: "It was stopped.", CodingRunStatus.REJECTED: "It was rejected.",
     CodingRunStatus.PR_OPENED: "It opened the PR.",
 }
+
+
+def visible_runs(member: Membership) -> Any:
+    """The coding runs `member` sees: theirs (sessions are private, like conversations), and, when
+    they may approve agent changes, those waiting on that decision (to start, or to push)."""
+    clause = CodingRun.requested_by_id == member.user_id
+    if can(member, Permission.APPROVE_ACTIONS):
+        clause = or_(clause, CodingRun.status.in_(WAITING))
+    return clause
+
+
+def _sees(run: CodingRun, member: Membership) -> bool:
+    return run.requested_by_id == member.user_id or (
+        run.status in WAITING and can(member, Permission.APPROVE_ACTIONS))
+
+
+def _earlier(turn: CodingRun) -> str:
+    """What an earlier turn did, for the next turn's brief."""
+    said = turn.summary or turn.error or STATUS_WORDS[turn.status]
+    if turn.status is CodingRunStatus.REJECTED and turn.summary:
+        return f"(its changes were rejected and never pushed: they're not on the branch) {said}"
+    return said
 
 
 class CodingUnavailable(Conflict):
@@ -136,22 +161,53 @@ class CodingService:
     async def follow_up(self, access: ProjectAccess, session_id: uuid.UUID, data: CodingFollowUp) -> CodingRunRead:
         """Another turn in a session: the same agent, on the session's branch, pushing to its PR
         (or opening one, if no turn has yet). It waits for an approval like the first."""
-        turns = await self._turns(access.project, session_id)
-        if any(t.status in ACTIVE for t in turns):
-            raise CodingBusy("This session has a turn waiting or working; follow up once it's done")
-        latest = turns[-1]
-        issue = await self._codable(access.project, access.member.user_id, latest.issue_key, busy_ok=False)
-        with_branch = next((t for t in reversed(turns) if t.branch and t.pr_number), None)
-        if with_branch is not None and with_branch.pr_state in (PrState.MERGED, PrState.CLOSED):
-            with_branch = None  # its PR is merged or closed: this turn starts a new branch and PR from the default branch
-        earlier = [(t.turn, t.summary or t.error or STATUS_WORDS[t.status]) for t in turns
-                   if t.status not in (CodingRunStatus.REJECTED, CodingRunStatus.STOPPED) or t.summary]
+        turns, issue, with_branch, earlier = await self._next_turn(access, session_id)
         run = await self._create(
             access.project, access.member, issue, data.message, CodingOrigin.FOLLOW_UP,
-            session_id=session_id, turn=latest.turn + 1, earlier=earlier, carry=with_branch,
+            session_id=session_id, turn=turns[-1].turn + 1, earlier=earlier, carry=with_branch,
             approval=data.approval_mode,
         )
         return await self._settle(access, run)
+
+    async def revert(self, access: ProjectAccess, run_id: uuid.UUID, data: CodingRevert) -> CodingRunRead:
+        """Undo a pushed turn: a new turn whose commit reverts it on the session's branch (never a
+        force-push, so the PR keeps its history). It waits for an approval like any turn; the agent
+        doesn't run."""
+        target = await self._get(access, run_id)
+        if target.status is not CodingRunStatus.PR_OPENED or not target.commit_sha:
+            raise Conflict("Only a turn that pushed its changes can be reverted")
+        if target.pr_state in (PrState.MERGED, PrState.CLOSED):
+            raise Conflict("Its PR is merged or closed: revert it on GitHub")
+        turns, issue, with_branch, earlier = await self._next_turn(access, target.session_id)
+        if any(t.revert_of == target.id and t.status is CodingRunStatus.PR_OPENED for t in turns):
+            raise Conflict(f"Turn {target.turn} is already reverted")
+        if with_branch is None or with_branch.branch != target.branch:
+            raise Conflict("The session has moved on to a new branch: revert it on GitHub")
+        run = await self._create(
+            access.project, access.member, issue, f"Revert turn {target.turn} ({target.commit_sha[:7]})",
+            CodingOrigin.FOLLOW_UP, session_id=target.session_id, turn=turns[-1].turn + 1, earlier=earlier,
+            carry=with_branch, approval=data.approval_mode,
+        )
+        run.revert_of = target.id
+        return await self._settle(access, run)
+
+    async def _next_turn(
+        self, access: ProjectAccess, session_id: uuid.UUID,
+    ) -> tuple[list[CodingRun], IssueRead, CodingRun | None, list[tuple[int, str]]]:
+        """What a new turn in a session builds on: its turns, its issue, the branch and PR it carries
+        on (None: a new one from the default branch), and what the earlier turns did."""
+        turns = await self._turns(access, session_id)
+        if turns[0].requested_by_id != access.member.user_id:
+            raise Forbidden("Only whoever started this session can continue it")
+        if any(t.status in ACTIVE for t in turns):
+            raise CodingBusy("This session has a turn waiting or working; follow up once it's done")
+        issue = await self._codable(access.project, access.member.user_id, turns[-1].issue_key, busy_ok=False)
+        with_branch = next((t for t in reversed(turns) if t.branch and t.pr_number), None)
+        if with_branch is not None and with_branch.pr_state in (PrState.MERGED, PrState.CLOSED):
+            with_branch = None  # its PR is merged or closed: this turn starts a new branch and PR from the default branch
+        earlier = [(t.turn, _earlier(t)) for t in turns
+                   if t.status not in (CodingRunStatus.REJECTED, CodingRunStatus.STOPPED) or t.summary]
+        return turns, issue, with_branch, earlier
 
     async def _settle(self, access: ProjectAccess, run: CodingRun) -> CodingRunRead:
         """Commit a new turn: it waits for an approval, or starts at once under the person's mode."""
@@ -224,7 +280,9 @@ class CodingService:
 
     async def decide(self, access: ProjectAccess, run_id: uuid.UUID, data: CodingDecision) -> CodingRunRead:
         """Approve (it's queued for the worker) or reject a run that waits for approval."""
-        run = await self._get(access.project, run_id, for_update=True)
+        run = await self._get(access, run_id, for_update=True)
+        if run.status is CodingRunStatus.CHANGES_READY:
+            return await self._decide_changes(access, run, data)
         if run.status is not CodingRunStatus.AWAITING_APPROVAL:
             raise Conflict("This coding run isn't waiting for a decision")
         run.decided_by_id, run.decided_at = access.member.user_id, datetime.now(UTC)
@@ -242,6 +300,31 @@ class CodingService:
             await self.session.commit()
             return self._read(run, access)
         dispatch = await self._queue(access, run)
+        await self.session.commit()
+        await self._send(run, dispatch)
+        await self.session.refresh(run)
+        return self._read(run, access)
+
+    async def _decide_changes(self, access: ProjectAccess, run: CodingRun, data: CodingDecision) -> CodingRunRead:
+        """Manual: accept a turn's checked changes (they're pushed, and the PR opened or updated) or
+        reject them (discarded: nothing reached GitHub)."""
+        now = datetime.now(UTC)
+        if run.requested_by_id and run.requested_by_id != access.member.user_id:
+            title = await self.session.scalar(select(Issue.title).where(Issue.id == run.issue_id)) or run.issue_key
+            Notifier(self.session).decided(
+                access.project, run.requested_by_id, None, f"Changes for {run.issue_key}: {title}", now,
+                approved=int(data.decision == "approve"), rejected=int(data.decision == "reject"), reason=data.reason,
+                actor_user_id=access.member.user_id, coding_run_id=run.id,
+            )
+        if data.decision == "reject":
+            run.status, run.finished_at, run.pending_patch = CodingRunStatus.REJECTED, now, None
+            run.error = "Its changes were rejected" + (f": {data.reason}" if data.reason else "")
+            self._audit(access.project, access, "coding.changes_rejected", run)
+            await self.session.commit()
+            return self._read(run, access)
+        run.accepted_by_id, run.accepted_at, run.status = access.member.user_id, now, CodingRunStatus.QUEUED
+        self._audit(access.project, access, "coding.changes_accepted", run)
+        dispatch = self._dispatch(self.session, run)
         await self.session.commit()
         await self._send(run, dispatch)
         await self.session.refresh(run)
@@ -269,7 +352,7 @@ class CodingService:
     async def recover(self, access: ProjectAccess, run_id: uuid.UUID, data: CodingRecover, app: GitHubApp) -> CodingRunRead:
         """Settle a run whose outcome is uncertain: check GitHub (adopt or open its PR, or run the
         turn again when nothing was published), or discard it after looking yourself."""
-        run = await self._get(access.project, run_id, for_update=True)
+        run = await self._get(access, run_id, for_update=True)
         if not self._can_stop(run, access):
             raise Forbidden("Only whoever asked for this run, or an owner or admin, can recover it")
         if run.status is not CodingRunStatus.RECOVERY_REQUIRED:
@@ -310,7 +393,7 @@ class CodingService:
             await self.jobs.enqueue("run_coding", run_id=str(run.id))
 
     async def stop(self, access: ProjectAccess, run_id: uuid.UUID) -> CodingRunRead:
-        run = await self._get(access.project, run_id, for_update=True)
+        run = await self._get(access, run_id, for_update=True)
         if not self._can_stop(run, access):
             raise Forbidden("Only whoever asked for this run, or an owner or admin, can stop it")
         if run.status is CodingRunStatus.RECOVERY_REQUIRED:
@@ -318,7 +401,10 @@ class CodingService:
         if run.status not in ACTIVE:
             raise Conflict("This coding run has finished")
         run.stop_requested = True  # a running one: the worker sees it within seconds and stops the agent
-        if run.status is not CodingRunStatus.RUNNING:
+        if run.status is CodingRunStatus.CHANGES_READY:
+            run.status, run.finished_at, run.pending_patch = CodingRunStatus.STOPPED, datetime.now(UTC), None
+            run.error = "Stopped: its changes were discarded, never pushed"
+        elif run.status is not CodingRunStatus.RUNNING:
             run.status, run.finished_at = CodingRunStatus.STOPPED, datetime.now(UTC)
             run.error = "Stopped before it started"
         self._audit(access.project, access, "coding.stop_requested", run)
@@ -326,18 +412,18 @@ class CodingService:
         return self._read(run, access)
 
     async def list(self, access: ProjectAccess, issue_key: str | None) -> list[CodingRunRead]:
-        query = select(CodingRun).where(CodingRun.project_id == access.project.id)
+        query = select(CodingRun).where(CodingRun.project_id == access.project.id, visible_runs(access.member))
         if issue_key:
             query = query.where(CodingRun.issue_key == issue_key.strip().upper())
         runs = await self.session.scalars(query.order_by(CodingRun.created_at.desc()).limit(MAX_LISTED))
         return [self._read(run, access) for run in runs]
 
     async def get(self, access: ProjectAccess, run_id: uuid.UUID) -> CodingRunRead:
-        return self._read(await self._get(access.project, run_id), access)
+        return self._read(await self._get(access, run_id), access)
 
     async def events(self, access: ProjectAccess, run_id: uuid.UUID, after: int, limit: int) -> CodingEventPage:
         """A run's events after `seq` `after` (-1: from the start), oldest first, a page at a time."""
-        run = await self._get(access.project, run_id)
+        run = await self._get(access, run_id)
         rows = (await self.session.scalars(
             select(CodingRunEvent)
             .where(CodingRunEvent.workspace_id == run.workspace_id, CodingRunEvent.run_id == run.id, CodingRunEvent.seq > after)
@@ -352,7 +438,7 @@ class CodingService:
     async def close_session(self, access: ProjectAccess, session_id: uuid.UUID) -> None:
         """Close a session: its sandbox kept between turns goes (the worker drops it); its transcript,
         branch, and PR stay, and a new turn opens it again and resumes. Whoever started it, or owners and admins."""
-        turns = await self._turns(access.project, session_id)
+        turns = await self._turns(access, session_id)
         if not self._can_stop(turns[0], access):
             raise Forbidden("Only whoever started the session, or owners and admins, can close it")
         if any(t.status in ACTIVE for t in turns):
@@ -380,7 +466,7 @@ class CodingService:
         branch and PR stay on GitHub, and the audit log keeps what happened. Whoever started it, or
         owners and admins; not while a turn waits or works."""
         row = await self._own_session(access, session_id)
-        turns = await self._turns(access.project, session_id)
+        turns = await self._turns(access, session_id)
         if any(t.status in ACTIVE for t in turns):
             raise CodingBusy("A turn is waiting or working: stop it first")
         keys = [s["key"] for t in turns for s in (t.screenshots or [])] + ([row.transcript_key] if row.transcript_key else [])
@@ -398,7 +484,7 @@ class CodingService:
                 logger.warning("couldn't delete a coding session's file", exc_info=True)
 
     async def _own_session(self, access: ProjectAccess, session_id: uuid.UUID) -> CodingSession:
-        turns = await self._turns(access.project, session_id)
+        turns = await self._turns(access, session_id)
         if not self._can_stop(turns[0], access):
             raise Forbidden("Only whoever started the session, or owners and admins, can change it")
         row = await self.session.get(CodingSession, session_id)
@@ -408,7 +494,7 @@ class CodingService:
 
     async def screenshot(self, access: ProjectAccess, run_id: uuid.UUID, index: int, storage: BlobStorage) -> tuple[bytes, str]:
         """One of the screenshots the agent's browser captured in a turn: its bytes and type."""
-        run = await self._get(access.project, run_id)
+        run = await self._get(access, run_id)
         shots = list(run.screenshots or [])
         if not 0 <= index < len(shots):
             raise NotFound("Screenshot not found")
@@ -416,7 +502,7 @@ class CodingService:
 
     async def session_turns(self, access: ProjectAccess, session_id: uuid.UUID) -> list[CodingRunRead]:
         """A session's turns, first to latest."""
-        return [self._read(run, access) for run in await self._turns(access.project, session_id)]
+        return [self._read(run, access) for run in await self._turns(access, session_id)]
 
     async def sessions(self, member: Membership, archived: bool | None = False) -> list[CodingSessionRead]:
         """The workspace's coding sessions across the projects you can see, latest activity first."""
@@ -425,7 +511,9 @@ class CodingService:
             .join(Project, Project.id == CodingRun.project_id)
             .join(Issue, Issue.id == CodingRun.issue_id)
             .where(CodingRun.workspace_id == member.workspace_id, Project.workspace_id == member.workspace_id,
-                   visible_to(member.user_id, member.role))
+                   visible_to(member.user_id, member.role),
+                   CodingRun.session_id.in_(select(CodingRun.session_id).where(
+                       CodingRun.workspace_id == member.workspace_id, visible_runs(member))))
             .order_by(CodingRun.created_at.desc())
             .limit(MAX_SESSION_RUNS)
         )).all()
@@ -469,21 +557,22 @@ class CodingService:
                                         ConnectedRepo.workspace_id == project.workspace_id)
         )
 
-    async def _turns(self, project: Project, session_id: uuid.UUID) -> list[CodingRun]:
+    async def _turns(self, access: ProjectAccess, session_id: uuid.UUID) -> list[CodingRun]:
+        """A session's turns, when you may see it (any of its turns: see `_sees`)."""
         turns = list(await self.session.scalars(
-            select(CodingRun).where(CodingRun.project_id == project.id, CodingRun.session_id == session_id)
+            select(CodingRun).where(CodingRun.project_id == access.project.id, CodingRun.session_id == session_id)
             .order_by(CodingRun.turn).execution_options(populate_existing=True)
         ))
-        if not turns:
+        if not turns or not any(_sees(t, access.member) for t in turns):
             raise NotFound("Coding session not found")
         return turns
 
-    async def _get(self, project: Project, run_id: uuid.UUID, *, for_update: bool = False) -> CodingRun:
-        query = select(CodingRun).where(CodingRun.project_id == project.id, CodingRun.id == run_id)
+    async def _get(self, access: ProjectAccess, run_id: uuid.UUID, *, for_update: bool = False) -> CodingRun:
+        query = select(CodingRun).where(CodingRun.project_id == access.project.id, CodingRun.id == run_id)
         if for_update:
             query = query.with_for_update()
         run = await self.session.scalar(query.execution_options(populate_existing=True))
-        if run is None:
+        if run is None or not _sees(run, access.member):
             raise NotFound("Coding run not found")
         return run
 
@@ -511,7 +600,11 @@ class CodingService:
             review_thread_id=run.review_thread_id,
             created_at=run.created_at, decided_at=run.decided_at, started_at=run.started_at,
             finished_at=run.finished_at,
-            can_decide=run.status is CodingRunStatus.AWAITING_APPROVAL and can(access.member, Permission.APPROVE_ACTIONS),
+            can_decide=run.status in WAITING and can(access.member, Permission.APPROVE_ACTIONS),
+            can_revert=run.status is CodingRunStatus.PR_OPENED and run.commit_sha is not None
+            and run.pr_state not in (PrState.MERGED, PrState.CLOSED) and run.requested_by_id == access.member.user_id
+            and can(access.member, Permission.INSTRUCT_CODING_AGENT),
+            accepted_by_id=run.accepted_by_id, accepted_at=run.accepted_at, revert_of=run.revert_of,
             can_stop=run.status in ACTIVE and run.status is not CodingRunStatus.RECOVERY_REQUIRED
             and self._can_stop(run, access),
             can_recover=run.status is CodingRunStatus.RECOVERY_REQUIRED and self._can_stop(run, access),
