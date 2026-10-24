@@ -55,12 +55,18 @@ keys.
    DOTRIX_CODING_IMAGE=dotrix-coding:latest
    ANTHROPIC_API_KEY=...   # Claude Code; with only OPENAI_API_KEY, Codex codes instead
    ```
+   For OpenCode instead, on any provider's model (the key is that provider's):
+   ```shell
+   DOTRIX_CODING_AGENT=opencode
+   DOTRIX_CODING_OPENCODE_MODEL=anthropic:claude-sonnet-5-5   # or openai:…, google_genai:…
+   ```
 
 Each run gets:
 - **A network with no route out** (`docker network create --internal`), and on it the agent's
   container and an **egress proxy** (`egress-proxy.mjs`, from the same image, also on the default
   network). The agent's `HTTPS_PROXY` points at it; it tunnels to the tool's model API
-  (api.anthropic.com or api.openai.com, or the host of `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL`)
+  (api.anthropic.com or api.openai.com, generativelanguage.googleapis.com for OpenCode on Google,
+  or the host of `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL`)
   and refuses everything else, GitHub and package registries included.
 - **The agent's container:** a read-only system, `/tmp` and the repo's volume writable, all
   capabilities dropped, `no-new-privileges`, the image's `sandbox` user (uid 1500), 4 GB of
@@ -82,12 +88,16 @@ checks all of this against a real container (it's skipped where the image isn't 
    young: test its isolation between tenants before you run other people's code on it.
    The machine that runs agents also needs the `openshell` CLI, selected to that gateway, and
    an `ssh` client: uploads to a sandbox go over SSH.
-2. Build the image, which installs Claude Code, Codex, and git:
+2. Build the image, which installs Claude Code, Codex, OpenCode, and git:
    `docker build -t dotrix-coding:latest infra/coding`
 3. Import the provider profiles:
    ```shell
    openshell provider profile import -f infra/coding/dotrix-claude-code.yaml --global
    openshell provider profile import -f infra/coding/dotrix-codex.yaml --global
+   # OpenCode, one per provider it may run on (not yet checked on a gateway):
+   openshell provider profile import -f infra/coding/dotrix-opencode-anthropic.yaml --global
+   openshell provider profile import -f infra/coding/dotrix-opencode-openai.yaml --global
+   openshell provider profile import -f infra/coding/dotrix-opencode-google.yaml --global
    ```
 4. Add these to `.env` on the machine that runs agents: the worker, or the API in local mode.
    ```shell

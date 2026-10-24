@@ -1,10 +1,11 @@
 """Coding runs (step 5c): asked for, approved, run in a sandbox, pushed to a new branch, and
 opened as a PR. GitHub's API is faked (conftest.FakeGitHub), the repo is a local git repo, and the
-"sandbox" is the local one with a scripted Claude Code in place of the real CLI."""
+"sandbox" is the local one with a scripted Claude Code (or OpenCode) in place of the real CLI."""
 import asyncio
 import base64
 import dataclasses
 import json
+import re
 import subprocess
 import uuid
 from pathlib import Path
@@ -46,13 +47,42 @@ class ScriptedClaude:
         return [json.dumps(e) + "\n" for e in events]
 
 
+class ScriptedOpenCode(ScriptedClaude):
+    """Stands in for `opencode run --format json`: the same edits, as OpenCode 2's events. Its last
+    step has no `step_finish` (as in the real one); `session export` gives it, with the cost."""
+
+    error: str | None = None
+
+    def lines(self) -> list[str]:
+        def event(kind: str, **part: Any) -> dict[str, Any]:
+            return {"type": kind, "sessionID": "ses_x", "part": {"sessionID": "ses_x", **part}}
+        tokens = {"input": 1000, "output": 200, "reasoning": 0, "cache": {"read": 0, "write": 0}}
+        events: list[dict[str, Any]] = []
+        for path in self.edits:
+            events += [event("step_start", messageID=f"m-{path}"), event("text", messageID=f"m-{path}", text=f"Editing {path}"),
+                       event("tool_use", messageID=f"m-{path}", tool="edit",
+                             state={"status": "completed", "input": {"path": f"/sandbox/repo/{path}"}}),
+                       event("step_finish", messageID=f"m-{path}", reason="tool-calls", tokens=tokens)]
+        events += [event("step_start", messageID="m-last"), event("text", messageID="m-last", text=self.result)]
+        if self.error:  # e.g. the provider refused mid-turn
+            events.append({"type": "error", "sessionID": "ses_x", "error": {"type": "provider.auth", "message": self.error}})
+        return [json.dumps(e) + "\n" for e in events]
+
+    def totals(self) -> str:
+        last = {"input": 500, "output": 50, "reasoning": 0, "cache": {"read": 0, "write": 0}}
+        steps = [{"id": f"m-{path}"} for path in self.edits] + [{"id": "m-last", "tokens": last}]
+        return json.dumps({"cost": 0.2, "turn": steps}) + "\n"
+
+
 class ScriptedSession(LocalSession):
     def __init__(self, root: Path, env: dict[str, str], agent: ScriptedClaude) -> None:
         super().__init__(root, env)
         self.agent = agent
 
     async def exec(self, argv, *, stdin=None, on_line=None, timeout, cancel=None) -> ExecResult:
-        if argv[0] != "claude":
+        if isinstance(self.agent, ScriptedOpenCode) and argv[:2] == ["sh", "-c"] and "node -e" in argv[2]:
+            return ExecResult(code=0, stdout=self.agent.totals(), stderr="")  # its totals after the turn
+        if argv[0] != "claude" and not (argv[0] == "env" and "opencode" in argv):
             return await super().exec(argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=cancel)
         self.agent.argv, self.agent.env = argv, dict(self.env)
         self.agent.briefs.append((stdin or b"").decode())
@@ -518,22 +548,25 @@ async def test_the_agent_s_screenshots_are_kept_and_shown(
 async def test_every_event_is_kept_and_read_a_page_at_a_time(
     db_client: AsyncClient, coding, claude: ScriptedClaude, agent_script
 ) -> None:
-    """The run keeps its latest 300 events for quick reads; coding_events keeps every one, in order."""
+    """The run keeps its latest 300 events for quick reads; coding_events keeps every one, in order.
+    The events come from the agent while it works: a finished run takes no more (#139)."""
     ada, cat, ws, kun, _, _ = coding
-    app = db_client._transport.app  # type: ignore[attr-defined]
-    worker = app.state.jobs.ctx.coding
     base = f"{ws}/projects/{kun['id']}"
     issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"title": "Tidy payments"})).json()
     run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={}, headers=ada.headers)).json()
     claude.edits = {"src/payments.py": "# tidy\n"}
+    steps = [json.dumps({"type": "assistant", "message": {"id": f"s{i}", "content": [
+        {"type": "tool_use", "name": "Bash", "input": {"command": f"step {i}"}}]}}) + "\n" for i in range(350)]
+    scripted = claude.lines
+    claude.lines = lambda: [*scripted()[:1], *steps, *scripted()[1:]]  # type: ignore[method-assign]
     agent_script.say("Fine.")
     assert (await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"},
                                  headers=ada.headers)).status_code == 200
-    before = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).json()["event_count"]
-    await worker._update(uuid.UUID(run["id"]), events=[{"at": "2026-10-10T12:00:00+00:00", "kind": "tool", "text": f"Step {i}"} for i in range(350)])
 
     read = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).json()
-    assert read["event_count"] == before + 350 and len(read["events"]) == 300 and read["events"][-1]["text"] == "Step 349"
+    assert read["status"] == "pr_opened", read
+    total = read["event_count"]
+    assert total > 350 and len(read["events"]) == 300 and "Ran step 349" in [e["text"] for e in read["events"]]
     first = (await db_client.get(f"{base}/coding/runs/{run['id']}/events", params={"limit": 100}, headers=cat.headers)).json()
     assert [e["seq"] for e in first["events"]] == list(range(100)) and first["next"] == 99
     seen, after = list(first["events"]), first["next"]
@@ -542,8 +575,9 @@ async def test_every_event_is_kept_and_read_a_page_at_a_time(
                                     headers=cat.headers)).json()
         seen += page["events"]
         after = page["next"]
-    assert len(seen) == before + 350 and [e["seq"] for e in seen] == list(range(before + 350))
-    assert seen[before]["text"] == "Step 0" and seen[-1]["text"] == "Step 349"
+    assert len(seen) == total and [e["seq"] for e in seen] == list(range(total))
+    texts = [e["text"] for e in seen]
+    assert [t for t in texts if t.startswith("Ran step ")] == [f"Ran step {i}" for i in range(350)]
 
 
 class TranscriptSession(ScriptedSession):
@@ -652,3 +686,66 @@ async def test_a_session_keeps_its_sandbox_and_resumes_its_conversation(
     assert (await db_client.get(f"{ws}/coding/sessions", params={"archived": "include"}, headers=ada.headers)).json() == []
     assert (await db_client.get(f"{base}/coding/runs/{first['id']}", headers=ada.headers)).status_code == 404
     assert len(github.pulls) == 1
+
+
+async def test_opencode_codes_on_the_model_the_server_names(
+    db_client: AsyncClient, coding, github, origin: Path, agent_script
+) -> None:
+    ada, _, ws, kun, _, sandbox = coding
+    settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
+    settings.coding_agent, settings.coding_opencode_model = "opencode", "openai:gpt-5.5"
+    settings.openai_api_key = SecretStr("sk-openai-test")
+    opencode = sandbox.agent = ScriptedOpenCode()
+    opencode.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    opencode.result = "Added refund()."
+    agent_script.say("Fine.")
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+
+    assert (await db_client.get(f"{base}/coding", headers=ada.headers)).json()["agent"] == "opencode"
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    assert run["agent"] == "opencode" and run["model"] == "openai:gpt-5.5"
+    run = await _approve(db_client, base, run, ada.headers)
+    assert run["status"] == "pr_opened", run
+    assert run["summary"] == "Added refund()." and "Edited src/refunds.py" in [e["text"] for e in run["events"]]
+    # The step its events left out, from the session's totals; the cost is the session's.
+    assert (run["input_tokens"], run["output_tokens"], run["cost_usd"]) == (1500, 250, 0.2)
+    # Its own config, the provider's model, our session id; only the provider's key in its environment.
+    assert opencode.argv[0] == "env" and opencode.argv[opencode.argv.index("opencode"):-1] == [
+        "opencode", "run", "--standalone", "--format", "json", "--auto", "-m", "openai/gpt-5.5", "-s"]
+    assert re.fullmatch(r"ses_[0-9a-f]{32}", opencode.argv[-1])  # the session's own id: made, then continued
+    assert "OPENCODE_DISABLE_PROJECT_CONFIG=1" in opencode.argv
+    assert set(opencode.env) - {"OPENAI_BASE_URL"} == {"PATH", "HOME", "LANG", "OPENAI_API_KEY"}
+    assert opencode.env["OPENAI_API_KEY"] == "sk-openai-test"
+    # OpenCode isn't an assignee of its own: the issue shows the built-in coding agent.
+    issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=ada.headers)).json()
+    assert issue["status"] == "review" and issue["assignee_agent"] == "coding-agent"
+    [pr] = github.pulls
+    assert "Written by OpenCode" in pr["body"]
+
+
+async def _opencode_turn(db_client: AsyncClient, coding, *, budget: int | None = None, error: str | None = None) -> dict:
+    ada, _, ws, kun, _, sandbox = coding
+    settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
+    settings.coding_agent, settings.coding_opencode_model = "opencode", "anthropic:claude-haiku-5-5"
+    if budget is not None:
+        settings.coding_token_budget = budget
+    opencode = sandbox.agent = ScriptedOpenCode()
+    opencode.edits, opencode.error = {"src/refunds.py": "def refund(amount):\n    return amount\n"}, error
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    return await _approve(db_client, base, run, ada.headers)
+
+
+async def test_opencode_s_last_step_counts_against_the_token_budget(db_client: AsyncClient, coding, github) -> None:
+    # The events say 1,200 tokens, under the budget; the totals add the last step (550), over it.
+    run = await _opencode_turn(db_client, coding, budget=1500)
+    assert run["status"] == "stopped" and "token budget" in (run["error"] or ""), run
+    assert run["input_tokens"] + run["output_tokens"] == 1750 and run["pr_number"] is None and github.pulls == []
+
+
+async def test_a_failed_opencode_turn_keeps_its_usage(db_client: AsyncClient, coding, github) -> None:
+    run = await _opencode_turn(db_client, coding, error="invalid x-api-key")
+    assert run["status"] == "failed" and "invalid x-api-key" in (run["error"] or ""), run
+    assert (run["input_tokens"], run["output_tokens"], run["cost_usd"]) == (1500, 250, 0.2) and github.pulls == []

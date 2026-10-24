@@ -87,6 +87,8 @@ class CodingService:
         reason = None
         if sandbox is None:
             reason = "Coding runs aren't set up on this server (DOTRIX_CODING_SANDBOX)"
+        elif agent is None and self.settings.coding_agent == "opencode":
+            reason = "OpenCode needs DOTRIX_CODING_OPENCODE_MODEL and its provider's key on the server"
         elif agent is None:
             reason = "The server needs an Anthropic key (Claude Code) or an OpenAI key (Codex)"
         elif not GitHubAppClient(self.settings).configured:
@@ -212,7 +214,7 @@ class CodingService:
         run.status = CodingRunStatus.QUEUED
         # The issue is the coding tool's now (its own rules: it may move it to review, never done).
         issue = await IssueService(self.session).get(access.project, run.issue_key)
-        change = IssueUpdate(assignee_agent=AgentAssignee(run.agent.value), assignee_user_id=None,
+        change = IssueUpdate(assignee_agent=run.agent.assignee, assignee_user_id=None,
                              note=f"Coding run approved: {run.agent.value} is working on it")
         if issue.status is not IssueStatus.IN_PROGRESS:
             change.status = IssueStatus.IN_PROGRESS

@@ -3,6 +3,7 @@ the key the server has, what a run's changes may not touch, and stopping a proce
 import asyncio
 import json
 import sys
+import uuid
 
 from pydantic import SecretStr
 
@@ -10,7 +11,18 @@ from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.coding import guard
 from dotrix_backend.modules.coding.models import CodingAgent
 from dotrix_backend.modules.coding.sandbox import run_process, sandbox_policy
-from dotrix_backend.modules.coding.tools import ClaudeCode, Codex, Usage, choose_agent
+from dotrix_backend.modules.coding.tools import (
+    OPENCODE_PROVIDERS,
+    TOOLS,
+    ClaudeCode,
+    Codex,
+    OpenCode,
+    Usage,
+    choose_agent,
+    model_for,
+    opencode_session,
+    tool_for,
+)
 
 
 def _settings(**values) -> Settings:
@@ -79,6 +91,20 @@ def test_the_tool_follows_the_key_the_server_has() -> None:
     assert choose_agent(_settings(**both)) is CodingAgent.CLAUDE_CODE
     assert choose_agent(_settings(**both, coding_agent="codex")) is CodingAgent.CODEX
     assert choose_agent(_settings(openai_api_key=SecretStr("o"), coding_agent="claude-code")) is None
+
+
+def test_each_tool_says_how_it_resumes_and_reaches_its_model() -> None:
+    session = uuid.uuid4()
+    claude, codex = TOOLS[CodingAgent.CLAUDE_CODE], TOOLS[CodingAgent.CODEX]
+    assert claude.session_args(session, resumed=False) == ["--session-id", str(session)]
+    assert claude.session_args(session, resumed=True) == ["--resume", str(session)]
+    assert claude.resumes and claude.browser and ".claude" in claude.save_state(session)
+    assert codex.session_args(session, resumed=True) == [] and not codex.resumes and not codex.browser
+    assert claude.sandbox_env("k") == {"ANTHROPIC_API_KEY": "k"}
+    assert codex.sandbox_env("k") == {"OPENAI_API_KEY": "k", "CODEX_API_KEY": "k"}
+    keys = _settings(anthropic_api_key=SecretStr("a"), coding_claude_model="m1", coding_codex_model="m2")
+    assert claude.server_key(keys) == "a" and codex.server_key(keys) is None
+    assert (claude.model(keys), codex.model(keys)) == ("m1", "m2")
 
 
 def test_what_a_run_may_not_change() -> None:
@@ -200,3 +226,85 @@ def test_the_browser_s_steps_read_like_the_rest() -> None:
         {"type": "tool_use", "name": name, "input": args} for name, args in calls]}})
     assert [s.text for s in tool.parse(line, usage).steps] == [
         "Opened http://localhost:8080/ in the browser", "Clicked Subtract button", "Took a screenshot", "Used the browser (resize)"]
+
+
+def _opencode_event(kind: str, **part) -> str:
+    return json.dumps({"type": kind, "sessionID": "ses_x", "part": {"sessionID": "ses_x", **part}})
+
+
+def test_opencode_runs_on_the_provider_its_model_names() -> None:
+    tool = tool_for(CodingAgent.OPENCODE, "google_genai:gemini-3-pro")
+    assert isinstance(tool, OpenCode)
+    assert (tool.key_env, tool.api_host, tool.provider_type) == (
+        "GOOGLE_API_KEY", "generativelanguage.googleapis.com", "dotrix-opencode-google")
+    assert tool.command("google_genai:gemini-3-pro")[-2:] == ["-m", "google/gemini-3-pro"]
+    assert tool_for(CodingAgent.OPENCODE, "mistral:large") is None and tool_for(CodingAgent.OPENCODE, None) is None
+    assert tool_for(CodingAgent.OPENCODE, "anthropic:") is None
+    assert tool_for(CodingAgent.CLAUDE_CODE, "anything") is TOOLS[CodingAgent.CLAUDE_CODE]
+
+
+def test_opencode_is_chosen_only_by_name_and_with_its_provider_s_key() -> None:
+    model = {"coding_opencode_model": "openai:gpt-5.5"}
+    assert choose_agent(_settings(openai_api_key=SecretStr("o"), **model)) is CodingAgent.CODEX  # auto never picks it
+    assert choose_agent(_settings(openai_api_key=SecretStr("o"), coding_agent="opencode", **model)) is CodingAgent.OPENCODE
+    assert choose_agent(_settings(anthropic_api_key=SecretStr("a"), coding_agent="opencode", **model)) is None
+    assert choose_agent(_settings(openai_api_key=SecretStr("o"), coding_agent="opencode")) is None  # no model
+    assert model_for(_settings(**model), CodingAgent.OPENCODE) == "openai:gpt-5.5"
+
+
+def test_opencode_s_config_is_ours_and_the_key_is_only_in_its_environment(monkeypatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    tool = OpenCode(OPENCODE_PROVIDERS["anthropic"])
+    argv = tool.command("anthropic:claude-haiku-5-5")
+    assert argv[0] == "env" and argv[argv.index("opencode"):] == [
+        "opencode", "run", "--standalone", "--format", "json", "--auto", "-m", "anthropic/claude-haiku-5-5"]
+    settings = dict(pair.split("=", 1) for pair in argv[1:argv.index("opencode")])
+    assert settings["OPENCODE_DISABLE_PROJECT_CONFIG"] == settings["OPENCODE_DISABLE_MODELS_FETCH"] == "1"
+    config = json.loads(settings["OPENCODE_CONFIG_CONTENT"])
+    assert config["enabled_providers"] == ["anthropic"] and "provider" not in config
+    assert config["permission"] == {"webfetch": "deny", "websearch": "deny", "question": "deny"}
+    assert tool.sandbox_env("sk-secret") == {"ANTHROPIC_API_KEY": "sk-secret"}
+    assert "sk-secret" not in " ".join(argv)
+    # Saving and restoring the session carry the same settings: the repo's config never loads.
+    session = uuid.uuid4()
+    for command in (tool.save_state(session), tool.restore_state(session), tool.usage_command(session)):
+        assert "OPENCODE_DISABLE_PROJECT_CONFIG=1" in command and "--standalone" in command
+    assert opencode_session(session) in tool.save_state(session)
+    assert tool.session_args(session, resumed=False) == tool.session_args(session, resumed=True) == [
+        "-s", f"ses_{session.hex}"]
+    # A proxy in front of Anthropic: the same ANTHROPIC_BASE_URL Claude Code takes.
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://proxy:8080/")
+    config = json.loads(dict(p.split("=", 1) for p in tool.command(None)[1:5])["OPENCODE_CONFIG_CONTENT"])
+    assert config["provider"] == {"anthropic": {"options": {"baseURL": "http://proxy:8080/v1"}}}
+
+
+def test_opencode_events_become_steps_and_tokens() -> None:
+    tool, usage = OpenCode(OPENCODE_PROVIDERS["anthropic"]), Usage()
+    tokens = {"input": 1000, "output": 20, "reasoning": 5, "cache": {"read": 200, "write": 0}}
+    out = [tool.parse(line, usage) for line in (
+        _opencode_event("step_start", messageID="m1", type="step-start"),
+        _opencode_event("text", messageID="m1", type="text", text="I'll write the file."),
+        _opencode_event("tool_use", messageID="m1", type="tool", tool="write",
+                        state={"status": "completed", "input": {"path": "/sandbox/repo/src/a.ts", "content": "x"}}),
+        _opencode_event("tool_use", messageID="m1", type="tool", tool="shell",
+                        state={"status": "error", "input": {"command": "npm test"}, "error": "exit 1"}),
+        _opencode_event("step_finish", messageID="m1", type="step-finish", reason="tool-calls", cost=0.01, tokens=tokens),
+        _opencode_event("text", messageID="m2", type="text", text="Done."),
+        "not json",
+    )]
+    assert [(s.kind, s.text) for o in out for s in o.steps] == [
+        ("text", "I'll write the file."), ("tool", "Wrote src/a.ts"), ("error", "Ran npm test: exit 1"), ("text", "Done.")]
+    assert out[5].summary == "Done." and (usage.input_tokens, usage.output_tokens) == (1200, 25)
+    failed = tool.parse(json.dumps({"type": "error", "error": {"type": "provider.no-route", "message": "Model unavailable"}}), usage)
+    assert failed.failed == "Model unavailable"
+
+
+def test_opencode_s_totals_add_the_step_its_events_left_out() -> None:
+    tool, usage = OpenCode(OPENCODE_PROVIDERS["anthropic"]), Usage()
+    step = {"input": 1000, "output": 20, "reasoning": 0, "cache": {"read": 200, "write": 0}}
+    tool.parse(_opencode_event("step_finish", messageID="m1", type="step-finish", tokens=step), usage)
+    # The export's last turn: m1 (already counted) and m2 (the final step, never in the stream).
+    tool.read_usage("noise\n" + json.dumps({"cost": 0.5, "turn": [{"id": "m1", "tokens": step}, {"id": "m2", "tokens": step}]}), usage)
+    assert (usage.input_tokens, usage.output_tokens, usage.cost_usd) == (2400, 40, 0.5)
+    tool.read_usage("not json", usage)  # a failed read keeps what the events said
+    assert usage.total == 2440
