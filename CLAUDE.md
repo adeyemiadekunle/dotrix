@@ -15,6 +15,7 @@ Proposed direction (2026-10-22, see Direction below): [strategy and roadmap](doc
 | `packages/engine` | UI-agnostic agent engine (`dotrix_engine`) | deepagents / LangGraph |
 | `packages/ui`, `api-client` | shadcn/ui components and theme; the typed API client (generated from OpenAPI) | TypeScript |
 | `infra` | Local Postgres (with pgvector), Redis, MinIO (`docker-compose.yml`) | Docker |
+| `deploy` | Production on one VPS with Dokploy: backend and web images, nginx, the compose file, the guide (`deploy/README.md`) | Docker |
 
 ## Commands
 
@@ -104,7 +105,7 @@ apps/backend/
 │   │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
 │   │   ├── code/                connected repos' checkouts for agents (checkouts.py: shallow fetch with the installation token, swap, size cap, prune; service.py: sync and record, a run's checkout), the sync_repository job
 │   │   ├── execution/           durable dispatch (`run_dispatches`): intent committed with the run change, published after commit, republished by the worker's sweep, accepted in the transaction that starts the run; no leases yet
-│   │   ├── coding/              coding runs: "Start coding" (service.py: ask, approve, stop), the brief (brief.py), Claude Code, Codex and OpenCode headless (tools.py: each behind `CodingTool`, its command, resume, saved session, key and model, JSON events), the sandbox (sandbox.py: Docker, OpenShell, or local; the policy; the Docker egress proxy in infra/coding), the worker (runner.py: clone, run, patch, guard.py, push, PR, Reviewer), the run_coding job
+│   │   ├── coding/              coding runs: "Start coding" (service.py: ask, approve, stop), the brief (brief.py), Claude Code, Codex and OpenCode headless (tools.py: each behind `CodingTool`, its command, resume, saved session, key and model, JSON events), the sandbox (sandbox.py: Docker, OpenShell, or local; the policy; the Docker egress proxy in infra/coding; each Docker sandbox's memory, CPUs, and runtime from settings), how many runs work at once per worker (slots.py, `DOTRIX_CODING_MAX_RUNS`), the worker (runner.py: clone, run, patch, guard.py, push, PR, Reviewer), the run_coding job
 │   │   └── connectors/          the GitHub App (github_app.py: app JWT, installation tokens), installations per workspace, each project's connected repo, the webhook (FR-10); GitLab and doc sources planned (FR-12)
 │   ├── jobs.py                  background jobs by name (send_email, send_password_reset, index_knowledge, run_automations, email_notifications, ...); where they run: core/jobs.py
 │   └── worker.py                arq worker (`pnpm dev:worker`): agent runs and jobs when DOTRIX_JOBS=worker
@@ -291,7 +292,7 @@ Each phase is usable on its own.
 - [ ] Your own key and default model from the CLI (`dotrix models`), and Continue for a run stopped at its model's limit in `dotrix chat`
 
 ### Dependencies (you)
-- [ ] Production: a domain and HTTPS for the API and web app (`DOTRIX_APP_URL`, OAuth redirect URIs), a secrets manager, `DOTRIX_ENV=production`, `DOTRIX_REDIS_URL`
+- [ ] Production: a domain and HTTPS for the API and web app (`DOTRIX_APP_URL`, OAuth redirect URIs), a secrets manager, `DOTRIX_ENV=production`, `DOTRIX_REDIS_URL`; on Dokploy, `deploy/README.md` (one VPS, 6 vCPUs / 12 GB: two coding runs at once)
 - [ ] `DOTRIX_ENCRYPTION_KEY` in production (organisations' model keys), and `DOTRIX_SERVER_MODEL_KEYS=false` if everyone brings their own key
 - [x] The GitHub App registered with code permissions, its settings in `.env` (app id, slug, private key file, webhook secret)
 - [x] Sendly: the sending domain verified, a live key, and `DOTRIX_EMAIL_FROM` on that domain
