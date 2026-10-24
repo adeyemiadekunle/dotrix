@@ -11,7 +11,7 @@ x-dotrix: &dotrix
     DOTRIX_ENV: production
     DOTRIX_APP_URL: ${DOTRIX_APP_URL:?your https:// address, e.g. https://dotrix.example.com}
     DOTRIX_CORS_ORIGINS: '["${DOTRIX_APP_URL}"]'
-    DOTRIX_DATABASE_URL: postgresql+asyncpg://dotrix:${POSTGRES_PASSWORD:?}@postgres:5432/dotrix
+    DOTRIX_DATABASE_URL: ${DOTRIX_DATABASE_URL:?the database URL (deploy/dokploy.env.example)}
     DOTRIX_REDIS_URL: redis://redis:6379/0
     DOTRIX_JOBS: worker
     DOTRIX_RATE_LIMITS: redis
