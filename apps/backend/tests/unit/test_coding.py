@@ -73,14 +73,17 @@ def test_codex_events_become_steps_and_tokens() -> None:
     tool, usage = Codex(), Usage()
     out = [tool.parse(json.dumps(e), usage) for e in (
         {"type": "thread.started", "thread_id": "t"},
-        {"type": "item.started", "item": {"type": "command_execution", "command": "npm test"}},
+        {"type": "item.started", "item": {"id": "c1", "type": "command_execution", "command": "npm test"}},
+        {"type": "item.completed", "item": {"id": "c1", "type": "command_execution", "command": "npm test",
+                                            "aggregated_output": "2 passed\n", "exit_code": 0}},
         {"type": "item.completed", "item": {"type": "file_change", "changes": [{"path": "/sandbox/repo/a.ts"}]}},
         {"type": "item.completed", "item": {"type": "agent_message", "text": "Changed a.ts; tests pass."}},
         {"type": "turn.completed", "usage": {"input_tokens": 300, "cached_input_tokens": 100, "output_tokens": 40}},
     )]
     assert [s.text for o in out for s in o.steps] == [
-        "Codex started", "Ran npm test", "Edited a.ts", "Changed a.ts; tests pass."]
-    assert out[3].summary == "Changed a.ts; tests pass." and usage.total == 340
+        "Codex started", "Ran npm test", "2 passed", "Edited a.ts", "Changed a.ts; tests pass."]
+    assert out[1].steps[0].ref == out[2].steps[0].ref == "c1" and out[2].steps[0].kind == "output"
+    assert out[4].summary == "Changed a.ts; tests pass." and usage.total == 340
     assert tool.parse(json.dumps({"type": "turn.failed", "error": {"message": "quota"}}), usage).failed == "quota"
     assert tool.command(None)[-1] == "-" and "--json" in tool.command(None)
 
@@ -287,14 +290,17 @@ def test_opencode_events_become_steps_and_tokens() -> None:
         _opencode_event("text", messageID="m1", type="text", text="I'll write the file."),
         _opencode_event("tool_use", messageID="m1", type="tool", tool="write",
                         state={"status": "completed", "input": {"path": "/sandbox/repo/src/a.ts", "content": "x"}}),
-        _opencode_event("tool_use", messageID="m1", type="tool", tool="shell",
+        _opencode_event("tool_use", messageID="m1", type="tool", tool="shell", callID="t-shell",
                         state={"status": "error", "input": {"command": "npm test"}, "error": "exit 1"}),
         _opencode_event("step_finish", messageID="m1", type="step-finish", reason="tool-calls", cost=0.01, tokens=tokens),
         _opencode_event("text", messageID="m2", type="text", text="Done."),
         "not json",
     )]
     assert [(s.kind, s.text) for o in out for s in o.steps] == [
-        ("text", "I'll write the file."), ("tool", "Wrote src/a.ts"), ("error", "Ran npm test: exit 1"), ("text", "Done.")]
+        ("text", "I'll write the file."), ("tool", "Wrote src/a.ts"), ("tool", "Ran npm test"), ("output-error", "exit 1"),
+        ("text", "Done.")]
+    ran, output = out[3].steps
+    assert ran.ref == output.ref == "t-shell"  # paired for the Terminal
     assert out[5].summary == "Done." and (usage.input_tokens, usage.output_tokens) == (1200, 25)
     failed = tool.parse(json.dumps({"type": "error", "error": {"type": "provider.no-route", "message": "Model unavailable"}}), usage)
     assert failed.failed == "Model unavailable"

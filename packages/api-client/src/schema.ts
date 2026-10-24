@@ -3586,6 +3586,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coding Run Diff
+         * @description A turn's changes as a unified diff against the commit it started from, with each file's
+         *     counts (the session's Changes). Kept after they're pushed or discarded.
+         */
+        get: operations["get_coding_run_diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coding Run Tree
+         * @description Every file in the repository as a turn leaves it, and how each changed (the session's Files):
+         *     its starting commit with its changes applied, whether pushed yet or not. 409 `files_unavailable`
+         *     when the repository can't be read here.
+         */
+        get: operations["get_coding_run_tree"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coding Run File
+         * @description One file before a turn and after it (text; not binary files or ones over 1 MB).
+         */
+        get: operations["get_coding_run_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/close": {
         parameters: {
             query?: never;
@@ -5115,6 +5178,26 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** CodingDiff */
+        CodingDiff: {
+            /**
+             * Base Sha
+             * @description The commit the turn started from
+             */
+            base_sha: string | null;
+            /**
+             * Diff
+             * @description Its changes as a unified diff against base_sha (empty until it has any)
+             */
+            diff: string;
+            /**
+             * Files
+             * @description Each changed file, with lines added and removed
+             */
+            files: {
+                [key: string]: unknown;
+            }[];
+        };
         /** CodingEvent */
         CodingEvent: {
             /**
@@ -5124,11 +5207,16 @@ export interface components {
             at: string;
             /**
              * Kind
-             * @description `step`, `text` (the agent's words), `tool` (what it did), `error`
+             * @description `step`, `text` (the agent's words), `tool` (what it did), `output` / `output-error` (a command's output, and whether it failed), `error`
              */
             kind: string;
             /** Text */
             text: string;
+            /**
+             * Ref
+             * @description Pairs a command (`tool`) with its output: the tool call's id
+             */
+            ref?: string | null;
         };
         /** CodingEventPage */
         CodingEventPage: {
@@ -5154,11 +5242,43 @@ export interface components {
             at: string;
             /**
              * Kind
-             * @description `step`, `text` (the agent's words), `tool` (what it did), `error`
+             * @description `step`, `text` (the agent's words), `tool` (what it did), `output` / `output-error` (a command's output, and whether it failed), `error`
              */
             kind: string;
             /** Text */
             text: string;
+            /**
+             * Ref
+             * @description Pairs a command (`tool`) with its output: the tool call's id
+             */
+            ref?: string | null;
+        };
+        /** CodingFile */
+        CodingFile: {
+            /** Path */
+            path: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "added" | "modified" | "deleted" | "unchanged";
+            /**
+             * Before
+             * @description Its text before the turn (none: it didn't exist, or isn't shown)
+             */
+            before: string | null;
+            /**
+             * After
+             * @description Its text after the turn (none: deleted, or isn't shown)
+             */
+            after: string | null;
+            /** Binary */
+            binary: boolean;
+            /**
+             * Too Large
+             * @description Over 1 MB: not shown
+             */
+            too_large: boolean;
         };
         /** CodingFollowUp */
         CodingFollowUp: {
@@ -5557,6 +5677,36 @@ export interface components {
             pinned?: boolean | null;
             /** Archived */
             archived?: boolean | null;
+        };
+        /** CodingTree */
+        CodingTree: {
+            /** Base Sha */
+            base_sha: string;
+            /**
+             * Entries
+             * @description Every file as the turn leaves the repository, and those it deleted
+             */
+            entries: components["schemas"]["CodingTreeEntry"][];
+            /**
+             * Truncated
+             * @description More files than are listed (the first 20,000 are)
+             */
+            truncated: boolean;
+        };
+        /** CodingTreeEntry */
+        CodingTreeEntry: {
+            /** Path */
+            path: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "added" | "modified" | "deleted" | "unchanged";
+            /**
+             * Size
+             * @description In bytes, as the turn leaves it (none for a deleted file)
+             */
+            size: number | null;
         };
         /** CommentCreate */
         CommentCreate: {
@@ -7856,9 +8006,11 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "step" | "text" | "tool" | "error";
+            kind: "step" | "text" | "tool" | "output" | "output-error" | "error";
             /** Text */
             text: string;
+            /** Ref */
+            ref?: string | null;
         };
         /** RunnerHeartbeat */
         RunnerHeartbeat: {
@@ -20298,6 +20450,180 @@ export interface operations {
             };
             /** @description A dependency (such as file storage) is unavailable or not configured */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_coding_run_diff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coding_run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingDiff"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_coding_run_tree: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coding_run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingTree"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_coding_run_file: {
+        parameters: {
+            query: {
+                /** @description A path in the repository */
+                path: string;
+            };
+            header?: never;
+            path: {
+                coding_run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingFile"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -51,8 +51,28 @@ BROWSER_RULE = """\
 
 @dataclass(frozen=True)
 class Step:
-    kind: str  # "text" (the agent's words), "tool" (what it did), "step", "error"
+    kind: str  # "text" (the agent's words), "tool" (what it did), "output" / "output-error", "step", "error"
     text: str
+    ref: str | None = None  # a command and its output share it (the tool call's id)
+
+
+MAX_OUTPUT = 8_000  # of a command's output: its start and, mostly, its end (where errors are)
+
+
+def output_step(text: str, ref: str | None, *, failed: bool) -> Step:
+    """A command's output as the session's Terminal shows it."""
+    text = text.rstrip()
+    if len(text) > MAX_OUTPUT:
+        text = text[:1_500] + f"\n… ({len(text) - MAX_OUTPUT:,} characters left out) …\n" + text[-(MAX_OUTPUT - 1_500):]
+    return Step("output-error" if failed else "output", text, ref)
+
+
+def _tool_result_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(str(c.get("text", "")) for c in content if isinstance(c, dict) and c.get("type") == "text")
+    return ""
 
 
 @dataclass
@@ -62,6 +82,8 @@ class Usage:
     cost_usd: float | None = None
     # Claude Code repeats a model call's usage on each of its content blocks: counted once.
     _calls: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # The tool calls of this run that ran a command: their results are kept as the command's output.
+    _commands: set[str] = field(default_factory=set)
 
     @property
     def total(self) -> int:
@@ -240,8 +262,11 @@ class ClaudeCode(_NoUsageCommand):
                     out.steps.append(Step("text", _clip(block["text"])))
                 elif block.get("type") == "tool_use":
                     said = _describe_claude_tool(str(block.get("name")), block.get("input") or {})
+                    ref = str(block.get("id") or "") or None
+                    if block.get("name") == "Bash" and ref:
+                        usage._commands.add(ref)
                     if said:
-                        out.steps.append(Step("tool", said))
+                        out.steps.append(Step("tool", said, ref if block.get("name") == "Bash" else None))
             calls = message.get("usage") or {}
             if message.get("id") and calls:
                 usage._calls[message["id"]] = (
@@ -251,6 +276,12 @@ class ClaudeCode(_NoUsageCommand):
                 )
                 usage.input_tokens = sum(i for i, _ in usage._calls.values())
                 usage.output_tokens = sum(o for _, o in usage._calls.values())
+        elif kind == "user":  # the results of its tool calls: a command's output is kept
+            for block in (event.get("message") or {}).get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "tool_result" \
+                        and block.get("tool_use_id") in usage._commands:
+                    out.steps.append(output_step(_tool_result_text(block.get("content")), block["tool_use_id"],
+                                                 failed=bool(block.get("is_error"))))
         elif kind == "result":
             totals = event.get("usage") or {}
             if totals:
@@ -310,9 +341,12 @@ class Codex(_NoUsageCommand):
         if kind == "thread.started":
             out.steps.append(Step("step", "Codex started"))
         elif kind == "item.started" and item.get("type") == "command_execution":
-            out.steps.append(Step("tool", f"Ran {_clip(str(item.get('command', '')), 160)}"))
+            out.steps.append(Step("tool", f"Ran {_clip(str(item.get('command', '')), 160)}", item.get("id")))
         elif kind == "item.completed":
             match item.get("type"):
+                case "command_execution":
+                    out.steps.append(output_step(str(item.get("aggregated_output") or ""), item.get("id"),
+                                                 failed=item.get("exit_code") not in (0, None)))
                 case "agent_message" if str(item.get("text", "")).strip():
                     out.steps.append(Step("text", _clip(item["text"])))
                     out.summary = str(item["text"])[:20_000]
@@ -498,10 +532,16 @@ class OpenCode:
             case "tool_use":
                 state = part.get("state") or {}
                 said = _describe_opencode_tool(str(part.get("tool")), state.get("input") or {})
-                if state.get("status") == "error":
+                command = part.get("tool") in ("shell", "bash")
+                ref = str(part.get("callID") or part.get("id") or "") or None if command else None
+                if state.get("status") == "error" and not command:  # a failed command shows in the Terminal instead
                     out.steps.append(Step("error", _clip(f"{said or part.get('tool')}: {state.get('error') or 'failed'}")))
                 elif said:
-                    out.steps.append(Step("tool", said))
+                    out.steps.append(Step("tool", said, ref))
+                if command and state.get("status") in ("completed", "error") and (state.get("output") or state.get("error")):
+                    metadata = state.get("metadata") or {}
+                    out.steps.append(output_step(str(state.get("output") or state.get("error") or ""), ref,
+                                                 failed=state.get("status") == "error" or metadata.get("exit") not in (0, None)))
             case "step_finish":
                 if part.get("messageID"):
                     usage._calls[part["messageID"]] = _tokens(part)

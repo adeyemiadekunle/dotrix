@@ -579,7 +579,7 @@ class CodingWorker:
             assert run is not None
             if not self._holds(run):
                 raise _ReconciliationRequired()  # a newer attempt finds the PR on GitHub
-            run.branch, run.commit_sha, run.files_changed = branch, commit_sha, files
+            run.branch, run.commit_sha, run.files_changed, run.diff = branch, commit_sha, files, diff
             run.pr_number, run.pr_url = pr.number, pr.html_url
             run.pr_state = run.pr_state or PrState.OPEN
             if run.status is CodingRunStatus.RECOVERY_REQUIRED:
@@ -632,7 +632,8 @@ class CodingWorker:
                 if cost_before is not None:
                     usage.cost_usd = max(0.0, usage.cost_usd - cost_before)
             now = datetime.now(UTC).isoformat()
-            pending.extend({"at": now, "kind": s.kind, "text": s.text} for s in parsed.steps)
+            pending.extend({"at": now, "kind": s.kind, "text": s.text, **({"ref": s.ref} if s.ref else {})}
+                           for s in parsed.steps)
             summary = parsed.summary or summary
             failed = parsed.failed or failed
             if parsed.failed and not cancel.is_set():  # e.g. the key was refused: don't wait out retries
@@ -973,7 +974,7 @@ def add_events(run: CodingRun, session: AsyncSession, *, events: list[dict[str, 
     for event in added:
         session.add(CodingRunEvent(
             workspace_id=run.workspace_id, run_id=run.id, session_id=run.session_id, seq=run.event_count,
-            at=datetime.fromisoformat(event["at"]), kind=event["kind"], text=event["text"],
+            at=datetime.fromisoformat(event["at"]), kind=event["kind"], text=event["text"], ref=event.get("ref"),
         ))
         run.event_count += 1
     if added:
@@ -985,7 +986,7 @@ async def ready_for_acceptance(
 ) -> None:
     """Manual: a turn's checked changes wait for a person (`changes_ready`); its approvers are told.
     Not committed."""
-    run.status, run.pending_patch, run.files_changed = CodingRunStatus.CHANGES_READY, diff, files
+    run.status, run.pending_patch, run.diff, run.files_changed = CodingRunStatus.CHANGES_READY, diff, diff, files
     run.summary = summary or run.summary
     run.lease_expires_at = None
     project = await session.get(Project, run.project_id)

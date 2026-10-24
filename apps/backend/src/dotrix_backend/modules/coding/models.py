@@ -142,6 +142,9 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # The turn's changes while they wait to be accepted (`changes_ready`), as a binary patch on the
     # session's branch; cleared once pushed or rejected. Who accepted them, and when.
     pending_patch: Mapped[str | None] = mapped_column(Text, deferred=True)
+    # The turn's changes as a patch against `base_sha`, kept after it's pushed or discarded: the
+    # session's Changes and Files show it (pending_patch is only the copy waiting to be pushed).
+    diff: Mapped[str | None] = mapped_column(Text, deferred=True)
     accepted_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Set on a pushed turn being reverted: the revert commit goes on the session's branch.
@@ -193,8 +196,10 @@ class CodingRunEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     seq: Mapped[int] = mapped_column(Integer)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    kind: Mapped[str] = mapped_column(String(16))  # step, text, tool, error
+    kind: Mapped[str] = mapped_column(String(16))  # step, text, tool, output, output-error, error
     text: Mapped[str] = mapped_column(Text)
+    # Pairs a command (`tool`, "Ran …") with its output (`output`, `output-error`): the tool call's id.
+    ref: Mapped[str | None] = mapped_column(String(64))
 
 
 class CodingSession(WorkspaceScopedMixin, Base):

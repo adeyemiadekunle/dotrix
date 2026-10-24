@@ -68,15 +68,19 @@ class CodingRecover(BaseModel):
 
 class CodingEvent(BaseModel):
     at: datetime
-    kind: str = Field(description="`step`, `text` (the agent's words), `tool` (what it did), `error`")
+    kind: str = Field(description="`step`, `text` (the agent's words), `tool` (what it did), `output` / "
+                      "`output-error` (a command's output, and whether it failed), `error`")
     text: str
+    ref: str | None = Field(default=None, description="Pairs a command (`tool`) with its output: the tool call's id")
 
 
 class CodingEventRead(BaseModel):
     seq: int = Field(description="Its place in the run, from 0")
     at: datetime
-    kind: str = Field(description="`step`, `text` (the agent's words), `tool` (what it did), `error`")
+    kind: str = Field(description="`step`, `text` (the agent's words), `tool` (what it did), `output` / "
+                      "`output-error` (a command's output, and whether it failed), `error`")
     text: str
+    ref: str | None = Field(default=None, description="Pairs a command (`tool`) with its output: the tool call's id")
 
 
 class CodingEventPage(BaseModel):
@@ -203,8 +207,9 @@ class CodingRunnerRead(BaseModel):
 
 
 class RunnerEvent(BaseModel):
-    kind: Literal["step", "text", "tool", "error"]
-    text: str = Field(max_length=4_000)
+    kind: Literal["step", "text", "tool", "output", "output-error", "error"]
+    text: str = Field(max_length=10_000)
+    ref: str | None = Field(default=None, max_length=64)
 
 
 class CodingClaim(BaseModel):
@@ -250,3 +255,33 @@ class RunnerResult(BaseModel):
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     cost_usd: float | None = Field(default=None, ge=0)
+
+
+FileStatus = Literal["added", "modified", "deleted", "unchanged"]
+
+
+class CodingDiff(BaseModel):
+    base_sha: str | None = Field(description="The commit the turn started from")
+    diff: str = Field(description="Its changes as a unified diff against base_sha (empty until it has any)")
+    files: list[dict[str, Any]] = Field(description="Each changed file, with lines added and removed")
+
+
+class CodingTreeEntry(BaseModel):
+    path: str
+    status: FileStatus
+    size: int | None = Field(description="In bytes, as the turn leaves it (none for a deleted file)")
+
+
+class CodingTree(BaseModel):
+    base_sha: str
+    entries: list[CodingTreeEntry] = Field(description="Every file as the turn leaves the repository, and those it deleted")
+    truncated: bool = Field(description="More files than are listed (the first 20,000 are)")
+
+
+class CodingFile(BaseModel):
+    path: str
+    status: FileStatus
+    before: str | None = Field(description="Its text before the turn (none: it didn't exist, or isn't shown)")
+    after: str | None = Field(description="Its text after the turn (none: deleted, or isn't shown)")
+    binary: bool
+    too_large: bool = Field(description="Over 1 MB: not shown")

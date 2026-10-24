@@ -399,10 +399,20 @@ conversation. On a real model (needs Docker, the coding image, the GitHub App, a
   own; closing removed the container.
 - [ ] Approvals for start and accept in Notifications per turn (with A2's accept step).
 
-**Phase C: the workspace view.**
-- The side panel's Terminal (read-only), Changes, and Files from real sessions; subagent events nested;
-  usage per session. The panel itself is built on seeded data.
-- The web's Code tab wired to the API (with Chat).
+**Phase C: the workspace view.** The panel done 2026-10-24.
+- [x] The side panel beside a conversation or a session (`components/KaiPanel.tsx`), for any turn:
+  - Changes: each file's diff with line numbers, from the turn's diff (`coding_runs.diff`, kept after
+    it's pushed or discarded; `GET .../coding/runs/{id}/diff`).
+  - Files: the repository as the turn leaves it, changed files marked, any file's diff or content
+    (`.../tree`, `.../file?path=`): the project's checkout at the turn's base commit (fetched into it
+    when missing) with its diff applied in a scratch index, never a working copy; `.dotrix/` never
+    shown; text up to 1 MB.
+  - Terminal: each command with its output. The worker keeps a command's output as an `output` or
+    `output-error` event paired with its `Ran …` by `ref` (Claude Code's tool results, OpenCode's tool
+    state, Codex's command items; 8,000 characters, mostly the end), and so does the local runner.
+- [x] The web's Code tab wired to the API (with Chat).
+- [ ] Subagent events nested; usage per session; live text rather than polling; the desktop app showing
+  a local turn's live worktree (with its runner).
 
 **Phase D: running apps and MCP.**
 - [x] The agent's browser (2026-10-10): Playwright MCP (`playwright-mcp`, Playwright's Chromium) in the

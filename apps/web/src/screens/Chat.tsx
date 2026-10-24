@@ -60,7 +60,7 @@ import { Av, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { CODING_AGENT } from "../data/seed-dotrix";
-import { kaiWork } from "../core/kaiWork";
+import { KaiPanel } from "../components/KaiPanel";
 import { useAtPicker } from "../components/AtPicker";
 import { Splitter, useStoredFlag, useStoredSize } from "../ui/splitter";
 
@@ -324,84 +324,6 @@ function SessionCard({ cs }: { cs: CodingSession }) {
         </button>
       </div>
     </div>
-  );
-}
-
-/** What Kai did in a session, beside its conversation: the latest turn's changes, every file the session
- * changed (by folder), and the commands it ran. From the session's turns (each carries its latest events). */
-function KaiPanel({ cs, onClose }: { cs: CodingSession; onClose: () => void }) {
-  const ws = wsId();
-  const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
-  const turns = useCodingSession(scope, cs.session_id).data ?? [];
-  const [tab, setTab] = useState<"changes" | "files" | "terminal">("changes");
-  const latest = turns.at(-1);
-  const work = kaiWork(turns);
-  const TABS: [typeof tab, string, number][] = [
-    ["changes", "Changes", work.latest.length],
-    ["files", "Files", work.files],
-    ["terminal", "Terminal", work.commands.length],
-  ];
-  return (
-    <aside className="kai-panel" aria-label={`${CODING_AGENT.name}'s work`}>
-      <div className="row" style={{ height: 46, padding: "0 12px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
-        <b className="trunc" style={{ fontWeight: 600, fontSize: 13 }}>
-          {CODING_AGENT.name} · <span className="mono">{cs.issue_key}</span>
-        </b>
-        <span className="sp" />
-        <button className="ibtn ibtn-sm" onClick={onClose} aria-label="Close the panel">
-          <Ic n="x" s={14} />
-        </button>
-      </div>
-      <div className="seg" role="tablist" aria-label="Kai's work" style={{ margin: "8px 12px" }}>
-        {TABS.map(([id, label, n]) => (
-          <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>
-            {label}
-            {n > 0 && <span className="faint"> {n}</span>}
-          </button>
-        ))}
-      </div>
-      <div className="kai-panel-body mono" style={{ fontSize: 12 }}>
-        {tab === "changes" &&
-          (work.latest.length ? (
-            work.latest.map((f) => (
-              <div key={f.path} className="row" style={{ gap: 8, padding: "2px 0" }}>
-                <span className="grow trunc">{f.path}</span>
-                <span style={{ color: "var(--green)" }}>+{f.added}</span>
-                <span style={{ color: "var(--red)" }}>-{f.removed}</span>
-              </div>
-            ))
-          ) : (
-            <p className="muted">{latest ? `Turn ${latest.turn} changed no files yet.` : "Nothing yet."}</p>
-          ))}
-        {tab === "files" &&
-          (work.folders.length ? (
-            work.folders.map(([folder, files]) => (
-              <div key={folder} style={{ marginBottom: 6 }}>
-                <div className="faint">{folder}/</div>
-                {files.map((f) => (
-                  <div key={f.path} className="row" style={{ gap: 8, padding: "1px 0 1px 12px" }}>
-                    <span className="grow trunc">{f.path.slice(f.path.lastIndexOf("/") + 1)}</span>
-                    <span className="faint">turn {f.turn}</span>
-                  </div>
-                ))}
-              </div>
-            ))
-          ) : (
-            <p className="muted">No files changed yet.</p>
-          ))}
-        {tab === "terminal" &&
-          (work.commands.length ? (
-            work.commands.map((c, i) => (
-              <div key={i} style={{ padding: "2px 0" }}>
-                <span className="faint">{c.turn} $ </span>
-                {c.text}
-              </div>
-            ))
-          ) : (
-            <p className="muted">No commands run yet.</p>
-          ))}
-      </div>
-    </aside>
   );
 }
 
@@ -1322,6 +1244,7 @@ function Session({ cs }: { cs: CodingSession }) {
   const recover = useRecoverCoding(scope, cs.issue_key);
   const revert = useRevertCoding(scope, cs.issue_key, defaultApproval());
   const follow = useFollowUp(scope, cs.session_id, cs.issue_key, defaultApproval());
+  const [panel, setPanel] = useStoredFlag("dotrix.chat.kaiPanel");
   const t = isLive() ? { id: cs.issue_key, key: cs.issue_key } : D().tasks.find((x) => x.key === cs.issue_key);
   const p = proj(cs.project_id);
   const tool = AGENT_NAMES[cs.agent];
@@ -1373,394 +1296,408 @@ function Session({ cs }: { cs: CodingSession }) {
   const files = latest?.files_changed ?? [];
   const shotSrc = (runId: string, index: number) => `/v1/workspaces/${ws}/projects/${cs.project_id}/coding/runs/${runId}/screenshots/${index}`;
   return (
-    <>
-      <div className="row cs-head">
-        <button
-          className="ibtn ibtn-sm"
-          onClick={() => open(cs.thread_id ? `thread=${cs.thread_id}&project=${cs.project_key}` : "")}
-          aria-label={cs.thread_id ? "Back to the conversation" : "Back to conversations"}
-        >
-          <Ic n="arrow-left" s={15} />
-        </button>
-        <button
-          className="mono faint cs-key"
-          style={{ fontSize: 12, whiteSpace: "nowrap" }}
-          onClick={() => t && openTask(t.id)}
-          data-tip="Open the issue"
-          aria-label={`Open ${cs.issue_key}`}
-        >
-          {cs.issue_key}
-        </button>
-        <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
-          {cs.title ?? cs.issue_title}
-        </b>
-        <button
-          ref={infoBtn}
-          className={`ibtn ibtn-sm ${info ? "on" : ""}`}
-          onClick={() => setInfo(info === "pinned" ? null : "pinned")}
-          onMouseEnter={hoverIn}
-          onMouseLeave={hoverOut}
-          aria-label={info ? "Hide the session's details" : "Show the session's details"}
-          aria-expanded={!!info}
-          aria-haspopup="dialog"
-        >
-          <Ic n="ellipsis-vertical" s={15} />
-        </button>
-        <span className={`badge ${c}`}>{label}</span>
-        <span className="sp" />
-      </div>
-      {shot && (
-        <div className="cs-lightbox" role="dialog" aria-label={`Screenshot: ${shot.name}`} onClick={() => setShot(null)}>
-          <img src={shot.src} alt={`Screenshot: ${shot.name}`} />
-          <span>{shot.name}</span>
+    <div className="conv">
+      <div className="conv-main">
+        <div className="row cs-head">
+          <button
+            className="ibtn ibtn-sm"
+            onClick={() => open(cs.thread_id ? `thread=${cs.thread_id}&project=${cs.project_key}` : "")}
+            aria-label={cs.thread_id ? "Back to the conversation" : "Back to conversations"}
+          >
+            <Ic n="arrow-left" s={15} />
+          </button>
+          <button
+            className="mono faint cs-key"
+            style={{ fontSize: 12, whiteSpace: "nowrap" }}
+            onClick={() => t && openTask(t.id)}
+            data-tip="Open the issue"
+            aria-label={`Open ${cs.issue_key}`}
+          >
+            {cs.issue_key}
+          </button>
+          <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
+            {cs.title ?? cs.issue_title}
+          </b>
+          <button
+            ref={infoBtn}
+            className={`ibtn ibtn-sm ${info ? "on" : ""}`}
+            onClick={() => setInfo(info === "pinned" ? null : "pinned")}
+            onMouseEnter={hoverIn}
+            onMouseLeave={hoverOut}
+            aria-label={info ? "Hide the session's details" : "Show the session's details"}
+            aria-expanded={!!info}
+            aria-haspopup="dialog"
+          >
+            <Ic n="ellipsis-vertical" s={15} />
+          </button>
+          <span className={`badge ${c}`}>{label}</span>
+          <span className="sp" />
+          <button
+            className={`ibtn ibtn-sm ${panel ? "on" : ""}`}
+            onClick={() => setPanel(!panel)}
+            aria-pressed={panel}
+            aria-label={`${CODING_AGENT.name}'s work`}
+            data-tip={`${CODING_AGENT.name}'s work: changes, files, terminal`}
+          >
+            <Ic n="panel-right" s={15} />
+          </button>
         </div>
-      )}
-      {info && at && (
-        <div
-          className="pop cs-info"
-          role="dialog"
-          aria-label="The session's details"
-          style={{ top: at.bottom + 6, left: Math.max(8, Math.min(at.left - 8, window.innerWidth - 436)) }}
-          onMouseEnter={hoverIn}
-          onMouseLeave={hoverOut}
-        >
-          <dl className="kv" style={{ margin: 0 }}>
-            <dt>
-              <Ic n="bot" s={14} />
-              Tool
-            </dt>
-            <dd>{tool}</dd>
-            <dt>
-              <Ic n="folder" s={14} />
-              Project
-            </dt>
-            <dd>
-              <span className="row" style={{ gap: 6 }}>
-                {p && <span className="pdot" style={css({ "--c": pColor(p) })} />}
-                {cs.project_name}
-              </span>
-            </dd>
-            <dt>
-              <Ic n="folder-git-2" s={14} />
-              Repository
-            </dt>
-            <dd>
-              {latest?.repo_full_name ? (
-                <a
-                  href={`https://github.com/${latest.repo_full_name}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mono"
-                  style={{ fontSize: 12, color: "var(--acc)" }}
-                >
-                  {latest.repo_full_name}
-                </a>
-              ) : (
-                <span className="faint">No repository connected to {cs.project_name}</span>
-              )}
-            </dd>
-            <dt>
-              <Ic n="git-branch" s={14} />
-              Branch
-            </dt>
-            <dd className="mono" style={{ fontSize: 12 }}>
-              {latest?.base_branch && (
-                <span className="faint">
-                  {latest.base_branch}
-                  {latest.base_sha ? `@${latest.base_sha.slice(0, 7)}` : ""} →{" "}
+        {shot && (
+          <div className="cs-lightbox" role="dialog" aria-label={`Screenshot: ${shot.name}`} onClick={() => setShot(null)}>
+            <img src={shot.src} alt={`Screenshot: ${shot.name}`} />
+            <span>{shot.name}</span>
+          </div>
+        )}
+        {info && at && (
+          <div
+            className="pop cs-info"
+            role="dialog"
+            aria-label="The session's details"
+            style={{ top: at.bottom + 6, left: Math.max(8, Math.min(at.left - 8, window.innerWidth - 436)) }}
+            onMouseEnter={hoverIn}
+            onMouseLeave={hoverOut}
+          >
+            <dl className="kv" style={{ margin: 0 }}>
+              <dt>
+                <Ic n="bot" s={14} />
+                Tool
+              </dt>
+              <dd>{tool}</dd>
+              <dt>
+                <Ic n="folder" s={14} />
+                Project
+              </dt>
+              <dd>
+                <span className="row" style={{ gap: 6 }}>
+                  {p && <span className="pdot" style={css({ "--c": pColor(p) })} />}
+                  {cs.project_name}
                 </span>
-              )}
-              {cs.branch ?? <span className="faint">a new branch, made when it starts</span>}
-            </dd>
-            <dt>
-              <Ic n="git-commit-horizontal" s={14} />
-              Commit
-            </dt>
-            <dd>
-              {latest?.commit_sha ? (
-                <span className="mono faint" style={{ fontSize: 12 }}>
-                  {latest.commit_sha.slice(0, 7)}
-                </span>
-              ) : (
-                <span className="faint">none yet</span>
-              )}
-            </dd>
-            <dt>
-              <Ic n="git-pull-request" s={14} />
-              Pull request
-            </dt>
-            <dd>
-              {cs.pr_url && cs.pr_number ? (
-                <a href={cs.pr_url} target="_blank" rel="noreferrer" className="row" style={{ gap: 6, color: "var(--acc)" }}>
-                  #{cs.pr_number}
-                  {cs.pr_state && <span className={`badge ${cs.pr_state === "merged" ? "accent" : cs.pr_state === "open" ? "green" : ""}`}>{cs.pr_state}</span>}
-                </a>
-              ) : (
-                <span className="faint">none yet</span>
-              )}
-            </dd>
-          </dl>
-        </div>
-      )}
-      <div className="chat-scroll">
-        <div className="chat-col">
-          {files.length > 0 && (
-            <div className="change" aria-label="Files changed">
-              <div className="change-h">
-                <Ic n="files" s={14} />
-                <b style={{ fontWeight: 500 }}>
-                  {files.length} file{files.length > 1 ? "s" : ""} changed
-                </b>
-              </div>
-              <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
-                {files.map((f, i) => (
-                  <span key={i} className="trunc">
-                    {fileOf(f)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          {turns.map((turn, i) => (
-            <div key={turn.id} style={{ marginBottom: 14 }}>
-              <div className="chat-msg user">
-                <Av id={turn.requested_by_id ?? D().me} cls="md" tip={false} />
-                <div className="body">
-                  <div className="who">
-                    <b>{turn.requested_by_id === D().me ? "You" : (who(turn.requested_by_id ?? "")?.name ?? "Someone")}</b>
-                    <time>
-                      Turn {i + 1} · {ago(ms(turn.created_at))}
-                    </time>
-                  </div>
-                  <div className="bubble">{turn.note || `Work on ${cs.issue_key}: ${cs.issue_title}`}</div>
-                </div>
-              </div>
-              {(turn.events.length > 0 || turn.summary || turn.error) && (
-                <div className="chat-msg">
-                  <Av id={`agent:${cs.agent}`} cls="md" tip={false} />
-                  <div className="body">
-                    <div className="who">
-                      <b>{tool}</b>
-                    </div>
-                    <div className="chat-act" style={{ flexDirection: "column", gap: 2 }}>
-                      {turn.events
-                        .filter((e) => e.kind !== "text")
-                        .slice(-30)
-                        .map((e, j) => (
-                          <span key={j}>
-                            <Ic n={e.kind === "error" ? "triangle-alert" : "check"} s={11} />
-                            {e.text}
-                          </span>
-                        ))}
-                    </div>
-                    {turn.summary && (
-                      <div className="md">
-                        <Markdown>{turn.summary}</Markdown>
-                      </div>
-                    )}
-                    {turn.error && <div className="faint">{turn.error}</div>}
-                    {turn.can_revert && !busy && (
-                      <button
-                        className="btn btn-sm btn-ghost"
-                        style={{ alignSelf: "flex-start", marginTop: 4 }}
-                        disabled={revert.isPending}
-                        onClick={() => revert.mutate(turn.id)}
-                      >
-                        <Ic n="undo-2" s={12} />
-                        Revert this turn
-                      </button>
-                    )}
-                    {(turn.screenshots ?? []).length > 0 && (
-                      <div className="cs-shots" aria-label="Screenshots from the browser">
-                        {(turn.screenshots ?? []).map((sh) => {
-                          const src = shotSrc(turn.id, sh.index);
-                          return (
-                            <button
-                              key={sh.index}
-                              className="cs-shot"
-                              onClick={() => setShot({ src, name: sh.name })}
-                              aria-label={`Open the screenshot ${sh.name}`}
-                            >
-                              <img src={src} alt={`Screenshot: ${sh.name}`} loading="lazy" />
-                              <span className="faint trunc">{sh.name}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-          {latest?.status === "awaiting_approval" && (
-            <div className="change">
-              <div className="change-h">
-                <Ic n="shield-check" s={14} />
-                <b style={{ fontWeight: 500 }}>Waiting for someone who may approve agent changes</b>
-              </div>
-              <div className="change-f">
-                <span className="faint" style={{ fontSize: 12 }}>
-                  It works on its own branch and opens a pull request; a person merges.
-                </span>
-                <span className="sp" />
-                {latest.can_decide && (
-                  <>
-                    <button
-                      className="btn btn-sm btn-secondary"
-                      disabled={decide.isPending}
-                      onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
-                    >
-                      Reject
-                    </button>
-                    <button
-                      className="btn btn-sm btn-primary"
-                      disabled={decide.isPending}
-                      onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
-                    >
-                      <Ic n="check" s={13} />
-                      Approve
-                    </button>
-                  </>
+              </dd>
+              <dt>
+                <Ic n="folder-git-2" s={14} />
+                Repository
+              </dt>
+              <dd>
+                {latest?.repo_full_name ? (
+                  <a
+                    href={`https://github.com/${latest.repo_full_name}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mono"
+                    style={{ fontSize: 12, color: "var(--acc)" }}
+                  >
+                    {latest.repo_full_name}
+                  </a>
+                ) : (
+                  <span className="faint">No repository connected to {cs.project_name}</span>
                 )}
-              </div>
-            </div>
-          )}
-          {latest?.status === "changes_ready" && (
-            <div className="change" role="group" aria-label="Changes waiting to be accepted">
-              <div className="change-h">
-                <Ic n="shield-check" s={14} />
-                <b style={{ fontWeight: 500 }}>Changes ready: nothing is pushed until someone accepts them</b>
-              </div>
-              {latest.files_changed.length > 0 && (
+              </dd>
+              <dt>
+                <Ic n="git-branch" s={14} />
+                Branch
+              </dt>
+              <dd className="mono" style={{ fontSize: 12 }}>
+                {latest?.base_branch && (
+                  <span className="faint">
+                    {latest.base_branch}
+                    {latest.base_sha ? `@${latest.base_sha.slice(0, 7)}` : ""} →{" "}
+                  </span>
+                )}
+                {cs.branch ?? <span className="faint">a new branch, made when it starts</span>}
+              </dd>
+              <dt>
+                <Ic n="git-commit-horizontal" s={14} />
+                Commit
+              </dt>
+              <dd>
+                {latest?.commit_sha ? (
+                  <span className="mono faint" style={{ fontSize: 12 }}>
+                    {latest.commit_sha.slice(0, 7)}
+                  </span>
+                ) : (
+                  <span className="faint">none yet</span>
+                )}
+              </dd>
+              <dt>
+                <Ic n="git-pull-request" s={14} />
+                Pull request
+              </dt>
+              <dd>
+                {cs.pr_url && cs.pr_number ? (
+                  <a href={cs.pr_url} target="_blank" rel="noreferrer" className="row" style={{ gap: 6, color: "var(--acc)" }}>
+                    #{cs.pr_number}
+                    {cs.pr_state && (
+                      <span className={`badge ${cs.pr_state === "merged" ? "accent" : cs.pr_state === "open" ? "green" : ""}`}>{cs.pr_state}</span>
+                    )}
+                  </a>
+                ) : (
+                  <span className="faint">none yet</span>
+                )}
+              </dd>
+            </dl>
+          </div>
+        )}
+        <div className="chat-scroll">
+          <div className="chat-col">
+            {files.length > 0 && (
+              <div className="change" aria-label="Files changed">
+                <div className="change-h">
+                  <Ic n="files" s={14} />
+                  <b style={{ fontWeight: 500 }}>
+                    {files.length} file{files.length > 1 ? "s" : ""} changed
+                  </b>
+                </div>
                 <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
-                  {latest.files_changed.map((f) => (
-                    <span key={fileOf(f)} className="row" style={{ gap: 8 }}>
-                      <span className="trunc grow">{fileOf(f)}</span>
-                      <span style={{ color: "var(--green)" }}>+{String(f.added ?? 0)}</span>
-                      <span style={{ color: "var(--red)" }}>-{String(f.removed ?? 0)}</span>
+                  {files.map((f, i) => (
+                    <span key={i} className="trunc">
+                      {fileOf(f)}
                     </span>
                   ))}
                 </div>
-              )}
-              <div className="change-f">
-                <span className="faint" style={{ fontSize: 12 }}>
-                  Accepted, they're pushed to {latest.branch ? <code>{latest.branch}</code> : "a new branch"} and the pull request is opened or updated.
+              </div>
+            )}
+            {turns.map((turn, i) => (
+              <div key={turn.id} style={{ marginBottom: 14 }}>
+                <div className="chat-msg user">
+                  <Av id={turn.requested_by_id ?? D().me} cls="md" tip={false} />
+                  <div className="body">
+                    <div className="who">
+                      <b>{turn.requested_by_id === D().me ? "You" : (who(turn.requested_by_id ?? "")?.name ?? "Someone")}</b>
+                      <time>
+                        Turn {i + 1} · {ago(ms(turn.created_at))}
+                      </time>
+                    </div>
+                    <div className="bubble">{turn.note || `Work on ${cs.issue_key}: ${cs.issue_title}`}</div>
+                  </div>
+                </div>
+                {(turn.events.length > 0 || turn.summary || turn.error) && (
+                  <div className="chat-msg">
+                    <Av id={`agent:${cs.agent}`} cls="md" tip={false} />
+                    <div className="body">
+                      <div className="who">
+                        <b>{tool}</b>
+                      </div>
+                      <div className="chat-act" style={{ flexDirection: "column", gap: 2 }}>
+                        {turn.events
+                          .filter((e) => e.kind !== "text" && !e.kind.startsWith("output")) // output: the panel's Terminal
+                          .slice(-30)
+                          .map((e, j) => (
+                            <span key={j}>
+                              <Ic n={e.kind === "error" ? "triangle-alert" : "check"} s={11} />
+                              {e.text}
+                            </span>
+                          ))}
+                      </div>
+                      {turn.summary && (
+                        <div className="md">
+                          <Markdown>{turn.summary}</Markdown>
+                        </div>
+                      )}
+                      {turn.error && <div className="faint">{turn.error}</div>}
+                      {turn.can_revert && !busy && (
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          style={{ alignSelf: "flex-start", marginTop: 4 }}
+                          disabled={revert.isPending}
+                          onClick={() => revert.mutate(turn.id)}
+                        >
+                          <Ic n="undo-2" s={12} />
+                          Revert this turn
+                        </button>
+                      )}
+                      {(turn.screenshots ?? []).length > 0 && (
+                        <div className="cs-shots" aria-label="Screenshots from the browser">
+                          {(turn.screenshots ?? []).map((sh) => {
+                            const src = shotSrc(turn.id, sh.index);
+                            return (
+                              <button
+                                key={sh.index}
+                                className="cs-shot"
+                                onClick={() => setShot({ src, name: sh.name })}
+                                aria-label={`Open the screenshot ${sh.name}`}
+                              >
+                                <img src={src} alt={`Screenshot: ${sh.name}`} loading="lazy" />
+                                <span className="faint trunc">{sh.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+            {latest?.status === "awaiting_approval" && (
+              <div className="change">
+                <div className="change-h">
+                  <Ic n="shield-check" s={14} />
+                  <b style={{ fontWeight: 500 }}>Waiting for someone who may approve agent changes</b>
+                </div>
+                <div className="change-f">
+                  <span className="faint" style={{ fontSize: 12 }}>
+                    It works on its own branch and opens a pull request; a person merges.
+                  </span>
+                  <span className="sp" />
+                  {latest.can_decide && (
+                    <>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        disabled={decide.isPending}
+                        onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
+                      >
+                        Reject
+                      </button>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={decide.isPending}
+                        onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
+                      >
+                        <Ic n="check" s={13} />
+                        Approve
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+            {latest?.status === "changes_ready" && (
+              <div className="change" role="group" aria-label="Changes waiting to be accepted">
+                <div className="change-h">
+                  <Ic n="shield-check" s={14} />
+                  <b style={{ fontWeight: 500 }}>Changes ready: nothing is pushed until someone accepts them</b>
+                </div>
+                {latest.files_changed.length > 0 && (
+                  <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
+                    {latest.files_changed.map((f) => (
+                      <span key={fileOf(f)} className="row" style={{ gap: 8 }}>
+                        <span className="trunc grow">{fileOf(f)}</span>
+                        <span style={{ color: "var(--green)" }}>+{String(f.added ?? 0)}</span>
+                        <span style={{ color: "var(--red)" }}>-{String(f.removed ?? 0)}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="change-f">
+                  <span className="faint" style={{ fontSize: 12 }}>
+                    Accepted, they're pushed to {latest.branch ? <code>{latest.branch}</code> : "a new branch"} and the pull request is opened or updated.
+                  </span>
+                  <span className="sp" />
+                  {latest.can_stop && !latest.can_decide && (
+                    <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
+                      Discard
+                    </button>
+                  )}
+                  {latest.can_decide && (
+                    <>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        disabled={decide.isPending}
+                        onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
+                      >
+                        Discard
+                      </button>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={decide.isPending}
+                        onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
+                      >
+                        <Ic n="check" s={13} />
+                        Accept and push
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+            {(latest?.status === "running" || latest?.status === "queued") && (
+              <div className="row" style={{ gap: 8 }}>
+                <span className="chat-typing">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  {latest.status === "queued" ? `${tool} starts soon` : `${tool} is working`}
                 </span>
                 <span className="sp" />
-                {latest.can_stop && !latest.can_decide && (
+                {latest.can_stop && (
                   <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
-                    Discard
+                    <Ic n="square" s={12} />
+                    Stop
                   </button>
                 )}
-                {latest.can_decide && (
-                  <>
-                    <button
-                      className="btn btn-sm btn-secondary"
-                      disabled={decide.isPending}
-                      onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
-                    >
-                      Discard
-                    </button>
-                    <button
-                      className="btn btn-sm btn-primary"
-                      disabled={decide.isPending}
-                      onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
-                    >
-                      <Ic n="check" s={13} />
-                      Accept and push
-                    </button>
-                  </>
-                )}
               </div>
-            </div>
-          )}
-          {(latest?.status === "running" || latest?.status === "queued") && (
-            <div className="row" style={{ gap: 8 }}>
-              <span className="chat-typing">
-                <i />
-                <i />
-                <i />
-              </span>
-              <span className="muted" style={{ fontSize: 12.5 }}>
-                {latest.status === "queued" ? `${tool} starts soon` : `${tool} is working`}
+            )}
+            {latest?.status === "recovery_required" && (
+              <div className="change" role="status">
+                <div className="change-h">
+                  <Ic n="shield-check" s={14} />
+                  <b style={{ fontWeight: 500 }}>This turn was cut off before it finished</b>
+                </div>
+                <div className="change-f">
+                  <span className="faint" style={{ fontSize: 12 }}>
+                    {latest.error || "Check GitHub to see what it published before another turn."}
+                  </span>
+                  <span className="sp" />
+                  {latest.can_recover && (
+                    <>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        disabled={recover.isPending}
+                        onClick={() => recover.mutate({ runId: latest.id, action: "discard" })}
+                      >
+                        Discard
+                      </button>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={recover.isPending}
+                        onClick={() => recover.mutate({ runId: latest.id, action: "check" })}
+                      >
+                        <Ic n="refresh-cw" s={12} />
+                        Check and recover
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="chat-input">
+          <div className="cbox">
+            <textarea
+              rows={2}
+              placeholder={
+                cs.state === "closed"
+                  ? "This session is closed"
+                  : cs.status === "recovery_required"
+                    ? "Recover the previous turn before continuing"
+                    : busy
+                      ? "A turn is waiting or working…"
+                      : `Ask ${tool} for a follow-up on the same branch`
+              }
+              value={ask}
+              disabled={busy}
+              onChange={(e) => setAsk(e.target.value)}
+              aria-label="Follow-up"
+              onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && send()}
+            />
+            <div className="row">
+              <span className="faint" style={{ fontSize: 11.5 }}>
+                {MOD}+Enter to send · approved like the first turn
               </span>
               <span className="sp" />
-              {latest.can_stop && (
-                <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
-                  <Ic n="square" s={12} />
-                  Stop
-                </button>
-              )}
+              <button className="btn btn-primary btn-sm" disabled={busy || !ask.trim() || follow.isPending} onClick={send}>
+                <Ic n="arrow-up" s={13} />
+                Send
+              </button>
             </div>
-          )}
-          {latest?.status === "recovery_required" && (
-            <div className="change" role="status">
-              <div className="change-h">
-                <Ic n="shield-check" s={14} />
-                <b style={{ fontWeight: 500 }}>This turn was cut off before it finished</b>
-              </div>
-              <div className="change-f">
-                <span className="faint" style={{ fontSize: 12 }}>
-                  {latest.error || "Check GitHub to see what it published before another turn."}
-                </span>
-                <span className="sp" />
-                {latest.can_recover && (
-                  <>
-                    <button
-                      className="btn btn-sm btn-secondary"
-                      disabled={recover.isPending}
-                      onClick={() => recover.mutate({ runId: latest.id, action: "discard" })}
-                    >
-                      Discard
-                    </button>
-                    <button
-                      className="btn btn-sm btn-primary"
-                      disabled={recover.isPending}
-                      onClick={() => recover.mutate({ runId: latest.id, action: "check" })}
-                    >
-                      <Ic n="refresh-cw" s={12} />
-                      Check and recover
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="chat-input">
-        <div className="cbox">
-          <textarea
-            rows={2}
-            placeholder={
-              cs.state === "closed"
-                ? "This session is closed"
-                : cs.status === "recovery_required"
-                  ? "Recover the previous turn before continuing"
-                  : busy
-                    ? "A turn is waiting or working…"
-                    : `Ask ${tool} for a follow-up on the same branch`
-            }
-            value={ask}
-            disabled={busy}
-            onChange={(e) => setAsk(e.target.value)}
-            aria-label="Follow-up"
-            onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && send()}
-          />
-          <div className="row">
-            <span className="faint" style={{ fontSize: 11.5 }}>
-              {MOD}+Enter to send · approved like the first turn
-            </span>
-            <span className="sp" />
-            <button className="btn btn-primary btn-sm" disabled={busy || !ask.trim() || follow.isPending} onClick={send}>
-              <Ic n="arrow-up" s={13} />
-              Send
-            </button>
           </div>
         </div>
       </div>
-    </>
+      {panel && <KaiPanel cs={cs} onClose={() => setPanel(false)} />}
+    </div>
   );
 }
 
