@@ -15,8 +15,7 @@ x-backend: &backend
   build: { context: .., dockerfile: deploy/backend.Dockerfile }
   image: dotrix-backend:dev
   env_file: ../.env
-  environment: &backend-env
-    # The password apart (asyncpg and libpq both read PGPASSWORD), never written into the URL.
+  environment: &backend-env # The password apart (asyncpg and libpq both read PGPASSWORD), never written into the URL.
     DOTRIX_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dotrix}@postgres:5432/${POSTGRES_DB:-dotrix}
     PGPASSWORD: ${POSTGRES_PASSWORD:?}
     DOTRIX_REDIS_URL: redis://redis:6379/0
