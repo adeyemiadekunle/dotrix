@@ -210,12 +210,16 @@ export function useLiveWorkspaceFiles(workspaceId: string | undefined, enabled =
           api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/documents", {
             params: { path: { workspace_id: workspaceId!, project_id: p.id } },
           }),
-        ).catch(() => []),
+        ),
     })),
-    // combine memoizes: the slot is undefined until every project's query has data, then a
+    // combine memoizes: the slot is undefined until every project's query has settled, then a
     // stable array — a fresh array per render would loop the StoreBridge's mirror effect.
+    // A failed project contributes nothing but keeps its error in the shared query (a screen
+    // reading useDocuments for it can still say why), like the old .catch(() => []) loads.
     combine: (results) =>
-      results.some((r) => r.data === undefined) ? undefined : results.flatMap((r, i) => r.data!.map((d) => toFile(d, projects.data![i].id))),
+      results.some((r) => r.data === undefined && !r.isError)
+        ? undefined
+        : results.flatMap((r, i) => (r.data ?? []).map((d) => toFile(d, projects.data![i].id))),
   });
   return projects.data ? files : undefined;
 }
@@ -231,14 +235,14 @@ export function useLiveWorkspaceKnowledge(workspaceId: string | undefined, enabl
           api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/knowledge", {
             params: { path: { workspace_id: workspaceId!, project_id: p.id } },
           }),
-        ).catch(() => ({ files: [] })),
+        ),
     })),
     combine: (results) =>
-      results.some((r) => r.data === undefined)
+      results.some((r) => r.data === undefined && !r.isError)
         ? undefined
         : results.flatMap((r, i) =>
-            r
-              .data!.files.filter((f) => !f.deleted)
+            (r.data?.files ?? [])
+              .filter((f) => !f.deleted)
               .map((f) => ({ path: f.path, project: projects.data![i].id, content: "", version: f.version, by: "", at: ms(f.updated_at) })),
           ),
   });
@@ -256,9 +260,9 @@ export function useLiveWorkspaceAutomations(workspaceId: string | undefined, ena
           api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/automations", {
             params: { path: { workspace_id: workspaceId!, project_id: p.id } },
           }),
-        ).catch(() => []),
+        ),
     })),
-    combine: (results) => (results.some((r) => r.data === undefined) ? undefined : results.flatMap((r) => r.data!.map(toAutomation))),
+    combine: (results) => (results.some((r) => r.data === undefined && !r.isError) ? undefined : results.flatMap((r) => (r.data ?? []).map(toAutomation))),
   });
   return projects.data ? autos : undefined;
 }
