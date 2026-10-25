@@ -31,6 +31,18 @@ async function openChat(page: Page, search = "") {
   await expect(page.locator("#main-content h1").first()).toContainText(/Good|Chat/);
 }
 
+async function pickChatOption(page: Page, label: "Agent" | "Approvals" | "Mode", name: string | RegExp) {
+  const picker = page.getByRole("button", { name: new RegExp(`^${label}:`) });
+  await picker.click();
+  const menu = page.getByRole("listbox", { name: label, exact: true });
+  const option = menu.getByRole("option", { name, exact: true });
+  const selected = (await option.innerText()).trim();
+  await option.click();
+  await expect(picker).toHaveAccessibleName(`${label}: ${selected}`);
+  await expect(menu).toBeHidden();
+  return selected;
+}
+
 test("the agents answer, and a change waits for approval before it happens", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
@@ -50,7 +62,7 @@ test("the agents answer, and a change waits for approval before it happens", asy
   // A new conversation for the change: it waits, and nothing happens until it's approved.
   await conversations.getByRole("button", { name: "New chat in Kumove" }).click();
   await expect(page).not.toHaveURL(/thread=/);
-  await page.getByLabel("Approvals", { exact: true }).selectOption("manual"); // a personal workspace starts on Accept edits
+  await pickChatOption(page, "Approvals", "Manual"); // a personal workspace starts on Accept edits
   await page.getByLabel("Message").fill("Create issue: Add dark mode");
   await page.getByLabel("Message").press("Enter");
   await expect(page.getByText("1 change waits for your approval")).toBeVisible();
@@ -63,6 +75,7 @@ test("the agents answer, and a change waits for approval before it happens", asy
   // The run resumes in the background and creates the issue; the board shows it once it exists.
   await expect(async () => {
     await page.goto(`/w/${slugOf(page)}/p/KUM/board`);
+    await expect(page.getByRole("region", { name: "Backlog", exact: true })).toBeVisible();
     await expect(page.getByText("Add dark mode")).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
 });
@@ -71,13 +84,14 @@ test("in Accept edits what you ask for goes through, approved by you", async ({ 
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await openChat(page, "?project=KUM");
-  await expect(page.getByLabel("Approvals", { exact: true })).toHaveValue("accept_edits"); // your own workspace's default
+  await expect(page.getByRole("button", { name: /^Approvals:/ })).toHaveAccessibleName("Approvals: Accept edits"); // your own workspace's default
   await page.getByLabel("Message").fill("Create issue: Add search");
   await page.getByLabel("Message").press("Enter");
   await expect(page.getByText(/Done\./)).toBeVisible();
   await expect(page.getByText("1 change waits for your approval")).toHaveCount(0);
   await expect(async () => {
     await page.goto(`/w/${slugOf(page)}/p/KUM/board`);
+    await expect(page.getByRole("region", { name: "Backlog", exact: true })).toBeVisible();
     await expect(page.getByText("Add search")).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
 });
@@ -87,14 +101,12 @@ test("the agent picked answers, and the conversation keeps it", async ({ page })
   await addProject(page, "Kumove", "KUM");
   await openChat(page, "?project=KUM");
 
-  const agent = page.getByLabel("Agent", { exact: true });
-  await agent.selectOption("research");
-  const name = ((await agent.locator("option:checked").textContent()) ?? "").split(" · ")[0]!;
+  const name = (await pickChatOption(page, "Agent", /^Vega ·/)).split(" · ")[0]!;
   await page.getByLabel("Message").fill("Who else ships multi-zone?");
   await page.getByLabel("Message").press("Enter");
   await expect(page.getByText("Test model reply: Who else ships multi-zone?")).toBeVisible();
   await expect(page.locator(".chat-msg.agent .who b").last()).toHaveText(name);
-  await expect(page.getByLabel("Agent", { exact: true })).toHaveValue("research");
+  await expect(page.getByRole("button", { name: /^Agent:/ })).toHaveAccessibleName(/^Agent: Vega ·/);
 });
 
 test("one conversation moves from Discuss to Plan to Build, and the plan is kept to build from", async ({ page }) => {
@@ -102,14 +114,14 @@ test("one conversation moves from Discuss to Plan to Build, and the plan is kept
   await addProject(page, "Kumove", "KUM");
   await openChat(page, "?project=KUM");
 
-  const mode = page.getByLabel("Mode", { exact: true });
-  await expect(mode).toHaveValue("discuss"); // a new conversation starts by talking it through
+  const mode = page.getByRole("button", { name: /^Mode:/ });
+  await expect(mode).toHaveAccessibleName("Mode: Discuss"); // a new conversation starts by talking it through
   await page.getByLabel("Message").fill("How would refunds work?");
   await page.getByLabel("Message").press("Enter");
   await expect(page.getByText("Test model reply: How would refunds work?")).toBeVisible();
   await expect(page.locator(".chat-msg.user .badge").last()).toHaveText("Discuss");
 
-  await mode.selectOption("plan");
+  await pickChatOption(page, "Mode", "Plan");
   await page.getByLabel("Message").fill("Save plan: Refunds; Add refund(); Test it");
   await page.getByLabel("Message").press("Enter");
   const card = page.getByRole("group", { name: "Plan version 1" });
@@ -122,7 +134,7 @@ test("one conversation moves from Discuss to Plan to Build, and the plan is kept
   await card.getByRole("button", { name: "Build this plan" }).click();
   await expect(page.getByText("Test model reply: Build plan version 1: Refunds")).toBeVisible();
   await expect(page.locator(".chat-msg.user .badge").last()).toHaveText("Build");
-  await expect(mode).toHaveValue("build");
+  await expect(mode).toHaveAccessibleName("Mode: Build");
 });
 
 test("ask across projects: the conversation reads only and is listed apart, with its projects", async ({ page }) => {
