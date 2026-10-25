@@ -376,11 +376,15 @@ export function Inbox() {
   // waits for a tap, so the list isn't covered.
   const shown = sel ?? ns[0] ?? null;
   const shownId = shown?.id ?? null;
-  // The auto-preview on desktop shows the detail without a row click, so it goes
-  // through the same read path as a selection. Mobile's hidden fallback is not
-  // marked, and approvals/checkpoints stay unread until decided.
+  // The auto-preview on desktop behaves like a click on the first row: it pins the
+  // row as the selection, then marks it read — so under the Unread filter the detail
+  // stays put when the row leaves `ns` instead of cascading through every unread.
+  // Mobile's hidden fallback is untouched, and approvals/checkpoints stay unread.
   useEffect(() => {
-    if (!sel && shown && !shown.read && !staysUnread(shown.type) && window.matchMedia("(min-width: 901px)").matches) markRead(shown);
+    if (!sel && shown && window.matchMedia("(min-width: 901px)").matches) {
+      S.ui.inboxSel = shown.id;
+      if (!shown.read && !staysUnread(shown.type)) markRead(shown);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, shownId]);
   const select = (id: string) => {
