@@ -168,6 +168,9 @@ export const issueOptions = (s: Scope, key: string) => ({
       }),
     ),
   retry: false,
+  // The drawer, Inbox preview and comment helpers read this entry synchronously — keep it
+  // for the session like the store's D().comments copy used to be, or badges drop to 0.
+  gcTime: Infinity,
 });
 
 export function useIssue(scope: Scope | undefined, key: string | null) {
