@@ -1,16 +1,19 @@
 """Organisations' own model provider keys: stored encrypted, used for their runs, and a provider
 refusing for its limits shown on the key (Settings → Models)."""
+import uuid
 from typing import Any
 
 import pytest
 from cryptography.fernet import Fernet
 from httpx import AsyncClient
+from pydantic import SecretStr
 from sqlalchemy import select
 
 from dotrix_backend.core.crypto import Secrets
 from dotrix_backend.modules.agents.llm import PROVIDERS, available_models, key_for, limit_error
-from dotrix_backend.modules.model_keys.models import WorkspaceModelKey
-from dotrix_backend.modules.workspaces.models import Role
+from dotrix_backend.modules.model_keys.models import UserModelKey, WorkspaceModelKey
+from dotrix_backend.modules.model_keys.service import run_keys
+from dotrix_backend.modules.workspaces.models import Role, Workspace
 from dotrix_engine.testing import ScriptedChatModel
 
 KEY = "sk-ant-test-" + "x" * 30 + "WXYZ"
@@ -44,40 +47,44 @@ def world(db_client: AsyncClient, create_team, signup, add_member):
     return _make
 
 
-async def test_readiness_uses_authorized_readable_keys_and_never_returns_secrets(world, db_client, signup) -> None:
+async def test_readiness_is_personal_readable_and_workspace_scoped(world, db_client, signup) -> None:
     app, ada, cat, ws, _ = await world()
-    app.state.settings.server_model_keys = False
-    path = f"{ws}/model-keys/access"
-    await db_client.patch(ws, json={"personal_keys": False}, headers=ada.headers)
-    assert (await db_client.get(path, headers=cat.headers)).json()["ready"] is False
-    assert (await db_client.get(path, headers=(await signup(email="other@example.com")).headers)).status_code == 404
+    path = f"{ws}/model-access"
+    assert not (await db_client.get(path, headers=cat.headers)).json()["ready"]
+    outsider = await signup(email="outside@example.com")
+    assert (await db_client.get(path, headers=outsider.headers)).status_code == 404
     await db_client.put("/v1/me/model-keys/xai", json={"api_key": KEY}, headers=cat.headers)
-    # Organisation policy blocks a personal key even though it exists.
-    assert (await db_client.get(path, headers=cat.headers)).json()["ready"] is False
-    await db_client.patch(ws, json={"personal_keys": True}, headers=ada.headers)
     own = await db_client.get(path, headers=cat.headers)
     assert own.json()["ready"] and own.json()["providers"] == ["xai"]
-    assert KEY not in own.text and "WXYZ" not in own.text and "grok-4.7" in own.text
-    # A different member doesn't acquire the person's key.
-    assert (await db_client.get(path, headers=ada.headers)).json()["ready"] is False
-    await db_client.put(f"{ws}/model-keys/openai", json={"api_key": KEY}, headers=ada.headers)
-    assert (await db_client.get(path, headers=ada.headers)).json()["providers"] == ["openai"]
-    # A key encrypted under a removed encryption key is unavailable.
-    app.state.secrets = Secrets(Fernet.generate_key().decode())
-    assert (await db_client.get(path, headers=cat.headers)).json()["ready"] is False
+    assert KEY not in own.text and "WXYZ" not in own.text
+    assert not (await db_client.get(path, headers=ada.headers)).json()["ready"]
+    app.state.secrets = app.state.runner.secrets = Secrets(Fernet.generate_key().decode())
+    assert not (await db_client.get(path, headers=cat.headers)).json()["ready"]
 
 
-async def test_readiness_respects_platform_key_policy_and_personal_default_is_private(world, db_client) -> None:
-    from pydantic import SecretStr
-
+async def test_shared_endpoints_and_server_credentials_cannot_unlock_a_user(world, db_client, db_session) -> None:
     app, ada, cat, ws, _ = await world()
-    settings = app.state.settings
-    settings.anthropic_api_key = settings.google_api_key = None
-    settings.openai_api_key = SecretStr(KEY)
-    settings.server_model_keys = True
-    assert (await db_client.get(f"{ws}/model-keys/access", headers=cat.headers)).json()["ready"]
-    settings.server_model_keys = False
-    assert not (await db_client.get(f"{ws}/model-keys/access", headers=cat.headers)).json()["ready"]
+    app.state.settings.openai_api_key = SecretStr(KEY)
+    app.state.settings.server_model_keys = True  # A legacy deployment setting must have no effect.
+    workspace_id = uuid.UUID(ws.rsplit("/", 1)[1])
+    workspace = await db_session.get(Workspace, workspace_id)
+    workspace.personal_keys = False  # Retired policy cannot block the user's own credentials.
+    db_session.add(WorkspaceModelKey(workspace_id=workspace_id, provider="openai",
+                                    encrypted=app.state.secrets.encrypt(KEY), last4="WXYZ", added_by_id=ada.id))
+    await db_session.commit()
+    for person in (ada, cat):
+        assert not (await db_client.get(f"{ws}/model-access", headers=person.headers)).json()["ready"]
+        assert (await db_client.get(f"{ws}/model-keys", headers=person.headers)).status_code == 404
+        assert (await db_client.put(f"{ws}/model-keys/openai", json={"api_key": KEY}, headers=person.headers)).status_code == 404
+        assert (await db_client.delete(f"{ws}/model-keys/openai", headers=person.headers)).status_code == 404
+    assert (await run_keys(db_session, app.state.secrets, workspace_id, None)).keys == {}
+    await db_client.put("/v1/me/model-keys/openai", json={"api_key": KEY}, headers=cat.headers)
+    assert (await db_client.get(f"{ws}/model-access", headers=cat.headers)).json()["ready"]
+    assert not (await db_client.get(f"{ws}/model-access", headers=ada.headers)).json()["ready"]
+
+
+async def test_default_coding_tool_is_private(world, db_client) -> None:
+    _, ada, cat, _, _ = await world()
     saved = await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": "opencode"}, headers=cat.headers)
     assert saved.status_code == 200 and saved.json()["default_coding_tool"] == "opencode"
     assert (await db_client.get("/v1/me/models", headers=ada.headers)).json()["default_coding_tool"] is None
@@ -85,98 +92,70 @@ async def test_readiness_respects_platform_key_policy_and_personal_default_is_pr
     assert (await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": None}, headers=cat.headers)).json()["default_coding_tool"] is None
 
 
-async def test_connect_a_key_it_is_encrypted_and_runs_use_it(world, db_client: AsyncClient, agent_script, db_session) -> None:
-    _, ada, cat, ws, base = await world()
-    assert (await db_client.put(f"{ws}/model-keys/anthropic", json={"api_key": KEY}, headers=cat.headers)).status_code == 403
-    saved = await db_client.put(f"{ws}/model-keys/anthropic", json={"api_key": KEY}, headers=ada.headers)
-    assert saved.status_code == 200, saved.text
-    assert saved.json()["connected"] and saved.json()["last4"] == "WXYZ" and KEY not in saved.text
-    row = await db_session.scalar(select(WorkspaceModelKey))
+async def test_personal_keys_are_encrypted_private_and_used_for_runs(world, db_client, agent_script, db_session) -> None:
+    _, ada, cat, _, base = await world()
+    saved = await db_client.put("/v1/me/model-keys/anthropic", json={"api_key": KEY}, headers=ada.headers)
+    assert saved.status_code == 200 and KEY not in saved.text
+    listed = {k["provider"]: k for k in saved.json()["keys"]}
+    assert set(listed) == set(PROVIDERS) and listed["anthropic"]["last4"] == "WXYZ"
+    assert all("server_key" not in k for k in listed.values())
+    row = await db_session.scalar(select(UserModelKey).where(UserModelKey.user_id == ada.id))
     assert row is not None and KEY not in row.encrypted
-
-    listed = {k["provider"]: k for k in (await db_client.get(f"{ws}/model-keys", headers=ada.headers)).json()}
-    assert set(listed) == set(PROVIDERS)
-    assert listed["anthropic"]["label"] == "Anthropic" and not listed["openai"]["connected"]
-    assert "anthropic:claude-haiku-5-5" in listed["anthropic"]["models"]
-
+    other = (await db_client.get("/v1/me/models", headers=cat.headers)).json()
+    assert all(not k["connected"] and k["last4"] is None for k in other["keys"])
     agent_script.say("Hello.")
-    run = (await db_client.post(f"{base}/agent/runs", json={"message": "hi"}, headers=ada.headers)).json()
-    assert run["status"] == "completed"
-    assert agent_script.keys_used[-1] == {"anthropic": KEY}
-
-    audit = [e for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json() if e["action"].startswith("model_key.")]
-    assert audit[0]["action"] == "model_key.saved" and audit[0]["details"] == {"provider": "anthropic", "last4": "WXYZ"}
-    assert KEY not in str(audit)
-
-    assert (await db_client.delete(f"{ws}/model-keys/anthropic", headers=ada.headers)).status_code == 204
-    assert (await db_client.delete(f"{ws}/model-keys/anthropic", headers=ada.headers)).status_code == 404
-    assert (await db_client.put(f"{ws}/model-keys/unsupported", json={"api_key": KEY}, headers=ada.headers)).status_code == 404
+    run = await db_client.post(f"{base}/agent/runs", json={"message": "hi"}, headers=ada.headers)
+    assert run.json()["status"] == "completed" and agent_script.keys_used[-1] == {"anthropic": KEY}
+    assert (await db_client.delete("/v1/me/model-keys/anthropic", headers=ada.headers)).status_code == 200
+    assert (await db_client.delete("/v1/me/model-keys/anthropic", headers=ada.headers)).status_code == 404
+    assert (await db_client.put("/v1/me/model-keys/unsupported", json={"api_key": KEY}, headers=ada.headers)).status_code == 404
 
 
-async def test_without_an_encryption_key_the_server_says_so(world, db_client: AsyncClient) -> None:
-    _, ada, _, ws, _ = await world(secure=False)
-    refused = await db_client.put(f"{ws}/model-keys/openai", json={"api_key": KEY}, headers=ada.headers)
+async def test_personal_keys_require_encryption(world, db_client) -> None:
+    _, ada, _, _, _ = await world(secure=False)
+    refused = await db_client.put("/v1/me/model-keys/openai", json={"api_key": KEY}, headers=ada.headers)
     assert refused.status_code == 503 and refused.json()["type"].endswith("/encryption_not_configured")
+    assert (await db_client.put("/v1/me/model-keys/openai", json={"api_key": " " * 30}, headers=ada.headers)).status_code == 422
 
 
-async def test_a_limit_reached_is_shown_on_the_key_and_cleared_by_the_next_run(
-    world, db_client: AsyncClient, agent_script
-) -> None:
-    _, ada, _, ws, base = await world()
-    await db_client.patch(base, json={"model": "anthropic:claude-sonnet-5"}, headers=ada.headers)
-    await db_client.put(f"{ws}/model-keys/anthropic", json={"api_key": KEY}, headers=ada.headers)
+async def test_provider_limits_are_recorded_only_on_the_requesters_key(world, db_client, agent_script) -> None:
+    _, ada, cat, _, base = await world()
+    for person in (ada, cat):
+        await db_client.put("/v1/me/model-keys/anthropic", json={"api_key": KEY}, headers=person.headers)
     agent_script.model = RateLimited.of("never")
     failed = (await db_client.post(f"{base}/agent/runs", json={"message": "hi"}, headers=ada.headers)).json()
-    assert failed["status"] == "failed"
-    assert failed["error"].startswith("Stopped: Anthropic refused this run") and "per-minute rate limit" in failed["error"]
-    key = next(k for k in (await db_client.get(f"{ws}/model-keys", headers=ada.headers)).json() if k["provider"] == "anthropic")
-    assert key["limit_reached_at"] and "rate limit" in key["limit_message"]
-
+    assert failed["status"] == "failed" and "per-minute rate limit" in failed["error"]
+    async def key(person):
+        return next(k for k in (await db_client.get("/v1/me/models", headers=person.headers)).json()["keys"] if k["provider"] == "anthropic")
+    assert (await key(ada))["limit_reached_at"] and (await key(cat))["limit_reached_at"] is None
     agent_script.say("Back again.")
-    assert (await db_client.post(f"{base}/agent/runs", json={"message": "hi"}, headers=ada.headers)).json()["status"] == "completed"
-    key = next(k for k in (await db_client.get(f"{ws}/model-keys", headers=ada.headers)).json() if k["provider"] == "anthropic")
-    assert key["limit_reached_at"] is None
+    await db_client.post(f"{base}/agent/runs", json={"message": "hi"}, headers=ada.headers)
+    assert (await key(ada))["limit_reached_at"] is None
 
 
-async def test_models_offered_follow_the_workspace_s_keys(world, db_client: AsyncClient) -> None:
-    app, ada, _, ws, _ = await world()
-    app.state.settings.server_model_keys = False  # a hosted service: everyone brings their own
-    try:
-        assert not [m for m in (await db_client.get(f"{ws}/models", headers=ada.headers)).json() if not m["id"].startswith("e2e:")]
-        await db_client.put(f"{ws}/model-keys/openai", json={"api_key": "sk-proj-" + "y" * 30}, headers=ada.headers)
-        models = (await db_client.get(f"{ws}/models", headers=ada.headers)).json()
-        assert {m["id"] for m in models} >= {"openai:gpt-5.5", "openai:gpt-5.5-mini"}
-        assert all(m["provider"] == "openai" and m["source"] == "workspace" for m in models if not m["id"].startswith("e2e:"))
-    finally:
-        app.state.settings.server_model_keys = True
-
-
-async def test_automations_have_no_daily_cap_unless_one_is_set(world, db_client: AsyncClient, agent_script) -> None:
-    _, ada, _, _, base = await world()
+async def test_model_choices_and_automations_use_the_creators_own_key(world, db_client, agent_script) -> None:
+    _, ada, cat, ws, base = await world()
+    await db_client.put("/v1/me/model-keys/openai", json={"api_key": KEY}, headers=ada.headers)
+    models = (await db_client.get(f"{ws}/models", headers=ada.headers)).json()
+    assert models and all(m["provider"] == "openai" and m["source"] == "personal" for m in models)
+    assert (await db_client.get(f"{ws}/models", headers=cat.headers)).json() == []
+    await db_client.put("/v1/me/model-keys/anthropic", json={"api_key": KEY}, headers=ada.headers)
     made = (await db_client.post(f"{base}/automations", json={
         "name": "Summary", "instructions": "Summarise.", "schedule_hour": 6,
     }, headers=ada.headers)).json()
     assert made["max_runs_per_day"] is None
-    url = f"{base}/automations/{made['id']}"
-    agent_script.say(*[f"Summary {i}." for i in range(8)])
-    for _ in range(7):
-        ran = (await db_client.post(f"{url}/run", headers=ada.headers)).json()
-    assert ran["runs_today"] == 7 and ran["last_error"] is None
-    capped = (await db_client.patch(url, json={"max_runs_per_day": 7}, headers=ada.headers)).json()
-    assert capped["max_runs_per_day"] == 7
-    assert "limit of 7 runs today" in (await db_client.post(f"{url}/run", headers=ada.headers)).json()["last_error"]
-    assert (await db_client.patch(url, json={"max_runs_per_day": None}, headers=ada.headers)).json()["max_runs_per_day"] is None
+    agent_script.say("Summary.")
+    await db_client.post(f"{base}/automations/{made['id']}/run", headers=ada.headers)
+    assert agent_script.keys_used[-1]["anthropic"] == KEY
 
 
-async def test_which_key_a_model_runs_with(db_client: AsyncClient) -> None:
-    settings = db_client._transport.app.state.settings.model_copy(update={"server_model_keys": True})  # type: ignore[attr-defined]
-    own = {"anthropic": "mine"}
-    assert key_for(settings, "anthropic:claude-sonnet-5", own) == "mine"
-    hosted = settings.model_copy(update={"server_model_keys": False})
-    assert key_for(hosted, "openai:gpt-5.5", own) is None
-    assert available_models(hosted, connected={"anthropic"}) == [
-        m for m in dict.fromkeys([*hosted.models, hosted.default_model]) if m.startswith("anthropic:")
-    ]
+async def test_models_never_fall_back_to_server_keys(db_client) -> None:
+    settings = db_client._transport.app.state.settings
+    settings.anthropic_api_key = SecretStr(KEY)
+    settings.server_model_keys = True
+    assert key_for(settings, "anthropic:claude-sonnet-5") is None
+    assert available_models(settings) == []
+    assert key_for(settings, "anthropic:claude-sonnet-5", {"anthropic": "mine"}) == "mine"
 
 
 def test_limit_errors_are_told_apart() -> None:

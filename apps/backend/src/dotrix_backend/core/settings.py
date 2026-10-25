@@ -169,8 +169,8 @@ class Settings(DatabaseSettings):
     s3_region: str = "us-east-1"
     max_upload_mb: int = Field(default=25, ge=1, le=200)
 
-    # Model provider keys. Read under their usual names (no DOTRIX_ prefix), so the
-    # same .env works for the CLI. A project's model ("anthropic:...") needs its key.
+    # Legacy configuration accepted during upgrades. Platform runs never use these keys:
+    # every person connects their own encrypted credentials in Account → Your models.
     anthropic_api_key: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("ANTHROPIC_API_KEY", "DOTRIX_ANTHROPIC_API_KEY")
     )
@@ -189,9 +189,8 @@ class Settings(DatabaseSettings):
     # these Fernet keys: comma-separated, the first encrypts, every one decrypts (to rotate, put
     # a new key first and re-save). None: workspaces can't connect keys.
     encryption_key: SecretStr | None = None
-    # Whether workspaces without their own key for a provider may use the server's keys above
-    # (self-hosting and development). Off for a hosted service where everyone brings their own.
-    server_model_keys: bool = True
+    # Ignored legacy compatibility flag. Every model call requires the instructing user's key.
+    server_model_keys: bool = False  # Legacy setting; shared/server fallback is disabled unconditionally.
     # Model for new projects ("provider:model"); each project can change its own.
     default_model: str = "anthropic:claude-sonnet-5"
     # Models a conversation can be started on; only those whose provider has a key are offered.

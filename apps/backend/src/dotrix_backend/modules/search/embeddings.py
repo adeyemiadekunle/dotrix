@@ -43,16 +43,16 @@ class LangchainEmbedder:
         return await self._queries.aembed_query(text)
 
 
-def build_embedder(settings: Settings) -> Embedder | None:
-    """The configured embedding model, or None (keyword search only)."""
+def build_embedder(settings: Settings, keys: dict[str, str] | None = None) -> Embedder | None:
+    """Only explicitly supplied personal credentials; shared background search uses keywords."""
     spec = (settings.embedding_model or "").strip()
     if not spec:
         return None
     provider, _, name = spec.partition(":")
     if provider == "google_genai":
-        key = settings.google_api_key
-        if key is None or not key.get_secret_value().strip():
-            logger.warning("search: no GOOGLE_API_KEY for %s; searching by keywords only", spec)
+        key = (keys or {}).get("google_genai")
+        if not key:
+            logger.debug("search: no personal key for %s; searching by keywords only", spec)
             return None
         from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
@@ -68,9 +68,9 @@ def build_embedder(settings: Settings) -> Embedder | None:
             spec, gemini("RETRIEVAL_DOCUMENT"), gemini("RETRIEVAL_QUERY"), settings.embedding_min_similarity
         )
     if provider == "openai":
-        key = settings.openai_api_key
-        if key is None or not key.get_secret_value().strip():
-            logger.warning("search: no OPENAI_API_KEY for %s; searching by keywords only", spec)
+        key = (keys or {}).get("openai")
+        if not key:
+            logger.debug("search: no personal key for %s; searching by keywords only", spec)
             return None
         from langchain_openai import OpenAIEmbeddings
 

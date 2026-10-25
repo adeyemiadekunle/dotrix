@@ -13,8 +13,9 @@ each behind `CodingTool` (`apps/backend/src/dotrix_backend/modules/coding/tools.
 Account → Your models saves a personal default. A new session can override it; follow-up turns
 keep their recorded tool and model. Unavailable defaults fall back to a compatible tool. OpenCode
 uses an available model from the platform catalogue; its session picker can choose another.
-Personal keys count only where the workspace allows them. The web app requires a usable personal,
-workspace, or authorized platform key before continuing in a real workspace (the seeded demo stays public).
+Every person brings their own provider key. The web app requires a usable personal key before
+continuing in a real workspace (the seeded demo stays public). Shared workspace and server model keys
+are not supported. Scheduled runs use the creator's own key.
 
 The worker gives the tool a copy of the repo and a brief, reads its changes back, then pushes a
 new branch and opens a PR through the dotrix GitHub App. This folder holds what the sandbox
@@ -26,9 +27,8 @@ egress proxy) and the OpenShell provider profiles for the model keys.
 1. **Approval.** In Manual a run waits for an approver. In Accept edits and Auto it starts at
    once, approved by whoever asked (the workspace's cap and the person's own rights apply, as in
    chat).
-2. **Keys.** The run codes on its requester's key: their own, where the organisation allows
-   personal keys, else the workspace's (Settings → Models), else the server's when
-   `DOTRIX_SERVER_MODEL_KEYS` lends it. Never the approver's.
+2. **Keys.** Only the requesting person's own key pays for a run. Scheduled runs use the
+   creator's personal key. No server, workspace, dotrix, or approver credential stands in.
 3. **The brief.** The issue and its acceptance criteria, its epic and what it waits on, the
    documents it links to in the project graph, and the repository's wiki pages that bear on it
    (`coding/brief.py`). Issue and document text is wrapped as data, never instructions.
@@ -122,15 +122,14 @@ You also need the GitHub App, with Contents (write) and Pull requests (write).
    ```shell
    DOTRIX_CODING_SANDBOX=docker
    DOTRIX_CODING_IMAGE=dotrix-coding:latest
-   ANTHROPIC_API_KEY=...   # Claude Code; with only OPENAI_API_KEY, Codex codes instead
    ```
    For OpenCode instead, on any provider's model (the key is that provider's):
    ```shell
    DOTRIX_CODING_AGENT=opencode
    DOTRIX_CODING_OPENCODE_MODEL=anthropic:claude-sonnet-5-5   # or openai:…, google_genai:…
    ```
-   The server's key is only the fallback: runs use the requester's or the workspace's key first
-   (above).
+   Sign in and connect your own provider key in Account → Your models before starting a run.
+   Model API keys are not configured in the platform environment.
 
 Each run gets:
 - **A network with no route out** (`docker network create --internal`), and on it the agent's
@@ -172,7 +171,6 @@ checks all of this against a real container (it's skipped where the image isn't 
    ```shell
    DOTRIX_CODING_SANDBOX=openshell
    DOTRIX_CODING_IMAGE=dotrix-coding:latest
-   ANTHROPIC_API_KEY=...   # Claude Code; with only OPENAI_API_KEY, Codex codes instead
    ```
    Add `DOTRIX_CODING_FORK_OWNER` for the fork (above); it's required in staging and production.
    OpenShell keeps each run's key as a provider for the length of the run and gives the sandbox
@@ -201,6 +199,7 @@ it.
 
 ## Check a sandbox by hand
 
+Use your own temporary provider key for this manual check, not a platform credential.
 Run this before trusting it with a real repo. It confirms that the agent can edit, reach its
 model, and nothing else.
 

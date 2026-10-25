@@ -177,7 +177,7 @@ class CodingService:
         if sandbox is None:
             reason = "Coding runs aren't set up on this server (DOTRIX_CODING_SANDBOX)"
         elif agent is None:
-            reason = "Connect a model provider in Settings → Models, or Account → Your models"
+            reason = "Connect your own model provider in Account → Your models"
         elif not GitHubAppClient(self.settings).configured:
             reason = "The dotrix GitHub App isn't set up on this server"
         elif await self._repo(project) is None:

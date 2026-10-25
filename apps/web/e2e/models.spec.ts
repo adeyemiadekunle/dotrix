@@ -4,14 +4,12 @@ import { signUp } from "./helpers";
 
 test("a missing provider blocks the workspace until an encrypted personal key is connected", async ({ page }) => {
   let ready = false;
-  await page.route("**/model-keys/access", (route) =>
+  await page.route("**/model-access", (route) =>
     route.fulfill({
       json: {
         ready,
         providers: ready ? ["xai"] : [],
         models: ready ? ["xai:grok-4.7"] : [],
-        personal_keys_allowed: true,
-        can_manage_keys: true,
         can_store_keys: true,
       },
     }),
@@ -39,18 +37,55 @@ test("a missing provider blocks the workspace until an encrypted personal key is
   await expect(page.getByLabel("Your default coding tool")).toHaveValue("opencode");
 });
 
-test("an organisation that forbids personal keys explains who can connect a provider", async ({ page }) => {
-  await page.route("**/model-keys/access", (route) =>
+test("every user connects a personal key without shared-key controls", async ({ page }) => {
+  await page.route("**/model-access", (route) =>
     route.fulfill({
-      json: { ready: false, providers: [], models: [], personal_keys_allowed: false, can_manage_keys: false, can_store_keys: true },
+      json: { ready: false, providers: [], models: [], can_store_keys: true },
     }),
   );
   await signUp(page);
-  await expect(page.getByText("Your organisation uses its own keys.", { exact: false })).toBeVisible();
-  await expect(page.getByLabel("Model API key")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Switch workspace" })).toBeVisible();
+  await expect(page.getByLabel("Model API key")).toBeVisible();
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  await expect(page.getByText("Connect a workspace key for everyone")).toHaveCount(0);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page).toHaveURL(/\/login/);
+});
+
+test("saving a personal key in Settings refreshes the mounted setup gate", async ({ page }) => {
+  let ready = false;
+  let accessChecks = 0;
+  await page.route("**/model-access", (route) => {
+    accessChecks += 1;
+    return route.fulfill({
+      json: {
+        ready,
+        providers: ready ? ["openai"] : [],
+        models: ready ? ["openai:gpt-5.5"] : [],
+        can_store_keys: true,
+      },
+    });
+  });
+  await page.route("**/me/model-keys/openai", async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    const response = await route.fetch();
+    if (response.ok()) ready = true;
+    await route.fulfill({ response });
+  });
+  await signUp(page);
+  await expect(page.getByRole("heading", { name: "Connect a model to continue" })).toBeVisible();
+  await page.getByRole("button", { name: "Model settings", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/my-models$/);
+  const openai = page.locator(".srow-wrap").filter({ has: page.getByText("OpenAI", { exact: true }) });
+  await openai.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByLabel("OpenAI API key", { exact: true }).fill("test-personal-provider-key-only");
+  const beforeSave = accessChecks;
+  await openai.getByRole("button", { name: "Save key", exact: true }).click();
+  await expect(page.getByText("Your OpenAI key is saved", { exact: true })).toBeVisible();
+  // Client navigation keeps ModelGate mounted: no reload or focus event can rescue a stale query.
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "Home", exact: true }).click();
+  await expect.poll(() => accessChecks).toBeGreaterThan(beforeSave);
+  await expect(page.getByRole("heading", { name: "Connect a model to continue" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Main", exact: true })).toBeVisible();
 });
 
 test("a new coding session offers compatible tools and sends the chosen OpenCode provider", async ({ page }) => {
