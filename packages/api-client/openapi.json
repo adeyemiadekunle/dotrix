@@ -8266,7 +8266,7 @@
           "agents"
         ],
         "summary": "Stop Run",
-        "description": "Stop a run that's still working (queued or running). Whoever asked can stop it, and so\ncan owners and admins. Changes already approved stay; the conversation can continue. A run\nwaiting for approval isn't stopped: reject its actions instead.",
+        "description": "Stop a run that's still working (queued or running). Whoever asked can stop it, and so\ncan owners and admins. Changes already approved stay; the conversation can continue. A run\nwaiting for approval isn't stopped: reject its actions instead. Returns only the run ID\nand status; reading its conversation requires the usual run access.",
         "operationId": "stop_run",
         "security": [
           {
@@ -8311,7 +8311,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentRunRead"
+                  "$ref": "#/components/schemas/RunStopRead"
                 }
               }
             }
@@ -30153,6 +30153,25 @@
           "failed"
         ],
         "title": "RunStatus"
+      },
+      "RunStopRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "RunStopRead",
+        "description": "Acknowledges a stop without granting access to the conversation."
       },
       "RunnerEvent": {
         "properties": {

@@ -183,8 +183,7 @@ class FakePlatform:
         if path.startswith(AGENT + "/runs/") and path.endswith("/stop") and method == "POST":
             run_id = path.split("/")[-2]
             self.stopped.append(run_id)
-            return httpx.Response(200, json={"id": run_id, "thread_id": "thread-1", "status": "failed",
-                                             "error": "Stopped by Ada", "approvals": [], "reply": None})
+            return httpx.Response(200, json={"id": run_id, "status": "failed"})
         if path.startswith(AGENT + "/runs/") and path.endswith("/stream"):
             if self.stream_status != 200:
                 return self.problem(self.stream_status, "not_found")

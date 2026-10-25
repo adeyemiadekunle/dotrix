@@ -147,7 +147,9 @@ async def test_stop_aborts_the_job_in_the_worker(worker_mode, db_client: AsyncCl
         await asyncio.wait_for(model.started.wait(), 10)
         stopped = await db_client.post(f"{base}/agent/runs/{run['id']}/stop", headers=ada.headers)
         assert stopped.status_code == 200, stopped.text
-        assert stopped.json()["status"] == "failed" and stopped.json()["error"] == "Stopped by Ada"
+        assert stopped.json() == {"id": run["id"], "status": "failed"}
+        own = (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=ada.headers)).json()
+        assert own["error"] == "Stopped by Ada"
     finally:
         # (worker.close() sends SIGUSR1, which Windows doesn't have: cancel the loop instead.)
         running.cancel()

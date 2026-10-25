@@ -59,7 +59,9 @@ losing runs.
 
 The worker starts each run's containers on the VPS's Docker. It reaches Docker only through
 `docker-proxy` (`tecnativa/docker-socket-proxy`), which allows containers, exec, networks, volumes,
-and images, and nothing else; the socket itself is never mounted into a dotrix container. Each
+and images, and nothing else. Only the worker and proxy join the internal `docker-control` network;
+the API, migrations, and web cannot reach the proxy. The worker also joins the application network
+for the database, queue, and storage. The socket itself is never mounted into a dotrix container. Each
 run's agent container has no route out except its egress proxy, which reaches only the model API
 of the tool Kai runs: Claude Code and Codex by default, or OpenCode on the provider set in
 `DOTRIX_CODING_OPENCODE_MODEL` (`DOTRIX_CODING_AGENT=opencode`). Runs use the requester's own key

@@ -10,6 +10,61 @@ from dotrix_cli.runner import LocalRunner, Outcome, Tool, parse_line
 from dotrix_cli.sandbox import ALLOWED_DOMAINS
 
 
+def test_unrelated_host_credentials_do_not_reach_a_tool_process(monkeypatch) -> None:
+    import os
+    import subprocess
+    import sys
+
+    from dotrix_cli.runner import _env
+
+    monkeypatch.setenv("DOTRIX_TOKEN", "synthetic-platform-token")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "synthetic-cloud-secret")
+    monkeypatch.setenv("GITHUB_TOKEN", "synthetic-github-token")
+    monkeypatch.setenv("NPM_TOKEN", "synthetic-registry-token")
+    monkeypatch.setenv("ALL_PROXY", "http://proxy.test:8080")
+    monkeypatch.setenv("NODE_OPTIONS", "--require /untrusted-hook.js")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-tool-key")
+    command = (
+        "import json, os; print(json.dumps({k: os.environ.get(k) for k in "
+        "['DOTRIX_TOKEN', 'AWS_SECRET_ACCESS_KEY', 'GITHUB_TOKEN', 'NPM_TOKEN', 'ALL_PROXY', 'NODE_OPTIONS', 'ANTHROPIC_API_KEY']}))"
+    )
+    result = subprocess.run([sys.executable, "-c", command], env=_env(), capture_output=True, text=True, check=True)
+    values = json.loads(result.stdout)
+    assert values.pop("ANTHROPIC_API_KEY") == "synthetic-tool-key"
+    assert all(value is None for value in values.values())
+    assert _env()["PATH"] == os.environ["PATH"]
+
+
+def test_provider_keys_and_settings_are_scoped_to_the_selected_tool(tmp_path: Path) -> None:
+    from dotrix_cli import sandbox
+
+    environ = {
+        "Path": "tool-bin", "SystemRoot": "windows", "HOME": "home", "XDG_CONFIG_HOME": "config",
+        "ANTHROPIC_API_KEY": "anthropic-key", "CLAUDE_CODE_OAUTH_TOKEN": "claude-login",
+        "OPENAI_API_KEY": "openai-key", "OPENAI_BASE_URL": "https://provider/100%",
+        "CODEX_API_KEY": "codex-key", "CODEX_HOME": "codex-auth",
+        "OPENCODE_CONFIG": "opencode.json", "GOOGLE_API_KEY": "google-key", "GOOGLE_GEMINI_BASE_URL": "https://google/",
+        "ANTHROPIC_UNRELATED_SECRET": "not-a-tool-setting", "OPENAI_UNRELATED_SECRET": "also-unrelated",
+        "DOTRIX_SRT": "trusted-parent-only", "ELECTRON_RUN_AS_NODE": "parent-only", "PYTHONPATH": "host-only",
+    }
+    claude = sandbox.tool_environment("claude-code", environ)
+    assert set(claude) == {"Path", "SystemRoot", "HOME", "XDG_CONFIG_HOME", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"}
+    opencode = sandbox.tool_environment("opencode", environ)
+    assert set(opencode) == {
+        "Path", "SystemRoot", "HOME", "XDG_CONFIG_HOME", "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
+        "OPENAI_BASE_URL", "OPENCODE_CONFIG", "GOOGLE_API_KEY", "GOOGLE_GEMINI_BASE_URL",
+    }
+    assert set(sandbox.tool_environment("codex", environ)) == {
+        "Path", "SystemRoot", "HOME", "XDG_CONFIG_HOME", "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "CODEX_HOME",
+    }
+    launcher = tmp_path / "opencode.launch.cmd"
+    sandbox.windows_launcher(launcher, ["opencode.cmd", "run"], environ, tool="opencode", home=tmp_path)
+    text = launcher.read_text()
+    assert 'set "OPENAI_BASE_URL=https://provider/100%%"' in text
+    assert 'set "OPENCODE_CONFIG=opencode.json"' in text
+    assert "claude-login" not in text and "UNRELATED_SECRET" not in text and "host-only" not in text
+
+
 def test_claude_codes_stream_becomes_events_and_a_summary() -> None:
     out = Outcome()
     parse_line(json.dumps({"type": "assistant", "message": {"content": [
@@ -46,10 +101,11 @@ def test_srt_writes_only_to_the_worktree_and_reaches_only_model_apis(tmp_path: P
     from dotrix_cli import sandbox
 
     monkeypatch.setattr(sandbox, "command", lambda: ["srt"])
+    monkeypatch.setattr(sandbox.platform, "system", lambda: "Linux")  # Windows has its own launcher test below
     runner = LocalRunner(api=None, repo=tmp_path, workspace_id="w", project_id="p")  # type: ignore[arg-type]
     tree = tmp_path / "trees" / "kun-1-abc123-1"
     tree.mkdir(parents=True)
-    argv, leftovers = runner._sandboxed(["claude", "-p"], tree)
+    argv, leftovers = runner._sandboxed(["claude", "-p"], tree, tool="claude-code")
     assert leftovers == [] or sandbox.platform.system() == "Windows"
     assert argv[:2] == ["srt", "--settings"] and argv[3:] == ["--", "claude", "-p"]
     settings = json.loads(Path(argv[2]).read_text())
@@ -117,10 +173,10 @@ def test_the_windows_launcher_hands_the_tool_its_environment_and_nothing_else(tm
     argv = sandbox.windows_launcher(launcher, ["C:/npm/claude.cmd", "-p", "--allowedTools", "Bash"], {
         "ANTHROPIC_API_KEY": "sk-ant-x", "OPENAI_BASE_URL": "https://p/100%", "DOTRIX_TOKEN": "dtx_secret",
         "PATH": "C:/Windows", "AWS_SECRET_ACCESS_KEY": "nope",
-    }, home=home)
+    }, tool="claude-code", home=home)
     assert argv == ["cmd.exe", "/d", "/c", str(launcher)]
     text = launcher.read_bytes().decode()
-    assert 'set "ANTHROPIC_API_KEY=sk-ant-x"' in text and 'set "OPENAI_BASE_URL=https://p/100%%"' in text
+    assert 'set "ANTHROPIC_API_KEY=sk-ant-x"' in text and "OPENAI_BASE_URL" not in text
     assert f'set "CLAUDE_CONFIG_DIR={home / ".claude"}"' in text  # its sign-in, not the sandbox account's
     assert "dtx_secret" not in text and "AWS_SECRET" not in text and "C:/Windows" not in text
     assert '"C:/npm/claude.cmd" "-p" "--allowedTools" "Bash"' in text and text.endswith("exit /b %errorlevel%\r\n")
@@ -155,7 +211,7 @@ def test_on_windows_the_tool_runs_through_the_launcher_and_it_is_removed(tmp_pat
     tree = tmp_path / "trees" / "kun-1-abc123-1"
     tree.mkdir(parents=True)
     runner = LocalRunner(api=None, repo=tmp_path, workspace_id="w", project_id="p")  # type: ignore[arg-type]
-    argv, leftovers = runner._sandboxed(["C:/npm/claude.cmd", "-p"], tree)
+    argv, leftovers = runner._sandboxed(["C:/npm/claude.cmd", "-p"], tree, tool="claude-code")
     assert argv[:3] == ["node", "cli.js", "--settings"] and argv[4:] == ["--", "cmd.exe", "/d", "/c", str(leftovers[0])]
     assert leftovers[0].exists() and not leftovers[0].is_relative_to(tree)  # never in the worktree (or its patch)
     runner_module._remove(leftovers)
@@ -200,7 +256,7 @@ async def test_a_turn_for_another_project_is_never_coded_here(tmp_path: Path) ->
     assert path.endswith("/runs/run-1/result") and body["outcome"] == "failed" and "another project" in body["error"]
 
 
-async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path: Path) -> None:
+async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path: Path, monkeypatch) -> None:
     """The lease is renewed every third of it (40 s by default); events waiting go out every couple
     of seconds anyway, so a local turn's view keeps up like a cloud turn's."""
     import shlex
@@ -225,7 +281,13 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
             calls.append((time.monotonic() - started, path.rsplit("/", 1)[-1], body or {}))
             return {"stop": False}
 
-    script = ("import json, time; print(json.dumps({'type': 'assistant', 'message': {'content': "
+    monkeypatch.setenv("DOTRIX_TEST_SECRET", "synthetic-host-secret")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-selected-tool-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-other-tool-key")
+    script = ("import json, os, time; assert 'DOTRIX_TEST_SECRET' not in os.environ; "
+              "assert os.environ['ANTHROPIC_API_KEY'] == 'synthetic-selected-tool-key'; "
+              "assert 'OPENAI_API_KEY' not in os.environ; "
+              "print(json.dumps({'type': 'assistant', 'message': {'content': "
               "[{'type': 'text', 'text': 'Looking at a.txt'}]}}), flush=True); time.sleep(4)")
     runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
                          command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}", sandbox="none",
@@ -236,7 +298,8 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     beats = [(at, body) for at, kind, body in calls if kind == "heartbeat"]
     sent = next(at for at, body in beats if any(e["text"] == "Looking at a.txt" for e in body["events"]))
     result = next(at for at, kind, _ in calls if kind == "result")
-    assert sent < 3.5 < result, calls  # while the tool still worked, not at the 40 s lease beat or the end
+    # Measure after worktree setup; slow git/filesystem startup is not event-delivery latency.
+    assert sent - beats[0][0] < 3.5 and result - sent > 0.5, calls
     # Where the turn's worktree is: to the platform (the desktop app opens it) and to whatever runs this.
     tree = beats[0][1]["worktree"]
     assert Path(tree).is_relative_to(tmp_path / "trees") and notified == [
@@ -316,5 +379,13 @@ async def test_stopping_the_runner_stops_the_tool_it_started(tmp_path: Path) -> 
     with pytest.raises(asyncio.CancelledError):
         await work
     await asyncio.sleep(0.2)
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
+    if sys.platform == "win32":
+        import csv
+
+        # os.kill(pid, 0) is not a POSIX existence probe on Windows.
+        listed = subprocess.run(["tasklist", "/fi", f"PID eq {pid}", "/fo", "csv", "/nh"],
+                                capture_output=True, text=True, check=True)
+        assert all(row[1] != str(pid) for row in csv.reader(listed.stdout.splitlines()) if len(row) > 1)
+    else:
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)

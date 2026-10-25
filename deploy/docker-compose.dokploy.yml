@@ -44,7 +44,6 @@ x-dotrix: &dotrix
     DOTRIX_CODING_WARM_MAX: ${DOTRIX_CODING_WARM_MAX:-1}
     DOTRIX_CODING_IDLE_MINUTES: ${DOTRIX_CODING_IDLE_MINUTES:-15}
     DOTRIX_CODING_DOCKER_RUNTIME: ${DOTRIX_CODING_DOCKER_RUNTIME:-}
-    DOCKER_HOST: tcp://docker-proxy:2375
 
 services:
   # The images, built on this host (so its Docker has the coding image the worker starts).
@@ -82,6 +81,10 @@ services:
 
   worker:
     <<: *dotrix
+    environment:
+      <<: *dotrix-env
+      DOCKER_HOST: tcp://docker-proxy:2375
+    networks: [default, docker-control]
     command: ["python", "-m", "dotrix_backend.worker"]
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -94,6 +97,7 @@ services:
   docker-proxy:
     image: tecnativa/docker-socket-proxy:0.3.0
     restart: unless-stopped
+    networks: [docker-control]
     environment:
       CONTAINERS: 1
       EXEC: 1
@@ -130,6 +134,10 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
     volumes: [miniodata:/data]
+
+networks:
+  docker-control:
+    internal: true
 
 volumes:
   pgdata:

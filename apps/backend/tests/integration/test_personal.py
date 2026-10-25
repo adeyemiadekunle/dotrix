@@ -1,6 +1,7 @@
 """What's each person's in a shared workspace (decided 2026-10-09): their conversations, their own
 model keys and default model, their touches to the agents, and continuing a run that stopped at
 its model's limit."""
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -10,7 +11,7 @@ from httpx import AsyncClient
 from sqlalchemy import update
 
 from dotrix_backend.core.crypto import Secrets
-from dotrix_backend.modules.agents.models import AgentRun
+from dotrix_backend.modules.agents.models import AgentRun, RunStatus
 from dotrix_backend.modules.workspaces.models import Role
 from dotrix_engine.testing import ScriptedChatModel, tool_call
 
@@ -50,6 +51,73 @@ async def _ask(client: AsyncClient, base: str, headers, message: str, **extra) -
     res = await client.post(f"{base}/agent/runs", json={"message": message, **extra}, headers=headers)
     assert res.status_code == 202, res.text
     return res.json()
+
+
+async def test_approval_queues_follow_conversation_privacy(
+    world, db_client: AsyncClient, db_session, agent_script
+) -> None:
+    ada, bob, ws, base = await world()
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="Ada's private proposal"))
+    private = await _ask(db_client, base, ada.headers, "Ada's private instruction")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/vision.md", content="Bob's proposal"))
+    own = await _ask(db_client, base, bob.headers, "Bob's instruction")
+    urls = [f"{base}/agent/approvals", f"{ws}/approvals"]
+    private_id, own_id = private["approvals"][0]["id"], own["approvals"][0]["id"]
+
+    for url in urls:
+        response = await db_client.get(url, headers=bob.headers)
+        assert response.status_code == 200, response.text
+        assert [item["id"] for item in response.json()] == [own_id]
+        assert "Ada's private" not in response.text
+        # Owners can decide both pending runs, even when they did not request them.
+        assert {item["id"] for item in (await db_client.get(url, headers=ada.headers)).json()} == {private_id, own_id}
+
+    granted = await db_client.patch(ws, json={"member_permissions": ["agents:approve"]}, headers=ada.headers)
+    assert granted.status_code == 200, granted.text
+    for url in urls:
+        assert {item["id"] for item in (await db_client.get(url, headers=bob.headers)).json()} == {private_id, own_id}
+
+    # A stale pending approval must not extend an approver's access after the run stops waiting.
+    await db_session.execute(update(AgentRun).where(AgentRun.id == uuid.UUID(private["id"])).values(status=RunStatus.COMPLETED))
+    await db_session.commit()
+    for url in urls:
+        assert [item["id"] for item in (await db_client.get(url, headers=bob.headers)).json()] == [own_id]
+
+    # Approval authority does not grant access to a restricted project.
+    assert (await db_client.patch(base, json={"access": "restricted"}, headers=ada.headers)).status_code == 200
+    assert (await db_client.get(urls[0], headers=bob.headers)).status_code == 404
+    assert (await db_client.get(urls[1], headers=bob.headers)).json() == []
+
+
+@pytest.mark.parametrize("run_status", [RunStatus.QUEUED, RunStatus.RUNNING])
+@pytest.mark.parametrize("manager_role", [Role.OWNER, Role.ADMIN])
+async def test_managers_can_stop_private_runs_without_reading_them(
+    world, db_client: AsyncClient, db_session, agent_script, signup, add_member, monkeypatch,
+    run_status: RunStatus, manager_role: Role,
+) -> None:
+    ada, bob, ws, base = await world()
+    manager = ada
+    if manager_role is Role.ADMIN:
+        manager = await signup(email="admin@example.com", name="Admin")
+        await add_member(ws.rsplit("/", 1)[-1], manager.id, Role.ADMIN)
+    agent_script.say("Bob's private reply")
+    run = await _ask(db_client, base, bob.headers, "Bob's private instruction")
+    await db_session.execute(update(AgentRun).where(AgentRun.id == uuid.UUID(run["id"])).values(status=run_status))
+    await db_session.commit()
+
+    async def no_worker(run_id, reason):
+        return False  # the service also handles a queued run or a worker that has already stopped
+
+    monkeypatch.setattr(db_client._transport.app.state.runner, "stop", no_worker)  # type: ignore[attr-defined]
+    run_url = f"{base}/agent/runs/{run['id']}"
+    assert (await db_client.get(run_url, headers=manager.headers)).status_code == 404
+    response = await db_client.post(f"{run_url}/stop", headers=manager.headers)
+    assert response.status_code == 200, response.text
+    assert response.json() == {"id": run["id"], "status": "failed"}
+    assert (await db_client.get(run_url, headers=manager.headers)).status_code == 404
+    own = (await db_client.get(run_url, headers=bob.headers)).json()
+    assert own["message"] == "Bob's private instruction" and own["reply"] == "Bob's private reply"
+    assert own["error"] == f"Stopped by {manager.user['display_name']}"
 
 
 async def test_conversations_are_private_to_whoever_started_them(world, db_client: AsyncClient, agent_script) -> None:

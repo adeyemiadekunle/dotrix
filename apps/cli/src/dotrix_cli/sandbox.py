@@ -26,6 +26,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -155,18 +156,50 @@ def settings(tree: Path, *, home: Path | None = None, system: str | None = None)
     }
 
 
-# What the tool may get from this machine's environment inside the Windows sandbox (which starts it
-# with a fresh one): its keys and settings, nothing else.
-FORWARDED = ("ANTHROPIC_", "CLAUDE_", "OPENAI_", "OPENCODE_", "GEMINI_", "GOOGLE_API_KEY")
+# Host credentials are not part of the tool's environment. Keep the execution settings it needs
+# and explicit provider/tool settings, on every platform and even when srt is unavailable.
+EXECUTION_ENV = frozenset({
+    "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "PROGRAMDATA", "APPDATA", "LOCALAPPDATA",
+    "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USER", "LOGNAME", "SHELL", "TMP", "TEMP", "TMPDIR",
+    "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "TERM", "COLORTERM", "TZ",
+    "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS",
+})
+ANTHROPIC_ENV = frozenset({
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
+})
+OPENAI_ENV = frozenset({"OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID"})
+TOOL_ENV = {
+    "claude-code": ANTHROPIC_ENV | {
+        "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+    },
+    # Codex can be supplied through --tool codex --command even though it isn't auto-detected.
+    "codex": OPENAI_ENV | {"CODEX_API_KEY", "CODEX_HOME"},
+    "opencode": ANTHROPIC_ENV | OPENAI_ENV | {
+        "GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_GEMINI_BASE_URL",
+        "OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT", "OPENCODE_DISABLE_AUTOUPDATE",
+    },
+}
 
 
-def windows_launcher(path: Path, argv: list[str], environ: dict[str, str], *, home: Path | None = None) -> list[str]:
+def tool_environment(tool: str, environ: Mapping[str, str]) -> dict[str, str]:
+    """An allowlist, rather than host inheritance or broad credential-name prefixes."""
+    allowed = EXECUTION_ENV | TOOL_ENV[tool]
+    return {key: value for key, value in environ.items() if key.upper() in allowed}
+
+
+def windows_launcher(
+    path: Path, argv: list[str], environ: dict[str, str], *, tool: str, home: Path | None = None,
+) -> list[str]:
     """A batch file that sets the tool's environment and starts it, for the Windows sandbox: the
     tool's key variables, and where its sign-in and state live (the person's profile, not the
     sandbox account's). Deleted by the runner when the turn ends."""
     home = home or Path.home()
-    values = {k: v for k, v in environ.items() if k.startswith(FORWARDED)}
-    values.setdefault("CLAUDE_CONFIG_DIR", str(home / ".claude"))
+    forwarded = TOOL_ENV[tool] | {"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"}
+    values = {k: v for k, v in tool_environment(tool, environ).items() if k.upper() in forwarded}
+    if tool == "claude-code":
+        values.setdefault("CLAUDE_CONFIG_DIR", str(home / ".claude"))
     values.setdefault("XDG_CONFIG_HOME", str(home / ".config"))
     values.setdefault("XDG_DATA_HOME", str(home / ".local" / "share"))
     values.setdefault("XDG_CACHE_HOME", str(home / ".cache"))
@@ -177,7 +210,7 @@ def windows_launcher(path: Path, argv: list[str], environ: dict[str, str], *, ho
     lines = ["@echo off"]
     lines += [f'set "{k}={v.replace("%", "%%")}"' for k, v in sorted(values.items()) if "\n" not in v and '"' not in v]
     lines += [" ".join(quoted(a) for a in argv), "exit /b %errorlevel%"]
-    path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
+    path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8", newline="")
     return ["cmd.exe", "/d", "/c", str(path)]
 
 

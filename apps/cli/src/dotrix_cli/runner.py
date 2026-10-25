@@ -353,14 +353,16 @@ class LocalRunner:
         else:
             here = self.tools()
             tool = Tool.named(run["tool"] if run["tool"] in here else here[0], isolated=isolation == "srt")
+        # A custom command stands in for the requested tool; its name is only a display label.
+        environment_tool = run["tool"] if self.command else tool.name
         # The tool by its full path: on Windows `claude` and `opencode` are .cmd files, found only that way.
         tool_argv = [shutil.which(tool.argv[0]) or tool.argv[0], *tool.argv[1:]]
-        argv, leftovers = self._sandboxed(tool_argv, tree) if isolation == "srt" else (tool_argv, [])
+        argv, leftovers = self._sandboxed(tool_argv, tree, tool=environment_tool) if isolation == "srt" else (tool_argv, [])
         out = Outcome(root=tree)
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv, cwd=tree, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE, env={**_env(), **(sandbox_runtime.env() if isolation == "srt" else {})},
+                stderr=asyncio.subprocess.PIPE, env={**_env(environment_tool), **(sandbox_runtime.env() if isolation == "srt" else {})},
                 **_own_group(),
             )
         except OSError as exc:
@@ -433,7 +435,7 @@ class LocalRunner:
         await report("changes", base_sha=base_sha, patch=patch, summary=out.summary or _tail(stderr), **usage)
         self.echo(f"  Changes reported; the worktree stays at {tree}")
 
-    def _sandboxed(self, argv: list[str], tree: Path) -> tuple[list[str], list[Path]]:
+    def _sandboxed(self, argv: list[str], tree: Path, *, tool: str) -> tuple[list[str], list[Path]]:
         """The tool inside srt (`sandbox.settings`), and the files to remove when it ends. On Windows
         it starts through a launcher that gives it its environment (srt starts it with a fresh one)."""
         settings = tree.parent / f"{tree.name}.srt.json"
@@ -443,7 +445,7 @@ class LocalRunner:
         leftovers: list[Path] = []
         if platform_info.system() == "Windows":
             launcher = tree.parent / f"{tree.name}.launch.cmd"
-            argv = sandbox_runtime.windows_launcher(launcher, argv, _env())
+            argv = sandbox_runtime.windows_launcher(launcher, argv, _env(tool), tool=tool)
             leftovers.append(launcher)
         return [*srt, "--settings", str(settings), "--", *argv], leftovers
 
@@ -476,9 +478,9 @@ def _lost(exc: Exception) -> bool:
     return getattr(exc, "code", None) == "lease_lost"
 
 
-def _env() -> dict[str, str]:
-    """The tool's environment: this machine's, without the platform's token."""
-    return {k: v for k, v in os.environ.items() if k not in ("DOTRIX_TOKEN",)}
+def _env(tool: str = "claude-code") -> dict[str, str]:
+    """Only the selected tool's credentials and execution settings cross this boundary."""
+    return sandbox_runtime.tool_environment(tool, os.environ)
 
 
 def _tail(text: str) -> str | None:

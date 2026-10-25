@@ -36,6 +36,7 @@ from .schemas import (
     PlanRead,
     RunCreate,
     RunEventPage,
+    RunStopRead,
     ThreadRead,
     ThreadRename,
     TriageRequest,
@@ -139,10 +140,11 @@ async def get_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> AgentRu
 
 
 @router.post("/runs/{run_id}/stop", responses=errors(409))
-async def stop_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> AgentRunRead:
+async def stop_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> RunStopRead:
     """Stop a run that's still working (queued or running). Whoever asked can stop it, and so
     can owners and admins. Changes already approved stay; the conversation can continue. A run
-    waiting for approval isn't stopped: reject its actions instead."""
+    waiting for approval isn't stopped: reject its actions instead. Returns only the run ID
+    and status; reading its conversation requires the usual run access."""
     return await agents.stop(access, run_id)
 
 
