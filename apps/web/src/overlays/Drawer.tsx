@@ -875,7 +875,16 @@ export function Drawer() {
                 // overwrite the real one on blur; wait for the detail query instead.
                 <div className="dsec">
                   <h3>Description</h3>
-                  <div className="muted">Loading…</div>
+                  {liveIssue.isError ? (
+                    <div className="muted">
+                      The description didn't load.{" "}
+                      <button className="btn btn-link" onClick={() => void liveIssue.refetch()}>
+                        Try again
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="muted">Loading…</div>
+                  )}
                 </div>
               ) : (
                 <Rte t={t} desc={isLive() ? mdToHtml(issue?.description ?? "") : t.desc} />
