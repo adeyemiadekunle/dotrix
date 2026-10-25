@@ -358,7 +358,7 @@ async def test_rejecting_stopping_and_when_it_isnt_available(
     app = db_client._transport.app  # type: ignore[attr-defined]
     app.state.settings.anthropic_api_key = None
     reason = (await db_client.get(f"{base}/coding", headers=ada.headers)).json()["reason"]
-    assert "Anthropic key" in reason
+    assert "Connect a model provider" in reason
 
 
 async def test_a_running_agent_is_stopped_and_nothing_is_pushed(
@@ -872,6 +872,44 @@ async def _asked(db_client: AsyncClient, coding, title: str = "Refund a payment"
     run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={}, headers=ada.headers)).json()
     assert run["status"] == "awaiting_approval", run
     return base, run
+
+
+async def test_tool_choice_personal_default_and_session_tool_are_kept(db_client: AsyncClient, coding) -> None:
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    app.state.settings.openai_api_key = SecretStr("test-openai-key")
+    app.state.settings.xai_api_key = SecretStr("test-xai-key")
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": "claude-code"}, headers=ada.headers)
+    available = (await db_client.get(f"{base}/coding", headers=ada.headers)).json()
+    assert available["default_tool"] == "claude-code"
+    assert {t["agent"] for t in available["tools"] if t["available"]} == {"claude-code", "codex", "opencode"}
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Tool choice"}, headers=ada.headers)).json()
+    first = await db_client.post(f"{base}/coding/issues/{task['key']}/runs",
+                                 json={"agent": "opencode", "model": "xai:grok-4.7"}, headers=ada.headers)
+    assert first.status_code == 201, first.text
+    run = first.json()
+    assert (run["agent"], run["model"]) == ("opencode", "xai:grok-4.7")
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "reject"}, headers=ada.headers)
+    await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": "codex"}, headers=ada.headers)
+    follow = await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns",
+                                  json={"message": "Try this approach instead"}, headers=ada.headers)
+    assert follow.status_code == 201, follow.text
+    assert (follow.json()["agent"], follow.json()["model"]) == ("opencode", "xai:grok-4.7")
+
+
+async def test_approval_needs_the_recorded_tools_key_even_if_another_tool_is_available(db_client: AsyncClient, coding) -> None:
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    app.state.settings.openai_api_key = SecretStr("test-openai-key")
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Recorded provider"}, headers=ada.headers)).json()
+    request = await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"agent": "codex"}, headers=ada.headers)
+    assert request.status_code == 201, request.text
+    app.state.settings.openai_api_key = None
+    result = await db_client.post(f"{base}/coding/runs/{request.json()['id']}/decision",
+                                  json={"decision": "approve"}, headers=ada.headers)
+    assert result.status_code == 409 and "codex" in result.text
 
 
 def _heads(origin: Path):

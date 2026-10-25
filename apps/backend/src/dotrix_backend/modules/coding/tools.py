@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.agents.llm import PROVIDERS, available_models
 
 from .models import CodingAgent
 
@@ -135,7 +136,7 @@ class _NoUsageCommand:
 
 
 def _secret(value: Any) -> str | None:
-    return value.get_secret_value() if value is not None else None
+    return (value.get_secret_value().strip() or None) if value is not None else None
 
 
 def _clip(text: str, limit: int = MAX_STEP) -> str:
@@ -388,6 +389,11 @@ OPENCODE_PROVIDERS = {
                          "OPENAI_BASE_URL", "openai_api_key"),
         OpenCodeProvider("google_genai", "google", "Google", "GOOGLE_API_KEY", "generativelanguage.googleapis.com",
                          "GOOGLE_GEMINI_BASE_URL", "google_api_key"),
+        OpenCodeProvider("xai", "xai", "xAI (Grok)", "XAI_API_KEY", "api.x.ai", "XAI_BASE_URL", "xai_api_key"),
+        OpenCodeProvider("deepseek", "deepseek", "DeepSeek", "DEEPSEEK_API_KEY", "api.deepseek.com", "DEEPSEEK_BASE_URL", "deepseek_api_key"),
+        OpenCodeProvider("mistral", "mistral", "Mistral", "MISTRAL_API_KEY", "api.mistral.ai", "MISTRAL_BASE_URL", "mistral_api_key"),
+        OpenCodeProvider("groq", "groq", "Groq", "GROQ_API_KEY", "api.groq.com", "GROQ_BASE_URL", "groq_api_key"),
+        OpenCodeProvider("openrouter", "openrouter", "OpenRouter", "OPENROUTER_API_KEY", "openrouter.ai", "OPENROUTER_BASE_URL", "openrouter_api_key"),
     )
 }
 # Never offered to the model: the sandbox can't reach the web, and a run has nobody to answer.
@@ -456,7 +462,7 @@ class OpenCode:
         self.key_env, self.api_host, self.base_url_env = provider.key_env, provider.api_host, provider.base_url_env
         self.provider_type = f"dotrix-opencode-{provider.opencode}"  # infra/coding/dotrix-opencode-*.yaml
 
-    def _env(self) -> list[str]:
+    def _env(self, model: str | None = None) -> list[str]:
         """Its settings, before every command (`env …`): the same in each sandbox, OpenShell's too,
         which passes the sandbox nothing but the key. None of them is a secret."""
         config: dict[str, Any] = {
@@ -467,6 +473,13 @@ class OpenCode:
         if base_url := os.environ.get(self.base_url_env, "").rstrip("/"):
             # The URL itself, not `{env:…}`: OpenShell passes the sandbox nothing but the key.
             config["provider"] = {self.opencode_provider.opencode: {"options": {"baseURL": base_url + self.opencode_provider.base_url_suffix}}}
+        elif endpoint := PROVIDERS[self.provider].base_url:
+            config["provider"] = {self.opencode_provider.opencode: {"options": {"baseURL": endpoint}}}
+        if model:
+            # The pinned CLI's built-in catalogue may predate a platform-configured model.
+            config.setdefault("provider", {}).setdefault(self.opencode_provider.opencode, {})["models"] = {
+                model.partition(":")[2]: {}
+            }
         return [
             f"OPENCODE_CONFIG_CONTENT={json.dumps(config, separators=(',', ':'))}",
             "OPENCODE_DISABLE_PROJECT_CONFIG=1",  # the repo's opencode.json is data, not config
@@ -478,7 +491,7 @@ class OpenCode:
         return "env " + " ".join(shlex.quote(pair) for pair in self._env()) + f" opencode {args}"
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
-        argv = ["env", *self._env(), "opencode", "run", "--standalone", "--format", "json", "--auto"]
+        argv = ["env", *self._env(model), "opencode", "run", "--standalone", "--format", "json", "--auto"]
         if model:
             argv += ["-m", f"{self.opencode_provider.opencode}/{model.partition(':')[2] or model}"]
         return argv
@@ -584,28 +597,39 @@ def run_key(tool: CodingTool, settings: Settings, keys: dict[str, str]) -> str |
     return tool.server_key(settings) if settings.server_model_keys else None
 
 
-def _can_run(settings: Settings, agent: CodingAgent, providers: frozenset[str] | set[str]) -> bool:
-    tool = tool_for(agent, model_for(settings, agent))
-    return tool is not None and (
-        tool.provider in providers or (settings.server_model_keys and tool.server_key(settings) is not None)
-    )
+def coding_models(settings: Settings, providers: frozenset[str] | set[str]) -> list[str]:
+    return [m for m in available_models(settings, *([settings.coding_opencode_model] if settings.coding_opencode_model else []),
+                                       connected=set(providers))
+            if m.partition(":")[0] in OPENCODE_PROVIDERS]
 
 
-def choose_agent(settings: Settings, providers: frozenset[str] | set[str] = frozenset()) -> CodingAgent | None:
-    """Claude Code when there's an Anthropic key, else Codex with an OpenAI key (or the one
-    `DOTRIX_CODING_AGENT` names, if there's a key for it: OpenCode only when named, with
-    `DOTRIX_CODING_OPENCODE_MODEL`); None when none can run. A key is the workspace's or the
-    person's own for that provider (`providers`), or the server's when it lends its keys."""
-    if settings.coding_agent != "auto":
-        agent = CodingAgent(settings.coding_agent)
-        return agent if _can_run(settings, agent, providers) else None
-    for agent in (CodingAgent.CLAUDE_CODE, CodingAgent.CODEX):
-        if _can_run(settings, agent, providers):
+def choose_agent(
+    settings: Settings, providers: frozenset[str] | set[str] = frozenset(), *,
+    preferred: str | None = None, preferred_model: str | None = None,
+) -> CodingAgent | None:
+    """A compatible personal/server default, otherwise Codex, Claude Code, then OpenCode."""
+    order = [preferred, settings.coding_agent, CodingAgent.CODEX, CodingAgent.CLAUDE_CODE, CodingAgent.OPENCODE]
+    for name in dict.fromkeys(order):
+        if name in (None, "auto"):
+            continue
+        agent = CodingAgent(name)
+        model = model_for(settings, agent, providers, preferred_model=preferred_model)
+        tool = tool_for(agent, model)
+        if tool and (tool.provider in providers or (settings.server_model_keys and tool.server_key(settings))):
             return agent
     return None
 
 
-def model_for(settings: Settings, agent: CodingAgent) -> str | None:
+def model_for(
+    settings: Settings, agent: CodingAgent, providers: frozenset[str] | set[str] = frozenset(), *,
+    preferred_model: str | None = None,
+) -> str | None:
     if agent is CodingAgent.OPENCODE:
-        return settings.coding_opencode_model
+        models = coding_models(settings, providers)
+        for model in (settings.coding_opencode_model, preferred_model):
+            if model in models:
+                return model
+        # Other providers have no native tool; use OpenCode with their first allowed model.
+        return next((m for m in models if m.partition(":")[0] not in ("openai", "anthropic")),
+                    next(iter(models), None))
     return TOOLS[agent].model(settings)

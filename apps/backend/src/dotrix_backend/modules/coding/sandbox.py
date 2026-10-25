@@ -490,19 +490,24 @@ class DockerSandbox:
             # The agent's environment: the proxy, and the key (passed by name from ours, never on argv).
             proxy = f"http://egress:{EGRESS_PORT}"
             # localhost stays local: the agent's own dev server, opened by its browser.
-            env = {**tool.sandbox_env(model_key), "HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "https_proxy": proxy,
-                   "http_proxy": proxy, "NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1",
-                   "HOME": DOCKER_HOME, "LANG": "C.UTF-8"}
+            credentials = tool.sandbox_env(model_key)
+            container_env = {"HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "https_proxy": proxy,
+                             "http_proxy": proxy, "NO_PROXY": "localhost,127.0.0.1,::1",
+                             "no_proxy": "localhost,127.0.0.1,::1", "HOME": DOCKER_HOME, "LANG": "C.UTF-8"}
             if os.environ.get(tool.base_url_env):
-                env[tool.base_url_env] = os.environ[tool.base_url_env]
+                credentials[tool.base_url_env] = os.environ[tool.base_url_env]
             # --init: a reaper as PID 1, so what a stopped turn leaves behind doesn't linger as zombies.
             await self.cli("run", "-d", "--init", "--name", name, "--label", label, "--network", name, "--read-only",
                            "--tmpfs", "/tmp:rw,exec,size=1g", "--mount", f"type=volume,dst={DOCKER_HOME}",
                            "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--user", DOCKER_UID,
                            "--memory", self.memory, "--cpus", f"{self.cpus:g}", "--pids-limit", "512",
                            *(["--runtime", self.runtime] if self.runtime else []),
-                           *[a for k in env for a in ("-e", k)], "-w", DOCKER_HOME, self.image, "sleep", "infinity",
-                           env=self.cli_env(**env))
+                           *[a for k in credentials for a in ("-e", k)],
+                           *[a for k, value in container_env.items() for a in ("-e", f"{k}={value}")],
+                           "-w", DOCKER_HOME, self.image, "sleep", "infinity",
+                           # Docker's TCP daemon must not use the agent-only egress proxy.
+                           # Credentials stay off argv; the fixed, non-secret container settings don't.
+                           env=self.cli_env(**credentials))
             await self.cli("exec", "-i", "-w", DOCKER_HOME, name, "tar", "-x", "-f", "-",
                            stdin=await asyncio.to_thread(_tar_of, source))
         except BaseException:

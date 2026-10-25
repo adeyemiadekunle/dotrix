@@ -58,9 +58,9 @@ CodingApprover = Annotated[ProjectAccess, Depends(require_project_permission(Per
 
 
 def get_coding_service(
-    session: SessionDep, settings: SettingsDep, jobs: Annotated[Jobs, Depends(get_jobs)]
+    request: Request, session: SessionDep, settings: SettingsDep, jobs: Annotated[Jobs, Depends(get_jobs)]
 ) -> CodingService:
-    return CodingService(session, settings, jobs)
+    return CodingService(session, settings, jobs, secrets=request.app.state.secrets)
 
 
 Coding = Annotated[CodingService, Depends(get_coding_service)]

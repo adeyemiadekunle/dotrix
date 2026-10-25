@@ -194,6 +194,7 @@ class PersonalKeys:
         return PersonalModelsRead(
             keys=[self._read(name, rows.get(name), settings) for name in PROVIDERS],
             default_model=user.default_model,
+            default_coding_tool=user.default_coding_tool,
             models=_catalogue(settings),
         )
 

@@ -128,7 +128,7 @@ class Settings(DatabaseSettings):
     coding_image: str = "dotrix-coding:latest"  # the sandbox image (infra/coding/Dockerfile)
     # Which tool codes: "auto" follows the key the server has (Anthropic: Claude Code, else
     # OpenAI: Codex); naming one needs its key.
-    coding_agent: Literal["auto", "claude-code", "codex", "opencode"] = "auto"  # "auto" never picks OpenCode
+    coding_agent: Literal["auto", "claude-code", "codex", "opencode"] = "auto"  # Default, overridable per person/run.
     coding_claude_model: str | None = None  # Claude Code's default when unset
     coding_codex_model: str | None = None  # Codex's default when unset
     # OpenCode's model, as everywhere in dotrix ("anthropic:claude-sonnet-5-5"): its provider decides
@@ -180,6 +180,11 @@ class Settings(DatabaseSettings):
     google_api_key: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("GOOGLE_API_KEY", "DOTRIX_GOOGLE_API_KEY")
     )
+    xai_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("XAI_API_KEY", "DOTRIX_XAI_API_KEY"))
+    deepseek_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("DEEPSEEK_API_KEY", "DOTRIX_DEEPSEEK_API_KEY"))
+    mistral_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("MISTRAL_API_KEY", "DOTRIX_MISTRAL_API_KEY"))
+    groq_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("GROQ_API_KEY", "DOTRIX_GROQ_API_KEY"))
+    openrouter_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("OPENROUTER_API_KEY", "DOTRIX_OPENROUTER_API_KEY"))
     # Organisations connect their own provider keys (Settings → Models), stored encrypted with
     # these Fernet keys: comma-separated, the first encrypts, every one decrypts (to rotate, put
     # a new key first and re-save). None: workspaces can't connect keys.
@@ -198,6 +203,11 @@ class Settings(DatabaseSettings):
         "anthropic:claude-haiku-4-5-20251001",
         "openai:gpt-5.5",
         "openai:gpt-5.5-mini",
+        "xai:grok-4.7",
+        "deepseek:deepseek-flash",
+        "mistral:mistral-small-latest",
+        "groq:openai/gpt-oss-120b",
+        "openrouter:openai/gpt-5.5",
     ]
     # The most tokens (input + output, over all its steps) one agent run may use before it
     # stops; a project can set its own. 0 turns the limit off.
