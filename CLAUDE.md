@@ -33,7 +33,7 @@ pnpm dev:backend                          # API on :8000, OpenAPI at /docs (pyth
 pnpm dev:worker                           # background worker (arq on Redis): agent runs, emails; needed when DOTRIX_JOBS=worker
 pnpm db:up && pnpm db:migrate             # Postgres, Redis, MinIO (console :9001) from infra/docker-compose.yml, then apply migrations
 pnpm db:revision "add issues"             # autogenerate a migration after model changes
-pnpm docker:up                            # dotrix itself in Docker (infra/docker-compose.app.yml): migrate, API (reloads on backend/engine changes), worker, web on :3080; docker:web rebuilds the web, docker:logs, docker:down
+pnpm docker:up                            # dotrix in Docker: migrate, API on :8000, worker, web on :3080 (DOTRIX_DOCKER_WEB_PORT=3000 keeps the native web address); docker:web rebuilds the web, docker:logs, docker:down
 pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
 pnpm --filter @dotrix/web e2e            # browser tests: fresh dotrix_e2e DB + backend on :8100 + web on :3100, rule-based model
 ```
