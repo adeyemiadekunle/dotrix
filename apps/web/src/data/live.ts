@@ -4,14 +4,14 @@
 // the store changes first (the screen answers at once), then the request; a refused request
 // puts the item back as the API has it and says why.
 //
-// Wired: the workspace, members and roles, projects (create,
-// edit, status, star), issues (create, every field, checklists, repeats, stars, attachments,
-// comments), notifications (read state), activity, agents (the list), Knowledge (read and save),
-// files (upload, list, rename, duplicate, delete), automations (list, on/off, add a preset), the audit log.
-// Changes made through mutate() anywhere in the screens (a sub-task ticked, a star, a team's
-// people) are compared with what the API last had after each change (reconcile) and sent.
-// Archive, delete, and moving an issue to another project go to the API too (a delete can't be
-// undone there, so it offers no undo).
+// Reads: the directory (you, workspaces, members, projects, agents) loads here; everything else
+// (issues, notifications, activity, threads, coding, documents, knowledge, automations, audit)
+// arrives through the StoreBridge's TanStack queries, which replace the store's slots.
+// Writes: the store changes first (the screen answers at once), then the request; a refused
+// request puts the item back as the API has it and says why. Wired: the workspace, members and
+// roles, projects (create, edit, status, star), issues (create, every field, checklists, repeats,
+// stars, attachments, comments), notifications (read state), agents (the list), Knowledge (save),
+// files (upload, rename, duplicate, delete), automations (on/off, add a preset).
 // Settings and Members (your account, the workspace, its people, agents' settings) are in
 // account.ts. Not yet: chat and coding (their own step).
 import { api, apiFetch, authPost, hasSession, problemMessage, unwrap, type Schemas } from "@/lib/api";
@@ -24,7 +24,6 @@ import {
   ms,
   toAgent,
   toAttachment,
-  toAudit,
   toAutomation,
   toChecklist,
   toFile,
@@ -117,32 +116,17 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       return false;
     }
     const path = { params: { path: { workspace_id: ws.id } } };
-    // Issues, notifications, activity, conversations and coding sessions come from the
-    // StoreBridge's TanStack queries — the store only holds the directory here.
-    const [members, projects, starred] = await Promise.all([
+    // Issues, notifications, activity, conversations, coding sessions, documents, knowledge,
+    // automations and the audit log come from the StoreBridge's TanStack queries — the store
+    // only holds the directory here (you, workspaces, members, projects, agents).
+    const [members, projects, starred, agents] = await Promise.all([
       unwrap(api.GET("/v1/workspaces/{workspace_id}/members", path)),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/projects", path)),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/starred", path)).catch(() => []),
+      unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", path)).catch(() => []),
     ]);
     const stars = new Set((starred as { id: string }[]).map((p) => p.id));
     const ps = projects.map((p) => toProject(p, members, stars));
-    // Per project: knowledge (every file's content), documents, automations. Agents and the audit
-    // log are the workspace's; the audit log is for owners and admins, so others get none.
-    const [perProject, agents, audit] = await Promise.all([
-      Promise.all(
-        projects.map(async (p) => {
-          const pp = { params: { path: { workspace_id: ws.id, project_id: p.id } } };
-          const [files, docs, autos] = await Promise.all([
-            loadKnowledge(ws.id, p.id).catch(() => []),
-            unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/documents", pp)).catch(() => []),
-            unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/automations", pp)).catch(() => []),
-          ]);
-          return { knowledge: files, files: docs.map((d) => toFile(d, p.id)), automations: autos.map(toAutomation) };
-        }),
-      ),
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", path)).catch(() => []),
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/audit", { params: { path: { workspace_id: ws.id }, query: { limit: 200 } } })).catch(() => []),
-    ]);
     const data: Data = {
       ws: { id: ws.id, name: ws.name, c: hashTint(ws.id), plan: ws.kind === "personal" ? "Personal" : "Team", kind: ws.kind, url: ws.slug },
       workspaces: wss.map((w) => ({
@@ -160,7 +144,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       comments: [],
       activity: [],
       notifs: [],
-      files: perProject.flatMap((x) => x.files),
+      files: [],
       projOrder: [...ps.filter((p) => p.fav), ...ps.filter((p) => !p.fav)].map((p) => p.id),
       savedViews: [],
       recentSearches: [],
@@ -168,10 +152,10 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       notifPrefs: {},
       agents: (agents as Schemas["AgentRead"][]).map(toAgent),
       threads: [],
-      knowledge: perProject.flatMap((x) => x.knowledge),
+      knowledge: [],
       coding: [],
-      audit: (audit as Schemas["AuditEventRead"][]).map(toAudit),
-      automations: perProject.flatMap((x) => x.automations),
+      audit: [],
+      automations: [],
     };
     if (live.demo === null) live.demo = S.data; // set aside the demo's data the first time only
     S.data = data;

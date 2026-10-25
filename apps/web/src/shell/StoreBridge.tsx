@@ -8,7 +8,15 @@ import { useEffect } from "react";
 import { useCodingSessions } from "../../lib/coding";
 import { useCrossConversations } from "../../lib/conversations";
 import { toCodingSession, toThread } from "../../lib/view-models";
-import { useLiveNotifications, useLiveWorkspaceActivity, useLiveWorkspaceTasks } from "../../lib/workspace-data";
+import {
+  useLiveAudit,
+  useLiveNotifications,
+  useLiveWorkspaceActivity,
+  useLiveWorkspaceAutomations,
+  useLiveWorkspaceFiles,
+  useLiveWorkspaceKnowledge,
+  useLiveWorkspaceTasks,
+} from "../../lib/workspace-data";
 import { isLive, live } from "../data/live";
 import { D, render, useStudio } from "../data/store";
 
@@ -20,6 +28,10 @@ export function StoreBridge() {
   const acts = useLiveWorkspaceActivity(wsId, Boolean(wsId));
   const convos = useCrossConversations(wsId, Boolean(wsId));
   const sessions = useCodingSessions(wsId, Boolean(wsId));
+  const files = useLiveWorkspaceFiles(wsId, Boolean(wsId));
+  const knowledge = useLiveWorkspaceKnowledge(wsId, Boolean(wsId));
+  const autos = useLiveWorkspaceAutomations(wsId, Boolean(wsId));
+  const audit = useLiveAudit(wsId, Boolean(wsId));
   useEffect(() => {
     if (!wsId) return;
     const d = D();
@@ -28,7 +40,11 @@ export function StoreBridge() {
     if (acts) d.activity = acts;
     if (convos.data) d.threads = convos.data.map(toThread);
     if (sessions.data) d.coding = sessions.data.map(toCodingSession);
-    if (tasks || notifs || acts || convos.data || sessions.data) render();
-  }, [wsId, tasks, notifs, acts, convos.data, sessions.data]);
+    if (files) d.files = files;
+    if (knowledge) d.knowledge = knowledge;
+    if (autos) d.automations = autos;
+    if (audit) d.audit = audit;
+    if (tasks || notifs || acts || convos.data || sessions.data || files || knowledge || autos || audit) render();
+  }, [wsId, tasks, notifs, acts, convos.data, sessions.data, files, knowledge, autos, audit]);
   return null;
 }
