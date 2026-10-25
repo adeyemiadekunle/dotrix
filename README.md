@@ -207,20 +207,11 @@ The `dotrix` command installs on its own (Python 3.11+ and [uv](https://docs.ast
 
 ```bash
 uv tool install "git+https://github.com/adeyemiadekunle/dotrix#subdirectory=apps/cli"
-dotrix sandbox install     # the sandbox runtime local coding turns run in (needs Node 22.12+)
 ```
 
-- The sandbox runtime ([srt](https://github.com/anthropics/sandbox-runtime)) comes with dotrix: a pinned
-  version installed into `~/.dotrix/tools` (`dotrix runner` installs it too, the first time it's missing),
-  never a global npm install. `dotrix sandbox check` says what's missing:
-  - macOS: nothing more.
-  - Linux: `bubblewrap` and `socat` (`sudo apt-get install bubblewrap socat`).
-  - Windows (srt's support is still alpha): a one-time setup per machine, which `dotrix sandbox install`
-    runs (Windows asks for an administrator once). Inside it, tools that use Windows' own TLS (`curl.exe`,
-    PowerShell's web commands, `dotnet restore`, `winget`) can't reach the network; Node, Python and Git
-    for Windows can.
-
-  The desktop app carries its own copy (and offers the Windows setup on first launch).
+- Local coding turns (`dotrix runner`) each run in a git worktree of their own under
+  `~/.dotrix/worktrees`. Nothing isolates them for now, so the coding tool only edits files there
+  and runs no commands.
 - On Windows, run `uv tool update-shell` once (then open a new terminal) so `dotrix` is on your PATH.
 - Without uv: `pipx install "git+https://github.com/adeyemiadekunle/dotrix#subdirectory=apps/cli"`.
 - Point it at your server with `DOTRIX_API_URL` (or `--api-url` on `login`). The default is

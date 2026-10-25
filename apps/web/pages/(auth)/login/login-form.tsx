@@ -79,10 +79,18 @@ export function LoginForm({
     );
   }
 
+  // A device (the CLI, the desktop app) waits on you: say so, since signing in is only step one.
+  const forDevice = next?.split("?")[0] === "/device";
   return (
     <AuthCard
-      title={mode === "link" ? "Sign in or sign up by email" : "Welcome back"}
-      description={mode === "link" ? "We'll email you a link: it signs you in, or creates your account if you're new." : "Sign in to your dotrix account."}
+      title={forDevice ? "Sign in to approve a device" : mode === "link" ? "Sign in or sign up by email" : "Welcome back"}
+      description={
+        forDevice
+          ? "Sign in to your dotrix account; you'll approve the device next."
+          : mode === "link"
+            ? "We'll email you a link: it signs you in, or creates your account if you're new."
+            : "Sign in to your dotrix account."
+      }
       footer={footer}
     >
       <form onSubmit={onSubmit} className="grid gap-4">

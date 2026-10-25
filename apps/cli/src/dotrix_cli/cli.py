@@ -38,7 +38,6 @@ from dotrix_engine.ingest import ingest_doc
 from dotrix_engine.jobs import get_job, list_jobs, resume_job, start_job
 
 from . import repo as repo_facts
-from . import sandbox as sandbox_runtime
 from .agent_client import ApprovalNotAllowed, Outcome, PlatformAgent
 from .board import CODING_AGENTS, PlatformBoard
 from .platform import (
@@ -496,7 +495,6 @@ def runner_command(
     project: str = ProjectOpt,
     tool: str = typer.Option(None, "--tool", help="claude-code or opencode (default: the first found here)"),
     command: str = typer.Option(None, "--command", help="Any other command instead: the brief on stdin, its output as events"),
-    sandbox: str = typer.Option("auto", "--sandbox", help="auto (srt when installed), srt, or none"),
     once: bool = typer.Option(False, "--once", help="Code at most one waiting turn, then exit"),
     poll: float = typer.Option(5.0, "--poll", help="Seconds between asks for a turn"),
     name: str = typer.Option(None, "--name", help="This checkout's name on the platform (default: the hostname and folder)"),
@@ -516,38 +514,18 @@ def runner_command(
         else:
             typer.echo(text)
 
-    if sandbox not in ("auto", "srt", "none"):
-        _fail("--sandbox is auto, srt, or none")
     config, state, client = _linked(project)
-    if sandbox != "none" and sandbox_runtime.command() is None:  # it comes with dotrix: installed the first time
-        say(f"Installing the sandbox runtime ({sandbox_runtime.PACKAGE}@{sandbox_runtime.VERSION})…")
-        try:
-            sandbox_runtime.install()
-        except RuntimeError as exc:
-            if sandbox == "srt":
-                _fail(str(exc))
-            typer.secho(f"{exc}. Turns won't be isolated until it is.", fg=typer.colors.YELLOW, err=True)
-    if sandbox != "none" and sys.platform == "win32" and sandbox_runtime.command() and sys.stdin.isatty() \
-            and sandbox_runtime.windows_setup_missing():
-        say("Setting up the sandbox on this machine (once; Windows asks for an administrator)…")
-        try:
-            sandbox_runtime.setup_windows()
-        except RuntimeError as exc:
-            if sandbox == "srt":
-                _fail(str(exc))
-            typer.secho(f"{exc}. Turns won't be isolated until it is.", fg=typer.colors.YELLOW, err=True)
     runner = LocalRunner(
         _AsyncApi(client), Path(config.root_dir), state.workspace_id, state.project_id, tool=tool, command=command,
-        sandbox=sandbox, echo=say,
+        echo=say,
         notify=_json_line if as_json else (lambda event: None), **({"name": name} if name else {}), **({"worktrees": worktrees} if worktrees else {}),
     )
     try:
         registered = asyncio.run(runner.register())
     except (PlatformError, RuntimeError) as exc:
         _fail(str(exc))
-    isolated = "isolated by srt" if registered["isolation"] == "srt" else (
-        "NOT isolated: " + ("; ".join(sandbox_runtime.check().missing) or "--sandbox none"))
-    say(f"{registered['name']}: coding {state.project_key} turns with {', '.join(registered['tools'])}, {isolated}")
+    say(f"{registered['name']}: coding {state.project_key} turns with {', '.join(registered['tools'])}, "
+        "each in a worktree of its own (not isolated: the tool edits files, it runs no commands)")
     try:
         if once:
             if not asyncio.run(runner.once()):
@@ -559,36 +537,6 @@ def runner_command(
         say("Stopped; a turn in progress needs recovery once its lease lapses")
     except PlatformError as exc:
         _fail(str(exc))
-
-
-sandbox_app = typer.Typer(help="The sandbox runtime (srt) that local turns code in; it comes with dotrix.")
-app.add_typer(sandbox_app, name="sandbox")
-
-
-@sandbox_app.command("install")
-def sandbox_install():
-    """Install the pinned sandbox runtime into ~/.dotrix/tools (needs Node 22.12+ with npm); on
-    Windows also its one-time setup for this machine (one administrator prompt)."""
-    try:
-        cli_js = sandbox_runtime.install()
-        typer.echo(f"{sandbox_runtime.PACKAGE}@{sandbox_runtime.VERSION} at {cli_js.parent.parent}")
-        if sys.platform == "win32" and sandbox_runtime.windows_setup_missing():
-            typer.echo("Setting up the sandbox on this machine (once; Windows asks for an administrator)…")
-            sandbox_runtime.setup_windows()
-    except RuntimeError as exc:
-        _fail(str(exc))
-    sandbox_check()
-
-
-@sandbox_app.command("check")
-def sandbox_check():
-    """Whether local turns can be isolated here, and what to install if not."""
-    found = sandbox_runtime.check()
-    if found.ready:
-        typer.echo(f"Ready: {' '.join(found.srt or [])}")
-        return
-    typer.secho("Not ready. Missing:\n  " + "\n  ".join(found.missing), fg=typer.colors.YELLOW)
-    raise typer.Exit(1)
 
 
 @app.command("code")
@@ -1207,8 +1155,9 @@ def login(
         if as_json:
             _json_line({"event": "code", "user_code": code, "verification_uri": uri, "verification_uri_complete": complete})
             return
+        # The code and the address apart, never one link with the code in it to copy around.
         typer.echo(f"To sign in, open {uri} and enter code:  {code}")
-        typer.echo(f"(or open {complete})  Waiting for approval…")
+        typer.echo("Waiting for approval…")
 
     credential = _platform_call(lambda: device_login(client, show=show, open_browser=not (no_browser or as_json),
                                                      client_name=client_name[:100]))

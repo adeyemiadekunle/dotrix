@@ -260,7 +260,7 @@ A turn asked for with `location: local` (`dotrix code KEY`, or "On <computer>" i
 codes on its requester's computer instead of a worker's sandbox; everything else is the same turn.
 
 - **The runner.** `dotrix runner` in a linked checkout registers the computer (`coding_runners`, one per
-  person and name: its tools, `srt` or not, the projects it has checkouts of) and polls
+  person and name: its tools, the projects it has checkouts of) and polls
   `POST /workspaces/{ws}/coding/runners/{id}/claim`. It claims only its owner's approved local turns, in
   those projects, checked again at claim time (they may have lost the project or the right to instruct Kai).
 - **Lease and fencing.** A claim is a new lease (`lease_token` + 1, `DOTRIX_CODING_LEASE_SECONDS`), renewed
@@ -276,25 +276,14 @@ codes on its requester's computer instead of a worker's sandbox; everything else
 - **Keys and credentials (decided).** The tool runs with what is signed in on that machine (Claude Code's
   login, OpenCode's config). The platform never sends a provider key or GitHub token to a device, and the
   runner strips `DOTRIX_TOKEN` from the tool's environment.
-- **Isolation.** A worktree isn't a security boundary. The tool runs inside `srt`, which comes with dotrix
-  (`dotrix_cli/sandbox.py`: a pinned version the CLI installs into `~/.dotrix/tools` with `dotrix sandbox
-  install`, or `dotrix runner` the first time; the desktop app ships the same version and points the runner
-  at it with `DOTRIX_SRT`). `--sandbox auto`, the default, uses it when it can run (Node 22.12+; on Linux
-  bubblewrap and socat), `srt` requires it: writes only to the worktree, the tools' own state and
-  `/tmp`; no reads of `~/.ssh`, `~/.aws` and other credentials; network only to the model APIs and package
-  registries. Claude Code may run commands only inside it (`--allowedTools Bash`); without it, edits only.
-  Per platform (`sandbox.settings`, `sandbox.check`): macOS needs nothing more (its temp
-  folders are writable); Linux needs bubblewrap and socat; Windows (alpha in srt) needs a one-time setup
-  per machine (`srt windows-install`, one administrator prompt), which `dotrix sandbox install` runs and
-  the desktop app offers on first launch, its state read with `srt-win.exe status`. On Windows srt starts
-  the tool as its own account with a fresh environment, so the runner starts it through a launcher (a
-  batch file beside the worktree, removed when the turn ends) that sets its key variables and where its
-  sign-in lives (`CLAUDE_CONFIG_DIR`, the XDG folders, in the person's profile, which the settings let it
-  write). Tools are started by their full path (`claude.cmd` on Windows), and Stop reaches everything
-  they started (a process group: SIGINT on macOS and Linux, Ctrl-Break then `taskkill /T` on Windows).
-  A turn without `srt` says so in its events. Checked for real on Linux (bubblewrap): writing in the
-  worktree works; writing outside it, reading `~/.ssh`, and reaching github.com are refused. Not yet
-  checked: macOS, and reaching the allowed hosts (behind this container's own proxy srt's bridge refused it).
+- **Isolation: none for now.** A worktree isn't a security boundary, and nothing isolates the tool:
+  `srt` (Anthropic's sandbox runtime) was removed on 2026-10-25, after its one-time Windows setup timed
+  out on a real machine (`srt-win acl stamp`), until another way is found. So Claude Code may only edit
+  files (`--permission-mode acceptEdits`, no commands), and its environment carries only its own
+  provider's settings and what it needs to run, none of the machine's other credentials
+  (`dotrix_cli/toolenv.py`). Tools are started by their full path (`claude.cmd` on Windows), and Stop
+  reaches everything they started (a process group: SIGINT on macOS and Linux, Ctrl-Break then
+  `taskkill /T` on Windows). Each turn's events say it isn't isolated.
 - **The result.** `.../result` carries the patch (`git diff --cached --binary` against the turn's base),
   the summary and usage. The platform reads the paths from the patch itself (`git apply --numstat`, renames
   included), runs the guard, and then treats it as a cloud turn's: Manual waits as changes ready; Accept
@@ -307,8 +296,7 @@ The desktop app codes local turns itself, with no Python or CLI to install:
 
 - **The CLI, bundled.** `apps/cli/scripts/standalone.py` builds the CLI with PyInstaller from only its
   own dependencies (`uv export --package dotrix`), into `apps/desktop/resources/dotrix`
-  (`pnpm --filter @dotrix/desktop bundle-cli`; built on each platform for that platform). srt is
-  bundled already (above).
+  (`pnpm --filter @dotrix/desktop bundle-cli`; built on each platform for that platform).
 - **Folders.** In a new coding session, "Local" opens a folder picker for a checkout
   of the project's repository. The app links it (`dotrix link`), runs `dotrix runner --json` there in
   the background, restarts it after a failure (three tries, then it waits), and starts it again on the
@@ -323,7 +311,7 @@ The desktop app codes local turns itself, with no Python or CLI to install:
   or opened, symlinks out of them refused, and only the app's own page may ask.
 
 Not yet: the standalone build run (and signed) on a real Mac and Windows machine, a folder with no remote
-(branch and diff, no PR), `srt` run on a real Mac and Windows machine.
+(branch and diff, no PR), and a way to isolate local turns again.
 
 ## Local-file projects
 

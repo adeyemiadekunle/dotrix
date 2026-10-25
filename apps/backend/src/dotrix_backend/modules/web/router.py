@@ -323,7 +323,9 @@ async def web_github_install(request: Request, settings: SettingsDep) -> Redirec
 async def web_github_setup(request: Request) -> RedirectResponse:
     """Step 2: GitHub's "Setup URL" sends the browser here with the new installation's id. Check
     it's the install this browser started, then sign in with GitHub in install mode, so the API
-    can confirm this person manages it. An updated installation needs nothing: back to Settings."""
+    can confirm this person manages it. GitHub says "update" when the app was already on that
+    account: started from Settings, it's still added to this workspace (which may not have it);
+    changed on GitHub alone, there's nothing to add, so back to Settings."""
     params = request.query_params
     saved = _read_cookie(request, GITHUB_INSTALL_COOKIE)
     next_path = safe_next_path(saved.get("next"))
@@ -333,16 +335,12 @@ async def web_github_setup(request: Request) -> RedirectResponse:
         response.delete_cookie(GITHUB_INSTALL_COOKIE, path=GITHUB_INSTALL_PATH)
         return response
 
-    if params.get("setup_action") == "update":
-        return back(_with_query(next_path, {"github": "updated"}))
     installation = params.get("installation_id") or ""
-    if (
-        not saved.get("workspace")
-        or not saved.get("state")
-        or params.get("state") != saved["state"]
-        or not installation.isdigit()
-        or int(installation) <= 0
-    ):
+    started_here = bool(saved.get("workspace") and saved.get("state") and params.get("state") == saved["state"])
+    known = installation.isdigit() and int(installation) > 0
+    if params.get("setup_action") == "update" and not (started_here and known):
+        return back(_with_query(next_path, {"github": "updated"}))
+    if not started_here or not known:
         message = "That GitHub install expired or came from another browser. Start it again from Settings."
         return back(_with_query(next_path, {"github_error": message}))
     return back(_with_query("/api/auth/github", {"install": f"{saved['workspace']}:{installation}", "next": next_path}))

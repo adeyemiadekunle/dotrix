@@ -246,3 +246,20 @@ async def test_installing_the_app_checks_the_state_and_the_install_link(db_clien
     location = urlparse(setup.headers["location"])
     assert location.path == "/api/auth/github"
     assert parse_qs(location.query) == {"install": [f"{workspace}:77"], "next": ["/w/x/settings/github"]}
+
+
+async def test_an_app_already_on_the_account_is_still_added_when_started_from_settings(db_client: AsyncClient) -> None:
+    # GitHub says "update" when the app was already installed on that account: this workspace may
+    # not have it yet, so an install started here goes on to add it.
+    workspace = "0190f5b8-0000-7000-8000-000000000001"
+    url = "https://github.com/apps/dotrix/installations/new"
+    res = await db_client.get(f"/api/github/install?workspace={workspace}&install_url={url}&next=/w/x/settings/github")
+    state = parse_qs(urlparse(res.headers["location"]).query)["state"][0]
+    setup = await db_client.get(f"/api/github/setup?installation_id=77&setup_action=update&state={state}")
+    location = urlparse(setup.headers["location"])
+    assert location.path == "/api/auth/github"
+    assert parse_qs(location.query) == {"install": [f"{workspace}:77"], "next": ["/w/x/settings/github"]}
+
+    # Changed on GitHub alone (no install started in this browser): nothing to add.
+    elsewhere = await db_client.get("/api/github/setup?installation_id=77&setup_action=update")
+    assert elsewhere.status_code == 303 and elsewhere.headers["location"] == "/?github=updated"
