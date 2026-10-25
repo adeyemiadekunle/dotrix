@@ -69,6 +69,7 @@ from .schemas import (
     RunFileRead,
     RunOutputItem,
     RunOutputRead,
+    RunStopRead,
     SourceRead,
     StageUsage,
     ThreadRead,
@@ -329,7 +330,7 @@ class AgentService:
 
     async def get(self, access: ProjectAccess, run_id: uuid.UUID, *, acted: bool = False) -> AgentRunRead:
         """A run its requester sees, or one waiting on a decision you may make (privacy.py).
-        `acted`: you just decided or stopped it, so you see where it got to."""
+        `acted`: you just decided it, so you see where it got to."""
         stmt = (
             select(AgentRun)
             .options(selectinload(AgentRun.approvals), selectinload(AgentRun.output_rows),
@@ -361,9 +362,11 @@ class AgentService:
     async def pending_approvals(self, access: ProjectAccess) -> list[ApprovalRead]:
         result = await self.session.scalars(
             select(AgentApproval)
+            .join(AgentRun, AgentRun.id == AgentApproval.run_id)
             .where(
                 AgentApproval.project_id == access.project.id,
                 AgentApproval.status == ApprovalStatus.PENDING,
+                run_openable_by(access.member),
             )
             .order_by(AgentApproval.created_at, AgentApproval.position)
         )
@@ -379,6 +382,7 @@ class AgentService:
                 Project.workspace_id == member.workspace_id,
                 AgentApproval.status == ApprovalStatus.PENDING,
                 visible_to(member.user_id, member.role),
+                run_openable_by(member),
             )
             .order_by(AgentApproval.created_at, AgentApproval.position)
         )
@@ -628,7 +632,7 @@ class AgentService:
         await resume_limited(self.session, self.runner, run)
         return await self.get(access, run.id)
 
-    async def stop(self, access: ProjectAccess, run_id: uuid.UUID) -> AgentRunRead:
+    async def stop(self, access: ProjectAccess, run_id: uuid.UUID) -> RunStopRead:
         """Stop a run that's still working. Whoever asked can stop it, and so can owners and
         admins. What the agents already wrote (after approval) stays; the conversation can
         continue with a new message."""
@@ -661,7 +665,7 @@ class AgentService:
             run.updated_at = run.finished_at = _now()
         await self.session.commit()
         if queued:
-            return await self.get(access, run.id, acted=True)
+            return RunStopRead(id=run.id, status=run.status)
         await self.runner.stop(run.id, reason)
         # If nothing recorded the stop (it hadn't started, or was cut off by a restart), do it.
         await self.session.refresh(run)
@@ -669,7 +673,7 @@ class AgentService:
             run.status, run.error = RunStatus.FAILED, reason
             run.updated_at = run.finished_at = _now()
             await self.session.commit()
-        return await self.get(access, run.id, acted=True)
+        return RunStopRead(id=run.id, status=run.status)
 
     async def update_output_item(
         self, access: ProjectAccess, run_id: uuid.UUID, output_id: uuid.UUID, index: int, data: OutputItemUpdate

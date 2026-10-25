@@ -172,7 +172,7 @@ export function useRecentThreads(scope: Scope | undefined) {
   });
 }
 
-function useAgentMutation<Vars>(scope: Scope | undefined, fn: (scope: Scope, vars: Vars) => Promise<Run>) {
+function useAgentMutation<Vars, Result>(scope: Scope | undefined, fn: (scope: Scope, vars: Vars) => Promise<Result>) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (vars: Vars) => fn(scope!, vars),

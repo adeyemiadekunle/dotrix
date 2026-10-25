@@ -154,4 +154,4 @@ def test_jobs_stop(linked_repo: Path, platform: FakePlatform) -> None:
     result = invoke(linked_repo, "jobs-stop", "run-9")
     assert result.exit_code == 0, result.output
     assert platform.stopped == ["run-9"]
-    assert "Run run-9 -> failed: Stopped by Ada" in result.output
+    assert "Run run-9 -> failed" in result.output

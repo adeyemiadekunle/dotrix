@@ -1825,7 +1825,8 @@ export interface paths {
          * Stop Run
          * @description Stop a run that's still working (queued or running). Whoever asked can stop it, and so
          *     can owners and admins. Changes already approved stay; the conversation can continue. A run
-         *     waiting for approval isn't stopped: reject its actions instead.
+         *     waiting for approval isn't stopped: reject its actions instead. Returns only the run ID
+         *     and status; reading its conversation requires the usual run access.
          */
         post: operations["stop_run"];
         delete?: never;
@@ -8010,6 +8011,18 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "queued" | "running" | "awaiting_approval" | "completed" | "failed";
+        /**
+         * RunStopRead
+         * @description Acknowledges a stop without granting access to the conversation.
+         */
+        RunStopRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            status: components["schemas"]["RunStatus"];
+        };
         /** RunnerEvent */
         RunnerEvent: {
             /**
@@ -14678,7 +14691,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentRunRead"];
+                    "application/json": components["schemas"]["RunStopRead"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */

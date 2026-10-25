@@ -286,6 +286,13 @@ class WorkspaceConversation(BaseModel):
     working: bool = Field(description="A run in it is still answering")
 
 
+class RunStopRead(BaseModel):
+    """Acknowledges a stop without granting access to the conversation."""
+
+    id: uuid.UUID
+    status: RunStatus
+
+
 class AgentRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

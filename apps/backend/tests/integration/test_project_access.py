@@ -91,6 +91,8 @@ async def test_the_approvals_queue_leaves_out_projects_you_cant_see(
     signup, create_team, add_member, db_client: AsyncClient, agent_script
 ) -> None:
     ada, bob, _, ws, base = await _setup(signup, create_team, add_member, db_client)
+    granted = await db_client.patch(ws, json={"member_permissions": ["agents:approve"]}, headers=ada.headers)
+    assert granted.status_code == 200, granted.text
     agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan"}, headers=ada.headers)).json()
     assert run["status"] == "awaiting_approval"
