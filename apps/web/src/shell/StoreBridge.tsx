@@ -1,16 +1,20 @@
 // Mirrors the workspace queries into the synchronous store slots the task kit still reads
-// (task(), PopLayer lookups, presence, badges). The queries are the source of truth — these
-// arrays are replaced, never merged — while writes keep flowing through live.ts's senders and
-// come back here through cache invalidation. The demo (/w/dotrix) is never live, so nothing
-// is mirrored and its seeded store is untouched. Deleting a slot's readers lets its mirror go.
+// (task(), proj()/who()/mem() lookups, PopLayer, presence, badges). The queries are the source
+// of truth — these arrays are replaced, never merged — while writes keep flowing through
+// live.ts's senders and come back here through cache invalidation. The demo (/w/dotrix) is
+// never live, so nothing is mirrored and its seeded store is untouched. Deleting a slot's
+// readers lets its mirror go.
 import { useEffect } from "react";
 
 import { useCodingSessions } from "../../lib/coding";
 import { useCrossConversations } from "../../lib/conversations";
 import { toCodingSession, toThread } from "../../lib/view-models";
 import {
+  useLiveAgents,
   useLiveAudit,
+  useLiveMembers,
   useLiveNotifications,
+  useLiveProjects,
   useLiveWorkspaceActivity,
   useLiveWorkspaceAutomations,
   useLiveWorkspaceFiles,
@@ -23,6 +27,9 @@ import { D, render, useStudio } from "../data/store";
 export function StoreBridge() {
   useStudio(); // re-render when live.ws appears or the store changes
   const wsId = isLive() ? live.ws?.id : undefined;
+  const members = useLiveMembers(wsId, Boolean(wsId));
+  const projects = useLiveProjects(wsId, Boolean(wsId));
+  const agents = useLiveAgents(wsId, Boolean(wsId));
   const tasks = useLiveWorkspaceTasks(wsId, Boolean(wsId));
   const notifs = useLiveNotifications(wsId, Boolean(wsId));
   const acts = useLiveWorkspaceActivity(wsId, Boolean(wsId));
@@ -35,6 +42,17 @@ export function StoreBridge() {
   useEffect(() => {
     if (!wsId) return;
     const d = D();
+    if (members) d.members = members;
+    if (agents) d.agents = agents;
+    if (projects) {
+      d.projects = projects;
+      // Sidebar order: starred first on first fill, then kept (drags stay), new projects last.
+      const kept = d.projOrder.filter((id) => projects.some((p) => p.id === id));
+      const fresh = projects.filter((p) => !kept.includes(p.id));
+      d.projOrder = kept.length
+        ? [...kept, ...fresh.filter((p) => p.fav).map((p) => p.id), ...fresh.filter((p) => !p.fav).map((p) => p.id)]
+        : [...projects.filter((p) => p.fav), ...projects.filter((p) => !p.fav)].map((p) => p.id);
+    }
     if (tasks) d.tasks = tasks;
     if (notifs) d.notifs = notifs;
     if (acts) d.activity = acts;
@@ -44,7 +62,9 @@ export function StoreBridge() {
     if (knowledge) d.knowledge = knowledge;
     if (autos) d.automations = autos;
     if (audit) d.audit = audit;
-    if (tasks || notifs || acts || convos.data || sessions.data || files || knowledge || autos || audit) render();
-  }, [wsId, tasks, notifs, acts, convos.data, sessions.data, files, knowledge, autos, audit]);
+    // Once the directory has resolved the shell may mount (screens read me()/proj() synchronously).
+    if (members && agents && projects) live.dirReady = true;
+    if (members || agents || projects || tasks || notifs || acts || convos.data || sessions.data || files || knowledge || autos || audit) render();
+  }, [wsId, members, agents, projects, tasks, notifs, acts, convos.data, sessions.data, files, knowledge, autos, audit]);
   return null;
 }
