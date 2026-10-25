@@ -58,6 +58,26 @@ export function useLiveAllTasks(workspaceId: string | undefined, enabled = true)
   return useLiveTasks(workspaceId, {}, enabled);
 }
 
+/** Every issue including archived ones, rank-ordered — the synchronous store mirror keeps them all reachable. */
+export function useLiveWorkspaceTasks(workspaceId: string | undefined, enabled = true): Task[] | undefined {
+  const issues = useWorkspaceIssues(enabled ? workspaceId : undefined, { archived: "include", order: "created" });
+  const starred = useQuery({
+    queryKey: ["issues", "workspace", workspaceId, "starred-keys"],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/issues", {
+          params: { path: { workspace_id: workspaceId! }, query: { starred: true, limit: 5000 } },
+        }),
+      ),
+    enabled: enabled && Boolean(workspaceId),
+  });
+  return useMemo(() => {
+    if (!issues.data) return undefined;
+    const fav = new Set((starred.data ?? []).map((i) => i.key));
+    return issues.data.map((i) => ({ ...toTask(i, i.project_id, i.rank), fav: fav.has(i.key) }));
+  }, [issues.data, starred.data]);
+}
+
 /** The signed-in person's notifications as store Notifs (Home's waiting card, the Inbox). */
 export function useLiveNotifications(workspaceId: string | undefined, enabled = true): Notif[] | undefined {
   const notifs = useNotifications(enabled ? workspaceId : undefined);

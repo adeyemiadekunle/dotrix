@@ -22,7 +22,6 @@ import {
   hashTint,
   logComment,
   ms,
-  toActivity,
   toAgent,
   toAttachment,
   toAudit,
@@ -31,7 +30,6 @@ import {
   toFile,
   toKnowledge,
   toMember,
-  toNotif,
   toProject,
   toTask,
 } from "@/lib/view-models";
@@ -119,25 +117,18 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       return false;
     }
     const path = { params: { path: { workspace_id: ws.id } } };
-    const [members, projects, starred, issues, notifs, activity] = await Promise.all([
+    // Issues, notifications, activity, conversations and coding sessions come from the
+    // StoreBridge's TanStack queries — the store only holds the directory here.
+    const [members, projects, starred] = await Promise.all([
       unwrap(api.GET("/v1/workspaces/{workspace_id}/members", path)),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/projects", path)),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/starred", path)).catch(() => []),
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/issues", {
-          params: { path: { workspace_id: ws.id }, query: { limit: 5000, order: "created", archived: "include" } },
-        }),
-      ),
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/notifications", { params: { path: { workspace_id: ws.id }, query: { limit: 200 } } })).catch(() => []),
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/activity", { params: { path: { workspace_id: ws.id }, query: { limit: 200, agents: true } } })).catch(
-        () => [],
-      ),
     ]);
     const stars = new Set((starred as { id: string }[]).map((p) => p.id));
     const ps = projects.map((p) => toProject(p, members, stars));
     // Per project: knowledge (every file's content), documents, automations. Agents and the audit
     // log are the workspace's; the audit log is for owners and admins, so others get none.
-    const [perProject, agents, audit, starredIssues] = await Promise.all([
+    const [perProject, agents, audit] = await Promise.all([
       Promise.all(
         projects.map(async (p) => {
           const pp = { params: { path: { workspace_id: ws.id, project_id: p.id } } };
@@ -151,11 +142,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       ),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", path)).catch(() => []),
       unwrap(api.GET("/v1/workspaces/{workspace_id}/audit", { params: { path: { workspace_id: ws.id }, query: { limit: 200 } } })).catch(() => []),
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/issues", { params: { path: { workspace_id: ws.id }, query: { starred: true, limit: 5000 } } })).catch(
-        () => [],
-      ),
     ]);
-    const starredKeys = new Set((starredIssues as Schemas["WorkspaceIssue"][]).map((i) => i.key));
     const data: Data = {
       ws: { id: ws.id, name: ws.name, c: hashTint(ws.id), plan: ws.kind === "personal" ? "Personal" : "Team", kind: ws.kind, url: ws.slug },
       workspaces: wss.map((w) => ({
@@ -169,10 +156,10 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       me: me.id,
       members: members.map(toMember),
       projects: ps,
-      tasks: issues.map((i) => ({ ...toTask(i, i.project_id, i.rank), fav: starredKeys.has(i.key) })),
+      tasks: [],
       comments: [],
-      activity: activity.map(toActivity),
-      notifs: notifs.map(toNotif),
+      activity: [],
+      notifs: [],
       files: perProject.flatMap((x) => x.files),
       projOrder: [...ps.filter((p) => p.fav), ...ps.filter((p) => !p.fav)].map((p) => p.id),
       savedViews: [],
