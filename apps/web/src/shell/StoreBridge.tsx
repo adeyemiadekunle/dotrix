@@ -5,6 +5,7 @@
 // never live, so nothing is mirrored and its seeded store is untouched. Deleting a slot's
 // readers lets its mirror go.
 import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { useCodingSessions } from "../../lib/coding";
 import { useCrossConversations } from "../../lib/conversations";
@@ -39,6 +40,20 @@ export function StoreBridge() {
   const knowledge = useLiveWorkspaceKnowledge(wsId, Boolean(wsId));
   const autos = useLiveWorkspaceAutomations(wsId, Boolean(wsId));
   const audit = useLiveAudit(wsId, Boolean(wsId));
+  // A directory request that fails for good shouldn't pin the shell on its loader —
+  // loadWorkspace used to throw here; surface the same error screen. (enabled: false —
+  // these only watch the real queries' state, they fetch nothing themselves.)
+  const membersFailed = useQuery({ queryKey: ["members", wsId], enabled: false }).isError;
+  const projectsFailed = useQuery({ queryKey: ["projects", wsId], enabled: false }).isError;
+  const agentsFailed = useQuery({ queryKey: ["agents", wsId], enabled: false }).isError;
+  const dirFailed = membersFailed || projectsFailed || agentsFailed;
+  useEffect(() => {
+    if (wsId && dirFailed && live.mode === "live") {
+      live.mode = "error";
+      live.error = "Some of the workspace didn't load.";
+      render();
+    }
+  }, [wsId, dirFailed]);
   useEffect(() => {
     if (!wsId) return;
     const d = D();
@@ -65,6 +80,8 @@ export function StoreBridge() {
     // Once the directory has resolved the shell may mount (screens read me()/proj() synchronously).
     if (members && agents && projects) live.dirReady = true;
     if (members || agents || projects || tasks || notifs || acts || convos.data || sessions.data || files || knowledge || autos || audit) render();
-  }, [wsId, members, agents, projects, tasks, notifs, acts, convos.data, sessions.data, files, knowledge, autos, audit]);
+    // mirrorRev is in the deps so a failed send re-runs this and overwrites the optimistic edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsId, live.mirrorRev, members, agents, projects, tasks, notifs, acts, convos.data, sessions.data, files, knowledge, autos, audit]);
   return null;
 }
