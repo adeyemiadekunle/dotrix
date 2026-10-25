@@ -1,5 +1,7 @@
 # Local services for the platform backend. Start with `pnpm db:up`, which passes the
 # repo-root .env; credentials are never stored in this file.
+# Keep the existing service and volume names when the app uses the repo as its project directory.
+name: infra
 services:
   postgres:
     # Postgres 17 plus the pgvector extension (knowledge search); built on the same Debian (trixie) as postgres:17, so collations match existing data.
@@ -10,6 +12,12 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-dotrix}
     ports: ["127.0.0.1:5432:5432"] # localhost only
     volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
   redis:
     image: redis:7
     ports: ["127.0.0.1:6379:6379"] # localhost only

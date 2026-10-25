@@ -8,13 +8,15 @@
 #            in production (deploy/web.Dockerfile); rebuild it after web changes: `pnpm docker:web`
 #
 # Settings come from the repo-root .env; only addresses that differ inside Docker are set here.
+# The package scripts pass --project-directory . from the repo root, so relative paths (including
+# DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH) are resolved from there. Absolute key paths work too.
 # Point the CLI at it with `--api-url http://localhost:3080`. GitHub sign-in and the app's install
 # need http://localhost:3080 among the GitHub App's callback and setup URLs.
 
 x-backend: &backend
-  build: { context: .., dockerfile: deploy/backend.Dockerfile }
+  build: { context: ., dockerfile: deploy/backend.Dockerfile }
   image: dotrix-backend:dev
-  env_file: ../.env
+  env_file: .env
   environment: &backend-env # The password apart (asyncpg and libpq both read PGPASSWORD), never written into the URL.
     DOTRIX_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dotrix}@postgres:5432/${POSTGRES_DB:-dotrix}
     PGPASSWORD: ${POSTGRES_PASSWORD:?}
@@ -30,14 +32,17 @@ x-backend: &backend
     # Changes on a Windows or macOS host don't reach the container as file events.
     WATCHFILES_FORCE_POLLING: "true"
   volumes:
-    - ../apps/backend/src:/app/apps/backend/src:ro
-    - ../apps/backend/migrations:/app/apps/backend/migrations:ro
-    - ../packages/engine/src:/app/packages/engine/src:ro
+    - ./apps/backend/src:/app/apps/backend/src:ro
+    - ./apps/backend/migrations:/app/apps/backend/migrations:ro
+    - ./packages/engine/src:/app/packages/engine/src:ro
     - type: bind
       source: ${DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH:-/dev/null}
       target: /run/secrets/github-app-key
       read_only: true
-  depends_on: [postgres, redis, minio]
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_started }
+    minio: { condition: service_started }
 
 services:
   migrate:
@@ -59,7 +64,7 @@ services:
       migrate: { condition: service_completed_successfully }
 
   web:
-    build: { context: .., dockerfile: deploy/web.Dockerfile }
+    build: { context: ., dockerfile: deploy/web.Dockerfile }
     image: dotrix-web:dev
     ports: ["127.0.0.1:3080:80"] # localhost only
     depends_on: [api]
