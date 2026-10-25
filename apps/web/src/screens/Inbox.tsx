@@ -1,6 +1,6 @@
 // The Inbox: what people send you (mentions, assignments, comments) and what the agents need
 // (changes to approve, plans to steer, findings, decisions), with the change itself in the detail.
-import type { CSSProperties } from "react";
+import { useEffect, type CSSProperties } from "react";
 
 import { continueLimited, decideCoding } from "../core/agents";
 import { LimitNotice } from "../components/LimitNotice";
@@ -375,6 +375,14 @@ export function Inbox() {
   // Desktop always shows something: the explicit pick, else the first row. Mobile still
   // waits for a tap, so the list isn't covered.
   const shown = sel ?? ns[0] ?? null;
+  const shownId = shown?.id ?? null;
+  // The auto-preview on desktop shows the detail without a row click, so it goes
+  // through the same read path as a selection. Mobile's hidden fallback is not
+  // marked, and approvals/checkpoints stay unread until decided.
+  useEffect(() => {
+    if (!sel && shown && !shown.read && !staysUnread(shown.type) && window.matchMedia("(min-width: 901px)").matches) markRead(shown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, shownId]);
   const select = (id: string) => {
     S.ui.inboxSel = id;
     const n = D().notifs.find((x) => x.id === id);

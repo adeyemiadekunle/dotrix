@@ -594,10 +594,21 @@ function Pick({
   lead?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const name = options.find(([v]) => v === value)?.[1] ?? value;
   return (
-    <span className="cpill pick">
+    <span
+      className="cpill pick"
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && open) {
+          e.stopPropagation();
+          setOpen(false);
+          btnRef.current?.focus();
+        }
+      }}
+    >
       <button
+        ref={btnRef}
         type="button"
         className="pick-open"
         aria-haspopup="listbox"
