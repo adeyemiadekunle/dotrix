@@ -372,6 +372,9 @@ export function Inbox() {
   if (S.ui.inboxUnread) ns = ns.filter((n) => !n.read);
   const selId = search.get("n") || S.ui.inboxSel;
   const sel = D().notifs.find((n) => n.id === selId) || null;
+  // Desktop always shows something: the explicit pick, else the first row. Mobile still
+  // waits for a tap, so the list isn't covered.
+  const shown = sel ?? ns[0] ?? null;
   const select = (id: string) => {
     S.ui.inboxSel = id;
     const n = D().notifs.find((x) => x.id === id);
@@ -437,7 +440,7 @@ export function Inbox() {
                     {b}
                   </div>
                   {list.map((n) => (
-                    <Item key={n.id} n={n} on={sel?.id === n.id} select={select} />
+                    <Item key={n.id} n={n} on={shown?.id === n.id} select={select} />
                   ))}
                 </div>
               ))
@@ -457,12 +460,12 @@ export function Inbox() {
             )}
           </div>
         </div>
-        <div className="inbox-prev" style={{ display: "flex", flexDirection: "column", minHeight: 0, overflowY: "auto" }}>
-          {sel ? (
-            PEOPLE.includes(sel.type) ? (
-              <TaskPreview n={sel} onBack={onBack} />
+        <div className="inbox-prev" style={{ display: "flex", flexDirection: "column", justifyContent: "safe center", minHeight: 0, overflowY: "auto" }}>
+          {shown ? (
+            PEOPLE.includes(shown.type) ? (
+              <TaskPreview n={shown} onBack={onBack} />
             ) : (
-              <AgentDetail n={sel} onBack={onBack} />
+              <AgentDetail n={shown} onBack={onBack} />
             )
           ) : (
             <SelectPrompt

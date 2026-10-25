@@ -1,8 +1,6 @@
-// An agent's face: a glossy sphere in its colour with eyes and a mouth that show what it's
+// An agent's face: a pale disc in its own hue with eyes and a mouth that show what it's
 // doing. Idle is calm, working is focused, needs-you looks up expectantly, blocked frowns.
 // Pure SVG, so it scales from the 18px sidebar dot to the large one on Home.
-import { useId } from "react";
-
 export type Mood = "idle" | "working" | "thinking" | "needs" | "blocked" | "offline";
 
 const EYES: Record<Mood, string> = {
@@ -24,8 +22,12 @@ const MOUTH: Record<Mood, string> = {
 
 /** `c` is the agent's colour; `size` in px. */
 export function Face({ c, size = 20, mood = "idle", label }: { c: string; size?: number; mood?: Mood; label?: string }) {
-  const id = useId().replace(/:/g, "");
-  const ink = "#2B2A27"; // the features stay dark on every colour, in both themes
+  // A pale tint of the agent's hue, features a darker step of it; offline drops to grey.
+  const off = mood === "offline";
+  const base = off ? "#8A867E" : c;
+  const disc = "var(--surface-3)";
+  const ring = `color-mix(in srgb, ${base} 55%, var(--surface))`;
+  const ink = `color-mix(in srgb, ${base} 65%, var(--text))`;
   return (
     <svg
       className={`face face-${mood}`}
@@ -36,15 +38,8 @@ export function Face({ c, size = 20, mood = "idle", label }: { c: string; size?:
       aria-label={label}
       aria-hidden={label ? undefined : true}
     >
-      <defs>
-        <radialGradient id={`g${id}`} cx="38%" cy="30%" r="75%">
-          <stop offset="0" stopColor="#fff" stopOpacity={mood === "offline" ? 0.25 : 0.7} />
-          <stop offset=".35" stopColor={mood === "offline" ? "#8A867E" : c} />
-          <stop offset="1" stopColor={mood === "offline" ? "#5F5C56" : c} stopOpacity=".92" />
-        </radialGradient>
-      </defs>
-      <circle cx="16" cy="16" r="15" fill={`url(#g${id})`} />
-      <circle cx="16" cy="16" r="14.5" fill="none" stroke="#000" strokeOpacity=".08" />
+      <circle cx="16" cy="16" r="15" fill={disc} />
+      <circle cx="16" cy="16" r="14.5" fill="none" stroke={ring} strokeWidth="1" />
       <path
         className="face-eyes"
         d={EYES[mood]}

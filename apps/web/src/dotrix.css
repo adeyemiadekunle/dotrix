@@ -86,7 +86,7 @@
   }
   .kp-st {
     font-family: var(--mono);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 600;
     width: 14px;
     text-align: center;
@@ -514,7 +514,8 @@
     color: var(--text);
   }
   .cpill.pick:focus-within {
-    box-shadow: 0 0 0 2px var(--accent-soft);
+    outline: 2px solid var(--accent-line);
+    outline-offset: 1px;
   }
   .cbox-send {
     width: 28px;
@@ -599,10 +600,8 @@
   display: flex;
   justify-content: space-between;
   padding: 12px 8px 4px;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--text-3);
 }
 .ap-row {
@@ -692,21 +691,27 @@
   height: 2px;
   margin-top: 6px;
   border-radius: 2px;
-  background:
-    linear-gradient(90deg, transparent, var(--acc), transparent) 0 0 / 40% 100% no-repeat,
-    var(--accent-soft);
+  background: var(--accent-soft);
+  position: relative;
+  overflow: hidden;
+}
+.ap-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 40%;
+  border-radius: 2px;
+  background: var(--acc);
   animation: apbar 1.4s linear infinite;
 }
 @keyframes apbar {
   from {
-    background-position:
-      -40% 0,
-      0 0;
+    transform: translateX(-100%);
   }
   to {
-    background-position:
-      140% 0,
-      0 0;
+    transform: translateX(250%);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -816,7 +821,7 @@
   padding: 0 10px 10px;
 }
 .notices.in-panel .notice {
-  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border);
 }
 #toasts {
   bottom: calc(20px + var(--notices-h, 0px));
@@ -864,7 +869,18 @@
 @media (max-width: 900px) {
   .notices {
     right: 16px;
-    bottom: 76px;
+    left: 16px;
+    top: calc(var(--topbar-h) + 8px);
+    bottom: auto;
+    width: auto;
+  }
+  .notices .notice {
+    box-shadow: none;
+    border: 1px solid var(--border-strong);
+  }
+  .agents-panel.sheet {
+    box-shadow: none;
+    border: 1px solid var(--border-strong);
   }
   #toasts {
     bottom: calc(76px + var(--notices-h, 0px));
@@ -885,142 +901,6 @@
   gap: 14px;
   margin: 4px 0 26px;
 }
-.ask-orbit {
-  position: relative;
-  width: 340px;
-  max-width: 100%;
-  height: 128px;
-}
-.ask-orbit .lead {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  filter: drop-shadow(0 8px 24px color-mix(in srgb, var(--amber) 35%, transparent));
-}
-.ask-orbit .sat {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  animation: askfloat 5s ease-in-out infinite;
-}
-.ask-orbit .sat em {
-  font-style: normal;
-  font-size: 10.5px;
-  color: var(--text-3);
-  transition: color 0.2s var(--ease);
-}
-.ask-orbit .sat,
-.ask-orbit .lead {
-  transition: opacity 0.25s var(--ease);
-}
-/* Point at a face: it springs up and glows in its colour; the others step back. */
-.ask-orbit .sat .face,
-.ask-orbit .lead .face {
-  transition:
-    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-    filter 0.25s var(--ease);
-}
-.ask-orbit .sat:hover .face {
-  transform: translateY(-3px) scale(1.28);
-  filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--c, var(--acc)) 60%, transparent));
-}
-.ask-orbit .sat:hover em {
-  color: var(--text);
-}
-.ask-orbit:has(.sat:hover) .sat:not(:hover),
-.ask-orbit:has(.sat:hover) .lead {
-  opacity: 0.6;
-}
-.ask-orbit .lead:hover .face {
-  animation: leadwiggle 0.7s var(--ease);
-}
-@keyframes leadwiggle {
-  25% {
-    transform: rotate(-9deg) scale(1.06);
-  }
-  55% {
-    transform: rotate(7deg) scale(1.08);
-  }
-  80% {
-    transform: rotate(-3deg) scale(1.04);
-  }
-}
-/* Now and then each one blinks, never all at once. */
-.ask-orbit .face-eyes {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: faceblink 5.5s infinite;
-}
-.ask-orbit .s0 .face-eyes {
-  animation-delay: -1.2s;
-}
-.ask-orbit .s1 .face-eyes {
-  animation-delay: -3.7s;
-}
-.ask-orbit .s2 .face-eyes {
-  animation-delay: -2.3s;
-}
-.ask-orbit .s3 .face-eyes {
-  animation-delay: -4.6s;
-}
-.ask-orbit .s4 .face-eyes {
-  animation-delay: -0.6s;
-}
-@keyframes faceblink {
-  0%,
-  93%,
-  100% {
-    transform: scaleY(1);
-  }
-  96% {
-    transform: scaleY(0.12);
-  }
-}
-.ask-orbit .s0 {
-  left: 14%;
-  top: 34%;
-  animation-delay: -1s;
-}
-.ask-orbit .s1 {
-  left: 32%;
-  top: 2%;
-  animation-delay: -2.4s;
-}
-.ask-orbit .s2 {
-  right: 31%;
-  top: 0;
-  animation-delay: -3.1s;
-}
-.ask-orbit .s3 {
-  right: 13%;
-  top: 32%;
-  animation-delay: -0.4s;
-}
-.ask-orbit .s4 {
-  left: 50%;
-  bottom: -6px;
-  transform: translateX(calc(-50% + 70px));
-  animation-delay: -4s;
-}
-@keyframes askfloat {
-  50% {
-    translate: 0 -4px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ask-orbit .sat,
-  .ask-orbit .face-eyes,
-  .ask-orbit .lead:hover .face {
-    animation: none;
-  }
-  .ask-orbit .sat .face,
-  .ask-orbit .lead .face {
-    transition: none;
-  }
-}
 .ask-wrap {
   position: relative;
   width: 100%;
@@ -1029,7 +909,7 @@
 .ask-box {
   width: 100%;
   background: var(--surface);
-  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border);
 }
 .ask-sugg {
   display: flex;
@@ -1060,7 +940,7 @@
   border-radius: 8px;
   display: grid;
   place-items: center;
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1;
 }
@@ -1108,7 +988,7 @@
   border-radius: 4px;
   display: grid;
   place-items: center;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   background: var(--surface-2);
   color: var(--text-2);
@@ -1374,7 +1254,7 @@ body.resizing-row * {
 .cs-preview-hero {
   height: 110px;
   border-radius: 6px;
-  background: linear-gradient(135deg, var(--accent-soft, var(--surface-2)), var(--surface-2));
+  background: var(--surface-2);
 }
 .cs-preview-row {
   display: grid;
@@ -1626,7 +1506,7 @@ body.resizing-row * {
 }
 .cs-browser .cs-url .badge {
   height: 18px;
-  font-size: 10.5px;
+  font-size: 11px;
 }
 .cs-shotview {
   display: block;
@@ -1673,4 +1553,75 @@ body.resizing-row * {
   .shell.no-topbar .topbar {
     display: none;
   }
+}
+
+/* Pick (screens/Chat.tsx): the pill's themed dropdown — replaces the OS select list. */
+.cpill.pick {
+  position: relative;
+  overflow: visible;
+}
+.cpill .pick-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+  max-width: 100%;
+}
+.cpill .pick-open:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+.pick-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 79;
+}
+.cmenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: 100%;
+  max-width: 90vw;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-pop);
+}
+.cmenu .mi {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cmenu .mi:hover,
+.cmenu .mi:focus-visible {
+  background: var(--surface-2);
+  color: var(--text);
+  outline: none;
+}
+.cmenu .mi.on {
+  color: var(--text);
 }

@@ -275,7 +275,7 @@ export function FilePrev({ f }: { f: Pick<FileItem, "type" | "name"> }) {
         style={{
           padding: 0,
           overflow: "hidden",
-          background: `linear-gradient(135deg,color-mix(in srgb,${t.c} 35%,var(--surface)),color-mix(in srgb,${t.c} 10%,var(--surface)))`,
+          background: `color-mix(in srgb,${t.c} 14%,var(--surface))`,
         }}
       >
         <svg viewBox="0 0 100 60" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>

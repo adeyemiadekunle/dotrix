@@ -508,7 +508,7 @@ export function seed(): Data {
     workspaces: [
       { id: "w1", name: "Dotrix", c: "#1D1C1A", plan: "Team", brand: true },
       { id: "w2", name: "Personal", c: "#3D8E5F", plan: "Free" },
-      { id: "w3", name: "Acme Labs", c: "#3B82C4", plan: "Business" },
+      { id: "w3", name: "Meridian Labs", c: "#3B82C4", plan: "Business" },
     ],
     me: "m1",
     members,
