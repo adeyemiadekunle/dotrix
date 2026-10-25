@@ -10,12 +10,22 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from pathlib import Path
 
 import uvicorn
 
 
 def selector_loop() -> asyncio.AbstractEventLoop:
     return asyncio.SelectorEventLoop()
+
+
+def source_dirs() -> list[str]:
+    """What --reload watches: the API's own code and the engine it runs (never the folder it
+    starts in, where worktrees, node_modules, or a virtualenv would restart it for nothing)."""
+    import dotrix_backend
+    import dotrix_engine
+
+    return [str(Path(module.__file__).parent) for module in (dotrix_backend, dotrix_engine)]
 
 
 def main() -> None:
@@ -30,6 +40,7 @@ def main() -> None:
         host=args.host,
         port=args.port,
         reload=args.reload,
+        reload_dirs=source_dirs() if args.reload else None,
         loop="dotrix_backend.serve:selector_loop" if sys.platform == "win32" else "auto",
     )
 

@@ -1420,7 +1420,7 @@ def _local_runner(db_client: AsyncClient, coding, checkout: Path, tmp_path: Path
 
     ada, _, ws, kun, _, _ = coding
     return LocalRunner(_RunnerApi(db_client, ada.headers), checkout, ws.split("/")[-1], kun["id"], command=command,
-                       sandbox="none", worktrees=tmp_path / "worktrees", name="ada-laptop", echo=lambda _: None, **kw)
+                       worktrees=tmp_path / "worktrees", name="ada-laptop", echo=lambda _: None, **kw)
 
 
 async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushes_it(

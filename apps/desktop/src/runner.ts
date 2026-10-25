@@ -1,8 +1,9 @@
 // The desktop app codes local turns itself: it runs `dotrix runner` in the background for each folder
 // a person picks (a checkout of a project's repo), with the dotrix CLI bundled in the app
-// (resources/dotrix, built by apps/cli/scripts/standalone.py) and the sandbox runtime bundled too
-// (sandbox.ts). Like the CLI's runner, the coding tool is the one signed in on this computer; the
-// platform never sends a provider key or GitHub token here. The CLI signs in with a device code the
+// (resources/dotrix, built by apps/cli/scripts/standalone.py). Each turn codes in a git worktree of
+// its own, not isolated for now, so the tool only edits files there. Like the CLI's runner, the
+// coding tool is the one signed in on this computer; the platform never sends a provider key or
+// GitHub token here. The CLI signs in with a device code the
 // person approves in the app's own window (where they're already signed in), and keeps its token in
 // the OS keychain: the app never sees it.
 import { type ChildProcess, execFile, spawn } from "node:child_process";
@@ -12,8 +13,6 @@ import path from "node:path";
 import readline from "node:readline";
 
 import { app, BrowserWindow, dialog, shell } from "electron";
-
-import { sandboxEnv } from "./sandbox";
 
 type RunnerState = "starting" | "waiting" | "coding" | "stopped" | "failed";
 
@@ -100,8 +99,8 @@ export class Runners {
   }
 
   private env(): NodeJS.ProcessEnv {
-    // The CLI's own runtime picks the API from here; srt from the app's bundle.
-    return { ...process.env, ...sandboxEnv(), DOTRIX_API_URL: this.apiUrl, PYTHONUNBUFFERED: "1" };
+    // The CLI's own runtime picks the API from here.
+    return { ...process.env, DOTRIX_API_URL: this.apiUrl, PYTHONUNBUFFERED: "1" };
   }
 
   private cli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {

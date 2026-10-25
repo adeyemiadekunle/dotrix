@@ -1,0 +1,65 @@
+# dotrix itself in Docker for development, on top of infra/docker-compose.yml (the same Postgres,
+# Redis and MinIO, the same data): `pnpm docker:up`, then http://localhost:3080.
+#
+#   migrate  applies the migrations, then exits
+#   api      the API, restarted on changes to apps/backend/src and packages/engine/src (mounted)
+#   worker   agent runs and jobs (DOTRIX_JOBS=worker), the same code
+#   web      the built web app behind nginx, which forwards /v1, /api and /health to the API, as
+#            in production (deploy/web.Dockerfile); rebuild it after web changes: `pnpm docker:web`
+#
+# Settings come from the repo-root .env; only addresses that differ inside Docker are set here.
+# Point the CLI at it with `--api-url http://localhost:3080`. GitHub sign-in and the app's install
+# need http://localhost:3080 among the GitHub App's callback and setup URLs.
+
+x-backend: &backend
+  build: { context: .., dockerfile: deploy/backend.Dockerfile }
+  image: dotrix-backend:dev
+  env_file: ../.env
+  environment: &backend-env # The password apart (asyncpg and libpq both read PGPASSWORD), never written into the URL.
+    DOTRIX_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dotrix}@postgres:5432/${POSTGRES_DB:-dotrix}
+    PGPASSWORD: ${POSTGRES_PASSWORD:?}
+    DOTRIX_REDIS_URL: redis://redis:6379/0
+    DOTRIX_S3_ENDPOINT_URL: http://minio:9000
+    DOTRIX_APP_URL: http://localhost:3080
+    DOTRIX_WEB_URL: http://localhost:3080
+    DOTRIX_CORS_ORIGINS: '["http://localhost:3080"]'
+    DOTRIX_JOBS: worker
+    DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app-key
+    # nginx in front of the API, on Docker's network.
+    DOTRIX_TRUSTED_PROXIES: '["172.16.0.0/12"]'
+    # Changes on a Windows or macOS host don't reach the container as file events.
+    WATCHFILES_FORCE_POLLING: "true"
+  volumes:
+    - ../apps/backend/src:/app/apps/backend/src:ro
+    - ../apps/backend/migrations:/app/apps/backend/migrations:ro
+    - ../packages/engine/src:/app/packages/engine/src:ro
+    - type: bind
+      source: ${DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH:-/dev/null}
+      target: /run/secrets/github-app-key
+      read_only: true
+  depends_on: [postgres, redis, minio]
+
+services:
+  migrate:
+    <<: *backend
+    working_dir: /app/apps/backend
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    <<: *backend
+    command: ["python", "-m", "dotrix_backend.serve", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "dotrix_backend.worker"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    build: { context: .., dockerfile: deploy/web.Dockerfile }
+    image: dotrix-web:dev
+    ports: ["127.0.0.1:3080:80"] # localhost only
+    depends_on: [api]

@@ -7,10 +7,11 @@ config).
 
 Each turn gets a worktree of its own outside the checkout (`~/.dotrix/worktrees/...`), on the
 session's branch or the base branch as the remote has it, so your working copy and its changes are
-never touched. A worktree separates directories, it isn't a security boundary: the tool runs inside
-`srt`, the sandbox runtime that comes with dotrix (`dotrix_cli.sandbox`): writes only to the worktree,
-network only to the model's API. Where it can't run, the turn says it isn't isolated. Worktrees are kept after the turn (nothing
-is deleted that you might want); `git worktree prune` and removing the folder clean them up.
+never touched. A worktree separates directories, it isn't a security boundary, and nothing isolates
+the tool for now: so it only edits files (Claude Code's acceptEdits, no commands), with an
+environment that carries its own provider's settings and none of this machine's other credentials
+(`dotrix_cli.toolenv`). Worktrees are kept after the turn (nothing is deleted that you might want);
+`git worktree prune` and removing the folder clean them up.
 """
 from __future__ import annotations
 
@@ -30,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from . import sandbox as sandbox_runtime
+from .toolenv import tool_environment
 
 TOOLS = ("claude-code", "opencode")
 EVENTS_PER_BEAT = 50
@@ -56,13 +57,10 @@ class Tool:
     argv: list[str]
 
     @classmethod
-    def named(cls, name: str, *, isolated: bool) -> Tool:
+    def named(cls, name: str) -> Tool:
         if name == "claude-code":
-            # Without a sandbox it may only edit files; inside srt it may run commands too.
-            argv = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"]
-            if isolated:
-                argv += ["--allowedTools", "Bash"]
-            return cls(name, argv)
+            # Not isolated, so it may only edit files: no commands on this machine.
+            return cls(name, ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"])
         if name == "opencode":
             return cls(name, ["opencode", "run", "--format", "json"])
         raise ValueError(f"Unknown coding tool {name!r} (one of {', '.join(TOOLS)})")
@@ -71,11 +69,6 @@ class Tool:
 def found_tools() -> list[str]:
     """The coding tools on this machine's PATH, preferred first."""
     return [name for name, binary in (("claude-code", "claude"), ("opencode", "opencode")) if shutil.which(binary)]
-
-
-def has_srt() -> bool:
-    """Whether srt can sandbox a tool here (it, and on Linux what it needs: `dotrix_cli.sandbox`)."""
-    return sandbox_runtime.check().ready
 
 
 @dataclass
@@ -221,7 +214,6 @@ class LocalRunner:
     project_id: str
     tool: str | None = None  # None: the first one found here
     command: str | None = None  # instead of a known tool: any command (brief on stdin, output as events)
-    sandbox: str = "auto"  # "auto" (srt when installed), "srt", or "none"
     worktrees: Path = field(default_factory=lambda: Path.home() / ".dotrix" / "worktrees")
     # This checkout's name on the platform. One registration per checkout: two runners on one computer
     # (for two projects) never share one, so neither claims the other's turns.
@@ -235,14 +227,6 @@ class LocalRunner:
     # What the agent did reaches the platform this soon (a heartbeat as soon as events wait this long),
     # so the turn's view in the app keeps up as it does for a cloud turn.
     events_seconds: float = EVENTS_SECONDS
-
-    @property
-    def isolation(self) -> str:
-        if self.sandbox == "srt":
-            if not has_srt():
-                raise RuntimeError("The sandbox runtime can't run here: " + "; ".join(sandbox_runtime.check().missing))
-            return "srt"
-        return "srt" if self.sandbox == "auto" and has_srt() else "none"
 
     def tools(self) -> list[str]:
         if self.tool:
@@ -265,7 +249,7 @@ class LocalRunner:
             raise RuntimeError("No coding tool here: install Claude Code (`claude`) or OpenCode (`opencode`)")
         runner = await self.api.post(self.base, {
             "name": self.name[:100], "platform": platform_info.system().lower(), "tools": tools,
-            "isolation": self.isolation, "project_ids": [self.project_id],
+            "isolation": "none", "project_ids": [self.project_id],
         })
         self.runner_id = runner["id"]
         self.notify({"event": "registered", "runner_id": runner["id"], "name": runner["name"],
@@ -339,9 +323,7 @@ class LocalRunner:
         tree.parent.mkdir(parents=True, exist_ok=True)
         await git(self.repo, "worktree", "add", "-q", "--detach", str(tree), "FETCH_HEAD")
         base_sha = (await git(tree, "rev-parse", "HEAD")).strip()
-        isolation = self.isolation
-        pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]}"
-                        + ("" if isolation == "srt" else " (not isolated: `dotrix sandbox install` to sandbox the tool)")})
+        pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]} (not isolated: the tool edits files only)"})
         self.notify({"event": "turn", "run_id": run["run_id"], "issue_key": run["issue_key"], "turn": run["turn"],
                      "worktree": str(tree)})
         if await beat({"base_sha": base_sha, "worktree": str(tree)}):
@@ -352,21 +334,18 @@ class LocalRunner:
             tool = Tool("command", shlex.split(self.command))
         else:
             here = self.tools()
-            tool = Tool.named(run["tool"] if run["tool"] in here else here[0], isolated=isolation == "srt")
+            tool = Tool.named(run["tool"] if run["tool"] in here else here[0])
         # A custom command stands in for the requested tool; its name is only a display label.
         environment_tool = run["tool"] if self.command else tool.name
         # The tool by its full path: on Windows `claude` and `opencode` are .cmd files, found only that way.
-        tool_argv = [shutil.which(tool.argv[0]) or tool.argv[0], *tool.argv[1:]]
-        argv, leftovers = self._sandboxed(tool_argv, tree, tool=environment_tool) if isolation == "srt" else (tool_argv, [])
+        argv = [shutil.which(tool.argv[0]) or tool.argv[0], *tool.argv[1:]]
         out = Outcome(root=tree)
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv, cwd=tree, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE, env={**_env(environment_tool), **(sandbox_runtime.env() if isolation == "srt" else {})},
-                **_own_group(),
+                stderr=asyncio.subprocess.PIPE, env=_env(environment_tool), **_own_group(),
             )
         except OSError as exc:
-            _remove(leftovers)
             await report("failed", base_sha=base_sha, error=f"Couldn't start {tool.name}: {exc}")
             return
         assert process.stdin and process.stdout and process.stderr
@@ -406,8 +385,6 @@ class LocalRunner:
             reading.cancel()
             await asyncio.shield(_terminate(process))
             raise
-        finally:
-            _remove(leftovers)  # the Windows launcher holds the tool's keys: never left behind
         if not reading.cancelled() and (failed := reading.exception()) is not None:
             await _terminate(process)  # its output can't be read: stop it rather than let its pipe fill
             await process.wait()
@@ -426,28 +403,15 @@ class LocalRunner:
         usage = {k: v for k, v in out.usage.items() if v is not None}
         if not patch.strip():
             if code != 0:
-                await report("failed", base_sha=base_sha, summary=out.summary,
-                             error=(stderr or f"{tool.name} exited with {code}")[-2000:], **usage)
+                error = (stderr or f"{tool.name} exited with {code}")[-2000:]
+                await report("failed", base_sha=base_sha, summary=out.summary, error=error, **usage)
+                self.echo(f"  Failed: {_tail(error)}")
             else:
                 await report("no_changes", base_sha=base_sha, summary=out.summary, **usage)
-            self.echo("  No changes")
+                self.echo("  No changes")
             return
         await report("changes", base_sha=base_sha, patch=patch, summary=out.summary or _tail(stderr), **usage)
         self.echo(f"  Changes reported; the worktree stays at {tree}")
-
-    def _sandboxed(self, argv: list[str], tree: Path, *, tool: str) -> tuple[list[str], list[Path]]:
-        """The tool inside srt (`sandbox.settings`), and the files to remove when it ends. On Windows
-        it starts through a launcher that gives it its environment (srt starts it with a fresh one)."""
-        settings = tree.parent / f"{tree.name}.srt.json"
-        settings.write_text(json.dumps(sandbox_runtime.settings(tree), indent=2), encoding="utf-8")
-        srt = sandbox_runtime.command()
-        assert srt is not None
-        leftovers: list[Path] = []
-        if platform_info.system() == "Windows":
-            launcher = tree.parent / f"{tree.name}.launch.cmd"
-            argv = sandbox_runtime.windows_launcher(launcher, argv, _env(tool), tool=tool)
-            leftovers.append(launcher)
-        return [*srt, "--settings", str(settings), "--", *argv], leftovers
 
 
 MAX_LINE = 4_000_000  # longer output lines are cut here (events keep 4,000 characters of a line anyway)
@@ -480,7 +444,7 @@ def _lost(exc: Exception) -> bool:
 
 def _env(tool: str = "claude-code") -> dict[str, str]:
     """Only the selected tool's credentials and execution settings cross this boundary."""
-    return sandbox_runtime.tool_environment(tool, os.environ)
+    return tool_environment(tool, os.environ)
 
 
 def _tail(text: str) -> str | None:
@@ -493,11 +457,6 @@ def _own_group() -> dict[str, Any]:
     if os.name == "nt":
         return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}  # type: ignore[attr-defined]
     return {"start_new_session": True}
-
-
-def _remove(paths: list[Path]) -> None:
-    for path in paths:
-        path.unlink(missing_ok=True)
 
 
 async def _terminate(process: asyncio.subprocess.Process) -> None:

@@ -1,13 +1,11 @@
-"""`dotrix runner`'s pieces that need no platform: reading the tool's output, and the srt wrapper.
+"""`dotrix runner`'s pieces that need no platform: reading the tool's output, and what the tool gets.
 The whole loop runs against the real API in the backend's tests (test_coding.py, local turns)."""
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 
 from dotrix_cli.runner import LocalRunner, Outcome, Tool, parse_line
-from dotrix_cli.sandbox import ALLOWED_DOMAINS
 
 
 def test_unrelated_host_credentials_do_not_reach_a_tool_process(monkeypatch) -> None:
@@ -35,8 +33,8 @@ def test_unrelated_host_credentials_do_not_reach_a_tool_process(monkeypatch) -> 
     assert _env()["PATH"] == os.environ["PATH"]
 
 
-def test_provider_keys_and_settings_are_scoped_to_the_selected_tool(tmp_path: Path) -> None:
-    from dotrix_cli import sandbox
+def test_provider_keys_and_settings_are_scoped_to_the_selected_tool() -> None:
+    from dotrix_cli.toolenv import tool_environment
 
     environ = {
         "Path": "tool-bin", "SystemRoot": "windows", "HOME": "home", "XDG_CONFIG_HOME": "config",
@@ -45,24 +43,18 @@ def test_provider_keys_and_settings_are_scoped_to_the_selected_tool(tmp_path: Pa
         "CODEX_API_KEY": "codex-key", "CODEX_HOME": "codex-auth",
         "OPENCODE_CONFIG": "opencode.json", "GOOGLE_API_KEY": "google-key", "GOOGLE_GEMINI_BASE_URL": "https://google/",
         "ANTHROPIC_UNRELATED_SECRET": "not-a-tool-setting", "OPENAI_UNRELATED_SECRET": "also-unrelated",
-        "DOTRIX_SRT": "trusted-parent-only", "ELECTRON_RUN_AS_NODE": "parent-only", "PYTHONPATH": "host-only",
+        "ELECTRON_RUN_AS_NODE": "parent-only", "PYTHONPATH": "host-only",
     }
-    claude = sandbox.tool_environment("claude-code", environ)
+    claude = tool_environment("claude-code", environ)
     assert set(claude) == {"Path", "SystemRoot", "HOME", "XDG_CONFIG_HOME", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"}
-    opencode = sandbox.tool_environment("opencode", environ)
+    opencode = tool_environment("opencode", environ)
     assert set(opencode) == {
         "Path", "SystemRoot", "HOME", "XDG_CONFIG_HOME", "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
         "OPENAI_BASE_URL", "OPENCODE_CONFIG", "GOOGLE_API_KEY", "GOOGLE_GEMINI_BASE_URL",
     }
-    assert set(sandbox.tool_environment("codex", environ)) == {
+    assert set(tool_environment("codex", environ)) == {
         "Path", "SystemRoot", "HOME", "XDG_CONFIG_HOME", "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "CODEX_HOME",
     }
-    launcher = tmp_path / "opencode.launch.cmd"
-    sandbox.windows_launcher(launcher, ["opencode.cmd", "run"], environ, tool="opencode", home=tmp_path)
-    text = launcher.read_text()
-    assert 'set "OPENAI_BASE_URL=https://provider/100%%"' in text
-    assert 'set "OPENCODE_CONFIG=opencode.json"' in text
-    assert "claude-login" not in text and "UNRELATED_SECRET" not in text and "host-only" not in text
 
 
 def test_claude_codes_stream_becomes_events_and_a_summary() -> None:
@@ -91,131 +83,12 @@ def test_opencode_events_and_errors() -> None:
     assert out.summary == "Changed a.py"
 
 
-def test_claude_code_runs_commands_only_inside_the_sandbox() -> None:
-    assert "--allowedTools" not in Tool.named("claude-code", isolated=False).argv
-    assert Tool.named("claude-code", isolated=True).argv[-2:] == ["--allowedTools", "Bash"]
-    assert Tool.named("opencode", isolated=False).argv[:2] == ["opencode", "run"]
+def test_claude_code_edits_files_and_runs_no_commands() -> None:
+    """Nothing isolates a local turn, so the tool only edits files in its worktree."""
+    claude = Tool.named("claude-code").argv
+    assert claude[-2:] == ["--permission-mode", "acceptEdits"] and "--allowedTools" not in claude
+    assert Tool.named("opencode").argv[:2] == ["opencode", "run"]
 
-
-def test_srt_writes_only_to_the_worktree_and_reaches_only_model_apis(tmp_path: Path, monkeypatch) -> None:
-    from dotrix_cli import sandbox
-
-    monkeypatch.setattr(sandbox, "command", lambda: ["srt"])
-    monkeypatch.setattr(sandbox.platform, "system", lambda: "Linux")  # Windows has its own launcher test below
-    runner = LocalRunner(api=None, repo=tmp_path, workspace_id="w", project_id="p")  # type: ignore[arg-type]
-    tree = tmp_path / "trees" / "kun-1-abc123-1"
-    tree.mkdir(parents=True)
-    argv, leftovers = runner._sandboxed(["claude", "-p"], tree, tool="claude-code")
-    assert leftovers == [] or sandbox.platform.system() == "Windows"
-    assert argv[:2] == ["srt", "--settings"] and argv[3:] == ["--", "claude", "-p"]
-    settings = json.loads(Path(argv[2]).read_text())
-    assert str(tree) in settings["filesystem"]["allowWrite"] and str(tmp_path) not in settings["filesystem"]["allowWrite"]
-    assert "~/.ssh" in settings["filesystem"]["denyRead"]
-    assert settings["network"]["allowedDomains"] == ALLOWED_DOMAINS and "github.com" not in ALLOWED_DOMAINS
-    assert not Path(argv[2]).is_relative_to(tree)  # the settings never land in the worktree (or the patch)
-
-
-def test_the_sandbox_runtime_comes_with_dotrix(tmp_path: Path, monkeypatch) -> None:
-    from dotrix_cli import sandbox
-
-    monkeypatch.setenv("DOTRIX_TOOLS_DIR", str(tmp_path / "tools"))
-    monkeypatch.delenv("DOTRIX_SRT", raising=False)
-    monkeypatch.delenv("DOTRIX_SRT_NODE", raising=False)
-    monkeypatch.setattr(sandbox.shutil, "which", lambda name: None)  # nothing on this machine
-    assert sandbox.command() is None and not sandbox.check().ready
-    assert any("Node 22.12" in m for m in sandbox.check().missing)
-    try:
-        sandbox.install()
-        raise AssertionError("installed without npm")
-    except RuntimeError as exc:
-        assert "Node 22.12" in str(exc)
-
-    # The copy dotrix installed, run with Node directly (no shim, no global install).
-    cli = sandbox.installed_cli()
-    cli.parent.mkdir(parents=True)
-    cli.write_text("// srt")
-    monkeypatch.setattr(sandbox.shutil, "which", lambda name: f"/usr/bin/{name}")
-    assert sandbox.command() == ["/usr/bin/node", str(cli)] and sandbox.VERSION in str(cli)
-    assert sandbox.env() == {}
-
-    # The desktop app's own copy, run by its executable as Node, wins.
-    bundled = tmp_path / "app" / "cli.js"
-    bundled.parent.mkdir()
-    bundled.write_text("// srt")
-    monkeypatch.setenv("DOTRIX_SRT", str(bundled))
-    monkeypatch.setenv("DOTRIX_SRT_NODE", "/Applications/dotrix.app/dotrix")
-    assert sandbox.command() == ["/Applications/dotrix.app/dotrix", str(bundled)]
-    assert sandbox.env() == {"ELECTRON_RUN_AS_NODE": "1"}
-
-
-def test_the_cli_and_the_desktop_app_pin_the_same_sandbox_runtime() -> None:
-    from dotrix_cli import sandbox
-
-    desktop = json.loads((Path(__file__).parents[2] / "desktop" / "package.json").read_text())
-    assert desktop["dependencies"][sandbox.PACKAGE] == sandbox.VERSION
-
-
-def test_srt_settings_per_platform(tmp_path: Path) -> None:
-    from dotrix_cli import sandbox
-
-    home, tree = tmp_path / "home", tmp_path / "trees" / "t"
-    mac = sandbox.settings(tree, home=home, system="Darwin")["filesystem"]["allowWrite"]  # type: ignore[index]
-    assert "/private/tmp" in mac and "/tmp" in mac and str(home / ".claude") in mac  # macOS's temp folders too
-    win = sandbox.settings(tree, home=home, system="Windows")["filesystem"]["allowWrite"]  # type: ignore[index]
-    assert str(tree) in win and "/tmp" not in win and tempfile.gettempdir() not in win  # its own %TEMP%
-
-
-def test_the_windows_launcher_hands_the_tool_its_environment_and_nothing_else(tmp_path: Path) -> None:
-    from dotrix_cli import sandbox
-
-    home = Path("C:/Users/ada")
-    launcher = tmp_path / "t.launch.cmd"
-    argv = sandbox.windows_launcher(launcher, ["C:/npm/claude.cmd", "-p", "--allowedTools", "Bash"], {
-        "ANTHROPIC_API_KEY": "sk-ant-x", "OPENAI_BASE_URL": "https://p/100%", "DOTRIX_TOKEN": "dtx_secret",
-        "PATH": "C:/Windows", "AWS_SECRET_ACCESS_KEY": "nope",
-    }, tool="claude-code", home=home)
-    assert argv == ["cmd.exe", "/d", "/c", str(launcher)]
-    text = launcher.read_bytes().decode()
-    assert 'set "ANTHROPIC_API_KEY=sk-ant-x"' in text and "OPENAI_BASE_URL" not in text
-    assert f'set "CLAUDE_CONFIG_DIR={home / ".claude"}"' in text  # its sign-in, not the sandbox account's
-    assert "dtx_secret" not in text and "AWS_SECRET" not in text and "C:/Windows" not in text
-    assert '"C:/npm/claude.cmd" "-p" "--allowedTools" "Bash"' in text and text.endswith("exit /b %errorlevel%\r\n")
-
-
-def test_the_windows_setup_is_read_from_srt_win_status(tmp_path: Path, monkeypatch) -> None:
-    import subprocess as sp
-
-    from dotrix_cli import sandbox
-
-    exe = tmp_path / "srt-win.exe"
-    exe.write_text("")
-    monkeypatch.setattr(sandbox, "srt_win", lambda: exe)
-
-    def answer(payload: dict) -> None:
-        monkeypatch.setattr(sandbox.subprocess, "run", lambda *a, **k: sp.CompletedProcess(a, 0, json.dumps(payload), ""))
-
-    answer({"user": {"user": {"exists": False}, "cred_present": False}, "wfp": {"state": "absent"}})
-    assert "one administrator prompt" in (sandbox.windows_setup_missing() or "")
-    answer({"user": {"user": {"exists": True}, "cred_present": True}, "wfp": {"state": "cannot-read"}})
-    assert sandbox.windows_setup_missing() is None  # set up (the filters aren't readable without elevation)
-    monkeypatch.setattr(sandbox, "srt_win", lambda: None)
-    assert "srt-win.exe" in (sandbox.windows_setup_missing() or "")
-
-
-def test_on_windows_the_tool_runs_through_the_launcher_and_it_is_removed(tmp_path: Path, monkeypatch) -> None:
-    from dotrix_cli import runner as runner_module
-    from dotrix_cli import sandbox
-
-    monkeypatch.setattr(sandbox, "command", lambda: ["node", "cli.js"])
-    monkeypatch.setattr(runner_module.platform_info, "system", lambda: "Windows")
-    tree = tmp_path / "trees" / "kun-1-abc123-1"
-    tree.mkdir(parents=True)
-    runner = LocalRunner(api=None, repo=tmp_path, workspace_id="w", project_id="p")  # type: ignore[arg-type]
-    argv, leftovers = runner._sandboxed(["C:/npm/claude.cmd", "-p"], tree, tool="claude-code")
-    assert argv[:3] == ["node", "cli.js", "--settings"] and argv[4:] == ["--", "cmd.exe", "/d", "/c", str(leftovers[0])]
-    assert leftovers[0].exists() and not leftovers[0].is_relative_to(tree)  # never in the worktree (or its patch)
-    runner_module._remove(leftovers)
-    assert not leftovers[0].exists()
 
 
 async def test_output_lines_of_any_length_are_read() -> None:
@@ -290,7 +163,7 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
               "print(json.dumps({'type': 'assistant', 'message': {'content': "
               "[{'type': 'text', 'text': 'Looking at a.txt'}]}}), flush=True); time.sleep(4)")
     runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
-                         command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}", sandbox="none",
+                         command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}",
                          worktrees=tmp_path / "trees", echo=lambda _: None, notify=notified.append)
     await runner.work({"run_id": "run-000001", "project_id": "p", "lease_token": 1, "lease_seconds": 120,
                        "issue_key": "KUN-1", "turn": 1, "title": "x", "base_branch": "main", "branch": None,
@@ -304,6 +177,41 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     tree = beats[0][1]["worktree"]
     assert Path(tree).is_relative_to(tmp_path / "trees") and notified == [
         {"event": "turn", "run_id": "run-000001", "issue_key": "KUN-1", "turn": 1, "worktree": tree}]
+
+
+async def test_a_tool_that_fails_before_changing_anything_is_shown_as_failed(tmp_path: Path) -> None:
+    """Not "No changes": the turn failed, and whoever watches the runner sees why."""
+    import shlex
+    import subprocess
+    import sys
+
+    origin = tmp_path / "origin"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
+    (origin / "a.txt").write_text("a\n")
+    subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(origin), "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "1"], check=True)
+    checkout = tmp_path / "checkout"
+    subprocess.run(["git", "clone", "-q", str(origin), str(checkout)], check=True)
+
+    results: list[dict] = []
+    said: list[str] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            if path.endswith("/result"):
+                results.append(body)
+            return {"stop": False}
+
+    script = "import sys; sys.stderr.write('claude: not signed in\\n'); sys.exit(3)"
+    runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
+                         command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}",
+                         worktrees=tmp_path / "trees", echo=said.append)
+    await runner.work({"run_id": "run-000002", "project_id": "p", "lease_token": 1, "lease_seconds": 120,
+                       "issue_key": "KUN-2", "turn": 1, "title": "x", "base_branch": "main", "branch": None,
+                       "tool": "claude-code", "brief": "x"})
+    [result] = results
+    assert result["outcome"] == "failed" and "not signed in" in result["error"]
+    assert said[-1] == "  Failed: claude: not signed in"
 
 
 def test_tool_calls_read_as_a_cloud_turns_do_so_the_terminal_panel_lists_them(tmp_path: Path) -> None:
@@ -365,7 +273,7 @@ async def test_stopping_the_runner_stops_the_tool_it_started(tmp_path: Path) -> 
 
     script = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(60)"
     runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
-                         command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}", sandbox="none",
+                         command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}",
                          worktrees=tmp_path / "trees", echo=lambda _: None)
     work = asyncio.create_task(runner.work({
         "run_id": "run-000001", "project_id": "p", "lease_token": 1, "lease_seconds": 120, "issue_key": "KUN-1",

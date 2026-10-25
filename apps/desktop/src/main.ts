@@ -6,7 +6,6 @@ import path from "node:path";
 
 import { Runners, sameOrigin } from "./runner";
 import { ownWorktree, worktreeFile, worktreeTree } from "./worktree";
-import { offerWindowsSandbox, sandboxEnv } from "./sandbox";
 
 const WEB_URL = process.env.DOTRIX_WEB_URL ?? "http://localhost:3000";
 // The web app is served on the API's origin, so the runner talks to the same one unless told otherwise.
@@ -69,12 +68,9 @@ function bridge(): void {
 }
 
 app.whenReady().then(() => {
-  // Anything the app starts (the coding runner) uses the sandbox runtime bundled here.
-  Object.assign(process.env, sandboxEnv());
   bridge();
   createWindow();
   runners.resume();
-  void offerWindowsSandbox();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

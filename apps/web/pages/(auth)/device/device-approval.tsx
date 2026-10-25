@@ -6,13 +6,44 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { AuthCard } from "@/components/auth-card";
 import { Field, FormError, SubmitButton } from "@/components/form";
-import { api, errorMessage, unwrap } from "@/lib/api";
+import { api, errorMessage, hasSession, unwrap } from "@/lib/api";
+import { Link } from "@/lib/navigation";
 
 type Outcome = "approved" | "denied";
+
+const PENDING_CODE = "dotrix.deviceCode";
+
+/** Keep a device code for this tab (through signing in), and return it. */
+export function rememberDeviceCode(code: string): string {
+  try {
+    sessionStorage.setItem(PENDING_CODE, code);
+  } catch {
+    // without storage, the code is typed again after signing in
+  }
+  return code;
+}
+
+/** The device code this tab is in the middle of approving, if any. */
+export function pendingDeviceCode(): string {
+  try {
+    return sessionStorage.getItem(PENDING_CODE) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function forgetDeviceCode() {
+  try {
+    sessionStorage.removeItem(PENDING_CODE);
+  } catch {
+    // nothing kept
+  }
+}
 
 export function DeviceApproval({ initialCode }: { initialCode: string }) {
   const [code, setCode] = useState(initialCode);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const signedIn = hasSession();
 
   const lookup = useMutation({
     mutationFn: (user_code: string) => unwrap(api.POST("/v1/auth/device/lookup", { body: { user_code } })),
@@ -23,13 +54,39 @@ export function DeviceApproval({ initialCode }: { initialCode: string }) {
       await unwrap(decision === "approved" ? api.POST("/v1/auth/device/approve", { body }) : api.POST("/v1/auth/device/deny", { body }));
       return decision;
     },
-    onSuccess: setOutcome,
+    onSuccess: (decision) => {
+      forgetDeviceCode();
+      setOutcome(decision);
+    },
   });
 
   const { mutate: find } = lookup;
   useEffect(() => {
-    if (initialCode) find(initialCode);
-  }, [initialCode, find]);
+    if (initialCode && signedIn) find(initialCode);
+  }, [initialCode, signedIn, find]);
+
+  if (!signedIn) {
+    // Approving signs the device in as you, so it needs you signed in here first; the code waits
+    // in this tab (never in the address) and comes back after.
+    return (
+      <AuthCard
+        title="Sign in to approve a device"
+        description="Your terminal or the desktop app is asking to sign in to dotrix as you. Sign in here first, then approve it."
+      >
+        <div className="grid gap-4">
+          {initialCode && (
+            <div className="bg-muted/50 text-muted-foreground flex items-center gap-2 rounded-md border p-3 text-sm">
+              <TerminalIcon className="size-4" />
+              Code <span className="text-foreground font-mono">{initialCode}</span>
+            </div>
+          )}
+          <Button asChild className="w-full">
+            <Link href={`/login?next=${encodeURIComponent("/device")}`}>Sign in to continue</Link>
+          </Button>
+        </div>
+      </AuthCard>
+    );
+  }
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
