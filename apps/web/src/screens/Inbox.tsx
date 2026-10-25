@@ -1,6 +1,6 @@
 // The Inbox: what people send you (mentions, assignments, comments) and what the agents need
 // (changes to approve, plans to steer, findings, decisions), with the change itself in the detail.
-import type { CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 
 import { continueLimited, decideCoding } from "../core/agents";
 import { LimitNotice } from "../components/LimitNotice";
@@ -370,8 +370,28 @@ export function Inbox() {
   const unread = count("all");
   let ns = all.filter((n) => inTab(n, tab));
   if (S.ui.inboxUnread) ns = ns.filter((n) => !n.read);
+  const autoPin = useRef<string | null>(null);
   const selId = search.get("n") || S.ui.inboxSel;
-  const sel = D().notifs.find((n) => n.id === selId) || null;
+  const selRaw = D().notifs.find((n) => n.id === selId) || null;
+  // An explicit pick survives a tab switch; a row the auto-preview pinned does not,
+  // so a mention previewed in All can't linger beside the Needs you rows.
+  const sel = selRaw && (search.get("n") || autoPin.current !== selRaw.id || inTab(selRaw, tab)) ? selRaw : null;
+  // Desktop always shows something: the explicit pick, else the first row. Mobile still
+  // waits for a tap, so the list isn't covered.
+  const shown = sel ?? ns[0] ?? null;
+  const shownId = shown?.id ?? null;
+  // The auto-preview on desktop behaves like a click on the first row: it pins the
+  // row as the selection, then marks it read — so under the Unread filter the detail
+  // stays put when the row leaves `ns` instead of cascading through every unread.
+  // Mobile's hidden fallback is untouched, and approvals/checkpoints stay unread.
+  useEffect(() => {
+    if (!sel && shown && window.matchMedia("(min-width: 901px)").matches) {
+      S.ui.inboxSel = shown.id;
+      autoPin.current = shown.id;
+      if (!shown.read && !staysUnread(shown.type)) markRead(shown);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, shownId]);
   const select = (id: string) => {
     S.ui.inboxSel = id;
     const n = D().notifs.find((x) => x.id === id);
@@ -437,7 +457,7 @@ export function Inbox() {
                     {b}
                   </div>
                   {list.map((n) => (
-                    <Item key={n.id} n={n} on={sel?.id === n.id} select={select} />
+                    <Item key={n.id} n={n} on={shown?.id === n.id} select={select} />
                   ))}
                 </div>
               ))
@@ -457,12 +477,12 @@ export function Inbox() {
             )}
           </div>
         </div>
-        <div className="inbox-prev" style={{ display: "flex", flexDirection: "column", minHeight: 0, overflowY: "auto" }}>
-          {sel ? (
-            PEOPLE.includes(sel.type) ? (
-              <TaskPreview n={sel} onBack={onBack} />
+        <div className="inbox-prev" style={{ display: "flex", flexDirection: "column", justifyContent: "safe center", minHeight: 0, overflowY: "auto" }}>
+          {shown ? (
+            PEOPLE.includes(shown.type) ? (
+              <TaskPreview n={shown} onBack={onBack} />
             ) : (
-              <AgentDetail n={sel} onBack={onBack} />
+              <AgentDetail n={shown} onBack={onBack} />
             )
           ) : (
             <SelectPrompt

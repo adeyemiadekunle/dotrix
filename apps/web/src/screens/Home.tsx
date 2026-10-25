@@ -16,7 +16,6 @@ import type { Notif } from "../data/types";
 import { STATUSES } from "../core/constants";
 import { MiniRow } from "../components/TaskList";
 import { newThread } from "../core/agents";
-import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { useAtPicker } from "../components/AtPicker";
 import { sortTasks, viewOf } from "../shell/viewEngine";
@@ -83,9 +82,6 @@ function AskHero() {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
   const lead = D().agents.find((a) => a.handle === "auto") ?? D().agents[0];
-  const others = D()
-    .agents.filter((a) => a !== lead)
-    .slice(0, 5);
   // "@" picks the project the agents read ("" for all of them) and who to ask.
   const ps = visibleProjects().filter((x) => canSee(x) && !x.archived);
   const [pid, setPid] = useState(ps[0]?.id ?? "");
@@ -106,19 +102,6 @@ function AskHero() {
   };
   return (
     <section className="ask-hero" aria-label={`Ask ${lead?.name ?? "the agents"}`}>
-      <div className="ask-orbit" aria-hidden>
-        {lead && (
-          <span className="lead">
-            <Face c={lead.c} size={64} mood={moodOf(lead.handle)} />
-          </span>
-        )}
-        {others.map((a, i) => (
-          <span key={a.handle} className={`sat s${i}`} style={{ "--c": a.c } as CSSProperties}>
-            <Face c={a.c} size={24} mood={moodOf(a.handle)} />
-            <em>{a.name}</em>
-          </span>
-        ))}
-      </div>
       <div className="ask-wrap">
         <form
           className="cbox ask-box"

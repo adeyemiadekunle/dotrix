@@ -40,3 +40,6 @@ test-results/
 
 # The desktop app's bundled dotrix CLI (pnpm --filter @dotrix/desktop bundle-cli)
 apps/desktop/resources/dotrix/
+
+# taste-skill working files
+.taste-skill/

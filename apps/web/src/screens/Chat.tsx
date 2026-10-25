@@ -593,19 +593,54 @@ function Pick({
   label: string;
   lead?: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const name = options.find(([v]) => v === value)?.[1] ?? value;
   return (
-    <label className="cpill pick">
-      {lead}
-      <span className="trunc">{options.find(([v]) => v === value)?.[1] ?? value}</span>
-      <Ic n="chevron-down" s={11} />
-      <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
-        {options.map(([v, l]) => (
-          <option key={v} value={v}>
-            {l}
-          </option>
-        ))}
-      </select>
-    </label>
+    <span
+      className="cpill pick"
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && open) {
+          e.stopPropagation();
+          setOpen(false);
+          btnRef.current?.focus();
+        }
+      }}
+    >
+      <button
+        ref={btnRef}
+        type="button"
+        className="pick-open"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`${label}: ${name}`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {lead}
+        <span className="trunc">{name}</span>
+        <Ic n="chevron-down" s={11} />
+      </button>
+      {open && (
+        <>
+          <span className="pick-veil" aria-hidden onClick={() => setOpen(false)} />
+          <span className="cmenu" role="listbox" aria-label={label}>
+            {options.map(([v, l]) => (
+              <button
+                key={v}
+                type="button"
+                role="option"
+                aria-selected={v === value}
+                className={`mi ${v === value ? "on" : ""}`}
+                onClick={() => (onChange(v), setOpen(false))}
+              >
+                <span className="trunc">{l}</span>
+                {v === value && <Ic n="check" s={13} />}
+              </button>
+            ))}
+          </span>
+        </>
+      )}
+    </span>
   );
 }
 
@@ -980,9 +1015,9 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   return (
     <div className="chat-scroll" style={{ display: "flex" }}>
       <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
-        <h1 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>
+        <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>
           {greeting()}, {me()?.name.split(" ")[0]}
-        </h1>
+        </h2>
         <p className="muted" style={{ margin: "0 0 18px", textAlign: "center" }}>
           Ask the agents about a project: they read its documents and board, and propose changes for you to approve.
         </p>
@@ -1118,7 +1153,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
   return (
     <div className="chat-scroll" style={{ display: "flex" }}>
       <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
-        <h1 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>Start a coding session</h1>
+        <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>Start a coding session</h2>
         <p className="muted" style={{ margin: "0 0 18px", textAlign: "center" }}>
           A coding tool works on an issue on its own branch and opens a pull request. It starts once someone who may approve agent changes says yes.
         </p>
@@ -1821,7 +1856,7 @@ export function Chat() {
           ) : (
             <>
               <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(d) => setListW((w) => w + d)} />
-              <div style={{ padding: "18px 14px 8px" }} className="row">
+              <div style={{ padding: "18px 16px 8px" }} className="row">
                 <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Chat</h1>
                 <span className="sp" />
                 <button className="ibtn ibtn-sm chat-fold" onClick={() => setListMin(true)} aria-label="Hide the list" data-tip="Hide the list">

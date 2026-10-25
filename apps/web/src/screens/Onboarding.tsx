@@ -147,7 +147,7 @@ export function Onboarding() {
             id="o-ws"
             value={o.ws}
             onChange={(e) => set({ ws: e.target.value, url: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "") })}
-            placeholder="e.g. Acme Studio"
+            placeholder="e.g. Meridian Studio"
             autoFocus
           />
           {err && (

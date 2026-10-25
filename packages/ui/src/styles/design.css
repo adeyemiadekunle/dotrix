@@ -124,7 +124,7 @@
   --on-accent: #12131c;
   --green: #5cba86;
   --amber: #d8a443;
-  --red: #e57d70;
+  --red: #e5566f;
   --blue: #72a5ea;
   --violet: #a98deb;
   --teal: #58c0b6;
@@ -384,7 +384,6 @@ kbd,
 .btn-primary {
   background: var(--acc);
   color: var(--on-accent);
-  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12);
 }
 .btn-primary:hover {
   background: color-mix(in srgb, var(--acc) 88%, var(--text));
@@ -396,7 +395,6 @@ kbd,
   background: var(--surface);
   border-color: var(--border-strong);
   color: var(--text);
-  box-shadow: var(--shadow-sm);
 }
 .btn-secondary:hover {
   background: var(--surface-2);
@@ -580,8 +578,8 @@ kbd,
 .select:focus,
 .textarea:focus {
   border-color: var(--acc);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  outline: none;
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
 }
 .input.is-error {
   border-color: var(--red);
@@ -1045,7 +1043,8 @@ kbd,
 }
 .select-btn[aria-expanded='true'] {
   border-color: var(--acc);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
 }
 .select-menu {
   max-width: 360px;
@@ -1151,10 +1150,8 @@ svg.logo {
   align-items: center;
   height: 24px;
   padding: 0 8px;
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--text-3);
 }
 .sgroup-h .ibtn {
@@ -1467,10 +1464,8 @@ h3.sub {
   margin: 0;
 }
 .eyebrow {
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
   color: var(--text-3);
 }
 .bottomnav {
@@ -1905,7 +1900,7 @@ h3.sub {
 }
 .board::after {
   content: '';
-  flex: 0 0 8px;
+  flex: 0 0 16px;
 }
 .bcol {
   width: 284px;
@@ -1971,7 +1966,7 @@ h3.sub {
 .kcard {
   background: var(--surface);
   border-radius: var(--r);
-  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border);
   padding: var(--card-pad) calc(var(--card-pad) + 2px);
   cursor: pointer;
   display: flex;
@@ -1979,13 +1974,11 @@ h3.sub {
   gap: 8px;
   position: relative;
   transition:
-    box-shadow var(--dur),
+    border-color var(--dur),
     transform var(--dur);
 }
 .kcard:hover {
-  box-shadow:
-    0 2px 6px -2px rgba(0, 0, 0, 0.08),
-    0 0 0 1px var(--border-strong);
+  border-color: var(--border-strong);
 }
 .kcard.dragging {
   opacity: 0.35;
@@ -2084,9 +2077,7 @@ h3.sub {
 .composer {
   background: var(--surface);
   border-radius: var(--r);
-  box-shadow:
-    0 0 0 1px var(--accent-line),
-    0 0 0 3px var(--accent-soft);
+  border: 1px solid var(--accent-line);
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
@@ -2304,9 +2295,12 @@ table.tbl {
   border-radius: 7px;
   display: grid;
   place-items: center;
-  background: color-mix(in srgb, var(--c) 14%, transparent);
+  background: var(--surface-2);
   color: var(--pc, var(--c));
   flex-shrink: 0;
+}
+.sitem .picon {
+  background: transparent;
 }
 .picon.lg {
   --sz: 36px;
@@ -2407,8 +2401,6 @@ table.tbl {
   font-weight: 600;
   color: var(--text-3);
   padding: 14px 0 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 .kv {
   display: grid;
@@ -2981,7 +2973,8 @@ table.tbl {
 }
 .cbox:focus-within {
   border-color: var(--acc);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
 }
 .cbox textarea {
   border: 0;
@@ -3104,9 +3097,7 @@ table.tbl {
   margin: 4px -4px;
 }
 .mh {
-  font-size: var(--fs-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-3);
   padding: 8px 8px 4px;
@@ -3247,9 +3238,7 @@ table.tbl {
   flex: 1;
 }
 .pal-sec {
-  font-size: var(--fs-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-3);
   padding: 10px 10px 4px;
@@ -3527,10 +3516,8 @@ table.tbl {
   background: var(--surface);
 }
 .set-nav .gh {
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--text-3);
   padding: 14px 8px 4px;
 }
@@ -3542,6 +3529,7 @@ table.tbl {
 }
 .set-in {
   max-width: 720px;
+  margin-inline: auto;
   padding: 32px 40px 80px;
 }
 .set-in h1 {
@@ -3603,7 +3591,8 @@ table.tbl {
 }
 .tcard.on {
   border-color: var(--acc);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
 }
 .tprev {
   height: 84px;
@@ -3829,7 +3818,8 @@ table.tbl {
 }
 .opt.on {
   border-color: var(--acc);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
 }
 .opt .i {
   color: var(--text-2);
@@ -3927,12 +3917,10 @@ table.tbl {
 }
 @keyframes doneRing {
   from {
-    box-shadow:
-      0 0 0 2px var(--green),
-      var(--shadow-card);
+    box-shadow: 0 0 0 2px var(--green);
   }
   to {
-    box-shadow: var(--shadow-card);
+    box-shadow: none;
   }
 }
 @keyframes land {
@@ -3942,7 +3930,7 @@ table.tbl {
   }
   100% {
     transform: none;
-    box-shadow: var(--shadow-card);
+    box-shadow: none;
   }
 }
 @keyframes addWash {
@@ -3955,12 +3943,10 @@ table.tbl {
 }
 @keyframes addRing {
   from {
-    box-shadow:
-      0 0 0 2px var(--accent-line),
-      var(--shadow-card);
+    box-shadow: 0 0 0 2px var(--accent-line);
   }
   to {
-    box-shadow: var(--shadow-card);
+    box-shadow: none;
   }
 }
 /* route change: content rises in, lightly staggered */
@@ -4218,10 +4204,10 @@ table.tbl {
     z-index: 70;
     transform: translateX(-100%);
     transition: transform 0.22s var(--ease);
-    box-shadow: var(--shadow-pop);
   }
   .shell.mnav .side {
     transform: none;
+    box-shadow: var(--shadow-pop);
   }
   .shell.collapsed .side .sitem {
     justify-content: flex-start;
