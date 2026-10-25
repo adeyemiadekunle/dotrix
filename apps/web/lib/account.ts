@@ -105,7 +105,7 @@ export function useSaveMyModelKey() {
     mutationFn: ({ provider, apiKey }: { provider: string; apiKey: string }) =>
       unwrap(api.PUT("/v1/me/model-keys/{provider}", { params: { path: { provider } }, body: { api_key: apiKey } })),
     onError: (e) => toast.error(errorMessage(e)),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: ["me", "models"] }),
+    onSettled: () => void queryClient.invalidateQueries(),
   });
 }
 
@@ -114,7 +114,7 @@ export function useRemoveMyModelKey() {
   return useMutation({
     mutationFn: (provider: string) => unwrap(api.DELETE("/v1/me/model-keys/{provider}", { params: { path: { provider } } })),
     onError: (e) => toast.error(errorMessage(e)),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: ["me", "models"] }),
+    onSettled: () => void queryClient.invalidateQueries(),
   });
 }
 

@@ -120,7 +120,6 @@ class CodingTool(Protocol):
     def usage_command(self, session: uuid.UUID) -> str | None: ...
     def read_usage(self, output: str, usage: Usage) -> None: ...
     def sandbox_env(self, model_key: str) -> dict[str, str]: ...
-    def server_key(self, settings: Settings) -> str | None: ...
     def model(self, settings: Settings) -> str | None: ...
     def parse(self, line: str, usage: Usage) -> Parsed: ...
 
@@ -133,10 +132,6 @@ class _NoUsageCommand:
 
     def read_usage(self, output: str, usage: Usage) -> None:
         return None
-
-
-def _secret(value: Any) -> str | None:
-    return (value.get_secret_value().strip() or None) if value is not None else None
 
 
 def _clip(text: str, limit: int = MAX_STEP) -> str:
@@ -220,9 +215,6 @@ class ClaudeCode(_NoUsageCommand):
 
     def sandbox_env(self, model_key: str) -> dict[str, str]:
         return {self.key_env: model_key}
-
-    def server_key(self, settings: Settings) -> str | None:
-        return _secret(settings.anthropic_api_key)
 
     def model(self, settings: Settings) -> str | None:
         return settings.coding_claude_model
@@ -321,9 +313,6 @@ class Codex(_NoUsageCommand):
 
     def sandbox_env(self, model_key: str) -> dict[str, str]:
         return {self.key_env: model_key, "CODEX_API_KEY": model_key}  # CODEX_API_KEY: what `codex exec` reads
-
-    def server_key(self, settings: Settings) -> str | None:
-        return _secret(settings.openai_api_key)
 
     def model(self, settings: Settings) -> str | None:
         return settings.coding_codex_model
@@ -526,9 +515,6 @@ class OpenCode:
     def sandbox_env(self, model_key: str) -> dict[str, str]:
         return {self.key_env: model_key}
 
-    def server_key(self, settings: Settings) -> str | None:
-        return _secret(getattr(settings, self.opencode_provider.setting, None))
-
     def model(self, settings: Settings) -> str | None:
         return settings.coding_opencode_model
 
@@ -590,11 +576,10 @@ def tool_for(agent: CodingAgent, model: str | None = None) -> CodingTool | None:
 
 
 def run_key(tool: CodingTool, settings: Settings, keys: dict[str, str]) -> str | None:
-    """The key a run's tool codes with, as chat picks one (`run_keys`): the person's own or the
-    workspace's for its provider (`keys`), else the server's when it lends its keys."""
+    """Only the requesting person's key for the selected provider."""
     if keys.get(tool.provider):
         return keys[tool.provider]
-    return tool.server_key(settings) if settings.server_model_keys else None
+    return None
 
 
 def coding_models(settings: Settings, providers: frozenset[str] | set[str]) -> list[str]:
@@ -615,7 +600,7 @@ def choose_agent(
         agent = CodingAgent(name)
         model = model_for(settings, agent, providers, preferred_model=preferred_model)
         tool = tool_for(agent, model)
-        if tool and (tool.provider in providers or (settings.server_model_keys and tool.server_key(settings))):
+        if tool and tool.provider in providers:
             return agent
     return None
 

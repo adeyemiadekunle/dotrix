@@ -352,7 +352,7 @@ class CodingWorker:
                 key = run_key(tool, self.settings, keys.keys)
                 if key is None:
                     raise RunFailed(f"There's no {tool.provider} key for {CODING_AGENT_NAME} ({tool.name}) here any "
-                                    "more (Settings → Models, or your own in Account → Your models)")
+                                    "more (connect your own in Account → Your models)")
 
         # 1. Our checkout, with a token for this repo only (an hour long, never stored). With a fork
         # owner, the branch goes to the app's fork: the PR's CI then gets none of the repo's secrets,

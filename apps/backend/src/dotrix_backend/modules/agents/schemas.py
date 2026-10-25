@@ -59,8 +59,8 @@ class ModelOption(BaseModel):
     id: str = Field(description="provider:model, e.g. google_genai:gemini-3.8-flash")
     provider: str
     name: str = Field(description="The model's name without the provider")
-    source: Literal["personal", "workspace", "server"] = Field(
-        default="server", description="Whose key runs it for you: your own, the workspace's, or the server's"
+    source: Literal["personal", "test"] = Field(
+        default="personal", description="Your own key; test is reserved for the isolated test model"
     )
 
 

@@ -129,9 +129,6 @@ class WorkspaceService:
             await self._audit(member, "workspace.approval_mode_cap_changed",
                               **{"from": before.value, "to": data.approval_mode_cap.value})
             workspace.approval_mode_cap = data.approval_mode_cap.value
-        if data.personal_keys is not None and data.personal_keys != workspace.personal_keys:
-            await self._audit(member, "workspace.personal_keys_" + ("allowed" if data.personal_keys else "turned_off"))
-            workspace.personal_keys = data.personal_keys
         await self.session.commit()
         return WorkspaceWithRole.of(workspace, member.role)
 

@@ -1,8 +1,10 @@
 """Chat with the team: pick who answers (Auto or one specialist), and the model per conversation."""
 import pytest
+from cryptography.fernet import Fernet
 from httpx import AsyncClient
 from pydantic import SecretStr
 
+from dotrix_backend.core.crypto import Secrets
 from dotrix_backend.modules.workspaces.models import Role
 from dotrix_engine.testing import tool_call
 
@@ -12,8 +14,7 @@ CLAUDE = "anthropic:claude-sonnet-5"  # the tests' default model (make_settings)
 
 @pytest.fixture
 def connected(db_client: AsyncClient):
-    """Providers with a key, as far as the model list is concerned: Google here (Anthropic is
-    the project's model, always allowed)."""
+    """Connect an individual user's provider; legacy server credentials must have no effect."""
     app = db_client._transport.app  # type: ignore[attr-defined]
     app.state.settings = app.state.settings.model_copy(
         update={
@@ -23,6 +24,15 @@ def connected(db_client: AsyncClient):
             "anthropic_api_key": None,
         }
     )
+    app.state.secrets = app.state.runner.secrets = Secrets(Fernet.generate_key().decode())
+
+    async def connect(person, provider: str = "google_genai") -> str:
+        key = f"personal-test-provider-key-{person.id}"
+        response = await db_client.put(f"/v1/me/model-keys/{provider}", json={"api_key": key}, headers=person.headers)
+        assert response.status_code == 200, response.text
+        return key
+
+    return connect
 
 
 @pytest.fixture
@@ -101,6 +111,8 @@ async def test_a_specialist_stays_in_its_folders(project, db_client: AsyncClient
 
 async def test_a_conversation_keeps_its_model(project, db_client: AsyncClient, agent_script, connected) -> None:
     ada, _, base = await project()
+    await connected(ada)
+    await connected(ada, "anthropic")
     agent_script.say("First.", "Second.", "Third.")
     first = (await send(db_client, base, ada.headers, "one", model=GEMINI)).json()
     assert first["conversation_model"] == GEMINI and first["model"] == GEMINI
@@ -119,8 +131,10 @@ async def test_a_conversation_keeps_its_model(project, db_client: AsyncClient, a
 
 async def test_who_may_choose_a_model(project, db_client: AsyncClient, agent_script, connected, signup, add_member) -> None:
     ada, team, base = await project()
+    await connected(ada)
     bob = await signup(email="bob@example.com", name="Bob")
     await add_member(team["id"], bob.id, Role.MEMBER)
+    await connected(bob, "anthropic")
     agent_script.say("ok", "ok", "ok")
     assert (await send(db_client, base, bob.headers, "hi")).status_code == 202  # the project's model: anyone
     assert (await send(db_client, base, bob.headers, "hi", model=CLAUDE)).status_code == 202  # same thing
@@ -128,7 +142,12 @@ async def test_who_may_choose_a_model(project, db_client: AsyncClient, agent_scr
     ws = f"/v1/workspaces/{team['id']}"
     res = await db_client.patch(ws, json={"member_permissions": ["agents:choose_model"]}, headers=ada.headers)
     assert res.status_code == 200
+    assert (await send(db_client, base, bob.headers, "hi", model=GEMINI)).status_code == 422
+    # A role grant cannot borrow Ada's key. With his own key Bob can choose its model.
+    own = await connected(bob)
+    await db_client.patch(ws, json={"member_permissions": []}, headers=ada.headers)
     assert (await send(db_client, base, bob.headers, "hi", model=GEMINI)).status_code == 202
+    assert agent_script.keys_used[-1]["google_genai"] == own
     # Only models that can run here.
     unavailable = await send(db_client, base, ada.headers, "hi", model="openai:gpt-test")
     assert unavailable.status_code == 422 and unavailable.json()["type"].endswith("/model_not_available")
@@ -136,10 +155,11 @@ async def test_who_may_choose_a_model(project, db_client: AsyncClient, agent_scr
 
 async def test_the_models_that_can_run(db_client: AsyncClient, create_team, signup, connected) -> None:
     ada = await signup()
+    await connected(ada)
     team = await create_team(ada.headers)
     models = (await db_client.get(f"/v1/workspaces/{team['id']}/models", headers=ada.headers)).json()
     assert [m["id"] for m in models] == [GEMINI]  # OpenAI and Anthropic have no key here
-    assert models[0] == {"id": GEMINI, "provider": "google_genai", "name": "gemini-3.8-flash", "source": "server"}
+    assert models[0] == {"id": GEMINI, "provider": "google_genai", "name": "gemini-3.8-flash", "source": "personal"}
     outsider = await signup(email="eve@example.com", name="Eve")
     assert (await db_client.get(f"/v1/workspaces/{team['id']}/models", headers=outsider.headers)).status_code == 404
 

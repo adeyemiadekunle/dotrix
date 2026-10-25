@@ -296,13 +296,6 @@ export const myAgentSaved = (handle: string, instructions: string, model: string
     }),
   );
 
-/** Let people's own keys run what they start here, or not (owners and admins). */
-export async function personalKeysAllowed(on: boolean) {
-  const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { personal_keys: on } }));
-  live.ws = { ...live.ws!, personal_keys: w.personal_keys };
-  render();
-}
-
 /** A run that stopped at its model's limit goes on: now, or once the limit resets. */
 export const runContinued = (projectId: string, runId: string, whenReset: boolean) =>
   unwrap(
@@ -312,13 +305,6 @@ export const runContinued = (projectId: string, runId: string, whenReset: boolea
     }),
   );
 
-export const modelKeys = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/model-keys", wsPath()));
-export const modelKeySaved = (provider: string, apiKey: string) =>
-  unwrap(
-    api.PUT("/v1/workspaces/{workspace_id}/model-keys/{provider}", { params: { path: { workspace_id: live.ws!.id, provider } }, body: { api_key: apiKey } }),
-  );
-export const modelKeyRemoved = (provider: string) =>
-  send(api.DELETE("/v1/workspaces/{workspace_id}/model-keys/{provider}", { params: { path: { workspace_id: live.ws!.id, provider } } }));
 export const agentList = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", wsPath()));
 
 export const rules = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/rules", wsPath()));

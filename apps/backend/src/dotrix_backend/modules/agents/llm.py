@@ -1,7 +1,4 @@
-"""Which chat model a project's agents use, with whose key, and whether it can run right now.
-
-A workspace's own key for the provider comes first (model_keys); without one, the server's,
-when `DOTRIX_SERVER_MODEL_KEYS` lends them (self-hosting, development)."""
+"""Chat models use only the instructing person's own provider credentials."""
 from __future__ import annotations
 
 import re
@@ -26,7 +23,7 @@ class ModelUnavailable(DomainError):
     code = "model_unavailable"
 
 
-# provider -> a workspace's own key (model_keys.ModelKeys.keys)
+# provider -> the requesting person's own key (model_keys.run_keys)
 Keys = dict[str, str]
 
 
@@ -75,30 +72,22 @@ def build_chat_model(model: str, api_key: str) -> Any:
     return init_chat_model(model, **{PROVIDERS[provider].kwarg: api_key})
 
 
-def server_key(settings: Settings, provider: str) -> str | None:
-    """The server's own key for a provider, or None (unset, or `KEY=` left empty in .env)."""
-    spec = PROVIDERS.get(provider)
-    key = getattr(settings, spec.setting) if spec else None
-    value = key.get_secret_value().strip() if key is not None else ""
-    return value or None
-
-
 def key_for(settings: Settings, model: str, keys: Keys | None = None) -> str | None:
-    """The key a model runs with here: the workspace's own, else the server's if it lends them."""
+    """A run uses only the requesting person's supplied key."""
     provider = model.partition(":")[0]
     if keys and keys.get(provider):
         return keys[provider]
-    return server_key(settings, provider) if settings.server_model_keys else None
+    return None
 
 
 def has_key(settings: Settings, model: str, connected: set[str] | None = None) -> bool:
     provider = model.partition(":")[0]
-    return provider in (connected or set()) or (settings.server_model_keys and server_key(settings, provider) is not None)
+    return provider in (connected or set())
 
 
 def available_models(settings: Settings, *also: str, connected: set[str] | None = None) -> list[str]:
     """The models a conversation or an agent can run on here: the catalogue (and `also`, e.g. the
-    project's model) whose provider has a key (the workspace's own, `connected`, or the server's),
+    project's model) whose provider has a personal key in `connected`,
     in order, without repeats."""
     found: list[str] = []
     for model in [*also, *settings.models, settings.default_model]:
@@ -128,9 +117,8 @@ def settings_model_factory(settings: Settings) -> ModelFactory:
         provider = provider_of(model)
         key = key_for(settings, model, keys)
         if key is None:
-            hint = f"set {provider.env_var} in .env and restart" if settings.server_model_keys else "an owner or admin connects it"
             raise ModelUnavailable(
-                f"No {provider.label} key for {model}: connect one in Settings → Models ({hint})"
+                f"No personal {provider.label} key for {model}: connect yours in Account → Your models"
             )
         return build_chat_model(model, key)
 

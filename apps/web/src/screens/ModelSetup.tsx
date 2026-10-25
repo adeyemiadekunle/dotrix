@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 
 import { api, authPost, unwrap } from "@/lib/api";
 import { go, useRoute } from "../core/nav";
-import { myKeySaved, myModels, modelKeySaved } from "../data/account";
+import { myKeySaved, myModels } from "../data/account";
 import { isLive, live } from "../data/live";
 import { D } from "../data/store";
 
@@ -15,7 +15,7 @@ export function ModelGate({ children }: { children: ReactNode }) {
   const access = useQuery({
     queryKey: ["model-access", workspace],
     enabled: !!workspace,
-    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/model-keys/access", { params: { path: { workspace_id: workspace! } } })),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/model-access", { params: { path: { workspace_id: workspace! } } })),
     refetchOnWindowFocus: true,
   });
   const providers = useQuery({ queryKey: ["my-models"], queryFn: myModels, enabled: !!workspace && access.data?.ready === false });
@@ -23,21 +23,18 @@ export function ModelGate({ children }: { children: ReactNode }) {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [shared, setShared] = useState(false);
   // Key settings remain reachable so members can fix policy/configuration without being trapped.
   const keySettings = route === "settings" && (params.sec === "my-models" || params.sec === "models");
   if (!workspace || access.data?.ready || keySettings) return children;
   const d = access.data;
-  const workspaceKey = d?.personal_keys_allowed === false || shared;
-  const allowed = d?.can_store_keys && (workspaceKey ? d.can_manage_keys : d.personal_keys_allowed);
+  const allowed = d?.can_store_keys;
   const connect = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!allowed || busy) return;
     setBusy(true);
     setError("");
     try {
-      if (workspaceKey) await modelKeySaved(provider, key.trim());
-      else await myKeySaved(provider, key.trim());
+      await myKeySaved(provider, key.trim());
       setKey("");
       await qc.invalidateQueries();
       await access.refetch();
@@ -53,8 +50,8 @@ export function ModelGate({ children }: { children: ReactNode }) {
         <h1>{d ? "Connect a model to continue" : "Checking your models…"}</h1>
         <p className="muted">
           {d
-            ? "This workspace has no available model provider. Connect a key to use chat and coding. Your key is stored encrypted."
-            : "Checking your personal, workspace, and platform providers."}
+            ? "Bring your own API key to use chat and coding. Your key is stored encrypted and pays only for your runs."
+            : "Checking your connected model providers."}
         </p>
         {access.error && (
           <div role="alert" className="alert danger">
@@ -64,15 +61,7 @@ export function ModelGate({ children }: { children: ReactNode }) {
             </button>
           </div>
         )}
-        {d && !d.can_store_keys && <p role="alert">Ask the platform administrator to enable encrypted key storage or connect a platform provider.</p>}
-        {d && !d.personal_keys_allowed && !d.can_manage_keys && (
-          <p role="alert">Your organisation uses its own keys. Ask an owner or administrator to connect a provider, or switch to your personal workspace.</p>
-        )}
-        {d?.can_manage_keys && d.personal_keys_allowed && (
-          <label className="muted" style={{ display: "block", marginBottom: 16 }}>
-            <input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} /> Connect a workspace key for everyone
-          </label>
-        )}
+        {d && !d.can_store_keys && <p role="alert">Ask the platform administrator to enable encrypted key storage.</p>}
         {allowed && (
           <form onSubmit={(e) => void connect(e)} style={{ display: "grid", gap: 12 }}>
             <label>
@@ -112,10 +101,7 @@ export function ModelGate({ children }: { children: ReactNode }) {
         )}
         <div className="row" style={{ marginTop: 20 }}>
           {d && (
-            <button
-              className="btn btn-secondary"
-              onClick={() => go("settings", { sec: d.can_manage_keys && !d.personal_keys_allowed ? "models" : "my-models" })}
-            >
+            <button className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
               Model settings
             </button>
           )}

@@ -51,7 +51,7 @@ from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.knowledge.repository import KnowledgeRepository
 from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
 from dotrix_backend.modules.lessons.service import lessons_path
-from dotrix_backend.modules.model_keys.service import ModelKeys, PersonalKeys, run_keys
+from dotrix_backend.modules.model_keys.service import PersonalKeys, run_keys
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import ProjectRepository, visible_to
@@ -136,8 +136,8 @@ NO_REPLY_AFTER_DECISIONS_ERROR = (
 )
 MODEL_LIMIT_ERROR = (
     "Stopped: {provider} refused this run because the key reached its rate limit, quota, or credit "
-    "({said}). It works again when the limit resets, or with a key that has more room; owners and "
-    "admins see and replace keys in Settings → Models, and can give agents a smaller model there."
+    "({said}). It works again when the limit resets. Replace your own key or choose a smaller "
+    "model in Account → Your models."
 )
 
 BUDGET_ERROR = (
@@ -549,7 +549,7 @@ class AgentRunner:
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
                 name, description, project_key = project.name, project.description, project.key
                 keys = (await run_keys(
-                    session, self.secrets, run.workspace_id, run.requested_by_id, own=run.automation_id is None
+                    session, self.secrets, run.workspace_id, run.requested_by_id
                 )).keys
                 choice = self.model_factory(project, run.model, keys=keys)
                 lead = run.agent  # None: Auto (the Project Manager)
@@ -949,13 +949,10 @@ class AgentRunner:
 
     async def _key_limit(self, session: Any, run: AgentRun, provider: str, said: str | None) -> None:
         """Record (or clear, `said` None) a provider's limit on the key the run used: the person's
-        own, or the workspace's."""
-        used = await run_keys(session, self.secrets, run.workspace_id, run.requested_by_id, own=run.automation_id is None)
-        if provider in used.personal and run.requested_by_id is not None:
-            keys: Any = PersonalKeys(session, self.secrets)
-            owner = run.requested_by_id
-        else:
-            keys, owner = ModelKeys(session, self.secrets), run.workspace_id
+        own."""
+        if run.requested_by_id is None:
+            return
+        keys, owner = PersonalKeys(session, self.secrets), run.requested_by_id
         if said is None:
             await keys.limit_cleared(owner, provider)
         else:
@@ -963,7 +960,7 @@ class AgentRunner:
 
     async def _limited(self, run_id: uuid.UUID, exc: BaseException, usage: TokenUsage) -> bool:
         """A provider refused for its rate limit, quota, or credit: the run fails saying so, and
-        the workspace's key records it for Settings → Models. False for any other failure."""
+        the requesting person's key records it in Account → Your models. False for any other failure."""
         said = limit_error(exc)
         if said is None:
             return False
