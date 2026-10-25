@@ -38,6 +38,10 @@ export const live = {
   error: "",
   /** The bridge set it once the directory queries (members, agents, projects) have landed — the shell waits on it. */
   dirReady: false,
+  /** Bumped when a send fails after the store showed the change: the bridge re-mirrors the queries'
+   *  (still pre-edit) data over the optimistic edit — an unchanged refetch keeps its array identity,
+   *  so the bridge wouldn't rewrite the slot on its own. */
+  mirrorRev: 0,
   /** The demo workspace's data while a real one is shown, so the demo keeps its edits. */
   demo: null as Data | null,
 };
@@ -53,6 +57,12 @@ const send = <T>(p: Promise<{ data?: T; error?: unknown; response: Response }>) 
 // While a real workspace is shown, this browser keeps saving the demo's data, never the API's.
 persist.data = () => (live.mode === "demo" ? S.data : (live.demo ?? S.data));
 /** An id the API made (a project or user), not one the store made up for a new item. */
+
+/** A send failed after the store already showed the change: put the queries' data back over it. */
+const restoreMirror = () => {
+  live.mirrorRev++;
+  render();
+};
 
 /** Refetch the workspace's agents (Settings' agent edits) — the bridge mirrors them in. */
 export async function reloadAgents() {
@@ -71,6 +81,9 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
   if (!hasSession()) return false;
   live.mode = "loading";
   live.slug = slug;
+  // A retry after an error — or a hop between workspaces — refetches the queries the
+  // bridge mirrors; a query that settled in error only fetches again on invalidation.
+  void invalidateLiveQueries();
   render();
   try {
     const [me, wss] = await Promise.all([unwrap(api.GET("/v1/me")), myWorkspaces()]);
@@ -241,6 +254,7 @@ export function taskPatched(t: Task, keys: (keyof Task)[]) {
     .catch((e) => {
       failed(`“${t.title}”`, e);
       invalidateLiveQueries();
+      restoreMirror(); // undo the edit the store already showed
     });
 }
 
@@ -331,7 +345,10 @@ export function taskRanked(t: Task, before: Task | undefined, after: Task | unde
       params: { path: { ...projectPath(t.project), key: t.key } },
       body: body as Schemas["RankRequest"],
     }),
-  ).catch((e) => failed("The new order", e));
+  ).catch((e) => {
+    failed("The new order", e);
+    restoreMirror();
+  });
 }
 
 const PSTATUS_OUT: Record<Project["status"], Pick<Schemas["ProjectUpdate"], "status" | "health">> = {
@@ -362,6 +379,7 @@ export function projectChanged(p: Project, keys: (keyof Project)[]): Promise<voi
     (e) => {
       failed(p.name, e);
       invalidateLiveQueries();
+      restoreMirror();
     },
   );
 }
@@ -398,6 +416,7 @@ export function projectCreated(p: Project) {
     .catch((e) => {
       failed(p.name, e);
       invalidateLiveQueries();
+      restoreMirror();
     });
 }
 
@@ -408,7 +427,10 @@ export function projectStarred(p: Project) {
     p.fav
       ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/star", params)
       : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/star", params),
-  ).catch((e) => failed("The star", e));
+  ).catch((e) => {
+    failed("The star", e);
+    restoreMirror();
+  });
 }
 
 export function roleChanged(m: Member) {
@@ -421,6 +443,7 @@ export function roleChanged(m: Member) {
   ).catch((e) => {
     failed(`${m.name}'s role`, e);
     invalidateLiveQueries();
+    restoreMirror();
   });
 }
 
@@ -431,7 +454,7 @@ export function notifsRead(ids: string[] | "all") {
       params: { path: { workspace_id: wsId() } },
       body: ids === "all" ? { all: true, ids: [] } : { ids, all: false },
     }),
-  ).catch(() => undefined);
+  ).catch(() => restoreMirror());
 }
 
 /* ---------- knowledge, files, automations ---------- */
@@ -457,6 +480,7 @@ export function knowledgeSaved(f: KnowledgeFile, content: string, message: strin
     .catch((e) => {
       failed(f.path, e);
       invalidateLiveQueries();
+      restoreMirror();
     });
 }
 
@@ -471,6 +495,7 @@ export function automationToggled(a: Automation, field: "enabled" | "unattended"
   ).catch((e) => {
     failed(a.name, e);
     invalidateLiveQueries();
+    restoreMirror();
   });
 }
 
@@ -504,6 +529,7 @@ export function automationRemoved(a: Automation) {
   ).catch((e) => {
     failed(a.name, e);
     invalidateLiveQueries();
+    restoreMirror();
   });
 }
 /** A preset added in Settings: created for the project, then shown. */
@@ -582,6 +608,7 @@ export function fileDeleted(f: FileItem) {
   void send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}", docPath(f))).catch((e) => {
     failed(`Deleting “${f.name}”`, e);
     invalidateLiveQueries();
+    restoreMirror();
   });
 }
 
@@ -643,6 +670,7 @@ export function attachmentRemoved(t: Task, attachmentId: string) {
   ).catch((e) => {
     failed("Removing the file", e);
     invalidateLiveQueries();
+    restoreMirror();
   });
 }
 
@@ -680,6 +708,7 @@ export function projectDeleted(pr: Project) {
   void send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(pr.id) } })).catch((e) => {
     failed(`Deleting ${pr.name}`, e);
     invalidateLiveQueries();
+    restoreMirror();
   });
 }
 
