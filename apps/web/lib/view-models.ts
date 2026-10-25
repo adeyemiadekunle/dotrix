@@ -13,6 +13,7 @@ import type {
   Attachment,
   AuditEvent,
   Automation,
+  CodingSession,
   FileItem,
   KnowledgeFile,
   Member,
@@ -21,6 +22,7 @@ import type {
   Project,
   Subtask,
   Task,
+  Thread,
 } from "@/src/data/types";
 import { fileType, fsize } from "@/src/ui/helpers";
 
@@ -315,6 +317,41 @@ export function logActivity(
     .map(([k, v]) => `${k}: ${Array.isArray(v) ? `${v[0] ?? "—"} → ${v[1] ?? "—"}` : String(v)}`)
     .join(", ");
   return { id: e.id, task: taskId, by: actor(e.author_user_id, e.author_agent), verb: verb[e.kind] ?? "updated", project: null, at: ms(e.created_at), extra };
+}
+
+/** A workspace conversation as a store Thread (summary only — its messages load with the thread). */
+export function toThread(c: Schemas["WorkspaceConversation"]): Thread {
+  return {
+    id: c.thread_id,
+    project: c.project_ids[0] ?? null,
+    projects: c.project_ids,
+    title: c.title,
+    by: "",
+    agent: "",
+    model: c.model ?? "",
+    at: ms(c.updated_at),
+    messages: [],
+  };
+}
+
+/** A coding session row as a store CodingSession (its turns/diffs load with the session itself). */
+export function toCodingSession(s: Schemas["CodingSessionRead"]): CodingSession {
+  return {
+    id: s.session_id,
+    project: s.project_id,
+    task: s.issue_key,
+    tool: s.agent,
+    status: s.status,
+    by: "",
+    at: ms(s.updated_at),
+    title: s.title,
+    pinned: s.pinned,
+    archived: s.archived,
+    state: s.state,
+    branch: s.branch ?? undefined,
+    pr: s.pr_url ? { url: s.pr_url, number: s.pr_number ?? 0, state: (s.pr_state ?? "open") as "open" | "merged" | "closed" } : undefined,
+    turns: [],
+  };
 }
 
 export { htmlToMd, mdToHtml };
