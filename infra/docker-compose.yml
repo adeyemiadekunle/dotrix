@@ -6,6 +6,7 @@ services:
   postgres:
     # Postgres 17 plus the pgvector extension (knowledge search); built on the same Debian (trixie) as postgres:17, so collations match existing data.
     image: pgvector/pgvector:pg17-trixie
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-dotrix}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
@@ -20,10 +21,12 @@ services:
       start_period: 10s
   redis:
     image: redis:7
+    restart: unless-stopped
     ports: ["127.0.0.1:6379:6379"] # localhost only
   # S3-compatible object storage for document originals. Console: http://localhost:9001
   minio:
     image: minio/minio:latest
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     # Required, from .env (see .env.example); compose refuses to start without them.
     environment:

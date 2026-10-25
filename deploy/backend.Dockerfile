@@ -27,7 +27,8 @@ COPY apps/backend apps/backend
 RUN uv sync --frozen --no-dev --package dotrix-backend
 
 ENV PATH=/app/.venv/bin:$PATH
-RUN useradd --uid 10001 --create-home dotrix
+RUN useradd --uid 10001 --create-home dotrix \
+  && mkdir -p /data/code && chown dotrix:dotrix /data/code && chmod 700 /data/code
 USER dotrix
 EXPOSE 8000
 CMD ["python", "-m", "dotrix_backend.serve", "--host", "0.0.0.0", "--port", "8000"]
