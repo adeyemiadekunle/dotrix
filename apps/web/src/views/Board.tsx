@@ -6,6 +6,7 @@ import { openPop, openTask, toggleDone } from "../core/actions";
 import { PR, STATUSES } from "../core/constants";
 import { Ic } from "../core/icons";
 import { cancelComposer, commitComposer, editTask, startComposer } from "../core/more";
+import { isLive, liveCommentsOf } from "../data/live";
 import { S, commentsOf, pColor, proj, render } from "../data/store";
 import type { Task } from "../data/types";
 import { Av, Due, Lbl, PrIcon, ProgBar, StIcon, TypeIcon } from "../ui/helpers";
@@ -13,7 +14,7 @@ import { Av, Due, Lbl, PrIcon, ProgBar, StIcon, TypeIcon } from "../ui/helpers";
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
 export function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
-  const cc = commentsOf(t.id).length;
+  const cc = isLive() ? liveCommentsOf(t).length : commentsOf(t.id).length;
   const ac = t.attachments.length;
   const sd = t.subtasks.filter((s) => s.done).length;
   const p = proj(t.project);

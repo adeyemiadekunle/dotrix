@@ -158,15 +158,22 @@ export function useSimilarIssues(scope: Scope | undefined, text: string) {
   });
 }
 
+/** The issue-detail query as options, so module code (live.ts) can prefetch the same cache entry. */
+export const issueOptions = (s: Scope, key: string) => ({
+  queryKey: issueKeys.issue(s, key),
+  queryFn: () =>
+    unwrap(
+      api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", {
+        params: { path: { ...path(s), key } },
+      }),
+    ),
+  retry: false,
+});
+
 export function useIssue(scope: Scope | undefined, key: string | null) {
   return useQuery({
     queryKey: scope && key ? issueKeys.issue(scope, key) : ["issues", "none"],
-    queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", {
-          params: { path: { ...path(scope!), key: key! } },
-        }),
-      ),
+    queryFn: () => (scope && key ? issueOptions(scope, key).queryFn() : Promise.resolve(undefined)),
     enabled: Boolean(scope && key),
     retry: false,
   });

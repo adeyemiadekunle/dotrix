@@ -15,13 +15,14 @@
 // Settings and Members (your account, the workspace, its people, agents' settings) are in
 // account.ts. Not yet: chat and coding (their own step).
 import { api, apiFetch, authPost, hasSession, problemMessage, unwrap, type Schemas } from "@/lib/api";
+import { issueKeys, issueOptions, type Issue, type Scope } from "@/lib/issues";
 import { RECUR_OUT, STATUS_OUT, fromApi, hashTint, logComment, ms, toAttachment, toAutomation, toChecklist, toFile, toTask } from "@/lib/view-models";
 import { invalidateLiveQueries, queryClient } from "@/lib/queryClient";
 
 import { fmtDate, uid } from "../core/utils";
 import { fileType } from "../ui/helpers";
 import { toast } from "../ui/toast";
-import { htmlToMd, mdToHtml } from "./markdown";
+import { htmlToMd } from "./markdown";
 import { D, S, mutate, persist, render } from "./store";
 import type { Automation, Comment, Data, FileItem, KnowledgeFile, Member, Project, Task } from "./types";
 
@@ -301,21 +302,33 @@ const creating = new WeakMap<Task, Promise<void>>();
 /** Settles once a new issue is on the API (or failed to be), e.g. before adding files to it. */
 export const whenCreated = (t: Task) => creating.get(t) ?? Promise.resolve();
 
-/** Comments of an issue, when its drawer opens. */
-export async function loadComments(t: Task) {
+const issueScope = (pid: string): Scope => ({ workspaceId: wsId(), projectId: pid });
+
+/** The task's issue detail, straight from the query cache — the drawer's useIssue fetches it and
+ *  openTask prefetches it, so helpers can read comments/description/attachments synchronously. */
+const cachedIssue = (t: Task) => queryClient.getQueryData<Issue>(issueKeys.issue(issueScope(t.project), t.key));
+
+/** Fetch the issue detail so cachedIssue has it (what loadComments did, through the query cache). */
+export function prefetchIssue(t: Task) {
   if (!isLive() || t.key.startsWith("new-")) return;
-  try {
-    const i = await unwrap(
-      api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } } }),
-    );
-    const cs: Comment[] = (i.log ?? []).filter((e) => e.kind === "commented" && e.body).map((e) => logComment(e, t.id));
-    D().comments = [...D().comments.filter((c) => c.task !== t.id), ...cs];
-    // The full issue has the description and its attachments, which lists leave out.
-    if (!t.desc) t.desc = mdToHtml(i.description);
-    t.attachments = (i.attachments ?? []).map(toAttachment);
-    render();
-  } catch {
-    /* the drawer still shows what the list had */
+  void queryClient.ensureQueryData(issueOptions(issueScope(t.project), t.key));
+}
+
+/** A task's comments from the cached issue detail — the live-mode replacement for D().comments. */
+export function liveCommentsOf(t: Task): Comment[] {
+  if (!isLive() || t.key.startsWith("new-")) return [];
+  return (cachedIssue(t)?.log ?? []).filter((e) => e.kind === "commented" && e.body).map((e) => logComment(e, t.id));
+}
+
+/** A comment by id, searched across every cached issue detail (PopLayer's reaction picker). */
+export function liveCommentById(id: string): Comment | undefined {
+  if (!isLive()) return undefined;
+  for (const [key, issue] of queryClient.getQueriesData<Issue>({ queryKey: ["issues"] })) {
+    const e = (issue?.log ?? []).find((x) => x.id === id && x.kind === "commented" && x.body);
+    if (e) {
+      const t = D().tasks.find((x) => x.project === key[1] && x.key === key[3]);
+      return t ? logComment(e, t.id) : undefined;
+    }
   }
 }
 
@@ -326,14 +339,7 @@ export function commentPosted(t: Task, text: string, mentions: string[] = []) {
       params: { path: { ...projectPath(t.project), key: t.key } },
       body: { body: text, mentions },
     }),
-  )
-    .then((i) => {
-      // The comment shown since it was posted takes the API's id, so it can be edited or reacted to.
-      const posted = [...(i.log ?? [])].reverse().find((e) => e.kind === "commented" && e.body === text);
-      const local = D().comments.find((c) => c.task === t.id && c.text === text && !fromApi(c.id));
-      if (posted?.id && local) local.id = posted.id;
-    })
-    .catch((e) => failed("Your comment", e));
+  ).catch((e) => failed("Your comment", e));
 }
 
 /** A rank change in a list or on the board: place it before the issue that now follows it. */
@@ -738,10 +744,6 @@ const commentPath = (c: Comment) => {
   const t = D().tasks.find((x) => x.id === c.task)!;
   return { ...projectPath(t.project), key: t.key, comment_id: c.id };
 };
-async function reloadComments(c: Comment) {
-  const t = D().tasks.find((x) => x.id === c.task);
-  if (t) await loadComments(t);
-}
 /** A comment's new text (its author only; the store shows it already). */
 export function commentEdited(c: Comment) {
   if (!isLive() || !fromApi(c.id)) return;
@@ -752,7 +754,7 @@ export function commentEdited(c: Comment) {
     }),
   ).catch((e) => {
     failed("Your comment", e);
-    void reloadComments(c);
+    void invalidateLiveQueries();
   });
 }
 /** A comment deleted (already gone from the store). */
@@ -761,7 +763,7 @@ export function commentDeleted(c: Comment) {
   void send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}", { params: { path: commentPath(c) } })).catch(
     (e) => {
       failed("Deleting the comment", e);
-      void reloadComments(c);
+      void invalidateLiveQueries();
     },
   );
 }
@@ -775,7 +777,7 @@ export function commentReacted(c: Comment, emoji: string, on: boolean) {
       : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}/reactions/{emoji}", path),
   ).catch((e) => {
     failed("Your reaction", e);
-    void reloadComments(c);
+    void invalidateLiveQueries();
   });
 }
 

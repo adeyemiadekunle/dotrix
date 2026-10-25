@@ -8,7 +8,7 @@ import { LABELS, PRIOS, PSTAT, STATUSES, type ProjectStatusId } from "../core/co
 import { useCloseSession, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
 import { useLiveProjectTasks } from "@/lib/workspace-data";
 import { confirmDlg, promptDlg } from "../core/more";
-import { isLive, live, taskPatched } from "../data/live";
+import { isLive, live, liveCommentById, taskPatched } from "../data/live";
 import { allowed, canInvite } from "../core/can";
 import { Ic, WsLogo } from "../core/icons";
 import {
@@ -734,7 +734,7 @@ function DepsMenu({ p, tk }: { p: P; tk: Task }) {
 
 /** Comment reactions (yours toggles). */
 export function react(commentId: string, e: string) {
-  const c = D().comments.find((x) => x.id === commentId);
+  const c = isLive() ? liveCommentById(commentId) : D().comments.find((x) => x.id === commentId);
   if (!c) return;
   S.ui.pop = null;
   toggleReaction(c, e);

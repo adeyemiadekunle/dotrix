@@ -9,7 +9,7 @@ import { editProject, share } from "../core/more";
 import { go } from "../core/nav";
 import { TODAY, ago, dayBucket, diffD, fmtDate, parse } from "../core/utils";
 import { D, isOver, mem, pColor, progressOf, task, tasksOf } from "../data/store";
-import { isLive, live } from "../data/live";
+import { isLive, live, liveCommentsOf } from "../data/live";
 import { useLiveProjectActivity, useLiveProjectTasks } from "../../lib/workspace-data";
 import type { Activity, Project } from "../data/types";
 import { ActItem, MiniRow } from "../components/TaskList";
@@ -258,9 +258,14 @@ export function ProjectActivity({ p }: { p: Project }) {
   const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
   const liveActs = useLiveProjectActivity(scope);
   const as = isLive() ? (liveActs ?? []) : D().activity.filter((a) => a.project === p.id);
-  const cs: Activity[] = D()
-    .comments.filter((c) => task(c.task)?.project === p.id)
-    .map((c) => ({ id: c.id, by: c.by, verb: "commented on", task: c.task, project: p.id, at: c.at, extra: "" }));
+  // Live: comments ride the issue queries' logs — the drawer and Inbox fill the cache.
+  const cs: Activity[] = (
+    isLive()
+      ? D()
+          .tasks.filter((t) => t.project === p.id)
+          .flatMap(liveCommentsOf)
+      : D().comments.filter((c) => task(c.task)?.project === p.id)
+  ).map((c) => ({ id: c.id, by: c.by, verb: "commented on", task: c.task, project: p.id, at: c.at, extra: "" }));
   const all = [...as, ...cs].sort((a, b) => b.at - a.at);
   const b: Record<string, Activity[]> = {};
   all.forEach((a) => (b[dayBucket(a.at)] ||= []).push(a));

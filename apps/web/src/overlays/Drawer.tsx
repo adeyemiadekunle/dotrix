@@ -98,7 +98,8 @@ export function postComment(id: string) {
   if (!txt) return;
   const t = task(id)!;
   mutate(() => {
-    D().comments.push({ id: uid("c"), task: id, by: D().me, at: Date.now(), text: txt, re: {} });
+    // Live reads comments from the issue query's log; the push is the demo's optimistic echo.
+    if (!isLive()) D().comments.push({ id: uid("c"), task: id, by: D().me, at: Date.now(), text: txt, re: {} });
     logAct("commented on", t);
     S.ui.drafts[id] = "";
     S.ui.mention = null;
