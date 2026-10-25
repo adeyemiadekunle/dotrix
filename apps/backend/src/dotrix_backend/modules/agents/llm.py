@@ -12,8 +12,10 @@ from typing import Any
 
 from langchain.chat_models import init_chat_model
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 
 from dotrix_backend.core.errors import DomainError
+from dotrix_backend.core.model_providers import PROVIDERS, Provider
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.projects.models import Project
 from dotrix_engine.agent import _web_search_tool
@@ -23,20 +25,6 @@ class ModelUnavailable(DomainError):
     status_code = HTTPStatus.SERVICE_UNAVAILABLE
     code = "model_unavailable"
 
-
-@dataclass(frozen=True)
-class Provider:
-    env_var: str
-    setting: str  # Settings attribute holding the key
-    kwarg: str  # init_chat_model keyword for the key
-    label: str = ""
-
-
-PROVIDERS = {
-    "anthropic": Provider("ANTHROPIC_API_KEY", "anthropic_api_key", "api_key", "Anthropic"),
-    "openai": Provider("OPENAI_API_KEY", "openai_api_key", "api_key", "OpenAI"),
-    "google_genai": Provider("GOOGLE_API_KEY", "google_api_key", "google_api_key", "Google"),
-}
 
 # provider -> a workspace's own key (model_keys.ModelKeys.keys)
 Keys = dict[str, str]
@@ -82,6 +70,8 @@ def build_chat_model(model: str, api_key: str) -> Any:
     provider, _, name = model.partition(":")
     if provider == "google_genai":
         return GeminiWithBuiltinTools(model=name, google_api_key=api_key)
+    if base_url := PROVIDERS[provider].base_url:
+        return ChatOpenAI(model=name, api_key=api_key, base_url=base_url, use_responses_api=False)
     return init_chat_model(model, **{PROVIDERS[provider].kwarg: api_key})
 
 

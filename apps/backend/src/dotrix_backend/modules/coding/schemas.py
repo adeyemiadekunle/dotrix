@@ -18,17 +18,28 @@ from .models import (
 )
 
 
+class CodingToolOption(BaseModel):
+    agent: CodingAgent
+    available: bool
+    model: str | None = None
+    models: list[str] = Field(default_factory=list)
+    reason: str | None = None
+
+
 class CodingAvailability(BaseModel):
     available: bool
     agent: CodingAgent | None = Field(
-        description="The engine Kai, the coding agent, would code on: OpenCode when the server names it, "
-        "else Claude Code with an Anthropic key, else Codex"
+        description="Your compatible default tool: Codex with OpenAI, Claude Code with Anthropic, "
+        "or OpenCode with another connected provider"
     )
     sandbox: str | None = Field(description="`docker`, `openshell`, or `local` (development, no isolation)")
     reason: str | None = Field(description="Why not, when it isn't available")
     local_available: bool = Field(default=False, description="Whether you can code here on your own computer")
     local_runner: str | None = Field(default=None, description="Your computer that would code (the one seen last)")
     local_reason: str | None = Field(default=None, description="Why not on your computer")
+    tools: list[CodingToolOption] = Field(default_factory=list)
+    local_tools: list[CodingAgent] = Field(default_factory=list)
+    default_tool: CodingAgent | None = None
 
 
 _APPROVAL = ("`manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved "
@@ -43,6 +54,8 @@ class CodingRunCreate(BaseModel):
     note: str | None = Field(default=None, max_length=5_000, description="Anything to add to the issue for the agent")
     approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
     location: CodingLocation = Field(default=CodingLocation.CLOUD, description=_LOCATION)
+    agent: CodingAgent | None = Field(default=None, description="The tool for this session; otherwise your compatible default")
+    model: str | None = Field(default=None, max_length=100, description="An allowed provider:model for OpenCode")
 
 
 class CodingFollowUp(BaseModel):

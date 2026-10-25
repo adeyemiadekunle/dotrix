@@ -6,9 +6,15 @@ each behind `CodingTool` (`apps/backend/src/dotrix_backend/modules/coding/tools.
 
 | Tool | Runs on | Chosen by |
 | --- | --- | --- |
-| Claude Code | Anthropic | `DOTRIX_CODING_AGENT=auto` (the default) with an Anthropic key, or `claude-code` |
-| Codex | OpenAI | `auto` with only an OpenAI key, or `codex` |
-| OpenCode 2 (pinned in the image) | Anthropic, OpenAI, or Google | `opencode`, with `DOTRIX_CODING_OPENCODE_MODEL=provider:model`; `auto` never picks it |
+| Claude Code | Anthropic | Your default or session choice; Auto when Anthropic is available without OpenAI |
+| Codex | OpenAI | Your default or session choice; Auto when OpenAI is available |
+| OpenCode 2 (pinned in the image) | Anthropic, OpenAI, Google, xAI/Grok, DeepSeek, Mistral, Groq, OpenRouter | Your default or session choice; Auto with another provider |
+
+Account → Your models saves a personal default. A new session can override it; follow-up turns
+keep their recorded tool and model. Unavailable defaults fall back to a compatible tool. OpenCode
+uses an available model from the platform catalogue; its session picker can choose another.
+Personal keys count only where the workspace allows them. The web app requires a usable personal,
+workspace, or authorized platform key before continuing in a real workspace (the seeded demo stays public).
 
 The worker gives the tool a copy of the repo and a brief, reads its changes back, then pushes a
 new branch and opens a PR through the dotrix GitHub App. This folder holds what the sandbox
@@ -92,11 +98,11 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 
 | Setting | Default | What |
 | --- | --- | --- |
-| `DOTRIX_CODING_SANDBOX` | `off` | `docker`, `openshell`, or `local` (development only: no isolation; production refuses it) |
+| `DOTRIX_CODING_SANDBOX` | `off` outside Compose; `docker` in Compose | `docker`, `openshell`, or `local` (development only: no isolation; production refuses it) |
 | `DOTRIX_CODING_IMAGE` | `dotrix-coding:latest` | The image built from this folder |
 | `DOTRIX_CODING_AGENT` | `auto` | `claude-code`, `codex`, or `opencode` |
 | `DOTRIX_CODING_CLAUDE_MODEL`, `DOTRIX_CODING_CODEX_MODEL` | the tool's default | A model for Claude Code or Codex |
-| `DOTRIX_CODING_OPENCODE_MODEL` | none | Required for OpenCode, e.g. `anthropic:claude-sonnet-5-5` |
+| `DOTRIX_CODING_OPENCODE_MODEL` | first available catalogue model | Optional server default, e.g. `xai:grok-4.7` |
 | `DOTRIX_CODING_TIMEOUT_MINUTES` | 30 | Per turn |
 | `DOTRIX_CODING_TOKEN_BUDGET` | 3,000,000 | Per turn |
 | `DOTRIX_CODING_LEASE_SECONDS` | 120 | A lapsed lease means recovery, found within about this long |
@@ -183,8 +189,11 @@ it.
   containers, Stop, cumulative cost) and the whole flow to a PR and the Reviewer. OpenCode was
   checked against fake Anthropic and OpenAI-compatible APIs (turns, resume in a fresh sandbox,
   Stop, base URLs), and through the egress proxy to the real api.anthropic.com.
+- The coding image also completed fake local API runs for xAI (Responses), DeepSeek, Mistral,
+  Groq, and OpenRouter (Chat Completions), each using only its selected provider's test key.
+  The real Docker isolation and Stop tests passed with this image.
 - **Not yet:**
-  - OpenCode on a real model, and its image in the Docker sandbox.
+  - Paid model calls with the added providers.
   - The OpenCode profiles on an OpenShell gateway.
   - OpenCode's browser.
   - Codex (needs an OpenAI key).

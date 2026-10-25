@@ -3966,6 +3966,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/model-keys/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Model Access
+         * @description Whether your runs have a usable provider here. Only availability is shared, never keys.
+         */
+        get: operations["model_access"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/model-keys": {
         parameters: {
             query?: never;
@@ -3998,7 +4018,7 @@ export interface paths {
         get?: never;
         /**
          * Save Model Key
-         * @description Connect or replace this workspace's key for `anthropic`, `openai`, or `google_genai`. It's
+         * @description Connect or replace this workspace's key for a supported model provider. It's
          *     stored encrypted and used for every agent run here that picks one of the provider's models.
          *     503 `encryption_not_configured` when the server can't store keys. Owners and admins; audited.
          */
@@ -4042,6 +4062,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/coding-tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set My Coding Tool
+         * @description Your default for new coding sessions; null chooses a tool with an available provider key.
+         */
+        put: operations["set_my_coding_tool"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/model-keys/{provider}": {
         parameters: {
             query?: never;
@@ -4052,7 +4092,7 @@ export interface paths {
         get?: never;
         /**
          * Save My Model Key
-         * @description Connect or replace your own key for `anthropic`, `openai`, or `google_genai`; stored
+         * @description Connect or replace your own key for a supported model provider; stored
          *     encrypted, never shown again. 503 `encryption_not_configured` when the server can't store keys.
          */
         put: operations["save_my_model_key"];
@@ -5082,7 +5122,7 @@ export interface components {
         CodingAvailability: {
             /** Available */
             available: boolean;
-            /** @description The engine Kai, the coding agent, would code on: OpenCode when the server names it, else Claude Code with an Anthropic key, else Codex */
+            /** @description Your compatible default tool: Codex with OpenAI, Claude Code with Anthropic, or OpenCode with another connected provider */
             agent: components["schemas"]["CodingAgent"] | null;
             /**
              * Sandbox
@@ -5110,6 +5150,11 @@ export interface components {
              * @description Why not on your computer
              */
             local_reason?: string | null;
+            /** Tools */
+            tools?: components["schemas"]["CodingToolOption"][];
+            /** Local Tools */
+            local_tools?: components["schemas"]["CodingAgent"][];
+            default_tool?: components["schemas"]["CodingAgent"] | null;
         };
         /**
          * CodingClaim
@@ -5333,6 +5378,13 @@ export interface components {
              * @default cloud
              */
             location: components["schemas"]["CodingLocation"];
+            /** @description The tool for this session; otherwise your compatible default */
+            agent?: components["schemas"]["CodingAgent"] | null;
+            /**
+             * Model
+             * @description An allowed provider:model for OpenCode
+             */
+            model?: string | null;
         };
         /** CodingRunRead */
         CodingRunRead: {
@@ -5689,6 +5741,18 @@ export interface components {
             /** Archived */
             archived?: boolean | null;
         };
+        /** CodingToolOption */
+        CodingToolOption: {
+            agent: components["schemas"]["CodingAgent"];
+            /** Available */
+            available: boolean;
+            /** Model */
+            model?: string | null;
+            /** Models */
+            models?: string[];
+            /** Reason */
+            reason?: string | null;
+        };
         /** CodingTree */
         CodingTree: {
             /** Base Sha */
@@ -5816,6 +5880,11 @@ export interface components {
              * @description One decision for every pending approval of the run
              */
             decisions: components["schemas"]["Decision"][];
+        };
+        /** DefaultCodingToolSave */
+        DefaultCodingToolSave: {
+            /** Default Coding Tool */
+            default_coding_tool?: ("claude-code" | "codex" | "opencode") | null;
         };
         /** DefaultModelSave */
         DefaultModelSave: {
@@ -6855,11 +6924,26 @@ export interface components {
         MemberRoleUpdate: {
             role: components["schemas"]["Role"];
         };
+        /** ModelAccessRead */
+        ModelAccessRead: {
+            /** Ready */
+            ready: boolean;
+            /** Providers */
+            providers: string[];
+            /** Models */
+            models: string[];
+            /** Personal Keys Allowed */
+            personal_keys_allowed: boolean;
+            /** Can Manage Keys */
+            can_manage_keys: boolean;
+            /** Can Store Keys */
+            can_store_keys: boolean;
+        };
         /** ModelKeyRead */
         ModelKeyRead: {
             /**
              * Provider
-             * @description anthropic, openai, or google_genai
+             * @description The provider identifier, e.g. anthropic, openai, google_genai, or xai
              */
             provider: string;
             /**
@@ -7219,6 +7303,8 @@ export interface components {
              * @description The models you can pick from
              */
             models: string[];
+            /** Default Coding Tool */
+            default_coding_tool?: ("claude-code" | "codex" | "opencode") | null;
         };
         /**
          * PlanRead
@@ -21754,6 +21840,64 @@ export interface operations {
             };
         };
     };
+    model_access: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelAccessRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     list_model_keys: {
         parameters: {
             query?: never;
@@ -22002,6 +22146,48 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_my_coding_tool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DefaultCodingToolSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalModelsRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

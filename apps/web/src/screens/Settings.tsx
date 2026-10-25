@@ -34,6 +34,7 @@ import {
   myAgentSaved,
   myAgents,
   myDefaultModelSaved,
+  myCodingToolSaved,
   myKeyRemoved,
   myKeySaved,
   myModels,
@@ -1075,7 +1076,9 @@ function MyModels() {
     default_model: null,
     models: DEMO_MODELS,
   });
-  const data = useApi<{ keys: KeyLook[]; default_model?: string | null; models: string[] }>(isLive() ? myModels : demo);
+  const data = useApi<{ keys: KeyLook[]; default_model?: string | null; default_coding_tool?: "codex" | "claude-code" | "opencode" | null; models: string[] }>(
+    isLive() ? myModels : demo,
+  );
   if (data.error) return <div className="alert danger">{data.error}</div>;
   if (!data.data) return <div className="faint">Loading…</div>;
   const d = data.data;
@@ -1127,6 +1130,29 @@ function MyModels() {
                 {m.split(":")[1] ?? m}
               </option>
             ))}
+          </select>
+        </SRow>
+      </div>
+      <div className="sblock">
+        <h2>Your default coding tool</h2>
+        <SRow
+          t="New coding sessions"
+          d="Auto uses Codex with OpenAI, Claude Code with Anthropic, or OpenCode with another available provider. Existing sessions keep their tool."
+        >
+          <select
+            className="select"
+            aria-label="Your default coding tool"
+            value={d.default_coding_tool ?? ""}
+            onChange={(e) => {
+              const tool = e.target.value as "codex" | "claude-code" | "opencode" | "";
+              if (isLive()) void save(myCodingToolSaved(tool || null), "Default coding tool saved");
+              else toast("Default coding tool saved");
+            }}
+          >
+            <option value="">Auto · available provider</option>
+            <option value="codex">Codex · OpenAI</option>
+            <option value="claude-code">Claude Code · Anthropic</option>
+            <option value="opencode">OpenCode · any connected provider</option>
           </select>
         </SRow>
       </div>

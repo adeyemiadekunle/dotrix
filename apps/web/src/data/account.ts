@@ -48,6 +48,8 @@ export function useApi<T>(load: () => Promise<T>, deps: unknown[] = []): { data:
 /* ---------- your account ---------- */
 
 export const getMe = () => unwrap(api.GET("/v1/me"));
+export const myCodingToolSaved = (tool: Schemas["DefaultCodingToolSave"]["default_coding_tool"]) =>
+  send(api.PUT("/v1/me/coding-tool", { body: { default_coding_tool: tool } }));
 
 export async function profileSaved(name: string, title: string) {
   await send(api.PATCH("/v1/me", { body: { display_name: name, title } }));

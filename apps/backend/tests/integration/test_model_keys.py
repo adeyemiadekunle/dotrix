@@ -8,7 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from dotrix_backend.core.crypto import Secrets
-from dotrix_backend.modules.agents.llm import available_models, key_for, limit_error
+from dotrix_backend.modules.agents.llm import PROVIDERS, available_models, key_for, limit_error
 from dotrix_backend.modules.model_keys.models import WorkspaceModelKey
 from dotrix_backend.modules.workspaces.models import Role
 from dotrix_engine.testing import ScriptedChatModel
@@ -44,6 +44,47 @@ def world(db_client: AsyncClient, create_team, signup, add_member):
     return _make
 
 
+async def test_readiness_uses_authorized_readable_keys_and_never_returns_secrets(world, db_client, signup) -> None:
+    app, ada, cat, ws, _ = await world()
+    app.state.settings.server_model_keys = False
+    path = f"{ws}/model-keys/access"
+    await db_client.patch(ws, json={"personal_keys": False}, headers=ada.headers)
+    assert (await db_client.get(path, headers=cat.headers)).json()["ready"] is False
+    assert (await db_client.get(path, headers=(await signup(email="other@example.com")).headers)).status_code == 404
+    await db_client.put("/v1/me/model-keys/xai", json={"api_key": KEY}, headers=cat.headers)
+    # Organisation policy blocks a personal key even though it exists.
+    assert (await db_client.get(path, headers=cat.headers)).json()["ready"] is False
+    await db_client.patch(ws, json={"personal_keys": True}, headers=ada.headers)
+    own = await db_client.get(path, headers=cat.headers)
+    assert own.json()["ready"] and own.json()["providers"] == ["xai"]
+    assert KEY not in own.text and "WXYZ" not in own.text and "grok-4.7" in own.text
+    # A different member doesn't acquire the person's key.
+    assert (await db_client.get(path, headers=ada.headers)).json()["ready"] is False
+    await db_client.put(f"{ws}/model-keys/openai", json={"api_key": KEY}, headers=ada.headers)
+    assert (await db_client.get(path, headers=ada.headers)).json()["providers"] == ["openai"]
+    # A key encrypted under a removed encryption key is unavailable.
+    app.state.secrets = Secrets(Fernet.generate_key().decode())
+    assert (await db_client.get(path, headers=cat.headers)).json()["ready"] is False
+
+
+async def test_readiness_respects_platform_key_policy_and_personal_default_is_private(world, db_client) -> None:
+    from pydantic import SecretStr
+
+    app, ada, cat, ws, _ = await world()
+    settings = app.state.settings
+    settings.anthropic_api_key = settings.google_api_key = None
+    settings.openai_api_key = SecretStr(KEY)
+    settings.server_model_keys = True
+    assert (await db_client.get(f"{ws}/model-keys/access", headers=cat.headers)).json()["ready"]
+    settings.server_model_keys = False
+    assert not (await db_client.get(f"{ws}/model-keys/access", headers=cat.headers)).json()["ready"]
+    saved = await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": "opencode"}, headers=cat.headers)
+    assert saved.status_code == 200 and saved.json()["default_coding_tool"] == "opencode"
+    assert (await db_client.get("/v1/me/models", headers=ada.headers)).json()["default_coding_tool"] is None
+    assert (await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": "shell"}, headers=cat.headers)).status_code == 422
+    assert (await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": None}, headers=cat.headers)).json()["default_coding_tool"] is None
+
+
 async def test_connect_a_key_it_is_encrypted_and_runs_use_it(world, db_client: AsyncClient, agent_script, db_session) -> None:
     _, ada, cat, ws, base = await world()
     assert (await db_client.put(f"{ws}/model-keys/anthropic", json={"api_key": KEY}, headers=cat.headers)).status_code == 403
@@ -54,7 +95,7 @@ async def test_connect_a_key_it_is_encrypted_and_runs_use_it(world, db_client: A
     assert row is not None and KEY not in row.encrypted
 
     listed = {k["provider"]: k for k in (await db_client.get(f"{ws}/model-keys", headers=ada.headers)).json()}
-    assert set(listed) == {"anthropic", "openai", "google_genai"}
+    assert set(listed) == set(PROVIDERS)
     assert listed["anthropic"]["label"] == "Anthropic" and not listed["openai"]["connected"]
     assert "anthropic:claude-haiku-5-5" in listed["anthropic"]["models"]
 
@@ -69,7 +110,7 @@ async def test_connect_a_key_it_is_encrypted_and_runs_use_it(world, db_client: A
 
     assert (await db_client.delete(f"{ws}/model-keys/anthropic", headers=ada.headers)).status_code == 204
     assert (await db_client.delete(f"{ws}/model-keys/anthropic", headers=ada.headers)).status_code == 404
-    assert (await db_client.put(f"{ws}/model-keys/mistral", json={"api_key": KEY}, headers=ada.headers)).status_code == 404
+    assert (await db_client.put(f"{ws}/model-keys/unsupported", json={"api_key": KEY}, headers=ada.headers)).status_code == 404
 
 
 async def test_without_an_encryption_key_the_server_says_so(world, db_client: AsyncClient) -> None:

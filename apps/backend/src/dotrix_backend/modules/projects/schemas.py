@@ -13,6 +13,7 @@ from pydantic import (
     StringConstraints,
 )
 
+from dotrix_backend.core.model_providers import PROVIDERS
 from dotrix_backend.modules.workspaces.models import Role
 
 from .models import (
@@ -35,7 +36,7 @@ ProjectKey = Annotated[
 ProjectName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 Description = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
 
-MODEL_PROVIDERS = ("anthropic", "openai", "google_genai")
+MODEL_PROVIDERS = tuple(PROVIDERS)
 
 
 def _model(value: str) -> str:

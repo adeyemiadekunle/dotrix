@@ -1,0 +1,26 @@
+# Import with openshell provider profile import -f infra/coding/dotrix-opencode-mistral.yaml --global
+# Docker uses its selected-host egress proxy. This profile is for OpenShell gateways.
+# Not yet exercised on a live OpenShell gateway.
+id: dotrix-opencode-mistral
+display_name: OpenCode on Mistral (dotrix)
+description: OpenCode CLI on Mistral models, for dotrix coding runs
+category: agent
+inference_capable: true
+credentials:
+  - name: api_key
+    description: Mistral API key used by OpenCode
+    env_vars: [MISTRAL_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [api_key]
+endpoints:
+  - host: api.mistral.ai
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/opencode
+  - /usr/local/lib/node_modules/@opencode/**

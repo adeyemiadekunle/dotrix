@@ -15,6 +15,19 @@ def search_files(query: str) -> str:
     return query
 
 
+@pytest.mark.parametrize(("provider", "endpoint", "model"), [
+    ("xai", "https://api.x.ai/v1", "grok-4.7"),
+    ("deepseek", "https://api.deepseek.com/v1", "deepseek-flash"),
+    ("mistral", "https://api.mistral.ai/v1", "mistral-small-latest"),
+    ("groq", "https://api.groq.com/openai/v1", "openai/gpt-oss-120b"),
+    ("openrouter", "https://openrouter.ai/api/v1", "openai/gpt-5.5"),
+])
+def test_compatible_providers_use_their_fixed_endpoint(provider: str, endpoint: str, model: str) -> None:
+    chat = build_chat_model(f"{provider}:{model}", "test-provider-key")
+    assert chat.model_name == model and str(chat.openai_api_base) == endpoint
+    assert chat.openai_api_key.get_secret_value() == "test-provider-key"
+
+
 def test_gemini_enables_builtin_tools_alongside_function_calling() -> None:
     model = build_chat_model("google_genai:gemini-3.8-flash", "test-key")
     assert isinstance(model, GeminiWithBuiltinTools)

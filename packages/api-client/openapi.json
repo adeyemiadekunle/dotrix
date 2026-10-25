@@ -20190,6 +20190,85 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/model-keys/access": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Model Access",
+        "description": "Whether your runs have a usable provider here. Only availability is shared, never keys.",
+        "operationId": "model_access",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelAccessRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/model-keys": {
       "get": {
         "tags": [
@@ -20279,7 +20358,7 @@
           "models"
         ],
         "summary": "Save Model Key",
-        "description": "Connect or replace this workspace's key for `anthropic`, `openai`, or `google_genai`. It's\nstored encrypted and used for every agent run here that picks one of the provider's models.\n503 `encryption_not_configured` when the server can't store keys. Owners and admins; audited.",
+        "description": "Connect or replace this workspace's key for a supported model provider. It's\nstored encrypted and used for every agent run here that picks one of the provider's models.\n503 `encryption_not_configured` when the server can't store keys. Owners and admins; audited.",
         "operationId": "save_model_key",
         "security": [
           {
@@ -20552,13 +20631,70 @@
         ]
       }
     },
+    "/v1/me/coding-tool": {
+      "put": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Set My Coding Tool",
+        "description": "Your default for new coding sessions; null chooses a tool with an available provider key.",
+        "operationId": "set_my_coding_tool",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefaultCodingToolSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalModelsRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/me/model-keys/{provider}": {
       "put": {
         "tags": [
           "models"
         ],
         "summary": "Save My Model Key",
-        "description": "Connect or replace your own key for `anthropic`, `openai`, or `google_genai`; stored\nencrypted, never shown again. 503 `encryption_not_configured` when the server can't store keys.",
+        "description": "Connect or replace your own key for a supported model provider; stored\nencrypted, never shown again. 503 `encryption_not_configured` when the server can't store keys.",
         "operationId": "save_my_model_key",
         "security": [
           {
@@ -23310,7 +23446,7 @@
                 "type": "null"
               }
             ],
-            "description": "The engine Kai, the coding agent, would code on: OpenCode when the server names it, else Claude Code with an Anthropic key, else Codex"
+            "description": "Your compatible default tool: Codex with OpenAI, Claude Code with Anthropic, or OpenCode with another connected provider"
           },
           "sandbox": {
             "anyOf": [
@@ -23365,6 +23501,30 @@
             ],
             "title": "Local Reason",
             "description": "Why not on your computer"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/CodingToolOption"
+            },
+            "type": "array",
+            "title": "Tools"
+          },
+          "local_tools": {
+            "items": {
+              "$ref": "#/components/schemas/CodingAgent"
+            },
+            "type": "array",
+            "title": "Local Tools"
+          },
+          "default_tool": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodingAgent"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -23841,6 +24001,30 @@
             "$ref": "#/components/schemas/CodingLocation",
             "description": "Where it codes: `cloud` (a sandbox on the platform) or `local` (your own computer, through `dotrix runner` in a checkout of the project). A follow-up stays where its session is unless told.",
             "default": "cloud"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodingAgent"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The tool for this session; otherwise your compatible default"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "An allowed provider:model for OpenCode"
           }
         },
         "type": "object",
@@ -24723,6 +24907,52 @@
         "type": "object",
         "title": "CodingSessionUpdate"
       },
+      "CodingToolOption": {
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/CodingAgent"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent",
+          "available"
+        ],
+        "title": "CodingToolOption"
+      },
       "CodingTree": {
         "properties": {
           "base_sha": {
@@ -25025,6 +25255,28 @@
           "decisions"
         ],
         "title": "DecisionsRequest"
+      },
+      "DefaultCodingToolSave": {
+        "properties": {
+          "default_coding_tool": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "claude-code",
+                  "codex",
+                  "opencode"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Coding Tool"
+          }
+        },
+        "type": "object",
+        "title": "DefaultCodingToolSave"
       },
       "DefaultModelSave": {
         "properties": {
@@ -27617,12 +27869,56 @@
         ],
         "title": "MemberRoleUpdate"
       },
+      "ModelAccessRead": {
+        "properties": {
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Providers"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "personal_keys_allowed": {
+            "type": "boolean",
+            "title": "Personal Keys Allowed"
+          },
+          "can_manage_keys": {
+            "type": "boolean",
+            "title": "Can Manage Keys"
+          },
+          "can_store_keys": {
+            "type": "boolean",
+            "title": "Can Store Keys"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ready",
+          "providers",
+          "models",
+          "personal_keys_allowed",
+          "can_manage_keys",
+          "can_store_keys"
+        ],
+        "title": "ModelAccessRead"
+      },
       "ModelKeyRead": {
         "properties": {
           "provider": {
             "type": "string",
             "title": "Provider",
-            "description": "anthropic, openai, or google_genai"
+            "description": "The provider identifier, e.g. anthropic, openai, google_genai, or xai"
           },
           "label": {
             "type": "string",
@@ -28374,6 +28670,22 @@
             "type": "array",
             "title": "Models",
             "description": "The models you can pick from"
+          },
+          "default_coding_tool": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "claude-code",
+                  "codex",
+                  "opencode"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Coding Tool"
           }
         },
         "type": "object",
