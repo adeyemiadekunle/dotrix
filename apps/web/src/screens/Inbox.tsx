@@ -1,6 +1,6 @@
 // The Inbox: what people send you (mentions, assignments, comments) and what the agents need
 // (changes to approve, plans to steer, findings, decisions), with the change itself in the detail.
-import { useEffect, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 
 import { continueLimited, decideCoding } from "../core/agents";
 import { LimitNotice } from "../components/LimitNotice";
@@ -370,8 +370,12 @@ export function Inbox() {
   const unread = count("all");
   let ns = all.filter((n) => inTab(n, tab));
   if (S.ui.inboxUnread) ns = ns.filter((n) => !n.read);
+  const autoPin = useRef<string | null>(null);
   const selId = search.get("n") || S.ui.inboxSel;
-  const sel = D().notifs.find((n) => n.id === selId) || null;
+  const selRaw = D().notifs.find((n) => n.id === selId) || null;
+  // An explicit pick survives a tab switch; a row the auto-preview pinned does not,
+  // so a mention previewed in All can't linger beside the Needs you rows.
+  const sel = selRaw && (search.get("n") || autoPin.current !== selRaw.id || inTab(selRaw, tab)) ? selRaw : null;
   // Desktop always shows something: the explicit pick, else the first row. Mobile still
   // waits for a tap, so the list isn't covered.
   const shown = sel ?? ns[0] ?? null;
@@ -383,6 +387,7 @@ export function Inbox() {
   useEffect(() => {
     if (!sel && shown && window.matchMedia("(min-width: 901px)").matches) {
       S.ui.inboxSel = shown.id;
+      autoPin.current = shown.id;
       if (!shown.read && !staysUnread(shown.type)) markRead(shown);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
