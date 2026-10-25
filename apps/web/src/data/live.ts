@@ -15,24 +15,8 @@
 // Settings and Members (your account, the workspace, its people, agents' settings) are in
 // account.ts. Not yet: chat and coding (their own step).
 import { api, apiFetch, authPost, hasSession, problemMessage, unwrap, type Schemas } from "@/lib/api";
-import {
-  RECUR_OUT,
-  STATUS_OUT,
-  fromApi,
-  hashTint,
-  logComment,
-  ms,
-  toAgent,
-  toAttachment,
-  toAutomation,
-  toChecklist,
-  toFile,
-  toKnowledge,
-  toMember,
-  toProject,
-  toTask,
-} from "@/lib/view-models";
-import { invalidateLiveQueries } from "@/lib/queryClient";
+import { RECUR_OUT, STATUS_OUT, fromApi, hashTint, logComment, ms, toAttachment, toAutomation, toChecklist, toFile, toTask } from "@/lib/view-models";
+import { invalidateLiveQueries, queryClient } from "@/lib/queryClient";
 
 import { fmtDate, uid } from "../core/utils";
 import { fileType } from "../ui/helpers";
@@ -52,6 +36,8 @@ export const live = {
   slug: null as string | null,
   ws: null as W | null,
   error: "",
+  /** The bridge set it once the directory queries (members, agents, projects) have landed — the shell waits on it. */
+  dirReady: false,
   /** The demo workspace's data while a real one is shown, so the demo keeps its edits. */
   demo: null as Data | null,
 };
@@ -68,37 +54,16 @@ const send = <T>(p: Promise<{ data?: T; error?: unknown; response: Response }>) 
 persist.data = () => (live.mode === "demo" ? S.data : (live.demo ?? S.data));
 /** An id the API made (a project or user), not one the store made up for a new item. */
 
-/** The agents list again, after one was saved, reset, or created in Settings. */
+/** Refetch the workspace's agents (Settings' agent edits) — the bridge mirrors them in. */
 export async function reloadAgents() {
   if (!isLive()) return;
-  try {
-    const agents = await unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", { params: { path: { workspace_id: live.ws!.id } } }));
-    D().agents = agents.map(toAgent);
-    render();
-  } catch {
-    /* leave what's shown */
-  }
+  await queryClient.invalidateQueries({ queryKey: ["agents", live.ws!.id] });
 }
 
 /* ---------- loading ---------- */
 
 export async function myWorkspaces(): Promise<W[]> {
   return unwrap(api.GET("/v1/workspaces"));
-}
-
-/** A project's knowledge files with their content (the manifest lists paths and versions only). */
-async function loadKnowledge(wsId: string, pid: string): Promise<KnowledgeFile[]> {
-  const path = { workspace_id: wsId, project_id: pid };
-  const manifest = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/knowledge", { params: { path } }));
-  return Promise.all(
-    manifest.files
-      .filter((f) => !f.deleted)
-      .map((f) =>
-        unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/knowledge/files/{path}", { params: { path: { ...path, path: f.path } } })).then(
-          (r) => toKnowledge(r, pid),
-        ),
-      ),
-  );
 }
 
 /** Load workspace {slug} from the API into the store. False when it isn't one of yours. */
@@ -115,18 +80,11 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       showDemo();
       return false;
     }
-    const path = { params: { path: { workspace_id: ws.id } } };
-    // Issues, notifications, activity, conversations, coding sessions, documents, knowledge,
-    // automations and the audit log come from the StoreBridge's TanStack queries — the store
-    // only holds the directory here (you, workspaces, members, projects, agents).
-    const [members, projects, starred, agents] = await Promise.all([
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/members", path)),
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/projects", path)),
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/starred", path)).catch(() => []),
-      unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", path)).catch(() => []),
-    ]);
-    const stars = new Set((starred as { id: string }[]).map((p) => p.id));
-    const ps = projects.map((p) => toProject(p, members, stars));
+    // Everything workspace-scoped — members, projects, agents, issues, notifications,
+    // activity, conversations, coding, documents, knowledge, automations, the audit log —
+    // comes from the StoreBridge's TanStack queries; the store holds you and your
+    // workspaces here, and the bridge fills the rest as its queries land.
+    live.dirReady = false;
     const data: Data = {
       ws: { id: ws.id, name: ws.name, c: hashTint(ws.id), plan: ws.kind === "personal" ? "Personal" : "Team", kind: ws.kind, url: ws.slug },
       workspaces: wss.map((w) => ({
@@ -138,19 +96,19 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
         slug: w.slug,
       })),
       me: me.id,
-      members: members.map(toMember),
-      projects: ps,
+      members: [],
+      projects: [],
       tasks: [],
       comments: [],
       activity: [],
       notifs: [],
       files: [],
-      projOrder: [...ps.filter((p) => p.fav), ...ps.filter((p) => !p.fav)].map((p) => p.id),
+      projOrder: [],
       savedViews: [],
       recentSearches: [],
       sessions: [],
       notifPrefs: {},
-      agents: (agents as Schemas["AgentRead"][]).map(toAgent),
+      agents: [],
       threads: [],
       knowledge: [],
       coding: [],
@@ -225,19 +183,6 @@ function failed(what: string, e: unknown) {
   toast(`${what} didn't save${msg ? `: ${msg}` : ""}`, { kind: "err", ms: 6000 });
 }
 
-/** Put an issue back as the API has it (after a refused change). */
-async function reloadTask(t: Task) {
-  try {
-    const i = await unwrap(
-      api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } } }),
-    );
-    Object.assign(t, toTask(i, t.project, t.order), { fav: t.fav });
-    render();
-  } catch {
-    /* leave it */
-  }
-}
-
 /** The fields of a patch the API has, as IssueUpdate. */
 function issueFields(t: Task, keys: (keyof Task)[]): Schemas["IssueUpdate"] {
   const body: Schemas["IssueUpdate"] = {};
@@ -295,7 +240,7 @@ export function taskPatched(t: Task, keys: (keyof Task)[]) {
     })
     .catch((e) => {
       failed(`“${t.title}”`, e);
-      void reloadTask(t);
+      invalidateLiveQueries();
     });
 }
 
@@ -397,10 +342,6 @@ const PSTATUS_OUT: Record<Project["status"], Pick<Schemas["ProjectUpdate"], "sta
   complete: { status: "completed" },
 };
 
-async function reloadProjects() {
-  if (isLive()) await loadWorkspace(live.slug!);
-}
-
 /** A project's fields changed in the store: send them. Settles once the API has them (or refused). */
 export function projectChanged(p: Project, keys: (keyof Project)[]): Promise<void> {
   if (!isLive()) return Promise.resolve();
@@ -420,7 +361,7 @@ export function projectChanged(p: Project, keys: (keyof Project)[]): Promise<voi
     () => undefined,
     (e) => {
       failed(p.name, e);
-      void reloadProjects();
+      invalidateLiveQueries();
     },
   );
 }
@@ -456,7 +397,7 @@ export function projectCreated(p: Project) {
     })
     .catch((e) => {
       failed(p.name, e);
-      void reloadProjects();
+      invalidateLiveQueries();
     });
 }
 
@@ -479,7 +420,7 @@ export function roleChanged(m: Member) {
     }),
   ).catch((e) => {
     failed(`${m.name}'s role`, e);
-    void reloadProjects();
+    invalidateLiveQueries();
   });
 }
 
@@ -494,17 +435,6 @@ export function notifsRead(ids: string[] | "all") {
 }
 
 /* ---------- knowledge, files, automations ---------- */
-
-async function reloadKnowledge(pid: string) {
-  if (!isLive()) return;
-  try {
-    const files = await loadKnowledge(wsId(), pid);
-    D().knowledge = [...D().knowledge.filter((f) => f.project !== pid), ...files];
-    render();
-  } catch {
-    /* leave what's shown */
-  }
-}
 
 /** A knowledge file saved from Knowledge: the text shows at once; the API's version replaces the guess. */
 export function knowledgeSaved(f: KnowledgeFile, content: string, message: string) {
@@ -526,19 +456,8 @@ export function knowledgeSaved(f: KnowledgeFile, content: string, message: strin
     })
     .catch((e) => {
       failed(f.path, e);
-      void reloadKnowledge(f.project);
+      invalidateLiveQueries();
     });
-}
-
-async function reloadAutomations(pid: string) {
-  if (!isLive()) return;
-  try {
-    const autos = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/automations", { params: { path: projectPath(pid) } }));
-    D().automations = [...D().automations.filter((a) => a.project !== pid), ...autos.map(toAutomation)];
-    render();
-  } catch {
-    /* leave what's shown */
-  }
 }
 
 /** An automation switched on or off, or let act without approval, in Settings (the store already shows it). */
@@ -551,7 +470,7 @@ export function automationToggled(a: Automation, field: "enabled" | "unattended"
     }),
   ).catch((e) => {
     failed(a.name, e);
-    void reloadAutomations(a.project);
+    invalidateLiveQueries();
   });
 }
 
@@ -584,7 +503,7 @@ export function automationRemoved(a: Automation) {
     }),
   ).catch((e) => {
     failed(a.name, e);
-    void reloadAutomations(a.project);
+    invalidateLiveQueries();
   });
 }
 /** A preset added in Settings: created for the project, then shown. */
@@ -626,16 +545,6 @@ export async function documentUploaded(file: File, pid: string, onProgress: (pct
 }
 
 const docPath = (f: FileItem) => ({ params: { path: { ...projectPath(f.project), document_id: f.id } } });
-async function reloadFiles(pid: string) {
-  try {
-    const docs = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/documents", { params: { path: projectPath(pid) } }));
-    D().files = [...D().files.filter((f) => f.project !== pid), ...docs.map((d) => toFile(d, pid))];
-    render();
-  } catch {
-    /* leave what's shown */
-  }
-}
-
 /** A project file renamed in Files (the store shows the new name already). */
 export function fileRenamed(f: FileItem, was: string) {
   if (!isLive()) return;
@@ -669,12 +578,11 @@ export async function fileDuplicated(f: FileItem) {
 /** A project file deleted in Files (already gone from the store): its markdown in Knowledge goes too. */
 export function fileDeleted(f: FileItem) {
   if (!isLive()) return;
-  void send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}", docPath(f)))
-    .then(() => reloadKnowledge(f.project))
-    .catch((e) => {
-      failed(`Deleting “${f.name}”`, e);
-      void reloadFiles(f.project);
-    });
+  // send() already invalidates, so the knowledge mirror picks up the markdown going too.
+  void send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/documents/{document_id}", docPath(f))).catch((e) => {
+    failed(`Deleting “${f.name}”`, e);
+    invalidateLiveQueries();
+  });
 }
 
 /** A file added to an issue (the drawer, or the new-issue form once the issue exists). */
@@ -734,7 +642,7 @@ export function attachmentRemoved(t: Task, attachmentId: string) {
     }),
   ).catch((e) => {
     failed("Removing the file", e);
-    void reloadTask(t);
+    invalidateLiveQueries();
   });
 }
 
@@ -771,7 +679,7 @@ export function projectDeleted(pr: Project) {
   if (!isLive()) return;
   void send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}", { params: { path: projectPath(pr.id) } })).catch((e) => {
     failed(`Deleting ${pr.name}`, e);
-    void reloadProjects();
+    invalidateLiveQueries();
   });
 }
 

@@ -187,7 +187,9 @@ export function Studio() {
           </button>
         </Full>
       );
-    if (live.mode !== "live" || live.slug !== slug)
+    // The bridge fills the directory as its queries land; screens assume members, agents and
+    // projects are there (me(), mem(), proj()), so the shell waits for them like loadWorkspace did.
+    if (live.mode !== "live" || live.slug !== slug || !live.dirReady)
       return (
         <div className="fullstate" style={{ minHeight: "100svh" }} aria-busy="true">
           <span className="faint" style={{ fontSize: 13 }}>
