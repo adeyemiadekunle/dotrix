@@ -715,7 +715,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ap-bar {
+  .ap-bar::after {
     animation: none;
   }
 }
