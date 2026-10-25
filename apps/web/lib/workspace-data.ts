@@ -2,7 +2,7 @@
 // API — the read half of the migration off data/store.ts + data/live.ts. Conversions come
 // from lib/view-models; writes still flow through the existing actions until the kit moves
 // (live.ts's senders invalidate these caches, see invalidateLiveQueries there).
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { api, unwrap, type Schemas } from "./api";
@@ -13,8 +13,8 @@ import { useKnowledge, useKnowledgeFile } from "./knowledge";
 import { useNotifications } from "./notifications";
 import { useProjects } from "./queries";
 import { useStarredProjects } from "./stars";
-import { ms, toActivity, toAgent, toFile, toMember, toNotif, toProject, toTask } from "./view-models";
-import type { Activity, Agent, FileItem, KnowledgeFile, Member, Notif, Project, Task } from "@/src/data/types";
+import { ms, toActivity, toAgent, toAudit, toAutomation, toFile, toMember, toNotif, toProject, toTask } from "./view-models";
+import type { Activity, Agent, AuditEvent, Automation, FileItem, KnowledgeFile, Member, Notif, Project, Task } from "@/src/data/types";
 
 /** Workspace issues as store Tasks: `fav` comes from the starred set, project ids are real. */
 function useLiveTasks(workspaceId: string | undefined, filters: WorkspaceIssueFilters, enabled: boolean): Task[] | undefined {
@@ -197,6 +197,90 @@ export function useLiveKnowledgeFile(scope: Scope | undefined, path: string | un
 export function useLiveProjectFiles(scope: Scope | undefined, enabled = true): FileItem[] | undefined {
   const docs = useDocuments(enabled ? scope : undefined);
   return useMemo(() => (docs.data && scope ? docs.data.map((d) => toFile(d, scope.projectId)) : undefined), [docs.data, scope]);
+}
+
+/** Uploaded documents across every visible project (the store's `files` mirror). */
+export function useLiveWorkspaceFiles(workspaceId: string | undefined, enabled = true): FileItem[] | undefined {
+  const projects = useProjects(enabled ? workspaceId : undefined);
+  const files = useQueries({
+    queries: (projects.data ?? []).map((p) => ({
+      queryKey: ["documents", p.id],
+      queryFn: () =>
+        unwrap(
+          api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/documents", {
+            params: { path: { workspace_id: workspaceId!, project_id: p.id } },
+          }),
+        ),
+    })),
+    // combine memoizes: the slot is undefined until every project's query has settled, then a
+    // stable array — a fresh array per render would loop the StoreBridge's mirror effect.
+    // A failed project contributes nothing but keeps its error in the shared query (a screen
+    // reading useDocuments for it can still say why), like the old .catch(() => []) loads.
+    combine: (results) =>
+      results.some((r) => r.data === undefined && !r.isError)
+        ? undefined
+        : results.flatMap((r, i) => (r.data ?? []).map((d) => toFile(d, projects.data![i].id))),
+  });
+  return projects.data ? files : undefined;
+}
+
+/** The .dotrix/ manifest across every visible project (the store's `knowledge` mirror; content is ""). */
+export function useLiveWorkspaceKnowledge(workspaceId: string | undefined, enabled = true): KnowledgeFile[] | undefined {
+  const projects = useProjects(enabled ? workspaceId : undefined);
+  const knowledge = useQueries({
+    queries: (projects.data ?? []).map((p) => ({
+      queryKey: ["knowledge", p.id],
+      queryFn: () =>
+        unwrap(
+          api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/knowledge", {
+            params: { path: { workspace_id: workspaceId!, project_id: p.id } },
+          }),
+        ),
+    })),
+    combine: (results) =>
+      results.some((r) => r.data === undefined && !r.isError)
+        ? undefined
+        : results.flatMap((r, i) =>
+            (r.data?.files ?? [])
+              .filter((f) => !f.deleted)
+              .map((f) => ({ path: f.path, project: projects.data![i].id, content: "", version: f.version, by: "", at: ms(f.updated_at) })),
+          ),
+  });
+  return projects.data ? knowledge : undefined;
+}
+
+/** Automations across every visible project (the store's `automations` mirror). */
+export function useLiveWorkspaceAutomations(workspaceId: string | undefined, enabled = true): Automation[] | undefined {
+  const projects = useProjects(enabled ? workspaceId : undefined);
+  const autos = useQueries({
+    queries: (projects.data ?? []).map((p) => ({
+      queryKey: ["automations", p.id],
+      queryFn: () =>
+        unwrap(
+          api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/automations", {
+            params: { path: { workspace_id: workspaceId!, project_id: p.id } },
+          }),
+        ),
+    })),
+    combine: (results) => (results.some((r) => r.data === undefined && !r.isError) ? undefined : results.flatMap((r) => (r.data ?? []).map(toAutomation))),
+  });
+  return projects.data ? autos : undefined;
+}
+
+/** The workspace's audit log for owners and admins (Settings → Audit); other roles get nothing. */
+export function useLiveAudit(workspaceId: string | undefined, enabled = true): AuditEvent[] | undefined {
+  const events = useQuery({
+    queryKey: ["audit", workspaceId],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/audit", {
+          params: { path: { workspace_id: workspaceId! }, query: { limit: 200 } },
+        }),
+      ),
+    enabled: enabled && Boolean(workspaceId),
+    retry: false,
+  });
+  return useMemo(() => events.data?.map(toAudit), [events.data]);
 }
 
 /** Workspace hybrid search hits (documents and/or issues) across every project you can see. */
