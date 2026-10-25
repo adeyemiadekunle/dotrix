@@ -1,5 +1,7 @@
 # dotrix itself in Docker for development, on top of infra/docker-compose.yml (the same Postgres,
 # Redis and MinIO, the same data): `pnpm docker:up`, then http://localhost:3080.
+# Set DOTRIX_DOCKER_WEB_PORT=3000 to keep the native web address; the API stays on :8000
+# (DOTRIX_DOCKER_API_PORT overrides it). These ports are bound to localhost only.
 #
 #   migrate  applies the migrations, then exits
 #   api      the API, restarted on changes to apps/backend/src and packages/engine/src (mounted)
@@ -16,22 +18,25 @@
 x-backend: &backend
   build: { context: ., dockerfile: deploy/backend.Dockerfile }
   image: dotrix-backend:dev
+  restart: unless-stopped
   env_file: .env
   environment: &backend-env # The password apart (asyncpg and libpq both read PGPASSWORD), never written into the URL.
     DOTRIX_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dotrix}@postgres:5432/${POSTGRES_DB:-dotrix}
     PGPASSWORD: ${POSTGRES_PASSWORD:?}
     DOTRIX_REDIS_URL: redis://redis:6379/0
     DOTRIX_S3_ENDPOINT_URL: http://minio:9000
-    DOTRIX_APP_URL: http://localhost:3080
-    DOTRIX_WEB_URL: http://localhost:3080
-    DOTRIX_CORS_ORIGINS: '["http://localhost:3080"]'
+    DOTRIX_APP_URL: http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}
+    DOTRIX_WEB_URL: http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}
+    DOTRIX_CORS_ORIGINS: '["http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}"]'
     DOTRIX_JOBS: worker
+    DOTRIX_CODE_DIR: /data/code
     DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app-key
     # nginx in front of the API, on Docker's network.
     DOTRIX_TRUSTED_PROXIES: '["172.16.0.0/12"]'
     # Changes on a Windows or macOS host don't reach the container as file events.
     WATCHFILES_FORCE_POLLING: "true"
   volumes:
+    - codecache:/data/code
     - ./apps/backend/src:/app/apps/backend/src:ro
     - ./apps/backend/migrations:/app/apps/backend/migrations:ro
     - ./packages/engine/src:/app/packages/engine/src:ro
@@ -54,6 +59,13 @@ services:
   api:
     <<: *backend
     command: ["python", "-m", "dotrix_backend.serve", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports: ["127.0.0.1:${DOTRIX_DOCKER_API_PORT:-8000}:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
     depends_on:
       migrate: { condition: service_completed_successfully }
 
@@ -66,5 +78,16 @@ services:
   web:
     build: { context: ., dockerfile: deploy/web.Dockerfile }
     image: dotrix-web:dev
-    ports: ["127.0.0.1:3080:80"] # localhost only
-    depends_on: [api]
+    restart: unless-stopped
+    ports: ["127.0.0.1:${DOTRIX_DOCKER_WEB_PORT:-3080}:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    depends_on:
+      api: { condition: service_healthy }
+
+volumes:
+  codecache:
