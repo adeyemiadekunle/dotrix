@@ -53,6 +53,15 @@ const send = <T>(p: Promise<{ data?: T; error?: unknown; response: Response }>) 
     invalidateLiveQueries();
     return r;
   });
+
+type WIssue = Schemas["WorkspaceIssue"];
+/** Every workspace-scoped issues cache (the filtered list variants and the starred-keys set share this prefix). */
+const issuesCaches = { queryKey: ["issues", "workspace"] } as const;
+/** Optimistically edit a task's issue rows in the caches, so hook-read screens update with the store's copy;
+ * the send's invalidation refetches the truth (and a failed send's invalidate puts it back). */
+const patchIssueRows = (t: Task, patch: (r: WIssue) => Partial<WIssue>) => {
+  queryClient.setQueriesData<WIssue[]>(issuesCaches, (rows) => rows?.map((r) => (r.key === t.key && r.project_id === t.project ? { ...r, ...patch(r) } : r)));
+};
 /** An id the API made (a project or user), not one the store made up for a new item. */
 
 /** A send failed after the store already showed the change: put the queries' data back over it. */
@@ -232,6 +241,12 @@ export function taskPatched(t: Task, keys: (keyof Task)[]) {
   if (!isLive() || t.key.startsWith("new-")) return;
   const body = issueFields(t, keys);
   if (!Object.keys(body).length) return;
+  const { archived, parent, ...rest } = body;
+  patchIssueRows(t, () => ({
+    ...(rest as Partial<WIssue>),
+    ...(archived === undefined ? {} : { archived_at: archived ? new Date().toISOString() : null }),
+    ...(parent === undefined ? {} : { parent_key: parent }),
+  }));
   void send(
     api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } }, body }),
   )
@@ -329,13 +344,37 @@ export function liveCommentById(id: string): Comment | undefined {
 }
 
 export function commentPosted(t: Task, text: string, mentions: string[] = []) {
-  if (!isLive()) return;
+  if (!isLive() || t.key.startsWith("new-")) return;
+  // Show it before the refetch lands: the detail cache feeds liveCommentsOf, the row's count the badge.
+  queryClient.setQueryData<Issue>(issueKeys.issue(issueScope(t.project), t.key), (i) =>
+    i
+      ? {
+          ...i,
+          log: [
+            ...(i.log ?? []),
+            {
+              id: `pending-${uid("c")}`,
+              kind: "commented",
+              author_user_id: D().me,
+              author_agent: null,
+              body: text,
+              changes: {},
+              created_at: new Date().toISOString(),
+            } as Schemas["IssueEventRead"],
+          ],
+        }
+      : i,
+  );
+  patchIssueRows(t, (r) => ({ comment_count: r.comment_count + 1 }));
   void send(
     api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments", {
       params: { path: { ...projectPath(t.project), key: t.key } },
       body: { body: text, mentions },
     }),
-  ).catch((e) => failed("Your comment", e));
+  ).catch((e) => {
+    failed("Your comment", e);
+    void invalidateLiveQueries();
+  });
 }
 
 /** A rank change in a list or on the board: place it before the issue that now follows it. */
@@ -624,6 +663,7 @@ export async function issueFileAttached(file: File, t: Task, onProgress: (pct: n
     onProgress,
   );
   t.attachments = (i.attachments ?? []).map(toAttachment);
+  patchIssueRows(t, (r) => ({ attachment_count: r.attachment_count + 1 }));
   invalidateLiveQueries();
   render();
   onProgress(100);
@@ -652,6 +692,16 @@ export function taskStarred(t: Task) {
   if (!isLive() || t.key.startsWith("new-")) return;
   const path = { params: { path: { ...projectPath(t.project), key: t.key } } };
   const on = t.fav;
+  // The starred-keys set feeds Task.fav; patch it so every screen's star flips at once.
+  queryClient.setQueriesData<WIssue[]>({ queryKey: ["issues", "workspace", wsId(), "starred-keys"] }, (rows) => {
+    if (!on) return rows?.filter((r) => !(r.key === t.key && r.project_id === t.project));
+    if (!rows || rows.some((r) => r.key === t.key && r.project_id === t.project)) return rows;
+    const row = queryClient
+      .getQueriesData<WIssue[]>({ queryKey: ["issues", "workspace", wsId()] })
+      .flatMap(([, rs]) => rs ?? [])
+      .find((r) => r.key === t.key && r.project_id === t.project);
+    return row ? [...rows, row] : rows;
+  });
   void send(
     on
       ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path)
@@ -659,12 +709,14 @@ export function taskStarred(t: Task) {
   ).catch((e) => {
     failed("The star", e);
     mutate(() => (t.fav = !on));
+    void invalidateLiveQueries();
   });
 }
 
 /** A file detached from an issue (already gone from the store). */
 export function attachmentRemoved(t: Task, attachmentId: string) {
   if (!isLive() || t.key.startsWith("new-") || attachmentId.startsWith("counted-")) return;
+  patchIssueRows(t, (r) => ({ attachment_count: Math.max(0, r.attachment_count - 1) }));
   void send(
     api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/attachments/{attachment_id}", {
       params: { path: { ...projectPath(t.project), key: t.key, attachment_id: attachmentId } },
@@ -685,6 +737,8 @@ export function tasksDeleted(ts: Task[]) {
   if (!isLive()) return;
   for (const t of ts) {
     if (t.key.startsWith("new-")) continue;
+    queryClient.setQueriesData<WIssue[]>(issuesCaches, (rows) => rows?.filter((r) => !(r.key === t.key && r.project_id === t.project)));
+    queryClient.removeQueries({ queryKey: issueKeys.issue(issueScope(t.project), t.key) });
     void send(
       api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } } }),
     ).catch(async (e) => {
