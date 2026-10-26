@@ -48,9 +48,9 @@ import { toast } from "../ui/toast";
 const here = () => routeOf(location.pathname);
 
 /* ---------- undo ---------- */
-export const snapshot = () => JSON.stringify(S.data);
+export const snapshot = () => JSON.stringify(D());
 export function restore(snap: string) {
-  S.data = JSON.parse(snap);
+  Object.assign(D(), JSON.parse(snap));
   save();
   render();
 }
