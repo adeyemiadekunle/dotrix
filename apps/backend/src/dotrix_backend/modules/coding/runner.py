@@ -165,7 +165,7 @@ class CodingWorker:
     storage: BlobStorage | None = None  # where the agent's screenshots go (none: they stay in the sandbox)
     secrets: Secrets = field(default_factory=lambda: Secrets(None))  # encrypts saved transcripts
     pool: WarmPool = field(default_factory=lambda: WarmPool(30 * 60, 3))  # sessions' sandboxes between turns
-    slots: RunSlots = field(default_factory=lambda: RunSlots(0))  # coding runs working at once (0: no limit)
+    slots: RunSlots = field(default_factory=lambda: RunSlots(2))  # coding runs working at once (0: no limit)
     _reaper: asyncio.Task[None] | None = field(default=None, repr=False)
 
     async def execute(

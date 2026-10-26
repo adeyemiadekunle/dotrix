@@ -32,6 +32,10 @@ x-backend: &backend
     DOTRIX_CODE_DIR: /data/code
     DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
     DOTRIX_CODING_IMAGE: dotrix-coding:latest
+    # Personal BYOK has no platform token cap; only two cloud turns run at once.
+    DOTRIX_RUN_TOKEN_BUDGET: ${DOTRIX_RUN_TOKEN_BUDGET:-0}
+    DOTRIX_CODING_TOKEN_BUDGET: ${DOTRIX_CODING_TOKEN_BUDGET:-0}
+    DOTRIX_CODING_MAX_RUNS: ${DOTRIX_CODING_MAX_RUNS:-2}
     DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app-key
     # nginx in front of the API, on Docker's network.
     DOTRIX_TRUSTED_PROXIES: '["172.16.0.0/12"]'

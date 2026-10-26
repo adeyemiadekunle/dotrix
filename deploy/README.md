@@ -23,9 +23,13 @@ The defaults in `dokploy.env.example` fit 6 vCPUs and 12 GB of memory:
 | API and worker | about 1.5 GB |
 | Coding: 2 runs at once × 3 GB (`DOTRIX_CODING_MAX_RUNS`, `DOTRIX_CODING_MEMORY`) | up to 6 GB |
 
-A third run waits ("Waiting for a free sandbox") until one finishes. A warm session keeps its
-sandbox between turns (`DOTRIX_CODING_WARM_MAX`, `DOTRIX_CODING_IDLE_MINUTES`); an idle one uses
-little memory, but keep it low on one machine.
+A third run waits ("Waiting for a free sandbox") until one finishes. This sizing uses one cloud
+worker: the two-run limit is per worker process. Idle cached sandboxes are separate: production
+keeps up to one per workspace for 15 minutes. They have no coding turn executing but their Docker
+containers remain running and can retain memory or background processes. Follow-ups reuse them;
+an expired sandbox starts fresh and restores its saved transcript.
+Every person brings their own model key. Platform chat and coding token caps default to 0
+(disabled); a person can still choose a budget for their project or agent.
 
 ## Set up
 

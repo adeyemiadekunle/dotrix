@@ -32,6 +32,32 @@ async def test_without_a_limit_runs_never_wait() -> None:
     assert waited == []
 
 
+async def test_the_default_cloud_capacity_runs_two_turns_and_queues_the_third() -> None:
+    slots = RunSlots(_settings().coding_max_runs, poll_seconds=0.01)
+    waiting, entered = asyncio.Event(), asyncio.Event()
+
+    async def on_wait() -> None:
+        waiting.set()
+
+    async def third() -> None:
+        async with slots.take(on_wait=on_wait, stopped=_never_stopped):
+            entered.set()
+
+    task = None
+    try:
+        async with asyncio.timeout(2):
+            async with slots.take(on_wait=on_wait, stopped=_never_stopped), slots.take(on_wait=on_wait, stopped=_never_stopped):
+                task = asyncio.create_task(third())
+                await waiting.wait()
+                assert not entered.is_set()
+            await task
+            assert entered.is_set()
+    finally:
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
 async def test_a_run_past_the_limit_waits_for_a_free_sandbox_and_says_so() -> None:
     slots, order = RunSlots(1, poll_seconds=0.01), []
 
