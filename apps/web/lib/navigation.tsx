@@ -59,10 +59,6 @@ export function useRouter(): AppRouter {
   );
 }
 
-export function usePathname(): string {
-  return useRouterState({ select: (state) => state.location.pathname });
-}
-
 /** The query string as URLSearchParams (read-only: change it with lib/url-state). */
 export function useSearchParams(): URLSearchParams {
   const search = useRouterState({ select: (state) => state.location.searchStr });

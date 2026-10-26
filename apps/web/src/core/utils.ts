@@ -1,12 +1,12 @@
 // Utilities, typed.
 export const uid = (p = "x") => p + Math.random().toString(36).slice(2, 8);
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 export const MOD = isMac ? "⌘" : "Ctrl";
 
 /* ---------- dates ---------- */
 export const DAY = 864e5;
-export const sod = (d: Date | number | string) => {
+const sod = (d: Date | number | string) => {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
   return x;
@@ -28,7 +28,7 @@ export const addD = (d: Date | number, n: number) => {
 };
 export const dOff = (n: number) => iso(addD(TODAY, n));
 export const diffD = (a: Date | number, b: Date | number) => Math.round((sod(a).getTime() - sod(b).getTime()) / DAY);
-export const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export const MONL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 export const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export const WDL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

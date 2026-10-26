@@ -1,12 +1,10 @@
 // An agent's proposed changes (a document diff, an issue's fields) and checkpoints (a plan to
 // continue, change, or stop), the same in Chat and the Inbox.
 import { useState } from "react";
-
-import { ACTION_OF, alwaysAllow, answerCheckpoint, canAlwaysAllow, decideAll, decideChange, threadOf } from "../core/agents";
+import { ACTION_OF, alwaysAllow, answerCheckpoint, canAlwaysAllow, decideChange, threadOf } from "../core/agents";
 import { Ic } from "../core/icons";
 import { D, who } from "../data/store";
-import type { ChatMessage, ProposedChange } from "../data/types";
-
+import type { ProposedChange } from "../data/types";
 export function Diff({ diff }: { diff: string }) {
   return (
     <div className="diff">
@@ -18,7 +16,6 @@ export function Diff({ diff }: { diff: string }) {
     </div>
   );
 }
-
 const KIND: Record<ProposedChange["kind"], [string, string]> = {
   write_file: ["file-pen", "Edit document"],
   create_issue: ["circle-plus", "Create issue"],
@@ -26,7 +23,6 @@ const KIND: Record<ProposedChange["kind"], [string, string]> = {
   comment: ["message-square", "Comment"],
   checkpoint: ["map", "Plan"],
 };
-
 function Decided({ ch }: { ch: ProposedChange }) {
   const ok = ch.status === "approved";
   return (
@@ -37,7 +33,6 @@ function Decided({ ch }: { ch: ProposedChange }) {
     </span>
   );
 }
-
 /** Whether this change offers "Always allow" (owners; a kind of change a rule covers), and for whom. */
 function alwaysAllowOf(ch: ProposedChange): { agent: string; what: string } | null {
   const act = ACTION_OF[ch.kind];
@@ -45,7 +40,6 @@ function alwaysAllowOf(ch: ProposedChange): { agent: string; what: string } | nu
   const agent = D().agents.find((a) => a.handle === by);
   return act && agent && canAlwaysAllow() ? { agent: agent.name, what: act[1] } : null;
 }
-
 export function ChangeCard({ ch }: { ch: ProposedChange }) {
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -139,7 +133,6 @@ export function ChangeCard({ ch }: { ch: ProposedChange }) {
     </div>
   );
 }
-
 function Checkpoint({ ch }: { ch: ProposedChange }) {
   const [steering, setSteering] = useState(false);
   const [note, setNote] = useState("");
@@ -207,28 +200,4 @@ function Checkpoint({ ch }: { ch: ProposedChange }) {
     </div>
   );
 }
-
 /** A reply's changes, with "Approve all" when several wait. */
-export function Changes({ msg }: { msg: ChatMessage }) {
-  const ch = msg.changes ?? [];
-  const waiting = ch.filter((c) => c.status === "pending" && c.kind !== "checkpoint").length;
-  if (!ch.length) return null;
-  return (
-    <div style={{ marginTop: 4 }}>
-      {ch.map((c) => (
-        <ChangeCard key={c.id} ch={c} />
-      ))}
-      {waiting > 1 && (
-        <div className="row" style={{ justifyContent: "flex-end", gap: 6, marginTop: 8 }}>
-          <button className="btn btn-sm btn-ghost" onClick={() => decideAll(msg, false)}>
-            Reject all
-          </button>
-          <button className="btn btn-sm btn-secondary" onClick={() => decideAll(msg, true)}>
-            <Ic n="check-check" s={13} />
-            Approve all {waiting}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}

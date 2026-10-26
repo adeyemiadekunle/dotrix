@@ -38,7 +38,7 @@ export function goTasks(f: "open" | "done" | "overdue") {
 }
 
 /** An agent's request in a list (Home, Inbox): who, what, where. */
-export function AgentItem({ n }: { n: Notif }) {
+function AgentItem({ n }: { n: Notif }) {
   const w = who(n.by);
   const p = n.project ? proj(n.project) : n.task ? proj(D().tasks.find((t) => t.id === n.task)?.project) : null;
   const open = () => (n.thread ? go("chat", {}, { search: `thread=${n.thread}` }) : go("inbox", {}, { search: `n=${n.id}` }));

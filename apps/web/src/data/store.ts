@@ -11,7 +11,7 @@ import { AGENTS, CODING_TOOLS } from "./seed-dotrix";
 import { seed } from "./seed";
 import type { Data, Filter, Project, Task } from "./types";
 
-export const STORE_KEY = "dotrix.studio.v2"; // v2: the seeded workspace is Dotrix
+const STORE_KEY = "dotrix.studio.v2"; // v2: the seeded workspace is Dotrix
 export const DEFAULT_PREFS = {
   theme: "system" as "system" | "light" | "dark",
   accent: "graphite",
@@ -134,7 +134,7 @@ const subscribe = (l: () => void) => {
 };
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 /** What this browser keeps: the demo's data (a real workspace's lives in the API; data/live.ts). */
-export const persist = { data: (): Data => S.data };
+const persist = { data: (): Data => S.data };
 
 /** A live workspace's data, mirrored in from the TanStack queries by the StoreBridge — null on the
  *  demo, so S.data keeps the demo's seed untouched while you're signed in. */
@@ -174,11 +174,6 @@ export function useStudio() {
   return S;
 }
 /** Start over from the seed (Settings → Reset demo data). */
-export function resetData() {
-  S.data = seed();
-  S.views = {};
-  mutate(() => {});
-}
 
 /* ---------- lookups ---------- */
 export const D = () => liveData ?? S.data;
@@ -189,7 +184,7 @@ export const people = () => D().members.filter((m) => m.status !== "deactivated"
 export const proj = (id: string | null | undefined) => D().projects.find((p) => p.id === id);
 export const projByKey = (key: string | undefined) => D().projects.find((p) => p.key.toLowerCase() === key?.toLowerCase());
 export const task = (id: string | null | undefined) => D().tasks.find((t) => t.id === id);
-export const taskByKey = (key: string | null | undefined) => D().tasks.find((t) => t.key === key);
+
 export const pColor = (p: Project | undefined) => PCOLORS[p?.color ?? "slate"] ?? PCOLORS.slate!;
 export const visibleProjects = () =>
   D()
@@ -205,11 +200,6 @@ export function progressOf(pid: string) {
   const ts = tasksOf(pid);
   if (!ts.length) return 0;
   return Math.round((ts.filter((t) => t.status === "done").length / ts.length) * 100);
-}
-export function taskProg(t: Task) {
-  if (t.status === "done") return 100;
-  if (t.subtasks.length) return Math.round((t.subtasks.filter((s) => s.done).length / t.subtasks.length) * 100);
-  return ({ backlog: 0, todo: 5, progress: 45, blocked: 45, review: 80 } as Record<string, number>)[t.status] ?? 0;
 }
 
 /** Anyone who acts: a member, an agent (auto, research…), or Kai, the coding agent (agent:coding-agent). */

@@ -13,7 +13,7 @@ export interface Member {
   last: number | null; // minutes since last active; null: never
   tz: string;
 }
-export interface Milestone {
+interface Milestone {
   name: string;
   date: string;
   done?: boolean;
@@ -136,7 +136,7 @@ export interface FileItem {
   /** dotrix: converted to Markdown into the project's knowledge */
   converted?: "ready" | "converting" | "failed";
 }
-export interface SavedView {
+interface SavedView {
   id: string;
   project: string;
   name: string;

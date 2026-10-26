@@ -73,7 +73,7 @@ function setField(p: P, patch: Partial<Task>) {
   updateTask(p.id as string, patch);
 }
 
-export function startOfWeek(d: Date) {
+function startOfWeek(d: Date) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
   const diff = (x.getDay() - S.prefs.weekStart + 7) % 7;
@@ -733,7 +733,7 @@ function DepsMenu({ p, tk }: { p: P; tk: Task }) {
 }
 
 /** Comment reactions (yours toggles). */
-export function react(commentId: string, e: string) {
+function react(commentId: string, e: string) {
   const c = isLive() ? liveCommentById(commentId) : D().comments.find((x) => x.id === commentId);
   if (!c) return;
   S.ui.pop = null;
@@ -1075,7 +1075,7 @@ export function PopLayer() {
 }
 
 /** The table's columns (views/table): id, name, width. */
-export const TCOLS: [string, string, number][] = [
+const TCOLS: [string, string, number][] = [
   ["title", "Task", 314],
   ["status", "Status", 132],
   ["priority", "Priority", 112],

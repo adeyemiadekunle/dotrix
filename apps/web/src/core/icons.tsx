@@ -28,9 +28,9 @@ export function Ic({ n, s = 16, cls = "", style }: { n: string; s?: number; cls?
 
 /* dotrix's mark: a 3×3 dot matrix in green, no background; the middle dot (the fifth) is bigger
    and darker, the eight around it lighter. In a 24-unit box. The wordmark follows the text colour. */
-export const MARK_GREEN = "#3D8B5C";
+const MARK_GREEN = "#3D8B5C";
 const GRID = [3.5, 12, 20.5];
-export function Dots() {
+function Dots() {
   return (
     <>
       {GRID.flatMap((y) =>
@@ -61,7 +61,7 @@ export function Logo({ h = 22 }: { h?: number }) {
     </svg>
   );
 }
-export function Mark({ px = 22 }: { px?: number }) {
+function Mark({ px = 22 }: { px?: number }) {
   return (
     <svg width={px} height={px} viewBox="0 0 24 24" aria-hidden="true">
       <Dots />

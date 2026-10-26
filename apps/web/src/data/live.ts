@@ -78,7 +78,7 @@ export async function reloadAgents() {
 
 /* ---------- loading ---------- */
 
-export async function myWorkspaces(): Promise<W[]> {
+async function myWorkspaces(): Promise<W[]> {
   return unwrap(api.GET("/v1/workspaces"));
 }
 
@@ -311,7 +311,7 @@ export function taskCreated(t: Task): Promise<void> {
 }
 const creating = new WeakMap<Task, Promise<void>>();
 /** Settles once a new issue is on the API (or failed to be), e.g. before adding files to it. */
-export const whenCreated = (t: Task) => creating.get(t) ?? Promise.resolve();
+const whenCreated = (t: Task) => creating.get(t) ?? Promise.resolve();
 
 const issueScope = (pid: string): Scope => ({ workspaceId: wsId(), projectId: pid });
 
@@ -541,7 +541,7 @@ export function automationToggled(a: Automation, field: "enabled" | "unattended"
 }
 
 /** The presets in Settings → Automations, as the API takes them. */
-export const PRESETS: Record<string, { agent: string; events?: Schemas["AutomationEvent"][]; weekly?: boolean; instructions: string }> = {
+const PRESETS: Record<string, { agent: string; events?: Schemas["AutomationEvent"][]; weekly?: boolean; instructions: string }> = {
   "Keep documents current": {
     agent: "documentation",
     events: ["changes.approved", "issue.done"],

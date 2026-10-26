@@ -57,7 +57,7 @@ export function restore(snap: string) {
 
 /** Undo for real workspaces: put the snapshot back, then send the restored field again.
  * (resend re-finds what changed — the restored copies are new objects.) */
-export function restoreSend(snap: string, ids: string[], key: "archived" | "status") {
+function restoreSend(snap: string, ids: string[], key: "archived" | "status") {
   restore(snap);
   for (const id of ids) {
     const t = task(id);
@@ -93,7 +93,7 @@ export function promptDlg(o: { title: string; label: string; value: string; run:
 
 /* ---------- create ---------- */
 /** The project you're looking at (a project page, or the open task's). */
-export function curProjectId(): string | null {
+function curProjectId(): string | null {
   const r = here();
   if (r.route === "project") return D().projects.find((p) => p.key.toLowerCase() === r.params.id?.toLowerCase())?.id ?? null;
   return null;
@@ -191,7 +191,7 @@ export const TEMPLATES = [
     tasks: ["Brain dump ideas", "Pick top 3 priorities", "Schedule focus time", "Weekly review"],
   },
 ];
-export function makeKey(name: string) {
+function makeKey(name: string) {
   const base =
     name
       .split(/\s+/)
@@ -270,12 +270,7 @@ export function dupTask(id: string) {
   toast("Task duplicated", { action: "Open", onAction: () => openTask(n!.id) });
 }
 /** Something a real workspace can't do yet: it says so instead. */
-export function notYet(what: string, instead = "Mark the issue done instead.") {
-  if (!isLive()) return false;
-  S.ui.pop = null;
-  toast(`${what} isn't available yet.${instead ? ` ${instead}` : ""}`, { kind: "info" });
-  return true;
-}
+
 export function archiveTask(id: string) {
   const t = task(id)!;
   const snap = snapshot();
@@ -379,13 +374,13 @@ export function delProject(id: string) {
 }
 
 /* ---------- board columns (a view key: "p:<project id>", "sv:<view id>", or a page) ---------- */
-export function projectFromKey(key: string | undefined): string | null {
+function projectFromKey(key: string | undefined): string | null {
   if (!key) return null;
   if (key.startsWith("p:")) return key.slice(2);
   if (key.startsWith("sv:")) return D().savedViews.find((v) => v.id === key.slice(3))?.project ?? null;
   return null;
 }
-export function colTasks(key: string, st: string) {
+function colTasks(key: string, st: string) {
   const pid = projectFromKey(key);
   return (pid ? tasksOf(pid) : allTasks()).filter((t) => t.status === st);
 }

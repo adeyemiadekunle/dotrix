@@ -13,7 +13,6 @@ import type { Task } from "../data/types";
 import { viewOf } from "../shell/viewEngine";
 import { handleFiles } from "../overlays/Drawer";
 import { toast } from "../ui/toast";
-
 type Drag = {
   type: "card" | "row" | "cal" | "proj";
   id: string;
@@ -29,14 +28,12 @@ let DRAG: Drag | null = null;
 const $ = <T extends Element = HTMLElement>(s: string) => document.querySelector<T>(s);
 const $$ = (s: string) => [...document.querySelectorAll<HTMLElement>(s)];
 const closest = (e: Event, s: string) => (e.target as Element | null)?.closest?.<HTMLElement>(s) ?? null;
-
-export function clearDropMarks() {
+function clearDropMarks() {
   $$(".drop-line").forEach((x) => x.remove());
   $$(".over").forEach((x) => x.classList.remove("over"));
   $$(".drop-before,.drop-after").forEach((x) => x.classList.remove("drop-before", "drop-after"));
   $$(".dragging").forEach((x) => x.classList.remove("dragging"));
 }
-
 let installed = false;
 export function installDragDrop() {
   if (installed) return;
@@ -228,7 +225,6 @@ export function installDragDrop() {
       render();
     }
   });
-
   /* timeline bar drag + table column resize (pointer events) */
   document.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
@@ -278,8 +274,6 @@ export function installDragDrop() {
       removeEventListener("pointermove", mv);
       removeEventListener("pointerup", up);
       if (!moved) return;
-      suppressClick = true;
-      setTimeout(() => (suppressClick = false), 60);
       const days = Math.round((ev.clientX - x0) / dw);
       const t = task(b.dataset.bar)!;
       if (!days) return render();
@@ -291,4 +285,3 @@ export function installDragDrop() {
   });
 }
 /** A timeline bar that was just dragged shouldn't also open its task. */
-export let suppressClick = false;

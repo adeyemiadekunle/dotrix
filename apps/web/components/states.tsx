@@ -1,10 +1,5 @@
-import { Button } from "@dotrix/ui/components/button";
-import { SearchXIcon, type LucideIcon } from "lucide-react";
-import { Link } from "@/lib/navigation";
+import { type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-
-import { PageHeader } from "@/components/app-shell";
-
 export function EmptyState({ icon: Icon, title, description, action }: { icon: LucideIcon; title: string; description: string; action?: ReactNode }) {
   return (
     // Sized to its content and placed where the page's content starts, so the action is where
@@ -21,24 +16,4 @@ export function EmptyState({ icon: Icon, title, description, action }: { icon: L
     </div>
   );
 }
-
 /** Also shown for things you can't see: the API answers 404 rather than revealing they exist. */
-export function NotFound({ what }: { what: string }) {
-  return (
-    <>
-      <PageHeader title="Not found" />
-      <div className="flex flex-1 items-center justify-center p-6 [&>div]:max-w-lg [&>div]:self-center">
-        <EmptyState
-          icon={SearchXIcon}
-          title={`This ${what} doesn't exist`}
-          description={`Or you don't have access to it. Check the link, or ask someone in the ${what} to add you.`}
-          action={
-            <Button asChild variant="outline">
-              <Link href="/">Go home</Link>
-            </Button>
-          }
-        />
-      </div>
-    </>
-  );
-}

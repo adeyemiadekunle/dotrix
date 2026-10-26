@@ -62,7 +62,7 @@ export function CellDue({ t }: { t: Task }) {
     </button>
   );
 }
-export function CellLabels({ t }: { t: Task }) {
+function CellLabels({ t }: { t: Task }) {
   return (
     <button className={`pillbtn ${t.labels.length ? "" : "empty"}`} onClick={pop("labels", t)} aria-label="Labels" style={{ gap: 4, overflow: "hidden" }}>
       {t.labels.length ? (
@@ -94,7 +94,7 @@ export function CellProject({ t }: { t: Task }) {
     </button>
   );
 }
-export const CELL: Record<string, (p: { t: Task }) => ReactElement> = {
+const CELL: Record<string, (p: { t: Task }) => ReactElement> = {
   status: CellStatus,
   assignee: CellAssignee,
   priority: CellPrio,
@@ -191,21 +191,7 @@ function TitleCell({ t }: { t: Task }) {
     </div>
   );
 }
-export function TaskRow({
-  t,
-  cols,
-  tpl,
-  group,
-  complete,
-  drag = true,
-}: {
-  t: Task;
-  cols: string[];
-  tpl: string;
-  group?: string;
-  complete?: boolean;
-  drag?: boolean;
-}) {
+function TaskRow({ t, cols, tpl, group, complete, drag = true }: { t: Task; cols: string[]; tpl: string; group?: string; complete?: boolean; drag?: boolean }) {
   const sel = S.ui.sel.has(t.id);
   return (
     <>
@@ -417,7 +403,7 @@ export function ListView({
     </>
   );
 }
-export function BulkBar({ ids }: { ids: string[] }) {
+function BulkBar({ ids }: { ids: string[] }) {
   const n = ids.filter((id) => S.ui.sel.has(id)).length;
   if (!n) return null;
   const del = () => {

@@ -56,7 +56,7 @@ export function createTask(f: Partial<Task>): Task {
   void taskCreated(t);
   return t;
 }
-export const RECUR_DAYS: Record<string, number> = { Daily: 1, Weekly: 7, "Every 2 weeks": 14, Monthly: 30 };
+const RECUR_DAYS: Record<string, number> = { Daily: 1, Weekly: 7, "Every 2 weeks": 14, Monthly: 30 };
 
 export function applyPatch(t: Task & { prevStatus?: Task["status"] }, patch: Partial<Task>): string[] {
   const msgs: string[] = [];

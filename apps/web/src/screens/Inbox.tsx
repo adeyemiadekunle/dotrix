@@ -22,7 +22,7 @@ const css = (o: Record<string, string | number>) => o as CSSProperties;
 
 const projOf = (n: Notif) => (n.project ? proj(n.project) : n.task ? proj(task(n.task)?.project) : null);
 
-export function NotifText({ n }: { n: Notif }) {
+function NotifText({ n }: { n: Notif }) {
   const t = n.task ? task(n.task) : null;
   const p = projOf(n);
   if (!n.by && p && !t) return <b style={{ fontWeight: 600 }}>{n.text}</b>;
@@ -38,7 +38,7 @@ export function NotifText({ n }: { n: Notif }) {
     </>
   );
 }
-export function NotifIcon({ n }: { n: Notif }) {
+function NotifIcon({ n }: { n: Notif }) {
   if (n.by) return <Av id={n.by} cls="md" tip={false} />;
   const i = n.type === "update" && n.project ? "triangle-alert" : "clock";
   return (
