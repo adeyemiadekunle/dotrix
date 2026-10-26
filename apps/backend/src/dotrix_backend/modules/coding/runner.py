@@ -3,7 +3,7 @@
 1. Fetch the default branch with a token scoped to this one repo (in git's environment only).
 2. Give the agent a copy of the tracked files with a fresh git history of its own (no remote,
    no token), in a sandbox (`sandbox.py`), and run Claude Code or Codex there with the brief.
-   Its events stream into the run; it's stopped at the time limit, the token budget, or Stop.
+   Its events stream into the run; it's stopped at the time limit or Stop.
 3. Read its changes back as a patch (data), apply it to our own checkout, and check it
    (`guard.py`): nothing is pushed if it touches `.dotrix/`, CI configuration, or `.git`.
 4. Commit, push a new branch (never the default branch, never forced), open the PR, link it on
@@ -165,7 +165,7 @@ class CodingWorker:
     storage: BlobStorage | None = None  # where the agent's screenshots go (none: they stay in the sandbox)
     secrets: Secrets = field(default_factory=lambda: Secrets(None))  # encrypts saved transcripts
     pool: WarmPool = field(default_factory=lambda: WarmPool(30 * 60, 3))  # sessions' sandboxes between turns
-    slots: RunSlots = field(default_factory=lambda: RunSlots(0))  # coding runs working at once (0: no limit)
+    slots: RunSlots = field(default_factory=lambda: RunSlots(2))  # coding runs working at once (0: no limit)
     _reaper: asyncio.Task[None] | None = field(default=None, repr=False)
 
     async def execute(
@@ -615,7 +615,6 @@ class CodingWorker:
         cancel = asyncio.Event()
         stop_reason: list[str] = []
         last_flush = time.monotonic()
-        budget = self.settings.coding_token_budget
 
         async def flush() -> None:
             nonlocal last_flush
@@ -637,9 +636,6 @@ class CodingWorker:
             summary = parsed.summary or summary
             failed = parsed.failed or failed
             if parsed.failed and not cancel.is_set():  # e.g. the key was refused: don't wait out retries
-                cancel.set()
-            if budget and usage.total > budget and not cancel.is_set():
-                stop_reason.append(f"Stopped at the token budget ({budget:,} tokens)")
                 cancel.set()
             if time.monotonic() - last_flush >= FLUSH_SECONDS:
                 await flush()
@@ -678,8 +674,6 @@ class CodingWorker:
         if failed or result.code != 0:
             detail = failed or (result.stderr.strip().splitlines() or [f"exit code {result.code}"])[-1]
             raise RunFailed(f"{CODING_AGENT_NAME} didn't finish ({tool.name}): {detail[:500]}")
-        if budget and usage.total > budget:  # over it only in the totals (OpenCode's last step): nothing is pushed
-            raise _Stopped(f"Stopped at the token budget ({budget:,} tokens)")
         return summary, (reported[-1] if reported else None)
 
     async def _totals(

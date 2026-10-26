@@ -105,7 +105,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 session_factory=sessionmaker,
                 checkpointer=await open_checkpointer(settings.database_url, stack),
                 model_factory=settings_model_factory(settings),
-                token_budget=settings.run_token_budget,
                 embedder=app.state.embedder,
                 web=build_web_research(settings),
                 checkouts=app.state.checkouts,

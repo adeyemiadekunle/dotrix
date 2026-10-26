@@ -216,7 +216,6 @@ class AgentRunner:
         queue: RunQueue | None = None,
         stop_reasons: RunQueue | None = None,
         streams: Streams | None = None,
-        token_budget: int | None = None,
         summarize_after_tokens: int | None = None,
         embedder: Any = None,
         web: WebResearch | None = None,
@@ -231,7 +230,7 @@ class AgentRunner:
         # Where a coding run asked for from a conversation goes when it starts at once (set once the
         # app's jobs exist; None: it waits for an approval).
         self.jobs: Any = None
-        # Reads workspaces' own model provider keys (model_keys); unconfigured: none can be read.
+        # Reads the instructing person's encrypted provider keys; unconfigured: none can be read.
         self.secrets = secrets or Secrets(None)
         # Changes agents may make under standing rules: per run step, per workspace per day.
         self.unattended_limits = unattended_limits
@@ -239,9 +238,7 @@ class AgentRunner:
         self.checkouts = checkouts
         # Agents' web tools (search, reading pages, sources); None: only the model's own search.
         self.web = web
-        # Defaults for every project (a project may set its own budget); None: no limit / the
-        # engine's own summarisation.
-        self.token_budget = token_budget or None
+        # None uses the engine's own summarisation.
         self.summarize_after_tokens = summarize_after_tokens
         # The search index's embedding model (None: agents search by keywords only).
         self.embedder = embedder
@@ -534,7 +531,7 @@ class AgentRunner:
                 run.agent_version = lead_agent.version
                 # The budget covers every step of the run: what earlier steps used counts. The
                 # leading agent's own budget wins over the project's.
-                run.token_budget = lead_agent.spec.budget_tokens or project.token_budget or self.token_budget
+                run.token_budget = lead_agent.spec.budget_tokens or project.token_budget
                 usage = TokenUsage(
                     budget=run.token_budget,
                     used=(run.input_tokens or 0) + (run.output_tokens or 0),
@@ -779,7 +776,7 @@ class AgentRunner:
                 token = self._take_lease(run)
                 run.model = run.conversation_model
                 run.agent_version = lead_agent.version
-                run.token_budget = lead_agent.spec.budget_tokens or self.token_budget
+                run.token_budget = lead_agent.spec.budget_tokens
                 usage = TokenUsage(budget=run.token_budget, used=(run.input_tokens or 0) + (run.output_tokens or 0))
                 await session.commit()
                 executing = True

@@ -86,9 +86,13 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
   loads (`OPENCODE_DISABLE_PROJECT_CONFIG`), and no model list is fetched.
 - **Filesystem.** The repo and `/tmp` are writable; the system is read-only. The agent runs as
   the image's unprivileged `sandbox` user (uid 1500).
-- **Limits.** Each run stops at `DOTRIX_CODING_TIMEOUT_MINUTES` (30 by default), at
-  `DOTRIX_CODING_TOKEN_BUDGET` tokens (3,000,000), or when someone presses Stop. A worker runs at
-  most `DOTRIX_CODING_MAX_RUNS` at once (0: no limit); the rest wait for a free sandbox.
+- **Limits.** Personal BYOK has no platform token-budget setting or coding token-cap enforcement.
+  Each coding turn still stops at `DOTRIX_CODING_TIMEOUT_MINUTES`
+  (30 by default) or Stop. Each cloud worker runs two turns at once (`DOTRIX_CODING_MAX_RUNS=2`);
+  the rest wait for a free sandbox. Idle cached sandboxes have a separate per-workspace limit
+  (`DOTRIX_CODING_WARM_MAX`) and timeout. They have no coding turn executing but remain running
+  Docker containers and can retain memory and background processes. The active-turn limit is per
+  worker process: this deployment uses one cloud worker; adding workers multiplies capacity.
 - **Guarding the default branch.** The worker never pushes to the default branch. GitHub can
   enforce that as well: add a ruleset or branch protection to the default branch (require a pull
   request with one approval). The app's token can't add workflows, because the app has no
@@ -104,10 +108,9 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 | `DOTRIX_CODING_CLAUDE_MODEL`, `DOTRIX_CODING_CODEX_MODEL` | the tool's default | A model for Claude Code or Codex |
 | `DOTRIX_CODING_OPENCODE_MODEL` | first available catalogue model | Optional server default, e.g. `xai:grok-4.7` |
 | `DOTRIX_CODING_TIMEOUT_MINUTES` | 30 | Per turn |
-| `DOTRIX_CODING_TOKEN_BUDGET` | 3,000,000 | Per turn |
 | `DOTRIX_CODING_LEASE_SECONDS` | 120 | A lapsed lease means recovery, found within about this long |
 | `DOTRIX_CODING_WARM_MAX`, `DOTRIX_CODING_IDLE_MINUTES` | 3, 30 | Warm sandboxes kept per workspace, and for how long idle (0: every turn starts fresh and resumes from the saved session) |
-| `DOTRIX_CODING_MAX_RUNS` | 0 | Runs working at once per worker (0: no limit) |
+| `DOTRIX_CODING_MAX_RUNS` | 2 | Runs working at once per worker (0: no limit) |
 | `DOTRIX_CODING_MEMORY`, `DOTRIX_CODING_CPUS` | `4g`, 2 | Each Docker sandbox |
 | `DOTRIX_CODING_DOCKER_RUNTIME` | Docker's | `runsc` for gVisor |
 | `DOTRIX_CODING_FORK_OWNER` | none | The organisation branches are pushed to as a fork (required in staging and production) |

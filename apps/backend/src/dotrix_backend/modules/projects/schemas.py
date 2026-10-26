@@ -119,7 +119,7 @@ class ProjectUpdate(BaseModel):
         "Send null to use the project's model; leave it out to keep the current one.",
     )
     token_budget: TokenBudget | None = Field(
-        default=None, description="Send null for the server's default; leave it out to keep the current one."
+        default=None, description="Send null to remove this project's token limit; leave it out to keep the current one."
     )
     repo_url: RepoUrl | None = Field(
         default=None,
@@ -159,7 +159,7 @@ class ProjectRead(BaseModel):
     specialist_model: str | None = Field(
         description="The specialists' and summaries' model; null means the project's model"
     )
-    token_budget: int | None = Field(description="Per-run token budget; null means the server's default")
+    token_budget: int | None = Field(description="Optional per-run token limit for this project; null: no project limit")
     health: ProjectHealth | None = Field(description="How it's going, as its owners and admins say; null: not said")
     target_date: date | None = Field(description="When it should be done; null: no date")
     status: ProjectStatus = Field(description="planning, active, on_hold, or completed")
