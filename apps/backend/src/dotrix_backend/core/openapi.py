@@ -140,6 +140,18 @@ TAGS: list[dict[str, str]] = [
         "plans waiting at a checkpoint, issues assigned to you, and findings from runs you asked for.",
     },
     {"name": "audit", "description": "Append-only log of knowledge changes, approvals, and agent runs."},
+    {
+        "name": "observe",
+        "description": "Workspace observability for owners: health counts, run summaries, the "
+        "dispatch queue, and the unified chat/coding run history — all scoped to the workspace "
+        "and the caller's run visibility.",
+    },
+    {
+        "name": "ops",
+        "description": "The Ops app's own accounts and reads: sign-up by proving workspace "
+        "ownership, httpOnly cookie sessions, workspace observability, audit, and creating an "
+        "organisation workspace.",
+    },
     {"name": "health", "description": "Liveness and readiness probes."},
 ]
 

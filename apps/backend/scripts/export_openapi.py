@@ -11,6 +11,7 @@ import json
 import sys
 from pathlib import Path
 
+import dotrix_backend.db.models  # noqa: F401  register every mapper before routers load
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.main import create_app
 

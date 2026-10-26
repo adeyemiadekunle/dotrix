@@ -798,6 +798,696 @@
         }
       }
     },
+    "/v1/ops/signup": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Ops Signup",
+        "description": "Create an ops account by proving you own the workspace (your app sign-in). Ops\naccounts are separate from app users: the ops signs in with its own credentials after.\nRate-limited on the owner's email and the client IP, same as sign-in.",
+        "operationId": "ops_signup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsSignup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/login": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Ops Login",
+        "description": "Sign the ops in: its own email and password, never an app session. Rate-limited per\nIP and per email (10 attempts in 15 minutes).",
+        "operationId": "ops_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpsLogin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/refresh": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Ops Refresh",
+        "description": "Trade the refresh-token cookie for a new access token. The cookie rotates with it:\nthe one you sent is dead from now on (the row is locked while it rotates).",
+        "operationId": "ops_refresh",
+        "parameters": [
+          {
+            "name": "dtx_ops_refresh",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/logout": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Ops Logout",
+        "description": "Sign out: revoke the access token's session, then clear both cookies.",
+        "operationId": "ops_logout",
+        "parameters": [
+          {
+            "name": "dtx_ops_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Access"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/me": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Ops Me",
+        "description": "Who's signed in and the workspace this ops is bound to.",
+        "operationId": "ops_me",
+        "parameters": [
+          {
+            "name": "dtx_ops_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/observe/overview": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Observe Overview",
+        "description": "The ops's workspace health (the same read the app's owners get).",
+        "operationId": "observe_overview",
+        "parameters": [
+          {
+            "name": "dtx_ops_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObserveOverview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/observe/runs": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Observe Runs",
+        "description": "The workspace's run history: chat and coding merged, newest first. Page backwards with\n`before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped.",
+        "operationId": "observe_runs",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "chat",
+                    "coding"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "dtx_ops_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ObservedRun"
+                  },
+                  "title": "Response Observe Runs"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/audit": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Audit",
+        "description": "The workspace's audit log: approvals, writes and decisions, newest first.",
+        "operationId": "audit",
+        "parameters": [
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "dtx_ops_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEventRead"
+                  },
+                  "title": "Response Audit"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/organization": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Ops Create Organization",
+        "description": "Create an organisation workspace owned by your account \u2014 a separate workspace, not a\nconversion: the personal workspace this ops is bound to stays personal.",
+        "operationId": "ops_create_organization",
+        "parameters": [
+          {
+            "name": "dtx_ops_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Access"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceWithRole"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/device/code": {
       "post": {
         "tags": [
@@ -20823,6 +21513,240 @@
           }
         }
       }
+    },
+    "/v1/workspaces/{workspace_id}/observe/overview": {
+      "get": {
+        "tags": [
+          "observe"
+        ],
+        "summary": "Get Overview",
+        "description": "The workspace's health in one read: counts, run activity, the run queue, stuck runs,\nand providers that last refused for their limits. Owners and admins (a personal workspace's owner).",
+        "operationId": "get_overview",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObserveOverview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/observe/runs": {
+      "get": {
+        "tags": [
+          "observe"
+        ],
+        "summary": "List Observed Runs",
+        "description": "The workspace's recent runs in one list \u2014 chat and coding merged, newest first \u2014 each\nwith its status, tokens, cost, and why it failed when it did. Owners and admins.",
+        "operationId": "list_observed_runs",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "chat",
+                    "coding"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only chat runs, or only coding turns",
+              "title": "Kind"
+            },
+            "description": "Only chat runs, or only coding turns"
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page backwards: pass the last run's `created_at`",
+              "title": "Before"
+            },
+            "description": "Page backwards: pass the last run's `created_at`"
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Pass the last run's `id` too, so ties on `created_at` aren't skipped",
+              "title": "Before Id"
+            },
+            "description": "Pass the last run's `id` too, so ties on `created_at` aren't skipped"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ObservedRun"
+                  },
+                  "title": "Response List Observed Runs"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -28132,6 +29056,417 @@
         "title": "NotificationSettings",
         "description": "Which notifications you get, in every workspace. Changes waiting for your decision and\nplans waiting at a checkpoint always come through: agents wait on them."
       },
+      "ObserveCounts": {
+        "properties": {
+          "projects": {
+            "type": "integer",
+            "title": "Projects",
+            "description": "Projects you can see"
+          },
+          "members": {
+            "type": "integer",
+            "title": "Members"
+          },
+          "documents": {
+            "type": "integer",
+            "title": "Documents"
+          },
+          "document_bytes": {
+            "type": "integer",
+            "title": "Document Bytes"
+          },
+          "coding_runners": {
+            "type": "integer",
+            "title": "Coding Runners",
+            "description": "Computers registered to code your local turns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "projects",
+          "members",
+          "documents",
+          "document_bytes",
+          "coding_runners"
+        ],
+        "title": "ObserveCounts"
+      },
+      "ObserveOverview": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "jobs": {
+            "type": "string",
+            "title": "Jobs",
+            "description": "Where background work runs: local, worker, or inline"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ObserveCounts"
+          },
+          "chat": {
+            "$ref": "#/components/schemas/RunGroupSummary"
+          },
+          "coding": {
+            "$ref": "#/components/schemas/RunGroupSummary"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/ObserveQueue"
+          },
+          "stuck": {
+            "type": "integer",
+            "title": "Stuck",
+            "description": "Active runs whose lease lapsed: the worker on them is gone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "jobs",
+          "counts",
+          "chat",
+          "coding",
+          "queue",
+          "stuck"
+        ],
+        "title": "ObserveOverview",
+        "description": "The workspace's health in one read (the Ops screen's cards)."
+      },
+      "ObserveQueue": {
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "title": "Pending",
+            "description": "Dispatches published but not yet taken by a worker"
+          },
+          "oldest_pending_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending Seconds",
+            "description": "How long the oldest pending dispatch has waited"
+          },
+          "discarded_7d": {
+            "type": "integer",
+            "title": "Discarded 7D",
+            "description": "Dispatches given up on in the last 7 days"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending",
+          "oldest_pending_seconds",
+          "discarded_7d"
+        ],
+        "title": "ObserveQueue"
+      },
+      "ObservedRun": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chat",
+              "coding"
+            ],
+            "title": "Kind"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "The conversation's title or first message; the coding run's issue key"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "work_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Mode"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location",
+            "description": "Coding runs: cloud (a worker) or local (your computer)"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Kind"
+          },
+          "requested_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By Id"
+          },
+          "automation": {
+            "type": "boolean",
+            "title": "Automation",
+            "default": false
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "status",
+          "label",
+          "project_id",
+          "agent",
+          "model",
+          "input_tokens",
+          "output_tokens",
+          "requested_by_id",
+          "created_at",
+          "finished_at"
+        ],
+        "title": "ObservedRun",
+        "description": "One agent run or coding turn in the unified run history."
+      },
+      "OpsLogin": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "OpsLogin"
+      },
+      "OpsRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/OpsWorkspace"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "name",
+          "workspace",
+          "created_at"
+        ],
+        "title": "OpsRead"
+      },
+      "OpsSignup": {
+        "properties": {
+          "owner_email": {
+            "type": "string",
+            "maxLength": 320,
+            "title": "Owner Email"
+          },
+          "owner_password": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Owner Password"
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 8,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "owner_email",
+          "owner_password",
+          "email",
+          "name",
+          "password"
+        ],
+        "title": "OpsSignup",
+        "description": "Create an ops account by proving you own the workspace: your app account's email and\npassword. The ops gets its own credentials from then on \u2014 separate from your sign-in."
+      },
+      "OpsWorkspace": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "kind"
+        ],
+        "title": "OpsWorkspace"
+      },
       "OrganizationConversion": {
         "properties": {
           "name": {
@@ -30019,6 +31354,67 @@
           "times"
         ],
         "title": "RunFileRead"
+      },
+      "RunGroupSummary": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "active": {
+            "type": "integer",
+            "title": "Active",
+            "description": "Queued or running right now"
+          },
+          "waiting": {
+            "type": "integer",
+            "title": "Waiting",
+            "description": "Stopped for a person's decision: approval, changes ready, or recovery"
+          },
+          "failed_7d": {
+            "type": "integer",
+            "title": "Failed 7D"
+          },
+          "input_tokens_7d": {
+            "type": "integer",
+            "title": "Input Tokens 7D",
+            "description": "Cumulative input tokens of runs active in the last 7 days"
+          },
+          "output_tokens_7d": {
+            "type": "integer",
+            "title": "Output Tokens 7D",
+            "description": "Cumulative output tokens of runs active in the last 7 days"
+          },
+          "model_calls_7d": {
+            "type": "integer",
+            "title": "Model Calls 7D",
+            "description": "Cumulative model calls of runs active in the last 7 days",
+            "default": 0
+          },
+          "cost_usd_7d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd 7D",
+            "description": "Coding runs only; the tool's reported cost, for runs active in the last 7 days"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "active",
+          "waiting",
+          "failed_7d",
+          "input_tokens_7d",
+          "output_tokens_7d"
+        ],
+        "title": "RunGroupSummary",
+        "description": "One run kind's numbers on the overview: agent runs (chat) or coding runs."
       },
       "RunKind": {
         "type": "string",
@@ -32484,6 +33880,14 @@
     {
       "name": "audit",
       "description": "Append-only log of knowledge changes, approvals, and agent runs."
+    },
+    {
+      "name": "observe",
+      "description": "Workspace observability for owners: health counts, run summaries, the dispatch queue, and the unified chat/coding run history \u2014 all scoped to the workspace and the caller's run visibility."
+    },
+    {
+      "name": "ops",
+      "description": "The Ops app's own accounts and reads: sign-up by proving workspace ownership, httpOnly cookie sessions, workspace observability, audit, and creating an organisation workspace."
     },
     {
       "name": "health",
