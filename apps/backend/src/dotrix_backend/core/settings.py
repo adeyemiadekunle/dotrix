@@ -153,8 +153,6 @@ class Settings(DatabaseSettings):
     coding_memory: str = Field(default="4g", pattern=r"^[1-9][0-9]*[mg]$")
     coding_cpus: float = Field(default=2.0, gt=0, le=64)
     coding_docker_runtime: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.-]{1,64}$")
-    # Tokens (input + output) one coding run may use before it's stopped; 0: no limit.
-    coding_token_budget: int = Field(default=0, ge=0)
     # The GitHub organisation coding branches are pushed to: the app forks each repo there (it needs
     # Administration and Contents write on it), so the PR's CI never gets the repo's secrets. Unset:
     # branches go to the repo itself (development only).
@@ -208,9 +206,6 @@ class Settings(DatabaseSettings):
         "groq:openai/gpt-oss-120b",
         "openrouter:openai/gpt-5.5",
     ]
-    # The most tokens (input + output, over all its steps) one agent run may use before it
-    # stops; a project can set its own. 0 turns the limit off.
-    run_token_budget: int = Field(default=0, ge=0)
     # Automation runs a workspace may start per day (UTC), across all its projects; 0: no limit
     # (the default: creators run on their own keys, and their provider's limits apply).
     automation_daily_runs: int = Field(default=0, ge=0)

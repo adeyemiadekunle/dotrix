@@ -28,8 +28,8 @@ worker: the two-run limit is per worker process. Idle cached sandboxes are separ
 keeps up to one per workspace for 15 minutes. They have no coding turn executing but their Docker
 containers remain running and can retain memory or background processes. Follow-ups reuse them;
 an expired sandbox starts fresh and restores its saved transcript.
-Every person brings their own model key. Platform chat and coding token caps default to 0
-(disabled); a person can still choose a budget for their project or agent.
+Every person brings their own model key. Platform token-budget settings and coding token-cap
+enforcement are removed; a person can still choose a limit for their project or agent.
 
 ## Set up
 

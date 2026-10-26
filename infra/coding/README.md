@@ -86,8 +86,8 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
   loads (`OPENCODE_DISABLE_PROJECT_CONFIG`), and no model list is fetched.
 - **Filesystem.** The repo and `/tmp` are writable; the system is read-only. The agent runs as
   the image's unprivileged `sandbox` user (uid 1500).
-- **Limits.** Personal BYOK has no platform token cap by default (`DOTRIX_CODING_TOKEN_BUDGET=0`
-  and `DOTRIX_RUN_TOKEN_BUDGET=0`). Each coding turn still stops at `DOTRIX_CODING_TIMEOUT_MINUTES`
+- **Limits.** Personal BYOK has no platform token-budget setting or coding token-cap enforcement.
+  Each coding turn still stops at `DOTRIX_CODING_TIMEOUT_MINUTES`
   (30 by default) or Stop. Each cloud worker runs two turns at once (`DOTRIX_CODING_MAX_RUNS=2`);
   the rest wait for a free sandbox. Idle cached sandboxes have a separate per-workspace limit
   (`DOTRIX_CODING_WARM_MAX`) and timeout. They have no coding turn executing but remain running
@@ -108,7 +108,6 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 | `DOTRIX_CODING_CLAUDE_MODEL`, `DOTRIX_CODING_CODEX_MODEL` | the tool's default | A model for Claude Code or Codex |
 | `DOTRIX_CODING_OPENCODE_MODEL` | first available catalogue model | Optional server default, e.g. `xai:grok-4.7` |
 | `DOTRIX_CODING_TIMEOUT_MINUTES` | 30 | Per turn |
-| `DOTRIX_CODING_TOKEN_BUDGET` | 0 | Optional per-turn token cap; 0 disables it |
 | `DOTRIX_CODING_LEASE_SECONDS` | 120 | A lapsed lease means recovery, found within about this long |
 | `DOTRIX_CODING_WARM_MAX`, `DOTRIX_CODING_IDLE_MINUTES` | 3, 30 | Warm sandboxes kept per workspace, and for how long idle (0: every turn starts fresh and resumes from the saved session) |
 | `DOTRIX_CODING_MAX_RUNS` | 2 | Runs working at once per worker (0: no limit) |

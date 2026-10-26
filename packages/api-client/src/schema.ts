@@ -7491,7 +7491,7 @@ export interface components {
             specialist_model: string | null;
             /**
              * Token Budget
-             * @description Per-run token budget; null means the server's default
+             * @description Optional per-run token limit for this project; null: no project limit
              */
             token_budget: number | null;
             /** @description How it's going, as its owners and admins say; null: not said */
@@ -7556,7 +7556,7 @@ export interface components {
             specialist_model?: string | null;
             /**
              * Token Budget
-             * @description Send null for the server's default; leave it out to keep the current one.
+             * @description Send null to remove this project's token limit; leave it out to keep the current one.
              */
             token_budget?: number | null;
             /**

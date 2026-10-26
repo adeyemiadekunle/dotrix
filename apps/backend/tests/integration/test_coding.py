@@ -65,11 +65,12 @@ class ScriptedOpenCode(ScriptedClaude):
     step has no `step_finish` (as in the real one); `session export` gives it, with the cost."""
 
     error: str | None = None
+    input_tokens: int = 1000
 
     def lines(self) -> list[str]:
         def event(kind: str, **part: Any) -> dict[str, Any]:
             return {"type": kind, "sessionID": "ses_x", "part": {"sessionID": "ses_x", **part}}
-        tokens = {"input": 1000, "output": 200, "reasoning": 0, "cache": {"read": 0, "write": 0}}
+        tokens = {"input": self.input_tokens, "output": 200, "reasoning": 0, "cache": {"read": 0, "write": 0}}
         events: list[dict[str, Any]] = []
         for path in self.edits:
             events += [event("step_start", messageID=f"m-{path}"), event("text", messageID=f"m-{path}", text=f"Editing {path}"),
@@ -790,13 +791,12 @@ async def test_opencode_codes_on_the_model_the_server_names(
     assert "Written by Kai (on OpenCode)" in pr["body"]
 
 
-async def _opencode_turn(db_client: AsyncClient, coding, *, budget: int | None = None, error: str | None = None) -> dict:
+async def _opencode_turn(db_client: AsyncClient, coding, *, input_tokens: int = 1000, error: str | None = None) -> dict:
     ada, _, ws, kun, _, sandbox = coding
     settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
     settings.coding_agent, settings.coding_opencode_model = "opencode", "anthropic:claude-haiku-5-5"
-    if budget is not None:
-        settings.coding_token_budget = budget
     opencode = sandbox.agent = ScriptedOpenCode()
+    opencode.input_tokens = input_tokens
     opencode.edits, opencode.error = {"src/refunds.py": "def refund(amount):\n    return amount\n"}, error
     base = f"{ws}/projects/{kun['id']}"
     task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
@@ -804,11 +804,12 @@ async def _opencode_turn(db_client: AsyncClient, coding, *, budget: int | None =
     return await _approve(db_client, base, run, ada.headers)
 
 
-async def test_opencode_s_last_step_counts_against_the_token_budget(db_client: AsyncClient, coding, github) -> None:
-    # The events say 1,200 tokens, under the budget; the totals add the last step (550), over it.
-    run = await _opencode_turn(db_client, coding, budget=1500)
-    assert run["status"] == "stopped" and "token budget" in (run["error"] or ""), run
-    assert run["input_tokens"] + run["output_tokens"] == 1750 and run["pr_number"] is None and github.pulls == []
+async def test_opencode_records_large_byok_usage_without_a_platform_cap(db_client: AsyncClient, coding, github, agent_script) -> None:
+    agent_script.say("Fine.")
+    run = await _opencode_turn(db_client, coding, input_tokens=4_000_000)
+    assert run["status"] == "pr_opened", run
+    assert run["input_tokens"] + run["output_tokens"] == 4_000_750 and run["pr_number"] is not None
+    assert len(github.pulls) == 1
 
 
 async def test_a_failed_opencode_turn_keeps_its_usage(db_client: AsyncClient, coding, github) -> None:

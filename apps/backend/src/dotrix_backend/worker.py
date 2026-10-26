@@ -81,7 +81,6 @@ async def startup(ctx: dict[str, Any]) -> None:
         session_factory=sessionmaker,
         checkpointer=checkpointer,
         model_factory=settings_model_factory(settings),
-        token_budget=settings.run_token_budget,
         embedder=embedder,
         web=build_web_research(settings),
         checkouts=checkouts,
