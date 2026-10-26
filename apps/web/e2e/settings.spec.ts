@@ -127,26 +127,33 @@ test("agents: an owner lets one write documents without asking, and the workspac
   await expect(page.getByLabel("Pause changes without approval")).toBeChecked();
 });
 
-test("models: connect the organisation's own key, and give an agent a smaller model", async ({ page }) => {
+test("legacy model settings connects only your own key, and an agent can use a smaller model", async ({ page }) => {
   await signUp(page);
   await settings(page, "models");
+  await expect(page.locator(".set-in h1")).toHaveText("Your models");
   const anthropic = page.locator(".srow-wrap", { hasText: "Anthropic" });
   await anthropic.getByRole("button", { name: "Connect" }).click();
   await page.getByLabel("Anthropic API key").fill("sk-ant-e2e-" + "x".repeat(30) + "AB12");
   await page.getByRole("button", { name: "Save key" }).click();
-  await expect(page.getByText("Anthropic key saved")).toBeVisible();
+  await expect(page.getByText("Your Anthropic key is saved")).toBeVisible();
   await expect(anthropic.getByText(/Connected · key ending AB12/)).toBeVisible();
   await expect(page.getByText("sk-ant-e2e")).toHaveCount(0);
 
   // Echo (documentation) doesn't need the biggest model.
-  await page.getByLabel("Echo's model").selectOption("anthropic:claude-haiku-5-5");
-  await expect(page.getByText("Echo now uses anthropic:claude-haiku-5-5")).toBeVisible();
+  await settings(page, "agents");
+  await page.locator("#main-content .mini", { hasText: "@documentation" }).click();
+  await page.getByLabel("Model", { exact: true }).selectOption("anthropic:claude-haiku-5-5");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(/Saved as version \d+/)).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Echo's model")).toHaveValue("anthropic:claude-haiku-5-5");
+  await page.locator("#main-content .mini", { hasText: "@documentation" }).click();
+  await expect(page.getByLabel("Model", { exact: true })).toHaveValue("anthropic:claude-haiku-5-5");
 
+  await settings(page, "my-models");
   await page.locator(".srow-wrap", { hasText: "Anthropic" }).getByRole("button", { name: "Remove" }).click();
-  await page.locator(".modal").getByRole("button", { name: "Remove key" }).click();
-  await expect(page.getByText("Anthropic key removed")).toBeVisible();
+  await expect(page.getByText("Your Anthropic key is removed")).toBeVisible();
+  await page.reload();
+  await expect(anthropic.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
 });
 
 test("your own models and agents: a key of your own, a default model, and how you like Lyra to work", async ({ page }) => {

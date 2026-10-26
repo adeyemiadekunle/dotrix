@@ -874,7 +874,7 @@ function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean
           <Ic n="triangle-alert" s={15} />
           <div>
             <b>Limit reached {ago(Date.parse(k.limit_reached_at))}.</b> {k.label} refused a run: {k.limit_message} Runs on its models stop until the limit
-            resets; give some agents a smaller model below, or use a key with more room.
+            resets; choose a smaller model in Your agents, or use a key with more room.
           </div>
         </div>
       )}
@@ -934,10 +934,7 @@ function MyModels() {
       </div>
       <div className="sblock">
         <h2>Your default model</h2>
-        <SRow
-          t="New conversations"
-          d="The model your conversations start on. It's used where it can run for you: on your own key, or where the workspace lets people choose models."
-        >
+        <SRow t="New conversations" d="The model your new conversations use when you have its provider key.">
           <select
             className="select"
             style={{ width: "auto", minWidth: 220 }}
@@ -1059,7 +1056,7 @@ function MyAgents() {
     <>
       <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
         Within limits: your touches can&apos;t change what an agent may do, read, or change, and automations don&apos;t use them. A model of your own needs your
-        key for it, or the workspace&apos;s permission to choose models.
+        key for it.
       </p>
       {agents.map((a) => (
         <MyAgentRow

@@ -126,8 +126,8 @@ class Settings(DatabaseSettings):
     openshell_bin: str = "openshell"
     docker_bin: str = "docker"
     coding_image: str = "dotrix-coding:latest"  # the sandbox image (infra/coding/Dockerfile)
-    # Which tool codes: "auto" follows the key the server has (Anthropic: Claude Code, else
-    # OpenAI: Codex); naming one needs its key.
+    # Which tool codes: "auto" follows the person's keys (OpenAI: Codex, Anthropic: Claude Code,
+    # other supported providers: OpenCode); naming one needs their key for its provider.
     coding_agent: Literal["auto", "claude-code", "codex", "opencode"] = "auto"  # Default, overridable per person/run.
     coding_claude_model: str | None = None  # Claude Code's default when unset
     coding_codex_model: str | None = None  # Codex's default when unset
@@ -185,9 +185,9 @@ class Settings(DatabaseSettings):
     mistral_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("MISTRAL_API_KEY", "DOTRIX_MISTRAL_API_KEY"))
     groq_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("GROQ_API_KEY", "DOTRIX_GROQ_API_KEY"))
     openrouter_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("OPENROUTER_API_KEY", "DOTRIX_OPENROUTER_API_KEY"))
-    # Organisations connect their own provider keys (Settings → Models), stored encrypted with
+    # People connect their own provider keys (Account → Your models), stored encrypted with
     # these Fernet keys: comma-separated, the first encrypts, every one decrypts (to rotate, put
-    # a new key first and re-save). None: workspaces can't connect keys.
+    # a new key first and re-save). None: people can't connect keys.
     encryption_key: SecretStr | None = None
     # Ignored legacy compatibility flag. Every model call requires the instructing user's key.
     server_model_keys: bool = False  # Legacy setting; shared/server fallback is disabled unconditionally.
@@ -212,7 +212,7 @@ class Settings(DatabaseSettings):
     # stops; a project can set its own. 0 turns the limit off.
     run_token_budget: int = Field(default=500_000, ge=0)
     # Automation runs a workspace may start per day (UTC), across all its projects; 0: no limit
-    # (the default: organisations run on their own keys, and their provider's limits apply).
+    # (the default: creators run on their own keys, and their provider's limits apply).
     automation_daily_runs: int = Field(default=0, ge=0)
     # Tokens (input + output) a workspace's automation runs may use per UTC day; 0: no limit.
     automation_daily_tokens: int = Field(default=0, ge=0)
