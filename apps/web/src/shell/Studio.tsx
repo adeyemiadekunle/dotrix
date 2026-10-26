@@ -19,6 +19,7 @@ import { Palette } from "../overlays/Palette";
 import { Chat } from "../screens/Chat";
 import { MemberPage, Members } from "../screens/Members";
 import { Settings } from "../screens/Settings";
+import { ModelGate } from "../screens/ModelSetup";
 import { Home } from "../screens/Home";
 import { Inbox } from "../screens/Inbox";
 import { Project } from "../screens/Project";
@@ -199,13 +200,13 @@ export function Studio() {
       );
   }
   return (
-    <>
+    <ModelGate>
       <Shell>
         <Screen />
       </Shell>
       <Drawer />
       <ModalLayer />
       <Palette />
-    </>
+    </ModelGate>
   );
 }

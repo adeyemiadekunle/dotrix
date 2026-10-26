@@ -1093,15 +1093,28 @@ function NewSession({ issue0 }: { issue0: string | null }) {
   const [menu, setMenu] = useState<string | null>(null);
   const [hl, setHl] = useState(0);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const t = task(tid);
+  const t = mine.find((issue) => issue.id === tid) ?? task(tid);
   const ws = wsId();
   const pid = t?.project;
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
   const avail = useCodingAvailability(scope).data;
+  const [chosenTool, setChosenTool] = useState<keyof typeof AGENT_NAMES | null>(null);
+  const [chosenModel, setChosenModel] = useState<string | null>(null);
   // On the platform, or on your own computer when one of yours runs `dotrix runner` for this project.
   const [where, setWhere] = useState<"cloud" | "local" | null>(null);
   const location = where ?? (avail && !avail.available && avail.local_available ? "local" : "cloud");
-  const ready = location === "local" ? avail?.local_available : avail?.available;
+  const toolOptions =
+    location === "local"
+      ? (avail?.local_tools ?? []).map((agent) => ({ agent, available: true, model: null, models: [] as string[] }))
+      : (avail?.tools ?? []).filter((tool) => tool.available);
+  const agent =
+    toolOptions.find((tool) => tool.agent === chosenTool)?.agent ??
+    toolOptions.find((tool) => tool.agent === avail?.default_tool)?.agent ??
+    toolOptions[0]?.agent ??
+    null;
+  const tool = toolOptions.find((tool) => tool.agent === agent);
+  const model = agent === "opencode" && location === "cloud" ? ((tool?.models?.includes(chosenModel ?? "") ? chosenModel : tool?.model) ?? null) : null;
+  const ready = (location === "local" ? avail?.local_available : avail?.available) && !!agent;
   // In the desktop app, a folder of this computer's picked here starts its runner (core/desktop.ts).
   const here = desktop();
   const runners = useDesktopRunners();
@@ -1122,11 +1135,11 @@ function NewSession({ issue0 }: { issue0: string | null }) {
       .catch((e: unknown) => toast(e instanceof Error ? e.message : "This computer's runner didn't start", { kind: "err" }))
       .finally(() => setAdding(false));
   };
-  const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location);
+  const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location, agent, model);
   const found = menu === null ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes(menu.toLowerCase())).slice(0, 8);
   const go_ = () => {
     if (!t) return;
-    if (ready === false || start.isPending) return;
+    if (!ready || start.isPending) return;
     start.mutateAsync(note.trim() || null).then(
       (run) => open(`session=${run.session_id}`),
       () => {},
@@ -1225,10 +1238,29 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                   {location === "local" ? `On ${avail.local_runner ?? "your computer"}` : "Cloud"}
                 </button>
               )}
-              {avail && location === "cloud" && (
-                <span className="cpill" data-tip={avail.available ? "The coding tool this server runs" : (avail.reason ?? undefined)}>
-                  <Ic n="bot" s={12} />
-                  {avail.available && avail.agent ? AGENT_NAMES[avail.agent] : "Coding is off"}
+              {toolOptions.length > 0 && agent && (
+                <Pick
+                  value={agent}
+                  label="Coding tool"
+                  lead={<Ic n="bot" s={12} />}
+                  onChange={(value) => {
+                    setChosenTool(value as keyof typeof AGENT_NAMES);
+                    setChosenModel(null);
+                  }}
+                  options={toolOptions.map((tool) => [tool.agent, AGENT_NAMES[tool.agent]])}
+                />
+              )}
+              {agent === "opencode" && model && (
+                <Pick
+                  value={model}
+                  label="Coding model"
+                  onChange={setChosenModel}
+                  options={(tool?.models ?? []).map((m) => [m, m.split(":").slice(1).join(":")])}
+                />
+              )}
+              {avail && location === "cloud" && !avail.available && (
+                <span className="cpill" data-tip={avail.reason ?? undefined}>
+                  Coding is off
                 </span>
               )}
               {avail && location === "local" && !avail.local_available && !here && (
@@ -1257,7 +1289,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
               <span className="faint hide-m" style={{ fontSize: 11 }}>
                 {MOD}+Enter to start
               </span>
-              <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t || ready === false || start.isPending}>
+              <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t || !ready || start.isPending}>
                 <Ic n="code" s={13} />
                 Start coding
               </button>

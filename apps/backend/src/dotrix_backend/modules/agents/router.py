@@ -252,14 +252,12 @@ async def list_models(
     connected: Connected,
     personal: Personal,
 ) -> list[ModelOption]:
-    """The models a conversation, or an agent, can run on here: those whose provider has a key
-    (your own, `source: personal`; the workspace's, `workspace`; or the server's, `server`). A project's own model
-    is always allowed too, even if it isn't listed."""
+    """Models backed by your own provider keys. The deterministic test model is available only
+    in the isolated test environment. No workspace or server key is used."""
     return [
         ModelOption(
             id=model, provider=model.partition(":")[0], name=model.partition(":")[2],
-            source="personal" if model.partition(":")[0] in personal
-            else "workspace" if model.partition(":")[0] in connected else "server",
+            source="test" if model.startswith("e2e:") else "personal",
         )
         for model in available_models(settings, connected=connected)
     ]

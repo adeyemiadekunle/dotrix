@@ -93,12 +93,19 @@ function useCodingMutation<T, R = CodingRun>(scope: Scope | undefined, issueKey:
 export type CodingLocation = Schemas["CodingLocation"];
 
 /** Ask Kai to code an issue: on the platform (`cloud`) or on your own computer (`local`, through `dotrix runner`). */
-export function useStartCoding(scope: Scope | undefined, issueKey: string, approvalMode: ApprovalMode | null = null, location: CodingLocation = "cloud") {
+export function useStartCoding(
+  scope: Scope | undefined,
+  issueKey: string,
+  approvalMode: ApprovalMode | null = null,
+  location: CodingLocation = "cloud",
+  agent: Schemas["CodingAgent"] | null = null,
+  model: string | null = null,
+) {
   return useCodingMutation(scope, issueKey, (s, note: string | null) =>
     unwrap(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/issues/{key}/runs", {
         params: { path: { ...path(s), key: issueKey } },
-        body: { note, approval_mode: approvalMode, location },
+        body: { note, approval_mode: approvalMode, location, agent, model },
       }),
     ),
   );

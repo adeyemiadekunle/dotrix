@@ -151,6 +151,11 @@ def claude() -> ScriptedClaude:
     return ScriptedClaude()
 
 
+async def _save_key(client: AsyncClient, headers, provider: str, key: str) -> None:
+    response = await client.put(f"/v1/me/model-keys/{provider}", json={"api_key": key}, headers=headers)
+    assert response.status_code == 200, response.text
+
+
 @pytest.fixture
 async def coding(db_client: AsyncClient, github, github_world, origin: Path, claude: ScriptedClaude):
     """Ada (owner) and Cat (member); KUN connected to kunemi/api; coding on, with Claude Code."""
@@ -158,10 +163,13 @@ async def coding(db_client: AsyncClient, github, github_world, origin: Path, cla
     settings = app.state.settings
     client = app.dependency_overrides[get_github_app]()
     settings.coding_sandbox = "local"
-    settings.anthropic_api_key = SecretStr("sk-ant-test")
+    settings.encryption_key = SecretStr(Fernet.generate_key().decode())
+    app.state.secrets = app.state.runner.secrets = Secrets.from_settings(settings)
     settings.github_app_id, settings.github_app_slug = "4242", "dotrix-test"
     settings.github_app_private_key = SecretStr(client.private_key)
     ada, cat, ws, kun, mob = await github_world()
+    for person in (ada, cat):
+        await _save_key(db_client, person.headers, "anthropic", "test-anthropic-personal-key-" + str(person.id))
     installation = (await db_client.post(f"{ws}/github/installations", json={"installation_id": 111, "code": "code-1"},
                                           headers=ada.headers)).json()
     connected = await db_client.put(f"{ws}/projects/{kun['id']}/repository",
@@ -177,7 +185,7 @@ async def coding(db_client: AsyncClient, github, github_world, origin: Path, cla
     jobs = app.state.jobs
     jobs.ctx = dataclasses.replace(jobs.ctx, coding=CodingWorker(
         jobs.ctx.session_factory, settings, sandbox, client, repo_url=repo_url, reviewer=app.state.runner,
-        pool=WarmPool(3600, 0),  # each turn starts fresh here; the warm sandbox has a test of its own
+        secrets=app.state.secrets, pool=WarmPool(3600, 0),  # each turn starts fresh here; the warm sandbox has a test of its own
     ))
     yield ada, cat, ws, kun, mob, sandbox
 
@@ -195,9 +203,14 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     })).json()
 
     availability = (await db_client.get(f"{base}/coding", headers=cat.headers)).json()
-    assert availability == {"available": True, "agent": "claude-code", "sandbox": "local", "reason": None,
-                            "local_available": False, "local_runner": None,
-                            "local_reason": "Run `dotrix runner` in a checkout of KUN on your computer first"}
+    expected = {"available": True, "agent": "claude-code", "sandbox": "local", "reason": None,
+                "local_available": False, "local_runner": None,
+                "local_reason": "Run `dotrix runner` in a checkout of KUN on your computer first"}
+    assert {name: availability[name] for name in expected} == expected
+    assert availability["default_tool"] == "claude-code" and availability["local_tools"] == []
+    assert {tool["agent"]: tool["available"] for tool in availability["tools"]} == {
+        "claude-code": True, "codex": False, "opencode": True,
+    }
     # Members can't instruct the coding agent unless the workspace lets them.
     assert (await db_client.post(f"{base}/coding/issues/{story['key']}/runs", json={},
                                  headers=cat.headers)).status_code == 403
@@ -254,7 +267,8 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     # The token was for this repo only, with push and PR rights; the agent never had it.
     assert github.token_requests[-1] == {"repository_ids": [9001], "permissions": {
         "metadata": "read", "contents": "write", "pull_requests": "write"}}
-    assert set(claude.env) - {"ANTHROPIC_BASE_URL"} == {"PATH", "HOME", "LANG", "ANTHROPIC_API_KEY"} and claude.env["ANTHROPIC_API_KEY"] == "sk-ant-test"
+    assert set(claude.env) - {"ANTHROPIC_BASE_URL"} == {"PATH", "HOME", "LANG", "ANTHROPIC_API_KEY"}
+    assert claude.env["ANTHROPIC_API_KEY"] == "test-anthropic-personal-key-" + str(ada.id)
     assert claude.argv[:3] == ["claude", "-p", "--bare"] and "--dangerously-skip-permissions" not in claude.argv
 
     # The issue is the coding tool's, in review, with the PR linked; a person closes it.
@@ -355,10 +369,9 @@ async def test_rejecting_stopping_and_when_it_isnt_available(
     epic = (await db_client.post(f"{base}/issues", json={"type": "epic", "title": "Big"}, headers=ada.headers)).json()
     assert (await db_client.post(f"{base}/coding/issues/{epic['key']}/runs", json={},
                                  headers=ada.headers)).status_code == 422
-    app = db_client._transport.app  # type: ignore[attr-defined]
-    app.state.settings.anthropic_api_key = None
+    await db_client.delete("/v1/me/model-keys/anthropic", headers=ada.headers)
     reason = (await db_client.get(f"{base}/coding", headers=ada.headers)).json()["reason"]
-    assert "Anthropic key" in reason
+    assert "Connect your own model provider" in reason
 
 
 async def test_a_running_agent_is_stopped_and_nothing_is_pushed(
@@ -661,16 +674,14 @@ async def test_a_session_keeps_its_sandbox_and_resumes_its_conversation(
     """Phase B: a follow-up runs in the sandbox the last turn left (warm), resuming Claude Code's
     conversation; after a restart a fresh sandbox gets the saved transcript and still resumes; closing
     the session drops the sandbox and the transcript."""
-    from cryptography.fernet import Fernet
 
-    from dotrix_backend.core.crypto import Secrets
 
     ada, _, ws, kun, _, _ = coding
     app = db_client._transport.app  # type: ignore[attr-defined]
     jobs = app.state.jobs
     sandbox = TranscriptSandbox(claude)
     worker = dataclasses.replace(jobs.ctx.coding, sandbox=sandbox, storage=storage,
-                                 secrets=Secrets(Fernet.generate_key().decode()), pool=WarmPool(3600, 3))
+                                 secrets=app.state.secrets, pool=WarmPool(3600, 3))
     jobs.ctx = dataclasses.replace(jobs.ctx, coding=worker)
     claude.found_transcript, claude.argvs = [], []
     base = f"{ws}/projects/{kun['id']}"
@@ -749,7 +760,7 @@ async def test_opencode_codes_on_the_model_the_server_names(
     ada, _, ws, kun, _, sandbox = coding
     settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
     settings.coding_agent, settings.coding_opencode_model = "opencode", "openai:gpt-5.5"
-    settings.openai_api_key = SecretStr("sk-openai-test")
+    await _save_key(db_client, ada.headers, "openai", "test-opencode-openai-personal-key")
     opencode = sandbox.agent = ScriptedOpenCode()
     opencode.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
     opencode.result = "Added refund()."
@@ -771,7 +782,7 @@ async def test_opencode_codes_on_the_model_the_server_names(
     assert re.fullmatch(r"ses_[0-9a-f]{32}", opencode.argv[-1])  # the session's own id: made, then continued
     assert "OPENCODE_DISABLE_PROJECT_CONFIG=1" in opencode.argv
     assert set(opencode.env) - {"OPENAI_BASE_URL"} == {"PATH", "HOME", "LANG", "OPENAI_API_KEY"}
-    assert opencode.env["OPENAI_API_KEY"] == "sk-openai-test"
+    assert opencode.env["OPENAI_API_KEY"] == "test-opencode-openai-personal-key"
     # OpenCode isn't an assignee of its own: the issue shows the built-in coding agent.
     issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=ada.headers)).json()
     assert issue["status"] == "review" and issue["assignee_agent"] == "coding-agent"
@@ -806,53 +817,23 @@ async def test_a_failed_opencode_turn_keeps_its_usage(db_client: AsyncClient, co
     assert (run["input_tokens"], run["output_tokens"], run["cost_usd"]) == (1500, 250, 0.2) and github.pulls == []
 
 
-async def test_coding_runs_on_the_same_keys_as_chat(db_client: AsyncClient, coding, claude: ScriptedClaude, agent_script) -> None:
-    """The person's own key (where the workspace allows them), else the workspace's, else the
-    server's when it lends its keys: who asked for the run decides, not who approves it."""
+async def test_coding_uses_only_the_requesters_own_key(db_client: AsyncClient, coding, claude: ScriptedClaude, agent_script) -> None:
     ada, cat, ws, kun, _, _ = coding
-    # Fake keys, built like test_model_keys' so no key-shaped literal sits in the source.
-    workspace_key, own_key, server_key = ("sk-ant-test-" + "x" * 20 + who for who in ("WORK", "MINE", "SERV"))
     app = db_client._transport.app  # type: ignore[attr-defined]
-    settings = app.state.settings
-    app.state.secrets = app.state.runner.secrets = app.state.jobs.ctx.coding.secrets = Secrets(Fernet.generate_key().decode())
-    settings.anthropic_api_key = None  # the server has no key of its own
+    own_key = "test-personal-coding-key-" + "x" * 24
+    app.state.settings.anthropic_api_key = SecretStr("legacy-server-key-never-used")
+    app.state.settings.server_model_keys = True
+    await _save_key(db_client, ada.headers, "anthropic", own_key)
     base = f"{ws}/projects/{kun['id']}"
     claude.edits = {"src/payments.py": "# tidy\n"}
-    agent_script.say("Fine.", "Fine.", "Fine.")
-
-    async def code(title: str) -> dict:
-        task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": title}, headers=ada.headers)).json()
-        run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
-        return await _approve(db_client, base, run, ada.headers)
-
-    gone = (await db_client.get(f"{base}/coding", headers=ada.headers)).json()
-    assert gone["available"] is False and "Settings → Models" in gone["reason"]
-
-    # The workspace's key.
-    assert (await db_client.put(f"{ws}/model-keys/anthropic", json={"api_key": workspace_key},
-                                headers=ada.headers)).status_code == 200
-    assert (await db_client.get(f"{base}/coding", headers=cat.headers)).json()["agent"] == "claude-code"
-    assert (await code("Tidy payments"))["status"] == "pr_opened"
-    assert claude.env["ANTHROPIC_API_KEY"] == workspace_key
-
-    # Ada's own key, once the workspace lets people's own keys run what they start.
-    assert (await db_client.put("/v1/me/model-keys/anthropic", json={"api_key": own_key},
-                                headers=ada.headers)).status_code == 200
-    assert (await db_client.patch(ws, json={"personal_keys": True}, headers=ada.headers)).status_code == 200
-    assert (await code("Tidy refunds"))["status"] == "pr_opened"
-    assert claude.env["ANTHROPIC_API_KEY"] == own_key
-
-    # Without the workspace's key or hers, the server's is used only where it lends its keys.
-    assert (await db_client.delete("/v1/me/model-keys/anthropic", headers=ada.headers)).status_code == 200
-    assert (await db_client.delete(f"{ws}/model-keys/anthropic", headers=ada.headers)).status_code == 204
-    settings.anthropic_api_key, settings.server_model_keys = SecretStr(server_key), False
-    try:
-        assert (await db_client.get(f"{base}/coding", headers=ada.headers)).json()["available"] is False
-        settings.server_model_keys = True
-        assert (await code("Tidy invoices"))["status"] == "pr_opened"
-        assert claude.env["ANTHROPIC_API_KEY"] == server_key
-    finally:
-        settings.server_model_keys = True
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Tidy payments"}, headers=ada.headers)).json()
+    request = await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)
+    agent_script.say("Fine.")
+    done = await _approve(db_client, base, request.json(), ada.headers)
+    assert done["status"] == "pr_opened" and claude.env["ANTHROPIC_API_KEY"] == own_key
+    await db_client.delete("/v1/me/model-keys/anthropic", headers=ada.headers)
+    assert not (await db_client.get(f"{base}/coding", headers=ada.headers)).json()["available"]
+    assert (await db_client.get(f"{base}/coding", headers=cat.headers)).json()["available"]
 
 
 # -- recovery: leases, fencing, and settling an uncertain run from what GitHub shows ---------------
@@ -872,6 +853,42 @@ async def _asked(db_client: AsyncClient, coding, title: str = "Refund a payment"
     run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={}, headers=ada.headers)).json()
     assert run["status"] == "awaiting_approval", run
     return base, run
+
+
+async def test_tool_choice_personal_default_and_session_tool_are_kept(db_client: AsyncClient, coding) -> None:
+    ada, _, ws, kun, _, _ = coding
+    await _save_key(db_client, ada.headers, "openai", "test-openai-personal-provider-key")
+    await _save_key(db_client, ada.headers, "xai", "test-xai-personal-provider-key")
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": "claude-code"}, headers=ada.headers)
+    available = (await db_client.get(f"{base}/coding", headers=ada.headers)).json()
+    assert available["default_tool"] == "claude-code"
+    assert {t["agent"] for t in available["tools"] if t["available"]} == {"claude-code", "codex", "opencode"}
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Tool choice"}, headers=ada.headers)).json()
+    first = await db_client.post(f"{base}/coding/issues/{task['key']}/runs",
+                                 json={"agent": "opencode", "model": "xai:grok-4.7"}, headers=ada.headers)
+    assert first.status_code == 201, first.text
+    run = first.json()
+    assert (run["agent"], run["model"]) == ("opencode", "xai:grok-4.7")
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "reject"}, headers=ada.headers)
+    await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": "codex"}, headers=ada.headers)
+    follow = await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns",
+                                  json={"message": "Try this approach instead"}, headers=ada.headers)
+    assert follow.status_code == 201, follow.text
+    assert (follow.json()["agent"], follow.json()["model"]) == ("opencode", "xai:grok-4.7")
+
+
+async def test_approval_needs_the_recorded_tools_key_even_if_another_tool_is_available(db_client: AsyncClient, coding) -> None:
+    ada, _, ws, kun, _, _ = coding
+    await _save_key(db_client, ada.headers, "openai", "test-openai-personal-provider-key")
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Recorded provider"}, headers=ada.headers)).json()
+    request = await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"agent": "codex"}, headers=ada.headers)
+    assert request.status_code == 201, request.text
+    await db_client.delete("/v1/me/model-keys/openai", headers=ada.headers)
+    result = await db_client.post(f"{base}/coding/runs/{request.json()['id']}/decision",
+                                  json={"decision": "approve"}, headers=ada.headers)
+    assert result.status_code == 409 and "codex" in result.text
 
 
 def _heads(origin: Path):
@@ -1247,7 +1264,7 @@ async def test_accepted_changes_are_pushed_without_a_model_key(
     claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
     await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
     assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()["status"] == "changes_ready"
-    db_client._transport.app.state.settings.anthropic_api_key = None  # type: ignore[attr-defined]
+    await db_client.delete("/v1/me/model-keys/anthropic", headers=ada.headers)
     agent_script.say("Fine.")
     done = await _approve(db_client, base, run, ada.headers)
     assert done["status"] == "pr_opened" and len(github.pulls) == 1, done

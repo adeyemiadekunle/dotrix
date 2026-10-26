@@ -10,6 +10,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid_utils.compat import uuid7
 
+from dotrix_backend.core.crypto import Secrets
 from dotrix_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from dotrix_backend.core.jobs import Jobs, QueuedJobs
 from dotrix_backend.core.settings import Settings
@@ -17,6 +18,7 @@ from dotrix_backend.core.storage import BlobStorage, StorageUnavailable
 from dotrix_backend.modules.agents.queue import RunQueue
 from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
+from dotrix_backend.modules.auth.models import User
 from dotrix_backend.modules.connectors.github_app import GitHubApp, GitHubAppClient
 from dotrix_backend.modules.connectors.models import ConnectedRepo
 from dotrix_backend.modules.execution.models import RunDispatch
@@ -24,7 +26,7 @@ from dotrix_backend.modules.execution.service import RunDispatcher, record_dispa
 from dotrix_backend.modules.issues.models import AgentAssignee, Issue, IssueStatus, IssueType
 from dotrix_backend.modules.issues.schemas import IssueRead, IssueUpdate
 from dotrix_backend.modules.issues.service import IssueActor, IssueService
-from dotrix_backend.modules.model_keys.service import key_providers
+from dotrix_backend.modules.model_keys.service import run_keys
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
@@ -65,8 +67,9 @@ from .schemas import (
     CodingScreenshot,
     CodingSessionRead,
     CodingSessionUpdate,
+    CodingToolOption,
 )
-from .tools import choose_agent, model_for
+from .tools import choose_agent, coding_models, model_for, run_key, tool_for
 
 MAX_LISTED = 50
 logger = logging.getLogger(__name__)
@@ -113,22 +116,68 @@ class CodingBusy(Conflict):
 
 
 class CodingService:
-    def __init__(self, session: AsyncSession, settings: Settings, jobs: Jobs) -> None:
+    def __init__(self, session: AsyncSession, settings: Settings, jobs: Jobs, *, secrets: Secrets | None = None) -> None:
         self.session, self.settings, self.jobs = session, settings, jobs
+        self.secrets = secrets or Secrets.from_settings(settings)
+
+    async def _keys(self, project: Project, user_id: uuid.UUID | None) -> dict[str, str]:
+        keys = await run_keys(self.session, self.secrets, project.workspace_id, user_id)
+        return keys.keys
+
+    async def _selection(
+        self, project: Project, user_id: uuid.UUID, location: CodingLocation, *,
+        agent: CodingAgent | None = None, model: str | None = None, fixed: bool = False,
+    ) -> tuple[CodingAgent, str | None]:
+        user = await self.session.get(User, user_id)
+        preferred = user.default_coding_tool if user else None
+        if location is CodingLocation.LOCAL:
+            runner, reason = await self.local_availability(project, user_id)
+            if reason or not runner or not runner.tools:
+                raise CodingUnavailable(reason or "No coding tool is installed on your computer")
+            selected = agent or (CodingAgent(preferred) if preferred in runner.tools else CodingAgent(runner.tools[0]))
+            if selected.value not in runner.tools:
+                raise CodingUnavailable(f"{selected.value} isn't installed on your computer")
+            return selected, model if fixed else None
+        keys = await self._keys(project, user_id)
+        selected = agent or choose_agent(
+            self.settings, set(keys), preferred=preferred, preferred_model=user.default_model if user else None,
+        )
+        if selected is None:
+            raise CodingUnavailable("Connect a model provider in Account → Your models before coding")
+        chosen = model if fixed or model is not None else model_for(
+            self.settings, selected, set(keys), preferred_model=user.default_model if user else None,
+        )
+        if not fixed and model is not None:
+            if selected is not CodingAgent.OPENCODE or model not in coding_models(self.settings, set(keys)):
+                raise Unprocessable("Choose an available provider:model for OpenCode")
+        tool = tool_for(selected, chosen)
+        if tool is None or not run_key(tool, self.settings, keys):
+            raise CodingUnavailable(f"Connect a compatible provider key to use {selected.value}")
+        return selected, chosen
 
     async def availability(self, project: Project, user_id: uuid.UUID | None) -> CodingAvailability:
         """Whether `user_id` (who asks for the run, and whose own key it may use) can code here."""
-        agent = choose_agent(self.settings, await key_providers(self.session, project.workspace_id, user_id))
+        keys = await self._keys(project, user_id)
+        providers = set(keys)
+        user = await self.session.get(User, user_id) if user_id else None
+        agent = choose_agent(self.settings, providers, preferred=user.default_coding_tool if user else None,
+                             preferred_model=user.default_model if user else None)
+        tools = []
+        for candidate in CodingAgent:
+            model = model_for(self.settings, candidate, providers, preferred_model=user.default_model if user else None)
+            tool = tool_for(candidate, model)
+            usable = tool is not None and bool(run_key(tool, self.settings, keys))
+            tools.append(CodingToolOption(
+                agent=candidate, available=usable, model=model,
+                models=coding_models(self.settings, providers) if candidate is CodingAgent.OPENCODE else [],
+                reason=None if usable else "Connect a compatible provider in Account → Your models",
+            ))
         sandbox = None if self.settings.coding_sandbox == "off" else self.settings.coding_sandbox
         reason = None
         if sandbox is None:
             reason = "Coding runs aren't set up on this server (DOTRIX_CODING_SANDBOX)"
-        elif agent is None and self.settings.coding_agent == "opencode":
-            reason = ("OpenCode needs DOTRIX_CODING_OPENCODE_MODEL and a key for its provider "
-                      "(Settings → Models, or your own in Account → Your models)")
         elif agent is None:
-            reason = ("Coding needs an Anthropic key (Claude Code) or an OpenAI key (Codex): "
-                      "Settings → Models, or your own in Account → Your models")
+            reason = "Connect your own model provider in Account → Your models"
         elif not GitHubAppClient(self.settings).configured:
             reason = "The dotrix GitHub App isn't set up on this server"
         elif await self._repo(project) is None:
@@ -136,7 +185,8 @@ class CodingService:
         runner, local_reason = await self.local_availability(project, user_id)
         return CodingAvailability(available=reason is None, agent=agent, sandbox=sandbox, reason=reason,
                                   local_available=local_reason is None, local_runner=runner.name if runner else None,
-                                  local_reason=local_reason)
+                                  local_reason=local_reason, tools=tools, default_tool=agent,
+                                  local_tools=[CodingAgent(t) for t in runner.tools] if runner else [])
 
     async def local_availability(self, project: Project, user_id: uuid.UUID | None) -> tuple[CodingRunner | None, str | None]:
         """Whether `user_id` can code here on their own computer: the runner that would (the one seen
@@ -167,7 +217,8 @@ class CodingService:
         that conversation, and the plan version it builds from."""
         issue = await self._codable(access.project, access.member.user_id, key, location=data.location)
         run = await self._create(access.project, access.member, issue, data.note, CodingOrigin.START,
-                                 approval=data.approval_mode, location=data.location)
+                                 approval=data.approval_mode, location=data.location,
+                                 requested_agent=data.agent, requested_model=data.model)
         run.thread_id, run.plan_id = thread_id, plan_id
         return await self._settle(access, run)
 
@@ -194,10 +245,13 @@ class CodingService:
             CodingLocation.CLOUD,
         )
         turns, issue, with_branch, earlier = await self._next_turn(access, session_id, location=location)
+        previous = next(t for t in reversed(turns) if t.revert_of is None)
+        selection = await self._selection(access.project, access.member.user_id, location,
+                                          agent=previous.agent, model=previous.model, fixed=True)
         run = await self._create(
             access.project, access.member, issue, data.message, CodingOrigin.FOLLOW_UP,
             session_id=session_id, turn=turns[-1].turn + 1, earlier=earlier, carry=with_branch,
-            approval=data.approval_mode, location=location,
+            approval=data.approval_mode, location=location, selection=selection,
         )
         return await self._settle(access, run)
 
@@ -290,17 +344,16 @@ class CodingService:
         session_id: uuid.UUID | None = None, turn: int = 1, earlier: list[tuple[int, str]] | None = None,
         carry: CodingRun | None = None, approval: ApprovalMode | None = None,
         location: CodingLocation = CodingLocation.CLOUD, agent: CodingAgent | None = None,
+        requested_agent: CodingAgent | None = None, requested_model: str | None = None,
+        selection: tuple[CodingAgent, str | None] | None = None,
     ) -> CodingRun:
         model: str | None = None
         if agent is not None:  # a revert: the session's engine, on record only (nothing runs it)
             pass
-        elif location is CodingLocation.LOCAL:  # whichever tool that computer has, on its own default model
-            runner, _ = await self.local_availability(project, member.user_id)
-            agent = CodingAgent(runner.tools[0]) if runner and runner.tools else CodingAgent.CLAUDE_CODE
         else:
-            found = choose_agent(self.settings, await key_providers(self.session, project.workspace_id, member.user_id))
-            assert found is not None
-            agent, model = found, model_for(self.settings, found)
+            agent, model = selection or await self._selection(
+                project, member.user_id, location, agent=requested_agent, model=requested_model,
+            )
         repo = await self._repo(project)
         assert repo is not None
         run_id = uuid7()
@@ -395,10 +448,14 @@ class CodingService:
             _, why = await self.local_availability(access.project, run.requested_by_id)
             if why:
                 raise CodingUnavailable(why)
+            await self._selection(access.project, run.requested_by_id, run.location,
+                                  agent=run.agent, model=run.model, fixed=True)
         else:
             available = await self.availability(access.project, run.requested_by_id)
             if not available.available:
                 raise CodingUnavailable(available.reason or "Coding runs aren't available")
+            await self._selection(access.project, run.requested_by_id, run.location,
+                                  agent=run.agent, model=run.model, fixed=True)
         run.status = CodingRunStatus.QUEUED
         # The issue is the coding tool's now (its own rules: it may move it to review, never done).
         issue = await IssueService(self.session).get(access.project, run.issue_key)

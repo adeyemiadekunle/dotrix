@@ -1,4 +1,4 @@
-"""An organisation's own model provider keys (Anthropic, OpenAI, Google), encrypted at rest."""
+"""Personal provider keys and the retired encrypted workspace-key storage."""
 from __future__ import annotations
 
 import uuid
@@ -11,6 +11,7 @@ from dotrix_backend.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, Wo
 
 
 class WorkspaceModelKey(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):
+    """Legacy rows retained for migration compatibility; never read by APIs or model runs."""
     __tablename__ = "workspace_model_keys"
     __table_args__ = (UniqueConstraint("workspace_id", "provider"),)  # one key per provider
 
@@ -24,8 +25,7 @@ class WorkspaceModelKey(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixi
 
 
 class UserModelKey(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """A person's own key for a provider (Account → Models), used for the runs they start where
-    the workspace allows personal keys (always in their personal workspace)."""
+    """A person's own provider key, used only for their instructed runs in any workspace."""
 
     __tablename__ = "user_model_keys"
     __table_args__ = (UniqueConstraint("user_id", "provider"),)

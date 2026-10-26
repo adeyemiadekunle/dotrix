@@ -194,7 +194,7 @@ class AgentService:
         thread_id = data.thread_id or uuid7()
         # The person's own keys run what they start (where allowed); automations use the workspace's.
         run_key = await run_keys(
-            self.session, self.runner.secrets, project.workspace_id, member.user_id, own=automation_id is None
+            self.session, self.runner.secrets, project.workspace_id, member.user_id
         )
         if data.thread_id is not None:
             await self._check_thread(project.id, data.thread_id, member)

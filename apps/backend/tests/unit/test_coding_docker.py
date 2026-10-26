@@ -31,6 +31,32 @@ def test_the_proxy_lets_each_tool_reach_its_model_api(monkeypatch: pytest.Monkey
     assert egress_allow(ClaudeCode()) == "llm-proxy.internal:8080"
 
 
+async def test_the_docker_daemon_does_not_inherit_the_agents_egress_proxy(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DOCKER_HOST", "tcp://docker-proxy:2375")
+    sandbox = DockerSandbox(Settings(database_url="postgresql+asyncpg://localhost/unused", jwt_secret="x" * 40))
+    calls = []
+
+    async def cli(*args, **kwargs):
+        calls.append((args, kwargs))
+        return ""
+
+    monkeypatch.setattr(sandbox, "cli", cli)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    box = await sandbox.open(uuid.uuid4(), repo, Codex(), "selected-test-key")
+    try:
+        args, kwargs = next((args, kwargs) for args, kwargs in calls if "--init" in args)
+        client = kwargs["env"]
+        assert client["DOCKER_HOST"] == "tcp://docker-proxy:2375"
+        assert not any(name in client for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"))
+        assert "HTTP_PROXY=http://egress:3128" in args
+        assert "NO_PROXY=localhost,127.0.0.1,::1" in args
+        assert client["OPENAI_API_KEY"] == client["CODEX_API_KEY"] == "selected-test-key"
+        assert "selected-test-key" not in " ".join(args)
+    finally:
+        await box.close()
+
+
 @pytest.mark.skipif(not _docker_ready(), reason=f"needs Docker and {IMAGE} (docker build -t {IMAGE} infra/coding)")
 async def test_a_docker_sandbox_edits_the_repo_and_reaches_nothing_else(tmp_path: Path) -> None:
     repo = tmp_path / "repo"

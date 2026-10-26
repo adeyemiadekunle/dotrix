@@ -154,42 +154,25 @@ async def test_conversations_are_private_to_whoever_started_them(world, db_clien
     assert {r["id"] for r in (await db_client.get(f"{base}/agent/runs", headers=bob.headers)).json()} == {bobs["id"], paused["id"]}
 
 
-async def test_a_persons_own_key_and_default_model(world, db_client: AsyncClient, agent_script) -> None:
+async def test_a_persons_key_and_default_are_independent_in_every_workspace(world, db_client: AsyncClient, agent_script) -> None:
     ada, bob, ws, base = await world()
-    await db_client.put(f"{ws}/model-keys/anthropic", json={"api_key": ANTHROPIC}, headers=ada.headers)
-
-    # Bob's default model isn't his to choose on the team's key (members don't choose models).
+    assert (await db_client.put("/v1/me/model-keys/anthropic", json={"api_key": ANTHROPIC}, headers=ada.headers)).status_code == 200
     mine = await db_client.put("/v1/me/models", json={"default_model": "anthropic:claude-haiku-5-5"}, headers=bob.headers)
     assert mine.status_code == 200 and mine.json()["default_model"] == "anthropic:claude-haiku-5-5"
-    assert (await db_client.put("/v1/me/models", json={"default_model": "acme:x"}, headers=bob.headers)).status_code == 422
-    agent_script.say("On the team's key.")
-    run = await _ask(db_client, base, bob.headers, "hi")
-    assert agent_script.models_used[-1] == "anthropic:claude-sonnet-5" and agent_script.keys_used[-1]["anthropic"] == ANTHROPIC
-    assert run["status"] == "completed"
-
-    # With his own key, his runs use it, and his default model with it.
+    assert (await db_client.get(f"{ws}/models", headers=bob.headers)).json() == []
     saved = await db_client.put("/v1/me/model-keys/anthropic", json={"api_key": BOBS}, headers=bob.headers)
     assert saved.status_code == 200 and BOBS not in saved.text
     assert next(k for k in saved.json()["keys"] if k["provider"] == "anthropic")["last4"] == "BOB1"
     models = (await db_client.get(f"{ws}/models", headers=bob.headers)).json()
-    assert {m["source"] for m in models if m["provider"] == "anthropic"} == {"personal"}
+    assert models and all(m["source"] == "personal" for m in models)
     agent_script.say("On Bob's key.")
     await _ask(db_client, base, bob.headers, "hi again")
     assert agent_script.models_used[-1] == "anthropic:claude-haiku-5-5" and agent_script.keys_used[-1]["anthropic"] == BOBS
-    # Ada's runs still use the team's.
     agent_script.say("Ada.")
     await _ask(db_client, base, ada.headers, "hello")
     assert agent_script.keys_used[-1]["anthropic"] == ANTHROPIC
-
-    # The organisation can turn personal keys off: then the team's key runs everything.
-    off = await db_client.patch(ws, json={"personal_keys": False}, headers=ada.headers)
-    assert off.status_code == 200 and off.json()["personal_keys"] is False
-    assert (await db_client.patch(ws, json={"personal_keys": True}, headers=bob.headers)).status_code == 403
-    agent_script.say("Team again.")
-    await _ask(db_client, base, bob.headers, "and now")
-    assert agent_script.keys_used[-1]["anthropic"] == ANTHROPIC and agent_script.models_used[-1] == "anthropic:claude-sonnet-5"
-
     assert (await db_client.delete("/v1/me/model-keys/anthropic", headers=bob.headers)).status_code == 200
+    assert (await db_client.get(f"{ws}/models", headers=bob.headers)).json() == []
     assert (await db_client.delete("/v1/me/model-keys/anthropic", headers=bob.headers)).status_code == 404
 
 
@@ -227,7 +210,7 @@ async def test_a_run_stopped_at_its_limit_continues_now_or_when_it_resets(
     world, db_client: AsyncClient, agent_script, db_session
 ) -> None:
     ada, _, ws, base = await world()
-    await db_client.put(f"{ws}/model-keys/anthropic", json={"api_key": ANTHROPIC}, headers=ada.headers)
+    await db_client.put("/v1/me/model-keys/anthropic", json={"api_key": ANTHROPIC}, headers=ada.headers)
     agent_script.model = RateLimited.of("never")
     stopped = await _ask(db_client, base, ada.headers, "Summarise the project")
     assert stopped["status"] == "failed" and stopped["error_kind"] == "model_limit"

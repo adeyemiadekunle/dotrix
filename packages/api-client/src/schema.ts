@@ -2198,9 +2198,8 @@ export interface paths {
         };
         /**
          * List Models
-         * @description The models a conversation, or an agent, can run on here: those whose provider has a key
-         *     (your own, `source: personal`; the workspace's, `workspace`; or the server's, `server`). A project's own model
-         *     is always allowed too, even if it isn't listed.
+         * @description Models backed by your own provider keys. The deterministic test model is available only
+         *     in the isolated test environment. No workspace or server key is used.
          */
         get: operations["list_models"];
         put?: never;
@@ -3966,7 +3965,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/workspaces/{workspace_id}/model-keys": {
+    "/v1/workspaces/{workspace_id}/model-access": {
         parameters: {
             query?: never;
             header?: never;
@@ -3974,42 +3973,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Model Keys
-         * @description Each model provider: whether this workspace has its own key (its last four characters,
-         *     never the key), whether the server's key stands in without one, the provider's models, and
-         *     when it last refused a run for a rate limit or quota. Owners and admins.
+         * Model Access
+         * @description Whether your runs have a usable provider here. Only availability is shared, never keys.
          */
-        get: operations["list_model_keys"];
+        get: operations["model_access"];
         put?: never;
         post?: never;
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/workspaces/{workspace_id}/model-keys/{provider}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Save Model Key
-         * @description Connect or replace this workspace's key for `anthropic`, `openai`, or `google_genai`. It's
-         *     stored encrypted and used for every agent run here that picks one of the provider's models.
-         *     503 `encryption_not_configured` when the server can't store keys. Owners and admins; audited.
-         */
-        put: operations["save_model_key"];
-        post?: never;
-        /**
-         * Remove Model Key
-         * @description Remove this workspace's key for a provider; its models stop running here unless the server
-         *     lends its own. Owners and admins; audited.
-         */
-        delete: operations["remove_model_key"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4025,16 +3995,34 @@ export interface paths {
         /**
          * Get My Models
          * @description Your own model keys (last four characters only) and your default model for new
-         *     conversations. Your keys run what you start: always in your personal workspace, and in an
-         *     organisation that allows personal keys (otherwise its own key does).
+         *     conversations. Your own key pays for your runs in every workspace.
          */
         get: operations["get_my_models"];
         /**
          * Set My Default Model
-         * @description Your default model for new conversations (null: each project's). It's used where it can
-         *     run: with your own key for its provider, or where the workspace lets people choose models.
+         * @description Your default model for new conversations (null: each project's), using your own provider key.
          */
         put: operations["set_my_default_model"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/coding-tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set My Coding Tool
+         * @description Your default for new coding sessions; null chooses a tool with an available provider key.
+         */
+        put: operations["set_my_coding_tool"];
         post?: never;
         delete?: never;
         options?: never;
@@ -4052,14 +4040,14 @@ export interface paths {
         get?: never;
         /**
          * Save My Model Key
-         * @description Connect or replace your own key for `anthropic`, `openai`, or `google_genai`; stored
+         * @description Connect or replace your own key for a supported model provider; stored
          *     encrypted, never shown again. 503 `encryption_not_configured` when the server can't store keys.
          */
         put: operations["save_my_model_key"];
         post?: never;
         /**
          * Remove My Model Key
-         * @description Remove your own key for a provider; what you start uses the workspace's key again.
+         * @description Remove your own key; this provider becomes unavailable to your runs.
          */
         delete: operations["remove_my_model_key"];
         options?: never;
@@ -5082,7 +5070,7 @@ export interface components {
         CodingAvailability: {
             /** Available */
             available: boolean;
-            /** @description The engine Kai, the coding agent, would code on: OpenCode when the server names it, else Claude Code with an Anthropic key, else Codex */
+            /** @description Your compatible default tool: Codex with OpenAI, Claude Code with Anthropic, or OpenCode with another connected provider */
             agent: components["schemas"]["CodingAgent"] | null;
             /**
              * Sandbox
@@ -5110,6 +5098,11 @@ export interface components {
              * @description Why not on your computer
              */
             local_reason?: string | null;
+            /** Tools */
+            tools?: components["schemas"]["CodingToolOption"][];
+            /** Local Tools */
+            local_tools?: components["schemas"]["CodingAgent"][];
+            default_tool?: components["schemas"]["CodingAgent"] | null;
         };
         /**
          * CodingClaim
@@ -5333,6 +5326,13 @@ export interface components {
              * @default cloud
              */
             location: components["schemas"]["CodingLocation"];
+            /** @description The tool for this session; otherwise your compatible default */
+            agent?: components["schemas"]["CodingAgent"] | null;
+            /**
+             * Model
+             * @description An allowed provider:model for OpenCode
+             */
+            model?: string | null;
         };
         /** CodingRunRead */
         CodingRunRead: {
@@ -5689,6 +5689,18 @@ export interface components {
             /** Archived */
             archived?: boolean | null;
         };
+        /** CodingToolOption */
+        CodingToolOption: {
+            agent: components["schemas"]["CodingAgent"];
+            /** Available */
+            available: boolean;
+            /** Model */
+            model?: string | null;
+            /** Models */
+            models?: string[];
+            /** Reason */
+            reason?: string | null;
+        };
         /** CodingTree */
         CodingTree: {
             /** Base Sha */
@@ -5816,6 +5828,11 @@ export interface components {
              * @description One decision for every pending approval of the run
              */
             decisions: components["schemas"]["Decision"][];
+        };
+        /** DefaultCodingToolSave */
+        DefaultCodingToolSave: {
+            /** Default Coding Tool */
+            default_coding_tool?: ("claude-code" | "codex" | "opencode") | null;
         };
         /** DefaultModelSave */
         DefaultModelSave: {
@@ -6855,11 +6872,22 @@ export interface components {
         MemberRoleUpdate: {
             role: components["schemas"]["Role"];
         };
+        /** ModelAccessRead */
+        ModelAccessRead: {
+            /** Ready */
+            ready: boolean;
+            /** Providers */
+            providers: string[];
+            /** Models */
+            models: string[];
+            /** Can Store Keys */
+            can_store_keys: boolean;
+        };
         /** ModelKeyRead */
         ModelKeyRead: {
             /**
              * Provider
-             * @description anthropic, openai, or google_genai
+             * @description The provider identifier, e.g. anthropic, openai, google_genai, or xai
              */
             provider: string;
             /**
@@ -6869,7 +6897,7 @@ export interface components {
             label: string;
             /**
              * Connected
-             * @description This workspace has its own key for the provider
+             * @description You have connected your own key for the provider
              */
             connected: boolean;
             /**
@@ -6881,11 +6909,6 @@ export interface components {
             added_by_id: string | null;
             /** Updated At */
             updated_at: string | null;
-            /**
-             * Server Key
-             * @description Without a key of its own, the workspace may use the server's for this provider
-             */
-            server_key: boolean;
             /**
              * Limit Reached At
              * @description When the provider last refused a run for a rate limit or quota (cleared by the next run that works)
@@ -6926,11 +6949,11 @@ export interface components {
             name: string;
             /**
              * Source
-             * @description Whose key runs it for you: your own, the workspace's, or the server's
-             * @default server
+             * @description Your own key; test is reserved for the isolated test model
+             * @default personal
              * @enum {string}
              */
-            source: "personal" | "workspace" | "server";
+            source: "personal" | "test";
         };
         /** NeighborsRead */
         NeighborsRead: {
@@ -7219,6 +7242,8 @@ export interface components {
              * @description The models you can pick from
              */
             models: string[];
+            /** Default Coding Tool */
+            default_coding_tool?: ("claude-code" | "codex" | "opencode") | null;
         };
         /**
          * PlanRead
@@ -8950,11 +8975,6 @@ export interface components {
              * @description Pause every agent's changes without approval (owners and admins); only owners resume them
              */
             unattended_paused?: boolean | null;
-            /**
-             * Personal Keys
-             * @description Let people's own model keys run what they start here (owners and admins)
-             */
-            personal_keys?: boolean | null;
             /** @description The highest approval mode people may work in: `manual` (every change waits for a yes), `accept_edits` (what a person asks for goes through, and coding starts at once), `auto` (the same, and checkpoints don't pause). Owners raise it; owners and admins lower it */
             approval_mode_cap?: components["schemas"]["ApprovalMode"] | null;
         };
@@ -8987,12 +9007,6 @@ export interface components {
              * @default false
              */
             unattended_paused: boolean;
-            /**
-             * Personal Keys
-             * @description People's own model keys run what they start here (else the workspace's key)
-             * @default true
-             */
-            personal_keys: boolean;
             /**
              * @description The highest approval mode people may work in here (Manual while changes without approval are paused)
              * @default manual
@@ -21754,7 +21768,7 @@ export interface operations {
             };
         };
     };
-    list_model_keys: {
+    model_access: {
         parameters: {
             query?: never;
             header?: never;
@@ -21771,137 +21785,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ModelKeyRead"][];
+                    "application/json": components["schemas"]["ModelAccessRead"];
                 };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    save_model_key: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                provider: string;
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ModelKeySave"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ModelKeyRead"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description A dependency (such as file storage) is unavailable or not configured */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    remove_model_key: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                provider: string;
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Missing, invalid, or expired credentials */
             401: {
@@ -22002,6 +21887,48 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_my_coding_tool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DefaultCodingToolSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalModelsRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

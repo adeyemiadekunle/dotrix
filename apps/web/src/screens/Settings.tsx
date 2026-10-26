@@ -15,7 +15,6 @@ import { ApiError } from "@/lib/api";
 import {
   GRANTABLE,
   agentCatalog,
-  agentList,
   apiHandle,
   agentDetail,
   agentReset,
@@ -28,16 +27,13 @@ import {
   installationRemoved,
   linkGitHub,
   memberPermissionsSaved,
-  modelKeyRemoved,
-  modelKeySaved,
-  modelKeys,
   myAgentSaved,
   myAgents,
   myDefaultModelSaved,
+  myCodingToolSaved,
   myKeyRemoved,
   myKeySaved,
   myModels,
-  personalKeysAllowed,
   models,
   notifSettings,
   notifSettingsSaved,
@@ -96,7 +92,6 @@ export const SET_NAV: [string, [string, string, string][], boolean?][] = [
     "Agents",
     [
       ["agents", "Agents", "bot"],
-      ["models", "Models", "cpu"],
       ["github", "GitHub", "github"],
       ["audit", "Audit log", "list-checks"],
     ],
@@ -809,11 +804,7 @@ function ApprovalCap({ role }: { role: string | undefined }) {
   );
 }
 
-/* ---------- Models: the organisation's own keys, and which model each agent uses ---------- */
-
-const MODEL_HINT =
-  "Small jobs don't need the most powerful model: give Echo (documents) and Juno (reviews) a fast, cheaper one, and keep the most capable for Nova and Orion.";
-const RUNS_NOTE = "Agents run as often as you ask; your provider's own limits apply. When a key reaches one, it shows here and the run says so.";
+/* ---------- Your personal model keys ---------- */
 
 interface KeyLook {
   provider: string;
@@ -821,7 +812,6 @@ interface KeyLook {
   connected: boolean;
   last4?: string | null;
   updated_at?: string | null;
-  server_key: boolean;
   limit_reached_at?: string | null;
   limit_message?: string | null;
 }
@@ -833,9 +823,7 @@ function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean
   const [busy, setBusy] = useState(false);
   const state = k.connected
     ? `Connected · key ending ${k.last4}${k.updated_at ? ` · added ${ago(Date.parse(k.updated_at))}` : ""}`
-    : k.server_key
-      ? "Not connected · runs use the server's key for now"
-      : "Not connected · its models can't run here";
+    : "Not connected · add your own key to use this provider";
   const save = () => {
     if (!value.trim()) return;
     setBusy(true);
@@ -886,7 +874,7 @@ function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean
           <Ic n="triangle-alert" s={15} />
           <div>
             <b>Limit reached {ago(Date.parse(k.limit_reached_at))}.</b> {k.label} refused a run: {k.limit_message} Runs on its models stop until the limit
-            resets; give some agents a smaller model below, or use a key with more room.
+            resets; choose a smaller model in Your agents, or use a key with more room.
           </div>
         </div>
       )}
@@ -894,178 +882,19 @@ function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean
   );
 }
 
-function Models() {
-  if (isLive()) return <LiveModels />;
-  return <DemoModels />;
-}
-
-function LiveModels() {
-  const keys = useApi(modelKeys);
-  const agents = useApi(agentList);
-  const ms = useApi(models);
-  const canEdit = live.ws?.role === "owner" || live.ws?.role === "admin";
-  if (keys.error) return <div className="alert danger">{keys.error}</div>;
-  if (!keys.data || !agents.data || !ms.data) return <div className="faint">Loading…</div>;
-  const refresh = () => (keys.reload(), ms.reload());
-  const remove = (k: { provider: string; label: string }) =>
-    confirmDlg({
-      title: `Remove the ${k.label} key?`,
-      body: "Agents set to its models stop running here until a key is connected again.",
-      ok: "Remove key",
-      danger: true,
-      icon: "trash-2",
-      run: () => {
-        modelKeyRemoved(k.provider)
-          .then(() => (toast(`${k.label} key removed`), refresh()))
-          .catch((e: unknown) => toast(`It wasn't removed: ${errText(e)}`, { kind: "err" }));
-      },
-    });
-  const setModel = (a: (typeof agents.data)[number], model: string) =>
-    agentSaved(a.handle, { ...fieldsOf(a), model: model || null }, a.version ?? null, model ? `Model: ${model}` : "Model: the project's")
-      .then(async () => {
-        toast(`${a.name} now uses ${model || "the project's model"}`);
-        agents.reload();
-        await reloadAgents();
-      })
-      .catch((e: unknown) => toast(`${a.name} didn't change: ${errText(e)}`, { kind: "err", ms: 6000 }));
-  return (
-    <>
-      <div className="sblock" style={{ marginTop: 0 }}>
-        <h2>Your model keys</h2>
-        <p className="muted" style={{ fontSize: 13 }}>
-          Connect your organisation&apos;s own keys. They&apos;re stored encrypted and used for every agent run here; only the last four characters are shown.
-        </p>
-        {keys.data.map((k) => (
-          <KeyRow
-            key={k.provider}
-            k={k}
-            canEdit={canEdit}
-            onSave={(v) =>
-              modelKeySaved(k.provider, v)
-                .then(() => (toast(`${k.label} key saved`), refresh()))
-                .catch((e: unknown) => toast(`The key wasn't saved: ${errText(e)}`, { kind: "err", ms: 6000 }))
-            }
-            onRemove={() => remove(k)}
-          />
-        ))}
-        <p className="faint" style={{ fontSize: 12.5 }}>
-          {RUNS_NOTE}
-        </p>
-        {live.ws?.kind === "organization" && (
-          <SRow
-            t="People's own keys"
-            d="Let each person's own key (Your models) run the conversations they start, instead of the workspace's. Automations always use the workspace's key."
-          >
-            <Tog
-              on={live.ws?.personal_keys ?? true}
-              set={(v) =>
-                void personalKeysAllowed(v).then(() => toast(v ? "People's own keys run their conversations" : "The workspace's keys run everything"))
-              }
-              label="People's own keys"
-              disabled={!canEdit}
-            />
-          </SRow>
-        )}
-      </div>
-      <div className="sblock">
-        <h2>Which model each agent uses</h2>
-        <p className="muted" style={{ fontSize: 13 }}>
-          {MODEL_HINT}
-        </p>
-        {agents.data.map((a) => (
-          <SRow key={a.handle} t={`${a.name}`} d={a.description || undefined}>
-            <select
-              className="select"
-              style={{ width: "auto", minWidth: 220 }}
-              value={a.model ?? ""}
-              onChange={(e) => void setModel(a, e.target.value)}
-              disabled={!canEdit}
-              aria-label={`${a.name}'s model`}
-            >
-              <option value="">Project&apos;s model</option>
-              {[...new Set([...(a.model ? [a.model] : []), ...ms.data!.map((m) => m.id)])].map((m) => (
-                <option key={m} value={m}>
-                  {m.split(":")[1] ?? m}
-                </option>
-              ))}
-            </select>
-          </SRow>
-        ))}
-      </div>
-    </>
-  );
-}
-
 const DEMO_KEYS: KeyLook[] = [
-  { provider: "anthropic", label: "Anthropic", connected: true, last4: "7Qa2", server_key: false, limit_reached_at: null, limit_message: null },
-  { provider: "openai", label: "OpenAI", connected: false, server_key: false },
+  { provider: "anthropic", label: "Anthropic", connected: true, last4: "7Qa2", limit_reached_at: null, limit_message: null },
+  { provider: "openai", label: "OpenAI", connected: false },
   {
     provider: "google_genai",
     label: "Google",
     connected: true,
     last4: "kP0e",
-    server_key: false,
     limit_reached_at: new Date(Date.now() - 3_600_000 * 2).toISOString(),
     limit_message: "429 RESOURCE_EXHAUSTED: quota exceeded for requests per day.",
   },
 ];
 const DEMO_MODELS = ["Claude Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Gemini 3.8 Flash"];
-
-function DemoModels() {
-  const [keys, setKeys] = useState(DEMO_KEYS);
-  return (
-    <>
-      <div className="sblock" style={{ marginTop: 0 }}>
-        <h2>Your model keys</h2>
-        <p className="muted" style={{ fontSize: 13 }}>
-          Connect your organisation&apos;s own keys. They&apos;re stored encrypted and used for every agent run here; only the last four characters are shown.
-        </p>
-        {keys.map((k) => (
-          <KeyRow
-            key={k.provider}
-            k={k}
-            canEdit
-            onSave={async (v) => (
-              setKeys(
-                keys.map((x) => (x.provider === k.provider ? { ...x, connected: true, last4: v.slice(-4), limit_reached_at: null, limit_message: null } : x)),
-              ),
-              toast(`${k.label} key saved`)
-            )}
-            onRemove={() => (
-              setKeys(keys.map((x) => (x.provider === k.provider ? { ...x, connected: false, last4: null } : x))),
-              toast(`${k.label} key removed`)
-            )}
-          />
-        ))}
-        <p className="faint" style={{ fontSize: 12.5 }}>
-          {RUNS_NOTE}
-        </p>
-      </div>
-      <div className="sblock">
-        <h2>Which model each agent uses</h2>
-        <p className="muted" style={{ fontSize: 13 }}>
-          {MODEL_HINT}
-        </p>
-        {D().agents.map((a) => (
-          <SRow key={a.handle} t={a.name} d={a.desc}>
-            <select
-              className="select"
-              style={{ width: "auto", minWidth: 220 }}
-              value={a.model ?? ""}
-              onChange={(e) => mutate(() => ((a.model = e.target.value || undefined), (a.customised = a.builtIn || undefined)))}
-              aria-label={`${a.name}'s model`}
-            >
-              <option value="">Project&apos;s model</option>
-              {DEMO_MODELS.map((m) => (
-                <option key={m}>{m}</option>
-              ))}
-            </select>
-          </SRow>
-        ))}
-      </div>
-    </>
-  );
-}
 
 /* ---------- Personal: your own keys and model, your touches to the agents ---------- */
 
@@ -1075,12 +904,12 @@ function MyModels() {
     default_model: null,
     models: DEMO_MODELS,
   });
-  const data = useApi<{ keys: KeyLook[]; default_model?: string | null; models: string[] }>(isLive() ? myModels : demo);
+  const data = useApi<{ keys: KeyLook[]; default_model?: string | null; default_coding_tool?: "codex" | "claude-code" | "opencode" | null; models: string[] }>(
+    isLive() ? myModels : demo,
+  );
   if (data.error) return <div className="alert danger">{data.error}</div>;
   if (!data.data) return <div className="faint">Loading…</div>;
   const d = data.data;
-  const org = isLive() ? live.ws?.kind === "organization" : true;
-  const off = isLive() && org && live.ws?.personal_keys === false;
   const save = (p: Promise<unknown>, ok: string) =>
     p.then(() => (toast(ok), data.reload())).catch((e: unknown) => toast(errText(e), { kind: "err", ms: 6000 }));
   return (
@@ -1088,18 +917,13 @@ function MyModels() {
       <div className="sblock" style={{ marginTop: 0 }}>
         <h2>Your keys</h2>
         <p className="muted" style={{ fontSize: 13 }}>
-          Your own provider keys run the conversations you start: always in your personal workspace{org ? ", and in an organisation that allows them" : ""}.
-          Stored encrypted; only the last four characters are shown. With your own key you can pick any of its models.
+          Your own provider keys pay for your chat, coding, and scheduled runs in every workspace. Stored encrypted; only the last four characters are shown.
+          Every person connects their own key.
         </p>
-        {off && (
-          <div className="alert info" style={{ marginBottom: 8 }}>
-            This organisation runs everything on its own keys, so yours aren't used here.
-          </div>
-        )}
         {d.keys.map((k) => (
           <KeyRow
             key={k.provider}
-            k={{ ...k, server_key: false }}
+            k={k}
             canEdit
             onSave={(v) =>
               isLive() ? save(myKeySaved(k.provider, v), `Your ${k.label} key is saved`) : Promise.resolve(toast(`Your ${k.label} key is saved`))
@@ -1110,10 +934,7 @@ function MyModels() {
       </div>
       <div className="sblock">
         <h2>Your default model</h2>
-        <SRow
-          t="New conversations"
-          d="The model your conversations start on. It's used where it can run for you: on your own key, or where the workspace lets people choose models."
-        >
+        <SRow t="New conversations" d="The model your new conversations use when you have its provider key.">
           <select
             className="select"
             style={{ width: "auto", minWidth: 220 }}
@@ -1127,6 +948,29 @@ function MyModels() {
                 {m.split(":")[1] ?? m}
               </option>
             ))}
+          </select>
+        </SRow>
+      </div>
+      <div className="sblock">
+        <h2>Your default coding tool</h2>
+        <SRow
+          t="New coding sessions"
+          d="Auto uses Codex with OpenAI, Claude Code with Anthropic, or OpenCode with another available provider. Existing sessions keep their tool."
+        >
+          <select
+            className="select"
+            aria-label="Your default coding tool"
+            value={d.default_coding_tool ?? ""}
+            onChange={(e) => {
+              const tool = e.target.value as "codex" | "claude-code" | "opencode" | "";
+              if (isLive()) void save(myCodingToolSaved(tool || null), "Default coding tool saved");
+              else toast("Default coding tool saved");
+            }}
+          >
+            <option value="">Auto · available provider</option>
+            <option value="codex">Codex · OpenAI</option>
+            <option value="claude-code">Claude Code · Anthropic</option>
+            <option value="opencode">OpenCode · any connected provider</option>
           </select>
         </SRow>
       </div>
@@ -1212,7 +1056,7 @@ function MyAgents() {
     <>
       <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
         Within limits: your touches can&apos;t change what an agent may do, read, or change, and automations don&apos;t use them. A model of your own needs your
-        key for it, or the workspace&apos;s permission to choose models.
+        key for it.
       </p>
       {agents.map((a) => (
         <MyAgentRow
@@ -2405,7 +2249,7 @@ function Body({ sec }: { sec: string }) {
     case "agents":
       return <Agents />;
     case "models":
-      return <Models />;
+      return <MyModels />;
     case "my-models":
       return <MyModels />;
     case "my-agents":
@@ -2708,7 +2552,7 @@ const ITEM_NEEDS: Record<string, Perm> = {
 export function Settings() {
   const { params } = useRoute();
   const asked = params.sec || S.ui.settings || "profile";
-  const sec = asked === "devices" ? "sessions" : asked; // Devices and tokens is part of Sessions now
+  const sec = asked === "devices" ? "sessions" : asked === "models" ? "my-models" : asked;
   const admin = allowed("workspace:manage");
   // Pages only some people may open: shown to them alone (the API refuses the rest anyway).
   const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true);

@@ -126,9 +126,9 @@ class Settings(DatabaseSettings):
     openshell_bin: str = "openshell"
     docker_bin: str = "docker"
     coding_image: str = "dotrix-coding:latest"  # the sandbox image (infra/coding/Dockerfile)
-    # Which tool codes: "auto" follows the key the server has (Anthropic: Claude Code, else
-    # OpenAI: Codex); naming one needs its key.
-    coding_agent: Literal["auto", "claude-code", "codex", "opencode"] = "auto"  # "auto" never picks OpenCode
+    # Which tool codes: "auto" follows the person's keys (OpenAI: Codex, Anthropic: Claude Code,
+    # other supported providers: OpenCode); naming one needs their key for its provider.
+    coding_agent: Literal["auto", "claude-code", "codex", "opencode"] = "auto"  # Default, overridable per person/run.
     coding_claude_model: str | None = None  # Claude Code's default when unset
     coding_codex_model: str | None = None  # Codex's default when unset
     # OpenCode's model, as everywhere in dotrix ("anthropic:claude-sonnet-5-5"): its provider decides
@@ -169,8 +169,8 @@ class Settings(DatabaseSettings):
     s3_region: str = "us-east-1"
     max_upload_mb: int = Field(default=25, ge=1, le=200)
 
-    # Model provider keys. Read under their usual names (no DOTRIX_ prefix), so the
-    # same .env works for the CLI. A project's model ("anthropic:...") needs its key.
+    # Legacy configuration accepted during upgrades. Platform runs never use these keys:
+    # every person connects their own encrypted credentials in Account → Your models.
     anthropic_api_key: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("ANTHROPIC_API_KEY", "DOTRIX_ANTHROPIC_API_KEY")
     )
@@ -180,13 +180,17 @@ class Settings(DatabaseSettings):
     google_api_key: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("GOOGLE_API_KEY", "DOTRIX_GOOGLE_API_KEY")
     )
-    # Organisations connect their own provider keys (Settings → Models), stored encrypted with
+    xai_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("XAI_API_KEY", "DOTRIX_XAI_API_KEY"))
+    deepseek_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("DEEPSEEK_API_KEY", "DOTRIX_DEEPSEEK_API_KEY"))
+    mistral_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("MISTRAL_API_KEY", "DOTRIX_MISTRAL_API_KEY"))
+    groq_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("GROQ_API_KEY", "DOTRIX_GROQ_API_KEY"))
+    openrouter_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("OPENROUTER_API_KEY", "DOTRIX_OPENROUTER_API_KEY"))
+    # People connect their own provider keys (Account → Your models), stored encrypted with
     # these Fernet keys: comma-separated, the first encrypts, every one decrypts (to rotate, put
-    # a new key first and re-save). None: workspaces can't connect keys.
+    # a new key first and re-save). None: people can't connect keys.
     encryption_key: SecretStr | None = None
-    # Whether workspaces without their own key for a provider may use the server's keys above
-    # (self-hosting and development). Off for a hosted service where everyone brings their own.
-    server_model_keys: bool = True
+    # Ignored legacy compatibility flag. Every model call requires the instructing user's key.
+    server_model_keys: bool = False  # Legacy setting; shared/server fallback is disabled unconditionally.
     # Model for new projects ("provider:model"); each project can change its own.
     default_model: str = "anthropic:claude-sonnet-5"
     # Models a conversation can be started on; only those whose provider has a key are offered.
@@ -198,12 +202,17 @@ class Settings(DatabaseSettings):
         "anthropic:claude-haiku-4-5-20251001",
         "openai:gpt-5.5",
         "openai:gpt-5.5-mini",
+        "xai:grok-4.7",
+        "deepseek:deepseek-flash",
+        "mistral:mistral-small-latest",
+        "groq:openai/gpt-oss-120b",
+        "openrouter:openai/gpt-5.5",
     ]
     # The most tokens (input + output, over all its steps) one agent run may use before it
     # stops; a project can set its own. 0 turns the limit off.
     run_token_budget: int = Field(default=500_000, ge=0)
     # Automation runs a workspace may start per day (UTC), across all its projects; 0: no limit
-    # (the default: organisations run on their own keys, and their provider's limits apply).
+    # (the default: creators run on their own keys, and their provider's limits apply).
     automation_daily_runs: int = Field(default=0, ge=0)
     # Tokens (input + output) a workspace's automation runs may use per UTC day; 0: no limit.
     automation_daily_tokens: int = Field(default=0, ge=0)

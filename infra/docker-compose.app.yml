@@ -30,6 +30,8 @@ x-backend: &backend
     DOTRIX_CORS_ORIGINS: '["http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}"]'
     DOTRIX_JOBS: worker
     DOTRIX_CODE_DIR: /data/code
+    DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
+    DOTRIX_CODING_IMAGE: dotrix-coding:latest
     DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app-key
     # nginx in front of the API, on Docker's network.
     DOTRIX_TRUSTED_PROXIES: '["172.16.0.0/12"]'
@@ -71,9 +73,35 @@ services:
 
   worker:
     <<: *backend
+    environment:
+      <<: *backend-env
+      DOCKER_HOST: tcp://docker-proxy:2375
+    networks: [default, docker-control]
     command: ["python", "-m", "dotrix_backend.worker"]
     depends_on:
       migrate: { condition: service_completed_successfully }
+      coding-image: { condition: service_completed_successfully }
+      docker-proxy: { condition: service_started }
+
+  coding-image:
+    image: dotrix-coding:latest
+    build: { context: ./infra/coding }
+    command: ["true"]
+    restart: "no"
+
+  # Only the worker can reach this restricted Docker API; neither API nor web gets the socket.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    networks: [docker-control]
+    environment:
+      CONTAINERS: 1
+      EXEC: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      IMAGES: 1
+      POST: 1
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
 
   web:
     build: { context: ., dockerfile: deploy/web.Dockerfile }
@@ -91,3 +119,7 @@ services:
 
 volumes:
   codecache:
+
+networks:
+  docker-control:
+    internal: true

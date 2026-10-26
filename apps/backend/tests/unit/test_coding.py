@@ -88,13 +88,32 @@ def test_codex_events_become_steps_and_tokens() -> None:
     assert tool.command(None)[-1] == "-" and "--json" in tool.command(None)
 
 
-def test_the_tool_follows_the_key_the_server_has() -> None:
-    assert choose_agent(_settings()) is None
-    assert choose_agent(_settings(openai_api_key=SecretStr("o"))) is CodingAgent.CODEX
-    both = {"openai_api_key": SecretStr("o"), "anthropic_api_key": SecretStr("a")}
-    assert choose_agent(_settings(**both)) is CodingAgent.CLAUDE_CODE
-    assert choose_agent(_settings(**both, coding_agent="codex")) is CodingAgent.CODEX
-    assert choose_agent(_settings(openai_api_key=SecretStr("o"), coding_agent="claude-code")) is None
+def test_tools_follow_only_the_persons_own_keys() -> None:
+    legacy = _settings(openai_api_key=SecretStr("server"), anthropic_api_key=SecretStr("server"), server_model_keys=True)
+    assert choose_agent(legacy) is None
+    assert choose_agent(legacy, {"openai"}) is CodingAgent.CODEX
+    assert choose_agent(legacy, {"anthropic"}) is CodingAgent.CLAUDE_CODE
+    assert choose_agent(legacy, {"openai", "anthropic"}) is CodingAgent.CODEX
+    assert choose_agent(legacy, {"openai"}, preferred="claude-code") is CodingAgent.CODEX
+
+
+def test_a_persons_default_needs_a_compatible_key_and_auto_supports_other_providers() -> None:
+    both = _settings(openai_api_key=SecretStr("o"), anthropic_api_key=SecretStr("a"))
+    assert choose_agent(both, {"anthropic", "openai"}, preferred="claude-code") is CodingAgent.CLAUDE_CODE
+    assert choose_agent(both, {"anthropic", "openai"}, preferred="opencode") is CodingAgent.OPENCODE
+    assert choose_agent(_settings(), {"xai"}) is CodingAgent.OPENCODE
+    assert model_for(_settings(), CodingAgent.OPENCODE, {"xai"}) == "xai:grok-4.7"
+    assert choose_agent(_settings(), {"xai"}, preferred="codex") is CodingAgent.OPENCODE
+    assert choose_agent(_settings(openai_api_key=SecretStr("  "))) is None
+    for provider in ("xai", "deepseek", "mistral", "groq", "openrouter"):
+        spec = OPENCODE_PROVIDERS[provider]
+        model = f"{provider}:test-model"
+        tool = tool_for(CodingAgent.OPENCODE, model)
+        assert tool is not None
+        assert tool.sandbox_env("only-this-key") == {spec.key_env: "only-this-key"}
+        assert tool.api_host == spec.api_host
+        config = json.loads(dict(pair.split("=", 1) for pair in tool.command(model)[1:5])["OPENCODE_CONFIG_CONTENT"])
+        assert config["enabled_providers"] == [spec.opencode]
 
 
 def test_each_tool_says_how_it_resumes_and_reaches_its_model() -> None:
@@ -107,7 +126,7 @@ def test_each_tool_says_how_it_resumes_and_reaches_its_model() -> None:
     assert claude.sandbox_env("k") == {"ANTHROPIC_API_KEY": "k"}
     assert codex.sandbox_env("k") == {"OPENAI_API_KEY": "k", "CODEX_API_KEY": "k"}
     keys = _settings(anthropic_api_key=SecretStr("a"), coding_claude_model="m1", coding_codex_model="m2")
-    assert claude.server_key(keys) == "a" and codex.server_key(keys) is None
+    assert run_key(claude, keys, {}) is None and run_key(codex, keys, {}) is None
     assert (claude.model(keys), codex.model(keys)) == ("m1", "m2")
 
 
@@ -242,18 +261,19 @@ def test_opencode_runs_on_the_provider_its_model_names() -> None:
     assert (tool.key_env, tool.api_host, tool.provider_type) == (
         "GOOGLE_API_KEY", "generativelanguage.googleapis.com", "dotrix-opencode-google")
     assert tool.command("google_genai:gemini-3-pro")[-2:] == ["-m", "google/gemini-3-pro"]
-    assert tool_for(CodingAgent.OPENCODE, "mistral:large") is None and tool_for(CodingAgent.OPENCODE, None) is None
+    assert tool_for(CodingAgent.OPENCODE, "unsupported:large") is None and tool_for(CodingAgent.OPENCODE, None) is None
     assert tool_for(CodingAgent.OPENCODE, "anthropic:") is None
     assert tool_for(CodingAgent.CLAUDE_CODE, "anything") is TOOLS[CodingAgent.CLAUDE_CODE]
 
 
-def test_opencode_is_chosen_only_by_name_and_with_its_provider_s_key() -> None:
+def test_opencode_uses_an_available_personal_provider_without_server_keys() -> None:
     model = {"coding_opencode_model": "openai:gpt-5.5"}
-    assert choose_agent(_settings(openai_api_key=SecretStr("o"), **model)) is CodingAgent.CODEX  # auto never picks it
-    assert choose_agent(_settings(openai_api_key=SecretStr("o"), coding_agent="opencode", **model)) is CodingAgent.OPENCODE
-    assert choose_agent(_settings(anthropic_api_key=SecretStr("a"), coding_agent="opencode", **model)) is None
-    assert choose_agent(_settings(openai_api_key=SecretStr("o"), coding_agent="opencode")) is None  # no model
-    assert model_for(_settings(**model), CodingAgent.OPENCODE) == "openai:gpt-5.5"
+    assert choose_agent(_settings(**model), {"openai"}) is CodingAgent.CODEX
+    assert choose_agent(_settings(coding_agent="opencode", **model), {"openai"}) is CodingAgent.OPENCODE
+    assert choose_agent(_settings(coding_agent="opencode", **model), {"anthropic"}) is CodingAgent.OPENCODE
+    assert choose_agent(_settings(coding_agent="opencode"), {"openai"}) is CodingAgent.OPENCODE
+    assert choose_agent(_settings(coding_agent="opencode")) is None
+    assert model_for(_settings(**model), CodingAgent.OPENCODE, {"openai"}) == "openai:gpt-5.5"
 
 
 def test_opencode_s_config_is_ours_and_the_key_is_only_in_its_environment(monkeypatch) -> None:
@@ -265,7 +285,8 @@ def test_opencode_s_config_is_ours_and_the_key_is_only_in_its_environment(monkey
     settings = dict(pair.split("=", 1) for pair in argv[1:argv.index("opencode")])
     assert settings["OPENCODE_DISABLE_PROJECT_CONFIG"] == settings["OPENCODE_DISABLE_MODELS_FETCH"] == "1"
     config = json.loads(settings["OPENCODE_CONFIG_CONTENT"])
-    assert config["enabled_providers"] == ["anthropic"] and "provider" not in config
+    assert config["enabled_providers"] == ["anthropic"]
+    assert config["provider"] == {"anthropic": {"models": {"claude-haiku-5-5": {}}}}
     assert config["permission"] == {"webfetch": "deny", "websearch": "deny", "question": "deny"}
     assert tool.sandbox_env("sk-secret") == {"ANTHROPIC_API_KEY": "sk-secret"}
     assert "sk-secret" not in " ".join(argv)
@@ -317,11 +338,11 @@ def test_opencode_s_totals_add_the_step_its_events_left_out() -> None:
     assert usage.total == 2440
 
 
-def test_a_run_s_key_is_the_person_s_or_workspace_s_else_the_server_s_when_it_lends() -> None:
+def test_a_run_uses_only_a_supplied_personal_key() -> None:
     claude = TOOLS[CodingAgent.CLAUDE_CODE]
     server = _settings(anthropic_api_key=SecretStr("server"))
     assert run_key(claude, server, {"anthropic": "theirs"}) == "theirs"
-    assert run_key(claude, server, {"openai": "other"}) == "server"
+    assert run_key(claude, server, {"openai": "other"}) is None
     hosted = server.model_copy(update={"server_model_keys": False})  # everyone brings their own
     assert run_key(claude, hosted, {}) is None
     # A tool can code where there's a key for its provider: the workspace's or the person's, or the server's.
@@ -330,5 +351,6 @@ def test_a_run_s_key_is_the_person_s_or_workspace_s_else_the_server_s_when_it_le
     assert choose_agent(_settings(), {"openai"}) is CodingAgent.CODEX
     assert choose_agent(hosted) is None and choose_agent(hosted, {"anthropic"}) is CodingAgent.CLAUDE_CODE
     opencode = _settings(coding_agent="opencode", coding_opencode_model="google_genai:gemini-3-pro")
-    assert choose_agent(opencode, {"anthropic"}) is None and choose_agent(opencode, {"google_genai"}) is CodingAgent.OPENCODE
+    assert choose_agent(opencode, {"anthropic"}) is CodingAgent.OPENCODE
+    assert choose_agent(opencode, {"google_genai"}) is CodingAgent.OPENCODE
     assert tool_for(CodingAgent.OPENCODE, "google_genai:gemini-3-pro").provider == "google_genai"
