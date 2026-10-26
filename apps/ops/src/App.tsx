@@ -2,7 +2,7 @@
 // (POST /v1/ops/*). An ops account is bound to the workspace proven at sign-up; everything it
 // sees stays inside that workspace.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { Badge } from "@dotrix/ui/components/badge";
 import { Button } from "@dotrix/ui/components/button";
@@ -11,40 +11,28 @@ import { Input } from "@dotrix/ui/components/input";
 import { Label } from "@dotrix/ui/components/label";
 import { Tabs, TabsList, TabsTrigger } from "@dotrix/ui/components/tabs";
 
-const TOKEN_KEY = "dotrix.ops.token";
-const REFRESH_KEY = "dotrix.ops.refresh";
-
 type Problem = { detail?: string };
 
-// Refresh once on a 401, then retry — mirrors the web app's session handling.
+// Both tokens live in httpOnly, SameSite=Strict cookies. The refresh cookie is scoped
+// to /v1/ops/refresh and browser tabs serialize rotation with a Web Lock.
 let refreshing: Promise<string | null> | null = null;
 
-async function refreshSession(): Promise<string | null> {
-  const refresh = localStorage.getItem(REFRESH_KEY);
-  if (!refresh) return null;
-  refreshing ??= fetch("/v1/ops/refresh", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refresh }),
-  })
-    .then(async (res) => {
-      if (!res.ok) return null;
-      const t = (await res.json()) as OpsTokens;
-      localStorage.setItem(TOKEN_KEY, t.access_token);
-      localStorage.setItem(REFRESH_KEY, t.refresh_token);
-      return t.access_token;
-    })
+async function refreshSession(): Promise<boolean> {
+  refreshing ??= (async () => {
+    const refresh = () => rawCall<void>("/ops/refresh", { method: "POST" }).then(() => "ok");
+    return navigator.locks ? navigator.locks.request("dotrix-ops-refresh", refresh) : refresh();
+  })()
     .catch(() => null)
     .finally(() => (refreshing = null));
-  return refreshing;
+  return (await refreshing) !== null;
 }
 
-async function rawCall<T>(path: string, options: { method?: string; body?: unknown; token?: string } = {}): Promise<T> {
+async function rawCall<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await fetch(`/v1${path}`, {
     method: options.method ?? "GET",
     headers: {
+      "X-Requested-With": "dotrix-ops",
       ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
     },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
@@ -57,20 +45,14 @@ async function rawCall<T>(path: string, options: { method?: string; body?: unkno
   return data as T;
 }
 
-async function call<T>(path: string, options: { method?: string; body?: unknown; token?: string } = {}): Promise<T> {
+async function call<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
   try {
     return await rawCall<T>(path, options);
   } catch (e) {
     if ((e as Error & { status?: number }).status !== 401) throw e;
-    const token = await refreshSession();
-    if (!token) throw e;
-    return rawCall<T>(path, { ...options, token });
+    if (!(await refreshSession())) throw e;
+    return rawCall<T>(path, options);
   }
-}
-
-interface OpsTokens {
-  access_token: string;
-  refresh_token: string;
 }
 
 const num = (n: number | null | undefined) => (n ?? 0).toLocaleString();
@@ -98,7 +80,6 @@ type Overview = {
   chat: Group & { model_calls_7d: number };
   coding: Group & { cost_usd_7d: number | null };
   queue: { pending: number; oldest_pending_seconds: number | null; discarded_7d: number };
-  limits: { provider: string; limit_reached_at: string; message: string | null }[];
 };
 type Run = {
   kind: string;
@@ -142,17 +123,17 @@ function GroupCard({ title, g, cost }: { title: string; g: Group; cost?: string 
   );
 }
 
-function Login({ onAuth }: { onAuth: (t: OpsTokens) => void }) {
+function Login({ onAuth }: { onAuth: () => void }) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [f, setF] = useState({ owner_email: "", owner_password: "", email: "", name: "", password: "" });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const auth = useMutation({
     mutationFn: () =>
-      call<OpsTokens>(mode === "login" ? "/ops/login" : "/ops/signup", {
+      rawCall<void>(mode === "login" ? "/ops/login" : "/ops/signup", {
         method: "POST",
         body: mode === "login" ? { email: f.email, password: f.password } : f,
       }),
-    onSuccess: (t) => onAuth(t),
+    onSuccess: onAuth,
   });
   const submit = (e: FormEvent) => (e.preventDefault(), auth.mutate());
   return (
@@ -205,10 +186,10 @@ function Login({ onAuth }: { onAuth: (t: OpsTokens) => void }) {
   );
 }
 
-function Overview({ token }: { token: string }) {
+function Overview() {
   const q = useQuery({
     queryKey: ["overview"],
-    queryFn: () => call<Overview>("/ops/observe/overview", { token }),
+    queryFn: () => call<Overview>("/ops/observe/overview"),
     refetchInterval: 15_000,
   });
   if (q.isPending) return <p className="text-sm text-muted-foreground">Reading the workspace…</p>;
@@ -247,34 +228,16 @@ function Overview({ token }: { token: string }) {
         <GroupCard title="Conversations (chat runs)" g={d.chat} />
         <GroupCard title="Coding turns" g={d.coding} cost={d.coding.cost_usd_7d != null ? `$${d.coding.cost_usd_7d.toFixed(2)}` : "—"} />
       </div>
-      {d.limits.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Provider limits</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {d.limits.map((l) => (
-              <div key={l.provider} className="flex gap-2 border-t py-1.5 text-xs first:border-0">
-                <b className="w-24">{l.provider}</b>
-                <span className="text-muted-foreground">
-                  refused a run {fmt(l.limit_reached_at)}
-                  {l.message ? ` — ${l.message}` : ""}
-                </span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
 
-function Runs({ token }: { token: string }) {
+function Runs() {
   const [kind, setKind] = useState<"all" | "chat" | "coding">("all");
   const [before, setBefore] = useState<string>();
   const q = useQuery({
     queryKey: ["runs", kind, before],
-    queryFn: () => call<Run[]>(`/ops/observe/runs?limit=50${kind === "all" ? "" : `&kind=${kind}`}${before ? `&before=${before}` : ""}`, { token }),
+    queryFn: () => call<Run[]>(`/ops/observe/runs?limit=50${kind === "all" ? "" : `&kind=${kind}`}${before ? `&before=${before}` : ""}`),
     placeholderData: (prev) => prev,
   });
   return (
@@ -337,11 +300,11 @@ function Runs({ token }: { token: string }) {
   );
 }
 
-function Audit({ token }: { token: string }) {
+function Audit() {
   const [action, setAction] = useState("");
   const q = useQuery({
     queryKey: ["audit", action],
-    queryFn: () => call<AuditEvent[]>(`/ops/audit?limit=100${action ? `&action=${encodeURIComponent(action)}` : ""}`, { token }),
+    queryFn: () => call<AuditEvent[]>(`/ops/audit?limit=100${action ? `&action=${encodeURIComponent(action)}` : ""}`),
     placeholderData: (prev) => prev,
   });
   return (
@@ -371,10 +334,10 @@ function Audit({ token }: { token: string }) {
   );
 }
 
-function Organisation({ token, me }: { token: string; me: Me }) {
+function Organisation({ me }: { me: Me }) {
   const [name, setName] = useState("");
   const create = useMutation({
-    mutationFn: () => call("/ops/organization", { method: "POST", body: { name: name.trim() }, token }),
+    mutationFn: () => call("/ops/organization", { method: "POST", body: { name: name.trim() } }),
   });
   if (create.isSuccess)
     return (
@@ -415,36 +378,36 @@ function Organisation({ token, me }: { token: string; me: Me }) {
 
 export function App() {
   const qc = useQueryClient();
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
+  const [signedIn, setSignedIn] = useState(false);
+  const [booting, setBooting] = useState(true);
   const [tab, setTab] = useState("overview");
-  const auth = (t: OpsTokens) => (
-    localStorage.setItem(TOKEN_KEY, t.access_token),
-    localStorage.setItem(REFRESH_KEY, t.refresh_token),
-    setToken(t.access_token)
-  );
+  const auth = () => {
+    qc.removeQueries({ queryKey: ["me"] });
+    setSignedIn(true);
+  };
   const signOut = () => {
-    // Revoke the session server-side (fire and forget), then clear it locally.
-    const refresh = localStorage.getItem(REFRESH_KEY);
-    if (refresh && token) void call("/ops/logout", { method: "POST", body: { refresh_token: refresh }, token }).catch(() => undefined);
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(REFRESH_KEY);
-    setToken("");
+    // Revocation happens before removing the UI session, so the cookie is still sent.
+    void rawCall<void>("/ops/logout", { method: "POST" }).catch(() => undefined);
+    setSignedIn(false);
     qc.clear();
   };
 
   const me = useQuery({
-    queryKey: ["me", token],
-    queryFn: () => call<Me>("/ops/me", { token }),
-    enabled: Boolean(token),
+    queryKey: ["me"],
+    queryFn: () => call<Me>("/ops/me"),
+    enabled: signedIn,
     retry: false,
   });
 
-  if (!token) return <Login onAuth={auth} />;
-  if (me.isError) {
-    signOut();
-    return <Login onAuth={auth} />;
-  }
-  if (me.isPending) return <p className="p-10 text-sm text-muted-foreground">Loading…</p>;
+  // On load: a valid refresh cookie silently signs back in.
+  useEffect(() => {
+    refreshSession()
+      .then((ok) => ok && setSignedIn(true))
+      .finally(() => setBooting(false));
+  }, []);
+
+  if (booting || (signedIn && me.isPending)) return <p className="p-10 text-sm text-muted-foreground">Loading…</p>;
+  if (!signedIn || me.isError || !me.data) return <Login onAuth={auth} />;
   const m = me.data;
 
   return (
@@ -468,10 +431,10 @@ export function App() {
           <TabsTrigger value="org">Organisation</TabsTrigger>
         </TabsList>
       </Tabs>
-      {tab === "overview" && <Overview token={token} />}
-      {tab === "runs" && <Runs token={token} />}
-      {tab === "audit" && <Audit token={token} />}
-      {tab === "org" && <Organisation token={token} me={m} />}
+      {tab === "overview" && <Overview />}
+      {tab === "runs" && <Runs />}
+      {tab === "audit" && <Audit />}
+      {tab === "org" && <Organisation me={m} />}
     </div>
   );
 }

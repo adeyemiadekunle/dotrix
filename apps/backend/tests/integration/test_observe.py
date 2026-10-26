@@ -13,6 +13,7 @@ from dotrix_backend.modules.coding.models import (
     CodingRun,
     CodingRunStatus,
 )
+from dotrix_backend.modules.execution.models import RunDispatch
 from dotrix_backend.modules.workspaces.models import Role
 
 
@@ -75,7 +76,7 @@ async def test_the_overview_counts_the_workspaces_health(signup, db_client: Asyn
         "input_tokens_7d": 0, "output_tokens_7d": 0, "model_calls_7d": 0, "cost_usd_7d": None,
     }
     assert overview["queue"] == {"pending": 0, "oldest_pending_seconds": None, "discarded_7d": 0}
-    assert overview["stuck"] == 0 and overview["limits"] == []
+    assert overview["stuck"] == 0 and "limits" not in overview
 
     # A finished chat run and a coding turn are counted, by kind.
     db_session.add(_chat_run(ws["id"], project["id"], ada, input_tokens=10, output_tokens=5, model_calls=2))
@@ -146,3 +147,43 @@ async def test_a_member_without_usage_rights_gets_none(signup, create_team, add_
     for path in ("observe/overview", "observe/runs"):
         assert (await db_client.get(f"{base}/{path}", headers=bob.headers)).status_code == 403
     assert (await db_client.get(f"{base}/observe/overview", headers=ada.headers)).status_code == 200
+
+
+async def test_queue_excludes_other_peoples_private_dispatches(
+    signup, create_team, add_member, db_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    ada = await signup()
+    bob = await signup(email="bob@example.com", name="Bob")
+    team = await create_team(ada.headers)
+    await add_member(team["id"], bob.id, Role.MEMBER)
+    base = f"/v1/workspaces/{team['id']}"
+    project = (await db_client.post(f"{base}/projects", json={"key": "KUN", "name": "Kunemi"}, headers=ada.headers)).json()
+    issue = (await db_client.post(f"{base}/projects/{project['id']}/issues", json={"title": "Task"}, headers=ada.headers)).json()
+    private_chat = _chat_run(team["id"], project["id"], bob, status=RunStatus.QUEUED)
+    private_coding = _coding_run(team["id"], project["id"], issue["id"], bob, status=CodingRunStatus.QUEUED)
+    own_chat = _chat_run(team["id"], project["id"], ada, status=RunStatus.QUEUED)
+    db_session.add_all([private_chat, private_coding, own_chat])
+    await db_session.flush()
+    now = datetime.now(UTC)
+    db_session.add_all([
+        RunDispatch(
+            workspace_id=uuid.UUID(team["id"]), agent_run_id=private_chat.id, generation=1,
+            queue_name="chat", payload={}, created_at=now - timedelta(hours=2), next_attempt_at=now,
+        ),
+        RunDispatch(
+            workspace_id=uuid.UUID(team["id"]), coding_run_id=private_coding.id, generation=1,
+            queue_name="coding", payload={}, created_at=now - timedelta(hours=1), next_attempt_at=now,
+            discarded_at=now,
+        ),
+        RunDispatch(
+            workspace_id=uuid.UUID(team["id"]), agent_run_id=own_chat.id, generation=1,
+            queue_name="chat", payload={}, created_at=now - timedelta(minutes=1), next_attempt_at=now,
+        ),
+    ])
+    await db_session.commit()
+
+    overview = (await db_client.get(f"{base}/observe/overview", headers=ada.headers)).json()
+    assert overview["queue"]["pending"] == 1
+    assert overview["queue"]["discarded_7d"] == 0
+    assert overview["queue"]["oldest_pending_seconds"] < 300
+    assert overview["chat"]["total"] == 1

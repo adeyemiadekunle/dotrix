@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import jwt
-from fastapi import Depends, Header
+from fastapi import Cookie, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,18 +25,21 @@ from dotrix_backend.modules.workspaces.schemas import WorkspaceCreate, Workspace
 from dotrix_backend.modules.workspaces.service import WorkspaceService
 
 from .models import OpsSession, OpsUser
-from .schemas import OpsLogin, OpsRead, OpsRefresh, OpsSignup, OpsTokens, OpsWorkspace
+from .schemas import OpsLogin, OpsRead, OpsSignup, OpsWorkspace
 
 OPS_TOKEN_TYPE = "ops"
 ACCESS_TTL = timedelta(hours=12)
 REFRESH_TTL = timedelta(days=30)
 
 
-def _ops_token(ops_id: uuid.UUID, settings: Settings) -> str:
+def _ops_token(ops_id: uuid.UUID, session_id: uuid.UUID, settings: Settings) -> str:
+    """The access token names its session (`sid`), so signing out kills it at once — a bare
+    JWT would otherwise stay valid for up to 12 hours after logout."""
     now = datetime.now(UTC)
     return jwt.encode(
         {
             "sub": str(ops_id),
+            "sid": str(session_id),
             "type": OPS_TOKEN_TYPE,
             "iss": settings.jwt_issuer,
             "iat": now,
@@ -52,9 +55,8 @@ class OpsService:
         self.session = session
         self.settings = settings
 
-    async def _tokens(self, ops: OpsUser, existing: OpsSession | None = None) -> OpsTokens:
-        """A new access token + rotated refresh token. The row's hash is replaced, so the
-        previous refresh token is dead the moment this is issued."""
+    async def _tokens(self, ops: OpsUser, existing: OpsSession | None = None) -> tuple[str, str]:
+        """Rotate the refresh token; the router sets both tokens as httpOnly cookies."""
         refresh = generate_token()
         now = datetime.now(UTC)
         session = existing or OpsSession(ops_user_id=ops.id, created_at=now)
@@ -63,12 +65,10 @@ class OpsService:
         session.expires_at = now + REFRESH_TTL
         if existing is None:
             self.session.add(session)
-        return OpsTokens(
-            access_token=_ops_token(ops.id, self.settings),
-            refresh_token=refresh,
-        )
+        await self.session.flush()  # the access token's sid is this row's id
+        return _ops_token(ops.id, session.id, self.settings), refresh
 
-    async def signup(self, data: OpsSignup) -> OpsTokens:
+    async def signup(self, data: OpsSignup) -> tuple[str, str]:
         """The owner's own credentials create the ops once; afterwards only the ops's sign in."""
         user = await UserRepository(self.session).get_by_email(data.owner_email.lower())
         if user is None or not verify_password(user.password_hash, data.owner_password):
@@ -98,24 +98,24 @@ class OpsService:
         )
         self.session.add(ops)
         await self.session.flush()  # the session row and the JWT both need ops.id
-        tokens = await self._tokens(ops)
+        pair = await self._tokens(ops)
         await self.session.commit()
-        return tokens
+        return pair
 
-    async def login(self, data: OpsLogin) -> OpsTokens:
+    async def login(self, data: OpsLogin) -> tuple[str, str]:
         ops = await self.session.scalar(select(OpsUser).where(OpsUser.email == data.email.lower()))
         if ops is None or not verify_password(ops.password_hash, data.password):
             raise Unauthorized("Wrong email or password")
-        tokens = await self._tokens(ops)
+        pair = await self._tokens(ops)
         await self.session.commit()
-        return tokens
+        return pair
 
-    async def refresh(self, data: OpsRefresh) -> OpsTokens:
+    async def refresh(self, refresh_token: str) -> tuple[str, str]:
         """Rotate: the presented token is replaced in place, so it's dead once this answers.
         FOR UPDATE serialises concurrent refreshes of one token (two tabs): the loser
         re-reads the row after the winner's commit, finds the hash rotated, and gets a 401."""
         session = await self.session.scalar(
-            select(OpsSession).where(OpsSession.token_hash == hash_token(data.refresh_token)).with_for_update()
+            select(OpsSession).where(OpsSession.token_hash == hash_token(refresh_token)).with_for_update()
         )
         now = datetime.now(UTC)
         if session is None or session.revoked_at is not None or session.expires_at <= now:
@@ -123,20 +123,22 @@ class OpsService:
         ops = await self.session.get(OpsUser, session.ops_user_id)
         if ops is None:
             raise Unauthorized("That ops account is gone")
-        tokens = await self._tokens(ops, existing=session)
+        pair = await self._tokens(ops, existing=session)
         await self.session.commit()
-        return tokens
+        return pair
 
-    async def logout(self, ops: OpsUser, refresh_token: str) -> None:
-        """Revoke the session the refresh token belongs to (this ops's only)."""
-        session = await self.session.scalar(
-            select(OpsSession).where(
-                OpsSession.token_hash == hash_token(refresh_token),
-                OpsSession.ops_user_id == ops.id,
-            )
+    async def logout(self, ops: OpsUser, access_token: str) -> None:
+        """Revoke the access token's session, even if its refresh cookie was lost."""
+        claims = jwt.decode(
+            access_token,
+            self.settings.jwt_secret.get_secret_value(),
+            algorithms=["HS256"],
+            issuer=self.settings.jwt_issuer,
         )
-        if session is not None and session.revoked_at is None:
-            session.revoked_at = datetime.now(UTC)
+        session_id = uuid.UUID(claims["sid"])
+        ops_session = await self.session.get(OpsSession, session_id, with_for_update=True)
+        if ops_session is not None and ops_session.ops_user_id == ops.id and ops_session.revoked_at is None:
+            ops_session.revoked_at = datetime.now(UTC)
             await self.session.commit()
 
     async def create_organization(self, ops: OpsUser, data: WorkspaceCreate) -> WorkspaceWithRole:
@@ -161,25 +163,35 @@ class OpsService:
 
 
 async def get_ops(
-    session: SessionDep, settings: SettingsDep, authorization: Annotated[str | None, Header()] = None
+    session: SessionDep, settings: SettingsDep, dtx_ops_access: Annotated[str | None, Cookie()] = None
 ) -> OpsUser:
-    """Bearer ops token -> the ops account. Never an app user."""
-    if not authorization or not authorization.lower().startswith("bearer "):
+    """Cookie-bound ops session -> ops account; app bearer tokens are never accepted."""
+    if not dtx_ops_access:
         raise Unauthorized("Sign in to the Ops app first")
-    token = authorization.split(None, 1)[1]
     try:
         claims = jwt.decode(
-            token,
+            dtx_ops_access,
             settings.jwt_secret.get_secret_value(),
             algorithms=["HS256"],
             issuer=settings.jwt_issuer,
-            options={"require": ["sub", "exp", "iat", "iss"]},
+            options={"require": ["sub", "sid", "exp", "iat", "iss"]},
         )
-    except jwt.PyJWTError as exc:
+        ops_id = uuid.UUID(claims["sub"])
+        session_id = uuid.UUID(claims["sid"])
+    except (jwt.PyJWTError, ValueError, KeyError) as exc:
         raise Unauthorized("Invalid or expired ops token") from exc
     if claims.get("type") != OPS_TOKEN_TYPE:
         raise Unauthorized("Not an ops token")
-    ops = await session.get(OpsUser, uuid.UUID(claims["sub"]))
+    ops_session = await session.get(OpsSession, session_id)
+    now = datetime.now(UTC)
+    if (
+        ops_session is None
+        or ops_session.ops_user_id != ops_id
+        or ops_session.revoked_at is not None
+        or ops_session.expires_at <= now
+    ):
+        raise Unauthorized("Sign in to the Ops app again")
+    ops = await session.get(OpsUser, ops_id)
     if ops is None:
         raise Unauthorized("That ops account is gone")
     return ops

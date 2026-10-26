@@ -1,4 +1,4 @@
-"""The observability reads behind Admin: the workspace's health in one query set, and a
+"""The observability reads behind Ops: the workspace's health in one query set, and a
 unified run history across chat and coding. Reads only — the numbers come from the modules'
 own tables. Runs stay under the same privacy as everywhere else (each person sees their own,
 plus what's waiting on a decision they may make)."""
@@ -19,7 +19,6 @@ from dotrix_backend.modules.coding.models import CodingRun, CodingRunner, Coding
 from dotrix_backend.modules.coding.service import visible_runs
 from dotrix_backend.modules.documents.models import Document
 from dotrix_backend.modules.execution.models import RunDispatch
-from dotrix_backend.modules.model_keys.models import UserModelKey
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import visible_to
 from dotrix_backend.modules.workspaces.models import Membership
@@ -29,7 +28,6 @@ from .schemas import (
     ObservedRun,
     ObserveOverview,
     ObserveQueue,
-    ProviderLimit,
     RunGroupSummary,
 )
 
@@ -40,8 +38,7 @@ class ObserveService:
         self.settings = settings
 
     async def overview(self, member: Membership) -> ObserveOverview:
-        """The Admin screen's cards: counts, both run kinds' status, the run queue, provider
-        limits, and runs whose worker is gone (a lapsed lease)."""
+        """Workspace counts, visible runs and dispatches, and runs with lapsed leases."""
         ws = member.workspace_id
         now = datetime.now(UTC)
         since = now - timedelta(days=7)
@@ -92,16 +89,24 @@ class ObserveService:
             cost=CodingRun.cost_usd,
         )
 
+        # The queue only counts dispatches for runs the member may see: a private run's
+        # pending dispatch would otherwise hint at a conversation they can't open.
+        visible = (
+            RunDispatch.agent_run_id.in_(select(AgentRun.id).where(AgentRun.workspace_id == ws, runs_visible_to(member)))
+            | RunDispatch.coding_run_id.in_(select(CodingRun.id).where(CodingRun.workspace_id == ws, visible_runs(member)))
+        )
         pending = select(func.count(RunDispatch.id)).where(
             RunDispatch.workspace_id == ws,
             RunDispatch.accepted_at.is_(None),
             RunDispatch.discarded_at.is_(None),
+            visible,
         )
         oldest = await self.session.scalar(
             select(func.min(RunDispatch.created_at)).where(
                 RunDispatch.workspace_id == ws,
                 RunDispatch.accepted_at.is_(None),
                 RunDispatch.discarded_at.is_(None),
+                visible,
             )
         )
         queue = ObserveQueue(
@@ -109,7 +114,7 @@ class ObserveService:
             oldest_pending_seconds=(now - oldest).total_seconds() if oldest is not None else None,
             discarded_7d=await scalar(
                 select(func.count(RunDispatch.id)).where(
-                    RunDispatch.workspace_id == ws, RunDispatch.discarded_at >= since
+                    RunDispatch.workspace_id == ws, RunDispatch.discarded_at >= since, visible
                 )
             ),
         )
@@ -133,19 +138,6 @@ class ObserveService:
             )
         )
 
-        limit_rows = await self.session.scalars(
-            select(UserModelKey).where(
-                UserModelKey.user_id == member.user_id, UserModelKey.limit_reached_at.is_not(None)
-            )
-        )
-        limits = [
-            ProviderLimit(
-                provider=row.provider, scope="person",
-                limit_reached_at=row.limit_reached_at, message=row.limit_message,
-            )
-            for row in limit_rows
-        ]
-
         return ObserveOverview(
             generated_at=now,
             jobs=self.settings.jobs,
@@ -154,7 +146,6 @@ class ObserveService:
             coding=coding,
             queue=queue,
             stuck=stuck,
-            limits=limits,
         )
 
     async def _run_summary(

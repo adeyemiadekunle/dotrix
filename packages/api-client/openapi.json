@@ -821,9 +821,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpsTokens"
-                }
+                "schema": {}
               }
             }
           },
@@ -889,15 +887,8 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpsTokens"
-                }
-              }
-            }
+          "204": {
+            "description": "Successful Response"
           },
           "401": {
             "description": "Missing, invalid, or expired credentials",
@@ -938,28 +929,29 @@
           "ops"
         ],
         "summary": "Ops Refresh",
-        "description": "Trade the refresh token for a new pair. The refresh token rotates with it: the one you\nsent is dead from now on.",
+        "description": "Trade the refresh-token cookie for a new access token. The cookie rotates with it:\nthe one you sent is dead from now on (the row is locked while it rotates).",
         "operationId": "ops_refresh",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OpsRefresh"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpsTokens"
+        "parameters": [
+          {
+            "name": "dtx_ops_refresh",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
                 }
-              }
+              ],
+              "title": "Dtx Ops Refresh"
             }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "401": {
             "description": "Missing, invalid, or expired credentials",
@@ -972,7 +964,7 @@
             }
           },
           "422": {
-            "description": "Request body or parameters failed validation",
+            "description": "Validation Error",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -990,12 +982,12 @@
           "ops"
         ],
         "summary": "Ops Logout",
-        "description": "Sign out: revoke the session this refresh token belongs to.",
+        "description": "Sign out: revoke the access token's session, then clear both cookies.",
         "operationId": "ops_logout",
         "parameters": [
           {
-            "name": "authorization",
-            "in": "header",
+            "name": "dtx_ops_access",
+            "in": "cookie",
             "required": false,
             "schema": {
               "anyOf": [
@@ -1006,20 +998,10 @@
                   "type": "null"
                 }
               ],
-              "title": "Authorization"
+              "title": "Dtx Ops Access"
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OpsRefresh"
-              }
-            }
-          }
-        },
         "responses": {
           "204": {
             "description": "Successful Response"
@@ -1035,7 +1017,7 @@
             }
           },
           "422": {
-            "description": "Request body or parameters failed validation",
+            "description": "Validation Error",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1057,8 +1039,8 @@
         "operationId": "ops_me",
         "parameters": [
           {
-            "name": "authorization",
-            "in": "header",
+            "name": "dtx_ops_access",
+            "in": "cookie",
             "required": false,
             "schema": {
               "anyOf": [
@@ -1069,7 +1051,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Authorization"
+              "title": "Dtx Ops Access"
             }
           }
         ],
@@ -1117,8 +1099,8 @@
         "operationId": "observe_overview",
         "parameters": [
           {
-            "name": "authorization",
-            "in": "header",
+            "name": "dtx_ops_access",
+            "in": "cookie",
             "required": false,
             "schema": {
               "anyOf": [
@@ -1129,7 +1111,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Authorization"
+              "title": "Dtx Ops Access"
             }
           }
         ],
@@ -1236,8 +1218,8 @@
             }
           },
           {
-            "name": "authorization",
-            "in": "header",
+            "name": "dtx_ops_access",
+            "in": "cookie",
             "required": false,
             "schema": {
               "anyOf": [
@@ -1248,7 +1230,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Authorization"
+              "title": "Dtx Ops Access"
             }
           }
         ],
@@ -1355,8 +1337,8 @@
             }
           },
           {
-            "name": "authorization",
-            "in": "header",
+            "name": "dtx_ops_access",
+            "in": "cookie",
             "required": false,
             "schema": {
               "anyOf": [
@@ -1367,7 +1349,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Authorization"
+              "title": "Dtx Ops Access"
             }
           }
         ],
@@ -1429,8 +1411,8 @@
         "operationId": "ops_create_organization",
         "parameters": [
           {
-            "name": "authorization",
-            "in": "header",
+            "name": "dtx_ops_access",
+            "in": "cookie",
             "required": false,
             "schema": {
               "anyOf": [
@@ -1441,7 +1423,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Authorization"
+              "title": "Dtx Ops Access"
             }
           }
         ],
@@ -29101,14 +29083,6 @@
             "type": "integer",
             "title": "Stuck",
             "description": "Active runs whose lease lapsed: the worker on them is gone"
-          },
-          "limits": {
-            "items": {
-              "$ref": "#/components/schemas/ProviderLimit"
-            },
-            "type": "array",
-            "title": "Limits",
-            "description": "Providers that last refused a run for a rate limit or quota"
           }
         },
         "type": "object",
@@ -29119,11 +29093,10 @@
           "chat",
           "coding",
           "queue",
-          "stuck",
-          "limits"
+          "stuck"
         ],
         "title": "ObserveOverview",
-        "description": "The workspace's health in one read (the Admin screen's cards)."
+        "description": "The workspace's health in one read (the Ops screen's cards)."
       },
       "ObserveQueue": {
         "properties": {
@@ -29387,20 +29360,6 @@
         ],
         "title": "OpsRead"
       },
-      "OpsRefresh": {
-        "properties": {
-          "refresh_token": {
-            "type": "string",
-            "title": "Refresh Token"
-          }
-        },
-        "type": "object",
-        "required": [
-          "refresh_token"
-        ],
-        "title": "OpsRefresh",
-        "description": "Trade the refresh token for a new pair (the refresh token rotates with it)."
-      },
       "OpsSignup": {
         "properties": {
           "owner_email": {
@@ -29442,29 +29401,6 @@
         ],
         "title": "OpsSignup",
         "description": "Create an ops account by proving you own the workspace: your app account's email and\npassword. The ops gets its own credentials from then on \u2014 separate from your sign-in."
-      },
-      "OpsTokens": {
-        "properties": {
-          "access_token": {
-            "type": "string",
-            "title": "Access Token"
-          },
-          "refresh_token": {
-            "type": "string",
-            "title": "Refresh Token"
-          },
-          "token_type": {
-            "type": "string",
-            "title": "Token Type",
-            "default": "bearer"
-          }
-        },
-        "type": "object",
-        "required": [
-          "access_token",
-          "refresh_token"
-        ],
-        "title": "OpsTokens"
       },
       "OpsWorkspace": {
         "properties": {
@@ -30560,47 +30496,6 @@
         },
         "type": "object",
         "title": "ProjectUpdate"
-      },
-      "ProviderLimit": {
-        "properties": {
-          "provider": {
-            "type": "string",
-            "title": "Provider"
-          },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "workspace",
-              "person"
-            ],
-            "title": "Scope",
-            "description": "Whose key hit the limit"
-          },
-          "limit_reached_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Limit Reached At"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          }
-        },
-        "type": "object",
-        "required": [
-          "provider",
-          "scope",
-          "limit_reached_at",
-          "message"
-        ],
-        "title": "ProviderLimit"
       },
       "QuoteCheck": {
         "properties": {

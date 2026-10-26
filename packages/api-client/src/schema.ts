@@ -413,8 +413,8 @@ export interface paths {
         put?: never;
         /**
          * Ops Refresh
-         * @description Trade the refresh token for a new pair. The refresh token rotates with it: the one you
-         *     sent is dead from now on.
+         * @description Trade the refresh-token cookie for a new access token. The cookie rotates with it:
+         *     the one you sent is dead from now on (the row is locked while it rotates).
          */
         post: operations["ops_refresh"];
         delete?: never;
@@ -434,7 +434,7 @@ export interface paths {
         put?: never;
         /**
          * Ops Logout
-         * @description Sign out: revoke the session this refresh token belongs to.
+         * @description Sign out: revoke the access token's session, then clear both cookies.
          */
         post: operations["ops_logout"];
         delete?: never;
@@ -7393,7 +7393,7 @@ export interface components {
         };
         /**
          * ObserveOverview
-         * @description The workspace's health in one read (the Admin screen's cards).
+         * @description The workspace's health in one read (the Ops screen's cards).
          */
         ObserveOverview: {
             /**
@@ -7415,11 +7415,6 @@ export interface components {
              * @description Active runs whose lease lapsed: the worker on them is gone
              */
             stuck: number;
-            /**
-             * Limits
-             * @description Providers that last refused a run for a rate limit or quota
-             */
-            limits: components["schemas"]["ProviderLimit"][];
         };
         /** ObserveQueue */
         ObserveQueue: {
@@ -7525,14 +7520,6 @@ export interface components {
             created_at: string;
         };
         /**
-         * OpsRefresh
-         * @description Trade the refresh token for a new pair (the refresh token rotates with it).
-         */
-        OpsRefresh: {
-            /** Refresh Token */
-            refresh_token: string;
-        };
-        /**
          * OpsSignup
          * @description Create an ops account by proving you own the workspace: your app account's email and
          *     password. The ops gets its own credentials from then on — separate from your sign-in.
@@ -7548,18 +7535,6 @@ export interface components {
             name: string;
             /** Password */
             password: string;
-        };
-        /** OpsTokens */
-        OpsTokens: {
-            /** Access Token */
-            access_token: string;
-            /** Refresh Token */
-            refresh_token: string;
-            /**
-             * Token Type
-             * @default bearer
-             */
-            token_type: string;
         };
         /** OpsWorkspace */
         OpsWorkspace: {
@@ -8015,24 +7990,6 @@ export interface components {
              * @description true archives it (out of the sidebar and Projects, kept as it is), false restores it
              */
             archived?: boolean | null;
-        };
-        /** ProviderLimit */
-        ProviderLimit: {
-            /** Provider */
-            provider: string;
-            /**
-             * Scope
-             * @description Whose key hit the limit
-             * @enum {string}
-             */
-            scope: "workspace" | "person";
-            /**
-             * Limit Reached At
-             * Format: date-time
-             */
-            limit_reached_at: string;
-            /** Message */
-            message: string | null;
         };
         /** QuoteCheck */
         QuoteCheck: {
@@ -10219,7 +10176,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OpsTokens"];
+                    "application/json": unknown;
                 };
             };
             /** @description Missing, invalid, or expired credentials */
@@ -10274,13 +10231,11 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["OpsTokens"];
-                };
+                content?: never;
             };
             /** @description Missing, invalid, or expired credentials */
             401: {
@@ -10316,57 +10271,11 @@ export interface operations {
             query?: never;
             header?: never;
             path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OpsRefresh"];
+            cookie?: {
+                dtx_ops_refresh?: string | null;
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OpsTokens"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    ops_logout: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OpsRefresh"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             204: {
@@ -10384,7 +10293,45 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Request body or parameters failed validation */
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    ops_logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_ops_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -10398,11 +10345,11 @@ export interface operations {
     ops_me: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
-            cookie?: never;
+            cookie?: {
+                dtx_ops_access?: string | null;
+            };
         };
         requestBody?: never;
         responses: {
@@ -10438,11 +10385,11 @@ export interface operations {
     observe_overview: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
-            cookie?: never;
+            cookie?: {
+                dtx_ops_access?: string | null;
+            };
         };
         requestBody?: never;
         responses: {
@@ -10491,11 +10438,11 @@ export interface operations {
                 before?: string | null;
                 limit?: number;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
-            cookie?: never;
+            cookie?: {
+                dtx_ops_access?: string | null;
+            };
         };
         requestBody?: never;
         responses: {
@@ -10544,11 +10491,11 @@ export interface operations {
                 before?: string | null;
                 limit?: number;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
-            cookie?: never;
+            cookie?: {
+                dtx_ops_access?: string | null;
+            };
         };
         requestBody?: never;
         responses: {
@@ -10593,11 +10540,11 @@ export interface operations {
     ops_create_organization: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
-            cookie?: never;
+            cookie?: {
+                dtx_ops_access?: string | null;
+            };
         };
         requestBody: {
             content: {

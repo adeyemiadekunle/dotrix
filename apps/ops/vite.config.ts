@@ -1,5 +1,5 @@
-// The Admin app: a separate origin from the web app (dev :3200), never bundled into it.
-// It talks only to /v1/ops/* — its own accounts and sign-in — plus nothing public.
+// The Ops app: a separate origin from the web app (dev :3200), never bundled into it.
+// Only Ops API routes are proxied; app/web session routes are not.
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -9,7 +9,7 @@ export default defineConfig({
   server: {
     port: 3200,
     proxy: {
-      "/v1": { target: "http://localhost:8000", changeOrigin: true },
+      "^/v1/ops(?:/|$)": { target: "http://localhost:8000", changeOrigin: true },
     },
   },
 });

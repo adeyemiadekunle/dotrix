@@ -2,11 +2,17 @@
 refresh tokens, and the workspace-scoped reads it reaches."""
 from typing import Any
 
+import pytest
 from httpx import AsyncClient
 
 
+@pytest.fixture(autouse=True)
+def ops_header(db_client: AsyncClient) -> None:
+    db_client.headers["X-Requested-With"] = "dotrix-ops"
+
+
 async def _ops(db_client: AsyncClient, owner: Any, email: str = "ops@example.com") -> dict[str, str]:
-    """Create an ops through the API and return its bearer header."""
+    """Create an ops session. The API authenticates via httpOnly cookies, not bearer tokens."""
     res = await db_client.post(
         "/v1/ops/signup",
         json={
@@ -18,8 +24,10 @@ async def _ops(db_client: AsyncClient, owner: Any, email: str = "ops@example.com
         },
     )
     assert res.status_code == 201, res.text
-    tokens = res.json()
-    return {"Authorization": f"Bearer {tokens['access_token']}"}
+    assert "access_token" not in res.text and "refresh_token" not in res.text
+    assert res.cookies.get("dtx_ops_access") and res.cookies.get("dtx_ops_refresh")
+    assert all("httponly" in cookie.lower() for cookie in res.headers.get_list("set-cookie"))
+    return {}
 
 
 async def test_signup_needs_the_owners_credentials(db_client: AsyncClient, signup) -> None:
@@ -78,8 +86,8 @@ async def test_login_and_duplicate_ops_email(db_client: AsyncClient, signup) -> 
     assert res.status_code == 401
 
     res = await db_client.post("/v1/ops/login", json={"email": "ops@example.com", "password": "ops secret 123"})
-    assert res.status_code == 200, res.text
-    assert res.json()["access_token"]
+    assert res.status_code == 204, res.text
+    assert not res.content
 
     # The same ops email can't be registered twice.
     res = await db_client.post(
@@ -113,24 +121,32 @@ async def test_refresh_rotates_and_logout_revokes(db_client: AsyncClient, signup
     owner = await signup()
     await _ops(db_client, owner)
     login = await db_client.post("/v1/ops/login", json={"email": "ops@example.com", "password": "ops secret 123"})
-    tokens = login.json()
+    assert login.status_code == 204 and not login.content
+    first_cookie = db_client.cookies.get("dtx_ops_refresh")
+    access_cookie = db_client.cookies.get("dtx_ops_access")
+    assert first_cookie
 
-    # The access token works, then refresh gives a new pair.
-    assert (await db_client.get("/v1/ops/me", headers={"Authorization": f"Bearer {tokens['access_token']}"})).status_code == 200
-    res = await db_client.post("/v1/ops/refresh", json={"refresh_token": tokens["refresh_token"]})
-    assert res.status_code == 200, res.text
-    rotated = res.json()
-    assert rotated["refresh_token"] != tokens["refresh_token"]
+    # The access cookie works, then refresh rotates the cookie; both stay httpOnly.
+    assert (await db_client.get("/v1/ops/me")).status_code == 200
+    res = await db_client.post("/v1/ops/refresh")
+    assert res.status_code == 204 and not res.content
+    assert db_client.cookies.get("dtx_ops_refresh") != first_cookie
 
-    # Rotation: the old refresh token is dead; the new one works.
-    assert (await db_client.post("/v1/ops/refresh", json={"refresh_token": tokens["refresh_token"]})).status_code == 401
-    assert (await db_client.post("/v1/ops/refresh", json={"refresh_token": rotated["refresh_token"]})).status_code == 200
+    # Rotation: the previous refresh cookie is dead; the new one works.
+    stale = await db_client.post("/v1/ops/refresh", headers={"Cookie": f"dtx_ops_refresh={first_cookie}"})
+    assert stale.status_code == 401
+    assert (await db_client.post("/v1/ops/refresh")).status_code == 204
 
-    # Logout revokes the session: refreshing afterwards is a 401.
-    res = await db_client.post(
-        "/v1/ops/logout",
-        json={"refresh_token": rotated["refresh_token"]},
-        headers={"Authorization": f"Bearer {rotated['access_token']}"},
-    )
-    assert res.status_code == 204
-    assert (await db_client.post("/v1/ops/refresh", json={"refresh_token": rotated["refresh_token"]})).status_code == 401
+    # Logout revokes the session even if the refresh cookie has gone missing.
+    dead = db_client.cookies.get("dtx_ops_refresh")
+    logout = await db_client.post("/v1/ops/logout", headers={"Cookie": f"dtx_ops_access={access_cookie}"})
+    assert logout.status_code == 204
+    assert (await db_client.get("/v1/ops/me", headers={"Cookie": f"dtx_ops_access={access_cookie}"})).status_code == 401
+    assert (await db_client.post("/v1/ops/refresh", headers={"Cookie": f"dtx_ops_refresh={dead}"})).status_code == 401
+
+
+async def test_ops_cookie_writes_require_csrf_header(db_client: AsyncClient, signup) -> None:
+    owner = await signup()
+    await _ops(db_client, owner)
+    res = await db_client.post("/v1/ops/organization", json={"name": "Cross-site"}, headers={"X-Requested-With": ""})
+    assert res.status_code == 403

@@ -1,4 +1,4 @@
-"""Ops accounts: the Ops app's own users, bound to a workspace by a proven owner.
+"""Admin accounts: historical table created before the Ops rename.
 
 Revision ID: b4f7a2c9d1e5
 Revises: 92a31cd6ef04
@@ -14,7 +14,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
-        "ops_users",
+        "admin_users",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
@@ -27,11 +27,11 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("email"),
     )
-    op.create_index("ix_ops_users_workspace_id", "ops_users", ["workspace_id"])
-    op.create_index("ix_ops_users_user_id", "ops_users", ["user_id"])
+    op.create_index("ix_admin_users_workspace_id", "admin_users", ["workspace_id"])
+    op.create_index("ix_admin_users_user_id", "admin_users", ["user_id"])
 
 
 def downgrade() -> None:
-    op.drop_index("ix_ops_users_user_id", table_name="ops_users")
-    op.drop_index("ix_ops_users_workspace_id", table_name="ops_users")
-    op.drop_table("ops_users")
+    op.drop_index("ix_admin_users_user_id", table_name="admin_users")
+    op.drop_index("ix_admin_users_workspace_id", table_name="admin_users")
+    op.drop_table("admin_users")

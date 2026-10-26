@@ -35,15 +35,8 @@ class ObserveQueue(BaseModel):
     discarded_7d: int = Field(description="Dispatches given up on in the last 7 days")
 
 
-class ProviderLimit(BaseModel):
-    provider: str
-    scope: Literal["workspace", "person"] = Field(description="Whose key hit the limit")
-    limit_reached_at: datetime
-    message: str | None
-
-
 class ObserveOverview(BaseModel):
-    """The workspace's health in one read (the Admin screen's cards)."""
+    """The workspace's health in one read (the Ops screen's cards)."""
 
     generated_at: datetime
     jobs: str = Field(description="Where background work runs: local, worker, or inline")
@@ -52,9 +45,6 @@ class ObserveOverview(BaseModel):
     coding: RunGroupSummary
     queue: ObserveQueue
     stuck: int = Field(description="Active runs whose lease lapsed: the worker on them is gone")
-    limits: list[ProviderLimit] = Field(
-        description="Providers that last refused a run for a rate limit or quota"
-    )
 
 
 class ObservedRun(BaseModel):

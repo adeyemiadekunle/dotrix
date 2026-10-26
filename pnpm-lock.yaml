@@ -48,7 +48,19 @@ importers:
         specifier: ^8.71.1
         version: 8.71.1(eslint@9.39.5(jiti@2.7.0))(typescript@6.0.3)
 
-  apps/admin:
+  apps/desktop:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
+      electron:
+        specifier: ^44.4.5
+        version: 44.4.5
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
+  apps/ops:
     dependencies:
       '@dotrix/ui':
         specifier: workspace:*
@@ -84,18 +96,6 @@ importers:
       vite:
         specifier: ^8.3.3
         version: 8.3.3(@types/node@26.6.2)(jiti@2.7.0)(yaml@2.9.1)
-
-  apps/desktop:
-    devDependencies:
-      '@types/node':
-        specifier: ^26.6.2
-        version: 26.6.2
-      electron:
-        specifier: ^44.4.5
-        version: 44.4.5
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
 
   apps/web:
     dependencies:
