@@ -1,4 +1,5 @@
 """Import every ORM model here so Base.metadata is complete for Alembic."""
+from dotrix_backend.modules.admin import models as _admin  # noqa: F401
 from dotrix_backend.modules.agent_definitions import models as _agent_definitions  # noqa: F401
 from dotrix_backend.modules.agents import models as _agents  # noqa: F401
 from dotrix_backend.modules.api_tokens import models as _api_tokens  # noqa: F401

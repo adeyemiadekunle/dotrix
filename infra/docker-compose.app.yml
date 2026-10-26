@@ -119,6 +119,20 @@ services:
     depends_on:
       api: { condition: service_healthy }
 
+  admin:
+    build: { context: ., dockerfile: deploy/admin.Dockerfile }
+    image: dotrix-admin:dev
+    restart: unless-stopped
+    ports: ["127.0.0.1:${DOTRIX_DOCKER_ADMIN_PORT:-3200}:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    depends_on:
+      api: { condition: service_healthy }
+
 volumes:
   codecache:
 

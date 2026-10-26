@@ -359,6 +359,188 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Signup
+         * @description Create an admin account by proving you own the workspace (your app sign-in). Admin
+         *     accounts are separate from app users: the admin signs in with its own credentials after.
+         */
+        post: operations["admin_signup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Login
+         * @description Sign the admin in: its own email and password, never an app session.
+         */
+        post: operations["admin_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Refresh
+         * @description Trade the refresh token for a new pair. The refresh token rotates with it: the one you
+         *     sent is dead from now on.
+         */
+        post: operations["admin_refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Logout
+         * @description Sign out: revoke the session this refresh token belongs to.
+         */
+        post: operations["admin_logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Me
+         * @description Who's signed in and the workspace this admin is bound to.
+         */
+        get: operations["admin_me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/observe/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe Overview
+         * @description The admin's workspace health (the same read the app's owners get).
+         */
+        get: operations["observe_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/observe/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe Runs
+         * @description The workspace's run history: chat and coding merged, newest first.
+         */
+        get: operations["observe_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit
+         * @description The workspace's audit log: approvals, writes and decisions, newest first.
+         */
+        get: operations["audit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/convert-to-organization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Convert To Organization
+         * @description Turn the admin's personal workspace into an organisation, keeping its projects.
+         */
+        post: operations["admin_convert_to_organization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/device/code": {
         parameters: {
             query?: never;
@@ -4098,6 +4280,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/observe/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overview
+         * @description The workspace's health in one read: counts, run activity, the run queue, stuck runs,
+         *     and providers that last refused for their limits. Owners and admins (a personal workspace's owner).
+         */
+        get: operations["get_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/observe/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Observed Runs
+         * @description The workspace's recent runs in one list — chat and coding merged, newest first — each
+         *     with its status, tokens, cost, and why it failed when it did. Owners and admins.
+         */
+        get: operations["list_observed_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4191,6 +4415,82 @@ export interface components {
          * @enum {string}
          */
         ActivityKind: "issue.created" | "issue.updated" | "issue.commented" | "issue.claimed" | "document.changed" | "document.deleted" | "run.started" | "approval.decided";
+        /** AdminLogin */
+        AdminLogin: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** AdminRead */
+        AdminRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Name */
+            name: string;
+            workspace: components["schemas"]["AdminWorkspace"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * AdminRefresh
+         * @description Trade the refresh token for a new pair (the refresh token rotates with it).
+         */
+        AdminRefresh: {
+            /** Refresh Token */
+            refresh_token: string;
+        };
+        /**
+         * AdminSignup
+         * @description Create an admin account by proving you own the workspace: your app account's email and
+         *     password. The admin gets its own credentials from then on — separate from your sign-in.
+         */
+        AdminSignup: {
+            /** Owner Email */
+            owner_email: string;
+            /** Owner Password */
+            owner_password: string;
+            /** Email */
+            email: string;
+            /** Name */
+            name: string;
+            /** Password */
+            password: string;
+        };
+        /** AdminTokens */
+        AdminTokens: {
+            /** Access Token */
+            access_token: string;
+            /** Refresh Token */
+            refresh_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+        };
+        /** AdminWorkspace */
+        AdminWorkspace: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Kind */
+            kind: string;
+        };
         /**
          * AgentAssignee
          * @description Agents that appear as assignable members.
@@ -7145,6 +7445,133 @@ export interface components {
              */
             email: "immediately" | "daily" | "off";
         };
+        /** ObserveCounts */
+        ObserveCounts: {
+            /**
+             * Projects
+             * @description Projects you can see
+             */
+            projects: number;
+            /** Members */
+            members: number;
+            /** Documents */
+            documents: number;
+            /** Document Bytes */
+            document_bytes: number;
+            /**
+             * Coding Runners
+             * @description Computers registered to code your local turns
+             */
+            coding_runners: number;
+        };
+        /**
+         * ObserveOverview
+         * @description The workspace's health in one read (the Admin screen's cards).
+         */
+        ObserveOverview: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Jobs
+             * @description Where background work runs: local, worker, or inline
+             */
+            jobs: string;
+            counts: components["schemas"]["ObserveCounts"];
+            chat: components["schemas"]["RunGroupSummary"];
+            coding: components["schemas"]["RunGroupSummary"];
+            queue: components["schemas"]["ObserveQueue"];
+            /**
+             * Stuck
+             * @description Active runs whose lease lapsed: the worker on them is gone
+             */
+            stuck: number;
+            /**
+             * Limits
+             * @description Providers that last refused a run for a rate limit or quota
+             */
+            limits: components["schemas"]["ProviderLimit"][];
+        };
+        /** ObserveQueue */
+        ObserveQueue: {
+            /**
+             * Pending
+             * @description Dispatches published but not yet taken by a worker
+             */
+            pending: number;
+            /**
+             * Oldest Pending Seconds
+             * @description How long the oldest pending dispatch has waited
+             */
+            oldest_pending_seconds: number | null;
+            /**
+             * Discarded 7D
+             * @description Dispatches given up on in the last 7 days
+             */
+            discarded_7d: number;
+        };
+        /**
+         * ObservedRun
+         * @description One agent run or coding turn in the unified run history.
+         */
+        ObservedRun: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chat" | "coding";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Status */
+            status: string;
+            /**
+             * Label
+             * @description The conversation's title or first message; the coding run's issue key
+             */
+            label: string;
+            /** Project Id */
+            project_id: string | null;
+            /** Agent */
+            agent: string | null;
+            /** Model */
+            model: string | null;
+            /** Work Mode */
+            work_mode?: string | null;
+            /**
+             * Location
+             * @description Coding runs: cloud (a worker) or local (your computer)
+             */
+            location?: string | null;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Cost Usd */
+            cost_usd?: number | null;
+            /** Error */
+            error?: string | null;
+            /** Error Kind */
+            error_kind?: string | null;
+            /** Requested By Id */
+            requested_by_id: string | null;
+            /**
+             * Automation
+             * @default false
+             */
+            automation: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+        };
         /** OrganizationConversion */
         OrganizationConversion: {
             /**
@@ -7586,6 +8013,24 @@ export interface components {
              */
             archived?: boolean | null;
         };
+        /** ProviderLimit */
+        ProviderLimit: {
+            /** Provider */
+            provider: string;
+            /**
+             * Scope
+             * @description Whose key hit the limit
+             * @enum {string}
+             */
+            scope: "workspace" | "person";
+            /**
+             * Limit Reached At
+             * Format: date-time
+             */
+            limit_reached_at: string;
+            /** Message */
+            message: string | null;
+        };
         /** QuoteCheck */
         QuoteCheck: {
             /**
@@ -7967,6 +8412,40 @@ export interface components {
             path: string;
             /** Times */
             times: number;
+        };
+        /**
+         * RunGroupSummary
+         * @description One run kind's numbers on the overview: agent runs (chat) or coding runs.
+         */
+        RunGroupSummary: {
+            /** Total */
+            total: number;
+            /**
+             * Active
+             * @description Queued or running right now
+             */
+            active: number;
+            /**
+             * Waiting
+             * @description Stopped for a person's decision: approval, changes ready, or recovery
+             */
+            waiting: number;
+            /** Failed 7D */
+            failed_7d: number;
+            /** Input Tokens 7D */
+            input_tokens_7d: number;
+            /** Output Tokens 7D */
+            output_tokens_7d: number;
+            /**
+             * Model Calls 7D
+             * @default 0
+             */
+            model_calls_7d: number;
+            /**
+             * Cost Usd 7D
+             * @description Coding runs only; the tool's reported cost
+             */
+            cost_usd_7d?: number | null;
         };
         /**
          * RunKind
@@ -9700,6 +10179,440 @@ export interface operations {
             };
             /** @description Bad request, for example an invalid or expired link or code */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    admin_signup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminSignup"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTokens"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    admin_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLogin"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTokens"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    admin_refresh: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminRefresh"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTokens"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    admin_logout: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminRefresh"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    admin_me: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    observe_overview: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObserveOverview"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    observe_runs: {
+        parameters: {
+            query?: {
+                kind?: ("chat" | "coding") | null;
+                before?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservedRun"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    audit: {
+        parameters: {
+            query?: {
+                action?: string | null;
+                before?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    admin_convert_to_organization: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationConversion"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceWithRole"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -22145,6 +23058,128 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceSearchHit"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_overview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObserveOverview"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_observed_runs: {
+        parameters: {
+            query?: {
+                /** @description Only chat runs, or only coding turns */
+                kind?: ("chat" | "coding") | null;
+                /** @description Page backwards: pass the last run's `created_at` */
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservedRun"][];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
