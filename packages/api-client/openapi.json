@@ -26408,6 +26408,11 @@
             "title": "Attachment Count",
             "default": 0
           },
+          "comment_count": {
+            "type": "integer",
+            "title": "Comment Count",
+            "default": 0
+          },
           "archived_at": {
             "anyOf": [
               {
@@ -26712,6 +26717,11 @@
           "attachment_count": {
             "type": "integer",
             "title": "Attachment Count",
+            "default": 0
+          },
+          "comment_count": {
+            "type": "integer",
+            "title": "Comment Count",
             "default": 0
           },
           "archived_at": {
@@ -31857,6 +31867,11 @@
           "attachment_count": {
             "type": "integer",
             "title": "Attachment Count",
+            "default": 0
+          },
+          "comment_count": {
+            "type": "integer",
+            "title": "Comment Count",
             "default": 0
           },
           "archived_at": {
