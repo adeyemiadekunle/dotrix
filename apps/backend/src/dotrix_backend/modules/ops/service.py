@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.api.deps import SessionDep, SettingsDep
-from dotrix_backend.core.errors import Conflict, NotFound, Unauthorized
+from dotrix_backend.core.errors import Conflict, Forbidden, NotFound, Unauthorized
 from dotrix_backend.core.security import generate_token, hash_password, hash_token, verify_password
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.auth.repository import UserRepository
@@ -201,12 +201,16 @@ OpsDep = Annotated[OpsUser, Depends(get_ops)]
 
 
 async def ops_member(session: AsyncSession, ops: OpsUser) -> Membership:
-    """The ops reads as the workspace's owner (a pseudo-membership, never persisted)."""
-    return Membership(
-        id=uuid.uuid4(),
-        workspace_id=ops.workspace_id,
-        user_id=ops.user_id,
-        role=Role.OWNER,
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
+    """The ops reads as its bound workspace's owner, for as long as the person who proved the
+    workspace still owns it. If that ownership is ever gone (transfer or removal), the ops
+    loses access rather than keeping a fabricated owner role."""
+    membership = await session.scalar(
+        select(Membership).where(
+            Membership.user_id == ops.user_id,
+            Membership.workspace_id == ops.workspace_id,
+            Membership.role == Role.OWNER,
+        )
     )
+    if membership is None:
+        raise Forbidden("The owner who proved this workspace no longer owns it")
+    return membership
