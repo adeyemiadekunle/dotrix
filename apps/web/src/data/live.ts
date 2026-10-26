@@ -23,7 +23,7 @@ import { fmtDate, uid } from "../core/utils";
 import { fileType } from "../ui/helpers";
 import { toast } from "../ui/toast";
 import { htmlToMd } from "./markdown";
-import { D, S, mutate, persist, render } from "./store";
+import { D, S, mutate, render, setLiveData } from "./store";
 import type { Automation, Comment, Data, FileItem, KnowledgeFile, Member, Project, Task } from "./types";
 
 type W = Schemas["WorkspaceWithRole"];
@@ -43,8 +43,6 @@ export const live = {
    *  (still pre-edit) data over the optimistic edit — an unchanged refetch keeps its array identity,
    *  so the bridge wouldn't rewrite the slot on its own. */
   mirrorRev: 0,
-  /** The demo workspace's data while a real one is shown, so the demo keeps its edits. */
-  demo: null as Data | null,
 };
 export const isLive = () => live.mode === "live";
 
@@ -55,8 +53,6 @@ const send = <T>(p: Promise<{ data?: T; error?: unknown; response: Response }>) 
     invalidateLiveQueries();
     return r;
   });
-// While a real workspace is shown, this browser keeps saving the demo's data, never the API's.
-persist.data = () => (live.mode === "demo" ? S.data : (live.demo ?? S.data));
 /** An id the API made (a project or user), not one the store made up for a new item. */
 
 /** A send failed after the store already showed the change: put the queries' data back over it. */
@@ -129,8 +125,8 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       audit: [],
       automations: [],
     };
-    if (live.demo === null) live.demo = S.data; // set aside the demo's data the first time only
-    S.data = data;
+    // Live data gets its own object — the demo's seed stays in S.data, untouched.
+    setLiveData(data);
     S.prefs.name = me.display_name;
     S.prefs.title = me.title ?? "";
     live.ws = ws;
@@ -146,6 +142,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
     }
     return true;
   } catch (e) {
+    setLiveData(null);
     live.mode = "error";
     live.error = e instanceof Error ? e.message : "The workspace didn't load.";
     render();
@@ -156,8 +153,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
 /** Back to the demo workspace's data (its own address, or signing out). */
 export function showDemo() {
   if (live.mode === "demo") return;
-  if (live.demo) S.data = live.demo;
-  live.demo = null;
+  setLiveData(null);
   live.mode = "demo";
   live.slug = null;
   live.ws = null;

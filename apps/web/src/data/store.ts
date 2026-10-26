@@ -135,6 +135,13 @@ const subscribe = (l: () => void) => {
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 /** What this browser keeps: the demo's data (a real workspace's lives in the API; data/live.ts). */
 export const persist = { data: (): Data => S.data };
+
+/** A live workspace's data, mirrored in from the TanStack queries by the StoreBridge — null on the
+ *  demo, so S.data keeps the demo's seed untouched while you're signed in. */
+let liveData: Data | null = null;
+export function setLiveData(d: Data | null) {
+  liveData = d;
+}
 function writeNow() {
   clearTimeout(saveTimer);
   saveTimer = undefined;
@@ -174,7 +181,7 @@ export function resetData() {
 }
 
 /* ---------- lookups ---------- */
-export const D = () => S.data;
+export const D = () => liveData ?? S.data;
 export const me = () => D().members.find((m) => m.id === D().me)!;
 export const mem = (id: string | null | undefined) => D().members.find((m) => m.id === id);
 /** People who can be assigned, mentioned, or put in a team: not deactivated, and not an invite still pending in a real workspace (no account yet). */
