@@ -43,6 +43,30 @@ function Dots() {
   );
 }
 
+export function DotsLoader({ px = 44 }: { px?: number }) {
+  return (
+    <svg className="dots-loader" width={px} height={px} viewBox="0 0 24 24" role="img" aria-label="Loading">
+      {GRID.flatMap((y) =>
+        GRID.map((x) => {
+          const mid = x === 12 && y === 12;
+          return (
+            <circle
+              key={`${x}-${y}`}
+              className="dots-loader-dot"
+              style={{ animationDelay: `${Math.hypot(x - 12, y - 12) * 110}ms` }}
+              cx={x}
+              cy={y}
+              r={mid ? 3.6 : 1.9}
+              fill={MARK_GREEN}
+              fillOpacity={mid ? 1 : 0.62}
+            />
+          );
+        }),
+      )}
+    </svg>
+  );
+}
+
 export function Logo({ h = 22 }: { h?: number }) {
   return (
     <svg className="logo" height={h} width={Math.round((h * 92) / 24)} viewBox="0 0 92 24" role="img" aria-label="dotrix">

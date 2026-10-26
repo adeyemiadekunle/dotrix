@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { hasSession } from "@/lib/api";
 
 import { applyPrefs } from "../core/theme";
-import { Ic } from "../core/icons";
+import { DotsLoader, Ic } from "../core/icons";
 import { WS, back, currentSlug, go, useRoute, type Route } from "../core/nav";
 import { limitToasts } from "../core/agents";
 import { live, loadWorkspace, onLoaded, showDemo } from "../data/live";
@@ -193,6 +193,7 @@ export function Studio() {
     if (live.mode !== "live" || live.slug !== slug || !live.dirReady)
       return (
         <div className="fullstate" style={{ minHeight: "100svh" }} aria-busy="true">
+          <DotsLoader px={44} />
           <span className="faint" style={{ fontSize: 13 }}>
             Loading the workspace…
           </span>
