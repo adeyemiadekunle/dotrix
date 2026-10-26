@@ -17,10 +17,9 @@ from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.auth.limits import LOGIN, ThrottleDep
 from dotrix_backend.modules.observe.schemas import ObservedRun, ObserveOverview
 from dotrix_backend.modules.observe.service import ObserveService
-from dotrix_backend.modules.workspaces.schemas import WorkspaceCreate, WorkspaceWithRole
 
-from .schemas import OpsLogin, OpsRead, OpsSignup
-from .service import OpsDep, OpsService, ops_member
+from .schemas import OpsBootstrap, OpsLogin, OpsRead, OpsSignup
+from .service import OpsDep, OpsService
 
 
 def require_ops_header(request: Request) -> None:
@@ -65,12 +64,17 @@ def get_ops_service(session: SessionDep, settings: SettingsDep) -> OpsService:
 Service = Annotated[OpsService, Depends(get_ops_service)]
 
 
-@router.post("/signup", status_code=status.HTTP_201_CREATED, responses=errors(409, 422, 429))
+@router.get("/bootstrap")
+async def ops_bootstrap(svc: Service) -> OpsBootstrap:
+    """Whether ops sign-up is open: true only while no ops account exists."""
+    return OpsBootstrap(enabled=await svc.bootstrap_available())
+
+
+@router.post("/signup", status_code=status.HTTP_201_CREATED, responses=errors(403, 422, 429))
 async def ops_signup(data: OpsSignup, svc: Service, response: Response, throttle: ThrottleDep) -> None:
-    """Create an ops account by proving you own the workspace (your app sign-in). Ops
-    accounts are separate from app users: the ops signs in with its own credentials after.
-    Rate-limited on the owner's email and the client IP, same as sign-in."""
-    await throttle(LOGIN, data.owner_email)
+    """Bootstrap the first ops account. The console is for whoever operates the deployment,
+    not app users — sign-up closes once the first account exists. Rate-limited per IP."""
+    await throttle(LOGIN, data.email)
     access, refresh = await svc.signup(data)
     _set_session(response, access, refresh, svc.settings)
 
@@ -113,7 +117,7 @@ async def ops_logout(
 
 @router.get("/me")
 async def ops_me(ops: OpsDep, svc: Service) -> OpsRead:
-    """Who's signed in and the workspace this ops is bound to."""
+    """Who's signed in."""
     return await svc.read(ops)
 
 
@@ -125,9 +129,9 @@ Observe = Annotated[ObserveService, Depends(get_observe)]
 
 
 @router.get("/observe/overview", responses=errors(403, 422))
-async def observe_overview(ops: OpsDep, session: SessionDep, observe: Observe) -> ObserveOverview:
-    """The ops's workspace health (the same read the app's owners get)."""
-    return await observe.overview(await ops_member(session, ops))
+async def observe_overview(ops: OpsDep, observe: Observe) -> ObserveOverview:
+    """Platform health: every workspace's runs, the whole dispatch queue, lapsed leases."""
+    return await observe.platform_overview()
 
 
 @router.get("/observe/runs", responses=errors(403, 422))
@@ -140,9 +144,9 @@ async def observe_runs(
     before_id: uuid.UUID | None = None,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[ObservedRun]:
-    """The workspace's run history: chat and coding merged, newest first. Page backwards with
-    `before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped."""
-    return await observe.runs(await ops_member(session, ops), kind=kind, before=before, before_id=before_id, limit=limit)
+    """Run history across the platform: chat and coding merged, newest first. Page backwards
+    with `before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped."""
+    return await observe.platform_runs(kind=kind, before=before, before_id=before_id, limit=limit)
 
 
 @router.get("/audit", responses=errors(403, 422))
@@ -153,12 +157,6 @@ async def audit(
     before: datetime | None = None,
     limit: int = Query(default=100, ge=1, le=200),
 ) -> list[AuditEventRead]:
-    """The workspace's audit log: approvals, writes and decisions, newest first."""
-    return await AuditLog(session).list(ops.workspace_id, action=action, before=before, limit=limit)
+    """Audit events across the whole platform, newest first."""
+    return await AuditLog(session).list(None, action=action, before=before, limit=limit)
 
-
-@router.post("/organization", status_code=status.HTTP_201_CREATED, responses=errors(422))
-async def ops_create_organization(data: WorkspaceCreate, ops: OpsDep, svc: Service) -> WorkspaceWithRole:
-    """Create an organisation workspace owned by your account — a separate workspace, not a
-    conversion: the personal workspace this ops is bound to stays personal."""
-    return await svc.create_organization(ops, data)

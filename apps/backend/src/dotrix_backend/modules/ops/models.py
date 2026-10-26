@@ -17,11 +17,11 @@ from dotrix_backend.db.base import Base, UUIDPrimaryKeyMixin
 class OpsUser(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "ops_users"
 
-    # The workspace this ops observes and manages (never crosses it).
-    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
-    # The owner who proved the workspace at sign-up: the ops reads as them (their runs,
-    # their usage), under the same workspace scope.
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    # Optional: set when an ops was created against a specific workspace (earlier phase-1
+    # accounts). The platform console reads the whole deployment, not one workspace.
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workspaces.id", ondelete="SET NULL"), index=True)
+    # The person who created the account (informational only).
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
     email: Mapped[str] = mapped_column(String(320), unique=True)
     name: Mapped[str] = mapped_column(String(200))
     password_hash: Mapped[str] = mapped_column(String(200))
