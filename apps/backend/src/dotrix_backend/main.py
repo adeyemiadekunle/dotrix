@@ -11,6 +11,11 @@ from arq.connections import RedisSettings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Routers may construct ORM aliases; register all relationship targets first.
+from .db import models as _models  # noqa: F401
+
+# isort: split
+
 from .api import health, v1
 from .core.crypto import Secrets
 from .core.email import build_email_sender
