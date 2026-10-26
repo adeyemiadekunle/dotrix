@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.settings import Settings
@@ -40,9 +40,24 @@ class ObserveService:
 
     async def overview(self, member: Membership) -> ObserveOverview:
         """Workspace counts, visible runs and dispatches, and runs with lapsed leases."""
-        ws = member.workspace_id
+        return await self._overview(member)
+
+    async def platform_overview(self) -> ObserveOverview:
+        """The same overview for the whole deployment: ops sees every workspace's runs."""
+        return await self._overview(None)
+
+    async def _overview(self, member: Membership | None) -> ObserveOverview:
+        ws = member.workspace_id if member else None  # None: the whole deployment
         now = datetime.now(UTC)
         since = now - timedelta(days=7)
+
+        def w(col) -> Any:  # workspace filter when scoped to one workspace
+            return col == ws if ws is not None else true()
+
+        def scope_runs(kind: str) -> Any:  # privacy filter only inside a workspace
+            if member is None:
+                return true()
+            return runs_visible_to(member) if kind == "chat" else visible_runs(member)
 
         async def scalar(stmt) -> int:
             return int((await self.session.execute(stmt)).scalar() or 0)
@@ -50,16 +65,17 @@ class ObserveService:
         counts = ObserveCounts(
             projects=await scalar(
                 select(func.count(Project.id)).where(
-                    Project.workspace_id == ws, visible_to(member.user_id, member.role)
+                    w(Project.workspace_id),
+                    visible_to(member.user_id, member.role) if member else true(),
                 )
             ),
-            members=await scalar(select(func.count(Membership.id)).where(Membership.workspace_id == ws)),
-            documents=await scalar(select(func.count(Document.id)).where(Document.workspace_id == ws)),
+            members=await scalar(select(func.count(Membership.id)).where(w(Membership.workspace_id))),
+            documents=await scalar(select(func.count(Document.id)).where(w(Document.workspace_id))),
             document_bytes=await scalar(
-                select(func.coalesce(func.sum(Document.size), 0)).where(Document.workspace_id == ws)
+                select(func.coalesce(func.sum(Document.size), 0)).where(w(Document.workspace_id))
             ),
             coding_runners=await scalar(
-                select(func.count(CodingRunner.id)).where(CodingRunner.workspace_id == ws)
+                select(func.count(CodingRunner.id)).where(w(CodingRunner.workspace_id))
             ),
         )
 
@@ -70,7 +86,7 @@ class ObserveService:
             member,
             since,
             model=AgentRun,
-            scope=runs_visible_to(member),
+            scope=scope_runs("chat"),
             window=AgentRun.updated_at >= since,
             active=AgentRun.status.in_((RunStatus.QUEUED, RunStatus.RUNNING)),
             waiting=AgentRun.status == RunStatus.AWAITING_APPROVAL,
@@ -83,11 +99,9 @@ class ObserveService:
             member,
             since,
             model=CodingRun,
-            scope=visible_runs(member),
+            scope=scope_runs("coding"),
             window=CodingRun.created_at >= since,
-            active=CodingRun.status.in_(
-                (CodingRunStatus.QUEUED, CodingRunStatus.RUNNING)
-            ),
+            active=CodingRun.status.in_((CodingRunStatus.QUEUED, CodingRunStatus.RUNNING)),
             waiting=CodingRun.status.in_(CODING_WAITING),
             failed=CodingRun.status == CodingRunStatus.FAILED,
             tokens_in=CodingRun.input_tokens,
@@ -95,24 +109,28 @@ class ObserveService:
             cost=CodingRun.cost_usd,
         )
 
-        # The queue only counts dispatches for runs the member may see: a private run's
-        # pending dispatch would otherwise hint at a conversation they can't open.
-        visible = (
-            RunDispatch.agent_run_id.in_(select(AgentRun.id).where(AgentRun.workspace_id == ws, runs_visible_to(member)))
-            | RunDispatch.coding_run_id.in_(select(CodingRun.id).where(CodingRun.workspace_id == ws, visible_runs(member)))
+        # Inside a workspace the queue counts only dispatches for runs the member may see; on
+        # the platform console all dispatches count (there is no member privacy to preserve).
+        dispatch_visible = true() if member is None else (
+            RunDispatch.agent_run_id.in_(
+                select(AgentRun.id).where(AgentRun.workspace_id == ws, runs_visible_to(member))
+            )
+            | RunDispatch.coding_run_id.in_(
+                select(CodingRun.id).where(CodingRun.workspace_id == ws, visible_runs(member))
+            )
         )
         pending = select(func.count(RunDispatch.id)).where(
-            RunDispatch.workspace_id == ws,
+            w(RunDispatch.workspace_id),
             RunDispatch.accepted_at.is_(None),
             RunDispatch.discarded_at.is_(None),
-            visible,
+            dispatch_visible,
         )
         oldest = await self.session.scalar(
             select(func.min(RunDispatch.created_at)).where(
-                RunDispatch.workspace_id == ws,
+                w(RunDispatch.workspace_id),
                 RunDispatch.accepted_at.is_(None),
                 RunDispatch.discarded_at.is_(None),
-                visible,
+                dispatch_visible,
             )
         )
         queue = ObserveQueue(
@@ -120,7 +138,7 @@ class ObserveService:
             oldest_pending_seconds=(now - oldest).total_seconds() if oldest is not None else None,
             discarded_7d=await scalar(
                 select(func.count(RunDispatch.id)).where(
-                    RunDispatch.workspace_id == ws, RunDispatch.discarded_at >= since, visible
+                    w(RunDispatch.workspace_id), RunDispatch.discarded_at >= since, dispatch_visible
                 )
             ),
         )
@@ -128,18 +146,18 @@ class ObserveService:
         stuck = (
             await scalar(
                 select(func.count(AgentRun.id)).where(
-                    AgentRun.workspace_id == ws,
+                    w(AgentRun.workspace_id),
                     AgentRun.status.in_(ACTIVE_STATUSES),
                     AgentRun.lease_expires_at < now,
-                    runs_visible_to(member),
+                    scope_runs("chat"),
                 )
             )
             + await scalar(
                 select(func.count(CodingRun.id)).where(
-                    CodingRun.workspace_id == ws,
+                    w(CodingRun.workspace_id),
                     CodingRun.status.in_(CODING_ACTIVE),
                     CodingRun.lease_expires_at < now,
-                    visible_runs(member),
+                    scope_runs("coding"),
                 )
             )
         )
@@ -156,7 +174,7 @@ class ObserveService:
 
     async def _run_summary(
         self,
-        member: Membership,
+        member: Membership | None,
         since: datetime,
         *,
         model,
@@ -170,37 +188,49 @@ class ObserveService:
         calls=None,
         cost=None,
     ) -> RunGroupSummary:
-        ws = member.workspace_id
+        ws = member.workspace_id if member else None
+        w = (lambda col: col == ws) if ws is not None else (lambda col: true())
 
         async def scalar(stmt) -> int | float:
             return (await self.session.execute(stmt)).scalar() or 0
 
         return RunGroupSummary(
-            total=await scalar(select(func.count(model.id)).where(model.workspace_id == ws, scope)),
-            active=await scalar(select(func.count(model.id)).where(model.workspace_id == ws, scope, active)),
-            waiting=await scalar(select(func.count(model.id)).where(model.workspace_id == ws, scope, waiting)),
+            total=await scalar(select(func.count(model.id)).where(w(model.workspace_id), scope)),
+            active=await scalar(select(func.count(model.id)).where(w(model.workspace_id), scope, active)),
+            waiting=await scalar(select(func.count(model.id)).where(w(model.workspace_id), scope, waiting)),
             failed_7d=await scalar(
-                select(func.count(model.id)).where(model.workspace_id == ws, scope, failed, model.finished_at >= since)
+                select(func.count(model.id)).where(w(model.workspace_id), scope, failed, model.finished_at >= since)
             ),
             input_tokens_7d=await scalar(
-                select(func.coalesce(func.sum(tokens_in), 0)).where(model.workspace_id == ws, scope, window)
+                select(func.coalesce(func.sum(tokens_in), 0)).where(w(model.workspace_id), scope, window)
             ),
             output_tokens_7d=await scalar(
-                select(func.coalesce(func.sum(tokens_out), 0)).where(model.workspace_id == ws, scope, window)
+                select(func.coalesce(func.sum(tokens_out), 0)).where(w(model.workspace_id), scope, window)
             ),
             model_calls_7d=await scalar(
-                select(func.coalesce(func.sum(calls), 0)).where(model.workspace_id == ws, scope, window)
+                select(func.coalesce(func.sum(calls), 0)).where(w(model.workspace_id), scope, window)
             )
             if calls is not None
             else 0,
             cost_usd_7d=float(
                 await scalar(
-                    select(func.coalesce(func.sum(cost), 0)).where(model.workspace_id == ws, scope, window)
+                    select(func.coalesce(func.sum(cost), 0)).where(w(model.workspace_id), scope, window)
                 )
             )
             if cost is not None
             else None,
         )
+
+    async def platform_runs(
+        self,
+        *,
+        kind: Literal["chat", "coding"] | None = None,
+        before: datetime | None = None,
+        before_id: uuid.UUID | None = None,
+        limit: int = 50,
+    ) -> list[ObservedRun]:
+        """Every workspace's runs, newest first (the ops console sees the whole platform)."""
+        return await self._runs(None, kind=kind, before=before, before_id=before_id, limit=limit)
 
     async def runs(
         self,
@@ -215,7 +245,18 @@ class ObserveService:
         fetched at `limit` and merged, so paging `before` the last row is exact. `before_id`
         keeps the same (created_at, id) order as the sort, so rows tied on created_at aren't
         skipped when a page boundary lands inside them."""
-        ws = member.workspace_id
+        return await self._runs(member, kind=kind, before=before, before_id=before_id, limit=limit)
+
+    async def _runs(
+        self,
+        member: Membership | None,
+        *,
+        kind: Literal["chat", "coding"] | None = None,
+        before: datetime | None = None,
+        before_id: uuid.UUID | None = None,
+        limit: int = 50,
+    ) -> list[ObservedRun]:
+        ws = member.workspace_id if member else None
         found: list[ObservedRun] = []
 
         def keyset(model) -> Any:
@@ -229,7 +270,10 @@ class ObserveService:
         if kind in (None, "chat"):
             stmt = (
                 select(AgentRun)
-                .where(AgentRun.workspace_id == ws, runs_visible_to(member))
+                .where(
+                    *( [AgentRun.workspace_id == ws] if ws is not None else [] ),
+                    runs_visible_to(member) if member else true(),
+                )
                 .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
                 .limit(limit)
             )
@@ -260,7 +304,10 @@ class ObserveService:
         if kind in (None, "coding"):
             stmt = (
                 select(CodingRun)
-                .where(CodingRun.workspace_id == ws, visible_runs(member))
+                .where(
+                    *( [CodingRun.workspace_id == ws] if ws is not None else [] ),
+                    visible_runs(member) if member else true(),
+                )
                 .order_by(CodingRun.created_at.desc(), CodingRun.id.desc())
                 .limit(limit)
             )

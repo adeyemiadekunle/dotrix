@@ -12,17 +12,14 @@ from typing import Annotated
 
 import jwt
 from fastapi import Cookie, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.api.deps import SessionDep, SettingsDep
-from dotrix_backend.core.errors import Conflict, Forbidden, NotFound, Unauthorized
+from dotrix_backend.core.errors import Forbidden, Unauthorized
 from dotrix_backend.core.security import generate_token, hash_password, hash_token, verify_password
 from dotrix_backend.core.settings import Settings
-from dotrix_backend.modules.auth.repository import UserRepository
-from dotrix_backend.modules.workspaces.models import Membership, Role, Workspace, WorkspaceKind
-from dotrix_backend.modules.workspaces.schemas import WorkspaceCreate, WorkspaceWithRole
-from dotrix_backend.modules.workspaces.service import WorkspaceService
+from dotrix_backend.modules.workspaces.models import Workspace
 
 from .models import OpsSession, OpsUser
 from .schemas import OpsLogin, OpsRead, OpsSignup, OpsWorkspace
@@ -68,36 +65,22 @@ class OpsService:
         await self.session.flush()  # the access token's sid is this row's id
         return _ops_token(ops.id, session.id, self.settings), refresh
 
+    async def bootstrap_available(self) -> bool:
+        """Sign-up is open only while no ops account exists — the console is for the person
+        operating the deployment, never for app users."""
+        return not await self.session.scalar(select(func.count(OpsUser.id)))
+
     async def signup(self, data: OpsSignup) -> tuple[str, str]:
-        """The owner's own credentials create the ops once; afterwards only the ops's sign in."""
-        user = await UserRepository(self.session).get_by_email(data.owner_email.lower())
-        if user is None or not verify_password(user.password_hash, data.owner_password):
-            raise Unauthorized("The workspace owner's sign-in didn't check out")
-        # Phase 1: a personal workspace only — pick it explicitly, since owners may also own
-        # an organisation (e.g. after converting, which leaves them a new personal one too).
-        workspace = await self.session.scalar(
-            select(Workspace)
-            .join(Membership, Membership.workspace_id == Workspace.id)
-            .where(
-                Membership.user_id == user.id,
-                Membership.role == Role.OWNER,
-                Workspace.kind == WorkspaceKind.PERSONAL,
-            )
-        )
-        if workspace is None:
-            raise Conflict("That account owns no personal workspace")
-        if await self.session.scalar(select(OpsUser).where(OpsUser.email == data.email.lower())):
-            raise Conflict("That email already has an ops account")
+        if not await self.bootstrap_available():
+            raise Forbidden("Ops sign-up is closed")
         ops = OpsUser(
-            workspace_id=workspace.id,
-            user_id=user.id,
             email=data.email.lower(),
             name=data.name,
             password_hash=hash_password(data.password),
             created_at=datetime.now(UTC),
         )
         self.session.add(ops)
-        await self.session.flush()  # the session row and the JWT both need ops.id
+        await self.session.flush()
         pair = await self._tokens(ops)
         await self.session.commit()
         return pair
@@ -141,23 +124,19 @@ class OpsService:
             ops_session.revoked_at = datetime.now(UTC)
             await self.session.commit()
 
-    async def create_organization(self, ops: OpsUser, data: WorkspaceCreate) -> WorkspaceWithRole:
-        """The owner's own organisation — created, never converted: the workspace this ops is
-        bound to stays a personal workspace."""
-        owner = await UserRepository(self.session).get(ops.user_id)
-        if owner is None:
-            raise NotFound("The account that proved the workspace is gone")
-        return await WorkspaceService(self.session).create(owner, data)
-
     async def read(self, ops: OpsUser) -> OpsRead:
-        workspace = await self.session.get(Workspace, ops.workspace_id)
-        if workspace is None:
-            raise NotFound("The workspace is gone")
+        workspace = (
+            await self.session.get(Workspace, ops.workspace_id) if ops.workspace_id is not None else None
+        )
         return OpsRead(
             id=ops.id,
             email=ops.email,
             name=ops.name,
-            workspace=OpsWorkspace(id=workspace.id, name=workspace.name, slug=workspace.slug, kind=workspace.kind.value),
+            workspace=(
+                OpsWorkspace(id=workspace.id, name=workspace.name, slug=workspace.slug, kind=workspace.kind.value)
+                if workspace is not None
+                else None
+            ),
             created_at=ops.created_at,
         )
 
@@ -200,17 +179,3 @@ async def get_ops(
 OpsDep = Annotated[OpsUser, Depends(get_ops)]
 
 
-async def ops_member(session: AsyncSession, ops: OpsUser) -> Membership:
-    """The ops reads as its bound workspace's owner, for as long as the person who proved the
-    workspace still owns it. If that ownership is ever gone (transfer or removal), the ops
-    loses access rather than keeping a fabricated owner role."""
-    membership = await session.scalar(
-        select(Membership).where(
-            Membership.user_id == ops.user_id,
-            Membership.workspace_id == ops.workspace_id,
-            Membership.role == Role.OWNER,
-        )
-    )
-    if membership is None:
-        raise Forbidden("The owner who proved this workspace no longer owns it")
-    return membership

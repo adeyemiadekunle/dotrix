@@ -71,7 +71,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   stopped: "secondary",
 };
 
-type Me = { email: string; name: string; workspace: { id: string; name: string; slug: string; kind: string } };
+type Me = { email: string; name: string; workspace: { id: string; name: string; slug: string; kind: string } | null };
 type Group = { total: number; active: number; waiting: number; failed_7d: number; input_tokens_7d: number; output_tokens_7d: number };
 type Overview = {
   jobs: string;
@@ -124,43 +124,35 @@ function GroupCard({ title, g, cost }: { title: string; g: Group; cost?: string 
 }
 
 function Login({ onAuth }: { onAuth: () => void }) {
+  const boot = useQuery({ queryKey: ["bootstrap"], queryFn: () => rawCall<{ enabled: boolean }>("/ops/bootstrap"), staleTime: 60_000 });
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [f, setF] = useState({ owner_email: "", owner_password: "", email: "", name: "", password: "" });
+  const [f, setF] = useState({ email: "", name: "", password: "" });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const auth = useMutation({
     mutationFn: () =>
       rawCall<void>(mode === "login" ? "/ops/login" : "/ops/signup", {
         method: "POST",
-        body: mode === "login" ? { email: f.email, password: f.password } : f,
+        body: mode === "login" ? { email: f.email, password: f.password } : { email: f.email, name: f.name, password: f.password },
       }),
     onSuccess: onAuth,
   });
   const submit = (e: FormEvent) => (e.preventDefault(), auth.mutate());
   return (
-    <div className="mx-auto max-w-sm px-5 py-16">
-      <h1 className="mb-4 text-2xl font-semibold">dotrix ops</h1>
+    <div className="ops-auth">
+      <h1>dotrix ops</h1>
+      <p className="sub">Platform console — not for app users.</p>
       <Tabs value={mode} onValueChange={(v) => setMode(v as "login" | "signup")}>
-        <TabsList className="mb-4">
+        <TabsList className="mb-4 w-full">
           <TabsTrigger value="login">Sign in</TabsTrigger>
-          <TabsTrigger value="signup">Create ops account</TabsTrigger>
+          {boot.data?.enabled && <TabsTrigger value="signup">Create ops account</TabsTrigger>}
         </TabsList>
       </Tabs>
-      <Card>
-        <CardContent className="flex flex-col gap-3 pt-5">
+      <Card className="border-0 bg-transparent shadow-none">
+        <CardContent className="flex flex-col gap-3 px-0 pt-0">
           <form onSubmit={submit} className="flex flex-col gap-3">
             {mode === "signup" && (
               <>
-                <p className="text-xs text-muted-foreground">
-                  Prove you own the workspace once — your dotrix sign-in — then this ops account is fully separate.
-                </p>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="oe">Your dotrix email</Label>
-                  <Input id="oe" type="email" value={f.owner_email} onChange={set("owner_email")} required />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="op">Your dotrix password</Label>
-                  <Input id="op" type="password" value={f.owner_password} onChange={set("owner_password")} required />
-                </div>
+                <p className="text-xs text-muted-foreground">One-time bootstrap — open only until the first account exists.</p>
                 <div className="grid gap-1.5">
                   <Label htmlFor="nm">Ops name</Label>
                   <Input id="nm" value={f.name} onChange={set("name")} required />
@@ -370,48 +362,6 @@ function Audit() {
   );
 }
 
-function Organisation({ me }: { me: Me }) {
-  const [name, setName] = useState("");
-  const create = useMutation({
-    mutationFn: () => call("/ops/organization", { method: "POST", body: { name: name.trim() } }),
-  });
-  if (create.isSuccess)
-    return (
-      <Card className="max-w-lg">
-        <CardContent className="pt-5">
-          <b>{name.trim()} is an organisation now — your account owns it.</b>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Open it in the app from the workspace switcher; members and invites live under Settings → Members.
-            {me.workspace.name} stays your personal workspace.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  return (
-    <Card className="max-w-lg">
-      <CardHeader>
-        <CardTitle className="text-base">Create an organisation workspace</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <p className="text-sm text-muted-foreground">
-          A new, separate workspace your account owns — for a team: invites, roles, many projects. {me.workspace.name} stays your personal workspace; nothing
-          moves or converts.
-        </p>
-        <div className="grid gap-1.5">
-          <Label htmlFor="orgname">Organisation name</Label>
-          <Input id="orgname" value={name} placeholder="Your team's name" onChange={(e) => setName(e.target.value)} />
-        </div>
-        {create.isError && <p className="text-xs text-destructive">{create.error.message}</p>}
-        <div>
-          <Button disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
-            {create.isPending ? "Creating…" : "Create the organisation"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export function App() {
   const qc = useQueryClient();
   const [signedIn, setSignedIn] = useState(false);
@@ -447,30 +397,31 @@ export function App() {
   const m = me.data;
 
   return (
-    <div className="mx-auto max-w-5xl px-5 py-8">
-      <div className="mb-4 flex items-baseline justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">dotrix ops</h1>
-          <p className="text-sm text-muted-foreground">
-            {m.name} · {m.workspace.name} ({m.workspace.kind})
-          </p>
+    <>
+      <header className="ops-topbar">
+        <div className="ops-brand">
+          dotrix ops
+          <span>
+            {m.name}
+            {m.workspace ? ` · ${m.workspace.name} (${m.workspace.kind})` : ""}
+          </span>
         </div>
-        <Button variant="outline" onClick={signOut}>
+        <Button variant="outline" size="sm" onClick={signOut}>
           Sign out
         </Button>
+      </header>
+      <div className="ops-page">
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList className="mb-4">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="runs">Runs</TabsTrigger>
+            <TabsTrigger value="audit">Audit log</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {tab === "overview" && <Overview />}
+        {tab === "runs" && <Runs />}
+        {tab === "audit" && <Audit />}
       </div>
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="mb-4">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="runs">Runs</TabsTrigger>
-          <TabsTrigger value="audit">Audit log</TabsTrigger>
-          <TabsTrigger value="org">Organisation</TabsTrigger>
-        </TabsList>
-      </Tabs>
-      {tab === "overview" && <Overview />}
-      {tab === "runs" && <Runs />}
-      {tab === "audit" && <Audit />}
-      {tab === "org" && <Organisation me={m} />}
-    </div>
+    </>
   );
 }

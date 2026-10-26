@@ -798,13 +798,45 @@
         }
       }
     },
+    "/v1/ops/bootstrap": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Ops Bootstrap",
+        "description": "Whether ops sign-up is open: true only while no ops account exists.",
+        "operationId": "ops_bootstrap",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsBootstrap"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/ops/signup": {
       "post": {
         "tags": [
           "ops"
         ],
         "summary": "Ops Signup",
-        "description": "Create an ops account by proving you own the workspace (your app sign-in). Ops\naccounts are separate from app users: the ops signs in with its own credentials after.\nRate-limited on the owner's email and the client IP, same as sign-in.",
+        "description": "Bootstrap the first ops account. The console is for whoever operates the deployment,\nnot app users \u2014 sign-up closes once the first account exists. Rate-limited per IP.",
         "operationId": "ops_signup",
         "requestBody": {
           "content": {
@@ -835,8 +867,8 @@
               }
             }
           },
-          "409": {
-            "description": "Conflicts with the current state",
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1035,7 +1067,7 @@
           "ops"
         ],
         "summary": "Ops Me",
-        "description": "Who's signed in and the workspace this ops is bound to.",
+        "description": "Who's signed in.",
         "operationId": "ops_me",
         "parameters": [
           {
@@ -1095,7 +1127,7 @@
           "ops"
         ],
         "summary": "Observe Overview",
-        "description": "The ops's workspace health (the same read the app's owners get).",
+        "description": "Platform health: every workspace's runs, the whole dispatch queue, lapsed leases.",
         "operationId": "observe_overview",
         "parameters": [
           {
@@ -1165,7 +1197,7 @@
           "ops"
         ],
         "summary": "Observe Runs",
-        "description": "The workspace's run history: chat and coding merged, newest first. Page backwards with\n`before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped.",
+        "description": "Run history across the platform: chat and coding merged, newest first. Page backwards\nwith `before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped.",
         "operationId": "observe_runs",
         "parameters": [
           {
@@ -1305,7 +1337,7 @@
           "ops"
         ],
         "summary": "Audit",
-        "description": "The workspace's audit log: approvals, writes and decisions, newest first.",
+        "description": "Audit events across the whole platform, newest first.",
         "operationId": "audit",
         "parameters": [
           {
@@ -1397,76 +1429,6 @@
           },
           "403": {
             "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Request body or parameters failed validation",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/ops/organization": {
-      "post": {
-        "tags": [
-          "ops"
-        ],
-        "summary": "Ops Create Organization",
-        "description": "Create an organisation workspace owned by your account \u2014 a separate workspace, not a\nconversion: the personal workspace this ops is bound to stays personal.",
-        "operationId": "ops_create_organization",
-        "parameters": [
-          {
-            "name": "dtx_ops_access",
-            "in": "cookie",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Dtx Ops Access"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WorkspaceCreate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkspaceWithRole"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -29342,6 +29304,20 @@
         "title": "ObservedRun",
         "description": "One agent run or coding turn in the unified run history."
       },
+      "OpsBootstrap": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "OpsBootstrap",
+        "description": "Whether the sign-up form is open: true only while no ops account exists."
+      },
       "OpsLogin": {
         "properties": {
           "email": {
@@ -29378,7 +29354,14 @@
             "title": "Name"
           },
           "workspace": {
-            "$ref": "#/components/schemas/OpsWorkspace"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpsWorkspace"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "type": "string",
@@ -29391,23 +29374,12 @@
           "id",
           "email",
           "name",
-          "workspace",
           "created_at"
         ],
         "title": "OpsRead"
       },
       "OpsSignup": {
         "properties": {
-          "owner_email": {
-            "type": "string",
-            "maxLength": 320,
-            "title": "Owner Email"
-          },
-          "owner_password": {
-            "type": "string",
-            "maxLength": 200,
-            "title": "Owner Password"
-          },
           "email": {
             "type": "string",
             "maxLength": 320,
@@ -29429,8 +29401,6 @@
         },
         "type": "object",
         "required": [
-          "owner_email",
-          "owner_password",
           "email",
           "name",
           "password"

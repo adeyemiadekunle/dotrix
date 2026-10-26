@@ -359,6 +359,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ops/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ops Bootstrap
+         * @description Whether ops sign-up is open: true only while no ops account exists.
+         */
+        get: operations["ops_bootstrap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ops/signup": {
         parameters: {
             query?: never;
@@ -370,9 +390,8 @@ export interface paths {
         put?: never;
         /**
          * Ops Signup
-         * @description Create an ops account by proving you own the workspace (your app sign-in). Ops
-         *     accounts are separate from app users: the ops signs in with its own credentials after.
-         *     Rate-limited on the owner's email and the client IP, same as sign-in.
+         * @description Bootstrap the first ops account. The console is for whoever operates the deployment,
+         *     not app users — sign-up closes once the first account exists. Rate-limited per IP.
          */
         post: operations["ops_signup"];
         delete?: never;
@@ -452,7 +471,7 @@ export interface paths {
         };
         /**
          * Ops Me
-         * @description Who's signed in and the workspace this ops is bound to.
+         * @description Who's signed in.
          */
         get: operations["ops_me"];
         put?: never;
@@ -472,7 +491,7 @@ export interface paths {
         };
         /**
          * Observe Overview
-         * @description The ops's workspace health (the same read the app's owners get).
+         * @description Platform health: every workspace's runs, the whole dispatch queue, lapsed leases.
          */
         get: operations["observe_overview"];
         put?: never;
@@ -492,8 +511,8 @@ export interface paths {
         };
         /**
          * Observe Runs
-         * @description The workspace's run history: chat and coding merged, newest first. Page backwards with
-         *     `before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped.
+         * @description Run history across the platform: chat and coding merged, newest first. Page backwards
+         *     with `before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped.
          */
         get: operations["observe_runs"];
         put?: never;
@@ -513,32 +532,11 @@ export interface paths {
         };
         /**
          * Audit
-         * @description The workspace's audit log: approvals, writes and decisions, newest first.
+         * @description Audit events across the whole platform, newest first.
          */
         get: operations["audit"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/ops/organization": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Ops Create Organization
-         * @description Create an organisation workspace owned by your account — a separate workspace, not a
-         *     conversion: the personal workspace this ops is bound to stays personal.
-         */
-        post: operations["ops_create_organization"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7495,6 +7493,14 @@ export interface components {
             /** Finished At */
             finished_at: string | null;
         };
+        /**
+         * OpsBootstrap
+         * @description Whether the sign-up form is open: true only while no ops account exists.
+         */
+        OpsBootstrap: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** OpsLogin */
         OpsLogin: {
             /** Email */
@@ -7513,7 +7519,7 @@ export interface components {
             email: string;
             /** Name */
             name: string;
-            workspace: components["schemas"]["OpsWorkspace"];
+            workspace?: components["schemas"]["OpsWorkspace"] | null;
             /**
              * Created At
              * Format: date-time
@@ -7526,10 +7532,6 @@ export interface components {
          *     password. The ops gets its own credentials from then on — separate from your sign-in.
          */
         OpsSignup: {
-            /** Owner Email */
-            owner_email: string;
-            /** Owner Password */
-            owner_password: string;
             /** Email */
             email: string;
             /** Name */
@@ -10165,6 +10167,35 @@ export interface operations {
             };
         };
     };
+    ops_bootstrap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsBootstrap"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     ops_signup: {
         parameters: {
             query?: never;
@@ -10196,8 +10227,8 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Conflicts with the current state */
-            409: {
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10528,50 +10559,6 @@ export interface operations {
             };
             /** @description Signed in, but your role or token scope doesn't allow this */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    ops_create_organization: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: {
-                dtx_ops_access?: string | null;
-            };
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkspaceCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceWithRole"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
                 headers: {
                     [name: string]: unknown;
                 };
