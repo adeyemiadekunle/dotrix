@@ -109,9 +109,11 @@ class AdminService:
         return tokens
 
     async def refresh(self, data: AdminRefresh) -> AdminTokens:
-        """Rotate: the presented token is replaced in place, so it's dead once this answers."""
+        """Rotate: the presented token is replaced in place, so it's dead once this answers.
+        FOR UPDATE serialises concurrent refreshes of one token (two tabs): the loser
+        re-reads the row after the winner's commit, finds the hash rotated, and gets a 401."""
         session = await self.session.scalar(
-            select(AdminSession).where(AdminSession.token_hash == hash_token(data.refresh_token))
+            select(AdminSession).where(AdminSession.token_hash == hash_token(data.refresh_token)).with_for_update()
         )
         now = datetime.now(UTC)
         if session is None or session.revoked_at is not None or session.expires_at <= now:
