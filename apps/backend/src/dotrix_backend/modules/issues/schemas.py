@@ -198,6 +198,7 @@ class IssueSummary(BaseModel):
         default=None, description="The key of the issue made when this repeating one was finished"
     )
     attachment_count: int = 0
+    comment_count: int = 0
     archived_at: datetime | None = Field(default=None, description="When it was archived; null while in use")
     rank: float
     created_at: datetime

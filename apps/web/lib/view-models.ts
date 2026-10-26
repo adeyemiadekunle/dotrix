@@ -151,6 +151,7 @@ export function toTask(i: IssueLike, projectId: string, order: number): Task {
     labels: i.labels,
     subtasks: (i.checklist ?? []).map(toSubtask),
     attachments: "attachments" in i && i.attachments ? i.attachments.map(toAttachment) : counted(i.attachment_count ?? 0),
+    commentCount: i.comment_count ?? 0,
     deps: i.depends_on ?? [],
     desc: full ? mdToHtml(i.description) : "",
     estimate: i.estimate != null ? `${i.estimate}` : null,

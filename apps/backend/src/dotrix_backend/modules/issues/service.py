@@ -320,10 +320,12 @@ class IssueService:
             )
         )
         is_blocked = await self.session.scalar(select(blocked_clause()).where(Issue.id == issue.id))
-        events = await self.session.scalars(
-            select(IssueEvent)
-            .where(IssueEvent.issue_id == issue.id)
-            .order_by(IssueEvent.created_at, IssueEvent.id)
+        events = list(
+            await self.session.scalars(
+                select(IssueEvent)
+                .where(IssueEvent.issue_id == issue.id)
+                .order_by(IssueEvent.created_at, IssueEvent.id)
+            )
         )
         attachments = [
             AttachmentRead.model_validate(a)
@@ -337,6 +339,7 @@ class IssueService:
             update={
                 "attachments": attachments,
                 "attachment_count": len(attachments),
+                "comment_count": sum(1 for e in events if e.kind is IssueEventKind.COMMENTED and e.body),
                 "parent_key": parent_key,
                 "depends_on": depends_on,
                 "blocks": blocks,
@@ -375,8 +378,8 @@ class IssueService:
             "updated": (Issue.updated_at.desc(),),
         }[order]
         rows = (await self.session.execute(stmt.order_by(*ordering, Issue.number).limit(limit).offset(offset))).all()
-        deps, counts = await self._row_extras([issue.id for issue, _ in rows])
-        return [self._summary(issue, parent_key, deps, counts) for issue, parent_key in rows]
+        deps, counts, comment_counts = await self._row_extras([issue.id for issue, _ in rows])
+        return [self._summary(issue, parent_key, deps, counts, comment_counts) for issue, parent_key in rows]
 
     async def across_projects(
         self,
@@ -432,10 +435,10 @@ class IssueService:
             "updated": (Issue.updated_at.desc(),),
         }[order]
         rows = (await self.session.execute(stmt.order_by(*ordering, Issue.id).limit(limit).offset(offset))).all()
-        deps, counts = await self._row_extras([row[0].id for row in rows])
+        deps, counts, comment_counts = await self._row_extras([row[0].id for row in rows])
         return [
             WorkspaceIssue.model_validate(
-                self._summary(issue, parent_key, deps, counts).model_dump()
+                self._summary(issue, parent_key, deps, counts, comment_counts).model_dump()
                 | {"project_id": issue.project_id, "project_key": key, "project_name": name}
             )
             for issue, parent_key, key, name in rows
@@ -455,10 +458,10 @@ class IssueService:
             epic_issue = await self._by_key(project, epic)
             stmt = stmt.where(Issue.parent_id == epic_issue.id)
         rows = (await self.session.execute(stmt.order_by(Issue.rank, Issue.number))).all()
-        deps, counts = await self._row_extras([issue.id for issue, _ in rows])
+        deps, counts, comment_counts = await self._row_extras([issue.id for issue, _ in rows])
         columns: dict[IssueStatus, list[IssueSummary]] = {status: [] for status in IssueStatus}
         for issue, parent_key in rows:
-            columns[issue.status].append(self._summary(issue, parent_key, deps, counts))
+            columns[issue.status].append(self._summary(issue, parent_key, deps, counts, comment_counts))
         return Board(columns=[BoardColumn(status=s, issues=columns[s]) for s in IssueStatus])
 
     async def epics(self, project: Project) -> list[EpicProgress]:
@@ -961,21 +964,23 @@ class IssueService:
         parent_key: str | None,
         deps: dict[uuid.UUID, list[str]] | None = None,
         counts: dict[uuid.UUID, int] | None = None,
+        comment_counts: dict[uuid.UUID, int] | None = None,
     ) -> IssueSummary:
         return IssueSummary.model_validate(issue).model_copy(
             update={
                 "parent_key": parent_key,
                 "depends_on": (deps or {}).get(issue.id, []),
                 "attachment_count": (counts or {}).get(issue.id, 0),
+                "comment_count": (comment_counts or {}).get(issue.id, 0),
             }
         )
 
     async def _row_extras(
         self, issue_ids: list[uuid.UUID]
-    ) -> tuple[dict[uuid.UUID, list[str]], dict[uuid.UUID, int]]:
-        """What list rows need beyond the issue: the keys each waits for, and its attachment count."""
+    ) -> tuple[dict[uuid.UUID, list[str]], dict[uuid.UUID, int], dict[uuid.UUID, int]]:
+        """What list rows need beyond the issue: the keys each waits for, its attachment and comment counts."""
         if not issue_ids:
-            return {}, {}
+            return {}, {}, {}
         counts: dict[uuid.UUID, int] = {
             issue_id: count
             for issue_id, count in await self.session.execute(
@@ -984,7 +989,15 @@ class IssueService:
                 .group_by(IssueAttachment.issue_id)
             )
         }
-        return await self._dependency_map(issue_ids), counts
+        comment_counts: dict[uuid.UUID, int] = {
+            issue_id: count
+            for issue_id, count in await self.session.execute(
+                select(IssueEvent.issue_id, func.count())
+                .where(IssueEvent.issue_id.in_(issue_ids), IssueEvent.kind == IssueEventKind.COMMENTED, IssueEvent.body.is_not(None))
+                .group_by(IssueEvent.issue_id)
+            )
+        }
+        return await self._dependency_map(issue_ids), counts, comment_counts
 
     async def _dependency_map(self, issue_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
         """The keys each of these issues waits for, in one query."""

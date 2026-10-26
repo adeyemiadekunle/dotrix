@@ -69,6 +69,8 @@ export interface Task {
   labels: string[];
   subtasks: Subtask[];
   attachments: Attachment[];
+  /** Live rows only: the API's comment count (comments themselves need the issue detail). */
+  commentCount?: number;
   deps: string[];
   desc: string;
   estimate: string | null;

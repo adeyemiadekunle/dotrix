@@ -6437,6 +6437,11 @@ export interface components {
              */
             attachment_count: number;
             /**
+             * Comment Count
+             * @default 0
+             */
+            comment_count: number;
+            /**
              * Archived At
              * @description When it was archived; null while in use
              */
@@ -6546,6 +6551,11 @@ export interface components {
              * @default 0
              */
             attachment_count: number;
+            /**
+             * Comment Count
+             * @default 0
+             */
+            comment_count: number;
             /**
              * Archived At
              * @description When it was archived; null while in use
@@ -8766,6 +8776,11 @@ export interface components {
              * @default 0
              */
             attachment_count: number;
+            /**
+             * Comment Count
+             * @default 0
+             */
+            comment_count: number;
             /**
              * Archived At
              * @description When it was archived; null while in use
