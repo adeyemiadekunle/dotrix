@@ -23,6 +23,7 @@ import { Ic } from "../core/icons";
 import { openModal, restore, snapshot } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, TODAY, ago, diffD, fmtDate, parse, relDate, uid } from "../core/utils";
+import { mdToHtml } from "../data/markdown";
 import { D, S, commentsOf, isOver, logAct, me, mutate, pColor, proj, render, save, task, toolName, who, people } from "../data/store";
 import { CODING_AGENT } from "../data/seed-dotrix";
 import type { CodingSession, Comment, Subtask, Task } from "../data/types";
@@ -98,7 +99,8 @@ export function postComment(id: string) {
   if (!txt) return;
   const t = task(id)!;
   mutate(() => {
-    D().comments.push({ id: uid("c"), task: id, by: D().me, at: Date.now(), text: txt, re: {} });
+    // Live reads comments from the issue query's log; the push is the demo's optimistic echo.
+    if (!isLive()) D().comments.push({ id: uid("c"), task: id, by: D().me, at: Date.now(), text: txt, re: {} });
     logAct("commented on", t);
     S.ui.drafts[id] = "";
     S.ui.mention = null;
@@ -338,11 +340,11 @@ export function CommentBox({
 }
 
 /* ---------- the rich-text description ---------- */
-function Rte({ t }: { t: Task }) {
+function Rte({ t, desc }: { t: Task; desc: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (ref.current && document.activeElement !== ref.current && ref.current.innerHTML !== t.desc) ref.current.innerHTML = t.desc;
-  }, [t.desc]);
+    if (ref.current && document.activeElement !== ref.current && ref.current.innerHTML !== desc) ref.current.innerHTML = desc;
+  }, [desc]);
   const cmd = (c: string) => {
     ref.current?.focus();
     if (c === "createLink") {
@@ -385,7 +387,7 @@ function Rte({ t }: { t: Task }) {
           aria-labelledby="d-desc-l"
           onBlur={(e) => {
             const html = e.currentTarget.innerHTML;
-            if (html !== t.desc) mutate(() => applyPatch(t, { desc: html }));
+            if (html !== desc) mutate(() => applyPatch(t, { desc: html }));
           }}
         />
       </div>
@@ -868,7 +870,25 @@ export function Drawer() {
                   </button>,
                 )}
               </dl>
-              <Rte t={t} />
+              {isLive() && !issue ? (
+                // The list rows carry no description — typing into an empty editor now would
+                // overwrite the real one on blur; wait for the detail query instead.
+                <div className="dsec">
+                  <h3>Description</h3>
+                  {liveIssue.isError ? (
+                    <div className="muted">
+                      The description didn't load.{" "}
+                      <button className="btn btn-link" onClick={() => void liveIssue.refetch()}>
+                        Try again
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="muted">Loading…</div>
+                  )}
+                </div>
+              ) : (
+                <Rte t={t} desc={isLive() ? mdToHtml(issue?.description ?? "") : t.desc} />
+              )}
               <Subtasks t={t} sd={sd} />
               <div className="dsec">
                 <div className="dsec-h">

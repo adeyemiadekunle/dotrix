@@ -11,7 +11,8 @@ import { ago, dayBucket } from "../core/utils";
 import { D, S, commentsOf, mutate, pColor, proj, render, task, toolName, who } from "../data/store";
 import type { Notif, NotifType } from "../data/types";
 import { ChangeCard } from "../components/Changes";
-import { isLive, live, notifsRead } from "../data/live";
+import { isLive, live, liveCommentsOf, notifsRead } from "../data/live";
+import { useIssue } from "../../lib/issues";
 import { useLiveNotifications } from "../../lib/workspace-data";
 import { CellAssignee, CellDue, CellPrio, CellStatus } from "../components/TaskList";
 import { CommentBox, CommentItem } from "../overlays/Drawer";
@@ -150,6 +151,9 @@ function SelectPrompt({ icon, title, text }: { icon: string; title: string; text
 function TaskPreview({ n, onBack }: { n: Notif; onBack: () => void }) {
   const t = n.task ? task(n.task) : null;
   const p = projOf(n);
+  // The preview's last comments come from the issue query's log — fetch it for live.
+  const scope = isLive() && live.ws && t && p ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
+  useIssue(scope, scope ? t!.key : null);
   if (!t)
     return (
       <div style={{ padding: "24px 28px" }}>
@@ -175,7 +179,7 @@ function TaskPreview({ n, onBack }: { n: Notif; onBack: () => void }) {
         )}
       </div>
     );
-  const cs = commentsOf(t.id).slice(-4);
+  const cs = (isLive() ? liveCommentsOf(t) : commentsOf(t.id)).slice(-4);
   return (
     <>
       <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>

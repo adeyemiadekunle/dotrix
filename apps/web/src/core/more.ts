@@ -30,6 +30,7 @@ import {
   fileDuplicated,
   fileRenamed,
   isLive,
+  liveCommentsOf,
   projectChanged,
   projectCreated,
   projectDeleted,
@@ -291,7 +292,7 @@ export function delTask(id: string) {
   const t = task(id);
   S.ui.pop = null;
   if (!t) return;
-  const n = commentsOf(t.id).length;
+  const n = (isLive() ? liveCommentsOf(t) : commentsOf(t.id)).length;
   const undoable = !isLive(); // a real workspace's delete is for good
   confirmDlg({
     title: "Delete task?",
