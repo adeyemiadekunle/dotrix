@@ -804,7 +804,7 @@
           "admin"
         ],
         "summary": "Admin Signup",
-        "description": "Create an admin account by proving you own the workspace (your app sign-in). Admin\naccounts are separate from app users: the admin signs in with its own credentials after.",
+        "description": "Create an admin account by proving you own the workspace (your app sign-in). Admin\naccounts are separate from app users: the admin signs in with its own credentials after.\nRate-limited on the owner's email and the client IP, same as sign-in.",
         "operationId": "admin_signup",
         "requestBody": {
           "content": {
@@ -856,6 +856,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
           }
         }
       }
@@ -866,7 +876,7 @@
           "admin"
         ],
         "summary": "Admin Login",
-        "description": "Sign the admin in: its own email and password, never an app session.",
+        "description": "Sign the admin in: its own email and password, never an app session. Rate-limited per\nIP and per email (10 attempts in 15 minutes).",
         "operationId": "admin_login",
         "requestBody": {
           "content": {
@@ -901,6 +911,16 @@
           },
           "422": {
             "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
             "content": {
               "application/problem+json": {
                 "schema": {

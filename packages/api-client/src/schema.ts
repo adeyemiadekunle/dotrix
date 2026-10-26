@@ -372,6 +372,7 @@ export interface paths {
          * Admin Signup
          * @description Create an admin account by proving you own the workspace (your app sign-in). Admin
          *     accounts are separate from app users: the admin signs in with its own credentials after.
+         *     Rate-limited on the owner's email and the client IP, same as sign-in.
          */
         post: operations["admin_signup"];
         delete?: never;
@@ -391,7 +392,8 @@ export interface paths {
         put?: never;
         /**
          * Admin Login
-         * @description Sign the admin in: its own email and password, never an app session.
+         * @description Sign the admin in: its own email and password, never an app session. Rate-limited per
+         *     IP and per email (10 attempts in 15 minutes).
          */
         post: operations["admin_login"];
         delete?: never;
@@ -10246,6 +10248,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
+            /** @description Too many attempts; the Retry-After header says how many seconds to wait */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
         };
     };
     admin_login: {
@@ -10281,6 +10292,15 @@ export interface operations {
             };
             /** @description Request body or parameters failed validation */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Too many attempts; the Retry-After header says how many seconds to wait */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

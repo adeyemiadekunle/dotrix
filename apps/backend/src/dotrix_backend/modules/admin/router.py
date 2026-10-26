@@ -11,6 +11,7 @@ from dotrix_backend.api.deps import SessionDep, SettingsDep
 from dotrix_backend.core.openapi import errors
 from dotrix_backend.modules.audit.schemas import AuditEventRead
 from dotrix_backend.modules.audit.service import AuditLog
+from dotrix_backend.modules.auth.limits import LOGIN, ThrottleDep
 from dotrix_backend.modules.observe.schemas import ObservedRun, ObserveOverview
 from dotrix_backend.modules.observe.service import ObserveService
 from dotrix_backend.modules.workspaces.schemas import OrganizationConversion, WorkspaceWithRole
@@ -29,16 +30,20 @@ def get_admin_service(session: SessionDep, settings: SettingsDep) -> AdminServic
 Service = Annotated[AdminService, Depends(get_admin_service)]
 
 
-@router.post("/signup", status_code=status.HTTP_201_CREATED, responses=errors(409, 422))
-async def admin_signup(data: AdminSignup, admins: Service) -> AdminTokens:
+@router.post("/signup", status_code=status.HTTP_201_CREATED, responses=errors(409, 422, 429))
+async def admin_signup(data: AdminSignup, admins: Service, throttle: ThrottleDep) -> AdminTokens:
     """Create an admin account by proving you own the workspace (your app sign-in). Admin
-    accounts are separate from app users: the admin signs in with its own credentials after."""
+    accounts are separate from app users: the admin signs in with its own credentials after.
+    Rate-limited on the owner's email and the client IP, same as sign-in."""
+    await throttle(LOGIN, data.owner_email)
     return await admins.signup(data)
 
 
-@router.post("/login", responses=errors(422))
-async def admin_login(data: AdminLogin, admins: Service) -> AdminTokens:
-    """Sign the admin in: its own email and password, never an app session."""
+@router.post("/login", responses=errors(422, 429))
+async def admin_login(data: AdminLogin, admins: Service, throttle: ThrottleDep) -> AdminTokens:
+    """Sign the admin in: its own email and password, never an app session. Rate-limited per
+    IP and per email (10 attempts in 15 minutes)."""
+    await throttle(LOGIN, data.email)
     return await admins.login(data)
 
 
