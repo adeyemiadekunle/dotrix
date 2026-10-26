@@ -320,10 +320,12 @@ class IssueService:
             )
         )
         is_blocked = await self.session.scalar(select(blocked_clause()).where(Issue.id == issue.id))
-        events = await self.session.scalars(
-            select(IssueEvent)
-            .where(IssueEvent.issue_id == issue.id)
-            .order_by(IssueEvent.created_at, IssueEvent.id)
+        events = list(
+            await self.session.scalars(
+                select(IssueEvent)
+                .where(IssueEvent.issue_id == issue.id)
+                .order_by(IssueEvent.created_at, IssueEvent.id)
+            )
         )
         attachments = [
             AttachmentRead.model_validate(a)
