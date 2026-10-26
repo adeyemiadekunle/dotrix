@@ -137,16 +137,17 @@ function Login({ onAuth }: { onAuth: () => void }) {
   });
   const submit = (e: FormEvent) => (e.preventDefault(), auth.mutate());
   return (
-    <div className="mx-auto max-w-sm px-5 py-16">
-      <h1 className="mb-4 text-2xl font-semibold">dotrix ops</h1>
+    <div className="ops-auth">
+      <h1>dotrix ops</h1>
+      <p className="sub">Workspace operations, bound to one workspace.</p>
       <Tabs value={mode} onValueChange={(v) => setMode(v as "login" | "signup")}>
-        <TabsList className="mb-4">
+        <TabsList className="mb-4 w-full">
           <TabsTrigger value="login">Sign in</TabsTrigger>
           <TabsTrigger value="signup">Create ops account</TabsTrigger>
         </TabsList>
       </Tabs>
-      <Card>
-        <CardContent className="flex flex-col gap-3 pt-5">
+      <Card className="border-0 bg-transparent shadow-none">
+        <CardContent className="flex flex-col gap-3 px-0 pt-0">
           <form onSubmit={submit} className="flex flex-col gap-3">
             {mode === "signup" && (
               <>
@@ -447,30 +448,32 @@ export function App() {
   const m = me.data;
 
   return (
-    <div className="mx-auto max-w-5xl px-5 py-8">
-      <div className="mb-4 flex items-baseline justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">dotrix ops</h1>
-          <p className="text-sm text-muted-foreground">
+    <>
+      <header className="ops-topbar">
+        <div className="ops-brand">
+          dotrix ops
+          <span>
             {m.name} · {m.workspace.name} ({m.workspace.kind})
-          </p>
+          </span>
         </div>
-        <Button variant="outline" onClick={signOut}>
+        <Button variant="outline" size="sm" onClick={signOut}>
           Sign out
         </Button>
+      </header>
+      <div className="ops-page">
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList className="mb-4">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="runs">Runs</TabsTrigger>
+            <TabsTrigger value="audit">Audit log</TabsTrigger>
+            <TabsTrigger value="org">Organisation</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {tab === "overview" && <Overview />}
+        {tab === "runs" && <Runs />}
+        {tab === "audit" && <Audit />}
+        {tab === "org" && <Organisation me={m} />}
       </div>
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="mb-4">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="runs">Runs</TabsTrigger>
-          <TabsTrigger value="audit">Audit log</TabsTrigger>
-          <TabsTrigger value="org">Organisation</TabsTrigger>
-        </TabsList>
-      </Tabs>
-      {tab === "overview" && <Overview />}
-      {tab === "runs" && <Runs />}
-      {tab === "audit" && <Audit />}
-      {tab === "org" && <Organisation me={m} />}
-    </div>
+    </>
   );
 }
