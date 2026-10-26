@@ -798,19 +798,19 @@
         }
       }
     },
-    "/v1/admin/signup": {
+    "/v1/ops/signup": {
       "post": {
         "tags": [
-          "admin"
+          "ops"
         ],
-        "summary": "Admin Signup",
-        "description": "Create an admin account by proving you own the workspace (your app sign-in). Admin\naccounts are separate from app users: the admin signs in with its own credentials after.\nRate-limited on the owner's email and the client IP, same as sign-in.",
-        "operationId": "admin_signup",
+        "summary": "Ops Signup",
+        "description": "Create an ops account by proving you own the workspace (your app sign-in). Ops\naccounts are separate from app users: the ops signs in with its own credentials after.\nRate-limited on the owner's email and the client IP, same as sign-in.",
+        "operationId": "ops_signup",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminSignup"
+                "$ref": "#/components/schemas/OpsSignup"
               }
             }
           },
@@ -822,7 +822,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminTokens"
+                  "$ref": "#/components/schemas/OpsTokens"
                 }
               }
             }
@@ -870,19 +870,19 @@
         }
       }
     },
-    "/v1/admin/login": {
+    "/v1/ops/login": {
       "post": {
         "tags": [
-          "admin"
+          "ops"
         ],
-        "summary": "Admin Login",
-        "description": "Sign the admin in: its own email and password, never an app session. Rate-limited per\nIP and per email (10 attempts in 15 minutes).",
-        "operationId": "admin_login",
+        "summary": "Ops Login",
+        "description": "Sign the ops in: its own email and password, never an app session. Rate-limited per\nIP and per email (10 attempts in 15 minutes).",
+        "operationId": "ops_login",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminLogin"
+                "$ref": "#/components/schemas/OpsLogin"
               }
             }
           },
@@ -894,7 +894,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminTokens"
+                  "$ref": "#/components/schemas/OpsTokens"
                 }
               }
             }
@@ -932,19 +932,19 @@
         }
       }
     },
-    "/v1/admin/refresh": {
+    "/v1/ops/refresh": {
       "post": {
         "tags": [
-          "admin"
+          "ops"
         ],
-        "summary": "Admin Refresh",
+        "summary": "Ops Refresh",
         "description": "Trade the refresh token for a new pair. The refresh token rotates with it: the one you\nsent is dead from now on.",
-        "operationId": "admin_refresh",
+        "operationId": "ops_refresh",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminRefresh"
+                "$ref": "#/components/schemas/OpsRefresh"
               }
             }
           },
@@ -956,7 +956,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminTokens"
+                  "$ref": "#/components/schemas/OpsTokens"
                 }
               }
             }
@@ -984,14 +984,14 @@
         }
       }
     },
-    "/v1/admin/logout": {
+    "/v1/ops/logout": {
       "post": {
         "tags": [
-          "admin"
+          "ops"
         ],
-        "summary": "Admin Logout",
+        "summary": "Ops Logout",
         "description": "Sign out: revoke the session this refresh token belongs to.",
-        "operationId": "admin_logout",
+        "operationId": "ops_logout",
         "parameters": [
           {
             "name": "authorization",
@@ -1015,7 +1015,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminRefresh"
+                "$ref": "#/components/schemas/OpsRefresh"
               }
             }
           }
@@ -1047,14 +1047,14 @@
         }
       }
     },
-    "/v1/admin/me": {
+    "/v1/ops/me": {
       "get": {
         "tags": [
-          "admin"
+          "ops"
         ],
-        "summary": "Admin Me",
-        "description": "Who's signed in and the workspace this admin is bound to.",
-        "operationId": "admin_me",
+        "summary": "Ops Me",
+        "description": "Who's signed in and the workspace this ops is bound to.",
+        "operationId": "ops_me",
         "parameters": [
           {
             "name": "authorization",
@@ -1079,7 +1079,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminRead"
+                  "$ref": "#/components/schemas/OpsRead"
                 }
               }
             }
@@ -1107,13 +1107,13 @@
         }
       }
     },
-    "/v1/admin/observe/overview": {
+    "/v1/ops/observe/overview": {
       "get": {
         "tags": [
-          "admin"
+          "ops"
         ],
         "summary": "Observe Overview",
-        "description": "The admin's workspace health (the same read the app's owners get).",
+        "description": "The ops's workspace health (the same read the app's owners get).",
         "operationId": "observe_overview",
         "parameters": [
           {
@@ -1177,10 +1177,10 @@
         }
       }
     },
-    "/v1/admin/observe/runs": {
+    "/v1/ops/observe/runs": {
       "get": {
         "tags": [
-          "admin"
+          "ops"
         ],
         "summary": "Observe Runs",
         "description": "The workspace's run history: chat and coding merged, newest first.",
@@ -1300,10 +1300,10 @@
         }
       }
     },
-    "/v1/admin/audit": {
+    "/v1/ops/audit": {
       "get": {
         "tags": [
-          "admin"
+          "ops"
         ],
         "summary": "Audit",
         "description": "The workspace's audit log: approvals, writes and decisions, newest first.",
@@ -1419,14 +1419,14 @@
         }
       }
     },
-    "/v1/admin/convert-to-organization": {
+    "/v1/ops/organization": {
       "post": {
         "tags": [
-          "admin"
+          "ops"
         ],
-        "summary": "Admin Convert To Organization",
-        "description": "Turn the admin's personal workspace into an organisation, keeping its projects.",
-        "operationId": "admin_convert_to_organization",
+        "summary": "Ops Create Organization",
+        "description": "Create an organisation workspace owned by your account \u2014 a separate workspace, not a\nconversion: the personal workspace this ops is bound to stays personal.",
+        "operationId": "ops_create_organization",
         "parameters": [
           {
             "name": "authorization",
@@ -1450,13 +1450,13 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OrganizationConversion"
+                "$ref": "#/components/schemas/WorkspaceCreate"
               }
             }
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -1468,26 +1468,6 @@
           },
           "401": {
             "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicts with the current state",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22018,168 +21998,6 @@
         ],
         "title": "ActivityKind"
       },
-      "AdminLogin": {
-        "properties": {
-          "email": {
-            "type": "string",
-            "maxLength": 320,
-            "title": "Email"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 200,
-            "title": "Password"
-          }
-        },
-        "type": "object",
-        "required": [
-          "email",
-          "password"
-        ],
-        "title": "AdminLogin"
-      },
-      "AdminRead": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "workspace": {
-            "$ref": "#/components/schemas/AdminWorkspace"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "email",
-          "name",
-          "workspace",
-          "created_at"
-        ],
-        "title": "AdminRead"
-      },
-      "AdminRefresh": {
-        "properties": {
-          "refresh_token": {
-            "type": "string",
-            "title": "Refresh Token"
-          }
-        },
-        "type": "object",
-        "required": [
-          "refresh_token"
-        ],
-        "title": "AdminRefresh",
-        "description": "Trade the refresh token for a new pair (the refresh token rotates with it)."
-      },
-      "AdminSignup": {
-        "properties": {
-          "owner_email": {
-            "type": "string",
-            "maxLength": 320,
-            "title": "Owner Email"
-          },
-          "owner_password": {
-            "type": "string",
-            "maxLength": 200,
-            "title": "Owner Password"
-          },
-          "email": {
-            "type": "string",
-            "maxLength": 320,
-            "minLength": 3,
-            "title": "Email"
-          },
-          "name": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Name"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 8,
-            "title": "Password"
-          }
-        },
-        "type": "object",
-        "required": [
-          "owner_email",
-          "owner_password",
-          "email",
-          "name",
-          "password"
-        ],
-        "title": "AdminSignup",
-        "description": "Create an admin account by proving you own the workspace: your app account's email and\npassword. The admin gets its own credentials from then on \u2014 separate from your sign-in."
-      },
-      "AdminTokens": {
-        "properties": {
-          "access_token": {
-            "type": "string",
-            "title": "Access Token"
-          },
-          "refresh_token": {
-            "type": "string",
-            "title": "Refresh Token"
-          },
-          "token_type": {
-            "type": "string",
-            "title": "Token Type",
-            "default": "bearer"
-          }
-        },
-        "type": "object",
-        "required": [
-          "access_token",
-          "refresh_token"
-        ],
-        "title": "AdminTokens"
-      },
-      "AdminWorkspace": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "slug": {
-            "type": "string",
-            "title": "Slug"
-          },
-          "kind": {
-            "type": "string",
-            "title": "Kind"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "slug",
-          "kind"
-        ],
-        "title": "AdminWorkspace"
-      },
       "AgentAssignee": {
         "type": "string",
         "enum": [
@@ -29514,6 +29332,168 @@
         ],
         "title": "ObservedRun",
         "description": "One agent run or coding turn in the unified run history."
+      },
+      "OpsLogin": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "OpsLogin"
+      },
+      "OpsRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/OpsWorkspace"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "name",
+          "workspace",
+          "created_at"
+        ],
+        "title": "OpsRead"
+      },
+      "OpsRefresh": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "OpsRefresh",
+        "description": "Trade the refresh token for a new pair (the refresh token rotates with it)."
+      },
+      "OpsSignup": {
+        "properties": {
+          "owner_email": {
+            "type": "string",
+            "maxLength": 320,
+            "title": "Owner Email"
+          },
+          "owner_password": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Owner Password"
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 8,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "owner_email",
+          "owner_password",
+          "email",
+          "name",
+          "password"
+        ],
+        "title": "OpsSignup",
+        "description": "Create an ops account by proving you own the workspace: your app account's email and\npassword. The ops gets its own credentials from then on \u2014 separate from your sign-in."
+      },
+      "OpsTokens": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "OpsTokens"
+      },
+      "OpsWorkspace": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "kind"
+        ],
+        "title": "OpsWorkspace"
       },
       "OrganizationConversion": {
         "properties": {

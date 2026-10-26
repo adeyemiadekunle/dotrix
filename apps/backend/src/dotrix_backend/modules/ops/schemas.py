@@ -1,4 +1,4 @@
-"""Admin app payloads: sign-up (proving workspace ownership once), sign-in, the account."""
+"""Ops app payloads: sign-up (proving workspace ownership once), sign-in, the account."""
 from __future__ import annotations
 
 import uuid
@@ -7,9 +7,9 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class AdminSignup(BaseModel):
-    """Create an admin account by proving you own the workspace: your app account's email and
-    password. The admin gets its own credentials from then on — separate from your sign-in."""
+class OpsSignup(BaseModel):
+    """Create an ops account by proving you own the workspace: your app account's email and
+    password. The ops gets its own credentials from then on — separate from your sign-in."""
 
     owner_email: str = Field(max_length=320)
     owner_password: str = Field(max_length=200)
@@ -18,33 +18,33 @@ class AdminSignup(BaseModel):
     password: str = Field(min_length=8, max_length=200)
 
 
-class AdminLogin(BaseModel):
+class OpsLogin(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(max_length=200)
 
 
-class AdminWorkspace(BaseModel):
+class OpsWorkspace(BaseModel):
     id: uuid.UUID
     name: str
     slug: str
     kind: str
 
 
-class AdminRead(BaseModel):
+class OpsRead(BaseModel):
     id: uuid.UUID
     email: str
     name: str
-    workspace: AdminWorkspace
+    workspace: OpsWorkspace
     created_at: datetime
 
 
-class AdminTokens(BaseModel):
+class OpsTokens(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
 
 
-class AdminRefresh(BaseModel):
+class OpsRefresh(BaseModel):
     """Trade the refresh token for a new pair (the refresh token rotates with it)."""
 
     refresh_token: str

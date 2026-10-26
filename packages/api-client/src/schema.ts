@@ -359,7 +359,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/signup": {
+    "/v1/ops/signup": {
         parameters: {
             query?: never;
             header?: never;
@@ -369,19 +369,19 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Admin Signup
-         * @description Create an admin account by proving you own the workspace (your app sign-in). Admin
-         *     accounts are separate from app users: the admin signs in with its own credentials after.
+         * Ops Signup
+         * @description Create an ops account by proving you own the workspace (your app sign-in). Ops
+         *     accounts are separate from app users: the ops signs in with its own credentials after.
          *     Rate-limited on the owner's email and the client IP, same as sign-in.
          */
-        post: operations["admin_signup"];
+        post: operations["ops_signup"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/login": {
+    "/v1/ops/login": {
         parameters: {
             query?: never;
             header?: never;
@@ -391,18 +391,18 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Admin Login
-         * @description Sign the admin in: its own email and password, never an app session. Rate-limited per
+         * Ops Login
+         * @description Sign the ops in: its own email and password, never an app session. Rate-limited per
          *     IP and per email (10 attempts in 15 minutes).
          */
-        post: operations["admin_login"];
+        post: operations["ops_login"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/refresh": {
+    "/v1/ops/refresh": {
         parameters: {
             query?: never;
             header?: never;
@@ -412,18 +412,18 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Admin Refresh
+         * Ops Refresh
          * @description Trade the refresh token for a new pair. The refresh token rotates with it: the one you
          *     sent is dead from now on.
          */
-        post: operations["admin_refresh"];
+        post: operations["ops_refresh"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/logout": {
+    "/v1/ops/logout": {
         parameters: {
             query?: never;
             header?: never;
@@ -433,17 +433,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Admin Logout
+         * Ops Logout
          * @description Sign out: revoke the session this refresh token belongs to.
          */
-        post: operations["admin_logout"];
+        post: operations["ops_logout"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/me": {
+    "/v1/ops/me": {
         parameters: {
             query?: never;
             header?: never;
@@ -451,10 +451,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Admin Me
-         * @description Who's signed in and the workspace this admin is bound to.
+         * Ops Me
+         * @description Who's signed in and the workspace this ops is bound to.
          */
-        get: operations["admin_me"];
+        get: operations["ops_me"];
         put?: never;
         post?: never;
         delete?: never;
@@ -463,7 +463,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/observe/overview": {
+    "/v1/ops/observe/overview": {
         parameters: {
             query?: never;
             header?: never;
@@ -472,7 +472,7 @@ export interface paths {
         };
         /**
          * Observe Overview
-         * @description The admin's workspace health (the same read the app's owners get).
+         * @description The ops's workspace health (the same read the app's owners get).
          */
         get: operations["observe_overview"];
         put?: never;
@@ -483,7 +483,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/observe/runs": {
+    "/v1/ops/observe/runs": {
         parameters: {
             query?: never;
             header?: never;
@@ -503,7 +503,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/audit": {
+    "/v1/ops/audit": {
         parameters: {
             query?: never;
             header?: never;
@@ -523,7 +523,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/convert-to-organization": {
+    "/v1/ops/organization": {
         parameters: {
             query?: never;
             header?: never;
@@ -533,10 +533,11 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Admin Convert To Organization
-         * @description Turn the admin's personal workspace into an organisation, keeping its projects.
+         * Ops Create Organization
+         * @description Create an organisation workspace owned by your account — a separate workspace, not a
+         *     conversion: the personal workspace this ops is bound to stays personal.
          */
-        post: operations["admin_convert_to_organization"];
+        post: operations["ops_create_organization"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4417,82 +4418,6 @@ export interface components {
          * @enum {string}
          */
         ActivityKind: "issue.created" | "issue.updated" | "issue.commented" | "issue.claimed" | "document.changed" | "document.deleted" | "run.started" | "approval.decided";
-        /** AdminLogin */
-        AdminLogin: {
-            /** Email */
-            email: string;
-            /** Password */
-            password: string;
-        };
-        /** AdminRead */
-        AdminRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Email */
-            email: string;
-            /** Name */
-            name: string;
-            workspace: components["schemas"]["AdminWorkspace"];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /**
-         * AdminRefresh
-         * @description Trade the refresh token for a new pair (the refresh token rotates with it).
-         */
-        AdminRefresh: {
-            /** Refresh Token */
-            refresh_token: string;
-        };
-        /**
-         * AdminSignup
-         * @description Create an admin account by proving you own the workspace: your app account's email and
-         *     password. The admin gets its own credentials from then on — separate from your sign-in.
-         */
-        AdminSignup: {
-            /** Owner Email */
-            owner_email: string;
-            /** Owner Password */
-            owner_password: string;
-            /** Email */
-            email: string;
-            /** Name */
-            name: string;
-            /** Password */
-            password: string;
-        };
-        /** AdminTokens */
-        AdminTokens: {
-            /** Access Token */
-            access_token: string;
-            /** Refresh Token */
-            refresh_token: string;
-            /**
-             * Token Type
-             * @default bearer
-             */
-            token_type: string;
-        };
-        /** AdminWorkspace */
-        AdminWorkspace: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Name */
-            name: string;
-            /** Slug */
-            slug: string;
-            /** Kind */
-            kind: string;
-        };
         /**
          * AgentAssignee
          * @description Agents that appear as assignable members.
@@ -7574,6 +7499,82 @@ export interface components {
             /** Finished At */
             finished_at: string | null;
         };
+        /** OpsLogin */
+        OpsLogin: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** OpsRead */
+        OpsRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Name */
+            name: string;
+            workspace: components["schemas"]["OpsWorkspace"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * OpsRefresh
+         * @description Trade the refresh token for a new pair (the refresh token rotates with it).
+         */
+        OpsRefresh: {
+            /** Refresh Token */
+            refresh_token: string;
+        };
+        /**
+         * OpsSignup
+         * @description Create an ops account by proving you own the workspace: your app account's email and
+         *     password. The ops gets its own credentials from then on — separate from your sign-in.
+         */
+        OpsSignup: {
+            /** Owner Email */
+            owner_email: string;
+            /** Owner Password */
+            owner_password: string;
+            /** Email */
+            email: string;
+            /** Name */
+            name: string;
+            /** Password */
+            password: string;
+        };
+        /** OpsTokens */
+        OpsTokens: {
+            /** Access Token */
+            access_token: string;
+            /** Refresh Token */
+            refresh_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+        };
+        /** OpsWorkspace */
+        OpsWorkspace: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Kind */
+            kind: string;
+        };
         /** OrganizationConversion */
         OrganizationConversion: {
             /**
@@ -10199,7 +10200,7 @@ export interface operations {
             };
         };
     };
-    admin_signup: {
+    ops_signup: {
         parameters: {
             query?: never;
             header?: never;
@@ -10208,7 +10209,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AdminSignup"];
+                "application/json": components["schemas"]["OpsSignup"];
             };
         };
         responses: {
@@ -10218,7 +10219,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminTokens"];
+                    "application/json": components["schemas"]["OpsTokens"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
@@ -10259,7 +10260,7 @@ export interface operations {
             };
         };
     };
-    admin_login: {
+    ops_login: {
         parameters: {
             query?: never;
             header?: never;
@@ -10268,7 +10269,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AdminLogin"];
+                "application/json": components["schemas"]["OpsLogin"];
             };
         };
         responses: {
@@ -10278,7 +10279,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminTokens"];
+                    "application/json": components["schemas"]["OpsTokens"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
@@ -10310,7 +10311,7 @@ export interface operations {
             };
         };
     };
-    admin_refresh: {
+    ops_refresh: {
         parameters: {
             query?: never;
             header?: never;
@@ -10319,7 +10320,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AdminRefresh"];
+                "application/json": components["schemas"]["OpsRefresh"];
             };
         };
         responses: {
@@ -10329,7 +10330,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminTokens"];
+                    "application/json": components["schemas"]["OpsTokens"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
@@ -10352,7 +10353,7 @@ export interface operations {
             };
         };
     };
-    admin_logout: {
+    ops_logout: {
         parameters: {
             query?: never;
             header?: {
@@ -10363,7 +10364,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AdminRefresh"];
+                "application/json": components["schemas"]["OpsRefresh"];
             };
         };
         responses: {
@@ -10394,7 +10395,7 @@ export interface operations {
             };
         };
     };
-    admin_me: {
+    ops_me: {
         parameters: {
             query?: never;
             header?: {
@@ -10411,7 +10412,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminRead"];
+                    "application/json": components["schemas"]["OpsRead"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
@@ -10589,7 +10590,7 @@ export interface operations {
             };
         };
     };
-    admin_convert_to_organization: {
+    ops_create_organization: {
         parameters: {
             query?: never;
             header?: {
@@ -10600,12 +10601,12 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["OrganizationConversion"];
+                "application/json": components["schemas"]["WorkspaceCreate"];
             };
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10615,24 +10616,6 @@ export interface operations {
             };
             /** @description Missing, invalid, or expired credentials */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Conflicts with the current state */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,5 +1,5 @@
-// dotrix Admin (phase 1): a separate app from the web app, with its own accounts and sign-in
-// (POST /v1/admin/*). An admin is bound to the workspace proven at sign-up; everything it
+// dotrix Ops (phase 1): a separate app from the web app, with its own accounts and sign-in
+// (POST /v1/ops/*). An ops account is bound to the workspace proven at sign-up; everything it
 // sees stays inside that workspace.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent, type ReactNode } from "react";
@@ -11,8 +11,8 @@ import { Input } from "@dotrix/ui/components/input";
 import { Label } from "@dotrix/ui/components/label";
 import { Tabs, TabsList, TabsTrigger } from "@dotrix/ui/components/tabs";
 
-const TOKEN_KEY = "dotrix.admin.token";
-const REFRESH_KEY = "dotrix.admin.refresh";
+const TOKEN_KEY = "dotrix.ops.token";
+const REFRESH_KEY = "dotrix.ops.refresh";
 
 type Problem = { detail?: string };
 
@@ -22,14 +22,14 @@ let refreshing: Promise<string | null> | null = null;
 async function refreshSession(): Promise<string | null> {
   const refresh = localStorage.getItem(REFRESH_KEY);
   if (!refresh) return null;
-  refreshing ??= fetch("/v1/admin/refresh", {
+  refreshing ??= fetch("/v1/ops/refresh", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: refresh }),
   })
     .then(async (res) => {
       if (!res.ok) return null;
-      const t = (await res.json()) as AdminTokens;
+      const t = (await res.json()) as OpsTokens;
       localStorage.setItem(TOKEN_KEY, t.access_token);
       localStorage.setItem(REFRESH_KEY, t.refresh_token);
       return t.access_token;
@@ -68,7 +68,7 @@ async function call<T>(path: string, options: { method?: string; body?: unknown;
   }
 }
 
-interface AdminTokens {
+interface OpsTokens {
   access_token: string;
   refresh_token: string;
 }
@@ -142,13 +142,13 @@ function GroupCard({ title, g, cost }: { title: string; g: Group; cost?: string 
   );
 }
 
-function Login({ onAuth }: { onAuth: (t: AdminTokens) => void }) {
+function Login({ onAuth }: { onAuth: (t: OpsTokens) => void }) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [f, setF] = useState({ owner_email: "", owner_password: "", email: "", name: "", password: "" });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const auth = useMutation({
     mutationFn: () =>
-      call<AdminTokens>(mode === "login" ? "/admin/login" : "/admin/signup", {
+      call<OpsTokens>(mode === "login" ? "/ops/login" : "/ops/signup", {
         method: "POST",
         body: mode === "login" ? { email: f.email, password: f.password } : f,
       }),
@@ -157,11 +157,11 @@ function Login({ onAuth }: { onAuth: (t: AdminTokens) => void }) {
   const submit = (e: FormEvent) => (e.preventDefault(), auth.mutate());
   return (
     <div className="mx-auto max-w-sm px-5 py-16">
-      <h1 className="mb-4 text-2xl font-semibold">dotrix admin</h1>
+      <h1 className="mb-4 text-2xl font-semibold">dotrix ops</h1>
       <Tabs value={mode} onValueChange={(v) => setMode(v as "login" | "signup")}>
         <TabsList className="mb-4">
           <TabsTrigger value="login">Sign in</TabsTrigger>
-          <TabsTrigger value="signup">Create admin</TabsTrigger>
+          <TabsTrigger value="signup">Create ops account</TabsTrigger>
         </TabsList>
       </Tabs>
       <Card>
@@ -170,7 +170,7 @@ function Login({ onAuth }: { onAuth: (t: AdminTokens) => void }) {
             {mode === "signup" && (
               <>
                 <p className="text-xs text-muted-foreground">
-                  Prove you own the workspace once — your dotrix sign-in — then this admin account is fully separate.
+                  Prove you own the workspace once — your dotrix sign-in — then this ops account is fully separate.
                 </p>
                 <div className="grid gap-1.5">
                   <Label htmlFor="oe">Your dotrix email</Label>
@@ -181,13 +181,13 @@ function Login({ onAuth }: { onAuth: (t: AdminTokens) => void }) {
                   <Input id="op" type="password" value={f.owner_password} onChange={set("owner_password")} required />
                 </div>
                 <div className="grid gap-1.5">
-                  <Label htmlFor="nm">Admin name</Label>
+                  <Label htmlFor="nm">Ops name</Label>
                   <Input id="nm" value={f.name} onChange={set("name")} required />
                 </div>
               </>
             )}
             <div className="grid gap-1.5">
-              <Label htmlFor="em">{mode === "signup" ? "Admin email" : "Email"}</Label>
+              <Label htmlFor="em">{mode === "signup" ? "Ops email" : "Email"}</Label>
               <Input id="em" type="email" value={f.email} onChange={set("email")} required />
             </div>
             <div className="grid gap-1.5">
@@ -208,7 +208,7 @@ function Login({ onAuth }: { onAuth: (t: AdminTokens) => void }) {
 function Overview({ token }: { token: string }) {
   const q = useQuery({
     queryKey: ["overview"],
-    queryFn: () => call<Overview>("/admin/observe/overview", { token }),
+    queryFn: () => call<Overview>("/ops/observe/overview", { token }),
     refetchInterval: 15_000,
   });
   if (q.isPending) return <p className="text-sm text-muted-foreground">Reading the workspace…</p>;
@@ -274,7 +274,7 @@ function Runs({ token }: { token: string }) {
   const [before, setBefore] = useState<string>();
   const q = useQuery({
     queryKey: ["runs", kind, before],
-    queryFn: () => call<Run[]>(`/admin/observe/runs?limit=50${kind === "all" ? "" : `&kind=${kind}`}${before ? `&before=${before}` : ""}`, { token }),
+    queryFn: () => call<Run[]>(`/ops/observe/runs?limit=50${kind === "all" ? "" : `&kind=${kind}`}${before ? `&before=${before}` : ""}`, { token }),
     placeholderData: (prev) => prev,
   });
   return (
@@ -341,7 +341,7 @@ function Audit({ token }: { token: string }) {
   const [action, setAction] = useState("");
   const q = useQuery({
     queryKey: ["audit", action],
-    queryFn: () => call<AuditEvent[]>(`/admin/audit?limit=100${action ? `&action=${encodeURIComponent(action)}` : ""}`, { token }),
+    queryFn: () => call<AuditEvent[]>(`/ops/audit?limit=100${action ? `&action=${encodeURIComponent(action)}` : ""}`, { token }),
     placeholderData: (prev) => prev,
   });
   return (
@@ -371,43 +371,41 @@ function Audit({ token }: { token: string }) {
   );
 }
 
-function Organisation({ token, me, onDone }: { token: string; me: Me; onDone: () => void }) {
-  const [name, setName] = useState(me.workspace.name);
-  const convert = useMutation({
-    mutationFn: () =>
-      call("/admin/convert-to-organization", {
-        method: "POST",
-        body: { name: name.trim() !== me.workspace.name ? name.trim() : null },
-        token,
-      }),
-    onSuccess: onDone,
+function Organisation({ token, me }: { token: string; me: Me }) {
+  const [name, setName] = useState("");
+  const create = useMutation({
+    mutationFn: () => call("/ops/organization", { method: "POST", body: { name: name.trim() }, token }),
   });
-  if (me.workspace.kind === "organization" || convert.isSuccess)
+  if (create.isSuccess)
     return (
       <Card className="max-w-lg">
         <CardContent className="pt-5">
-          <b>This workspace is an organisation.</b>
-          <p className="mt-1 text-sm text-muted-foreground">Members and invites live in the app under Settings → Members.</p>
+          <b>{name.trim()} is an organisation now — your account owns it.</b>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Open it in the app from the workspace switcher; members and invites live under Settings → Members.
+            {me.workspace.name} stays your personal workspace.
+          </p>
         </CardContent>
       </Card>
     );
   return (
     <Card className="max-w-lg">
       <CardHeader>
-        <CardTitle className="text-base">Make this workspace an organisation</CardTitle>
+        <CardTitle className="text-base">Create an organisation workspace</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <p className="text-sm text-muted-foreground">
-          Its projects, documents and history stay; it can then invite people with roles. You keep a new, empty personal workspace.
+          A new, separate workspace your account owns — for a team: invites, roles, many projects. {me.workspace.name} stays your personal workspace; nothing
+          moves or converts.
         </p>
         <div className="grid gap-1.5">
           <Label htmlFor="orgname">Organisation name</Label>
-          <Input id="orgname" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input id="orgname" value={name} placeholder="Your team's name" onChange={(e) => setName(e.target.value)} />
         </div>
-        {convert.isError && <p className="text-xs text-destructive">{convert.error.message}</p>}
+        {create.isError && <p className="text-xs text-destructive">{create.error.message}</p>}
         <div>
-          <Button disabled={!name.trim() || convert.isPending} onClick={() => convert.mutate()}>
-            {convert.isPending ? "Converting…" : "Make it an organisation"}
+          <Button disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
+            {create.isPending ? "Creating…" : "Create the organisation"}
           </Button>
         </div>
       </CardContent>
@@ -419,7 +417,7 @@ export function App() {
   const qc = useQueryClient();
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
   const [tab, setTab] = useState("overview");
-  const auth = (t: AdminTokens) => (
+  const auth = (t: OpsTokens) => (
     localStorage.setItem(TOKEN_KEY, t.access_token),
     localStorage.setItem(REFRESH_KEY, t.refresh_token),
     setToken(t.access_token)
@@ -427,7 +425,7 @@ export function App() {
   const signOut = () => {
     // Revoke the session server-side (fire and forget), then clear it locally.
     const refresh = localStorage.getItem(REFRESH_KEY);
-    if (refresh && token) void call("/admin/logout", { method: "POST", body: { refresh_token: refresh }, token }).catch(() => undefined);
+    if (refresh && token) void call("/ops/logout", { method: "POST", body: { refresh_token: refresh }, token }).catch(() => undefined);
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
     setToken("");
@@ -436,7 +434,7 @@ export function App() {
 
   const me = useQuery({
     queryKey: ["me", token],
-    queryFn: () => call<Me>("/admin/me", { token }),
+    queryFn: () => call<Me>("/ops/me", { token }),
     enabled: Boolean(token),
     retry: false,
   });
@@ -453,7 +451,7 @@ export function App() {
     <div className="mx-auto max-w-5xl px-5 py-8">
       <div className="mb-4 flex items-baseline justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">dotrix admin</h1>
+          <h1 className="text-2xl font-semibold">dotrix ops</h1>
           <p className="text-sm text-muted-foreground">
             {m.name} · {m.workspace.name} ({m.workspace.kind})
           </p>
@@ -473,7 +471,7 @@ export function App() {
       {tab === "overview" && <Overview token={token} />}
       {tab === "runs" && <Runs token={token} />}
       {tab === "audit" && <Audit token={token} />}
-      {tab === "org" && <Organisation token={token} me={m} onDone={() => me.refetch()} />}
+      {tab === "org" && <Organisation token={token} me={m} />}
     </div>
   );
 }

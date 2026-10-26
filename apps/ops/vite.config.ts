@@ -1,5 +1,5 @@
 // The Admin app: a separate origin from the web app (dev :3200), never bundled into it.
-// It talks only to /v1/admin/* — its own accounts and sign-in — plus nothing public.
+// It talks only to /v1/ops/* — its own accounts and sign-in — plus nothing public.
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
