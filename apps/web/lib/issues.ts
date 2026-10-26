@@ -158,6 +158,10 @@ export function useSimilarIssues(scope: Scope | undefined, text: string) {
   });
 }
 
+/** How long a fetched issue detail stays cached after its last observer — long enough to back the
+ *  synchronous comment helpers for a browsing session, bounded so the cache doesn't grow forever. */
+const ISSUE_DETAIL_GC_TIME = 30 * 60_000;
+
 /** The issue-detail query as options, so module code (live.ts) can prefetch the same cache entry. */
 export const issueOptions = (s: Scope, key: string) => ({
   queryKey: issueKeys.issue(s, key),
@@ -168,9 +172,10 @@ export const issueOptions = (s: Scope, key: string) => ({
       }),
     ),
   retry: false,
-  // The drawer, Inbox preview and comment helpers read this entry synchronously — keep it
-  // for the session like the store's D().comments copy used to be, or badges drop to 0.
-  gcTime: Infinity,
+  // The drawer, Inbox preview and comment helpers read this entry synchronously — keep it long
+  // enough to cover a browsing session like the store's D().comments copy did, but bounded so a
+  // long session doesn't grow the cache forever (the API has no per-row comment count yet).
+  gcTime: ISSUE_DETAIL_GC_TIME,
 });
 
 export function useIssue(scope: Scope | undefined, key: string | null) {
@@ -179,6 +184,7 @@ export function useIssue(scope: Scope | undefined, key: string | null) {
     queryFn: () => (scope && key ? issueOptions(scope, key).queryFn() : Promise.resolve(undefined)),
     enabled: Boolean(scope && key),
     retry: false,
+    gcTime: ISSUE_DETAIL_GC_TIME,
   });
 }
 
