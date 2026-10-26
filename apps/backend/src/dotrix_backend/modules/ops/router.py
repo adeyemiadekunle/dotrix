@@ -2,6 +2,7 @@
 and management — never the app users' session."""
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -136,10 +137,12 @@ async def observe_runs(
     observe: Observe,
     kind: Literal["chat", "coding"] | None = None,
     before: datetime | None = None,
+    before_id: uuid.UUID | None = None,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[ObservedRun]:
-    """The workspace's run history: chat and coding merged, newest first."""
-    return await observe.runs(await ops_member(session, ops), kind=kind, before=before, limit=limit)
+    """The workspace's run history: chat and coding merged, newest first. Page backwards with
+    `before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped."""
+    return await observe.runs(await ops_member(session, ops), kind=kind, before=before, before_id=before_id, limit=limit)
 
 
 @router.get("/audit", responses=errors(403, 422))

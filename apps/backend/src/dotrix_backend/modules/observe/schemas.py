@@ -15,10 +15,13 @@ class RunGroupSummary(BaseModel):
     active: int = Field(description="Queued or running right now")
     waiting: int = Field(description="Stopped for a person's decision: approval, changes ready, or recovery")
     failed_7d: int
-    input_tokens_7d: int
-    output_tokens_7d: int
-    model_calls_7d: int = 0
-    cost_usd_7d: float | None = Field(default=None, description="Coding runs only; the tool's reported cost")
+    input_tokens_7d: int = Field(description="Cumulative input tokens of runs active in the last 7 days")
+    output_tokens_7d: int = Field(description="Cumulative output tokens of runs active in the last 7 days")
+    model_calls_7d: int = Field(default=0, description="Cumulative model calls of runs active in the last 7 days")
+    cost_usd_7d: float | None = Field(
+        default=None,
+        description="Coding runs only; the tool's reported cost, for runs active in the last 7 days",
+    )
 
 
 class ObserveCounts(BaseModel):

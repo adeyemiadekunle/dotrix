@@ -4,8 +4,9 @@ own tables. Runs stay under the same privacy as everywhere else (each person see
 plus what's waiting on a decision they may make)."""
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,11 +63,15 @@ class ObserveService:
             ),
         )
 
+        # Token and cost columns are cumulative per run. Chat runs resume in place, so the
+        # window is "runs with activity this week" (updated_at); coding turns are a new row
+        # each time, so created_at is already the right window there.
         chat = await self._run_summary(
             member,
             since,
             model=AgentRun,
             scope=runs_visible_to(member),
+            window=AgentRun.updated_at >= since,
             active=AgentRun.status.in_((RunStatus.QUEUED, RunStatus.RUNNING)),
             waiting=AgentRun.status == RunStatus.AWAITING_APPROVAL,
             failed=AgentRun.status == RunStatus.FAILED,
@@ -79,6 +84,7 @@ class ObserveService:
             since,
             model=CodingRun,
             scope=visible_runs(member),
+            window=CodingRun.created_at >= since,
             active=CodingRun.status.in_(
                 (CodingRunStatus.QUEUED, CodingRunStatus.RUNNING)
             ),
@@ -155,6 +161,7 @@ class ObserveService:
         *,
         model,
         scope,
+        window,
         active,
         waiting,
         failed,
@@ -176,19 +183,19 @@ class ObserveService:
                 select(func.count(model.id)).where(model.workspace_id == ws, scope, failed, model.finished_at >= since)
             ),
             input_tokens_7d=await scalar(
-                select(func.coalesce(func.sum(tokens_in), 0)).where(model.workspace_id == ws, scope, model.created_at >= since)
+                select(func.coalesce(func.sum(tokens_in), 0)).where(model.workspace_id == ws, scope, window)
             ),
             output_tokens_7d=await scalar(
-                select(func.coalesce(func.sum(tokens_out), 0)).where(model.workspace_id == ws, scope, model.created_at >= since)
+                select(func.coalesce(func.sum(tokens_out), 0)).where(model.workspace_id == ws, scope, window)
             ),
             model_calls_7d=await scalar(
-                select(func.coalesce(func.sum(calls), 0)).where(model.workspace_id == ws, scope, model.created_at >= since)
+                select(func.coalesce(func.sum(calls), 0)).where(model.workspace_id == ws, scope, window)
             )
             if calls is not None
             else 0,
             cost_usd_7d=float(
                 await scalar(
-                    select(func.coalesce(func.sum(cost), 0)).where(model.workspace_id == ws, scope, model.created_at >= since)
+                    select(func.coalesce(func.sum(cost), 0)).where(model.workspace_id == ws, scope, window)
                 )
             )
             if cost is not None
@@ -201,12 +208,23 @@ class ObserveService:
         *,
         kind: Literal["chat", "coding"] | None = None,
         before: datetime | None = None,
+        before_id: uuid.UUID | None = None,
         limit: int = 50,
     ) -> list[ObservedRun]:
         """The workspace's recent runs in one list (chat and coding), newest first. Each kind is
-        fetched at `limit` and merged, so paging `before` the last row is exact."""
+        fetched at `limit` and merged, so paging `before` the last row is exact. `before_id`
+        keeps the same (created_at, id) order as the sort, so rows tied on created_at aren't
+        skipped when a page boundary lands inside them."""
         ws = member.workspace_id
         found: list[ObservedRun] = []
+
+        def keyset(model) -> Any:
+            if before is None:
+                return None
+            clause = model.created_at < before
+            if before_id is not None:
+                clause |= (model.created_at == before) & (model.id < before_id)
+            return clause
 
         if kind in (None, "chat"):
             stmt = (
@@ -215,8 +233,8 @@ class ObserveService:
                 .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
                 .limit(limit)
             )
-            if before is not None:
-                stmt = stmt.where(AgentRun.created_at < before)
+            if (clause := keyset(AgentRun)) is not None:
+                stmt = stmt.where(clause)
             for r in await self.session.scalars(stmt):
                 found.append(
                     ObservedRun(
@@ -246,8 +264,8 @@ class ObserveService:
                 .order_by(CodingRun.created_at.desc(), CodingRun.id.desc())
                 .limit(limit)
             )
-            if before is not None:
-                stmt = stmt.where(CodingRun.created_at < before)
+            if (clause := keyset(CodingRun)) is not None:
+                stmt = stmt.where(clause)
             for r in await self.session.scalars(stmt):
                 found.append(
                     ObservedRun(

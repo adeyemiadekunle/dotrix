@@ -1,6 +1,7 @@
-"""Workspace observability (Admin): health overview and the unified run history."""
+"""Workspace observability (Ops): health overview and the unified run history."""
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -41,8 +42,9 @@ async def list_observed_runs(
     observe: Observe,
     kind: Literal["chat", "coding"] | None = Query(default=None, description="Only chat runs, or only coding turns"),
     before: datetime | None = Query(default=None, description="Page backwards: pass the last run's `created_at`"),
+    before_id: uuid.UUID | None = Query(default=None, description="Pass the last run's `id` too, so ties on `created_at` aren't skipped"),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[ObservedRun]:
     """The workspace's recent runs in one list — chat and coding merged, newest first — each
     with its status, tokens, cost, and why it failed when it did. Owners and admins."""
-    return await observe.runs(member, kind=kind, before=before, limit=limit)
+    return await observe.runs(member, kind=kind, before=before, before_id=before_id, limit=limit)

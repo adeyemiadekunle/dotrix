@@ -492,7 +492,8 @@ export interface paths {
         };
         /**
          * Observe Runs
-         * @description The workspace's run history: chat and coding merged, newest first.
+         * @description The workspace's run history: chat and coding merged, newest first. Page backwards with
+         *     `before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped.
          */
         get: operations["observe_runs"];
         put?: never;
@@ -8392,18 +8393,25 @@ export interface components {
             waiting: number;
             /** Failed 7D */
             failed_7d: number;
-            /** Input Tokens 7D */
+            /**
+             * Input Tokens 7D
+             * @description Cumulative input tokens of runs active in the last 7 days
+             */
             input_tokens_7d: number;
-            /** Output Tokens 7D */
+            /**
+             * Output Tokens 7D
+             * @description Cumulative output tokens of runs active in the last 7 days
+             */
             output_tokens_7d: number;
             /**
              * Model Calls 7D
+             * @description Cumulative model calls of runs active in the last 7 days
              * @default 0
              */
             model_calls_7d: number;
             /**
              * Cost Usd 7D
-             * @description Coding runs only; the tool's reported cost
+             * @description Coding runs only; the tool's reported cost, for runs active in the last 7 days
              */
             cost_usd_7d?: number | null;
         };
@@ -10436,6 +10444,7 @@ export interface operations {
             query?: {
                 kind?: ("chat" | "coding") | null;
                 before?: string | null;
+                before_id?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -23113,6 +23122,8 @@ export interface operations {
                 kind?: ("chat" | "coding") | null;
                 /** @description Page backwards: pass the last run's `created_at` */
                 before?: string | null;
+                /** @description Pass the last run's `id` too, so ties on `created_at` aren't skipped */
+                before_id?: string | null;
                 limit?: number;
             };
             header?: never;

@@ -137,6 +137,40 @@ async def test_the_runs_list_merges_chat_and_coding_newest_first(
     assert [r["label"] for r in older] == ["Ask about refunds"]
 
 
+async def test_paging_keeps_runs_tied_on_created_at(
+    signup, db_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    ada = await signup()
+    ws = await _personal_ws(db_client, ada.headers)
+    base = f"/v1/workspaces/{ws['id']}"
+    project = (
+        await db_client.post(f"{base}/projects", json={"key": "KUN", "name": "Kunemi"}, headers=ada.headers)
+    ).json()
+    when = datetime.now(UTC)
+    db_session.add_all(
+        _chat_run(ws["id"], project["id"], ada, title=f"tied-{i}", created_at=when) for i in range(3)
+    )
+    await db_session.commit()
+
+    first = (await db_client.get(f"{base}/observe/runs", params={"limit": 1}, headers=ada.headers)).json()
+    second = (
+        await db_client.get(
+            f"{base}/observe/runs",
+            params={"limit": 1, "before": first[0]["created_at"], "before_id": first[0]["id"]},
+            headers=ada.headers,
+        )
+    ).json()
+    assert len(first) == 1 and len(second) == 1
+    # Timestamp alone would drop the tied row; the keyset cursor keeps it.
+    assert second[0]["created_at"] == first[0]["created_at"] and second[0]["id"] != first[0]["id"]
+    bare = (
+        await db_client.get(
+            f"{base}/observe/runs", params={"before": first[0]["created_at"]}, headers=ada.headers
+        )
+    ).json()
+    assert all(r["id"] != second[0]["id"] for r in bare)
+
+
 async def test_a_member_without_usage_rights_gets_none(signup, create_team, add_member, db_client: AsyncClient) -> None:
     ada = await signup()
     bob = await signup(email="bob@example.com", name="Bob")

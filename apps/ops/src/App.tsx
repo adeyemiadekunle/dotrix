@@ -234,10 +234,11 @@ function Overview() {
 
 function Runs() {
   const [kind, setKind] = useState<"all" | "chat" | "coding">("all");
-  const [before, setBefore] = useState<string>();
+  const [before, setBefore] = useState<{ at: string; id: string }>();
   const q = useQuery({
-    queryKey: ["runs", kind, before],
-    queryFn: () => call<Run[]>(`/ops/observe/runs?limit=50${kind === "all" ? "" : `&kind=${kind}`}${before ? `&before=${before}` : ""}`),
+    queryKey: ["runs", kind, before?.at, before?.id],
+    queryFn: () =>
+      call<Run[]>(`/ops/observe/runs?limit=50${kind === "all" ? "" : `&kind=${kind}`}${before ? `&before=${before.at}&before_id=${before.id}` : ""}`),
     placeholderData: (prev) => prev,
   });
   return (
@@ -289,7 +290,14 @@ function Runs() {
               </div>
             ))}
             {q.data.length === 50 && (
-              <Button variant="outline" className="mt-3" onClick={() => setBefore(q.data.at(-1)!.created_at)}>
+              <Button
+                variant="outline"
+                className="mt-3"
+                onClick={() => {
+                  const last = q.data.at(-1)!;
+                  setBefore({ at: last.created_at, id: last.id });
+                }}
+              >
                 Older runs
               </Button>
             )}
@@ -302,31 +310,59 @@ function Runs() {
 
 function Audit() {
   const [action, setAction] = useState("");
+  const [older, setOlder] = useState<AuditEvent[][]>([]);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const q = useQuery({
     queryKey: ["audit", action],
     queryFn: () => call<AuditEvent[]>(`/ops/audit?limit=100${action ? `&action=${encodeURIComponent(action)}` : ""}`),
     placeholderData: (prev) => prev,
   });
+  const events = [...(q.data ?? []), ...older.flat()];
+  const last = events.at(-1);
+  const loadOlder = async () => {
+    if (!last) return;
+    setLoadingOlder(true);
+    try {
+      const next = await call<AuditEvent[]>(
+        `/ops/audit?limit=100&before=${encodeURIComponent(last.created_at)}${action ? `&action=${encodeURIComponent(action)}` : ""}`,
+      );
+      setOlder((p) => [...p, next]);
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
   return (
     <div>
-      <Input className="mb-3 max-w-xs" placeholder="Filter by action (e.g. issue.updated)" value={action} onChange={(e) => setAction(e.target.value)} />
+      <Input
+        className="mb-3 max-w-xs"
+        placeholder="Filter by action (e.g. issue.updated)"
+        value={action}
+        onChange={(e) => (setAction(e.target.value), setOlder([]))}
+      />
       <Card>
         <CardContent className="pt-4">
           {q.isPending ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : q.isError ? (
             <p className="text-sm text-destructive">{q.error.message}</p>
-          ) : !q.data.length ? (
+          ) : !events.length ? (
             <p className="text-sm text-muted-foreground">Nothing recorded.</p>
           ) : (
-            q.data.map((e) => (
-              <div key={e.id} className="flex items-center gap-3 border-b py-1.5 text-xs last:border-0">
-                <b className="w-52 truncate">{e.action}</b>
-                <span className="w-24 text-muted-foreground">{e.target ?? "—"}</span>
-                <span className="flex-1 text-muted-foreground">{e.agent ? `agent ${e.agent}` : "person"}</span>
-                <span className="w-28 text-right text-muted-foreground">{fmt(e.created_at)}</span>
-              </div>
-            ))
+            <>
+              {events.map((e) => (
+                <div key={e.id} className="flex items-center gap-3 border-b py-1.5 text-xs last:border-0">
+                  <b className="w-52 truncate">{e.action}</b>
+                  <span className="w-24 text-muted-foreground">{e.target ?? "—"}</span>
+                  <span className="flex-1 text-muted-foreground">{e.agent ? `agent ${e.agent}` : "person"}</span>
+                  <span className="w-28 text-right text-muted-foreground">{fmt(e.created_at)}</span>
+                </div>
+              ))}
+              {(older.at(-1)?.length ?? q.data?.length ?? 0) === 100 && (
+                <Button variant="outline" className="mt-3" disabled={loadingOlder} onClick={loadOlder}>
+                  {loadingOlder ? "Loading…" : "Older events"}
+                </Button>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
