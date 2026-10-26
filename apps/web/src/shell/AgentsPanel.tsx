@@ -10,7 +10,7 @@ import { S, me, render, save } from "../data/store";
 import { Face } from "../ui/face";
 
 const WIDE = "(min-width: 1200px)";
-export const panelWide = () => typeof window !== "undefined" && window.matchMedia(WIDE).matches;
+const panelWide = () => typeof window !== "undefined" && window.matchMedia(WIDE).matches;
 
 /** Home (`/w/{workspace}`): the only page where the panel is a column of its own. */
 const onHome = () => /^\/w\/[^/]+\/?$/.test(location.pathname);

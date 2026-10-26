@@ -1,6 +1,5 @@
 // Project overview and activity. dotrix adds
 // "Ask in Chat" for a summary, and the agents' latest conversations about the project.
-import type { CSSProperties } from "react";
 
 import { openPop } from "../core/actions";
 import { STATUSES } from "../core/constants";
@@ -15,8 +14,6 @@ import type { Activity, Project } from "../data/types";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { sortTasks, viewOf } from "../shell/viewEngine";
 import { Av, AvStack, Empty, PStatus, StIcon } from "../ui/helpers";
-
-const css = (o: Record<string, string | number>) => o as CSSProperties;
 
 function goFilteredList(p: Project, st: string) {
   const v = viewOf("p:" + p.id);
@@ -288,5 +285,3 @@ export function ProjectActivity({ p }: { p: Project }) {
     </div>
   );
 }
-
-export { css };

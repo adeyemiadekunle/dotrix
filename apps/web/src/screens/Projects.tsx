@@ -1,5 +1,4 @@
 // Projects. The workspace Overview folded into Home.
-import type { CSSProperties } from "react";
 
 import { openPop } from "../core/actions";
 import { PSTAT } from "../core/constants";
@@ -14,7 +13,6 @@ import { useLiveProjects } from "../../lib/workspace-data";
 import type { Project } from "../data/types";
 import { Av, AvStack, Empty, PIcon, PStatus, ProgBar } from "../ui/helpers";
 
-const css = (o: Record<string, string | number>) => o as CSSProperties;
 const ctx = (p: Project) => (e: React.MouseEvent<HTMLElement>) => {
   e.preventDefault();
   openPop(e.currentTarget, "ctx", { ctx: "project", id: p.id, x: e.clientX, y: e.clientY });
@@ -24,7 +22,7 @@ const more = (p: Project) => (e: React.MouseEvent<HTMLElement>) => {
   openPop(e.currentTarget, "ctx", { ctx: "project", id: p.id });
 };
 
-export function ProjectCard({ p }: { p: Project }) {
+function ProjectCard({ p }: { p: Project }) {
   const ts = tasksOf(p.id);
   const pr = progressOf(p.id);
   const open = ts.filter((t) => t.status !== "done").length;
@@ -332,5 +330,3 @@ export function Projects() {
 }
 
 // The workspace Overview folded into Home.
-
-export { css };

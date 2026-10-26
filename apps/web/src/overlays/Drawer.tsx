@@ -94,7 +94,7 @@ export function handleFiles(files: FileList | File[] | null, ctx: { project: str
 }
 
 /* ---------- comments ---------- */
-export function postComment(id: string) {
+function postComment(id: string) {
   const txt = (S.ui.drafts[id] || "").trim();
   if (!txt) return;
   const t = task(id)!;

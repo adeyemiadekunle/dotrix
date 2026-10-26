@@ -1,7 +1,6 @@
 // Small render helpers as components, same markup.
 import type { CSSProperties, ReactNode } from "react";
 import { Fragment } from "react";
-
 import { LB, PR, PSTAT, ST, TY, type IssueType, type PriorityId, type ProjectStatusId, type StatusId } from "../core/constants";
 import { Ic } from "../core/icons";
 import { TODAY, diffD, initials, parse, relDate } from "../core/utils";
@@ -9,12 +8,9 @@ import { moodOf } from "../core/presence";
 import { Face } from "./face";
 import { D, pColor, who } from "../data/store";
 import type { FileItem, Project, Task } from "../data/types";
-
 const css = (o: Record<string, string | number>) => o as CSSProperties;
-
 /** A person's (or an agent's) avatar; nobody: the dashed "unassigned" circle. */
 const FACE_PX: Record<string, number> = { sm: 20, md: 26, lg: 36, xl: 64 };
-
 export function Av({ id, cls = "", tip = true }: { id: string | null | undefined; cls?: string; tip?: boolean }) {
   const w = who(id);
   if (!w) {
@@ -51,7 +47,6 @@ export function AvStack({ ids, max = 4, cls = "sm" }: { ids: string[]; max?: num
     </span>
   );
 }
-
 export function StIcon({ st, s = 14 }: { st: StatusId; s?: number }) {
   const c = `var(--st-${st})`;
   const r = 5.4;
@@ -331,4 +326,3 @@ export function FilePrev({ f }: { f: Pick<FileItem, "type" | "name"> }) {
     </div>
   );
 }
-export const sk = (w: string, h = 10, extra: CSSProperties = {}) => <span className="sk" style={{ width: w, height: h, ...extra }} />;

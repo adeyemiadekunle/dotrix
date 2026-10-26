@@ -47,7 +47,6 @@ export function useApi<T>(load: () => Promise<T>, deps: unknown[] = []): { data:
 
 /* ---------- your account ---------- */
 
-export const getMe = () => unwrap(api.GET("/v1/me"));
 export const myCodingToolSaved = (tool: Schemas["DefaultCodingToolSave"]["default_coding_tool"]) =>
   send(api.PUT("/v1/me/coding-tool", { body: { default_coding_tool: tool } }));
 
@@ -214,7 +213,7 @@ export async function inviteLinkCreated(role: Member["role"]): Promise<string> {
   return l.url;
 }
 
-export async function inviteRevoked(m: Member) {
+async function inviteRevoked(m: Member) {
   await send(
     api.DELETE("/v1/workspaces/{workspace_id}/invites/{invite_id}", {
       params: { path: { workspace_id: live.ws!.id, invite_id: m.id.slice(INVITE_ID.length) } },
@@ -304,8 +303,6 @@ export const runContinued = (projectId: string, runId: string, whenReset: boolea
       body: { when_reset: whenReset },
     }),
   );
-
-export const agentList = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/agents", wsPath()));
 
 export const rules = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/rules", wsPath()));
 export const ruleSaved = (handle: string, content: string, base: number) =>

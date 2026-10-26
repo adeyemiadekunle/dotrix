@@ -13,7 +13,7 @@ import { Av, Due, Lbl, PrIcon, ProgBar, StIcon, TypeIcon } from "../ui/helpers";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
-export function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
+function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
   const cc = isLive() ? (t.commentCount ?? liveCommentsOf(t).length) : commentsOf(t.id).length;
   const ac = t.attachments.length;
   const sd = t.subtasks.filter((s) => s.done).length;

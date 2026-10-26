@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { applyPatch, copy, createTask, openPop, openTask } from "../core/actions";
 import { PCOLORS, PICONS } from "../core/constants";
 import { Ic } from "../core/icons";
-import { closeModal, createProject, escapeHtml, newTask, restore, snapshot, TEMPLATES } from "../core/more";
+import { closeModal, createProject, escapeHtml, restore, snapshot, TEMPLATES } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, ago, fmtDate, uid } from "../core/utils";
 import type { Schemas } from "@/lib/api";
@@ -588,7 +588,7 @@ function ProjectModal({ m }: { m: Modal }) {
 }
 
 /* ---------- share ---------- */
-export const PERMS = ["Can view", "Can comment", "Can edit", "Full access"];
+const PERMS = ["Can view", "Can comment", "Can edit", "Full access"];
 function ShareModal({ m }: { m: Modal }) {
   const p = proj(m.id as string)! as ReturnType<typeof proj> & { perms?: Record<string, string>; access?: string };
   p.perms = p.perms || {};
@@ -1322,5 +1322,3 @@ function SaveViewModal({ m }: { m: Modal }) {
     </>
   );
 }
-
-export { newTask };

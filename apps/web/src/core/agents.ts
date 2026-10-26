@@ -7,10 +7,8 @@ import { runContinued } from "../data/account";
 import { isLive, live } from "../data/live";
 import { toast } from "../ui/toast";
 import { createTask } from "./actions";
-import { confirmDlg, promptDlg } from "./more";
 import { go } from "./nav";
 import { dOff, uid } from "./utils";
-
 export function threadOf(changeId: string): { th: Thread; msg: ChatMessage; ch: ProposedChange } | null {
   for (const th of D().threads)
     for (const msg of th.messages) {
@@ -19,13 +17,11 @@ export function threadOf(changeId: string): { th: Thread; msg: ChatMessage; ch: 
     }
   return null;
 }
-
 /** The agents' items about a thread are settled once nothing in it waits. */
 function settleNotifs(th: Thread) {
   const waiting = th.messages.some((m) => m.changes?.some((c) => c.status === "pending"));
   if (!waiting) D().notifs.forEach((n) => n.thread === th.id && (n.type === "approval" || n.type === "checkpoint") && (n.read = true));
 }
-
 /** Text after a unified diff is applied: context and added lines. */
 const applied = (diff: string) =>
   diff
@@ -33,7 +29,6 @@ const applied = (diff: string) =>
     .filter((l) => !l.startsWith("-"))
     .map((l) => l.slice(1))
     .join("\n");
-
 export function decideChange(changeId: string, approve: boolean, reason = "") {
   const f = threadOf(changeId);
   if (!f || f.ch.status !== "pending") return;
@@ -85,7 +80,6 @@ export function decideChange(changeId: string, approve: boolean, reason = "") {
   });
   toast(approve ? `Approved: ${ch.title}` : `Rejected: ${ch.title}`, { ms: 2200 });
 }
-
 /** The autonomy action each kind of change takes, and how to say it. */
 export const ACTION_OF: Partial<Record<ProposedChange["kind"], [string, string]>> = {
   write_file: ["knowledge.write", "write documents"],
@@ -93,10 +87,8 @@ export const ACTION_OF: Partial<Record<ProposedChange["kind"], [string, string]>
   update_issue: ["issues.update", "edit issues"],
   comment: ["issues.comment", "comment on issues"],
 };
-
 /** Who may "Always allow this": owners. */
 export const canAlwaysAllow = () => (isLive() ? live.ws?.role === "owner" : me()?.role === "Owner");
-
 /** "Always allow this": approve the change, and let its agent make that kind of change without
  * asking from now on (a new version of its contract; the API's `.../always-allow`). */
 export function alwaysAllow(changeId: string) {
@@ -115,11 +107,6 @@ export function alwaysAllow(changeId: string) {
     onAction: () => ((S.ui.agentSel = agent.handle), go("settings", { sec: "agents" })),
   });
 }
-
-export function decideAll(msg: ChatMessage, approve: boolean) {
-  msg.changes?.filter((c) => c.status === "pending" && c.kind !== "checkpoint").forEach((c) => decideChange(c.id, approve));
-}
-
 /** A checkpoint: continue, change the plan (steer), or stop. */
 export function answerCheckpoint(changeId: string, answer: "continue" | "steer" | "stop", note = "") {
   const f = threadOf(changeId);
@@ -140,9 +127,8 @@ export function answerCheckpoint(changeId: string, answer: "continue" | "steer" 
         : "Continuing with the plan. **Recommendation:** a server-side queue with last-write-wins per field; CRDTs are more than the app needs. I've drafted an ADR you can review below.";
   agentReply(th, msg.by, reply, answer === "continue" ? ["Read architecture/overview.md", "Compared 3 approaches"] : []);
 }
-
 /** The agent answers after a short pause (seeded: canned, by intent). */
-export function agentReply(th: Thread, by: string, text: string, activity: string[] = [], changes?: ProposedChange[]) {
+function agentReply(th: Thread, by: string, text: string, activity: string[] = [], changes?: ProposedChange[]) {
   S.ui.chatBusy = th.id;
   render();
   setTimeout(() => {
@@ -154,7 +140,6 @@ export function agentReply(th: Thread, by: string, text: string, activity: strin
     render();
   }, 1100);
 }
-
 function cannedAnswer(th: Thread, q: string): { text: string; activity: string[]; changes?: ProposedChange[] } {
   const p = proj(th.project);
   const name = p?.name ?? "your projects";
@@ -187,15 +172,13 @@ function cannedAnswer(th: Thread, q: string): { text: string; activity: string[]
     text: `Here's what I found in ${name}'s documents and board. ${open.length ? `The most urgent open issue is **${open[0]!.key}** ${open[0]!.title}.` : "Nothing is open."} Ask me to turn this into issues or a document when you're ready.`,
   };
 }
-
 /** Chat and coding run on the API in the next step; a real workspace says so instead of a canned reply. */
 /** "owner/name" from a repo's address (or the name as it is). */
-export function repoName(url: string | undefined): string | undefined {
+function repoName(url: string | undefined): string | undefined {
   if (!url) return undefined;
   const m = url.match(/github\.com[/:]([^/]+\/[^/.]+)/);
   return m ? m[1] : url;
 }
-
 /** Ask a coding tool to work on an issue: a session waiting for someone to approve it. Its id, or null. */
 export function startCoding(t: { id: string; key: string; title: string; project: string }, tool: CodingSession["tool"], note = ""): string | null {
   if (agentsNotWired()) return null;
@@ -228,14 +211,12 @@ export function startCoding(t: { id: string; key: string; title: string; project
   });
   return id;
 }
-
-export function agentsNotWired(): boolean {
+function agentsNotWired(): boolean {
   if (!isLive()) return false;
   toast("Chat with the agents comes to your workspace in the next update. Try it in the demo workspace.", { kind: "info", ms: 5000 });
   return true;
 }
-
-export function sendChat(th: Thread, text: string, agent: string) {
+function sendChat(th: Thread, text: string, agent: string) {
   const q = text.trim();
   if (!q || agentsNotWired()) return;
   mutate(() => {
@@ -246,7 +227,6 @@ export function sendChat(th: Thread, text: string, agent: string) {
   const a = cannedAnswer(th, q);
   agentReply(th, agent, a.text, a.activity, a.changes);
 }
-
 export function newThread(project: string | null, agent: string, model: string, first: string, projects?: string[]): Thread | null {
   if (agentsNotWired()) return null;
   const title = first
@@ -271,7 +251,6 @@ export function newThread(project: string | null, agent: string, model: string, 
   sendChat(th, first, agent);
   return th;
 }
-
 /* ---------- coding sessions ---------- */
 export function decideCoding(cs: CodingSession, approve: boolean, reason = "") {
   if (cs.status !== "awaiting_approval") return;
@@ -296,30 +275,13 @@ export function decideCoding(cs: CodingSession, approve: boolean, reason = "") {
   });
   toast(approve ? `${toolName(cs.tool)} is coding ${task(cs.task)!.key}` : "Coding rejected", { ms: 2200 });
 }
-export function stopCoding(cs: CodingSession) {
-  mutate(() => {
-    cs.status = "stopped";
-    cs.turns.at(-1)!.summary = "Stopped before it finished.";
-  });
-}
-export function followUp(cs: CodingSession, ask: string) {
-  if (!ask.trim()) return;
-  mutate(() => {
-    cs.turns.push({ at: Date.now(), ask: ask.trim(), events: [] });
-    cs.status = "awaiting_approval";
-    cs.at = Date.now();
-  });
-}
-
 /* ---------- a run stopped at its model's limit ---------- */
-
 /** Where a conversation stopped at its model's limit (the seeded data's message for it). */
 function limitedMessage(threadId: string | undefined): { th: Thread; msg: ChatMessage } | null {
   const th = D().threads.find((t) => t.id === threadId);
   const msg = th?.messages.findLast((m) => m.limit && !m.limit.continued);
   return th && msg ? { th, msg } : null;
 }
-
 /** Continue a run that stopped at its model's limit: now, or once the limit resets. In a real
  * workspace it's the API's `.../continue`; on the seeded data it carries on here. */
 export function continueLimited(at: { thread?: string; project?: string; run?: string; notif?: string }, whenReset: boolean) {
@@ -364,9 +326,7 @@ export function continueLimited(at: { thread?: string; project?: string; run?: s
   done();
   toast("Continuing where it stopped");
 }
-
 const toasted = new Set<string>();
-
 /** A real workspace opening with a run stopped at its model's limit (the last 12 hours, unread):
  * a toast with Continue, once per session. */
 export function limitToasts() {
@@ -382,59 +342,6 @@ export function limitToasts() {
     });
   }
 }
-
 /* ---------- a coding session's menu ---------- */
-
-const sessionOf = (id: string) => D().coding.find((c) => c.id === id);
-
-export function renameSession(id: string) {
-  const cs = sessionOf(id);
-  if (!cs || agentsNotWired()) return;
-  promptDlg({
-    title: "Rename session",
-    label: "Name",
-    value: cs.title ?? task(cs.task)?.title ?? "",
-    run: (v) => mutate(() => void (sessionOf(id)!.title = v.trim() || undefined)),
-  });
-}
-export function togglePinSession(id: string) {
-  if (agentsNotWired()) return;
-  mutate(() => {
-    const cs = sessionOf(id);
-    if (cs) cs.pinned = !cs.pinned;
-  });
-}
-export function toggleArchiveSession(id: string) {
-  if (agentsNotWired()) return;
-  const archived = !sessionOf(id)?.archived;
-  mutate(() => {
-    const cs = sessionOf(id);
-    if (cs) cs.archived = archived;
-  });
-  toast(archived ? "Session archived" : "Session back in the list");
-}
 /** Its sandbox stops; its conversation, branch, and PR stay, and a new turn resumes it. */
-export function closeSession(id: string) {
-  if (agentsNotWired()) return;
-  mutate(() => {
-    const cs = sessionOf(id);
-    if (cs) cs.state = "closed";
-  });
-  toast("Session closed: its sandbox stopped. A new turn picks the conversation up again.");
-}
 /** Its turns, screenshots, and saved conversation go; the branch and PR stay on GitHub. */
-export function deleteSession(id: string) {
-  const cs = sessionOf(id);
-  if (!cs || agentsNotWired()) return;
-  confirmDlg({
-    title: "Delete this session?",
-    body: "Its turns, screenshots, and saved conversation are deleted. The branch and pull request stay on GitHub.",
-    ok: "Delete",
-    danger: true,
-    run: () => {
-      mutate(() => (D().coding = D().coding.filter((c) => c.id !== id)));
-      if (new URLSearchParams(location.search).get("session") === id) go("chat");
-      toast("Session deleted");
-    },
-  });
-}

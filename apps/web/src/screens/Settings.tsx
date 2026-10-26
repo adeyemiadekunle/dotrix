@@ -72,7 +72,7 @@ import { Face } from "../ui/face";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
-export const SET_NAV: [string, [string, string, string][], boolean?][] = [
+const SET_NAV: [string, [string, string, string][], boolean?][] = [
   [
     "General",
     [

@@ -75,7 +75,7 @@ export function viewOf(key: string): View {
     S.views[key] = { filters: [], sort: { f: "manual", dir: 1 }, group: "status", q: "", hidden: ["start", "created", "deps"], colW: {}, showDone: true };
   return S.views[key]!;
 }
-export function matchF(t: Task, f: Filter): boolean {
+function matchF(t: Task, f: Filter): boolean {
   if (!f.v || !f.v.length) return true;
   let hit: boolean;
   if (f.f === "labels") hit = f.v.some((v) => t.labels.includes(v));
@@ -171,14 +171,14 @@ export const viewChange = (key: string, fn: (v: View) => void) => {
   save();
   render();
 };
-export const clearFilters = (key: string) =>
+const clearFilters = (key: string) =>
   viewChange(key, (v) => {
     v.filters = [];
     v.q = "";
     closePop();
   });
 
-export function FilterChips({ k }: { k: string }) {
+function FilterChips({ k }: { k: string }) {
   const v = viewOf(k);
   if (!v.filters.length) return null;
   return (

@@ -18,7 +18,7 @@ import { Board } from "../views/Board";
 import { ProjectActivity, ProjectOverview } from "../views/ProjectOverview";
 import { Knowledge } from "./Knowledge";
 
-export const PTABS: [string, string, string][] = [
+const PTABS: [string, string, string][] = [
   ["overview", "Overview", "layout-dashboard"],
   ["board", "Board", "square-kanban"],
   ["list", "List", "list"],
@@ -40,7 +40,7 @@ function Denied({ p }: { p: P }) {
 
 const LIST_COLS = ["status", "assignee", "priority", "due", "labels"];
 
-export function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
+function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   const v = viewOf(k);
   const liveTasks = useLiveProjectTasks(live.ws?.id, p.id, isLive());
   const base = isLive() ? (liveTasks ?? []) : tasksOf(p.id);

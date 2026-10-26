@@ -3,7 +3,7 @@
 // agents' (approvals, plans, findings).
 import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
-import { openPop, projMove, toggleSide } from "../core/actions";
+import { openPop, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { Ic, WsLogo } from "../core/icons";
 import { presence } from "../core/presence";
@@ -47,7 +47,7 @@ const css = (o: Record<string, string | number>) => o as CSSProperties;
 const NARROW = "(max-width: 900px)";
 const narrow = () => typeof window !== "undefined" && window.matchMedia(NARROW).matches;
 /** The sidebar shows icons only: collapsed, on a wide screen. */
-export const sideCollapsed = () => S.ui.collapsed && !narrow();
+const sideCollapsed = () => S.ui.collapsed && !narrow();
 
 /** A collapsed sidebar's labels on hover or focus. They float over the page: the sidebar clips
  * anything that overflows it, so CSS tooltips (`data-tip`) can't show from inside it. */
@@ -507,5 +507,3 @@ function BottomNav() {
     </nav>
   );
 }
-
-export { projMove };

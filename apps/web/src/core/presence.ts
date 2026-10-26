@@ -7,7 +7,7 @@ import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
 import type { ChatMessage, ProposedChange, Thread } from "../data/types";
 import type { Mood } from "../ui/face";
 
-export type State = "working" | "needs" | "blocked" | "idle";
+type State = "working" | "needs" | "blocked" | "idle";
 export interface Presence {
   id: string; // an agent handle, or a coding tool ("agent:claude-code")
   name: string;
