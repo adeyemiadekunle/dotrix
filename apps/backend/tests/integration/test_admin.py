@@ -91,6 +91,20 @@ async def test_login_and_duplicate_admin_email(db_client: AsyncClient, signup) -
     assert res.status_code == 409
 
 
+async def test_signup_picks_the_personal_workspace_when_owner_has_both(db_client: AsyncClient, signup) -> None:
+    """Converting gives the owner a new personal workspace alongside the organisation; the
+    admin account must bind to the personal one, not whichever membership comes first."""
+    owner = await signup()
+    personal = (await db_client.get("/v1/workspaces", headers=owner.headers)).json()[0]
+    res = await db_client.post(f"/v1/workspaces/{personal['id']}/convert-to-organization", json={}, headers=owner.headers)
+    assert res.status_code == 200, res.text
+
+    headers = await _admin(db_client, owner)
+    me = await db_client.get("/v1/admin/me", headers=headers)
+    assert me.status_code == 200, me.text
+    assert me.json()["workspace"]["kind"] == "personal"
+
+
 async def test_refresh_rotates_and_logout_revokes(db_client: AsyncClient, signup) -> None:
     owner = await signup()
     await _admin(db_client, owner)

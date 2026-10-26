@@ -71,15 +71,19 @@ class AdminService:
         user = await UserRepository(self.session).get_by_email(data.owner_email.lower())
         if user is None or not verify_password(user.password_hash, data.owner_password):
             raise Unauthorized("The workspace owner's sign-in didn't check out")
-        membership = await self.session.scalar(
-            select(Membership).where(Membership.user_id == user.id, Membership.role == Role.OWNER)
+        # Phase 1: a personal workspace only — pick it explicitly, since owners may also own
+        # an organisation (e.g. after converting, which leaves them a new personal one too).
+        workspace = await self.session.scalar(
+            select(Workspace)
+            .join(Membership, Membership.workspace_id == Workspace.id)
+            .where(
+                Membership.user_id == user.id,
+                Membership.role == Role.OWNER,
+                Workspace.kind == WorkspaceKind.PERSONAL,
+            )
         )
-        if membership is None:
-            raise Unauthorized("That account owns no workspace")
-        # Phase 1: a personal workspace only.
-        workspace = await self.session.get(Workspace, membership.workspace_id)
-        if workspace is None or workspace.kind is not WorkspaceKind.PERSONAL:
-            raise Conflict("Admin accounts are for personal workspaces")
+        if workspace is None:
+            raise Conflict("That account owns no personal workspace")
         if await self.session.scalar(select(AdminUser).where(AdminUser.email == data.email.lower())):
             raise Conflict("That email already has an admin account")
         admin = AdminUser(
