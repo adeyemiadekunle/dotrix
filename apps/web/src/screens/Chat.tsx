@@ -50,7 +50,7 @@ import { LimitNotice } from "../components/LimitNotice";
 import { approvalModes, defaultApproval } from "../core/can";
 import { openPop, openTask } from "../core/actions";
 import { desktop, useDesktopRunners } from "../core/desktop";
-import { Ic } from "../core/icons";
+import { DotsLoader, Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { MOD, ago, greeting } from "../core/utils";
 import { isLive, live } from "../data/live";
@@ -127,7 +127,15 @@ function useRows(ws: string | undefined) {
       waiting: false,
     })),
   ];
-  return { rows, loaded: own.isFetched && cross.isFetched };
+  return {
+    rows,
+    loaded: own.isFetched && cross.isFetched,
+    failed: own.isError || cross.isError,
+    retry: () => {
+      void own.refetch();
+      void cross.refetch();
+    },
+  };
 }
 
 const threadSearch = (r: Pick<Row, "id" | "projectKey">) => (r.projectKey ? `thread=${r.id}&project=${r.projectKey}` : `thread=${r.id}&across=1`);
@@ -910,12 +918,15 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const halt = () => working && (projectId ? stop.mutate(working.id) : stopCross.mutate(working.id));
   const about = [...new Set(runs.flatMap((r) => r.project_ids ?? []))].map((pid) => proj(pid)?.name).filter(Boolean);
   // The address named a project (or "across"), so the list wasn't needed to open it; the runs say if it exists.
-  if ((projectId ? own.isFetched : cross.isFetched) && runs.length === 0) return <Pending text={MISSING_THREAD} />;
+  const query = projectId ? own : cross;
+  if (query.isLoading) return <Pending text="Loading the conversation…" loading />;
+  if (query.isError && !query.data) return <Pending text="The conversation couldn't be loaded." onRetry={() => void query.refetch()} />;
+  if (query.isSuccess && runs.length === 0) return <Pending text={MISSING_THREAD} />;
   return (
     <div className="conv">
       <div className="conv-main">
         <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
-          <button className="ibtn ibtn-sm" onClick={() => open(p ? `project=${p.key}` : "")} aria-label="Back to conversations">
+          <button className="ibtn ibtn-sm" onClick={() => open("")} aria-label="Back to conversations">
             <Ic n="arrow-left" s={15} />
           </button>
           <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
@@ -1077,6 +1088,9 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   const sugg = pid ? SUGGESTIONS : ACROSS;
   return (
     <div className="conv">
+      <button className="ibtn chat-new-back" onClick={() => open("")} aria-label="Back to conversations">
+        <Ic n="arrow-left" s={16} />
+      </button>
       <div className="chat-scroll" style={{ display: "flex" }}>
         <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
           <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>
@@ -1905,10 +1919,26 @@ function Session({ cs }: { cs: CodingSession }) {
 
 const MISSING_THREAD = "This conversation isn't here: it was deleted, or isn't one you can see.";
 
-const Pending = ({ text }: { text: string }) => (
+const Pending = ({ text, loading = false, onRetry, inbox = false }: { text: string; loading?: boolean; onRetry?: () => void; inbox?: boolean }) => (
   <div className="chat-scroll" style={{ display: "flex" }}>
-    <div className="faint" style={{ margin: "auto", fontSize: 13 }}>
-      {text}
+    <div className="chat-pending" role={loading ? "status" : undefined}>
+      {loading && <DotsLoader px={44} />}
+      <span>{text}</span>
+      {onRetry && (
+        <button className="btn btn-secondary btn-sm" onClick={onRetry}>
+          Try again
+        </button>
+      )}
+      {inbox && (
+        <button className="btn btn-secondary btn-sm" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
+          Open Inbox
+        </button>
+      )}
+      {!loading && (
+        <button className="btn btn-ghost btn-sm" onClick={() => open("")}>
+          Back to conversations
+        </button>
+      )}
     </div>
   </div>
 );
@@ -1924,7 +1954,7 @@ export function Chat() {
   const newSession = search.get("tab") === "coding" && !sessionId;
   const q = S.ui.chatQ.toLowerCase();
   const ps = visibleProjects().filter(canSee);
-  const { rows, loaded } = useRows(ws);
+  const { rows, loaded, failed, retry } = useRows(ws);
   const sessionsQ = useCodingSessions(ws);
   const allSessions = sessionsQ.data ?? [];
   const row = rows.find((r) => r.id === threadId);
@@ -1974,6 +2004,9 @@ export function Chat() {
               <button className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
                 <Ic n="panel-left-open" s={16} />
               </button>
+              <button className="ibtn" onClick={() => open("new=1")} aria-label="New chat" data-tip="New chat" data-tip-pos="right">
+                <Ic n="square-pen" s={16} />
+              </button>
             </div>
           ) : (
             <>
@@ -1983,6 +2016,11 @@ export function Chat() {
                 <span className="sp" />
                 <button className="ibtn ibtn-sm chat-fold" onClick={() => setListMin(true)} aria-label="Hide the list" data-tip="Hide the list">
                   <Ic n="panel-left-close" s={15} />
+                </button>
+              </div>
+              <div className="chat-new">
+                <button className="btn btn-secondary" onClick={() => open("new=1")}>
+                  <Ic n="square-pen" s={14} /> New chat
                 </button>
               </div>
               <div style={{ padding: "0 14px 8px" }}>
@@ -2031,19 +2069,28 @@ export function Chat() {
           )}
         </aside>
         <section className="chat-main">
-          {sessionId ? (
+          {!isLive() && (threadId || sessionId) ? (
+            <Pending text="This conversation isn't available in the demo. Review the request in Inbox." inbox />
+          ) : sessionId ? (
             cs ? (
               <Session key={cs.session_id} cs={cs} />
+            ) : sessionsQ.isError ? (
+              <Pending text="The session couldn't be loaded." onRetry={() => void sessionsQ.refetch()} />
             ) : (
-              <Pending text={sessionsQ.isFetched ? "This session isn't here: it was deleted, or isn't one you can see." : "Loading the session…"} />
+              <Pending
+                text={sessionsQ.isFetched ? "This session isn't here: it was deleted, or isn't one you can see." : "Loading the session…"}
+                loading={!sessionsQ.isFetched}
+              />
             )
           ) : newSession ? (
             <NewSession key={search.get("issue") ?? ""} issue0={search.get("issue")} />
           ) : threadId ? (
             thread ? (
               <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />
+            ) : failed ? (
+              <Pending text="The conversation couldn't be loaded." onRetry={retry} />
             ) : (
-              <Pending text={loaded ? MISSING_THREAD : "Loading the conversation…"} />
+              <Pending text={loaded ? MISSING_THREAD : "Loading the conversation…"} loading={!loaded} />
             )
           ) : (
             <NewChat

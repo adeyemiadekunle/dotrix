@@ -17,6 +17,7 @@ import { useLiveNotifications } from "../../lib/workspace-data";
 import { CellAssignee, CellDue, CellPrio, CellStatus } from "../components/TaskList";
 import { CommentBox, CommentItem } from "../overlays/Drawer";
 import { Av, CommentText, Empty } from "../ui/helpers";
+import { tabKeys } from "../ui/tabs";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -445,15 +446,24 @@ export function Inbox() {
               <Ic n="settings-2" s={15} />
             </button>
           </div>
-          <div className="tabs inbox-tabs" role="tablist">
+          <div className="tabs inbox-tabs" role="tablist" aria-label="Inbox categories" onKeyDown={tabKeys}>
             {TABS.map(([k, n]) => (
-              <button key={k} role="tab" className={`tab ${tab === k ? "on" : ""}`} onClick={() => openTab(k)}>
+              <button
+                key={k}
+                id={`inbox-tab-${k}`}
+                role="tab"
+                aria-selected={tab === k}
+                aria-controls="inbox-list"
+                tabIndex={tab === k ? 0 : -1}
+                className={`tab ${tab === k ? "on" : ""}`}
+                onClick={() => openTab(k)}
+              >
                 {n}
                 {count(k) > 0 && <span className="cnt">{count(k)}</span>}
               </button>
             ))}
           </div>
-          <div className="inbox-list">
+          <div className="inbox-list" id="inbox-list" role="tabpanel" aria-labelledby={`inbox-tab-${tab}`}>
             {ns.length ? (
               Object.entries(buckets).map(([b, list]) => (
                 <div key={b}>
