@@ -22,6 +22,7 @@ import {
   wasStopped,
   WORK_MODES,
   APPROVAL_MODES,
+  MODE_ICONS,
   type AgentId,
   type ApprovalMode,
   type Plan,
@@ -556,7 +557,6 @@ function RunSteps({ scope, runId }: { scope: Scope | undefined; runId: string })
 }
 
 const MODELS_ICON = "cpu";
-const MODE_ICONS: Record<WorkMode, string> = { discuss: "message-circle", plan: "list-checks", build: "hammer", review: "eye" };
 
 /** A version of the conversation's plan; the latest can be built (a Build message naming its version). */
 function PlanCard({ plan, latest, busy, onBuild }: { plan: Plan; latest: boolean; busy: boolean; onBuild: () => void }) {
@@ -711,7 +711,7 @@ function Composer({
   placeholder: string;
   onSend: (text: string, agent: string) => void;
   agent: string;
-  setAgent: (a: string) => void;
+  setAgent?: (a: string) => void;
   model?: string;
   setModel?: (m: string) => void;
   models?: [string, string][];
@@ -729,27 +729,19 @@ function Composer({
   const [text, setText] = useState(initial);
   const ref = useRef<HTMLTextAreaElement>(null);
   const a = D().agents.find((x) => x.handle === agent);
-  // Typing "@" offers the projects (in a new chat) and the agents.
-  const at = useAtPicker({ text, setText, ref, projects: contexts, project: context, onProject: setContext, agent, onAgent: setAgent });
+  // "+" (or typing "@") offers the projects (in a new chat) and the work modes; Nova always answers.
+  const at = useAtPicker({ text, setText, ref, projects: contexts, project: context, onProject: setContext, modes: WORK_MODES, mode, onMode: setMode });
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
   const send = () => {
-    let q = text.trim();
+    const q = text.trim();
     if (!q || S.ui.offline) return;
-    // "@vega …" (or its handle, "@research") picks the agent
-    const m = q.match(/^@(\w+)\s+/);
-    let pick = agent;
-    const named = m && D().agents.find((x) => x.handle === m[1] || x.name.toLowerCase() === m[1]!.toLowerCase());
-    if (m && named) {
-      pick = named.handle;
-      q = q.slice(m[0].length);
-      setAgent(pick);
-    }
-    onSend(q, pick);
-    setAgent("auto");
+    onSend(q, agent);
+    setAgent?.("auto");
     setText("");
   };
+  const modeLabel = WORK_MODES.find(([v]) => v === mode)?.[1] ?? "";
   return (
     <div style={{ position: "relative" }}>
       <div className="cbox">
@@ -770,12 +762,27 @@ function Composer({
           aria-expanded={at.open}
         />
         <div className="cbox-row">
+          {(contexts || (mode && setMode)) && (
+            <button
+              type="button"
+              className="cpill pick"
+              onClick={at.start}
+              aria-label="Project and mode"
+              aria-haspopup="listbox"
+              aria-expanded={at.open}
+              data-tip="Pick a project or a mode (or type @)"
+            >
+              <Ic n="plus" s={12} />
+            </button>
+          )}
           {contexts && setContext && context !== undefined ? (
             <button
               className="cpill pick"
               onClick={at.start}
-              aria-label={`Project: ${contexts.find(([v]) => v === context)?.[1]}. Type @ to change it`}
-              data-tip="Type @ to pick another project"
+              aria-label={`Project: ${contexts.find(([v]) => v === context)?.[1]}`}
+              aria-haspopup="listbox"
+              aria-expanded={at.open}
+              data-tip="Pick a project or a mode (or type @)"
             >
               <Ic n={context ? "at-sign" : "layers"} s={12} />
               <span className="trunc">{contexts.find(([v]) => v === context)?.[1]}</span>
@@ -789,15 +796,17 @@ function Composer({
             )
           )}
           {mode && setMode && (
-            <span data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
-              <Pick
-                value={mode}
-                onChange={(v) => setMode(v as WorkMode)}
-                options={WORK_MODES.map(([v, l]): [string, string] => [v, l])}
-                label="Mode"
-                lead={<Ic n={MODE_ICONS[mode]} s={12} />}
-              />
-            </span>
+            <button
+              className="cpill pick"
+              onClick={at.start}
+              aria-label={`Mode: ${modeLabel}`}
+              aria-haspopup="listbox"
+              aria-expanded={at.open}
+              data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}
+            >
+              <Ic n={MODE_ICONS[mode]} s={12} />
+              <span className="trunc">{modeLabel}</span>
+            </button>
           )}
           {approval && setApproval && approvals.length > 1 && (
             <span data-tip={APPROVAL_MODES.find(([v]) => v === approval)?.[2]}>
@@ -810,11 +819,7 @@ function Composer({
               />
             </span>
           )}
-          <span className="cpill" aria-label="Nova is the lead adviser">
-            <Face c={D().agents.find((x) => x.handle === "auto")?.c ?? "var(--acc)"} size={16} mood="idle" />
-            Nova · Lead adviser
-          </span>
-          {agent !== "auto" && a && (
+          {agent !== "auto" && a && setAgent && (
             <button className="cpill" onClick={() => setAgent("auto")} aria-label={`Remove request to involve ${a.name}`}>
               Involve {a.name} <Ic n="x" s={10} />
             </button>
@@ -861,8 +866,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const sendCross = useSendCross(ws);
   const stop = useStopRun(scope);
   const stopCross = useStopCross(ws);
-  const [picked, setAgent] = useState<string | null>(null);
-  const agent = picked ?? "auto";
+  const agent = "auto";
   // How you're working: what you picked, else how the conversation was going, else Discuss.
   const [pickedMode, setMode] = useState<WorkMode | null>(null);
   const mode = pickedMode ?? lastUser?.work_mode ?? "discuss";
@@ -897,13 +901,11 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   }, [id, runs.length, busy, stream.text]);
-  const say = (message: string, a: string, m: WorkMode = mode) =>
-    projectId
-      ? send.mutate({ message, threadId: id, agent: a as AgentId, workMode: m, approvalMode: approval })
-      : sendCross.mutate({ message, thread_id: id, agent: a as AgentId });
+  const say = (message: string, m: WorkMode = mode) =>
+    projectId ? send.mutate({ message, threadId: id, agent, workMode: m, approvalMode: approval }) : sendCross.mutate({ message, thread_id: id, agent });
   const build = (plan: Plan) => {
     setMode("build");
-    say(`Build plan version ${plan.version}: ${plan.title}`, agent, "build");
+    say(`Build plan version ${plan.version}: ${plan.title}`, "build");
   };
   const halt = () => working && (projectId ? stop.mutate(working.id) : stopCross.mutate(working.id));
   const about = [...new Set(runs.flatMap((r) => r.project_ids ?? []))].map((pid) => proj(pid)?.name).filter(Boolean);
@@ -1011,12 +1013,11 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           <Composer
             key={fixDraft.version}
             initial={fixDraft.text}
-            placeholder="Ask Nova, or type @ to involve a specialist"
+            placeholder="Ask Nova, or type @ to pick a mode"
             agent={agent}
-            setAgent={setAgent}
             model={modelName(last?.conversation_model) || undefined}
             context={p?.name ?? "All projects"}
-            onSend={(q, a) => say(q, a)}
+            onSend={(q) => say(q)}
             mode={projectId ? mode : undefined}
             setMode={projectId ? setMode : undefined}
             approval={projectId ? approval : undefined}
@@ -1055,7 +1056,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   const ps = visibleProjects().filter((p) => canSee(p) && !p.archived);
   const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ps[0]?.id ?? ""));
   const [picked, setPicked] = useState<string[]>(ps.slice(0, 3).map((p) => p.id));
-  const [agent, setAgent] = useState(agent0 ?? S.ui.chatAgent);
+  const [agent, setAgent] = useState(agent0 ?? "auto");
   const models = useModels(ws).data ?? [];
   const [chosen, setModel] = useState<string | null>(null);
   const model = chosen ?? models[0]?.id ?? "";
@@ -1065,7 +1066,6 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   const send = useSendMessage(scope);
   const sendCross = useSendCross(ws);
   const start = (text: string, a: string) => {
-    S.ui.chatAgent = a;
     const body = { agent: a as AgentId, model: model || null };
     const started = pid
       ? send
@@ -1104,7 +1104,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           )}
           <Composer
             key={q}
-            placeholder="Ask anything, or type @ to pick a project or an agent"
+            placeholder="Ask anything, or type @ to pick a project or a mode"
             agent={agent}
             setAgent={setAgent}
             model={model}
@@ -1167,6 +1167,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
   const [tid, setTid] = useState(issue0 ? (isLive() ? issue0 : (D().tasks.find((t) => t.key === issue0)?.id ?? "")) : "");
   const [note, setNote] = useState("");
   const [menu, setMenu] = useState<string | null>(null);
+  const [menuBtn, setMenuBtn] = useState(false);
   const [hl, setHl] = useState(0);
   const ref = useRef<HTMLTextAreaElement>(null);
   const t = mine.find((issue) => issue.id === tid) ?? task(tid);
@@ -1212,7 +1213,9 @@ function NewSession({ issue0 }: { issue0: string | null }) {
       .finally(() => setAdding(false));
   };
   const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location, agent, model);
-  const found = menu === null ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes(menu.toLowerCase())).slice(0, 8);
+  // The issue list opens two ways: typing "@" or "/" (menu is the query) or the Issue button (menuBtn); the button never touches the note.
+  const menuOpen = menu !== null || menuBtn;
+  const found = !menuOpen ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes((menu ?? "").toLowerCase())).slice(0, 8);
   const go_ = () => {
     if (!t) return;
     if (!ready || start.isPending) return;
@@ -1225,17 +1228,23 @@ function NewSession({ issue0 }: { issue0: string | null }) {
     setNote(el.value);
     const m = el.value.slice(0, el.selectionStart).match(/(?:^|\s)[@/]([\w-]*)$/);
     setMenu(m ? m[1]! : null);
+    setMenuBtn(false);
     setHl(0);
   };
   const pick = (id: string) => {
     setTid(id);
-    setNote(note.replace(/(^|\s)[@/][\w-]*$/, "$1").replace(/\s+$/, ""));
+    if (menu !== null) setNote(note.replace(/(^|\s)[@/][\w-]*$/, "$1").replace(/\s+$/, ""));
     setMenu(null);
+    setMenuBtn(false);
     ref.current?.focus();
   };
   const ask = () => {
-    setNote(note + (note && !note.endsWith(" ") ? " @" : "@"));
-    setMenu("");
+    if (menuOpen) {
+      setMenu(null);
+      setMenuBtn(false);
+      return;
+    }
+    setMenuBtn(true);
     setHl(0);
     ref.current?.focus();
   };
@@ -1260,7 +1269,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
               }
               onChange={(e) => onText(e.target)}
               onKeyDown={(e) => {
-                if (menu !== null && found.length) {
+                if (menuOpen && found.length) {
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
                     setHl((hl + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
@@ -1272,14 +1281,15 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                     return;
                   }
                 }
-                if (e.key === "Escape" && menu !== null) {
+                if (e.key === "Escape" && menuOpen) {
                   e.stopPropagation();
                   setMenu(null);
+                  setMenuBtn(false);
                 }
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) go_();
               }}
               aria-label="What should it do"
-              aria-expanded={menu !== null}
+              aria-expanded={menuOpen}
               aria-controls="cs-issues"
             />
             <div className="cbox-row">
@@ -1294,7 +1304,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                   </button>
                 </span>
               ) : (
-                <button className="cpill pick" onClick={ask} aria-label="Pick an issue">
+                <button className="cpill pick" onClick={ask} aria-label="Pick an issue" aria-haspopup="listbox" aria-expanded={menuOpen}>
                   <Ic n="at-sign" s={12} />
                   Issue
                 </button>
@@ -1371,40 +1381,50 @@ function NewSession({ issue0 }: { issue0: string | null }) {
               </button>
             </div>
           </div>
-          {menu !== null && (
-            <div
-              className="pop"
-              id="cs-issues"
-              role="listbox"
-              aria-label="Issues"
-              style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, maxWidth: 520 }}
-            >
-              {found.length ? (
-                found.map((x, i) => (
-                  <button
-                    key={x.id}
-                    role="option"
-                    aria-selected={i === hl}
-                    className={`mi ${i === hl ? "hl" : ""}`}
-                    onMouseEnter={() => setHl(i)}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => pick(x.id)}
-                  >
-                    <span className="faint" style={{ fontSize: 12, width: 64, flexShrink: 0 }}>
-                      {x.key}
-                    </span>
-                    <span className="trunc" style={{ flex: 1 }}>
-                      {x.title}
-                    </span>
-                    <span className="r">{proj(x.project)?.name}</span>
-                  </button>
-                ))
-              ) : (
-                <div className="faint" style={{ padding: "8px 10px", fontSize: 12.5 }}>
-                  {mine.length ? "No issue matches." : personal ? "No open issues." : "No open issues are assigned to you."}
-                </div>
-              )}
-            </div>
+          {menuOpen && (
+            <>
+              <span
+                className="pick-veil"
+                aria-hidden
+                onClick={() => {
+                  setMenu(null);
+                  setMenuBtn(false);
+                }}
+              />
+              <div
+                className="pop"
+                id="cs-issues"
+                role="listbox"
+                aria-label="Issues"
+                style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, maxWidth: 520, zIndex: 80 }}
+              >
+                {found.length ? (
+                  found.map((x, i) => (
+                    <button
+                      key={x.id}
+                      role="option"
+                      aria-selected={i === hl}
+                      className={`mi ${i === hl ? "hl" : ""}`}
+                      onMouseEnter={() => setHl(i)}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pick(x.id)}
+                    >
+                      <span className="faint" style={{ fontSize: 12, width: 64, flexShrink: 0 }}>
+                        {x.key}
+                      </span>
+                      <span className="trunc" style={{ flex: 1 }}>
+                        {x.title}
+                      </span>
+                      <span className="r">{proj(x.project)?.name}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="faint" style={{ padding: "8px 10px", fontSize: 12.5 }}>
+                    {mine.length ? "No issue matches." : personal ? "No open issues." : "No open issues are assigned to you."}
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -1954,12 +1974,6 @@ export function Chat() {
               <button className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
                 <Ic n="panel-left-open" s={16} />
               </button>
-              <button className="ibtn" onClick={() => open("new=1")} aria-label="New chat" data-tip="New chat" data-tip-pos="right">
-                <Ic n="square-pen" s={15} />
-              </button>
-              <button className="ibtn" onClick={() => open("tab=coding")} aria-label="New coding session" data-tip="New coding session" data-tip-pos="right">
-                <Ic n="code" s={15} />
-              </button>
             </div>
           ) : (
             <>
@@ -1983,15 +1997,6 @@ export function Chat() {
                     aria-label="Find"
                   />
                 </div>
-                {/* Start something new, under the search: a conversation, or Kai on an issue. */}
-                <button className={`sitem chat-new ${!hasSel || search.get("new") ? "on" : ""}`} onClick={() => open("new=1")}>
-                  <Ic n="square-pen" s={15} />
-                  <span className="trunc">New chat</span>
-                </button>
-                <button className={`sitem chat-new ${newSession ? "on" : ""}`} onClick={() => open("tab=coding")}>
-                  <Ic n="code" s={15} />
-                  <span className="trunc">New coding session</span>
-                </button>
               </div>
               <nav className="chat-list" aria-label="Conversations">
                 {ps.map((p) => {

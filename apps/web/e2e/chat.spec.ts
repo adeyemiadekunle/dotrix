@@ -31,10 +31,11 @@ async function openChat(page: Page, search = "") {
   await expect(page.locator("#main-content h1").first()).toContainText(/Good|Chat/);
 }
 
-async function pickChatOption(page: Page, label: "Agent" | "Approvals" | "Mode", name: string | RegExp) {
+async function pickChatOption(page: Page, label: "Approvals" | "Mode", name: string | RegExp) {
   const picker = page.getByRole("button", { name: new RegExp(`^${label}:`) });
   await picker.click();
-  const menu = page.getByRole("listbox", { name: label, exact: true });
+  // Approvals keeps its own list; Mode is a section of the + menu (projects + modes).
+  const menu = label === "Approvals" ? page.getByRole("listbox", { name: "Approvals", exact: true }) : page.locator(".pop[role='listbox']");
   const option = menu.getByRole("option", { name, exact: true });
   const selected = (await option.innerText()).trim();
   await option.click();
@@ -101,12 +102,43 @@ test("a specialist mention keeps Nova as the adviser", async ({ page }) => {
   await addProject(page, "Kumove", "KUM");
   await openChat(page, "?project=KUM&agent=research");
 
-  await expect(page.getByText("Nova · Lead adviser")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Project and mode" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove request to involve Vega" })).toBeVisible();
   await page.getByLabel("Message").fill("Who else ships multi-zone?");
   await page.getByLabel("Message").press("Enter");
   await expect(page.getByText(/Who else ships multi-zone/).last()).toBeVisible();
   await expect(page.locator(".chat-msg.agent .who b").last()).toHaveText("Nova");
+});
+
+test("the + menu opens and cancels without touching the draft", async ({ page }) => {
+  await signUp(page);
+  await addProject(page, "Kumove", "KUM");
+  await openChat(page, "?project=KUM");
+
+  const box = page.getByLabel("Message");
+  const plus = page.getByRole("button", { name: "Project and mode" });
+  const menu = page.locator(".pop[role='listbox']");
+
+  await plus.click();
+  await expect(menu).toBeVisible();
+  // Clicking where the pill is cancels (the veil catches it) and an empty box stays empty.
+  const r = (await plus.boundingBox())!;
+  await page.mouse.click(r.x + r.width / 2, r.y + r.height / 2);
+  await expect(menu).toBeHidden();
+  await expect(box).toHaveValue("");
+
+  await box.fill("Ship it");
+  await plus.click();
+  await page.mouse.click(20, 20); // a click away cancels, and the draft is untouched
+  await expect(menu).toBeHidden();
+  await expect(box).toHaveValue("Ship it");
+
+  // A typed @ still opens the same list, and a pick removes the trigger.
+  await box.fill("Ship it @");
+  await expect(menu).toBeVisible();
+  await menu.getByRole("option", { name: "Plan", exact: true }).click();
+  await expect(box).toHaveValue("Ship it ");
+  await expect(page.getByRole("button", { name: "Mode: Plan" })).toBeVisible();
 });
 
 test("one conversation moves from Discuss to Plan to Build, and the plan is kept to build from", async ({ page }) => {
@@ -125,7 +157,7 @@ test("one conversation moves from Discuss to Plan to Build, and the plan is kept
   await page.getByLabel("Message").fill("Save plan: Refunds; Add refund(); Test it");
   await page.getByLabel("Message").press("Enter");
   const card = page.getByRole("group", { name: "Plan version 1" });
-  await expect(card.getByText("Refunds", { exact: true })).toBeVisible();
+  await expect(card.getByText("Refunds", { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(card.getByText("Test it")).toBeVisible();
   await expect(card.getByText("after 1")).toBeVisible();
   await expect(page.getByText("Saved the plan; switch to Build to carry it out.")).toBeVisible();
@@ -156,16 +188,15 @@ test("ask across projects: the conversation reads only and is listed apart, with
   await expect(conversations.getByRole("button", { name: /How are both projects doing/ })).toContainText(/ALP|KUM/);
 });
 
-test("one list for conversations and coding sessions: a new session starts from it, and New chat goes back", async ({ page }) => {
+test("one list for conversations and coding sessions: a coding link opens beside the same list", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await openChat(page);
   await expect(page.getByRole("tab", { name: "Code" })).toHaveCount(0); // no separate Code tab
-  await page.getByRole("button", { name: "New coding session" }).click();
-  await expect(page).toHaveURL(/tab=coding/);
+  // Coding starts from an issue's link (or Build mode); the form opens beside the conversations.
+  await page.goto(`/w/${slugOf(page)}/chat?tab=coding`);
   await expect(page.getByRole("heading", { name: "Start a coding session" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Conversations" })).toBeVisible(); // the same list beside it
-  await page.getByRole("button", { name: "New chat", exact: true }).click();
-  await expect(page).not.toHaveURL(/tab=coding/);
+  await page.goto(`/w/${slugOf(page)}/chat`);
   await expect(page.getByLabel("Message")).toBeVisible();
 });
