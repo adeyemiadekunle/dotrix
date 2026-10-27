@@ -36,7 +36,7 @@ export const WORK_MODES: [WorkMode, string, string][] = [
 ];
 export type ModelOption = Schemas["ModelOption"];
 
-export const isActive = (run: Pick<Run, "status">) => run.status === "queued" || run.status === "running";
+export const isActive = (run: Pick<Run, "status">) => ["queued", "running", "waiting_children", "waiting_dependency"].includes(run.status);
 
 export type AgentOption = { id: AgentId; name: string; description: string };
 
@@ -369,7 +369,7 @@ export function useRunSteps(scope: Scope | undefined, runId: string, enabled: bo
         }),
       ),
     enabled: Boolean(scope) && enabled,
-    select: (page) => page.events.filter((e) => e.kind === "activity").map((e) => String(e.data.label ?? "")),
+    select: (page) => page.events.filter((e) => e.kind === "activity").map((e) => String("label" in e.data ? e.data.label : "")),
   });
 }
 
@@ -415,7 +415,8 @@ export function useRenameThread(scope: Scope | undefined) {
 }
 
 /** A run someone stopped (it's recorded as failed with "Stopped by …"). */
-export const wasStopped = (run: Pick<Run, "status" | "error">) => run.status === "failed" && (run.error ?? "").startsWith("Stopped");
+export const wasStopped = (run: Pick<Run, "status" | "error">) =>
+  run.status === "cancelled" || (run.status === "failed" && (run.error ?? "").startsWith("Stopped"));
 
 /** What the agents did across the workspace in the last `days` days (owners and admins). */
 export function useWorkspaceAgentUsage(workspaceId: string | undefined, enabled: boolean, days = 7) {

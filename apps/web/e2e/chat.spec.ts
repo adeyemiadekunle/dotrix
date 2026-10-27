@@ -96,17 +96,17 @@ test("in Accept edits what you ask for goes through, approved by you", async ({ 
   }).toPass({ timeout: 30_000 });
 });
 
-test("the agent picked answers, and the conversation keeps it", async ({ page }) => {
+test("a specialist mention keeps Nova as the adviser", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
-  await openChat(page, "?project=KUM");
+  await openChat(page, "?project=KUM&agent=research");
 
-  const name = (await pickChatOption(page, "Agent", /^Vega ·/)).split(" · ")[0]!;
+  await expect(page.getByText("Nova · Lead adviser")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove request to involve Vega" })).toBeVisible();
   await page.getByLabel("Message").fill("Who else ships multi-zone?");
   await page.getByLabel("Message").press("Enter");
-  await expect(page.getByText("Test model reply: Who else ships multi-zone?")).toBeVisible();
-  await expect(page.locator(".chat-msg.agent .who b").last()).toHaveText(name);
-  await expect(page.getByRole("button", { name: /^Agent:/ })).toHaveAccessibleName(/^Agent: Vega ·/);
+  await expect(page.getByText(/Who else ships multi-zone/).last()).toBeVisible();
+  await expect(page.locator(".chat-msg.agent .who b").last()).toHaveText("Nova");
 });
 
 test("one conversation moves from Discuss to Plan to Build, and the plan is kept to build from", async ({ page }) => {

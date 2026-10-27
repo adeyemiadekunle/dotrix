@@ -26,13 +26,14 @@ from deepagents.backends import CompositeBackend, StateBackend
 from . import tasks as T
 from .approvals import agent_tag
 from .backend import LockingFilesystemBackend
-from .builtins import BUILTIN_HANDLES, SPECIALISTS, builtin_specs, introduce
+from .builtins import BUILTIN_HANDLES, SPECIALISTS, builtin_specs, introduce, role_instructions
 from .catalog import group as catalog_group
 from .catalog import tool_id, tool_name
 from .code import CODE_GUIDE
 from .config import ProjectConfig
 from .context_middleware import CompactTools, UnchangedReads, summarization
 from .contracts import PM_HANDLE, AgentSpec
+from .delegation import DelegationBoundary
 from .outputs import ResultSink, StageSink, result_instructions, result_tool, stage_tool
 from .pipelines import MODES, PIPELINES, checkpoint_tool
 from .pipelines import instructions as pipeline_instructions
@@ -167,6 +168,15 @@ document needs no second look.
 Your reply goes back to Nova, the project manager, not to a person. Answer with findings: a short
 answer first, then the key points, each with the path and section it comes from, and any
 changes you propose. Don't paste whole documents back; quote only the lines that matter."""
+
+# Nova speaks in every interactive conversation: picking a specialist is a request to
+# involve them, not to hand the chat over.
+_CHAT_GUIDE = """## You're in the project's chat
+You're talking with a person in the project's chat; answer them directly. When they ask for
+a specialist, or the work needs one, involve them with the `task` tool: a short brief (the
+question, what the person asked for, what you already know, where to start, what to return),
+then weigh what they return into your answer.
+"""
 
 # A specialist picked in the chat leads the run: it talks to the person, and may ask the
 # other specialists (one level: the ones it calls can't call anyone).
@@ -375,6 +385,8 @@ def build_team(
     work_mode: str | None = None,
     lead_tools: list | None = None,
     checkpoints: bool = True,
+    platform_delegation: bool = False,
+    delegated: bool = False,
 ):
     """The Project Manager plus the specialists, over any storage backend.
 
@@ -412,12 +424,16 @@ def build_team(
     person how the person is working (Discuss, Plan, Build, Review); the caller gives the tools
     that mode allows. `lead_tools` are that agent's alone (whatever its contract lists). Without
     `checkpoints` (the person's Auto approval mode), a checkpoint doesn't pause the run.
+    `delegated` marks a durable specialist child: it answers Nova with findings, not a person
+    in the chat.
     """
     if work_mode is not None:
         work_mode_guide(work_mode)  # an unknown mode fails here
     if mode is not None and mode not in MODES:
         raise ValueError(f"Unknown mode {mode!r}; use one of {', '.join(MODES)}")
     specs = list(agents) if agents else builtin_specs()
+    if any(spec.handle not in BUILTIN_HANDLES for spec in specs):
+        raise ValueError("Only the fixed built-in team is supported")
     if not any(spec.handle == PM_HANDLE for spec in specs):
         specs = [builtin_specs()[0], *specs]
     by_handle = {spec.handle: spec for spec in specs}
@@ -459,7 +475,9 @@ def build_team(
 {description}
 
 You coordinate the specialist subagents via the `task` tool ({names}).
-{pm.instructions}
+You are the person's primary adviser. Answer straightforward questions directly from context.
+Bring in specialists when their expertise is useful, then reconcile their findings into your answer.
+{role_instructions(pm)}
 {board}
 ## Chat Mode vs Action Mode
 Default to CHAT MODE: read files, read the board, delegate to subagents for
@@ -489,7 +507,8 @@ blockers, and documentation status. A briefing never writes.
 
     def middleware() -> list[Any]:
         """Fresh instances for each agent: files already read, and when to summarise."""
-        extra: list[Any] = [CompactTools(), UnchangedReads()]
+        allowed = set() if platform_delegation else {spec.agent_name for spec in team}
+        extra: list[Any] = [CompactTools(), UnchangedReads(), DelegationBoundary(allowed)]
         if summarize_after_tokens:
             extra.append(summarization(summary_model, backend, summarize_after_tokens))
         return extra
@@ -521,7 +540,9 @@ blockers, and documentation status. A briefing never writes.
             text += result_instructions(output)
         if spec.handle == speaker:
             tools.extend(lead_tools or [])
-            if work_mode is not None:
+            if work_mode is not None and not delegated:
+                if spec.handle == PM_HANDLE:
+                    text += _CHAT_GUIDE.replace("`task`", "`delegate_tasks`") if platform_delegation else _CHAT_GUIDE
                 text += work_mode_guide(work_mode)
         return tools, text
 
@@ -533,9 +554,11 @@ blockers, and documentation status. A briefing never writes.
 
     def prompt(spec: AgentSpec) -> str:
         if spec.handle == lead:
-            text = f"{introduce(spec, project_name)}\n{spec.instructions}\n{board}\n{_LEAD_GUIDE}"
+            # A delegated task answers Nova with findings; a picked specialist answers the person.
+            guide = _FINDINGS_GUIDE if delegated else _LEAD_GUIDE
+            text = f"{introduce(spec, project_name)}\n{role_instructions(spec)}\n{board}\n{guide}"
         else:
-            text = f"{introduce(spec, project_name)}\n{spec.instructions}\n{_FINDINGS_GUIDE}"
+            text = f"{introduce(spec, project_name)}\n{role_instructions(spec)}\n{_FINDINGS_GUIDE}"
         text += extras(spec)[1] + guides(spec)
         return _with_context(_with_rules(rules, spec.handle, text), context)
 
@@ -562,7 +585,7 @@ blockers, and documentation status. A briefing never writes.
             model=model,
             tools=[*_tools_for(leader, specialist_box), *extras(leader)[0]],
             system_prompt=prompt(leader),
-            subagents=[subagent(spec) for spec in _callable(leader, specs)],
+            subagents=[] if platform_delegation else [subagent(spec) for spec in _callable(leader, specs)],
             middleware=middleware(),
             permissions=_permissions(leader),
             backend=backend,
@@ -574,8 +597,10 @@ blockers, and documentation status. A briefing never writes.
     return create_deep_agent(
         model=model,
         tools=[*_tools_for(pm, pm_box), *extras(pm)[0]],
-        system_prompt=_with_context(_with_rules(rules, PM_HANDLE, pm_instructions + extras(pm)[1] + guides(pm)), context),
-        subagents=[subagent(spec) for spec in team],
+        system_prompt=_with_context(_with_rules(rules, PM_HANDLE, (
+            pm_instructions.replace("`task`", "`delegate_tasks`") if platform_delegation else pm_instructions
+        ) + extras(pm)[1] + guides(pm)), context),
+        subagents=[] if platform_delegation else [subagent(spec) for spec in team],
         middleware=middleware(),
         permissions=_permissions(pm),
         backend=backend,

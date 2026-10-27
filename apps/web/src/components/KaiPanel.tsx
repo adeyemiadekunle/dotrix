@@ -3,7 +3,7 @@
 // output). The same for cloud and local turns: everything comes from the platform (lib/coding.ts), except
 // a turn coding on this computer in the desktop app, whose Files are its worktree as it is now
 // (core/desktop.ts), with the folder a click away.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { useCodingDiff, useCodingEvents, useCodingFile, useCodingSession, useCodingTree, type CodingRun, type CodingSession } from "@/lib/coding";
 
@@ -18,13 +18,25 @@ import { Splitter, useStoredSize } from "../ui/splitter";
 type Tab = "changes" | "files" | "terminal";
 const LONG_OUTPUT = 24; // lines of a command's output shown before "Show all"
 
-export function KaiPanel({ cs, onClose }: { cs: CodingSession; onClose: () => void }) {
+export function KaiPanel({
+  cs,
+  onClose,
+  navigation,
+  initialTurn,
+  initialFile,
+}: {
+  cs: CodingSession;
+  onClose: () => void;
+  navigation?: ReactNode;
+  initialTurn?: string;
+  initialFile?: string;
+}) {
   const ws = live.ws?.id;
   const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
   const turns = useCodingSession(scope, cs.session_id).data ?? [];
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(initialTurn ?? null);
   const run = turns.find((t) => t.id === picked) ?? turns.at(-1);
-  const [tab, setTab] = useState<Tab>("changes");
+  const [tab, setTab] = useState<Tab>(initialFile ? "files" : "changes");
   const [width, setWidth] = useStoredSize("dotrix.chat.kaiPanel.width", 420, 300, 900);
   const diff = useCodingDiff(scope, run);
   const files = useMemo(() => parseDiff(diff.data?.diff ?? ""), [diff.data?.diff]);
@@ -39,6 +51,7 @@ export function KaiPanel({ cs, onClose }: { cs: CodingSession; onClose: () => vo
   return (
     <aside className="kai-panel" style={{ width }} aria-label={`${CODING_AGENT.name}'s work`}>
       <Splitter dir="col" className="kai-panel-split" label="Resize the panel" onDrag={(d) => setWidth((w) => w - d)} />
+      {navigation}
       <div className="row" style={{ height: 46, padding: "0 12px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
         <b className="trunc" style={{ fontWeight: 600, fontSize: 13 }}>
           {CODING_AGENT.name} · <span className="mono">{cs.issue_key}</span>
@@ -72,7 +85,7 @@ export function KaiPanel({ cs, onClose }: { cs: CodingSession; onClose: () => vo
         ) : tab === "changes" ? (
           <Changes files={files} loading={diff.isLoading} turn={run} />
         ) : tab === "files" ? (
-          <Files scope={scope} run={run} diffs={files} worktree={worktree} />
+          <Files scope={scope} run={run} diffs={files} worktree={worktree} initialPath={initialFile} />
         ) : (
           <Terminal entries={commands} working={run.status === "running"} />
         )}
@@ -169,14 +182,16 @@ function Files({
   run,
   diffs,
   worktree,
+  initialPath,
 }: {
   scope: { workspaceId: string; projectId: string } | undefined;
   run: CodingRun;
   diffs: DiffFile[];
   worktree: string | null;
+  initialPath?: string;
 }) {
   const tree = useCodingTree(scope, run, true, worktree);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(initialPath ?? null);
   const [changedOnly, setChangedOnly] = useState(false);
   const root = useMemo(() => buildTree((tree.data?.entries ?? []).filter((e) => !changedOnly || e.status !== "unchanged")), [tree.data, changedOnly]);
   if (open)

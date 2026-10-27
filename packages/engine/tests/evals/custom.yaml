@@ -1,11 +1,6 @@
-- name: a custom agent's allowed comment doesn't pause, its blocked action is gone
-  agent: triage
-  spec:
-    handle: triage
-    name: Triage
-    instructions: Comment on issues.
-    tools: [board.read, issues.create, issues.comment]
-    issue_types: [bug]
+- name: a built-in agent's allowed comment doesn't pause, its blocked action is gone
+  agent: product
+  overrides:
     autonomy: { issues.comment: allow, issues.create: block }
   message: triage KUN-1
   script:
@@ -19,12 +14,7 @@
     reply: Commented.
 
 - name: a result that doesn't fit its schema is sent back
-  agent: security
-  spec:
-    handle: security
-    name: Security reviewer
-    instructions: Look for risks.
-    output: finding
+  agent: reviewer
   message: review
   script:
     - tool: submit_result

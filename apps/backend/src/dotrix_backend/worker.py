@@ -151,6 +151,8 @@ async def dispatch_runs(ctx: dict[str, Any]) -> None:
     """Recover committed intent whose queue publication/acceptance was interrupted, and agent runs
     whose worker stopped (their lease lapsed): they go on from their last checkpoint."""
     runner: AgentRunner = ctx["runner"]
+    from .modules.agents.coding_outcomes import sweep_team
+    await sweep_team(runner)
     queue = RunQueue(ctx["redis"])
     await expire_agent_leases(runner.session_factory, queue_name=queue.queue_name)
     await RunDispatcher(runner.session_factory, queue).sweep()

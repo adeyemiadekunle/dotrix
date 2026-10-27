@@ -1,4 +1,6 @@
 """Agent runs through the API, with a scripted model (no API key needed)."""
+import uuid
+
 import pytest
 from httpx import AsyncClient
 from langchain_core.messages import AIMessage
@@ -117,7 +119,7 @@ async def test_workspace_agent_usage(project, db_client: AsyncClient, agent_scri
     usage = (await db_client.get(f"{ws}/agent-usage", params={"days": 7}, headers=ada.headers)).json()
     assert usage["days"] == 7 and usage["runs"] == 2
     assert usage["input_tokens"] >= 0 and usage["approved"] == 0 and usage["rejected"] == 0
-    assert sorted((a["agent"], a["runs"]) for a in usage["by_agent"]) == [("auto", 1), ("research", 1)]
+    assert sorted((a["agent"], a["runs"]) for a in usage["by_agent"]) == [("auto", 2)]
 
     # Spend is for owners and admins.
     bob = await signup(email="bob@example.com", name="Bob")
@@ -291,9 +293,11 @@ async def test_subagent_writes_are_attributed_to_its_role(
     project, db_client: AsyncClient, agent_script
 ) -> None:
     ada, _, base = await project()
+    db_client._transport.app.state.runner.settings.durable_delegation = True
     agent_script.say(
         # PM delegates to the Product agent...
-        tool_call("task", description="Add a scheduled-delivery story", subagent_type="product-agent"),
+        tool_call("delegate_tasks", tasks=[{"key": "story", "agent": "product", "brief": "Add a scheduled-delivery story",
+                                          "expected_result": "Story", "changes_project": True}]),
         # ...which writes its own folder...
         tool_call("write_file", file_path="/dotrix/requirements/product.md", content="# Scheduled delivery"),
         "Story written.",
@@ -301,8 +305,11 @@ async def test_subagent_writes_are_attributed_to_its_role(
         "Product added the story.",
     )
     paused = await run(db_client, base, ada.headers, "add a scheduled delivery story")
-    assert paused["status"] == "awaiting_approval"
-    done = (await decide(db_client, base, paused, ada.headers, ("approve",))).json()
+    assert paused["status"] == "waiting_children"
+    children = (await db_client.get(f"{base}/agent/runs/{paused['id']}/tasks", headers=ada.headers)).json()
+    child = (await db_client.get(f"{base}/agent/runs/{children[0]['id']}", headers=ada.headers)).json()
+    await decide(db_client, base, child, ada.headers, ("approve",))
+    done = (await db_client.get(f"{base}/agent/runs/{paused['id']}", headers=ada.headers)).json()
     assert done["status"] == "completed", done
     assert await read(db_client, base, "requirements/product.md", ada.headers) == "# Scheduled delivery"
     [latest, *_] = (
@@ -527,14 +534,19 @@ async def test_tokens_add_up_across_an_approval(project, db_client: AsyncClient,
 
 async def test_subagent_calls_are_counted(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
+    db_client._transport.app.state.runner.settings.durable_delegation = True
     agent_script.say(
-        used(tool_call("task", description="Summarise the vision", subagent_type="research-agent"), 100, 10),
+        used(tool_call("delegate_tasks", tasks=[{"key": "vision", "agent": "research", "brief": "Summarise the vision",
+                                                 "expected_result": "Summary"}]), 100, 10),
         used("The vision is a logistics platform.", 40, 8),  # the subagent
         used("Research says: logistics.", 130, 6),  # the PM again
     )
     done = await run(db_client, base, ada.headers, "Ask research about the vision")
     assert done["status"] == "completed", done
-    assert (done["input_tokens"], done["output_tokens"]) == (270, 24)
+    children = (await db_client.get(f"{base}/agent/runs/{done['id']}/tasks", headers=ada.headers)).json()
+    child = (await db_client.get(f"{base}/agent/runs/{children[0]['id']}", headers=ada.headers)).json()
+    assert (done["input_tokens"], done["output_tokens"]) == (230, 16)
+    assert (child["input_tokens"], child["output_tokens"]) == (40, 8)
 
 
 async def test_a_failed_run_keeps_its_tokens(project, db_client: AsyncClient, agent_script) -> None:
@@ -552,9 +564,11 @@ async def test_owners_see_where_the_tokens_went(
     project, db_client: AsyncClient, agent_script, signup, add_member
 ) -> None:
     ada, team, base = await project()
+    db_client._transport.app.state.runner.settings.durable_delegation = True
     agent_script.say(
         used(tool_call("read_file", file_path="/dotrix/project.md"), 100, 10),
-        used(tool_call("task", description="Check the vision", subagent_type="research-agent"), 120, 10),
+        used(tool_call("delegate_tasks", tasks=[{"key": "vision", "agent": "research", "brief": "Check the vision",
+                                                 "expected_result": "Findings"}]), 120, 10),
         used(tool_call("read_file", file_path="/dotrix/vision.md"), 40, 5),  # the research agent
         used("Vision checked.", 50, 5),  # the research agent's answer
         used("All good.", 150, 5),
@@ -562,14 +576,15 @@ async def test_owners_see_where_the_tokens_went(
     done = await run(db_client, base, ada.headers, "Check the vision")
     assert done["status"] == "completed", done
     breakdown = done["breakdown"]
-    assert breakdown["by_agent"] == [
-        {"agent": "project-manager", "input_tokens": 370, "output_tokens": 25, "model_calls": 3},
-        {"agent": "research", "input_tokens": 90, "output_tokens": 10, "model_calls": 2},
-    ]
+    assert breakdown["by_agent"] == [{"agent": "project-manager", "input_tokens": 370, "output_tokens": 25, "model_calls": 3}]
+    children = (await db_client.get(f"{base}/agent/runs/{done['id']}/tasks", headers=ada.headers)).json()
+    child = (await db_client.get(f"{base}/agent/runs/{children[0]['id']}", headers=ada.headers)).json()
+    assert child["breakdown"]["by_agent"] == [{"agent": "research", "input_tokens": 90, "output_tokens": 10, "model_calls": 2}]
     tools = {t["tool"]: t for t in breakdown["tools"]}
-    assert tools["read_file"]["calls"] == 2 and tools["read_file"]["result_tokens"] > 0
-    assert tools["task"]["calls"] == 1
-    assert {f["path"] for f in breakdown["files_read"]} == {"/dotrix/project.md", "/dotrix/vision.md"}
+    assert tools["read_file"]["calls"] == 1 and tools["read_file"]["result_tokens"] > 0
+    assert tools["delegate_tasks"]["calls"] == 1
+    assert {f["path"] for f in breakdown["files_read"]} == {"/dotrix/project.md"}
+    assert {f["path"] for f in child["breakdown"]["files_read"]} == {"/dotrix/vision.md"}
     assert breakdown["token_budget"] is None  # tests run without a default budget
 
     bob = await signup(email="bob@example.com", name="Bob")
@@ -599,15 +614,18 @@ async def test_a_run_stops_at_its_token_budget(project, db_client: AsyncClient, 
 
 async def test_the_budget_covers_specialists_too(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
+    db_client._transport.app.state.runner.settings.durable_delegation = True
     await db_client.patch(base, json={"token_budget": 10_000}, headers=ada.headers)
     agent_script.say(
-        used(tool_call("task", description="Research it", subagent_type="research-agent"), 6_000, 0),
-        used(tool_call("read_file", file_path="/dotrix/vision.md"), 5_000, 0),  # the research agent
-        "never reached",
+        used(tool_call("delegate_tasks", tasks=[{"key": "research", "agent": "research", "brief": "Research it",
+                                                 "expected_result": "Evidence"}]), 6_000, 0),
+        used(tool_call("read_file", file_path="/dotrix/vision.md"), 11_000, 0),
+        "The research task exceeded its budget.",
     )
     done = await run(db_client, base, ada.headers, "Research it")
-    assert done["status"] == "failed", done
-    assert "token budget (11,000 of 10,000 tokens)" in done["error"]
+    children = (await db_client.get(f"{base}/agent/runs/{done['id']}/tasks", headers=ada.headers)).json()
+    assert children[0]["status"] == "failed" and "token budget" in children[0]["error"]
+    assert done["status"] == "completed"
 
 
 async def test_the_budget_counts_every_step_of_a_run(project, db_client: AsyncClient, agent_script) -> None:
@@ -625,13 +643,24 @@ async def test_the_budget_counts_every_step_of_a_run(project, db_client: AsyncCl
     assert await read(db_client, base, "roadmap.md", ada.headers) == "New"
 
 
-async def test_specialists_can_run_on_a_cheaper_model(project, db_client: AsyncClient, agent_script) -> None:
+async def test_specialists_can_run_on_a_cheaper_model(project, db_client: AsyncClient, agent_script, db_session, monkeypatch) -> None:
+    from dotrix_backend.modules.agents.llm import ModelChoice
+    from dotrix_backend.modules.projects.models import Project
+
     ada, _, base = await project()
+    runner = db_client._transport.app.state.runner
+    runner.settings.durable_delegation = True
+    saved_project = await db_session.get(Project, uuid.UUID(base.rsplit("/", 1)[-1]))
+    saved_project.specialist_model = "test:cheap"
+    await db_session.commit()
     pm = agent_script.say(
-        tool_call("task", description="Summarise the vision", subagent_type="product-agent"),
+        tool_call("delegate_tasks", tasks=[{"key": "vision", "agent": "product", "brief": "Summarise the vision",
+                                          "expected_result": "Summary"}]),
         "Product says: logistics.",
     )
     specialist = agent_script.specialists_say("The vision is logistics.")
+    monkeypatch.setattr(runner, "model_factory", lambda project, model, keys=None: ModelChoice(
+        model=specialist if model == "test:cheap" else pm, web_search=None))
     done = await run(db_client, base, ada.headers, "Ask product")
     assert done["status"] == "completed" and done["reply"] == "Product says: logistics."
     assert len(pm.received) == 2 and len(specialist.received) == 1

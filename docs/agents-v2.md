@@ -1,5 +1,10 @@
 # Agents v2: spec
 
+> Current decision: the fixed built-in team and Nova coordinator described in
+> [nova-team.md](nova-team.md) supersede this historical spec's custom-agent creation,
+> selection, restoration, and native platform delegation. Historical definitions remain
+> stored for attribution; only additional guidance and permitted policy settings are editable.
+
 Status: reviewed 2026-09-29; D1, D2, and D6 decided, D3 on 2026-10-01 (§12). Plan: "Plan: agents v2" in [CLAUDE.md](../CLAUDE.md).
 Background: the 2026-09-29 review of our agents against ChatGPT's workspace agents, dots, and
 Space (DevDay 2026), deep-research agents, code knowledge graphs, and AGENTS.md / Agent Skills.

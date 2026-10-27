@@ -1,5 +1,9 @@
 # Dotrix Durable Agent Harness
 
+> Pilot status: project conversations can use the fixed Nova team and durable specialist
+> batches behind `DOTRIX_DURABLE_DELEGATION`. The implemented scope and remaining limits are
+> recorded in [nova-team.md](nova-team.md); this document also contains broader proposals.
+
 ## Product vision, architecture, design decisions and step-by-step implementation plan
 
 **Status:** Proposed architecture\

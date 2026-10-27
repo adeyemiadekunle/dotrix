@@ -1,6 +1,6 @@
 """Structural evals: saved cases per agent (tests/evals/*.yaml), run with the scripted model.
 
-Each case builds the team from the built-in contracts (plus an inline custom one, if given),
+Each case builds the team from the built-in contracts (with permitted policy overrides),
 lets the named agent lead, plays a scripted conversation, and checks what the agent was offered,
 what paused for approval, what was refused, and what it returned. They guard the contracts: a
 change to an agent's tools, gates, or prompts that breaks one fails here.
@@ -18,7 +18,6 @@ from langgraph.checkpoint.memory import InMemorySaver
 from dotrix_engine import approvals
 from dotrix_engine.agent import build_team
 from dotrix_engine.builtins import builtin_specs
-from dotrix_engine.contracts import AgentSpec
 from dotrix_engine.testing import ScriptedChatModel, tool_call
 from dotrix_engine.web import FakeSearch, PageFetcher, SearchHit, build_web_tools
 
@@ -86,8 +85,8 @@ def _script(steps: list[dict[str, Any]]) -> ScriptedChatModel:
 def test_eval(case: dict[str, Any]) -> None:
     model = _script(case["script"])
     agents = builtin_specs()
-    if "spec" in case:
-        agents.append(AgentSpec.model_validate(case["spec"]))
+    if "overrides" in case:
+        agents = [spec.model_copy(update=case["overrides"]) if spec.handle == case["agent"] else spec for spec in agents]
     reads, writes = _board()
     results: list = []
     team = build_team(

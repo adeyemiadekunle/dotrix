@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from uuid_utils.compat import uuid7
 
-from dotrix_backend.core.errors import Conflict, Forbidden, NotFound
+from dotrix_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
 from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.auth.models import User
@@ -35,7 +35,7 @@ from dotrix_backend.modules.search.models import ChunkSource
 from dotrix_backend.modules.search.service import KnowledgeIndex
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
-from dotrix_engine.contracts import PM_HANDLE, AgentSpec
+from dotrix_engine.contracts import AgentSpec
 
 from .board_tools import BoardContext, build_board_tools
 from .events import events_after
@@ -268,13 +268,13 @@ class WorkspaceRunService:
         if data.agent != "auto":
             handles = {a.spec.handle for a in await AgentDefinitionRepository(self.session).resolve(member.workspace_id)}
             if data.agent not in handles:
-                raise NotFound(f"This workspace has no @{data.agent} agent")
+                raise Unprocessable(f"Unsupported agent @{data.agent}; choose a built-in specialist")
         now = _now()
         run = AgentRun(
             workspace_id=member.workspace_id, project_id=None, project_ids=[p.id for p in projects],
             thread_id=thread_id, kind=RunKind.CHAT, status=RunStatus.QUEUED, message=data.message,
             title=title_from_message(data.message) if data.thread_id is None else None,
-            agent=None if data.agent in ("auto", PM_HANDLE) else data.agent, conversation_model=model,
+            agent=None, conversation_model=model,
             requested_by_id=member.user_id, created_at=now, updated_at=now,
         )
         self.session.add(run)
@@ -284,11 +284,10 @@ class WorkspaceRunService:
             details={"kind": "chat", "thread_id": str(thread_id), "agent": data.agent, "model": model,
                      "projects": [p.key for p in projects]},
         )
-        dispatch = self.runner.prepare_dispatch(
-            self.session, run, {"kind": "start", "message": data.message},
-        )
+        message = data.message if data.agent == "auto" else f"The person asks you to involve {data.agent} where useful.\n\n{data.message}"
+        dispatch = self.runner.prepare_dispatch(self.session, run, {"kind": "start", "message": message})
         await self.session.commit()
-        await self.runner.start(run.id, data.message, dispatch=dispatch)
+        await self.runner.start(run.id, message, dispatch=dispatch)
         return await self.get(member, run.id)
 
     async def _first(self, member: Membership, thread_id: uuid.UUID) -> AgentRun:

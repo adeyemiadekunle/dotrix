@@ -85,7 +85,7 @@ class TokenUsage(BaseCallbackHandler):
         self.tools: dict[str, dict[str, int]] = defaultdict(lambda: {"calls": 0, "result_tokens": 0})
         self.files_read: dict[str, int] = defaultdict(int)
         self._agents: dict[UUID, str] = {}
-        self._tool_names: dict[UUID, str] = {}
+        self._tool_names: dict[UUID, tuple[str, str | None]] = {}
 
     # The stage each agent is in, from its `stage` calls (kept across steps of a run).
     stages: dict[str, str]
@@ -150,15 +150,18 @@ class TokenUsage(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         name = str((serialized or {}).get("name") or kwargs.get("name") or "tool")
-        self._tool_names[run_id] = name
-        self.tools[name]["calls"] += 1
+        # A call counts when the tool ends: delegate_tasks interrupts inside the tool and is
+        # replayed from the checkpoint on resume, so only the replay is a completed call.
         path = (inputs or {}).get("file_path") if isinstance(inputs, dict) else None
-        if name in READ_TOOLS and isinstance(path, str):
-            self.files_read[path] += 1
+        self._tool_names[run_id] = (name, path if name in READ_TOOLS and isinstance(path, str) else None)
 
     def on_tool_end(self, output: Any, *, run_id: UUID, **kwargs: Any) -> None:
-        if (name := self._tool_names.pop(run_id, None)) is not None:
+        if (started := self._tool_names.pop(run_id, None)) is not None:
+            name, path = started
+            self.tools[name]["calls"] += 1
             self.tools[name]["result_tokens"] += _approx_tokens(output)
+            if path is not None:
+                self.files_read[path] += 1
 
     # -- reporting ---------------------------------------------------------------------
 

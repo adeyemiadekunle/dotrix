@@ -126,14 +126,12 @@ async def test_repeated_findings_are_settled_not_shown_twice(world, db_client: A
         ])
 
     agent_script.say(review(), "Two findings.", review(), "Same again.")
-    first = (await db_client.post(f"{base}/agent/runs", json={"message": "review", "agent": "reviewer"},
-                                  headers=ada.headers)).json()
+    first = (await db_client.post(f"{base}/agent/issues/KUN-1/review", headers=ada.headers)).json()
     items = first["outputs"][0]["items"]
     assert [i["state"] for i in items] == ["open", "done"]
     assert items[1]["link"] == "KUN-1" and items[1]["reason"] == "Already on the board as KUN-1"
     assert items[0]["data"]["fingerprint"]
-    second = (await db_client.post(f"{base}/agent/runs", json={"message": "review again", "agent": "reviewer"},
-                                   headers=ada.headers)).json()
+    second = (await db_client.post(f"{base}/agent/issues/KUN-1/review", headers=ada.headers)).json()
     items = second["outputs"][0]["items"]
     assert items[0]["state"] == "dismissed" and items[0]["reason"] == "Same as an open finding from an earlier run"
 

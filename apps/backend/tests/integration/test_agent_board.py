@@ -81,9 +81,11 @@ async def test_pm_creates_an_epic_after_approval(project, db_client: AsyncClient
 
 async def test_specialists_open_only_their_issue_types(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
+    db_client._transport.app.state.runner.settings.durable_delegation = True
     await db_client.post(f"{base}/issues", json={"type": "epic", "title": "Scheduled delivery"}, headers=ada.headers)
     model = agent_script.say(
-        tool_call("task", description="Write the stories", subagent_type="product-agent"),
+        tool_call("delegate_tasks", tasks=[{"key": "stories", "agent": "product", "brief": "Write the stories",
+                                          "expected_result": "A story", "changes_project": True}]),
         # Product opens a story (allowed) and a bug (not its kind).
         tool_call("create_issue", call_id="story", type="story", title="Book a delivery slot",
                   description="Acceptance: merchant picks a slot.", parent="KUN-1"),
@@ -92,10 +94,15 @@ async def test_specialists_open_only_their_issue_types(project, db_client: Async
         "Product added KUN-2.",
     )
     paused = await run(db_client, base, ada.headers, "have product write the stories")
-    for _ in range(3):  # each write pauses; approve until the run finishes
-        if paused["status"] != "awaiting_approval":
+    root_id = paused["id"]
+    for _ in range(3):  # the specialist's writes pause independently
+        children = (await db_client.get(f"{base}/agent/runs/{root_id}/tasks", headers=ada.headers)).json()
+        waiting = next((child for child in children if child["status"] == "awaiting_approval"), None)
+        if waiting is None:
             break
-        paused = await decide(db_client, base, paused, ada.headers)
+        child = (await db_client.get(f"{base}/agent/runs/{waiting['id']}", headers=ada.headers)).json()
+        await decide(db_client, base, child, ada.headers)
+    paused = (await db_client.get(f"{base}/agent/runs/{root_id}", headers=ada.headers)).json()
     assert paused["status"] == "completed", paused
 
     created = {i["key"]: i for i in await issues(db_client, base, ada.headers)}
@@ -107,9 +114,11 @@ async def test_specialists_open_only_their_issue_types(project, db_client: Async
 
 async def test_only_the_pm_edits_and_closes(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
+    db_client._transport.app.state.runner.settings.durable_delegation = True
     await db_client.post(f"{base}/issues", json={"title": "Hub model", "status": "review"}, headers=ada.headers)
     model = agent_script.say(
-        tool_call("task", description="Tidy KUN-1", subagent_type="architecture-agent"),
+        tool_call("delegate_tasks", tasks=[{"key": "tidy", "agent": "architecture", "brief": "Check KUN-1",
+                                          "expected_result": "Impact", "changes_project": True}]),
         tool_call("update_issue", key="KUN-1", priority="urgent"),
         "I can't edit issues.",
         # The PM closes the reviewed issue.

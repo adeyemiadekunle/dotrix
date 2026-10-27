@@ -124,7 +124,8 @@ async def _save_plan(ctx: ModeContext, plan: SavePlan) -> dict[str, Any]:
 
 
 async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
-    from dotrix_backend.modules.coding.schemas import CodingRunCreate
+    from dotrix_backend.modules.coding.models import CodingRun, CodingSession, CodingSessionState
+    from dotrix_backend.modules.coding.schemas import CodingFollowUp, CodingRunCreate
     from dotrix_backend.modules.coding.service import CodingService
 
     assert ctx.settings is not None
@@ -142,10 +143,21 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
         ).order_by(ConversationPlan.version.desc()).limit(1))
         try:
             approval = ctx.approval if ctx.jobs is not None else None
-            run = await CodingService(session, ctx.settings, ctx.jobs or _NO_JOBS).start(
-                ProjectAccess(project, member), ask.issue_key, CodingRunCreate(note=ask.note, approval_mode=approval),
-                thread_id=ctx.thread_id, plan_id=plan_id,
-            )
+            service = CodingService(session, ctx.settings, ctx.jobs or _NO_JOBS)
+            previous = await session.scalar(select(CodingRun).join(CodingSession, CodingSession.id == CodingRun.session_id).where(
+                CodingRun.workspace_id == ctx.workspace_id, CodingRun.project_id == ctx.project_id,
+                CodingRun.thread_id == ctx.thread_id, CodingRun.issue_key == ask.issue_key,
+                CodingSession.state != CodingSessionState.CLOSED, CodingSession.archived_at.is_(None),
+            ).order_by(CodingRun.created_at.desc()).limit(1))
+            if previous:
+                run = await service.follow_up(ProjectAccess(project, member), previous.session_id,
+                    CodingFollowUp(message=ask.note or "Continue the instructed work on this issue", approval_mode=approval),
+                    origin_run_id=ctx.run_id)
+            else:
+                run = await service.start(
+                    ProjectAccess(project, member), ask.issue_key, CodingRunCreate(note=ask.note, approval_mode=approval),
+                    thread_id=ctx.thread_id, plan_id=plan_id, origin_run_id=ctx.run_id,
+                )
         except DomainError as exc:  # not available here, busy, no such issue, ...
             return {"error": exc.detail}
         AuditLog(session).record(

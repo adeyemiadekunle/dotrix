@@ -11,6 +11,7 @@ import { confirmDlg, invite, promptDlg, restoreProject } from "../core/more";
 import { go, useRoute } from "../core/nav";
 import { ago, dOff, fmtDate, uid } from "../core/utils";
 import { ApiError } from "@/lib/api";
+import { useBuiltinTeam } from "@/lib/team";
 
 import {
   GRANTABLE,
@@ -440,22 +441,17 @@ function LiveAgent({ handle }: { handle: string }) {
   };
   const reset = () =>
     confirmDlg({
-      title: ag.source === "custom" ? `Delete ${ag.name}?` : `Reset ${ag.name} to its default?`,
-      body:
-        ag.source === "custom"
-          ? "Projects stop using it. Its history is kept in the audit log."
-          : "Your changes to its contract are replaced by the built-in one. Its history is kept.",
-      ok: ag.source === "custom" ? "Delete agent" : "Reset to default",
-      danger: ag.source === "custom",
-      icon: ag.source === "custom" ? "trash-2" : "rotate-ccw",
+      title: `Reset ${ag.name} to its default?`,
+      body: "Additional guidance and configuration return to the built-in defaults. Version history is kept.",
+      ok: "Reset to default",
+      icon: "rotate-ccw",
       run: () => {
         agentReset(handle)
           .then(async () => {
-            toast(ag.source === "custom" ? "Agent deleted" : "Reset to default");
+            toast("Reset to default");
             setF(null);
             await reloadAgents();
-            if (ag.source === "custom") back();
-            else a.reload();
+            a.reload();
           })
           .catch((e: unknown) => toast(`It didn't change: ${errText(e)}`, { kind: "err" }));
       },
@@ -478,106 +474,123 @@ function LiveAgent({ handle }: { handle: string }) {
           </h2>
           <div className="muted">{ag.description}</div>
         </div>
-        <span className="badge">{ag.source === "custom" ? "Custom" : ag.source === "customised" ? "Customised" : "Built-in"}</span>
+        <span className="badge">Built-in</span>
+        {ag.source === "customised" && <span className="badge">Customised</span>}
         {ag.version != null && <span className="badge mono">v{ag.version}</span>}
       </div>
       <SRow t="Name">
-        <input className="input" style={{ width: 220 }} value={v.name} onChange={(e) => set({ name: e.target.value })} aria-label="Name" />
+        <input className="input" style={{ width: 220 }} value={v.name} readOnly aria-label="Name" />
       </SRow>
       <SRow t="Description" d="One line, shown in Chat's agent picker.">
-        <input className="input" style={{ width: 320 }} value={v.description} onChange={(e) => set({ description: e.target.value })} aria-label="Description" />
+        <input className="input" style={{ width: 320 }} value={v.description} readOnly aria-label="Description" />
       </SRow>
-      <SRow t="Model" d="Which model this agent uses; the run's model when unset.">
-        <select
-          className="select"
-          style={{ width: "auto", minWidth: 180 }}
-          value={v.model ?? ""}
-          onChange={(e) => set({ model: e.target.value || null })}
-          aria-label="Model"
-        >
-          <option value="">The run's model</option>
-          {(ms.data ?? []).map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-          {v.model && !(ms.data ?? []).some((m) => m.id === v.model) && <option value={v.model}>{v.model}</option>}
-        </select>
-      </SRow>
-      <SRow t="Token budget" d="Tokens one run it leads may use; empty uses the project's.">
-        <input
-          className="input"
-          inputMode="numeric"
-          style={{ width: 140 }}
-          value={v.budget_tokens ?? ""}
-          onChange={(e) => {
-            const n = Number.parseInt(e.target.value.replace(/\D/g, ""), 10);
-            set({ budget_tokens: Number.isFinite(n) ? n : null });
-          }}
-          aria-label="Token budget"
-        />
-      </SRow>
-      <div className="sblock">
-        <h2>Tools</h2>
-        <p className="muted" style={{ fontSize: 13 }}>
-          From the catalogue. Writes wait for approval unless an owner allows them below.
-        </p>
-        {cat.data.tools.map((t) => (
-          <SRow key={t.id} t={t.label} d={t.description}>
-            <Tog on={v.tools.includes(t.id)} set={() => toggleTool(t.id)} label={t.label} />
+      {handle === "coding-agent" ? (
+        <SRow t="Coding tool and model" d="Kai uses your coding preferences and credentials.">
+          <button className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
+            Your models
+          </button>
+        </SRow>
+      ) : (
+        <SRow t="Model" d="Which model this agent uses; the run's model when unset.">
+          <select
+            className="select"
+            style={{ width: "auto", minWidth: 180 }}
+            value={v.model ?? ""}
+            onChange={(e) => set({ model: e.target.value || null })}
+            aria-label="Model"
+          >
+            <option value="">The run's model</option>
+            {(ms.data ?? []).map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+            {v.model && !(ms.data ?? []).some((m) => m.id === v.model) && <option value={v.model}>{v.model}</option>}
+          </select>
+        </SRow>
+      )}
+      {handle !== "coding-agent" && (
+        <>
+          <SRow t="Token budget" d="Tokens one run it leads may use; empty uses the project's.">
+            <input
+              className="input"
+              inputMode="numeric"
+              style={{ width: 140 }}
+              value={v.budget_tokens ?? ""}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value.replace(/\D/g, ""), 10);
+                set({ budget_tokens: Number.isFinite(n) ? n : null });
+              }}
+              aria-label="Token budget"
+            />
           </SRow>
-        ))}
-      </div>
-      <div className="sblock">
-        <h2>Without asking</h2>
-        <p className="muted" style={{ fontSize: 13 }}>
-          Only owners can let an agent act without asking; each change is recorded as approved by the owner who saved this version. Closing issues and coding
-          always wait for a person, folder access still applies, and a run makes at most a few changes this way.
-        </p>
-        {live.ws?.unattended_paused && (
-          <div className="alert warn" style={{ marginBottom: 8 }}>
-            Paused for this workspace: every change waits for approval until an owner resumes it.
+          <div className="sblock">
+            <h2>Tools</h2>
+            <p className="muted" style={{ fontSize: 13 }}>
+              From the catalogue. Writes wait for approval unless an owner allows them below.
+            </p>
+            {cat.data.tools
+              .filter((tool) => ag.available_tools.includes(tool.id))
+              .map((t) => (
+                <SRow key={t.id} t={t.label} d={t.description}>
+                  <Tog on={v.tools.includes(t.id)} set={() => toggleTool(t.id)} label={t.label} />
+                </SRow>
+              ))}
           </div>
-        )}
-        {cat.data.tools
-          .filter((t) => t.actions.length && v.tools.includes(t.id))
-          .flatMap((t) => t.actions.map((act) => [t, act] as const))
-          .map(([t, act]) => {
-            const rule = v.autonomy?.[act] ?? "ask";
-            const risky = !cat.data!.low_risk_actions.includes(act);
-            return (
-              <SRow key={act} t={t.label} d={rule === "allow" && risky ? "Changes go through without anyone approving them." : undefined}>
-                <select
-                  className="select"
-                  style={{ width: "auto" }}
-                  value={rule}
-                  onChange={(e) => set({ autonomy: { ...v.autonomy, [act]: e.target.value as "allow" | "ask" | "block" } })}
-                  aria-label={`${t.label} without asking`}
-                >
-                  <option value="ask">Ask first</option>
-                  <option value="allow" disabled={!owner}>
-                    Allow
-                  </option>
-                  <option value="block">Block</option>
-                </select>
-              </SRow>
-            );
-          })}
-        {!owner && (
-          <p className="faint" style={{ fontSize: 12.5 }}>
-            Only owners can allow an action, or save a version that allows more than comments and links.
-          </p>
-        )}
-      </div>
+          <div className="sblock">
+            <h2>Without asking</h2>
+            <p className="muted" style={{ fontSize: 13 }}>
+              Only owners can let an agent act without asking; each change is recorded as approved by the owner who saved this version. Closing issues and
+              coding always wait for a person, folder access still applies, and a run makes at most a few changes this way.
+            </p>
+            {live.ws?.unattended_paused && (
+              <div className="alert warn" style={{ marginBottom: 8 }}>
+                Paused for this workspace: every change waits for approval until an owner resumes it.
+              </div>
+            )}
+            {cat.data.tools
+              .filter((t) => t.actions.length && v.tools.includes(t.id))
+              .flatMap((t) => t.actions.map((act) => [t, act] as const))
+              .map(([t, act]) => {
+                const rule = v.autonomy?.[act] ?? "ask";
+                const risky = !cat.data!.low_risk_actions.includes(act);
+                return (
+                  <SRow key={act} t={t.label} d={rule === "allow" && risky ? "Changes go through without anyone approving them." : undefined}>
+                    <select
+                      className="select"
+                      style={{ width: "auto" }}
+                      value={rule}
+                      onChange={(e) => set({ autonomy: { ...v.autonomy, [act]: e.target.value as "allow" | "ask" | "block" } })}
+                      aria-label={`${t.label} without asking`}
+                    >
+                      <option value="ask">Ask first</option>
+                      <option value="allow" disabled={!owner}>
+                        Allow
+                      </option>
+                      <option value="block">Block</option>
+                    </select>
+                  </SRow>
+                );
+              })}
+            {!owner && (
+              <p className="faint" style={{ fontSize: 12.5 }}>
+                Only owners can allow an action, or save a version that allows more than comments and links.
+              </p>
+            )}
+          </div>
+        </>
+      )}
       <div className="sblock">
-        <h2>Instructions</h2>
+        <h2>Built-in instructions</h2>
+        <textarea className="textarea" rows={6} value={ag.instructions} readOnly aria-label="Built-in instructions" />
+        <h2>Additional instructions</h2>
         <textarea
           className="textarea"
           rows={10}
-          value={v.instructions}
-          onChange={(e) => set({ instructions: e.target.value })}
+          value={v.additional_instructions ?? ""}
+          onChange={(e) => set({ additional_instructions: e.target.value })}
           style={{ marginTop: 10 }}
-          aria-label="Instructions"
+          aria-label="Additional instructions"
         />
         <div className="row" style={{ marginTop: 10, gap: 6 }}>
           <button className="btn btn-primary" onClick={save} disabled={busy || !f}>
@@ -589,9 +602,9 @@ function LiveAgent({ handle }: { handle: string }) {
             </button>
           )}
           <span className="sp" />
-          {ag.source !== "built_in" && (
-            <button className={`btn ${ag.source === "custom" ? "btn-danger-ghost" : "btn-secondary"}`} onClick={reset}>
-              {ag.source === "custom" ? "Delete agent" : "Reset to default"}
+          {ag.source === "customised" && (
+            <button className="btn btn-secondary" onClick={reset}>
+              Reset to default
             </button>
           )}
         </div>
@@ -601,10 +614,66 @@ function LiveAgent({ handle }: { handle: string }) {
 }
 
 function Agents() {
+  const [guidance, setGuidance] = useState<Record<string, string>>({});
+  const [kaiGuidance, setKaiGuidance] = useState("");
   const liveAgents = useLiveAgents(live.ws?.id, isLive());
+  const roster = useBuiltinTeam(isLive() ? live.ws?.id : undefined);
   const agents = isLive() ? (liveAgents ?? []) : D().agents;
   const sel = agents.find((a) => a.handle === S.ui.agentSel);
-  if (sel && isLive()) return <LiveAgent handle={sel.handle} />;
+  if (isLive() && (sel || S.ui.agentSel === "coding-agent")) return <LiveAgent key={S.ui.agentSel} handle={S.ui.agentSel!} />;
+  if (!isLive() && S.ui.agentSel === "coding-agent")
+    return (
+      <>
+        <button className="btn btn-sm btn-ghost" onClick={() => ((S.ui.agentSel = null), render())}>
+          <Ic n="arrow-left" s={14} />
+          All agents
+        </button>
+        <h2>
+          Kai <span className="badge">Built-in</span>
+          {kaiGuidance && <span className="badge">Customised</span>}
+        </h2>
+        <p className="muted">Implements instructed work through Nova in Build mode.</p>
+        <div className="sblock">
+          <h2>Built-in instructions</h2>
+          <textarea
+            className="textarea"
+            readOnly
+            value="You are Kai, the built-in coding agent. Work only on the instructed change."
+            aria-label="Built-in instructions"
+          />
+          <h2>Additional instructions</h2>
+          <textarea
+            className="textarea"
+            value={guidance["coding-agent"] ?? kaiGuidance}
+            onChange={(event) => setGuidance({ ...guidance, "coding-agent": event.target.value })}
+            aria-label="Additional instructions"
+          />
+          <div className="row" style={{ marginTop: 10, gap: 6 }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                setKaiGuidance(guidance["coding-agent"] ?? kaiGuidance);
+                toast("Saved as a new version");
+              }}
+            >
+              Save
+            </button>
+            {kaiGuidance && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setKaiGuidance("");
+                  setGuidance({ ...guidance, "coding-agent": "" });
+                  toast("Reset to default");
+                }}
+              >
+                Reset to default
+              </button>
+            )}
+          </div>
+        </div>
+      </>
+    );
   if (sel)
     return (
       <>
@@ -627,7 +696,8 @@ function Agents() {
             <div className="muted">{sel.desc}</div>
           </div>
           <span className="sp" />
-          {sel.builtIn && <span className="badge">{sel.customised ? "Customised" : "Built-in"}</span>}
+          <span className="badge">Built-in</span>
+          {sel.customised && <span className="badge">Customised</span>}
         </div>
         <SRow t="Model" d="Which model this agent uses; the project's model when unset.">
           <select
@@ -679,22 +749,48 @@ function Agents() {
           ))}
         </div>
         <div className="sblock">
-          <h2>Instructions</h2>
+          <h2>Built-in instructions</h2>
+          <textarea
+            className="textarea"
+            rows={3}
+            readOnly
+            value={`You are ${sel.name}, the ${sel.role.toLowerCase()} agent. ${sel.desc}`}
+            aria-label="Built-in instructions"
+          />
+          <h2>Additional instructions</h2>
           <textarea
             className="textarea"
             rows={6}
-            defaultValue={`You are ${sel.name}, the ${sel.role.toLowerCase()} agent. ${sel.desc}`}
+            value={guidance[sel.handle] ?? sel.additionalInstructions ?? ""}
+            onChange={(event) => setGuidance({ ...guidance, [sel.handle]: event.target.value })}
             style={{ marginTop: 10 }}
-            aria-label="Instructions"
+            aria-label="Additional instructions"
           />
           <div className="row" style={{ marginTop: 10, gap: 6 }}>
-            <button className="btn btn-primary" onClick={() => (mutate(() => (sel.customised = true)), toast("Saved as a new version"))}>
+            <button
+              className="btn btn-primary"
+              onClick={() => (
+                mutate(() => {
+                  sel.customised = true;
+                  sel.additionalInstructions = guidance[sel.handle] ?? sel.additionalInstructions ?? "";
+                }),
+                toast("Saved as a new version")
+              )}
+            >
               Save
             </button>
             {sel.customised && (
               <button
                 className="btn btn-secondary"
-                onClick={() => (mutate(() => ((sel.customised = false), (sel.model = undefined))), toast("Reset to default"))}
+                onClick={() => {
+                  mutate(() => {
+                    sel.customised = false;
+                    sel.model = undefined;
+                    sel.additionalInstructions = "";
+                  });
+                  setGuidance({ ...guidance, [sel.handle]: "" });
+                  toast("Reset to default");
+                }}
               >
                 Reset to default
               </button>
@@ -707,7 +803,7 @@ function Agents() {
     <>
       <div className="row" style={{ marginBottom: 12 }}>
         <span className="muted" style={{ fontSize: 13 }}>
-          {agents.length} agents · used by every project unless a project overrides one
+          {agents.length + 1} built-in agents · Nova leads the team
         </span>
       </div>
       <UnattendedPause />
@@ -729,10 +825,34 @@ function Agents() {
                 {a.desc}
               </div>
             </div>
-            <span className="badge">{!a.builtIn ? "Custom" : a.customised ? "Customised" : "Built-in"}</span>
+            <span className="badge">Built-in</span>
+            {a.customised && <span className="badge">Customised</span>}
             <Ic n="chevron-right" s={14} />
           </div>
         ))}
+        <div
+          className="mini"
+          style={{ minHeight: 52 }}
+          role="button"
+          tabIndex={0}
+          onClick={() => ((S.ui.agentSel = "coding-agent"), render())}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              S.ui.agentSel = "coding-agent";
+              render();
+            }
+          }}
+        >
+          <Face c="var(--acc)" size={26} mood={moodOf("agent:coding-agent")} />
+          <div className="grow">
+            <b>Kai</b> <span className="muted">Coding</span>
+            <div className="faint">Implements instructed work through Nova in Build mode.</div>
+          </div>
+          <span className="badge">Built-in</span>
+          {(roster.data?.find((agent) => agent.handle === "coding-agent")?.customised || kaiGuidance) && <span className="badge">Customised</span>}
+          <Ic n="chevron-right" s={14} />
+        </div>
       </div>
     </>
   );
@@ -1015,20 +1135,26 @@ function MyAgentRow({
         aria-label={`How you like ${a.name} to work`}
       />
       <div className="row" style={{ gap: 8, marginTop: 8 }}>
-        <select
-          className="select"
-          style={{ width: "auto", minWidth: 200 }}
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          aria-label={`${a.name}'s model for you`}
-        >
-          <option value="">As the workspace set it</option>
-          {models.map((m) => (
-            <option key={m} value={m}>
-              {m.split(":")[1] ?? m}
-            </option>
-          ))}
-        </select>
+        {a.handle === "coding-agent" ? (
+          <button className="btn btn-secondary btn-sm" onClick={() => go("settings", { sec: "my-models" })}>
+            Coding tool and model
+          </button>
+        ) : (
+          <select
+            className="select"
+            style={{ width: "auto", minWidth: 200 }}
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            aria-label={`${a.name}'s model for you`}
+          >
+            <option value="">As the workspace set it</option>
+            {models.map((m) => (
+              <option key={m} value={m}>
+                {m.split(":")[1] ?? m}
+              </option>
+            ))}
+          </select>
+        )}
         <span className="faint" style={{ fontSize: 12 }}>
           {text.length}/2000
         </span>
@@ -1047,7 +1173,7 @@ function MyAgentRow({
 
 function MyAgents() {
   const liveAgents = useLiveAgents(live.ws?.id, isLive());
-  const agents = isLive() ? (liveAgents ?? []) : D().agents;
+  const agents = [...(isLive() ? (liveAgents ?? []) : D().agents), { handle: "coding-agent", name: "Kai", desc: "Implements your instructed coding work." }];
   const prefs = useApi(isLive() ? myAgents : async () => [] as { handle: string; instructions: string; model?: string | null }[]);
   const ms = useApi(isLive() ? models : async () => DEMO_MODELS.map((m) => ({ id: m })));
   if (prefs.error) return <div className="alert danger">{prefs.error}</div>;
@@ -1278,9 +1404,14 @@ function Automations() {
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 500 }}>{a.name}</div>
                   <div className="faint trunc" style={{ fontSize: 12 }}>
-                    {who(a.agent)?.name} · {a.trigger} · {p?.name}
+                    {who(a.agent)?.name ?? a.agent} · {a.trigger} · {p?.name}
                     {a.last ? ` · last ran ${ago(a.last)}` : ""}
                   </div>
+                  {a.lastError && (
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {a.lastError}
+                    </div>
+                  )}
                 </div>
                 <label
                   className="row faint"

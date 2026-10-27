@@ -78,8 +78,10 @@ async def test_a_run_starts_with_the_project_map(project, db_client: AsyncClient
 
 async def test_specialists_get_the_same_map(project, db_client: AsyncClient, agent_script) -> None:
     ada, base = await project()
+    db_client._transport.app.state.runner.settings.durable_delegation = True
     model = agent_script.say(
-        tool_call("task", description="Summarise the vision", subagent_type="research-agent"),
+        tool_call("delegate_tasks", tasks=[{"key": "vision", "agent": "research", "brief": "Summarise the vision",
+                                          "expected_result": "Summary"}]),
         "The vision is freight.",  # the specialist
         "Research says: freight.",  # the PM
     )

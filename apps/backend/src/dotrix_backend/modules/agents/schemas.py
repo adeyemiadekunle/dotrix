@@ -6,12 +6,13 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
+from dotrix_backend.modules.coding.models import CodingRunStatus
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 from dotrix_engine.catalog import action_for
 
 from .models import ApprovalStatus, RunEventKind, RunKind, RunStatus, WorkMode
 
-# `auto` (the Project Manager) or any agent handle the project has (built-in or custom).
+# A built-in specialist hint. Nova remains the coordinator for interactive conversations.
 AgentChoice = Annotated[str, Field(pattern=r"^(auto|[a-z][a-z0-9-]{1,30})$")]
 
 
@@ -23,9 +24,9 @@ class RunCreate(BaseModel):
     )
     agent: AgentChoice = Field(
         default="auto",
-        description="Who answers: `auto` (the Project Manager involves the specialists it needs) or an "
-        "agent's handle (`GET .../agents`: built-in or custom), who leads and may ask the agents it can call. "
-        "422 `unknown_agent` if the project has no such agent",
+        description="`auto` lets Nova advise and coordinate, or name a built-in specialist to involve. "
+        "Nova remains the coordinator. `coding-agent` requests Kai's involvement in Build mode. "
+        "Unsupported handles return 422 `unknown_agent`",
     )
     model: str | None = Field(
         default=None,
@@ -293,10 +294,37 @@ class RunStopRead(BaseModel):
     status: RunStatus
 
 
+class ReviewRevision(BaseModel):
+    """Recorded coding evidence for a review and its automatic conversation summary."""
+
+    coding_run_id: uuid.UUID
+    session_id: uuid.UUID
+    issue_key: str
+    revision: str
+    status: CodingRunStatus
+    pr_url: str | None = None
+    reported_summary: str | None = None
+    error: str | None = None
+    files: list[dict[str, Any]] = Field(default_factory=list)
+    diff_truncated: bool = False
+    verification: str
+
+
+class TaskLifecycle(BaseModel):
+    task_id: uuid.UUID
+    agent: str
+    status: RunStatus
+    key: str | None = None
+
+
 class AgentRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    parent_run_id: uuid.UUID | None = None
+    source: str = "user"
+    review_context: ReviewRevision | None = None
+    orchestration: bool = False
     thread_id: uuid.UUID
     project_ids: Annotated[list[uuid.UUID], BeforeValidator(lambda v: v or [])] = Field(
         default_factory=list, description="A conversation across projects: the projects it's about (empty otherwise)"
@@ -434,7 +462,7 @@ class RunEventRead(BaseModel):
     attempt: int = Field(description="Which attempt wrote it (a resumed run's later attempts count up)")
     kind: RunEventKind = Field(description="`step`: an attempt at a step began (its text starts over); `text`: a "
                                "piece of the reply; `activity`: what the agents were doing; `status`: the step's outcome")
-    data: dict[str, Any]
+    data: TaskLifecycle | dict[str, Any]
     created_at: datetime
 
 

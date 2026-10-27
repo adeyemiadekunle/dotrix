@@ -265,8 +265,38 @@ export const models = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/models
 export type AgentFields = Schemas["AgentFields"];
 /** The fields of a contract as saved (everything an AgentRead carries that a save takes). */
 export function fieldsOf(a: Schemas["AgentRead"]): AgentFields {
-  const { name, description, instructions, model, budget_tokens, tools, access, issue_types, can_call, autonomy, output, pipeline, triggers } = a;
-  return { name, description, instructions, model, budget_tokens, tools, access, issue_types, can_call, autonomy, output, pipeline, triggers };
+  const {
+    name,
+    description,
+    instructions,
+    additional_instructions,
+    model,
+    budget_tokens,
+    tools,
+    access,
+    issue_types,
+    can_call,
+    autonomy,
+    output,
+    pipeline,
+    triggers,
+  } = a;
+  return {
+    name,
+    description,
+    instructions,
+    additional_instructions,
+    model,
+    budget_tokens,
+    tools,
+    access,
+    issue_types,
+    can_call,
+    autonomy,
+    output,
+    pipeline,
+    triggers,
+  };
 }
 export const agentSaved = (handle: string, agent: AgentFields, base: number | null, note = "") =>
   unwrap(

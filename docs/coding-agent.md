@@ -1,5 +1,10 @@
 # Coding agent: design
 
+> Current integration: Kai is a fixed built-in executor. For conversations created with the
+> Nova orchestration pilot enabled, each coding turn records its originating run; changed
+> successful turns receive a Juno review and an automatic, read-only Nova summary in the
+> original conversation. See [nova-team.md](nova-team.md) for the current contract.
+
 Status: proposed, 2026-10-10; revised the same day with the owner's decisions (approval modes,
 session visibility) and a review against the code. Builds on the coding runs in
 `apps/backend/src/dotrix_backend/modules/coding/` and replaces their one-shot model with a session per

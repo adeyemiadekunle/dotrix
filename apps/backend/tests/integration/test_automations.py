@@ -1,4 +1,5 @@
 """Automations: agents that run on a schedule or when people change things (agents v2 step 4)."""
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from httpx import AsyncClient
@@ -67,6 +68,24 @@ async def test_set_up_and_who_may(db_client: AsyncClient, signup, create_team, a
     assert (await db_client.delete(url, headers=ada.headers)).status_code == 204
     actions = {e["action"] for e in (await db_client.get(f"{base.split('/projects')[0]}/audit", headers=ada.headers)).json()}
     assert {"automation.created", "automation.updated", "automation.deleted"} <= actions
+
+
+async def test_retired_custom_automation_cannot_be_reenabled_or_run(db_client, db_session, signup, create_team, add_member):
+    from dotrix_backend.modules.automations.models import Automation
+
+    ada, _, _, base = await _world(db_client, signup, create_team, add_member)
+    made = (await db_client.post(f"{base}/automations", headers=ada.headers, json={
+        "name": "Legacy", "agent": "research", "instructions": "Review changes", "schedule_hour": 8,
+    })).json()
+    row = await db_session.get(Automation, uuid.UUID(made["id"]))
+    row.agent, row.enabled = "custom-reviewer", False
+    row.last_error = "Custom agents are no longer supported; select a built-in agent"
+    await db_session.commit()
+    url = f"{base}/automations/{made['id']}"
+    assert (await db_client.patch(url, headers=ada.headers, json={"enabled": True})).status_code == 422
+    assert (await db_client.post(f"{url}/run", headers=ada.headers)).status_code == 422
+    updated = await db_client.patch(url, headers=ada.headers, json={"agent": "reviewer", "enabled": True})
+    assert updated.status_code == 200 and updated.json()["last_error"] is None
 
 
 async def test_people_s_changes_set_it_off_and_agents_don_t(

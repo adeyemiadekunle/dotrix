@@ -63,7 +63,8 @@ import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT } from "../data/seed-dotrix";
-import { KaiPanel } from "../components/KaiPanel";
+import { WorkPanels } from "../components/WorkPanels";
+import { useConversationTasks, useReviewRuns, type SpecialistTask } from "@/lib/team";
 import { useAtPicker } from "../components/AtPicker";
 import { Splitter, useStoredFlag, useStoredSize } from "../ui/splitter";
 
@@ -442,7 +443,7 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
   const cont = useContinueRun(scope);
   const limited = run.error_kind === "model_limit";
   const interrupted = run.status === "failed" && run.error_kind === "interrupted";
-  const failed = run.status === "failed" && !limited;
+  const failed = ["failed", "cancelled", "blocked"].includes(run.status) && !limited;
   const text = stream ? stream.text : (run.reply ?? "");
   const reply: Msg = {
     id: `${run.id}-reply`,
@@ -456,11 +457,13 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
   const shows = !stream || stream.text;
   return (
     <>
-      <Message
-        m={{ id: run.id, role: "user", by: run.requested_by_id ?? D().me, at: ms(run.created_at), text: run.message || runTitle(run) }}
-        projectId={projectId}
-        tag={WORK_MODES.find(([v]) => v === run.work_mode)?.[1]}
-      />
+      {run.source !== "coding_outcome" && (
+        <Message
+          m={{ id: run.id, role: "user", by: run.requested_by_id ?? D().me, at: ms(run.created_at), text: run.message || runTitle(run) }}
+          projectId={projectId}
+          tag={WORK_MODES.find(([v]) => v === run.work_mode)?.[1]}
+        />
+      )}
       {shows && (reply.text || run.approvals?.length || limited) ? (
         <Message m={reply} projectId={projectId}>
           {projectId && <RunApprovals run={run} scope={scope} />}
@@ -491,6 +494,49 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
 }
 
 /** What the agents did for a reply (kept after the run), folded until asked for. */
+function SpecialistTasks({ tasks, scope, onReview }: { tasks: SpecialistTask[]; scope: Scope | undefined; onReview: () => void }) {
+  if (!tasks.length) return null;
+  return (
+    <section className="specialist-tasks" aria-label="Specialist activity">
+      {tasks.map((task) => (
+        <details className="specialist-task" key={task.id}>
+          <summary>
+            <b>{agentName(task.agent ?? "auto")}</b>
+            <span className="muted">{task.task_key}</span>
+            <span className="badge">{task.status.replaceAll("_", " ")}</span>
+          </summary>
+          <p>{task.task_result?.summary || task.error || task.message}</p>
+          {task.task_result?.risks?.map((risk, index) => (
+            <p className="muted" key={index}>
+              {risk}
+            </p>
+          ))}
+          {task.task_result?.evidence?.length ? (
+            <ul>
+              {task.task_result.evidence.map((ref, index) => (
+                <li className="mono" key={index}>
+                  {ref}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {task.agent === "reviewer" && (
+            <button className="btn btn-sm" onClick={onReview}>
+              Open Juno's review
+            </button>
+          )}
+          {task.status === "awaiting_approval" && <TaskApproval scope={scope} id={task.id} />}
+        </details>
+      ))}
+    </section>
+  );
+}
+
+function TaskApproval({ scope, id }: { scope: Scope | undefined; id: string }) {
+  const run = useReviewRuns(scope, [id])[0];
+  return run ? <RunApprovals run={run} scope={scope} /> : null;
+}
+
 function RunSteps({ scope, runId }: { scope: Scope | undefined; runId: string }) {
   const [open, setOpen] = useState(false);
   const steps = useRunSteps(scope, runId, open);
@@ -701,6 +747,7 @@ function Composer({
       setAgent(pick);
     }
     onSend(q, pick);
+    setAgent("auto");
     setText("");
   };
   return (
@@ -763,13 +810,15 @@ function Composer({
               />
             </span>
           )}
-          <Pick
-            value={agent}
-            onChange={setAgent}
-            options={D().agents.map((x) => [x.handle, `${x.name} · ${x.role}`])}
-            label="Agent"
-            lead={a && <Face c={a.c} size={16} mood="idle" />}
-          />
+          <span className="cpill" aria-label="Nova is the lead adviser">
+            <Face c={D().agents.find((x) => x.handle === "auto")?.c ?? "var(--acc)"} size={16} mood="idle" />
+            Nova · Lead adviser
+          </span>
+          {agent !== "auto" && a && (
+            <button className="cpill" onClick={() => setAgent("auto")} aria-label={`Remove request to involve ${a.name}`}>
+              Involve {a.name} <Ic n="x" s={10} />
+            </button>
+          )}
           {setModel && models?.length ? (
             <Pick value={model ?? ""} onChange={setModel} options={models ?? []} label="Model" lead={<Ic n={MODELS_ICON} s={12} />} />
           ) : (
@@ -799,22 +848,27 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const cross = useCrossThread(ws, projectId ? null : id);
   const runs = (projectId ? own.data : cross.data) ?? [];
   const last = runs.at(-1);
-  const active = Boolean(last && isActive(last));
-  const ownStream = useRunStream(scope, last?.id ?? "", Boolean(projectId) && active);
-  const crossStream = useCrossStream(ws, last?.id ?? "", !projectId && active);
+  const lastUser = runs.filter((run) => run.source === "user").at(-1);
+  const delegated = useConversationTasks(scope, runs);
+  const routeSearch = useRoute().search;
+  const [fixDraft, setFixDraft] = useState({ text: "", version: 0 });
+  const working = runs.find((run) => isActive(run) && run.status !== "waiting_dependency");
+  const active = Boolean(working);
+  const ownStream = useRunStream(scope, working?.id ?? "", Boolean(projectId) && active);
+  const crossStream = useCrossStream(ws, working?.id ?? "", !projectId && active);
   const stream = projectId ? ownStream : crossStream;
   const send = useSendMessage(scope);
   const sendCross = useSendCross(ws);
   const stop = useStopRun(scope);
   const stopCross = useStopCross(ws);
   const [picked, setAgent] = useState<string | null>(null);
-  const agent = picked ?? handleOf(last?.agent);
+  const agent = picked ?? "auto";
   // How you're working: what you picked, else how the conversation was going, else Discuss.
   const [pickedMode, setMode] = useState<WorkMode | null>(null);
-  const mode = pickedMode ?? last?.work_mode ?? "discuss";
+  const mode = pickedMode ?? lastUser?.work_mode ?? "discuss";
   // How much goes through without waiting: what you picked, else how the conversation was going (if you still may), else the default.
   const [pickedApproval, setApproval] = useState<ApprovalMode | null>(null);
-  const lastApproval = last?.approval_mode && approvalModes().includes(last.approval_mode) ? last.approval_mode : null;
+  const lastApproval = lastUser?.approval_mode && approvalModes().includes(lastUser.approval_mode) ? lastUser.approval_mode : null;
   const approval = pickedApproval ?? lastApproval ?? defaultApproval();
   const plans = useThreadPlans(scope, projectId ? id : null, runs.filter((r) => !isActive(r)).length).data ?? [];
   // Kai's sessions started from this conversation, each after the message that started it.
@@ -822,14 +876,21 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const anchorOf = (c: CodingSession) => runs.filter((r) => ms(r.created_at) <= ms(c.started_at)).at(-1)?.id ?? last?.id;
   // Kai's latest session here: what Build mode's messages go to (its next turn), and what the panel shows.
   const kai = [...coded].filter((c) => c.state !== "closed" && !c.archived).sort((a, b) => ms(b.updated_at) - ms(a.updated_at))[0] ?? null;
-  const kaiBusy = Boolean(kai && BUSY.includes(kai.status));
-  const kaiScope = useMemo(() => (ws && kai ? { workspaceId: ws, projectId: kai.project_id } : undefined), [ws, kai]);
-  const followUp = useFollowUp(kaiScope, kai?.session_id ?? "", kai?.issue_key ?? "", approval);
-  const [toKaiPicked, setToKai] = useState<boolean | null>(null);
-  const addressed = useRef(false); // an agent was picked or @mentioned for the message being sent
-  const toKai = mode === "build" && Boolean(kai) && !kaiBusy && (toKaiPicked ?? true);
   const [panelSet, setPanel] = useStoredFlag("dotrix.chat.kaiPanel");
-  const panel = Boolean(kai) && panelSet;
+  const panel = panelSet || routeSearch.get("panel") === "review";
+  const panelView = routeSearch.get("panel") === "review" ? "review" : "coding";
+  const openSide = (view: "coding" | "review") => {
+    const query = new URLSearchParams(routeSearch);
+    query.set("panel", view);
+    go("chat", {}, { search: query.toString(), replace: true });
+    setPanel(true);
+  };
+  const closeSide = () => {
+    const query = new URLSearchParams(routeSearch);
+    query.delete("panel");
+    go("chat", {}, { search: query.toString(), replace: true });
+    setPanel(false);
+  };
   const latestPlan = plans.at(-1);
   const end = useRef<HTMLDivElement>(null);
   const busy = active && !stream.text;
@@ -844,7 +905,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
     setMode("build");
     say(`Build plan version ${plan.version}: ${plan.title}`, agent, "build");
   };
-  const halt = () => last && (projectId ? stop.mutate(last.id) : stopCross.mutate(last.id));
+  const halt = () => working && (projectId ? stop.mutate(working.id) : stopCross.mutate(working.id));
   const about = [...new Set(runs.flatMap((r) => r.project_ids ?? []))].map((pid) => proj(pid)?.name).filter(Boolean);
   // The address named a project (or "across"), so the list wasn't needed to open it; the runs say if it exists.
   if ((projectId ? own.isFetched : cross.isFetched) && runs.length === 0) return <Pending text={MISSING_THREAD} />;
@@ -883,7 +944,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           {kai && (
             <button
               className={`ibtn ibtn-sm ${panel ? "on" : ""}`}
-              onClick={() => setPanel(!panel)}
+              onClick={() => (panel && panelView === "coding" ? closeSide() : openSide("coding"))}
               aria-pressed={panel}
               aria-label={`${CODING_AGENT.name}'s work`}
               data-tip={`${CODING_AGENT.name}'s work: changes, files, terminal`}
@@ -891,12 +952,21 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               <Ic n="panel-right" s={15} />
             </button>
           )}
+          <button
+            className={`ibtn ibtn-sm ${panel && panelView === "review" ? "on" : ""}`}
+            aria-label="Juno's review"
+            onClick={() => openSide("review")}
+            data-tip="Juno's review"
+          >
+            <Ic n="shield-check" s={15} />
+          </button>
         </div>
         <div className="chat-scroll">
           <div className="chat-col">
             {runs.map((r) => (
               <div key={r.id}>
                 <RunMessages run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
+                <SpecialistTasks tasks={delegated.filter((task) => task.parent_run_id === r.id)} scope={scope} onReview={() => openSide("review")} />
                 {plans
                   .filter((pl) => pl.run_id === r.id)
                   .map((pl) => (
@@ -938,37 +1008,15 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           </div>
         </div>
         <div className="chat-input">
-          {mode === "build" && kai && (
-            <div className="row" style={{ gap: 8, marginBottom: 6, fontSize: 12 }}>
-              <span className="muted">Send to</span>
-              <div className="seg" role="radiogroup" aria-label="Send to">
-                <button role="radio" aria-checked={toKai} className={toKai ? "on" : ""} disabled={kaiBusy} onClick={() => setToKai(true)}>
-                  {CODING_AGENT.name} on {kai.issue_key}
-                </button>
-                <button role="radio" aria-checked={!toKai} className={!toKai ? "on" : ""} onClick={() => setToKai(false)}>
-                  The agents
-                </button>
-              </div>
-              {kaiBusy && <span className="faint">{CODING_AGENT.name} is still on the last turn</span>}
-            </div>
-          )}
           <Composer
-            placeholder={toKai && kai ? `Tell ${CODING_AGENT.name} what to do next on ${kai.issue_key}` : `Ask ${agentName(agent)}, or type @ to pick an agent`}
+            key={fixDraft.version}
+            initial={fixDraft.text}
+            placeholder="Ask Nova, or type @ to involve a specialist"
             agent={agent}
-            setAgent={(h) => {
-              // Picking an agent, or @mentioning one, addresses the agents, not Kai.
-              addressed.current = true;
-              setToKai(false);
-              setAgent(h);
-            }}
+            setAgent={setAgent}
             model={modelName(last?.conversation_model) || undefined}
             context={p?.name ?? "All projects"}
-            onSend={(q, a) => {
-              const named = addressed.current;
-              addressed.current = false;
-              if (toKai && !named) followUp.mutate(q);
-              else say(q, a);
-            }}
+            onSend={(q, a) => say(q, a)}
             mode={projectId ? mode : undefined}
             setMode={projectId ? setMode : undefined}
             approval={projectId ? approval : undefined}
@@ -982,12 +1030,27 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           )}
         </div>
       </div>
-      {panel && kai && <KaiPanel cs={kai} onClose={() => setPanel(false)} />}
+      {panel && (
+        <WorkPanels
+          key={panelView}
+          scope={scope}
+          cs={kai}
+          tasks={delegated}
+          roots={runs}
+          initial={panelView}
+          onClose={closeSide}
+          onAskFix={(text) => {
+            setMode("build");
+            setFixDraft((draft) => ({ text, version: draft.version + 1 }));
+          }}
+        />
+      )}
     </div>
   );
 }
 
 function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null; across: boolean; q: string; agent0: string | null }) {
+  const route = useRoute();
   const ws = wsId();
   const ps = visibleProjects().filter((p) => canSee(p) && !p.archived);
   const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ps[0]?.id ?? ""));
@@ -1013,59 +1076,72 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   };
   const sugg = pid ? SUGGESTIONS : ACROSS;
   return (
-    <div className="chat-scroll" style={{ display: "flex" }}>
-      <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
-        <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>
-          {greeting()}, {me()?.name.split(" ")[0]}
-        </h2>
-        <p className="muted" style={{ margin: "0 0 18px", textAlign: "center" }}>
-          Ask the agents about a project: they read its documents and board, and propose changes for you to approve.
-        </p>
-        {!pid && (
-          <div className="row" role="group" aria-label="Projects" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap", justifyContent: "center" }}>
-            <span className="faint" style={{ fontSize: 12 }}>
-              Projects
-            </span>
-            {ps.map((p) => (
-              <label key={p.id} className="badge" style={{ cursor: "pointer", gap: 5 }}>
-                <input
-                  type="checkbox"
-                  checked={picked.includes(p.id)}
-                  onChange={() => setPicked(picked.includes(p.id) ? picked.filter((x) => x !== p.id) : [...picked, p.id])}
-                />
-                {p.name}
-              </label>
+    <div className="conv">
+      <div className="chat-scroll" style={{ display: "flex" }}>
+        <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
+          <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>
+            {greeting()}, {me()?.name.split(" ")[0]}
+          </h2>
+          <p className="muted" style={{ margin: "0 0 18px", textAlign: "center" }}>
+            Ask the agents about a project: they read its documents and board, and propose changes for you to approve.
+          </p>
+          {!pid && (
+            <div className="row" role="group" aria-label="Projects" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap", justifyContent: "center" }}>
+              <span className="faint" style={{ fontSize: 12 }}>
+                Projects
+              </span>
+              {ps.map((p) => (
+                <label key={p.id} className="badge" style={{ cursor: "pointer", gap: 5 }}>
+                  <input
+                    type="checkbox"
+                    checked={picked.includes(p.id)}
+                    onChange={() => setPicked(picked.includes(p.id) ? picked.filter((x) => x !== p.id) : [...picked, p.id])}
+                  />
+                  {p.name}
+                </label>
+              ))}
+            </div>
+          )}
+          <Composer
+            key={q}
+            placeholder="Ask anything, or type @ to pick a project or an agent"
+            agent={agent}
+            setAgent={setAgent}
+            model={model}
+            setModel={setModel}
+            models={models.map((m): [string, string] => [m.id, m.name])}
+            context={pid}
+            contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "All projects"]]}
+            setContext={setPid}
+            mode={pid ? mode : undefined}
+            setMode={pid ? setMode : undefined}
+            approval={pid ? approval : undefined}
+            setApproval={pid ? setApproval : undefined}
+            onSend={start}
+            autoFocus
+            initial={q}
+          />
+          <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 14, justifyContent: "center" }}>
+            {sugg.map(([i, s]) => (
+              <button key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={!pid && !picked.length}>
+                <Ic n={i!} s={13} />
+                {s}
+              </button>
             ))}
           </div>
-        )}
-        <Composer
-          key={q}
-          placeholder="Ask anything, or type @ to pick a project or an agent"
-          agent={agent}
-          setAgent={setAgent}
-          model={model}
-          setModel={setModel}
-          models={models.map((m): [string, string] => [m.id, m.name])}
-          context={pid}
-          contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "All projects"]]}
-          setContext={setPid}
-          mode={pid ? mode : undefined}
-          setMode={pid ? setMode : undefined}
-          approval={pid ? approval : undefined}
-          setApproval={pid ? setApproval : undefined}
-          onSend={start}
-          autoFocus
-          initial={q}
-        />
-        <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 14, justifyContent: "center" }}>
-          {sugg.map(([i, s]) => (
-            <button key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={!pid && !picked.length}>
-              <Ic n={i!} s={13} />
-              {s}
-            </button>
-          ))}
         </div>
       </div>
+      {route.search.get("panel") === "review" && (
+        <WorkPanels
+          scope={scope}
+          initial="review"
+          onClose={() => {
+            const query = new URLSearchParams(route.search);
+            query.delete("panel");
+            go("chat", {}, { search: query.toString(), replace: true });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1802,7 +1878,7 @@ function Session({ cs }: { cs: CodingSession }) {
           </div>
         </div>
       </div>
-      {panel && <KaiPanel cs={cs} onClose={() => setPanel(false)} />}
+      {panel && <WorkPanels scope={scope} cs={cs} onClose={() => setPanel(false)} />}
     </div>
   );
 }

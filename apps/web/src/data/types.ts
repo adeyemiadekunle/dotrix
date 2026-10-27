@@ -172,6 +172,7 @@ export interface Agent {
   c: string;
   builtIn: boolean;
   customised?: boolean;
+  additionalInstructions?: string;
   tools: string[];
   model?: string;
   /** actions an owner lets it take without asking ("knowledge.write", "issues.create", …) */
@@ -274,6 +275,7 @@ export interface Automation {
   /** its runs may make the changes the agent's contract allows without approval */
   unattended?: boolean;
   last?: number;
+  lastError?: string;
 }
 
 export interface Data {

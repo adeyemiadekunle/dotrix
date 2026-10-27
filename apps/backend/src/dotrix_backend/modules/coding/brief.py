@@ -4,14 +4,19 @@ project graph. Documents and issue text reach the agent as data, never as instru
 """
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.errors import NotFound
+from dotrix_backend.modules.agent_definitions.preferences import preferences_for, with_preferences
+from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from dotrix_backend.modules.graph.service import GraphService
 from dotrix_backend.modules.issues.schemas import IssueRead
 from dotrix_backend.modules.knowledge.service import KnowledgeService
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.repo_knowledge.service import RepoKnowledgeService
+from dotrix_engine.builtins import role_instructions
 
 MAX_DOCUMENTS = 4
 DOCUMENT_CHARS = 6_000
@@ -38,6 +43,7 @@ RULES = """\
 async def build_brief(
     session: AsyncSession, project: Project, issue: IssueRead, note: str | None,
     earlier: list[tuple[int, str]] | None = None,
+    *, user_id: uuid.UUID | None = None,
 ) -> str:
     """The brief for a run. A follow-up (`earlier`: the session's previous turns and what each
     did) works on the session's branch, and `note` is what to do in this turn."""
@@ -76,7 +82,10 @@ async def build_brief(
             clipped = content if len(content) <= DOCUMENT_CHARS else content[:DOCUMENT_CHARS] + "\n…(cut)"
             note = f" (stale: {', '.join(stale[:5])})" if stale else ""
             parts.append(f'<data source="{path}{note}">\n{clipped.strip()}\n</data>')
-    parts += ["", RULES]
+    kai = (await AgentDefinitionRepository(session).coding_configuration(project.workspace_id, project.id)).spec
+    if user_id:
+        kai = with_preferences([kai], await preferences_for(session, project.workspace_id, user_id), "the person")[0]
+    parts += ["", role_instructions(kai), "", RULES]
     return "\n".join(parts)
 
 

@@ -4,6 +4,12 @@ Guidance for Claude Code working in this repo. The product is **dotrix** (former
 Engine notes: [docs/engine.md](docs/engine.md). Agents v2 spec: [docs/agents-v2.md](docs/agents-v2.md).
 Proposed direction (2026-10-22, see Direction below): [strategy and roadmap](docs/dotrix-product-strategy-and-roadmap.md), [durable agent harness](docs/dotrix-durable-agent-harness.md), [hybrid execution](docs/dotrix-hybrid-execution-architecture.md), [Repository Knowledge skill](docs/dotrix-repository-knowledge-skill.md).
 
+## Built-in team and Nova orchestration
+
+The team is fixed: Nova advises and coordinates Lyra, Orion, Vega, Juno, and Echo; Kai executes coding turns. Interactive conversations keep Nova as the speaker, with mentions treated as requests to involve a specialist. The four work modes and approval controls remain in force. Built-in identity and core instructions live in the engine; workspace and project additional guidance and personal preferences are layered, versioned, and audited. Custom identities are retired, with historical attribution retained.
+
+`DOTRIX_DURABLE_DELEGATION` (default false) pilots new durable specialist task trees in project conversations; existing trees continue to recover when it is off. Run the worker queue in deployments that need restart recovery. Children have isolated checkpoints, inherit the requester's permissions and keys, and cannot delegate. Two independent read-only specialists can run together; project-changing specialist work is serialized. The outbox, leases, fencing, permissions and approval gates remain authoritative. Cross-project conversations stay read-only and do not launch specialist tasks. Kai remains in the coding service; completed changed turns produce Juno reviews and a queued Nova summary in the original conversation. See [docs/nova-team.md](docs/nova-team.md).
+
 ## Repo map
 
 | Path | What | Stack |
@@ -92,9 +98,9 @@ apps/backend/
 │   │   ├── knowledge/           .dotrix/ files + version history + export
 │   │   ├── documents/           uploads: original in storage, Markdown into knowledge; rename (same extension), duplicate (converted again), delete (with its Markdown unless another upload made it)
 │   │   ├── issues/              issues, keys, board/backlog/epics, claim, issues across a workspace's visible projects, checklists, repeats (the next one made when one is finished), per-person stars, attachments (any file, in storage), Markdown render for export
-│   │   ├── agent_definitions/   agent contracts per workspace with project overrides, versions, resolution for runs (agents v2 step 1); people's own touches to them (preferences.py: instructions and a model, for their runs)
+│   │   ├── agent_definitions/   protected built-in contracts, layered workspace/project guidance and policy, and versioned personal preferences
 │   │   ├── model_keys/          personal model provider keys, encrypted (Account → Your models); personal defaults and BYOK setup; `run_keys` never borrows credentials from the platform or a workspace; provider limits are private to the user
-│   │   ├── agents/              agent runs (runner wraps dotrix_engine), approvals, checkpoints and decisions, triage and issue review, findings dedup, board tools, token usage, checkpointer, run queue + live streams (in-process or Redis), conversations across projects (workspace_runs.py), each run's kept events (events.py), work modes (work_modes.py: Discuss / Plan / Build / Review; plans, `start_coding`, `coding_evidence`)
+│   │   ├── agents/              Nova runs and durable children (delegation.py), coding outcomes (coding_outcomes.py), private activity and roster, approvals, checkpoints, structured findings, context, streams and work modes
 │   │   ├── activity/            a project's activity feed for everyone who sees it, read from issue logs, document versions, runs, and decisions
 │   │   ├── notifications/       per-person notifications (approvals and checkpoints waiting, assignments, findings, mentions, decisions), written by the runner and the issues service (notify.py), read and marked read per person, emailed as they happen or as a daily digest (emails.py)
 │   │   ├── automations/         agents that run on schedules and events (the outbox in events.py), started by run_automations
@@ -153,7 +159,7 @@ apps/desktop/src/
 └── preload.ts                   `window.dotrixDesktop`: runners and worktrees (the web's core/desktop.ts)
 packages/engine/src/dotrix_engine/
 ├── agent.py                     build_team(): the team from agent contracts (deepagents), each agent's tools and approval gate
-├── contracts.py, catalog.py, builtins.py   AgentSpec + AgentPolicy (agents v2), the tool catalogue, the six built-ins as contracts
+├── contracts.py, catalog.py, builtins.py, team.py, delegation.py   protected built-in contracts, fixed roster, specialist briefs/results and policy
 ├── pipelines.py, outputs.py     pipelines (stages with guidance, checkpoints, run modes) and result schemas (`submit_result`)
 ├── approvals.py                 Action Mode approvals, independent of any UI (pending actions, resume)
 ├── context_middleware.py        smaller prompts: unchanged re-reads, compact tool definitions, summarising long conversations
