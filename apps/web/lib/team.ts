@@ -41,7 +41,7 @@ export function useConversationTasks(scope: Scope | undefined, runs: Run[]) {
   }).flatMap((query) => query.data ?? []);
 }
 
-export function useReviewRuns(scope: Scope | undefined, ids: string[]) {
+export function useReviewRunQueries(scope: Scope | undefined, ids: string[]) {
   return useQueries({
     queries: [...new Set(ids)].map((id) => ({
       queryKey: ["review-run", id],
@@ -54,5 +54,9 @@ export function useReviewRuns(scope: Scope | undefined, ids: string[]) {
         ),
       refetchInterval: (query: { state: { data: Run | undefined } }) => (!query.state.data || isActive(query.state.data) ? 1500 : false),
     })),
-  }).flatMap((query) => (query.data ? [query.data] : []));
+  });
+}
+
+export function useReviewRuns(scope: Scope | undefined, ids: string[]) {
+  return useReviewRunQueries(scope, ids).flatMap((query) => (query.data ? [query.data] : []));
 }

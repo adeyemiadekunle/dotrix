@@ -960,7 +960,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               onClick={() => (panel && panelView === "coding" ? closeSide() : openSide("coding"))}
               aria-pressed={panel}
               aria-label={`${CODING_AGENT.name}'s work`}
-              data-tip={`${CODING_AGENT.name}'s work: changes, files, terminal`}
+              data-tip={`${CODING_AGENT.name}'s work: changes, files, terminal, browser, and review`}
             >
               <Ic n="panel-right" s={15} />
             </button>
@@ -1460,7 +1460,19 @@ function Session({ cs }: { cs: CodingSession }) {
   const recover = useRecoverCoding(scope, cs.issue_key);
   const revert = useRevertCoding(scope, cs.issue_key, defaultApproval());
   const follow = useFollowUp(scope, cs.session_id, cs.issue_key, defaultApproval());
-  const [panel, setPanel] = useStoredFlag("dotrix.chat.kaiPanel");
+  const search = useRoute().search;
+  const [panelSet, setPanel] = useStoredFlag("dotrix.chat.kaiPanel");
+  const panel = panelSet || search.has("panel") || search.has("file");
+  const closePanel = () => {
+    if (search.has("panel") || search.has("file")) {
+      const query = new URLSearchParams(search);
+      query.delete("panel");
+      query.delete("file");
+      query.delete("line");
+      go("chat", {}, { search: query.toString(), replace: true });
+    }
+    setPanel(false);
+  };
   const t = isLive() ? { id: cs.issue_key, key: cs.issue_key } : D().tasks.find((x) => x.key === cs.issue_key);
   const p = proj(cs.project_id);
   const tool = AGENT_NAMES[cs.agent];
@@ -1550,10 +1562,10 @@ function Session({ cs }: { cs: CodingSession }) {
           <span className="sp" />
           <button
             className={`ibtn ibtn-sm ${panel ? "on" : ""}`}
-            onClick={() => setPanel(!panel)}
+            onClick={() => (panel ? closePanel() : setPanel(true))}
             aria-pressed={panel}
             aria-label={`${CODING_AGENT.name}'s work`}
-            data-tip={`${CODING_AGENT.name}'s work: changes, files, terminal`}
+            data-tip={`${CODING_AGENT.name}'s work: changes, files, terminal, browser, and review`}
           >
             <Ic n="panel-right" s={15} />
           </button>
@@ -1912,7 +1924,16 @@ function Session({ cs }: { cs: CodingSession }) {
           </div>
         </div>
       </div>
-      {panel && <WorkPanels scope={scope} cs={cs} onClose={() => setPanel(false)} />}
+      {panel && (
+        <WorkPanels
+          scope={scope}
+          cs={cs}
+          initial={search.get("panel") === "review" ? "review" : "coding"}
+          onClose={closePanel}
+          onAskFix={setAsk}
+          fixLabel={`Ask ${CODING_AGENT.name} to fix`}
+        />
+      )}
     </div>
   );
 }

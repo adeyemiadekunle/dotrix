@@ -1,96 +1,102 @@
-// Kai's work beside a conversation or a session: the turn's Changes (each file's diff), its Files (the
-// repository as the turn leaves it, any file before and after), and its Terminal (each command with its
-// output). The same for cloud and local turns: everything comes from the platform (lib/coding.ts), except
-// a turn coding on this computer in the desktop app, whose Files are its worktree as it is now
-// (core/desktop.ts), with the folder a click away.
-import { useMemo, useState, type ReactNode } from "react";
+// The selected coding turn's diff, repository files, recorded commands, and browser captures.
+// Desktop turns can also show the live worktree on this computer.
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { useCodingDiff, useCodingEvents, useCodingFile, useCodingSession, useCodingTree, type CodingRun, type CodingSession } from "@/lib/coding";
+import { useCodingEvents, useCodingFile, useCodingTree, type CodingRun } from "@/lib/coding";
+import type { Scope } from "@/lib/issues";
 
 import { desktop, useDesktopRunners, worktreeHere } from "../core/desktop";
 import { Ic } from "../core/icons";
-import { buildTree, parseDiff, terminal, type DiffFile, type DiffHunk, type TreeNode } from "../core/kaiWork";
-import { CODING_AGENT } from "../data/seed-dotrix";
-import { live } from "../data/live";
+import { buildTree, terminal, type DiffFile, type DiffHunk, type TreeNode } from "../core/kaiWork";
 import { toast } from "../ui/toast";
-import { Splitter, useStoredSize } from "../ui/splitter";
 
-type Tab = "changes" | "files" | "terminal";
+type Tab = "changes" | "files" | "terminal" | "browser" | "review";
 const LONG_OUTPUT = 24; // lines of a command's output shown before "Show all"
 
 export function KaiPanel({
-  cs,
-  onClose,
-  navigation,
-  initialTurn,
+  scope,
+  run,
+  tab,
+  id,
+  files,
+  diffLoading,
+  diffError,
+  retryDiff,
   initialFile,
+  initialLine,
+  referenceVersion,
 }: {
-  cs: CodingSession;
-  onClose: () => void;
-  navigation?: ReactNode;
-  initialTurn?: string;
+  scope: Scope | undefined;
+  run: CodingRun;
+  tab: Tab;
+  id: string;
+  files: DiffFile[];
+  diffLoading: boolean;
+  diffError: boolean;
+  retryDiff: () => void;
   initialFile?: string;
+  initialLine?: number;
+  referenceVersion?: number;
 }) {
-  const ws = live.ws?.id;
-  const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
-  const turns = useCodingSession(scope, cs.session_id).data ?? [];
-  const [picked, setPicked] = useState<string | null>(initialTurn ?? null);
-  const run = turns.find((t) => t.id === picked) ?? turns.at(-1);
-  const [tab, setTab] = useState<Tab>(initialFile ? "files" : "changes");
-  const [width, setWidth] = useStoredSize("dotrix.chat.kaiPanel.width", 420, 300, 900);
-  const diff = useCodingDiff(scope, run);
-  const files = useMemo(() => parseDiff(diff.data?.diff ?? ""), [diff.data?.diff]);
   const events = useCodingEvents(scope, run, tab === "terminal");
-  const commands = useMemo(() => terminal(events.data ?? run?.events ?? []), [events.data, run?.events]);
+  const commands = useMemo(() => terminal(events.data ?? run.events ?? []), [events.data, run.events]);
   const worktree = worktreeHere(run, useDesktopRunners());
-  const TABS: [Tab, string, number][] = [
-    ["changes", "Changes", files.length],
-    ["files", "Files", 0],
-    ["terminal", "Terminal", commands.length],
-  ];
   return (
-    <aside className="kai-panel" style={{ width }} aria-label={`${CODING_AGENT.name}'s work`}>
-      <Splitter dir="col" className="kai-panel-split" label="Resize the panel" onDrag={(d) => setWidth((w) => w - d)} />
-      {navigation}
-      <div className="row" style={{ height: 46, padding: "0 12px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
-        <b className="trunc" style={{ fontWeight: 600, fontSize: 13 }}>
-          {CODING_AGENT.name} · <span className="mono">{cs.issue_key}</span>
-        </b>
-        <span className="sp" />
-        {turns.length > 1 && run && (
-          <select className="input input-sm" value={run.id} onChange={(e) => setPicked(e.target.value)} aria-label="Turn">
-            {turns.map((t) => (
-              <option key={t.id} value={t.id}>
-                Turn {t.turn}
-              </option>
-            ))}
-          </select>
+    <>
+      <section role="tabpanel" id={`${id}-changes-panel`} aria-labelledby={`${id}-changes-tab`} hidden={tab !== "changes"}>
+        <div className="work-section-head">
+          <b>Changes</b>
+          <span className="badge">Kai · Turn {run.turn}</span>
+        </div>
+        {diffError ? (
+          <p className="muted">
+            The changes couldn't be loaded.{" "}
+            <button className="btn btn-sm btn-ghost" onClick={retryDiff}>
+              Try again
+            </button>
+          </p>
+        ) : (
+          <Changes files={files} loading={diffLoading} turn={run} />
         )}
-        {worktree && <WorktreeButtons worktree={worktree} />}
-        <button className="ibtn ibtn-sm" onClick={onClose} aria-label="Close the panel">
-          <Ic n="x" s={14} />
-        </button>
-      </div>
-      <div className="seg" role="tablist" aria-label="Kai's work" style={{ margin: "8px 12px" }}>
-        {TABS.map(([id, label, n]) => (
-          <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>
-            {label}
-            {n > 0 && <span className="faint"> {n}</span>}
-          </button>
-        ))}
-      </div>
-      <div className="kai-panel-body">
-        {!run ? (
-          <p className="muted">Nothing yet.</p>
-        ) : tab === "changes" ? (
-          <Changes files={files} loading={diff.isLoading} turn={run} />
-        ) : tab === "files" ? (
-          <Files scope={scope} run={run} diffs={files} worktree={worktree} initialPath={initialFile} />
+      </section>
+      <section role="tabpanel" id={`${id}-files-panel`} aria-labelledby={`${id}-files-tab`} hidden={tab !== "files"}>
+        <div className="work-section-head">
+          <b>Files</b>
+          <span className="badge">Turn {run.turn}</span>
+        </div>
+        <Files
+          key={`${initialFile ?? ""}:${initialLine ?? ""}:${referenceVersion ?? ""}`}
+          scope={scope}
+          run={run}
+          diffs={files}
+          worktree={worktree}
+          initialPath={initialFile}
+          initialLine={initialLine}
+          enabled={tab === "files"}
+        />
+      </section>
+      <section role="tabpanel" id={`${id}-terminal-panel`} aria-labelledby={`${id}-terminal-tab`} hidden={tab !== "terminal"}>
+        <div className="work-section-head">
+          <b>Terminal</b>
+          <span className="badge">Recorded output · read-only</span>
+        </div>
+        {events.isLoading ? (
+          <p className="muted">Loading commands…</p>
+        ) : events.isError ? (
+          <p className="muted">
+            The commands couldn't be loaded.{" "}
+            <button className="btn btn-sm btn-ghost" onClick={() => void events.refetch()}>
+              Try again
+            </button>
+          </p>
         ) : (
           <Terminal entries={commands} working={run.status === "running"} />
         )}
-      </div>
-    </aside>
+      </section>
+      <section role="tabpanel" id={`${id}-browser-panel`} aria-labelledby={`${id}-browser-tab`} hidden={tab !== "browser"}>
+        <Browser scope={scope} run={run} active={tab === "browser"} />
+      </section>
+    </>
   );
 }
 
@@ -183,14 +189,18 @@ function Files({
   diffs,
   worktree,
   initialPath,
+  initialLine,
+  enabled,
 }: {
-  scope: { workspaceId: string; projectId: string } | undefined;
+  scope: Scope | undefined;
   run: CodingRun;
   diffs: DiffFile[];
   worktree: string | null;
   initialPath?: string;
+  initialLine?: number;
+  enabled: boolean;
 }) {
-  const tree = useCodingTree(scope, run, true, worktree);
+  const tree = useCodingTree(scope, run, enabled, worktree);
   const [open, setOpen] = useState<string | null>(initialPath ?? null);
   const [changedOnly, setChangedOnly] = useState(false);
   const root = useMemo(() => buildTree((tree.data?.entries ?? []).filter((e) => !changedOnly || e.status !== "unchanged")), [tree.data, changedOnly]);
@@ -202,19 +212,34 @@ function Files({
         path={open}
         diff={worktree ? undefined : diffs.find((d) => d.path === open)}
         worktree={worktree}
+        initialLine={open === initialPath ? initialLine : undefined}
         onBack={() => setOpen(null)}
       />
     );
   if (!run.base_sha) return <p className="muted">The files show once the turn starts on a commit.</p>;
   if (tree.isLoading) return <p className="muted">Loading the files…</p>;
-  if (tree.error) return <p className="muted">{tree.error instanceof Error ? tree.error.message : "The files can't be read here."}</p>;
+  if (tree.error)
+    return (
+      <p className="muted">
+        {tree.error instanceof Error ? tree.error.message : "The files can't be read here."}{" "}
+        <button className="btn btn-sm btn-ghost" onClick={() => void tree.refetch()}>
+          Try again
+        </button>
+      </p>
+    );
   return (
     <div>
+      {worktree && (
+        <div className="row work-file-actions">
+          <span className="faint">Live on this computer</span>
+          <span className="sp" />
+          <WorktreeButtons worktree={worktree} />
+        </div>
+      )}
       <label className="row faint" style={{ gap: 6, fontSize: 12, marginBottom: 6 }}>
         <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
         Changed only ({root.changed})
         <span className="sp" />
-        {worktree && <span data-tip={worktree}>Live on this computer ·</span>}
         <span className="mono">{run.base_sha.slice(0, 7)}</span>
       </label>
       <div className="kp-tree mono" role="tree" aria-label="Files">
@@ -259,18 +284,24 @@ function FileView({
   path,
   diff,
   worktree,
+  initialLine,
   onBack,
 }: {
-  scope: { workspaceId: string; projectId: string } | undefined;
+  scope: Scope | undefined;
   run: CodingRun;
   path: string;
   diff: DiffFile | undefined;
   worktree: string | null;
+  initialLine?: number;
   onBack: () => void;
 }) {
   const file = useCodingFile(scope, run.id, path, worktree);
-  const [view, setView] = useState<"file" | "diff">(diff ? "diff" : "file");
+  const [view, setView] = useState<"file" | "diff">(initialLine ? "file" : diff ? "diff" : "file");
+  const lineRef = useRef<HTMLDivElement>(null);
   const text = file.data?.after ?? file.data?.before ?? "";
+  useEffect(() => {
+    if (view === "file" && initialLine && file.data) lineRef.current?.scrollIntoView({ block: "nearest" });
+  }, [file.data, initialLine, view]);
   return (
     <div>
       <div className="row" style={{ gap: 6, marginBottom: 6 }}>
@@ -280,6 +311,7 @@ function FileView({
         <span className="mono trunc grow" style={{ fontSize: 12 }}>
           {path}
         </span>
+        {worktree && <WorktreeButtons worktree={worktree} />}
         {diff && (
           <div className="seg seg-sm" role="tablist" aria-label="Show">
             <button role="tab" aria-selected={view === "diff"} className={view === "diff" ? "on" : ""} onClick={() => setView("diff")}>
@@ -300,7 +332,12 @@ function FileView({
       ) : file.isLoading ? (
         <p className="muted">Loading…</p>
       ) : file.error ? (
-        <p className="muted">{file.error instanceof Error ? file.error.message : "This file can't be read."}</p>
+        <p className="muted">
+          {file.error instanceof Error ? file.error.message : "This file can't be read."}{" "}
+          <button className="btn btn-sm btn-ghost" onClick={() => void file.refetch()}>
+            Try again
+          </button>
+        </p>
       ) : file.data?.binary ? (
         <p className="muted">A binary file: not shown.</p>
       ) : file.data?.too_large ? (
@@ -310,12 +347,98 @@ function FileView({
       ) : (
         <div className="kp-diff mono" role="table" aria-label={path}>
           {text.split("\n").map((l, i) => (
-            <div key={i} className="kp-line ctx" role="row">
+            <div
+              key={i}
+              ref={i + 1 === initialLine ? lineRef : undefined}
+              className={`kp-line ctx ${i + 1 === initialLine ? "kp-line-reference" : ""}`}
+              role="row"
+            >
               <span className="kp-no">{i + 1}</span>
               <span className="kp-text">{l || " "}</span>
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Browser: screenshots captured by the selected turn ---------- */
+
+function Browser({ scope, run, active }: { scope: Scope | undefined; run: CodingRun; active: boolean }) {
+  const screenshots = run.screenshots ?? [];
+  const [selected, setSelected] = useState<number | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const shot = screenshots.find((candidate) => candidate.index === selected) ?? screenshots[0];
+  const src =
+    scope && shot
+      ? `/v1/workspaces/${encodeURIComponent(scope.workspaceId)}/projects/${encodeURIComponent(scope.projectId)}/coding/runs/${encodeURIComponent(run.id)}/screenshots/${shot.index}`
+      : null;
+  return (
+    <div className="work-browser">
+      <div className="work-section-head">
+        <b>Browser</b>
+        <span className="badge">Captured screenshots</span>
+      </div>
+      <p className="faint">Saved by Kai during Turn {run.turn}; this is not a live browser.</p>
+      {!shot || !src ? (
+        <p className="muted">
+          {run.status === "running" || run.status === "queued" ? "No screenshots captured yet." : "No screenshots were captured in this turn."}
+        </p>
+      ) : (
+        <>
+          {screenshots.length > 1 && (
+            <div className="work-captures" aria-label="Screenshots">
+              {screenshots.map((candidate) => (
+                <button
+                  key={candidate.index}
+                  className={`btn btn-sm ${candidate.index === shot.index ? "btn-secondary" : "btn-ghost"}`}
+                  aria-pressed={candidate.index === shot.index}
+                  onClick={() => {
+                    setSelected(candidate.index);
+                    setFailed(false);
+                  }}
+                >
+                  {candidate.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="work-capture-head">
+            <span className="trunc">{shot.name}</span>
+            <span className="sp" />
+            <a href={src} target="_blank" rel="noreferrer">
+              Open image
+            </a>
+          </div>
+          {active && (
+            <>
+              {failed && (
+                <p className="muted">
+                  This screenshot couldn't be loaded.{" "}
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => {
+                      setFailed(false);
+                      setAttempt((value) => value + 1);
+                    }}
+                  >
+                    Try again
+                  </button>
+                </p>
+              )}
+              <img
+                key={`${src}-${attempt}`}
+                className="work-capture"
+                src={src}
+                alt={`Screenshot: ${shot.name}`}
+                hidden={failed}
+                onError={() => setFailed(true)}
+              />
+            </>
+          )}
+        </>
       )}
     </div>
   );

@@ -27,7 +27,7 @@
     flex: 1;
     overflow-y: auto;
   }
-  /* A conversation, and Kai's work beside it (Changes, Files, Terminal). */
+  /* A conversation and the selected turn's work beside it. */
   .conv {
     display: flex;
     flex: 1;
@@ -52,7 +52,7 @@
   .kai-panel-body {
     flex: 1;
     overflow-y: auto;
-    padding: 4px 12px 16px;
+    padding: 16px 12px;
   }
   .kai-panel {
     position: relative;
@@ -119,6 +119,10 @@
   }
   .kp-line.del {
     background: var(--red-soft);
+  }
+  .kp-line-reference {
+    background: var(--accent-soft, var(--surface-3));
+    box-shadow: inset 2px 0 var(--acc);
   }
   .kp-no {
     width: 3.2em;
@@ -224,12 +228,13 @@
     cursor: pointer;
     padding: 0;
   }
-  @media (max-width: 900px) {
+  @media (max-width: 1200px) {
     .kai-panel {
       position: absolute;
       inset: 0 0 0 auto;
       width: min(420px, 100%) !important;
       z-index: 5;
+      box-shadow: var(--shadow-pop);
     }
     .kai-panel-split {
       display: none;
@@ -569,19 +574,137 @@
   color: var(--muted);
   font-size: 11px;
 }
-.work-panel-nav {
-  margin: 8px 12px;
-  flex-shrink: 0;
-}
-.review-panel-head {
-  min-height: 42px;
+.work-panel-head {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  height: 46px;
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.work-panel-head > .i {
+  color: var(--text-3);
+}
+.work-panel-head select {
+  width: auto;
+}
+.work-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  padding: 0 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  scrollbar-width: thin;
+}
+.work-tabs button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  min-height: 42px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.work-tabs button[aria-selected="true"] {
+  color: var(--acc);
+  font-weight: 600;
+}
+.work-tabs button[aria-selected="true"]::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--acc);
+  content: "";
+}
+.work-tabs button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.work-tabs button:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: -2px;
+}
+.work-tab-count {
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  font-size: 10px;
+}
+.work-panel-nav {
+  margin: 0 0 12px;
+}
+.review-panel-head {
+  min-height: 30px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 .review-panel > select {
-  margin: 8px 12px;
-  width: calc(100% - 24px);
+  margin-bottom: 12px;
+  width: 100%;
+}
+.work-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.work-file-actions {
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.work-browser > p {
+  font-size: 12px;
+}
+.work-captures {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.work-captures button {
+  flex-shrink: 0;
+}
+.work-capture-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r) var(--r) 0 0;
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-size: 11px;
+}
+.work-capture-head a {
+  color: var(--acc);
+  white-space: nowrap;
+}
+.work-capture {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 var(--r) var(--r);
+  background: var(--surface);
+}
+.work-capture[hidden] {
+  display: none;
 }
 .review-finding {
   margin-bottom: 12px;
