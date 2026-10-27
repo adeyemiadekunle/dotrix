@@ -50,14 +50,16 @@ class AuditLog:
 
     async def list(
         self,
-        workspace_id: uuid.UUID,
+        workspace_id: uuid.UUID | None,
         *,
         project_id: uuid.UUID | None = None,
         action: str | None = None,
         before: datetime | None = None,
         limit: int = 50,
     ) -> list[AuditEventRead]:
-        stmt = select(AuditEvent).where(AuditEvent.workspace_id == workspace_id)
+        stmt = select(AuditEvent)
+        if workspace_id is not None:
+            stmt = stmt.where(AuditEvent.workspace_id == workspace_id)
         if project_id is not None:
             stmt = stmt.where(AuditEvent.project_id == project_id)
         if action is not None:

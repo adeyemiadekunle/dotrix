@@ -11,8 +11,6 @@ class OpsSignup(BaseModel):
     """Create an ops account by proving you own the workspace: your app account's email and
     password. The ops gets its own credentials from then on — separate from your sign-in."""
 
-    owner_email: str = Field(max_length=320)
-    owner_password: str = Field(max_length=200)
     email: str = Field(min_length=3, max_length=320)
     name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=8, max_length=200)
@@ -34,6 +32,12 @@ class OpsRead(BaseModel):
     id: uuid.UUID
     email: str
     name: str
-    workspace: OpsWorkspace
+    workspace: OpsWorkspace | None = None
     created_at: datetime
+
+
+class OpsBootstrap(BaseModel):
+    """Whether the sign-up form is open: true only while no ops account exists."""
+
+    enabled: bool
 

@@ -1,0 +1,64 @@
+/* Geist, bundled with the app (@fontsource-variable); the theme reads these (packages/ui globals.css). */
+:root {
+  --font-geist-sans: "Geist Variable";
+  --font-geist-mono: "Geist Mono Variable";
+}
+
+/* The ops shell on the design's tokens (design.css via @dotrix/ui/globals.css). */
+@layer components {
+  body {
+    background: var(--bg);
+    color: var(--text);
+  }
+  .ops-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    height: 52px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .ops-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: var(--fs-sm, 13px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .ops-brand span {
+    color: var(--text-3);
+    font-weight: 400;
+  }
+  .ops-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 20px 48px;
+  }
+  .ops-auth {
+    max-width: 380px;
+    margin: 12vh auto 0;
+    padding: 28px 24px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 10px);
+    box-shadow: var(--shadow-card);
+  }
+  .ops-auth h1 {
+    font-size: 22px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    text-align: center;
+  }
+  .ops-auth .sub {
+    margin: 6px 0 18px;
+    font-size: 13px;
+    color: var(--text-3);
+    text-align: center;
+  }
+}

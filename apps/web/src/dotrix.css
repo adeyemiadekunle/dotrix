@@ -1694,3 +1694,26 @@ body.resizing-row * {
 .cmenu .mi.on {
   color: var(--text);
 }
+
+/* Workspace loader: the mark's nine dots pulse outward from the centre. */
+@keyframes dots-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.55);
+    opacity: 0.45;
+  }
+}
+.dots-loader .dots-loader-dot {
+  animation: dots-pulse 1.4s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dots-loader .dots-loader-dot {
+    animation: none;
+  }
+}
