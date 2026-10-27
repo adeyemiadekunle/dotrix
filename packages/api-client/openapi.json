@@ -6684,7 +6684,7 @@
           "agents"
         ],
         "summary": "List Agents",
-        "description": "The workspace's agents: the six built-ins (as they are here) and its custom agents.",
+        "description": "The six thinking-agent configurations. The team roster also includes Kai.",
         "operationId": "list_agents",
         "security": [
           {
@@ -6905,7 +6905,7 @@
           "agents"
         ],
         "summary": "Save Agent",
-        "description": "Create a custom agent, or change one (a built-in's first change makes it customised).\nOwners and admins; only owners let an agent act without asking (`allow`). Each save is a new\nversion; send the `version` you edited as `base_version` (409 `agent_changed` otherwise).\n422 `invalid_agent` with the reason when the contract breaks a rule.",
+        "description": "Configure a built-in agent (its first change makes it customised).\nOwners and admins; only owners let an agent act without asking (`allow`). Each save is a new\nversion; send the `version` you edited as `base_version` (409 `agent_changed` otherwise).\n422 `invalid_agent` with the reason when the contract breaks a rule.",
         "operationId": "save_agent",
         "security": [
           {
@@ -7014,7 +7014,7 @@
           "agents"
         ],
         "summary": "Delete Agent",
-        "description": "Remove a custom agent, or reset a built-in to its default. Its history is kept.",
+        "description": "Reset a built-in to its default. Its history is kept.",
         "operationId": "delete_agent",
         "security": [
           {
@@ -7465,7 +7465,7 @@
           "agents"
         ],
         "summary": "Save Project Agent",
-        "description": "Override an agent for this project only, or create an agent only this project has.",
+        "description": "Override permitted configuration for one built-in agent in this project.",
         "operationId": "save_project_agent",
         "security": [
           {
@@ -7584,7 +7584,7 @@
           "agents"
         ],
         "summary": "Delete Project Agent",
-        "description": "Drop this project's override (the workspace's agent applies again), or remove an agent\nonly this project had.",
+        "description": "Drop this project's override; the workspace's built-in configuration applies again.",
         "operationId": "delete_project_agent",
         "security": [
           {
@@ -7923,6 +7923,91 @@
                     "$ref": "#/components/schemas/AgentPreferenceRead"
                   },
                   "title": "Response List My Agent Preferences"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/my-agents/{handle}/versions": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List My Agent Preference Versions",
+        "description": "Your private guidance history for a built-in agent, including resets.",
+        "operationId": "list_my_agent_preference_versions",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "handle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,30}$",
+              "description": "The agent's handle, e.g. research",
+              "title": "Handle"
+            },
+            "description": "The agent's handle, e.g. research"
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPreferenceVersionRead"
+                  },
+                  "title": "Response List My Agent Preference Versions"
                 }
               }
             }
@@ -11617,7 +11702,7 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Request body or parameters failed validation",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21709,6 +21794,275 @@
           }
         }
       }
+    },
+    "/v1/workspaces/{workspace_id}/agent-team": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Get Builtin Team",
+        "description": "The seven built-in identities. Kai executes coding rather than a thinking-agent graph.",
+        "operationId": "get_builtin_team",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TeamMemberRead"
+                  },
+                  "title": "Response Get Builtin Team"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/tasks": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Specialist Tasks",
+        "description": "The private specialist tasks beneath a coordinator's message, with saved results.",
+        "operationId": "list_specialist_tasks",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SpecialistTaskRead"
+                  },
+                  "title": "Response List Specialist Tasks"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/agent/activity": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Private Agent Activity",
+        "description": "Recent agent activity in conversations the caller owns, restricted to visible projects.",
+        "operationId": "list_private_agent_activity",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentActivityRead"
+                  },
+                  "title": "Response List Private Agent Activity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -21978,6 +22332,102 @@
         ],
         "title": "ActivityKind"
       },
+      "AgentActivityRead": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Run Id"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Run Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_key": {
+            "type": "string",
+            "title": "Project Key"
+          },
+          "agent": {
+            "type": "string",
+            "title": "Agent"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunStatus"
+              },
+              {
+                "$ref": "#/components/schemas/CodingRunStatus"
+              }
+            ],
+            "title": "Status"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "parent_run_id",
+          "thread_id",
+          "project_id",
+          "project_key",
+          "agent",
+          "status",
+          "title",
+          "source",
+          "updated_at"
+        ],
+        "title": "AgentActivityRead"
+      },
       "AgentAssignee": {
         "type": "string",
         "enum": [
@@ -22088,6 +22538,13 @@
             "minLength": 1,
             "title": "Instructions",
             "description": "Its role prompt (Markdown)"
+          },
+          "additional_instructions": {
+            "type": "string",
+            "maxLength": 20000,
+            "title": "Additional Instructions",
+            "description": "Additional guidance; the built-in role is protected",
+            "default": ""
           },
           "model": {
             "anyOf": [
@@ -22226,6 +22683,17 @@
             "type": "string",
             "title": "Handle"
           },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
           "updated_at": {
             "anyOf": [
               {
@@ -22271,6 +22739,45 @@
         "type": "object",
         "title": "AgentPreferenceSave"
       },
+      "AgentPreferenceVersionRead": {
+        "properties": {
+          "instructions": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Instructions",
+            "description": "How you like this agent to work (tone, format, what to focus on); added to its instructions for the runs you start. It can't change what the agent may do",
+            "default": ""
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Its model for your runs; null: as set for the workspace"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "created_at"
+        ],
+        "title": "AgentPreferenceVersionRead"
+      },
       "AgentRead": {
         "properties": {
           "name": {
@@ -22291,6 +22798,13 @@
             "minLength": 1,
             "title": "Instructions",
             "description": "Its role prompt (Markdown)"
+          },
+          "additional_instructions": {
+            "type": "string",
+            "maxLength": 20000,
+            "title": "Additional Instructions",
+            "description": "Additional guidance; the built-in role is protected",
+            "default": ""
           },
           "model": {
             "anyOf": [
@@ -22407,17 +22921,24 @@
               }
             ],
             "title": "Base",
-            "description": "The built-in it's based on, or null for a custom agent"
+            "description": "Its protected built-in identity"
+          },
+          "available_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Tools",
+            "description": "The core role's permitted tools; configuration may restrict this set"
           },
           "source": {
             "type": "string",
             "enum": [
               "built_in",
-              "customised",
-              "custom"
+              "customised"
             ],
             "title": "Source",
-            "description": "built_in (the default), customised (a changed built-in), or custom"
+            "description": "built_in (the default), or customised (a changed built-in)"
           },
           "scope": {
             "type": "string",
@@ -22461,6 +22982,7 @@
           "tools",
           "handle",
           "base",
+          "available_tools",
           "source",
           "scope",
           "version",
@@ -22493,6 +23015,38 @@
             "type": "string",
             "format": "uuid",
             "title": "Id"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Run Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "user"
+          },
+          "review_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewRevision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orchestration": {
+            "type": "boolean",
+            "title": "Orchestration",
+            "default": false
           },
           "thread_id": {
             "type": "string",
@@ -31080,6 +31634,92 @@
         ],
         "title": "RestoreRequest"
       },
+      "ReviewRevision": {
+        "properties": {
+          "coding_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Coding Run Id"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "issue_key": {
+            "type": "string",
+            "title": "Issue Key"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CodingRunStatus"
+          },
+          "pr_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Url"
+          },
+          "reported_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported Summary"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "files": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "diff_truncated": {
+            "type": "boolean",
+            "title": "Diff Truncated",
+            "default": false
+          },
+          "verification": {
+            "type": "string",
+            "title": "Verification"
+          }
+        },
+        "type": "object",
+        "required": [
+          "coding_run_id",
+          "session_id",
+          "issue_key",
+          "revision",
+          "status",
+          "verification"
+        ],
+        "title": "ReviewRevision",
+        "description": "Recorded coding evidence for a review and its automatic conversation summary."
+      },
       "Role": {
         "type": "string",
         "enum": [
@@ -31183,7 +31823,7 @@
             "type": "string",
             "pattern": "^(auto|[a-z][a-z0-9-]{1,30})$",
             "title": "Agent",
-            "description": "Who answers: `auto` (the Project Manager involves the specialists it needs) or an agent's handle (`GET .../agents`: built-in or custom), who leads and may ask the agents it can call. 422 `unknown_agent` if the project has no such agent",
+            "description": "`auto` lets Nova advise and coordinate, or name a built-in specialist to involve. Nova remains the coordinator. `coding-agent` requests Kai's involvement in Build mode. Unsupported handles return 422 `unknown_agent`",
             "default": "auto"
           },
           "model": {
@@ -31244,7 +31884,8 @@
           "step",
           "text",
           "activity",
-          "status"
+          "status",
+          "task"
         ],
         "title": "RunEventKind"
       },
@@ -31287,8 +31928,15 @@
             "description": "`step`: an attempt at a step began (its text starts over); `text`: a piece of the reply; `activity`: what the agents were doing; `status`: the step's outcome"
           },
           "data": {
-            "additionalProperties": true,
-            "type": "object",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskLifecycle"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
             "title": "Data"
           },
           "created_at": {
@@ -31551,7 +32199,11 @@
           "running",
           "awaiting_approval",
           "completed",
-          "failed"
+          "failed",
+          "waiting_children",
+          "waiting_dependency",
+          "blocked",
+          "cancelled"
         ],
         "title": "RunStatus"
       },
@@ -32091,6 +32743,191 @@
         "title": "SourceRead",
         "description": "A web page the run's agents found or read, under the id its report cites."
       },
+      "SpecialistResult": {
+        "properties": {
+          "summary": {
+            "type": "string",
+            "maxLength": 12000,
+            "minLength": 1,
+            "title": "Summary"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "partial",
+              "blocked"
+            ],
+            "title": "Status",
+            "default": "completed"
+          },
+          "findings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 60,
+            "title": "Findings"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 60,
+            "title": "Evidence"
+          },
+          "artifacts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Artifacts"
+          },
+          "risks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Risks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary"
+        ],
+        "title": "SpecialistResult"
+      },
+      "SpecialistTaskRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Run Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "task_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Key"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
+          },
+          "task_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpecialistResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "review_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewRevision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "parent_run_id",
+          "project_id",
+          "agent",
+          "task_key",
+          "message",
+          "status",
+          "depends_on",
+          "task_result",
+          "error",
+          "review_context",
+          "updated_at"
+        ],
+        "title": "SpecialistTaskRead"
+      },
       "StageUsage": {
         "properties": {
           "agent": {
@@ -32199,6 +33036,83 @@
         ],
         "title": "SubgraphRead",
         "description": "What's near something, to draw: the closest first, up to a limit."
+      },
+      "TaskLifecycle": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "agent": {
+            "type": "string",
+            "title": "Agent"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "agent",
+          "status"
+        ],
+        "title": "TaskLifecycle"
+      },
+      "TeamMemberRead": {
+        "properties": {
+          "handle": {
+            "type": "string",
+            "title": "Handle"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "coordinator",
+              "specialist",
+              "coding"
+            ],
+            "title": "Kind"
+          },
+          "built_in": {
+            "type": "boolean",
+            "title": "Built In",
+            "default": true
+          },
+          "customised": {
+            "type": "boolean",
+            "title": "Customised",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "handle",
+          "name",
+          "role",
+          "kind"
+        ],
+        "title": "TeamMemberRead"
       },
       "ThreadRead": {
         "properties": {

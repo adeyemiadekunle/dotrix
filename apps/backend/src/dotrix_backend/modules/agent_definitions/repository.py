@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dotrix_engine.builtins import builtin_specs
+from dotrix_engine.builtins import builtin, builtin_specs, configure_builtin
 from dotrix_engine.contracts import AgentSpec
 
 from .models import AgentDefinition, AgentDefinitionVersion
@@ -31,6 +31,7 @@ class ResolvedAgent:
     updated_at: datetime | None
     # Who saved the version in effect: the person whose standing rules (allow) it carries.
     author_id: uuid.UUID | None = None
+    own_guidance: str = ""
 
 
 class AgentDefinitionRepository:
@@ -87,21 +88,44 @@ class AgentDefinitionRepository:
             .order_by(AgentDefinition.project_id.is_not(None), AgentDefinition.handle)
         )
         for definition, version in rows:
+            if definition.handle not in builtin_handles:
+                continue  # Retired definitions remain stored for historical attribution.
             try:
                 spec = AgentSpec.model_validate(version.spec | {"handle": definition.handle})
+                own_guidance = configure_builtin(spec).additional_instructions
+                inherited = agents[definition.handle].spec.additional_instructions if definition.project_id else ""
+                spec = configure_builtin(spec, inherited)
             except ValidationError:
                 # Stored under older rules that no longer validate: fall back to what was there.
                 logger.warning("agent definition %s v%s no longer validates", definition.id, version.version)
                 continue
             agents[definition.handle] = ResolvedAgent(
                 spec,
-                "customised" if definition.handle in builtin_handles else "custom",
+                "customised",
                 "project" if definition.project_id else "workspace",
                 definition.current_version,
                 definition.updated_at,
                 version.author_user_id,
+                own_guidance,
             )
         return list(agents.values())
 
     async def specs(self, workspace_id: uuid.UUID, project_id: uuid.UUID) -> list[AgentSpec]:
         return [agent.spec for agent in await self.resolve(workspace_id, project_id)]
+
+    async def coding_configuration(self, workspace_id: uuid.UUID, project_id: uuid.UUID | None = None) -> ResolvedAgent:
+        """Kai has configurable guidance, but is never a thinking subagent."""
+        resolved = ResolvedAgent(builtin("coding-agent"), "built_in", "default", None, None)
+        for scope in ([None, project_id] if project_id else [None]):
+            definition = await self.get(workspace_id, scope, "coding-agent")
+            if definition is None or definition.archived_at is not None:
+                continue
+            version = await self.version(definition)
+            if version is None:
+                continue
+            stored = AgentSpec.model_validate(version.spec | {"handle": "coding-agent"})
+            configured = configure_builtin(stored, resolved.spec.additional_instructions if scope else "")
+            resolved = ResolvedAgent(configured, "customised", "project" if scope else "workspace",
+                definition.current_version, definition.updated_at, version.author_user_id,
+                configure_builtin(stored).additional_instructions)
+        return resolved

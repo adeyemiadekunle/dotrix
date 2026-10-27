@@ -93,7 +93,7 @@ test("agents: change a built-in's contract, then reset it; workspace rules are s
   await signUp(page);
   await settings(page, "agents");
   await page.locator("#main-content .mini", { hasText: "@research" }).click();
-  await page.getByLabel("Description").fill("Finds and checks sources on the web.");
+  await page.getByLabel("Additional instructions").fill("Finds and checks sources on the web.");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText(/Saved as version \d+/)).toBeVisible();
   await expect(page.getByText("Customised").first()).toBeVisible();

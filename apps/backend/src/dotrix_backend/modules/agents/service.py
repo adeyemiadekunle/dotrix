@@ -47,6 +47,7 @@ from .models import (
     ConversationPlan,
     RunKind,
     RunStatus,
+    WorkMode,
 )
 from .privacy import run_openable_by, runs_visible_to
 from .runner import BRIEFING_PROMPT, AgentRunner
@@ -185,18 +186,25 @@ class AgentService:
         made from the message (`titles.py`; no model call), and its model, fixed from then on.
         `available` lists the models a conversation may start on (`llm.available_models`)."""
         project, member = access.project, access.member
-        if data.agent not in ("auto", PM_ROLE):
+        interactive = mode is None and automation_id is None and kind is RunKind.CHAT
+        requested_agent = data.agent
+        if data.agent not in ("auto", PM_ROLE, "coding-agent"):
             handles = {a.spec.handle for a in await AgentDefinitionRepository(self.session).resolve(
                 project.workspace_id, project.id
             )}
             if data.agent not in handles:
                 raise UnknownAgent(f"This project has no @{data.agent} agent")
+        if interactive:
+            data = data.model_copy(update={"agent": "auto", "work_mode": data.work_mode or WorkMode.DISCUSS})
         thread_id = data.thread_id or uuid7()
         # The person's own keys run what they start (where allowed); automations use the workspace's.
         run_key = await run_keys(
             self.session, self.runner.secrets, project.workspace_id, member.user_id
         )
         if data.thread_id is not None:
+            await self.session.scalar(select(Project).where(
+                Project.workspace_id == project.workspace_id, Project.id == project.id,
+            ).with_for_update())
             await self._check_thread(project.id, data.thread_id, member)
             model = await self._thread_model(project.id, data.thread_id)
             if data.model is not None and data.model != (model or project.model):
@@ -246,6 +254,7 @@ class AgentService:
             requested_by_id=member.user_id,
             created_at=now,
             updated_at=now,
+            orchestration=bool(interactive and self.runner.settings and self.runner.settings.durable_delegation),
         )
         self.session.add(run)
         if data.mentions:
@@ -266,11 +275,12 @@ class AgentService:
                      **({"work_mode": data.work_mode.value} if data.work_mode else {}),
                      **({"automation_id": str(automation_id)} if automation_id else {})},
         )
-        dispatch = self.runner.prepare_dispatch(
-            self.session, run, {"kind": "start", "message": data.message},
-        )
+        message = data.message
+        if interactive and requested_agent not in ("auto", PM_ROLE):
+            message = f"The person asks you to involve {requested_agent} where useful.\n\n{message}"
+        dispatch = self.runner.prepare_dispatch(self.session, run, {"kind": "start", "message": message})
         await self.session.commit()
-        await self.runner.start(run.id, data.message, dispatch=dispatch)
+        await self.runner.start(run.id, message, dispatch=dispatch)
         return await self.get(access, run.id)
 
     async def architecture_draft(
@@ -350,7 +360,7 @@ class AgentService:
             select(AgentRun)
             .options(selectinload(AgentRun.approvals), selectinload(AgentRun.output_rows),
                      selectinload(AgentRun.source_rows))
-            .where(AgentRun.project_id == access.project.id, runs_visible_to(access.member))
+            .where(AgentRun.project_id == access.project.id, AgentRun.parent_run_id.is_(None), runs_visible_to(access.member))
         )
         if thread_id is not None:
             stmt = stmt.where(AgentRun.thread_id == thread_id)
@@ -458,7 +468,7 @@ class AgentService:
             )
             .join(Project, Project.id == AgentRun.project_id)
             .where(Project.workspace_id == member.workspace_id, visible_to(member.user_id, member.role),
-                   runs_visible_to(member))
+                   AgentRun.parent_run_id.is_(None), runs_visible_to(member))
             .group_by(AgentRun.thread_id, AgentRun.project_id, Project.key, Project.name)
             .order_by(func.max(AgentRun.updated_at).desc())
             .limit(limit)
@@ -644,12 +654,21 @@ class AgentService:
         )
         if run is None:
             raise NotFound("Run not found")
-        if run.status not in (RunStatus.QUEUED, RunStatus.RUNNING):
+        if run.status not in (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_CHILDREN):
             raise Conflict("Only a run that's still working can be stopped")
         if run.requested_by_id != member.user_id and not can(member, Permission.MANAGE_PROJECTS):
             raise Forbidden("Only whoever asked, or an owner or admin, can stop this run")
         user = await self.session.get(User, member.user_id)
         reason = f"Stopped by {user.display_name if user else 'a member'}"
+        if run.orchestration:
+            AuditLog(self.session).record(workspace_id=run.workspace_id, project_id=run.project_id,
+                action="agent_run.stopped", target=str(run.id), actor_type=AuthorType.USER,
+                actor_user_id=member.user_id)
+            await self.session.commit()
+            from .delegation import DelegationService
+            await DelegationService(self.runner).cancel(run.workspace_id, run.id, reason)
+            await self.session.refresh(run)
+            return RunStopRead(id=run.id, status=run.status)
         AuditLog(self.session).record(
             workspace_id=run.workspace_id,
             project_id=run.project_id,

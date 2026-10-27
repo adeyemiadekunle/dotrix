@@ -57,7 +57,7 @@ async def test_customise_a_builtin_then_reset_it(world, db_client: AsyncClient, 
     product = (await db_client.get(f"{ws}/agents/product", headers=ada.headers)).json()
     fields = {k: product[k] for k in ("name", "description", "instructions", "tools", "access", "issue_types", "can_call")}
     changed = await save(db_client, f"{ws}/agents/product", ada.headers,
-                         fields | {"instructions": "Write every story as a job to be done."}, note="JTBD")
+                         fields | {"additional_instructions": "Write every story as a job to be done."}, note="JTBD")
     assert changed.status_code == 200, changed.text
     assert changed.json()["source"] == "customised" and changed.json()["version"] == 1
 
@@ -66,13 +66,13 @@ async def test_customise_a_builtin_then_reset_it(world, db_client: AsyncClient, 
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "stories?", "agent": "product"},
                                 headers=ada.headers)).json()
     assert run["status"] == "completed"
-    assert "Write every story as a job to be done." in str(model.received[0][0].content)
+    assert "You are Nova" in str(model.received[0][0].content)
 
     # Stale edits are refused; saving the same thing again is a no-op.
     stale = await save(db_client, f"{ws}/agents/product", ada.headers, fields, base_version=0)
     assert stale.status_code == 409 and stale.json()["type"].endswith("/agent_changed")
     same = await save(db_client, f"{ws}/agents/product", ada.headers,
-                      fields | {"instructions": "Write every story as a job to be done."}, base_version=1)
+                      fields | {"additional_instructions": "Write every story as a job to be done."}, base_version=1)
     assert same.json()["version"] == 1
 
     assert (await db_client.delete(f"{ws}/agents/product", headers=ada.headers)).status_code == 204
@@ -81,101 +81,71 @@ async def test_customise_a_builtin_then_reset_it(world, db_client: AsyncClient, 
     history = (await db_client.get(f"{ws}/agents/product/versions", headers=ada.headers)).json()
     assert [(v["version"], v["note"]) for v in history] == [(1, "JTBD")]
     restored = (await db_client.post(f"{ws}/agents/product/versions/1/restore", headers=ada.headers)).json()
-    assert restored["version"] == 2 and restored["instructions"].startswith("Write every story")
+    assert restored["version"] == 2 and restored["additional_instructions"].startswith("Write every story")
 
     actions = [e["action"] for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()]
     assert {"agent.customised", "agent.reset"} <= set(actions)
 
 
-async def test_a_custom_agent_leads_a_chat_and_writes_only_where_its_contract_allows(
-    world, db_client: AsyncClient, agent_script
-) -> None:
+async def test_custom_agents_cannot_be_created_or_executed(world, db_client: AsyncClient) -> None:
     ada, _, _, ws, base = await world()
     created = await save(db_client, f"{ws}/agents/security", ada.headers, SECURITY)
-    assert created.status_code == 200, created.text and created.json()["source"] == "custom"
-    assert "security" in [a["handle"] for a in (await db_client.get(f"{base}/agents", headers=ada.headers)).json()]
-
-    agent_script.say(
-        tool_call("write_file", file_path="/dotrix/reviews/security/auth.md", content="# Auth review\n"),
-        tool_call("write_file", file_path="/dotrix/requirements/auth.md", content="# Changed\n"),
-        "Review saved.",
-    )
-    paused = (await db_client.post(f"{base}/agent/runs", json={"message": "review auth", "agent": "security"},
-                                   headers=ada.headers)).json()
-    assert paused["status"] == "awaiting_approval" and paused["agent"] == "security"
-    done = paused
-    while done["status"] == "awaiting_approval":  # each write pauses; approve them all
-        pending = [a for a in done["approvals"] if a["status"] == "pending"]
-        decisions = [{"approval_id": a["id"], "decision": "approve"} for a in pending]
-        done = (await db_client.post(f"{base}/agent/runs/{done['id']}/decisions", json={"decisions": decisions},
-                                     headers=ada.headers)).json()
-    assert done["status"] == "completed", done
-
-    history = (await db_client.get(f"{base}/knowledge/files/reviews/security/auth.md/versions",
-                                   headers=ada.headers)).json()
-    assert history[0]["agent"] == "security"
-    # Its contract gives it no access to requirements/, so that write was refused even approved.
-    missing = await db_client.get(f"{base}/knowledge/files/requirements/auth.md", headers=ada.headers)
-    assert missing.status_code == 404
-
-    unknown = await db_client.post(f"{base}/agent/runs", json={"message": "hi", "agent": "marketing"},
-                                   headers=ada.headers)
+    assert created.status_code == 422 and "no longer supported" in created.json()["detail"]
+    assert "security" not in [a["handle"] for a in (await db_client.get(f"{ws}/agents", headers=ada.headers)).json()]
+    unknown = await db_client.post(f"{base}/agent/runs", json={"message": "review", "agent": "security"}, headers=ada.headers)
     assert unknown.status_code == 422 and unknown.json()["type"].endswith("/unknown_agent")
+    assert (await db_client.post(f"{ws}/agents/security/versions/1/restore", headers=ada.headers)).status_code == 422
 
 
 async def test_who_may_change_agents(world, db_client: AsyncClient) -> None:
     ada, bob, cat, ws, _ = await world()
-    assert (await save(db_client, f"{ws}/agents/security", cat.headers, SECURITY)).status_code == 403
-    assert (await save(db_client, f"{ws}/agents/security", bob.headers, SECURITY)).status_code == 200
-    # Only owners let an agent act without asking.
-    allow = SECURITY | {"tools": [*SECURITY["tools"], "issues.comment"], "autonomy": {"issues.comment": "allow"}}
-    by_admin = await save(db_client, f"{ws}/agents/security", bob.headers, allow, base_version=1)
-    assert by_admin.status_code == 403
-    by_owner = await save(db_client, f"{ws}/agents/security", ada.headers, allow, base_version=1)
-    assert by_owner.status_code == 200 and by_owner.json()["autonomy"] == {"issues.comment": "allow"}
-    # An admin may keep a low-risk allow when changing something else...
-    kept = await save(db_client, f"{ws}/agents/security", bob.headers, allow | {"description": "Finds holes."},
-                      base_version=2)
-    assert kept.status_code == 200
-    # ...but beyond the low-risk actions, every version that allows them is an owner's.
-    risky = allow | {"autonomy": {"issues.comment": "allow", "issues.create": "allow"}}
-    assert (await save(db_client, f"{ws}/agents/security", ada.headers, risky, base_version=3)).status_code == 200
-    again = await save(db_client, f"{ws}/agents/security", bob.headers, risky | {"description": "Finds."},
-                       base_version=4)
-    assert again.status_code == 403
+    fields = (await db_client.get(f"{ws}/agents/project-manager", headers=ada.headers)).json()
+    assert (await save(db_client, f"{ws}/agents/project-manager", cat.headers, fields)).status_code == 403
+    fields["additional_instructions"] = "Use our terminology"
+    assert (await save(db_client, f"{ws}/agents/project-manager", bob.headers, fields)).status_code == 200
+    fields["autonomy"] = {"issues.comment": "allow"}
+    assert (await save(db_client, f"{ws}/agents/project-manager", bob.headers, fields, base_version=1)).status_code == 403
+    assert (await save(db_client, f"{ws}/agents/project-manager", ada.headers, fields, base_version=1)).status_code == 200
+    fields["additional_instructions"] = "Keep comments concise"
+    assert (await save(db_client, f"{ws}/agents/project-manager", bob.headers, fields, base_version=2)).status_code == 200
+    fields["autonomy"]["issues.create"] = "allow"
+    assert (await save(db_client, f"{ws}/agents/project-manager", ada.headers, fields, base_version=3)).status_code == 200
+    fields["additional_instructions"] = "Another revision"
+    assert (await save(db_client, f"{ws}/agents/project-manager", bob.headers, fields, base_version=4)).status_code == 403
 
 
-@pytest.mark.parametrize(
-    ("handle", "agent", "message"),
-    [
-        ("auto", SECURITY, "reserved"),
-        ("coding", SECURITY, "reserved"),
-        ("security", SECURITY | {"access": {"agent-rules/*": "write"}}, "agent-rules"),
-        ("security", SECURITY | {"tools": ["shell"]}, "Unknown tools"),
-        ("security", SECURITY | {"tools": ["knowledge.read"]}, "issues.create"),
-    ],
-)
-async def test_contracts_are_checked(world, db_client: AsyncClient, handle: str, agent: dict, message: str) -> None:
+@pytest.mark.parametrize("patch,message", [
+    ({"instructions": "Replace the role"}, "read-only"),
+    ({"access": {"agent-rules/*": "write"}}, "agent-rules"),
+    ({"tools": ["shell"]}, "core role"),
+    ({"can_call": ["security"]}, "built-in specialists"),
+])
+async def test_contracts_are_checked(world, db_client: AsyncClient, patch: dict, message: str) -> None:
     ada, _, _, ws, _ = await world()
-    res = await save(db_client, f"{ws}/agents/{handle}", ada.headers, agent)
-    assert res.status_code == 422 and message in res.json()["detail"], res.text
+    fields = (await db_client.get(f"{ws}/agents/product", headers=ada.headers)).json()
+    response = await save(db_client, f"{ws}/agents/product", ada.headers, fields | patch)
+    assert response.status_code == 422 and message in response.json()["detail"], response.text
 
 
-async def test_a_project_overrides_an_agent_for_itself_only(world, db_client: AsyncClient, agent_script) -> None:
+async def test_workspace_and_project_guidance_compose_without_replacing_the_role(world, db_client: AsyncClient, db_session) -> None:
+    from uuid import UUID
+
+    from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
     ada, _, _, ws, base = await world()
     research = (await db_client.get(f"{ws}/agents/research", headers=ada.headers)).json()
-    fields = {k: research[k] for k in ("name", "description", "instructions", "tools", "access", "issue_types", "can_call")}
-    override = await save(db_client, f"{base}/agents/research", ada.headers,
-                          fields | {"instructions": "Only cite EU sources."})
-    assert override.status_code == 200 and override.json()["scope"] == "project"
-    assert (await db_client.get(f"{ws}/agents/research", headers=ada.headers)).json()["source"] == "built_in"
-
-    model = agent_script.say("EU sources say yes.")
-    await db_client.post(f"{base}/agent/runs", json={"message": "rules?", "agent": "research"}, headers=ada.headers)
-    assert "Only cite EU sources." in str(model.received[0][0].content)
-
+    saved = await save(db_client, f"{ws}/agents/research", ada.headers, research | {"additional_instructions": "Workspace conventions"})
+    assert saved.status_code == 200
+    override = await save(db_client, f"{base}/agents/research", ada.headers, research | {"additional_instructions": "Only cite EU sources."})
+    assert override.status_code == 200 and override.json()["additional_instructions"] == "Only cite EU sources."
+    effective = next(a.spec for a in await AgentDefinitionRepository(db_session).resolve(UUID(ws.rsplit('/',1)[1]), UUID(base.rsplit('/',1)[1])) if a.spec.handle == "research")
+    assert effective.instructions == research["instructions"]
+    assert effective.additional_instructions == "Workspace conventions\n\nOnly cite EU sources."
+    unchanged = await save(db_client, f"{base}/agents/research", ada.headers, override.json(), base_version=1)
+    assert unchanged.status_code == 200
+    reread = (await db_client.get(f"{base}/agents/research", headers=ada.headers)).json()
+    assert reread["additional_instructions"] == "Only cite EU sources."
     assert (await db_client.delete(f"{base}/agents/research", headers=ada.headers)).status_code == 204
-    assert (await db_client.get(f"{base}/agents/research", headers=ada.headers)).json()["source"] == "built_in"
+    assert (await db_client.get(f"{base}/agents/research", headers=ada.headers)).json()["additional_instructions"] == "Workspace conventions"
 
 
 async def test_an_allowed_comment_needs_no_approval_and_a_blocked_action_is_gone(
@@ -183,48 +153,43 @@ async def test_an_allowed_comment_needs_no_approval_and_a_blocked_action_is_gone
 ) -> None:
     ada, _, _, ws, base = await world()
     issue = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Rotate keys"}, headers=ada.headers)).json()
-    triage = {
-        "name": "Triage", "instructions": "Comment on issues; never open them.",
-        "tools": ["board.read", "issues.create", "issues.comment"], "issue_types": ["bug"],
-        "autonomy": {"issues.comment": "allow", "issues.create": "block"},
-    }
-    assert (await save(db_client, f"{ws}/agents/triage", ada.headers, triage)).status_code == 200
+    triage = (await db_client.get(f"{ws}/agents/project-manager", headers=ada.headers)).json()
+    triage["autonomy"] = {"issues.comment": "allow", "issues.create": "block"}
+    assert (await save(db_client, f"{ws}/agents/project-manager", ada.headers, triage)).status_code == 200
 
     agent_script.say(
         tool_call("comment_issue", key=issue["key"], text="Looks like a duplicate of nothing."),
         tool_call("create_issue", type="bug", title="Should not exist"),
         "Commented.",
     )
-    done = (await db_client.post(f"{base}/agent/runs", json={"message": "triage it", "agent": "triage"},
+    done = (await db_client.post(f"{base}/agent/runs", json={"message": "triage it", "agent": "auto"},
                                  headers=ada.headers)).json()
     assert done["status"] == "completed", done  # nothing paused for approval
     log = (await db_client.get(f"{base}/issues/{issue['key']}", headers=ada.headers)).json()["log"]
     comment = next(e for e in log if e["kind"] == "commented")
-    assert comment["author_agent"] == "triage" and "duplicate" in comment["body"]
+    assert comment["author_agent"] == "project-manager" and "duplicate" in comment["body"]
     titles = [i["title"] for i in (await db_client.get(f"{base}/issues", headers=ada.headers)).json()]
     assert "Should not exist" not in titles  # blocked: it had no create tool
     audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
     allowed = next(e for e in audit if e["action"] == "issues.comment.allowed")
-    assert allowed["agent"] == "triage" and allowed["details"]["rule"] == {"agent": "triage", "action": "issues.comment", "version": 1}
+    assert allowed["agent"] == "project-manager" and allowed["details"]["rule"] == {"agent": "project-manager", "action": "issues.comment", "version": 1}
 
 
 async def test_a_run_records_its_result_and_people_act_on_each_item(world, db_client: AsyncClient, agent_script) -> None:
     ada, _, cat, ws, base = await world()
-    reviewer = SECURITY | {"output": "finding", "pipeline": "reviewer.commit"}
-    assert (await save(db_client, f"{ws}/agents/security", ada.headers, reviewer)).status_code == 200
+    issue = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Review auth"}, headers=ada.headers)).json()
     agent_script.say(
-        tool_call("stage", current="diff"),
+        tool_call("stage", current="issue"),
         tool_call("submit_result", items=[
             {"severity": "high", "title": "Token in logs", "detail": "auth.py logs the refresh token", "refs": ["auth.py"]},
             {"severity": "low", "title": "Verbose errors", "detail": "Stack traces reach the client"},
         ]),
         "Two findings.",
     )
-    done = (await db_client.post(f"{base}/agent/runs", json={"message": "review", "agent": "security"},
-                                 headers=ada.headers)).json()
+    done = (await db_client.post(f"{base}/agent/issues/{issue['key']}/review", headers=ada.headers)).json()
     assert done["status"] == "completed", done
     [output] = done["outputs"]
-    assert output["agent"] == "security" and output["kind"] == "finding" and "create_issue" in output["actions"]
+    assert output["agent"] == "reviewer" and output["kind"] == "finding" and "create_issue" in output["actions"]
     assert [i["data"]["title"] for i in output["items"]] == ["Token in logs", "Verbose errors"]
     assert all(i["state"] == "open" for i in output["items"])
 

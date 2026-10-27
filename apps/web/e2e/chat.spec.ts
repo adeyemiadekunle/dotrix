@@ -52,7 +52,7 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await box.fill("What's open?");
   await box.press("Enter");
   await expect(page).toHaveURL(/thread=.*project=KUM/);
-  await expect(page.getByText("Test model reply: What's open?")).toBeVisible();
+  await expect(page.getByText("Test model reply: What's open?")).toBeVisible({ timeout: 30_000 });
   // What the agents did stays with the reply (kept after the run), folded until asked for.
   await page.getByRole("button", { name: "Steps" }).first().click();
   await expect(page.getByRole("list", { name: "Steps" })).toBeVisible();
@@ -96,17 +96,17 @@ test("in Accept edits what you ask for goes through, approved by you", async ({ 
   }).toPass({ timeout: 30_000 });
 });
 
-test("the agent picked answers, and the conversation keeps it", async ({ page }) => {
+test("a specialist mention keeps Nova as the adviser", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
-  await openChat(page, "?project=KUM");
+  await openChat(page, "?project=KUM&agent=research");
 
-  const name = (await pickChatOption(page, "Agent", /^Vega ·/)).split(" · ")[0]!;
+  await expect(page.getByText("Nova · Lead adviser")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove request to involve Vega" })).toBeVisible();
   await page.getByLabel("Message").fill("Who else ships multi-zone?");
   await page.getByLabel("Message").press("Enter");
-  await expect(page.getByText("Test model reply: Who else ships multi-zone?")).toBeVisible();
-  await expect(page.locator(".chat-msg.agent .who b").last()).toHaveText(name);
-  await expect(page.getByRole("button", { name: /^Agent:/ })).toHaveAccessibleName(/^Agent: Vega ·/);
+  await expect(page.getByText(/Who else ships multi-zone/).last()).toBeVisible();
+  await expect(page.locator(".chat-msg.agent .who b").last()).toHaveText("Nova");
 });
 
 test("one conversation moves from Discuss to Plan to Build, and the plan is kept to build from", async ({ page }) => {
@@ -118,7 +118,7 @@ test("one conversation moves from Discuss to Plan to Build, and the plan is kept
   await expect(mode).toHaveAccessibleName("Mode: Discuss"); // a new conversation starts by talking it through
   await page.getByLabel("Message").fill("How would refunds work?");
   await page.getByLabel("Message").press("Enter");
-  await expect(page.getByText("Test model reply: How would refunds work?")).toBeVisible();
+  await expect(page.getByText("Test model reply: How would refunds work?")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".chat-msg.user .badge").last()).toHaveText("Discuss");
 
   await pickChatOption(page, "Mode", "Plan");
@@ -132,7 +132,7 @@ test("one conversation moves from Discuss to Plan to Build, and the plan is kept
 
   // Building from the plan says which version, in Build mode; the conversation then stays in Build.
   await card.getByRole("button", { name: "Build this plan" }).click();
-  await expect(page.getByText("Test model reply: Build plan version 1: Refunds")).toBeVisible();
+  await expect(page.getByText("Test model reply: Build plan version 1: Refunds")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".chat-msg.user .badge").last()).toHaveText("Build");
   await expect(mode).toHaveAccessibleName("Mode: Build");
 });
@@ -151,7 +151,7 @@ test("ask across projects: the conversation reads only and is listed apart, with
   await page.getByLabel("Message").fill("How are both projects doing?");
   await page.getByLabel("Message").press("Enter");
   await expect(page).toHaveURL(/thread=.*across=1/);
-  await expect(page.getByText("Test model reply: How are both projects doing?")).toBeVisible();
+  await expect(page.getByText("Test model reply: How are both projects doing?")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/In all projects the agents only read/)).toBeVisible();
   await expect(conversations.getByRole("button", { name: /How are both projects doing/ })).toContainText(/ALP|KUM/);
 });

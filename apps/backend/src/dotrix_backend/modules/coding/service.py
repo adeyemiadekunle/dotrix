@@ -211,15 +211,25 @@ class CodingService:
     async def start(
         self, access: ProjectAccess, key: str, data: CodingRunCreate, *,
         thread_id: uuid.UUID | None = None, plan_id: uuid.UUID | None = None,
+        origin_run_id: uuid.UUID | None = None,
     ) -> CodingRunRead:
         """Ask for a coding run on an issue: a new session, waiting for an approval (or started at
         once, when the person's approval mode lets it go through). From a conversation in Build mode:
         that conversation, and the plan version it builds from."""
+        if thread_id:
+            await self.session.scalar(select(Project).where(Project.workspace_id == access.member.workspace_id,
+                                                           Project.id == access.project.id).with_for_update())
+            busy = await self.session.scalar(select(CodingRun.id).where(
+                CodingRun.workspace_id == access.member.workspace_id, CodingRun.thread_id == thread_id,
+                CodingRun.status.in_(ACTIVE)).limit(1))
+            if busy:
+                raise CodingBusy("Kai already has an active turn in this conversation")
         issue = await self._codable(access.project, access.member.user_id, key, location=data.location)
         run = await self._create(access.project, access.member, issue, data.note, CodingOrigin.START,
                                  approval=data.approval_mode, location=data.location,
                                  requested_agent=data.agent, requested_model=data.model)
         run.thread_id, run.plan_id = thread_id, plan_id
+        run.origin_run_id = origin_run_id
         return await self._settle(access, run)
 
     async def start_for_assignment(self, access: ProjectAccess, key: str) -> CodingRunRead | None:
@@ -236,7 +246,8 @@ class CodingService:
         await self.session.commit()
         return self._read(run, access)
 
-    async def follow_up(self, access: ProjectAccess, session_id: uuid.UUID, data: CodingFollowUp) -> CodingRunRead:
+    async def follow_up(self, access: ProjectAccess, session_id: uuid.UUID, data: CodingFollowUp, *,
+                        origin_run_id: uuid.UUID | None = None) -> CodingRunRead:
         """Another turn in a session: the same agent, on the session's branch, pushing to its PR
         (or opening one, if no turn has yet). It waits for an approval like the first."""
         # Where the session codes, unless told: its latest turn that coded (a revert codes nowhere).
@@ -245,6 +256,14 @@ class CodingService:
             CodingLocation.CLOUD,
         )
         turns, issue, with_branch, earlier = await self._next_turn(access, session_id, location=location)
+        thread_id = turns[-1].thread_id
+        if thread_id:
+            await self.session.scalar(select(Project).where(Project.workspace_id == access.member.workspace_id,
+                                                           Project.id == access.project.id).with_for_update())
+            if await self.session.scalar(select(CodingRun.id).where(
+                CodingRun.workspace_id == access.member.workspace_id, CodingRun.thread_id == thread_id,
+                CodingRun.status.in_(ACTIVE)).limit(1)):
+                raise CodingBusy("Kai already has an active turn in this conversation")
         previous = next(t for t in reversed(turns) if t.revert_of is None)
         selection = await self._selection(access.project, access.member.user_id, location,
                                           agent=previous.agent, model=previous.model, fixed=True)
@@ -253,6 +272,8 @@ class CodingService:
             session_id=session_id, turn=turns[-1].turn + 1, earlier=earlier, carry=with_branch,
             approval=data.approval_mode, location=location, selection=selection,
         )
+        run.thread_id, run.plan_id = thread_id, turns[-1].plan_id
+        run.origin_run_id = origin_run_id or turns[-1].origin_run_id
         return await self._settle(access, run)
 
     async def revert(self, access: ProjectAccess, run_id: uuid.UUID, data: CodingRevert) -> CodingRunRead:
@@ -362,7 +383,7 @@ class CodingService:
             workspace_id=project.workspace_id, project_id=project.id, issue_id=issue.id, issue_key=issue.key,
             turn=turn, origin=origin, agent=agent, model=model, location=location,
             status=CodingRunStatus.AWAITING_APPROVAL,
-            brief=await build_brief(self.session, project, issue, note, earlier),
+            brief=await build_brief(self.session, project, issue, note, earlier, user_id=member.user_id),
             note=note, repo_full_name=repo.full_name, base_branch=repo.default_branch,
             requested_by_id=member.user_id, created_at=datetime.now(UTC),
             # The mode this turn was asked in, as far as the workspace and the person allow.

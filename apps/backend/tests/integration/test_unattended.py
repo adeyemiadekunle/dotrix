@@ -20,12 +20,16 @@ WRITER = {
     "issue_types": ["bug"],
     "autonomy": {"knowledge.write": "allow", "issues.create": "allow", "issues.update": "allow"},
 }
+# Custom identities are retired: Nova (the project manager) carries the same contract here — it's
+# the one built-in whose core role covers writing documents and working the board.
+NOVA = "project-manager"
+NOVA_FIELDS = ("name", "description", "instructions", "tools", "access", "issue_types", "can_call")
 
 
 @pytest.fixture
 def world(db_client: AsyncClient, create_team, signup, add_member):
-    """Ada owns a team with project KUN and a Writer agent allowed to act unasked; Bob is an
-    admin, Cat a member."""
+    """Ada owns a team with project KUN and Nova allowed to act unasked; Bob is an
+    admin, Cat is a member."""
 
     async def _make():
         ada = await signup()
@@ -37,7 +41,10 @@ def world(db_client: AsyncClient, create_team, signup, add_member):
         ws = f"/v1/workspaces/{team['id']}"
         project = (await db_client.post(f"{ws}/projects", json={"key": "KUN", "name": "Kunemi"},
                                         headers=ada.headers)).json()
-        saved = await db_client.put(f"{ws}/agents/writer", json={"agent": WRITER}, headers=ada.headers)
+        nova = (await db_client.get(f"{ws}/agents/{NOVA}", headers=ada.headers)).json()
+        fields = {k: nova[k] for k in NOVA_FIELDS}
+        saved = await db_client.put(f"{ws}/agents/{NOVA}", json={"agent": fields | {"autonomy": WRITER["autonomy"]}},
+                                    headers=ada.headers)
         assert saved.status_code == 200, saved.text
         return ada, bob, cat, ws, f"{ws}/projects/{project['id']}"
 
@@ -45,8 +52,15 @@ def world(db_client: AsyncClient, create_team, signup, add_member):
 
 
 async def _ask(client: AsyncClient, base: str, headers, message: str = "do it") -> dict:
-    return (await client.post(f"{base}/agent/runs", json={"message": message, "agent": "writer"},
+    return (await client.post(f"{base}/agent/runs", json={"message": message, "agent": NOVA},
                               headers=headers)).json()
+
+
+async def _child(client: AsyncClient, base: str, run: dict, headers) -> dict:
+    """The specialist run Nova delegated to."""
+    tasks = (await client.get(f"{base}/agent/runs/{run['id']}/tasks", headers=headers)).json()
+    assert len(tasks) == 1, tasks
+    return (await client.get(f"{base}/agent/runs/{tasks[0]['id']}", headers=headers)).json()
 
 
 async def test_allowed_changes_go_through_recorded_as_the_owner_s_rule(
@@ -55,8 +69,8 @@ async def test_allowed_changes_go_through_recorded_as_the_owner_s_rule(
     ada, bob, _, ws, base = await world()
     issue = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Rotate keys"},
                                   headers=ada.headers)).json()
-    agent_script.say(
-        tool_call("write_file", file_path="/dotrix/reviews/auth.md", content="# Auth review\n"),
+    model = agent_script.say(
+        tool_call("write_file", file_path="/dotrix/progress/auth.md", content="# Auth review\n"),
         tool_call("write_file", file_path="/dotrix/requirements/auth.md", content="# Not mine\n"),
         tool_call("create_issue", type="bug", title="Token in logs", description="auth.py logs it"),
         tool_call("update_issue", key=issue["key"], status="in_progress"),
@@ -67,10 +81,10 @@ async def test_allowed_changes_go_through_recorded_as_the_owner_s_rule(
     assert run["status"] == "completed", run  # nothing waited for a person
     assert not run["approvals"]
     # Told what it may change unasked.
-    assert "What you may change without asking" in str(agent_script.model.received[0][0].content)
+    assert "What you may change without asking" in str(model.received[0][0].content)
 
-    history = (await db_client.get(f"{base}/knowledge/files/reviews/auth.md/versions", headers=ada.headers)).json()
-    assert history[0]["agent"] == "writer" and history[0]["approved_by_id"] == ada.id
+    history = (await db_client.get(f"{base}/knowledge/files/progress/auth.md/versions", headers=ada.headers)).json()
+    assert history[0]["agent"] == NOVA and history[0]["approved_by_id"] == ada.id
     assert history[0]["instructed_by_id"] == bob.id
     # Folder access still applies.
     assert (await db_client.get(f"{base}/knowledge/files/requirements/auth.md", headers=ada.headers)).status_code == 404
@@ -84,7 +98,7 @@ async def test_allowed_changes_go_through_recorded_as_the_owner_s_rule(
     assert allowed == {"knowledge.write.allowed", "issues.create.allowed", "issues.update.allowed"}
     write = next(e for e in audit if e["action"] == "knowledge.write.allowed")
     assert write["approved_by_id"] == ada.id and write["details"]["rule"] == {
-        "agent": "writer", "action": "knowledge.write", "version": 1,
+        "agent": NOVA, "action": "knowledge.write", "version": 1,
     }
 
 
@@ -92,7 +106,7 @@ async def test_paused_workspace_and_a_member_s_request_wait_for_approval(
     world, db_client: AsyncClient, agent_script
 ) -> None:
     ada, bob, cat, ws, base = await world()
-    write = tool_call("write_file", file_path="/dotrix/reviews/a.md", content="# A\n")
+    write = tool_call("write_file", file_path="/dotrix/progress/a.md", content="# A\n")
 
     # Cat can't edit documents herself, so the agent doesn't do it unasked for her.
     agent_script.say(write, "Done.")
@@ -116,12 +130,12 @@ async def test_an_automation_acts_unasked_only_with_its_own_switch(
 ) -> None:
     ada, bob, _, _, base = await world()
     made = (await db_client.post(f"{base}/automations", json={
-        "name": "Reviews", "agent": "writer", "instructions": "Write the review.", "schedule_hour": 6,
+        "name": "Reviews", "agent": NOVA, "instructions": "Write the review.", "schedule_hour": 6,
     }, headers=ada.headers)).json()
     assert made["unattended"] is False
     url = f"{base}/automations/{made['id']}"
 
-    agent_script.say(tool_call("write_file", file_path="/dotrix/reviews/a.md", content="# A\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/progress/a.md", content="# A\n"), "Done.")
     await db_client.post(f"{url}/run", headers=ada.headers)
     runs = (await db_client.get(f"{base}/agent/runs", headers=ada.headers)).json()
     assert runs[0]["status"] == "awaiting_approval"
@@ -132,11 +146,11 @@ async def test_an_automation_acts_unasked_only_with_its_own_switch(
     # Admins can't switch it on; owners can.
     assert (await db_client.patch(url, json={"unattended": True}, headers=bob.headers)).status_code == 403
     assert (await db_client.patch(url, json={"unattended": True}, headers=ada.headers)).json()["unattended"] is True
-    agent_script.say(tool_call("write_file", file_path="/dotrix/reviews/b.md", content="# B\n"), "Done.")
+    agent_script.say(tool_call("write_file", file_path="/dotrix/progress/b.md", content="# B\n"), "Done.")
     await db_client.post(f"{url}/run", headers=ada.headers)
     runs = (await db_client.get(f"{base}/agent/runs", headers=ada.headers)).json()
     assert runs[0]["status"] == "completed", runs[0]
-    assert (await db_client.get(f"{base}/knowledge/files/reviews/b.md", headers=ada.headers)).status_code == 200
+    assert (await db_client.get(f"{base}/knowledge/files/progress/b.md", headers=ada.headers)).status_code == 200
 
 
 def _member(role: Role, permissions: list[str] | None = None) -> Membership:
@@ -180,10 +194,16 @@ def test_what_a_run_may_use_and_the_cap() -> None:
 
 async def test_always_allow_from_a_waiting_change(world, db_client: AsyncClient, agent_script) -> None:
     ada, bob, _, ws, base = await world()
+    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
     # Lyra (product) asks before writing; owners can turn that into a standing rule from the change.
-    agent_script.say(tool_call("write_file", file_path="/dotrix/requirements/a.md", content="# A\n"), "Done.")
-    run = (await db_client.post(f"{base}/agent/runs", json={"message": "write it", "agent": "product"},
-                                headers=ada.headers)).json()
+    agent_script.say(
+        tool_call("delegate_tasks", tasks=[{"key": "product", "agent": "product", "brief": "write it",
+                                          "expected_result": "Done", "changes_project": True}]),
+        tool_call("write_file", file_path="/dotrix/requirements/a.md", content="# A\n"), "Done.", "Nova sums up.",
+    )
+    parent = (await db_client.post(f"{base}/agent/runs", json={"message": "write it", "agent": "product"},
+                                   headers=ada.headers)).json()
+    run = await _child(db_client, base, parent, ada.headers)
     change = run["approvals"][0]
     assert run["status"] == "awaiting_approval"
     assert change["agent"] == "product" and change["action"] == "knowledge.write"
@@ -195,12 +215,22 @@ async def test_always_allow_from_a_waiting_change(world, db_client: AsyncClient,
     assert allowed.json()["autonomy"] == {"knowledge.write": "allow"} and allowed.json()["source"] == "customised"
     history = (await db_client.get(f"{ws}/agents/product/versions", headers=ada.headers)).json()
     assert history[0]["note"].startswith("Always allow knowledge.write")
-    # The change itself still waits; the next one goes straight through.
+    # The change itself still waits; once it's settled the next one goes straight through.
     assert (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=ada.headers)).json()["status"] == "awaiting_approval"
-    agent_script.say(tool_call("write_file", file_path="/dotrix/requirements/b.md", content="# B\n"), "Done.")
+    await db_client.post(f"{base}/agent/runs/{run['id']}/decisions", headers=ada.headers,
+                         json={"decisions": [{"approval_id": change["id"], "decision": "approve"}]})
+    agent_script.say(
+        tool_call("delegate_tasks", tasks=[{"key": "product", "agent": "product", "brief": "and b",
+                                          "expected_result": "Done", "changes_project": True}]),
+        tool_call("write_file", file_path="/dotrix/requirements/b.md", content="# B\n"),
+        tool_call("submit_specialist_result", summary="Done", evidence=["requirements/b.md"]),
+        "Done.", "Nova sums up.",
+    )
     second = (await db_client.post(f"{base}/agent/runs", json={"message": "and b", "agent": "product"},
                                    headers=ada.headers)).json()
-    assert second["status"] == "completed", second
+    second_child = await _child(db_client, base, second, ada.headers)
+    assert second_child["status"] == "completed", second_child
+    assert not [a for a in second_child["approvals"] if a["status"] == "pending"]
 
     # An id that isn't one of this run's changes is 404.
     assert (await db_client.post(f"{base}/agent/runs/{run['id']}/approvals/{uuid.uuid4()}/always-allow",
@@ -213,9 +243,15 @@ async def test_a_project_override_gets_the_rule_not_the_workspace(world, db_clie
     fields = {k: product[k] for k in ("name", "description", "instructions", "tools", "access", "issue_types", "can_call")}
     assert (await db_client.put(f"{base}/agents/product", json={"agent": fields | {"description": "Ours."}},
                                 headers=ada.headers)).status_code == 200
-    agent_script.say(tool_call("write_file", file_path="/dotrix/requirements/a.md", content="# A\n"), "Done.")
-    run = (await db_client.post(f"{base}/agent/runs", json={"message": "write it", "agent": "product"},
-                                headers=ada.headers)).json()
+    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
+    agent_script.say(
+        tool_call("delegate_tasks", tasks=[{"key": "product", "agent": "product", "brief": "write it",
+                                          "expected_result": "Done", "changes_project": True}]),
+        tool_call("write_file", file_path="/dotrix/requirements/a.md", content="# A\n"), "Done.", "Nova sums up.",
+    )
+    parent = (await db_client.post(f"{base}/agent/runs", json={"message": "write it", "agent": "product"},
+                                   headers=ada.headers)).json()
+    run = await _child(db_client, base, parent, ada.headers)
     url = f"{base}/agent/runs/{run['id']}/approvals/{run['approvals'][0]['id']}/always-allow"
     saved = (await db_client.post(url, headers=ada.headers)).json()
     assert saved["scope"] == "project" and saved["autonomy"] == {"knowledge.write": "allow"}

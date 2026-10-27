@@ -190,14 +190,26 @@ async def test_people_touch_up_agents_for_themselves_within_limits(world, db_cli
     long = await db_client.put(f"{url}/product", json={"instructions": "x" * 2001}, headers=bob.headers)
     assert long.status_code == 422
 
-    # His runs with Lyra carry them; the contract itself is unchanged, and Ada's runs don't.
-    model = agent_script.say("Stories.")
+    # His runs with Lyra carry them: Nova involves the product specialist, whose prompt keeps
+    # his way of working; the contract itself is unchanged, and Ada's runs don't carry it.
+    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
+    model = agent_script.say(
+        tool_call("delegate_tasks", tasks=[{"key": "stories", "agent": "product", "brief": "stories",
+                                          "expected_result": "Stories"}]),
+        "Stories.",
+        "Nova sums up.",
+    )
     await _ask(db_client, base, bob.headers, "stories please", agent="product")
-    prompt = str(model.received[0][0].content)
+    prompt = str(model.received[1][0].content)
     assert "How Bob likes you to work" in prompt and "British English" in prompt
-    model = agent_script.say("Stories.")
+    model = agent_script.say(
+        tool_call("delegate_tasks", tasks=[{"key": "stories", "agent": "product", "brief": "stories",
+                                          "expected_result": "Stories"}]),
+        "Stories.",
+        "Nova sums up.",
+    )
     await _ask(db_client, base, ada.headers, "stories please", agent="product")
-    assert "British English" not in str(model.received[0][0].content)
+    assert "British English" not in str(model.received[1][0].content)
     assert (await db_client.get(f"{ws}/agents/product", headers=ada.headers)).json()["source"] == "built_in"
 
     # They're his alone.

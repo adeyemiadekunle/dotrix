@@ -925,6 +925,18 @@ class CodingWorker:
         touch the coding run."""
         if self.reviewer is None:
             return
+        async with self.session_factory() as session:
+            linked = await session.get(CodingRun, run_id)
+            if linked is not None and linked.origin_run_id:
+                from dotrix_backend.modules.agents.models import AgentRun
+                origin = await session.scalar(select(AgentRun).where(AgentRun.workspace_id == linked.workspace_id,
+                    AgentRun.id == linked.origin_run_id, AgentRun.orchestration.is_(True)))
+            else:
+                origin = None
+            if origin is not None:
+                from dotrix_backend.modules.agents.coding_outcomes import sync_coding_outcomes
+                await sync_coding_outcomes(self.reviewer)
+                return
         from dotrix_backend.modules.agents.schemas import RunCreate
         from dotrix_backend.modules.agents.service import AgentService
         from dotrix_engine.permissions import REVIEWER

@@ -37,7 +37,7 @@ KEEP_EVENTS = 2_000  # a run's latest; older ones are pruned when a step ends
 PAGE_MAX = 500
 POLL_SECONDS = 1.0
 HEARTBEAT_SECONDS = 15.0
-ACTIVE = (RunStatus.QUEUED, RunStatus.RUNNING)
+ACTIVE = (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_CHILDREN)
 
 
 async def add_event(

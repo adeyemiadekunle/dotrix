@@ -115,6 +115,10 @@ class AutomationService:
         fields = data.model_fields_set
         if "agent" in fields and data.agent is not None:
             row.agent = await self._agent(access.project, data.agent)
+            if (row.last_error or "").startswith("Custom agents are no longer supported"):
+                row.last_error = None
+        if data.enabled is True:
+            await self._agent(access.project, row.agent or "auto")
         if "unattended" in fields and data.unattended is not None:
             row.unattended = _unattended(access, data.unattended, row.unattended)
         if "max_runs_per_day" in fields:
@@ -149,6 +153,7 @@ class AutomationService:
     async def run_now(self, access: ProjectAccess, automation_id: uuid.UUID) -> AutomationRead:
         """Start it once, now (owners and admins), whatever its events and schedule."""
         row = await self._get(access.project, automation_id)
+        await self._agent(access.project, row.agent or "auto")
         await self._fire(row, "now, started by hand", [])
         await self.session.commit()
         await self.session.refresh(row)

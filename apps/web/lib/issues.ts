@@ -197,7 +197,7 @@ export function useMembers(workspaceId: string | undefined) {
  * Refresh everything issue-shaped in the project, the lists across projects (Home, My issues,
  * Tasks), and the activity feeds; show the API's reason when it says no.
  */
-function useIssueMutation<Vars>(scope: Scope | undefined, fn: (scope: Scope, vars: Vars) => Promise<unknown>) {
+function useIssueMutation<Vars, Result = unknown>(scope: Scope | undefined, fn: (scope: Scope, vars: Vars) => Promise<Result>) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (vars: Vars) => fn(scope!, vars),

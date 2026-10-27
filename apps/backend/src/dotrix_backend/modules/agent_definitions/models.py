@@ -70,3 +70,18 @@ class AgentPreference(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin,
     handle: Mapped[str] = mapped_column(String(32))
     instructions: Mapped[str] = mapped_column(String(2000), default="", server_default="")
     model: Mapped[str | None] = mapped_column(String(100))
+    version: Mapped[int] = mapped_column(default=1, server_default="1")
+
+
+class AgentPreferenceVersion(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """Private history of a person's guidance, including resets."""
+
+    __tablename__ = "agent_preference_versions"
+    __table_args__ = (UniqueConstraint("workspace_id", "user_id", "handle", "version"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    handle: Mapped[str] = mapped_column(String(32))
+    version: Mapped[int]
+    instructions: Mapped[str] = mapped_column(String(2000), default="", server_default="")
+    model: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

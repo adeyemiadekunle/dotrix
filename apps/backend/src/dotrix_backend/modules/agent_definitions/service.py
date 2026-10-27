@@ -16,7 +16,7 @@ from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.workspaces.models import Membership, Role
 from dotrix_engine import catalog
-from dotrix_engine.builtins import builtin
+from dotrix_engine.builtins import builtin, configure_builtin
 from dotrix_engine.contracts import RESERVED_HANDLES, AgentSpec
 from dotrix_engine.outputs import PIPELINES
 from dotrix_engine.outputs import SCHEMAS as OUTPUT_SCHEMAS
@@ -52,8 +52,11 @@ def _fields(spec: AgentSpec) -> AgentFields:
 
 
 def _read(agent: ResolvedAgent) -> AgentRead:
+    fields = _fields(agent.spec).model_dump()
+    fields["additional_instructions"] = agent.own_guidance
     return AgentRead(
-        **_fields(agent.spec).model_dump(),
+        **fields,
+        available_tools=builtin(agent.spec.handle).tools if builtin(agent.spec.handle) else [],
         handle=agent.spec.handle,
         base=agent.spec.base,
         source=agent.source,
@@ -105,15 +108,24 @@ class AgentDefinitionService:
         available_models: list[str] | None = None,
         note: str | None = None,
     ) -> AgentRead:
-        """Create a custom agent, or change one (a built-in's first change creates its definition)."""
+        """Save permitted configuration and additional guidance for a protected built-in role."""
         workspace_id = member.workspace_id
         base = builtin(handle)
-        if handle == "auto" or (base is None and handle in RESERVED_HANDLES):
-            raise InvalidAgent(f"{handle!r} is reserved; choose another handle")
+        if base is None:
+            raise InvalidAgent("Custom agents are no longer supported; configure a built-in agent")
+        if data.agent.instructions != base.instructions:
+            raise InvalidAgent("Built-in instructions are read-only; use additional_instructions")
+        if handle == "coding-agent" and data.agent.model is not None:
+            raise InvalidAgent("Choose Kai's coding tool and model in Your models")
+        if set(data.agent.tools) - set(base.tools):
+            raise InvalidAgent("A built-in cannot be given tools outside its core role")
+        if any(h != "*" and (builtin(h) is None or h == "coding-agent") for h in data.agent.can_call):
+            raise InvalidAgent("Only built-in specialists may receive delegated work")
         try:
             spec = AgentSpec.model_validate(
                 data.agent.model_dump() | {"handle": handle, "base": handle if base else None}
             )
+            spec = configure_builtin(spec)
         except ValidationError as exc:
             raise InvalidAgent("; ".join(_messages(exc))) from exc
         if spec.model and available_models is not None and spec.model not in available_models:
@@ -128,7 +140,7 @@ class AgentDefinitionService:
                 f"{handle} changed since you opened it (now version {definition.current_version}); reload and try again"
             )
         current = await self._find(workspace_id, project_id, handle)
-        previous = current.spec if current else None
+        previous = current.spec.model_copy(update={"additional_instructions": current.own_guidance}) if current else None
         # A version carries its author's approval for what it allows: adding any allow, or saving
         # a version that keeps one beyond the low-risk actions, is an owner's call.
         if member.role is not Role.OWNER and (
@@ -195,11 +207,13 @@ class AgentDefinitionService:
         *, available_models: list[str] | None = None,
     ) -> AgentRead:
         """Save an earlier version as the new current one."""
+        if builtin(handle) is None:
+            raise InvalidAgent("Custom agents can no longer be restored")
         definition = await self._definition(member.workspace_id, project_id, handle)
         old = await self.repo.version(definition, version)
         if old is None:
             raise NotFound(f"{handle} has no version {version}")
-        fields = AgentFields.model_validate({k: v for k, v in old.spec.items() if k in AgentFields.model_fields})
+        fields = _fields(configure_builtin(AgentSpec.model_validate(old.spec | {"handle": handle})))
         base_version = definition.current_version if definition.archived_at is None else None
         return await self.save(
             member, project_id, handle, AgentSave(agent=fields, base_version=base_version),
@@ -224,6 +238,7 @@ class AgentDefinitionService:
         if agent.spec.allowed(action):
             return _read(agent)
         fields = _fields(agent.spec)
+        fields.additional_instructions = agent.own_guidance
         fields.autonomy = {**fields.autonomy, action: "allow"}
         return await self.save(
             member,
@@ -234,6 +249,8 @@ class AgentDefinitionService:
         )
 
     async def _find(self, workspace_id: uuid.UUID, project_id: uuid.UUID | None, handle: str) -> ResolvedAgent | None:
+        if handle == "coding-agent":
+            return await self.repo.coding_configuration(workspace_id, project_id)
         return next((a for a in await self.repo.resolve(workspace_id, project_id) if a.spec.handle == handle), None)
 
     async def _resolved(self, workspace_id: uuid.UUID, project_id: uuid.UUID | None, handle: str) -> ResolvedAgent:

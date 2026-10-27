@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from dotrix_engine.contracts import Autonomy
 from dotrix_engine.permissions import Access
 
-AgentSource = Literal["built_in", "customised", "custom"]
+AgentSource = Literal["built_in", "customised"]
 AgentScope = Literal["default", "workspace", "project"]
 
 
@@ -19,6 +19,7 @@ class AgentFields(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     description: str = Field(default="", max_length=200)
     instructions: str = Field(min_length=1, max_length=20_000, description="Its role prompt (Markdown)")
+    additional_instructions: str = Field(default="", max_length=20_000, description="Additional guidance; the built-in role is protected")
     model: str | None = Field(default=None, max_length=100, description="provider:model; null uses the run's model")
     budget_tokens: int | None = Field(default=None, description="Tokens one run it leads may use; null: the project's")
     tools: list[str] = Field(description="Tool ids from `GET .../agents/catalog`")
@@ -48,8 +49,9 @@ class AgentSave(BaseModel):
 
 class AgentRead(AgentFields):
     handle: str
-    base: str | None = Field(description="The built-in it's based on, or null for a custom agent")
-    source: AgentSource = Field(description="built_in (the default), customised (a changed built-in), or custom")
+    base: str | None = Field(description="Its protected built-in identity")
+    available_tools: list[str] = Field(description="The core role's permitted tools; configuration may restrict this set")
+    source: AgentSource = Field(description="built_in (the default), or customised (a changed built-in)")
     scope: AgentScope = Field(
         description="Where it's defined: default (built in), workspace, or project (an override for one project)"
     )
@@ -94,4 +96,10 @@ class AgentPreferenceSave(BaseModel):
 
 class AgentPreferenceRead(AgentPreferenceSave):
     handle: str
+    version: int | None = None
     updated_at: datetime | None = None
+
+
+class AgentPreferenceVersionRead(AgentPreferenceSave):
+    version: int
+    created_at: datetime

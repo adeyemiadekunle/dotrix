@@ -13,6 +13,7 @@ from dotrix_backend.modules.agents.router import router as agents
 from dotrix_backend.modules.agents.router import threads_router as workspace_threads
 from dotrix_backend.modules.agents.router import usage_router as workspace_agent_usage
 from dotrix_backend.modules.agents.router import workspace_router as workspace_approvals
+from dotrix_backend.modules.agents.team_api import router as agent_team
 from dotrix_backend.modules.api_tokens.router import device_router, tokens_router
 from dotrix_backend.modules.audit.router import router as audit
 from dotrix_backend.modules.auth.router import me_router
@@ -90,3 +91,5 @@ for module_router in (
     observe,
 ):
     router.include_router(module_router)
+
+router.include_router(agent_team)

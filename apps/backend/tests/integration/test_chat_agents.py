@@ -1,4 +1,4 @@
-"""Chat with the team: pick who answers (Auto or one specialist), and the model per conversation."""
+"""Chat with Nova, ask for specialists, and keep the model fixed per conversation."""
 import pytest
 from cryptography.fernet import Fernet
 from httpx import AsyncClient
@@ -54,17 +54,18 @@ async def send(client: AsyncClient, base: str, headers, message: str = "hello", 
     return await client.post(f"{base}/agent/runs", json={"message": message, **extra}, headers=headers)
 
 
-async def test_a_specialist_answers_directly(project, db_client: AsyncClient, agent_script) -> None:
+async def test_a_specialist_mention_keeps_nova_as_coordinator(project, db_client: AsyncClient, agent_script) -> None:
     ada, team, base = await project()
     model = agent_script.say("Three competitors ship multi-zone already.")
     done = (await send(db_client, base, ada.headers, "Who else does multi-zone?", agent="research")).json()
-    assert done["status"] == "completed" and done["agent"] == "research"
+    assert done["status"] == "completed" and done["agent"] == "auto"
     assert done["reply"] == "Three competitors ship multi-zone already."
     system = str(model.received[0][0].content)
-    assert "You are Vega, the research agent" in system and "You're in the project's chat" in system
-    assert [a["agent"] for a in done["breakdown"]["by_agent"]] == ["research"]  # no PM hop
+    assert "You are Nova" in system and "You're in the project's chat" in system
+    assert "involve research" in str(model.received[0][-1].content)
+    assert [a["agent"] for a in done["breakdown"]["by_agent"]] == ["project-manager"]
     events = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
-    assert next(e for e in events if e["action"] == "agent_run.completed")["agent"] == "research"
+    assert next(e for e in events if e["action"] == "agent_run.completed")["agent"] == "project-manager"
     # Auto is the Project Manager, as before.
     agent_script.say("On track.")
     auto = (await send(db_client, base, ada.headers, "Status?")).json()
@@ -73,15 +74,21 @@ async def test_a_specialist_answers_directly(project, db_client: AsyncClient, ag
 
 async def test_a_specialists_writes_are_its_own(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
+    db_client._transport.app.state.runner.settings.durable_delegation = True
     agent_script.say(
+        tool_call("delegate_tasks", tasks=[{"key": "zones", "agent": "product", "brief": "Write up zones",
+                                          "expected_result": "Requirements", "changes_project": True}]),
         tool_call("write_file", file_path="/dotrix/requirements/zones.md", content="# Zones\n"),
         "Drafted the zones requirements.",
+        "Product drafted the requirements.",
     )
     paused = (await send(db_client, base, ada.headers, "Write up zones", agent="product")).json()
-    assert paused["status"] == "awaiting_approval"
-    pending = paused["approvals"][0]
+    assert paused["status"] == "waiting_children"
+    tasks = (await db_client.get(f"{base}/agent/runs/{paused['id']}/tasks", headers=ada.headers)).json()
+    child = (await db_client.get(f"{base}/agent/runs/{tasks[0]['id']}", headers=ada.headers)).json()
+    pending = child["approvals"][0]
     decided = await db_client.post(
-        f"{base}/agent/runs/{paused['id']}/decisions",
+        f"{base}/agent/runs/{child['id']}/decisions",
         json={"decisions": [{"approval_id": pending["id"], "decision": "approve"}]},
         headers=ada.headers,
     )
@@ -92,15 +99,21 @@ async def test_a_specialists_writes_are_its_own(project, db_client: AsyncClient,
 
 async def test_a_specialist_stays_in_its_folders(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
+    db_client._transport.app.state.runner.settings.durable_delegation = True
     agent_script.say(
+        tool_call("delegate_tasks", tasks=[{"key": "architecture", "agent": "research", "brief": "Change the architecture",
+                                          "expected_result": "Report", "changes_project": True}]),
         tool_call("write_file", file_path="/dotrix/architecture/overview.md", content="# Changed"),
         "Couldn't change architecture.",
+        "Research could not change architecture.",
     )
     paused = (await send(db_client, base, ada.headers, "Change the architecture", agent="research")).json()
+    tasks = (await db_client.get(f"{base}/agent/runs/{paused['id']}/tasks", headers=ada.headers)).json()
+    child = (await db_client.get(f"{base}/agent/runs/{tasks[0]['id']}", headers=ada.headers)).json()
     done = (
         await db_client.post(
-            f"{base}/agent/runs/{paused['id']}/decisions",
-            json={"decisions": [{"approval_id": paused["approvals"][0]["id"], "decision": "approve"}]},
+            f"{base}/agent/runs/{child['id']}/decisions",
+            json={"decisions": [{"approval_id": child["approvals"][0]["id"], "decision": "approve"}]},
             headers=ada.headers,
         )
     ).json()

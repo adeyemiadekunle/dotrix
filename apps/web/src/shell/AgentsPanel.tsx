@@ -8,6 +8,8 @@ import { go } from "../core/nav";
 import { presence, today, type Presence } from "../core/presence";
 import { S, me, render, save } from "../data/store";
 import { Face } from "../ui/face";
+import { useAgentActivity, useBuiltinTeam } from "@/lib/team";
+import { isLive, live } from "../data/live";
 
 const WIDE = "(min-width: 1200px)";
 const panelWide = () => typeof window !== "undefined" && window.matchMedia(WIDE).matches;
@@ -34,9 +36,9 @@ const LABEL: Record<Presence["state"], string> = { needs: "Needs you", working: 
 
 function openWork(p: Presence) {
   S.ui.agentsSheet = false;
-  if (p.thread) go("chat", {}, { search: `thread=${p.thread}` });
+  if (p.thread) go("chat", {}, { search: `thread=${p.thread}${p.project ? `&project=${p.project}` : ""}${p.review ? "&panel=review" : ""}` });
   else if (p.session) go("chat", {}, { search: `tab=coding&session=${p.session}` });
-  else go("chat", {}, { search: `new=1&agent=${p.id}` });
+  else go("chat", {}, { search: `new=1&agent=${p.id}${p.review ? "&panel=review" : ""}` });
 }
 
 function Row({ p }: { p: Presence }) {
@@ -96,7 +98,15 @@ function Group({ title, list }: { title: string; list: Presence[] }) {
 }
 
 export function AgentsPanel() {
-  const all = presence();
+  const workspaceId = isLive() ? live.ws?.id : undefined;
+  const activity = useAgentActivity(workspaceId);
+  const roster = useBuiltinTeam(workspaceId);
+  const all = presence(activity.data ?? []).map((item) => {
+    const role = roster.data?.find(
+      (agent) => agent.handle === (item.id === "auto" ? "project-manager" : item.id === "agent:coding-agent" ? "coding-agent" : item.id),
+    );
+    return role ? { ...item, name: role.name, role: role.role } : item;
+  });
   const by = (st: Presence["state"][]) => all.filter((p) => st.includes(p.state));
   const t = today();
   const admin = me()?.role === "Owner" || me()?.role === "Admin";
@@ -113,6 +123,7 @@ export function AgentsPanel() {
         </button>
       </div>
       <div className="ap-body">
+        <p className="ap-team-note">7 built-in agents · Nova leads the team</p>
         <Group title="Needs you" list={by(["needs", "blocked"])} />
         <Group title="Working" list={by(["working"])} />
         <Group title="Free" list={by(["idle"])} />

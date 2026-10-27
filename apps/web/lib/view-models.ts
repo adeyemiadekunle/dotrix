@@ -242,6 +242,8 @@ export const toAutomation = (a: Schemas["AutomationRead"]): Automation => ({
   trigger: triggerLabel(a),
   enabled: a.enabled,
   unattended: a.unattended,
+  last: a.last_run_at ? ms(a.last_run_at) : undefined,
+  lastError: a.last_error ?? undefined,
 });
 
 export function toKnowledge(f: Schemas["FileRead"], pid: string): KnowledgeFile {
@@ -279,7 +281,7 @@ export function toAgent(a: Schemas["AgentRead"]): Agent {
     desc: a.description,
     icon: look?.icon ?? "bot",
     c: look?.c ?? "#57544E",
-    builtIn: a.source !== "custom",
+    builtIn: true,
     customised: a.source === "customised",
     tools: a.tools,
     model: a.model ?? undefined,

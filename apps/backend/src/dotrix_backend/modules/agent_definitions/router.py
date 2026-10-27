@@ -21,6 +21,7 @@ from .schemas import (
     AgentCatalog,
     AgentPreferenceRead,
     AgentPreferenceSave,
+    AgentPreferenceVersionRead,
     AgentRead,
     AgentSave,
     AgentVersionRead,
@@ -42,7 +43,7 @@ Handle = Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]{1,30}$", description="The
 
 @router.get("")
 async def list_agents(member: Viewer, session: SessionDep) -> list[AgentRead]:
-    """The workspace's agents: the six built-ins (as they are here) and its custom agents."""
+    """The six thinking-agent configurations. The team roster also includes Kai."""
     return await AgentDefinitionService(session).list(member.workspace_id)
 
 
@@ -64,7 +65,7 @@ async def save_agent(
     handle: Handle, data: AgentSave, member: Manager, session: SessionDep, settings: SettingsDep,
     connected: Connected,
 ) -> AgentRead:
-    """Create a custom agent, or change one (a built-in's first change makes it customised).
+    """Configure a built-in agent (its first change makes it customised).
     Owners and admins; only owners let an agent act without asking (`allow`). Each save is a new
     version; send the `version` you edited as `base_version` (409 `agent_changed` otherwise).
     422 `invalid_agent` with the reason when the contract breaks a rule."""
@@ -75,7 +76,7 @@ async def save_agent(
 
 @router.delete("/{handle}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403))
 async def delete_agent(handle: Handle, member: Manager, session: SessionDep) -> None:
-    """Remove a custom agent, or reset a built-in to its default. Its history is kept."""
+    """Reset a built-in to its default. Its history is kept."""
     await AgentDefinitionService(session).delete(member, None, handle)
 
 
@@ -116,7 +117,7 @@ async def save_project_agent(
     handle: Handle, data: AgentSave, access: ProjectManager, session: SessionDep, settings: SettingsDep,
     connected: Connected,
 ) -> AgentRead:
-    """Override an agent for this project only, or create an agent only this project has."""
+    """Override permitted configuration for one built-in agent in this project."""
     return await AgentDefinitionService(session).save(
         access.member, access.project.id, handle, data,
         available_models=available_models(settings, access.project.model, connected=connected),
@@ -125,8 +126,7 @@ async def save_project_agent(
 
 @project_router.delete("/{handle}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403))
 async def delete_project_agent(handle: Handle, access: ProjectManager, session: SessionDep) -> None:
-    """Drop this project's override (the workspace's agent applies again), or remove an agent
-    only this project had."""
+    """Drop this project's override; the workspace's built-in configuration applies again."""
     await AgentDefinitionService(session).delete(access.member, access.project.id, handle)
 
 
@@ -160,6 +160,12 @@ async def list_my_agent_preferences(member: Chatter, session: SessionDep) -> lis
     """Your own preferences for this workspace's agents: extra instructions and a model, for the
     runs you start. Agents you haven't touched aren't listed."""
     return await AgentPreferences(session).list(member)
+
+
+@mine_router.get("/{handle}/versions")
+async def list_my_agent_preference_versions(handle: Handle, member: Chatter, session: SessionDep) -> list[AgentPreferenceVersionRead]:
+    """Your private guidance history for a built-in agent, including resets."""
+    return await AgentPreferences(session).versions(member, handle)
 
 
 @mine_router.put("/{handle}", responses=errors(403, 422))

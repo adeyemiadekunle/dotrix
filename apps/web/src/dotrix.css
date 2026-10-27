@@ -564,6 +564,73 @@
   animation: tipIn 0.12s 0.2s both;
 }
 
+.ap-team-note {
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.work-panel-nav {
+  margin: 8px 12px;
+  flex-shrink: 0;
+}
+.review-panel-head {
+  min-height: 42px;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.review-panel > select {
+  margin: 8px 12px;
+  width: calc(100% - 24px);
+}
+.review-finding {
+  margin-bottom: 12px;
+  padding: 12px;
+}
+.review-finding h3 {
+  margin: 8px 0;
+  font-size: 13px;
+}
+.review-finding p,
+.review-finding li {
+  overflow-wrap: anywhere;
+}
+.review-evidence {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.review-evidence dt {
+  color: var(--muted);
+}
+.review-evidence dd {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.specialist-tasks {
+  margin: 6px 0 14px 36px;
+}
+.specialist-task {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 6px);
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.specialist-task summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+}
+.specialist-task summary .badge {
+  margin-left: auto;
+}
+.specialist-task p,
+.specialist-task li {
+  overflow-wrap: anywhere;
+}
+
 /* The agents panel (shell/AgentsPanel.tsx): a third column on wide screens, a sheet otherwise. */
 .shell.with-agents {
   grid-template-columns: var(--side-w) minmax(0, 1fr) 300px;

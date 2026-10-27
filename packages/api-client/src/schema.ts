@@ -1618,7 +1618,7 @@ export interface paths {
         };
         /**
          * List Agents
-         * @description The workspace's agents: the six built-ins (as they are here) and its custom agents.
+         * @description The six thinking-agent configurations. The team roster also includes Kai.
          */
         get: operations["list_agents"];
         put?: never;
@@ -1664,7 +1664,7 @@ export interface paths {
         get: operations["get_agent"];
         /**
          * Save Agent
-         * @description Create a custom agent, or change one (a built-in's first change makes it customised).
+         * @description Configure a built-in agent (its first change makes it customised).
          *     Owners and admins; only owners let an agent act without asking (`allow`). Each save is a new
          *     version; send the `version` you edited as `base_version` (409 `agent_changed` otherwise).
          *     422 `invalid_agent` with the reason when the contract breaks a rule.
@@ -1673,7 +1673,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Agent
-         * @description Remove a custom agent, or reset a built-in to its default. Its history is kept.
+         * @description Reset a built-in to its default. Its history is kept.
          */
         delete: operations["delete_agent"];
         options?: never;
@@ -1755,14 +1755,13 @@ export interface paths {
         get: operations["get_project_agent"];
         /**
          * Save Project Agent
-         * @description Override an agent for this project only, or create an agent only this project has.
+         * @description Override permitted configuration for one built-in agent in this project.
          */
         put: operations["save_project_agent"];
         post?: never;
         /**
          * Delete Project Agent
-         * @description Drop this project's override (the workspace's agent applies again), or remove an agent
-         *     only this project had.
+         * @description Drop this project's override; the workspace's built-in configuration applies again.
          */
         delete: operations["delete_project_agent"];
         options?: never;
@@ -1823,6 +1822,26 @@ export interface paths {
          *     runs you start. Agents you haven't touched aren't listed.
          */
         get: operations["list_my_agent_preferences"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/my-agents/{handle}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Agent Preference Versions
+         * @description Your private guidance history for a built-in agent, including resets.
+         */
+        get: operations["list_my_agent_preference_versions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4324,6 +4343,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/agent-team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Builtin Team
+         * @description The seven built-in identities. Kai executes coding rather than a thinking-agent graph.
+         */
+        get: operations["get_builtin_team"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Specialist Tasks
+         * @description The private specialist tasks beneath a coordinator's message, with saved results.
+         */
+        get: operations["list_specialist_tasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/agent/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Private Agent Activity
+         * @description Recent agent activity in conversations the caller owns, restricted to visible projects.
+         */
+        get: operations["list_private_agent_activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4417,6 +4496,40 @@ export interface components {
          * @enum {string}
          */
         ActivityKind: "issue.created" | "issue.updated" | "issue.commented" | "issue.claimed" | "document.changed" | "document.deleted" | "run.started" | "approval.decided";
+        /** AgentActivityRead */
+        AgentActivityRead: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Parent Run Id */
+            parent_run_id: string | null;
+            /** Thread Id */
+            thread_id: string | null;
+            /** Session Id */
+            session_id?: string | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Key */
+            project_key: string;
+            /** Agent */
+            agent: string;
+            /** Status */
+            status: components["schemas"]["RunStatus"] | components["schemas"]["CodingRunStatus"];
+            /** Title */
+            title: string;
+            /** Source */
+            source: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /**
          * AgentAssignee
          * @description Agents that appear as assignable members.
@@ -4477,6 +4590,12 @@ export interface components {
              * @description Its role prompt (Markdown)
              */
             instructions: string;
+            /**
+             * Additional Instructions
+             * @description Additional guidance; the built-in role is protected
+             * @default
+             */
+            additional_instructions: string;
             /**
              * Model
              * @description provider:model; null uses the run's model
@@ -4543,6 +4662,8 @@ export interface components {
             model?: string | null;
             /** Handle */
             handle: string;
+            /** Version */
+            version?: number | null;
             /** Updated At */
             updated_at?: string | null;
         };
@@ -4560,6 +4681,27 @@ export interface components {
              */
             model?: string | null;
         };
+        /** AgentPreferenceVersionRead */
+        AgentPreferenceVersionRead: {
+            /**
+             * Instructions
+             * @description How you like this agent to work (tone, format, what to focus on); added to its instructions for the runs you start. It can't change what the agent may do
+             * @default
+             */
+            instructions: string;
+            /**
+             * Model
+             * @description Its model for your runs; null: as set for the workspace
+             */
+            model?: string | null;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** AgentRead */
         AgentRead: {
             /** Name */
@@ -4574,6 +4716,12 @@ export interface components {
              * @description Its role prompt (Markdown)
              */
             instructions: string;
+            /**
+             * Additional Instructions
+             * @description Additional guidance; the built-in role is protected
+             * @default
+             */
+            additional_instructions: string;
             /**
              * Model
              * @description provider:model; null uses the run's model
@@ -4628,15 +4776,20 @@ export interface components {
             handle: string;
             /**
              * Base
-             * @description The built-in it's based on, or null for a custom agent
+             * @description Its protected built-in identity
              */
             base: string | null;
             /**
+             * Available Tools
+             * @description The core role's permitted tools; configuration may restrict this set
+             */
+            available_tools: string[];
+            /**
              * Source
-             * @description built_in (the default), customised (a changed built-in), or custom
+             * @description built_in (the default), or customised (a changed built-in)
              * @enum {string}
              */
-            source: "built_in" | "customised" | "custom";
+            source: "built_in" | "customised";
             /**
              * Scope
              * @description Where it's defined: default (built in), workspace, or project (an override for one project)
@@ -4668,6 +4821,19 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Parent Run Id */
+            parent_run_id?: string | null;
+            /**
+             * Source
+             * @default user
+             */
+            source: string;
+            review_context?: components["schemas"]["ReviewRevision"] | null;
+            /**
+             * Orchestration
+             * @default false
+             */
+            orchestration: boolean;
             /**
              * Thread Id
              * Format: uuid
@@ -8263,6 +8429,44 @@ export interface components {
             base_version?: number | null;
         };
         /**
+         * ReviewRevision
+         * @description Recorded coding evidence for a review and its automatic conversation summary.
+         */
+        ReviewRevision: {
+            /**
+             * Coding Run Id
+             * Format: uuid
+             */
+            coding_run_id: string;
+            /**
+             * Session Id
+             * Format: uuid
+             */
+            session_id: string;
+            /** Issue Key */
+            issue_key: string;
+            /** Revision */
+            revision: string;
+            status: components["schemas"]["CodingRunStatus"];
+            /** Pr Url */
+            pr_url?: string | null;
+            /** Reported Summary */
+            reported_summary?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Files */
+            files?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Diff Truncated
+             * @default false
+             */
+            diff_truncated: boolean;
+            /** Verification */
+            verification: string;
+        };
+        /**
          * Role
          * @enum {string}
          */
@@ -8311,7 +8515,7 @@ export interface components {
             thread_id?: string | null;
             /**
              * Agent
-             * @description Who answers: `auto` (the Project Manager involves the specialists it needs) or an agent's handle (`GET .../agents`: built-in or custom), who leads and may ask the agents it can call. 422 `unknown_agent` if the project has no such agent
+             * @description `auto` lets Nova advise and coordinate, or name a built-in specialist to involve. Nova remains the coordinator. `coding-agent` requests Kai's involvement in Build mode. Unsupported handles return 422 `unknown_agent`
              * @default auto
              */
             agent: string;
@@ -8334,7 +8538,7 @@ export interface components {
          * RunEventKind
          * @enum {string}
          */
-        RunEventKind: "step" | "text" | "activity" | "status";
+        RunEventKind: "step" | "text" | "activity" | "status" | "task";
         /** RunEventPage */
         RunEventPage: {
             /** Events */
@@ -8360,7 +8564,7 @@ export interface components {
             /** @description `step`: an attempt at a step began (its text starts over); `text`: a piece of the reply; `activity`: what the agents were doing; `status`: the step's outcome */
             kind: components["schemas"]["RunEventKind"];
             /** Data */
-            data: {
+            data: components["schemas"]["TaskLifecycle"] | {
                 [key: string]: unknown;
             };
             /**
@@ -8494,7 +8698,7 @@ export interface components {
          * RunStatus
          * @enum {string}
          */
-        RunStatus: "queued" | "running" | "awaiting_approval" | "completed" | "failed";
+        RunStatus: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "waiting_children" | "waiting_dependency" | "blocked" | "cancelled";
         /**
          * RunStopRead
          * @description Acknowledges a stop without granting access to the conversation.
@@ -8736,6 +8940,55 @@ export interface components {
              */
             flagged: string[];
         };
+        /** SpecialistResult */
+        SpecialistResult: {
+            /** Summary */
+            summary: string;
+            /**
+             * Status
+             * @default completed
+             * @enum {string}
+             */
+            status: "completed" | "partial" | "blocked";
+            /** Findings */
+            findings?: string[];
+            /** Evidence */
+            evidence?: string[];
+            /** Artifacts */
+            artifacts?: string[];
+            /** Risks */
+            risks?: string[];
+        };
+        /** SpecialistTaskRead */
+        SpecialistTaskRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Parent Run Id */
+            parent_run_id: string | null;
+            /** Project Id */
+            project_id: string | null;
+            /** Agent */
+            agent: string | null;
+            /** Task Key */
+            task_key: string | null;
+            /** Message */
+            message: string;
+            status: components["schemas"]["RunStatus"];
+            /** Depends On */
+            depends_on: string[] | null;
+            task_result: components["schemas"]["SpecialistResult"] | null;
+            /** Error */
+            error: string | null;
+            review_context: components["schemas"]["ReviewRevision"] | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** StageUsage */
         StageUsage: {
             /** Agent */
@@ -8783,6 +9036,43 @@ export interface components {
              * @description More was near it than is shown
              */
             truncated: boolean;
+        };
+        /** TaskLifecycle */
+        TaskLifecycle: {
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Agent */
+            agent: string;
+            status: components["schemas"]["RunStatus"];
+            /** Key */
+            key?: string | null;
+        };
+        /** TeamMemberRead */
+        TeamMemberRead: {
+            /** Handle */
+            handle: string;
+            /** Name */
+            name: string;
+            /** Role */
+            role: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "coordinator" | "specialist" | "coding";
+            /**
+             * Built In
+             * @default true
+             */
+            built_in: boolean;
+            /**
+             * Customised
+             * @default false
+             */
+            customised: boolean;
         };
         /** ThreadRead */
         ThreadRead: {
@@ -14962,6 +15252,57 @@ export interface operations {
             };
         };
     };
+    list_my_agent_preference_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's handle, e.g. research */
+                handle: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPreferenceVersionRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     save_my_agent_preference: {
         parameters: {
             query?: never;
@@ -17237,7 +17578,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -23158,6 +23499,182 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_builtin_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMemberRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_specialist_tasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecialistTaskRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_private_agent_activity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentActivityRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -5,6 +5,7 @@ import { useState, type KeyboardEvent, type RefObject } from "react";
 import { Ic } from "../core/icons";
 import { D, proj } from "../data/store";
 import { Face } from "../ui/face";
+import { CODING_AGENT } from "../data/seed-dotrix";
 import { PIcon } from "../ui/helpers";
 
 type Item = { kind: "project" | "agent"; id: string; label: string; sub?: string; c?: string };
@@ -41,6 +42,9 @@ export function useAtPicker({
           ...D()
             .agents.filter((x) => `${x.name} ${x.handle} ${x.role}`.toLowerCase().includes(ql))
             .map((x) => ({ kind: "agent" as const, id: x.handle, label: x.name, sub: x.role, c: x.c })),
+          ...("kai coding".includes(ql)
+            ? [{ kind: "agent" as const, id: "coding-agent", label: "Kai", sub: "Coding · through Nova in Build mode", c: CODING_AGENT.c }]
+            : []),
         ];
   const choose = (it: Item) => {
     if (it.kind === "project") onProject?.(it.id);

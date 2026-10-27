@@ -44,9 +44,13 @@ class RunStatus(enum.StrEnum):
     AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
+    WAITING_CHILDREN = "waiting_children"
+    WAITING_DEPENDENCY = "waiting_dependency"
+    BLOCKED = "blocked"
+    CANCELLED = "cancelled"
 
 
-ACTIVE_STATUSES = (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_APPROVAL)
+ACTIVE_STATUSES = (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_APPROVAL, RunStatus.WAITING_CHILDREN, RunStatus.WAITING_DEPENDENCY)
 
 
 class ApprovalStatus(enum.StrEnum):
@@ -57,6 +61,19 @@ class ApprovalStatus(enum.StrEnum):
 
 class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     __tablename__ = "agent_runs"
+    __table_args__ = (UniqueConstraint("parent_run_id", "delegation_key", "task_key"), UniqueConstraint("outcome_key"))
+
+    parent_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id"), index=True)
+    delegation_key: Mapped[str | None] = mapped_column(String(200))
+    task_key: Mapped[str | None] = mapped_column(String(40))
+    depends_on: Mapped[list[str] | None] = mapped_column(JSONB)
+    task_mutates: Mapped[bool] = mapped_column(default=False, server_default="false")
+    task_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    waiting_interrupts: Mapped[dict[str, str] | None] = mapped_column(JSONB)
+    orchestration: Mapped[bool] = mapped_column(default=False, server_default="false")
+    source: Mapped[str] = mapped_column(String(24), default="user", server_default="user")
+    outcome_key: Mapped[str | None] = mapped_column(String(160))
+    review_context: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     # The project it's about; null for a conversation across projects (or about none), which
     # lists its projects in `project_ids` and is read-only (workspace_runs.py).
@@ -201,6 +218,7 @@ class RunEventKind(enum.StrEnum):
     TEXT = "text"  # a piece of the reply, as written (coalesced: about a second's worth)
     ACTIVITY = "activity"  # what the agents were doing ("Reading roadmap.md")
     STATUS = "status"  # the run's outcome for the step: awaiting_approval, completed, failed
+    TASK = "task"
 
 
 class AgentRunEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):

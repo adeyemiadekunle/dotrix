@@ -26,6 +26,8 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.tools import StructuredTool
+from langgraph.types import Command
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,11 +63,13 @@ from dotrix_backend.modules.research.service import RunWeb, WebResearch, check_r
 from dotrix_backend.modules.rules.service import WorkspaceRules, WorkspaceSkills, layered
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode, effective, goes_through
 from dotrix_backend.modules.workspaces.models import Workspace
+from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine import approvals as hitl
 from dotrix_engine.agent import PM_ROLE, briefing_system_prompt, build_team, role_for_agent_name
 from dotrix_engine.code import build_code_tools
 from dotrix_engine.contracts import AgentPolicy, AgentSpec
+from dotrix_engine.delegation import SpecialistResult
 from dotrix_engine.layout import AGENTS
 from dotrix_engine.skills import SKILLS_FOLDER, default_skills, skill_name, skills_guide
 from dotrix_engine.templates import TEMPLATES_GUIDE, default_templates
@@ -73,6 +77,7 @@ from dotrix_engine.templates import TEMPLATES_GUIDE, default_templates
 from .activity import activity_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
 from .context import build_context_pack
+from .delegation import DelegationService, delegation_tool, task_interrupts
 from .events import RecordingStream, RunRecorder, add_event
 from .findings import dedupe_findings
 from .graph_tools import GRAPH_TOOLS_GUIDE, build_graph_tools
@@ -472,6 +477,9 @@ class AgentRunner:
         """Run one step of a run to its outcome: a reply, actions waiting for approval, or a
         failure. Safe to call again for a step that was cut off (a retried queue job): it
         continues from the last checkpoint instead of starting over."""
+        # An inline child runs in a task inheriting the coordinator's context variables. It
+        # must not use the parent's fencing token before it has acquired its own lease.
+        _LEASE.set(None)
         async with self.session_factory() as session:
             target = select(AgentRun).where(AgentRun.id == run_id)
             if operation is not None:
@@ -490,6 +498,8 @@ class AgentRunner:
         # attempt's tokens are lost when its job is retried.
         usage = TokenUsage()
         results: list[tuple[str, list[dict[str, Any]]]] = []  # what the leading agent submitted
+        specialist_results: list[dict[str, Any]] = []
+        admitted = False
         run_web: RunWeb | None = None
         executing = False
         recording: RecordingStream | None = None
@@ -504,10 +514,16 @@ class AgentRunner:
                     return
                 if not await accept_operation(session, run, operation, retry=retry_operation):
                     return
+                admitted = True
                 # A previous attempt was cut off, or the person continues one that stopped at a limit.
                 retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue" or bool(payload.get("recovered"))
                 project = await ProjectRepository(session).get(run.workspace_id, run.project_id)
                 assert project is not None
+                instructor = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) if run.requested_by_id else None
+                if instructor is None or not can(instructor, Permission.CHAT) or not await ProjectRepository(session).can_see(project, instructor.user_id):
+                    await session.rollback()
+                    await self._fail(run_id, "The person who asked no longer sees this project", usage)
+                    return
                 # The agents in effect for this project: its overrides, the workspace's, the built-ins.
                 resolved = {a.spec.handle: a for a in await AgentDefinitionRepository(session).resolve(
                     run.workspace_id, run.project_id
@@ -527,7 +543,8 @@ class AgentRunner:
                         specs = with_preferences(specs, prefs, person.display_name if person else "the person")
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
                 token = self._take_lease(run)
-                run.model = run.conversation_model or project.model
+                active_spec = next(spec for spec in specs if spec.handle == (run.agent or PM_ROLE))
+                run.model = ((active_spec.model or project.specialist_model) if run.parent_run_id else None) or run.conversation_model or project.model
                 run.agent_version = lead_agent.version
                 # The budget covers every step of the run: what earlier steps used counts. The
                 # leading agent's own budget wins over the project's.
@@ -552,9 +569,14 @@ class AgentRunner:
                 lead = run.agent  # None: Auto (the Project Manager)
                 mode = run.mode
                 work_mode = run.work_mode
+                durable = run.orchestration
+                child = run.parent_run_id is not None
+                read_only_run = (child and not run.task_mutates) or run.source == "coding_outcome"
                 specs, unattended_left, accepted, approval = await self._unattended_specs(
                     session, run, specs, resolved, recovered=bool(payload.get("recovered")),
                 )
+                if read_only_run:
+                    specs = [read_only(spec) for spec in specs]
                 policy = AgentPolicy(specs)
                 versions = {handle: agent.version for handle, agent in resolved.items()}
                 unattended = Unattended(
@@ -597,6 +619,28 @@ class AgentRunner:
                 self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
                 approval=approval, jobs=self.jobs,
             ))
+            if read_only_run or child:
+                mode_tools = []
+            if durable and not child and not read_only_run and policy.spec(PM_ROLE).can("delegate"):
+                mode_tools.append(delegation_tool(self, workspace_id, run_id, token))
+            if child:
+                async def submit_specialist_result(**fields):
+                    saved = SpecialistResult(**fields).model_dump(mode="json")
+                    async with self.session_factory() as session:
+                        task = await session.scalar(select(AgentRun).where(
+                            AgentRun.workspace_id == workspace_id, AgentRun.id == run_id,
+                        ).with_for_update())
+                        if task is None or task.status is not RunStatus.RUNNING or task.lease_token != token:
+                            raise Conflict("This specialist no longer owns the task")
+                        task.task_result = saved
+                        await session.commit()
+                    specialist_results.append(saved)
+                    return {"saved": True}
+                mode_tools.append(StructuredTool.from_function(
+                    coroutine=submit_specialist_result, name="submit_specialist_result", args_schema=SpecialistResult,
+                    description="Return your structured findings, evidence, artifacts, risks and actual completion status.",
+                ))
+                context += "\n\nReturn the task's result with submit_specialist_result before your final summary."
             if mode == REPO_MODE:  # explaining the repository: its inventory, to read and to cite
                 mode_tools = [*mode_tools, *repo_tools(RepoContext(
                     self.session_factory, workspace_id, project_id, run_id,
@@ -642,6 +686,8 @@ class AgentRunner:
                 work_mode=work_mode.value if work_mode else None,
                 lead_tools=mode_tools,
                 checkpoints=approval is not ApprovalMode.AUTO,
+                platform_delegation=True,
+                delegated=child,
                 result_sink=lambda schema, items: results.append((schema, items)),
                 # Stages show as live activity from the `stage` calls themselves (activity.py);
                 # here they split the run's tokens by stage.
@@ -660,6 +706,10 @@ class AgentRunner:
                 if resuming
                 else {"messages": [{"role": "user", "content": payload["message"]}]}
             )
+            if payload["kind"] == "delegation_ready":
+                graph_input = Command(resume=payload["interrupts"])
+            elif read_only_run and not child and payload["kind"] == "start":
+                graph_input = {"messages": [SystemMessage(payload["message"])]}
             stream = recording = await self._record(run_id, workspace_id, token, payload)
             result = None
             if retry:
@@ -671,6 +721,15 @@ class AgentRunner:
                 result = await _brief(agent, choice.model, system, payload["message"], config, stream)
             if result is None:
                 result = await _run_graph(agent, graph_input, config, stream, speaker)
+            if waits := task_interrupts(result):
+                await recording.flush()
+                async with self.session_factory() as session:
+                    held = await session.get(AgentRun, run_id, with_for_update=True)
+                    if held is not None and not _fenced_off(held):
+                        _add_tokens(held, usage)
+                        await session.commit()
+                await DelegationService(self).wait(workspace_id, run_id, token, waits)
+                return
             result = await self._settle(agent, kind, config, stream, result)
             if not hitl.has_pending(result) and not _reply(result):
                 logger.warning("agent run %s: no reply; asking once more", run_id)
@@ -684,7 +743,8 @@ class AgentRunner:
             await recording.flush()  # the reply's last words before its outcome
             if results:
                 await self._save_outputs(run_id, speaker, results)
-            await self._finish(run_id, result, usage, speaker)
+            await self._finish(run_id, result, usage, speaker,
+                               specialist_results[-1] if specialist_results else None)
         except asyncio.CancelledError:
             if recording is not None:
                 await recording.flush()
@@ -727,6 +787,8 @@ class AgentRunner:
                 await self.streams.close(run_id)
                 await self._release_lease(run_id, token, holder)
             _LEASE.set(None)
+            if original.orchestration and admitted:
+                await DelegationService(self).completed(original.workspace_id, run_id)
 
     async def _execute_across(
         self, run_id: uuid.UUID, payload: dict[str, Any],
@@ -807,7 +869,7 @@ class AgentRunner:
                 task_tools=(read_tools if projects else [], []), subagent_task_tools=[], agents=specs,
                 models=lambda name: self.model_factory(stand_in, name, keys=keys).model,  # type: ignore[arg-type]
                 board_instructions=WORKSPACE_GUIDE, context=context,
-                knowledge_tools=search_tools if projects else [], lead=lead,
+                knowledge_tools=search_tools if projects else [], lead=lead, platform_delegation=True,
             )
             config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": RECURSION_LIMIT,
                       "callbacks": [usage]}
@@ -888,7 +950,8 @@ class AgentRunner:
                 result = await _run_graph(agent, command, config, stream)
         return result
 
-    async def _finish(self, run_id: uuid.UUID, result: dict, usage: TokenUsage, speaker: str = PM_ROLE) -> None:
+    async def _finish(self, run_id: uuid.UUID, result: dict, usage: TokenUsage, speaker: str = PM_ROLE,
+                      specialist_result: dict | None = None) -> None:
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id, with_for_update=True)
             assert run is not None
@@ -924,6 +987,11 @@ class AgentRunner:
                 action_name = "agent_run.awaiting_approval"
             else:
                 run.reply = _reply(result)
+                if run.parent_run_id:
+                    run.task_result = specialist_result or run.task_result or SpecialistResult(
+                        summary=run.reply or "The specialist supplied no summary", status="partial",
+                        risks=["No structured evidence was supplied; verify this result before relying on it"],
+                    ).model_dump(mode="json")
                 run.status, run.finished_at = RunStatus.COMPLETED, now
                 action_name = "agent_run.completed"
                 await _changes_approved(session, run)
@@ -990,7 +1058,7 @@ class AgentRunner:
         """Stopped and failed runs keep the tokens they used."""
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id, with_for_update=True)
-            if run is None or _fenced_off(run):
+            if run is None or run.status in (RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.BLOCKED, RunStatus.CANCELLED) or _fenced_off(run):
                 return
             tokens = _add_tokens(run, usage)
             run.status, run.error = RunStatus.FAILED, error[:2000]
@@ -1288,10 +1356,10 @@ async def _continue_from_checkpoint(
             # running them again unasked, each unanswered call says so; the agent checks, and any
             # change it repeats asks for approval (a recovered attempt runs in Manual).
             cut = _unanswered_calls(state.values)
-            if cut:
+            if cut and not any(call.get("name") == "delegate_tasks" for call in cut):
                 await agent.aupdate_state(config, {"messages": [
                     ToolMessage(content=CUT_OFF_TOOL, tool_call_id=call["id"], name=call.get("name"))
-                    for call in cut
+                    for call in cut if call.get("name") != "delegate_tasks"
                 ]}, as_node="tools")
         return None, None  # continue the pending steps from the last checkpoint
     if payload["kind"] == "start" and _last_user_message(state.values) != payload["message"]:

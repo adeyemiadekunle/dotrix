@@ -66,7 +66,7 @@ async def delete_automation(automation_id: uuid.UUID, access: ProjectManager, au
     await automations.delete(access, automation_id)
 
 
-@router.post("/{automation_id}/run", responses=errors(403))
+@router.post("/{automation_id}/run", responses=errors(403, 422))
 async def run_automation(automation_id: uuid.UUID, access: ProjectManager, automations: Automations) -> AutomationRead:
     """Run it once now. If it can't (its daily limit, its last run still going), `last_error`
     says why. Owners and admins."""

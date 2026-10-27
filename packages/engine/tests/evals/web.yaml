@@ -28,15 +28,9 @@
     tools_exclude: [web_search, fetch_page]
     prompt_excludes: ["## Researching on the web"]
 
-- name: a custom agent granted web search gets our tools
-  agent: scout
+- name: the built-in research agent refuses private network addresses
+  agent: research
   web: true
-  spec:
-    handle: scout
-    name: Scout
-    description: Watches competitors
-    instructions: Look up competitors.
-    tools: [knowledge.read, web.search]
   message: who sells multi-zone dispatch?
   script:
     - tool: fetch_page

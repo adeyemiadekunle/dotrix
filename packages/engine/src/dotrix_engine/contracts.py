@@ -25,7 +25,7 @@ HANDLE = re.compile(r"^[a-z][a-z0-9-]{1,30}$")
 PM_HANDLE = "project-manager"
 # Handles no custom agent can take: the built-ins' (edit those instead) and chat's "auto".
 RESERVED_HANDLES = frozenset({"auto", PM_HANDLE, "product", "architecture", "research", "reviewer",
-                              "documentation", "coding"})
+                              "documentation", "coding", "coding-agent"})
 PEOPLE_ONLY = ("agent-rules/*",)  # no contract can make these writable (§4.4)
 MAX_INSTRUCTIONS = 20_000
 
@@ -42,6 +42,7 @@ class AgentSpec(BaseModel):
     description: str = Field(default="", max_length=200, description="One line, shown in the chat's + menu")
     base: str | None = Field(default=None, description="The built-in it was cloned from, if any")
     instructions: str = Field(min_length=1, max_length=MAX_INSTRUCTIONS, description="Its role prompt (Markdown)")
+    additional_instructions: str = Field(default="", max_length=MAX_INSTRUCTIONS)
     model: str | None = Field(default=None, max_length=100, description="provider:model; null uses the run's")
     budget_tokens: int | None = Field(default=None, ge=10_000, le=10_000_000)
     tools: list[str] = Field(default_factory=lambda: ["knowledge.read", "knowledge.search", "board.read"])
@@ -58,7 +59,7 @@ class AgentSpec(BaseModel):
     @field_validator("handle")
     @classmethod
     def _handle(cls, value: str) -> str:
-        if not HANDLE.match(value) or value.endswith("-agent"):
+        if not HANDLE.match(value) or (value.endswith("-agent") and value != "coding-agent"):
             raise ValueError("Use 2-31 lower-case letters, digits, and dashes, starting with a letter")
         return value
 

@@ -116,9 +116,11 @@ class RuleBasedChatModel(_StreamsReplies, GenericFakeChatModel):
     """
 
     messages: Any = Field(default_factory=lambda: iter(()))
+    tools_known: frozenset[str] = frozenset()
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> RuleBasedChatModel:  # type: ignore[override]
-        return self
+        known = {getattr(t, "name", None) or (t.get("name") if isinstance(t, dict) else None) for t in tools or []}
+        return self.model_copy(update={"tools_known": frozenset(known - {None})})
 
     def _reply(self, messages: list[BaseMessage]) -> AIMessage:
         last = messages[-1] if messages else None
@@ -140,6 +142,12 @@ class RuleBasedChatModel(_StreamsReplies, GenericFakeChatModel):
         if lowered.startswith("plan:"):
             steps = [s.strip() for s in text.split(":", 1)[1].split(";") if s.strip()] or ["Do it"]
             return tool_call("checkpoint", summary="A plan for this request", plan=steps)
+        # A mention asks Nova to involve a specialist: when durable delegation is on, send the ask on.
+        if "delegate_tasks" in self.tools_known and (involved := re.search(r"involve (\w+)", lowered)):
+            agent = involved.group(1)
+            return tool_call("delegate_tasks", tasks=[{"key": agent, "agent": agent,
+                                                     "brief": text.rsplit("\n\n", 1)[-1] or text,
+                                                     "expected_result": "Findings"}])
         return AIMessage(content=f"Test model reply: {text[:500]}")
 
     def _after_tool(self, name: str, content: str) -> AIMessage:

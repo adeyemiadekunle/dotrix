@@ -4,7 +4,7 @@ from deepagents.backends import CompositeBackend, StateBackend
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
-from dotrix_engine import approvals, permissions
+from dotrix_engine import permissions
 from dotrix_engine.agent import build_team, role_for_agent_name
 from dotrix_engine.builtins import BUILTIN_HANDLES, builtin, builtin_specs
 from dotrix_engine.contracts import AgentPolicy, AgentSpec
@@ -95,46 +95,27 @@ def _backend():
     return CompositeBackend(default=StateBackend(), routes={"/dotrix/": StateBackend()})
 
 
-def test_the_pm_delegates_to_a_custom_agent() -> None:
+def test_custom_agents_cannot_join_the_team() -> None:
+    model = ScriptedChatModel.of("Should not run")
+    with pytest.raises(ValueError, match="fixed built-in team"):
+        build_team("Kunemi", "x", model, _backend(), agents=[*builtin_specs(), spec()])
+    assert model.received == []
+
+
+def test_custom_agents_cannot_lead() -> None:
+    with pytest.raises(ValueError, match="fixed built-in team"):
+        build_team("Kunemi", "x", ScriptedChatModel.of("unused"), _backend(),
+                   agents=[*builtin_specs(), spec()], lead="security")
+
+
+def test_general_purpose_delegation_is_denied() -> None:
     model = ScriptedChatModel.of(
-        tool_call("task", description="Check the auth flow", subagent_type="security-agent"),
-        "No secrets in the flow.",
-        "Security says the flow is fine.",
-    )
-    agents = [*builtin_specs(), spec(description="Reviews changes for security risks.")]
-    agent = build_team("Kunemi", "x", model, _backend(), checkpointer=InMemorySaver(), agents=agents)
-    result = agent.invoke({"messages": [{"role": "user", "content": "is auth safe?"}]},
-                          {"configurable": {"thread_id": "c1"}})
-    assert result["messages"][-1].content == "Security says the flow is fine."
-    pm, called = str(model.received[0][0].content), str(model.received[1][0].content)
-    assert "security-agent" in pm
-    assert "You are Security reviewer, an agent for Kunemi" in called and "Look for risks." in called
-
-
-def test_a_custom_agent_leads_with_its_own_gates() -> None:
-    model = ScriptedChatModel.of(
-        tool_call("write_file", file_path="/dotrix/reviews/security/r.md", content="# Review"),
-        "Written.",
-    )
-    writer = spec(tools=["knowledge.read", "knowledge.write"], access={"reviews/security/*": "write"})
-    agent = build_team("Kunemi", "x", model, _backend(), checkpointer=InMemorySaver(),
-                       agents=[*builtin_specs(), writer], lead="security")
-    result = agent.invoke({"messages": [{"role": "user", "content": "write it"}]}, {"configurable": {"thread_id": "c2"}})
-    assert [a["tool"] for a in approvals.pending_actions(result)] == ["write_file"]
-    assert "You are Security reviewer" in str(model.received[0][0].content)
-
-
-def test_a_custom_agent_without_document_writes_is_refused_outright() -> None:
-    model = ScriptedChatModel.of(
-        tool_call("write_file", file_path="/dotrix/reviews/r.md", content="x"),
-        "I can't write that.",
-    )
-    agent = build_team("Kunemi", "x", model, _backend(), checkpointer=InMemorySaver(),
-                       agents=[*builtin_specs(), spec()], lead="security")
-    result = agent.invoke({"messages": [{"role": "user", "content": "write"}]}, {"configurable": {"thread_id": "c3"}})
-    assert not approvals.has_pending(result)
+        tool_call("task", description="Bypass the team", subagent_type="general-purpose"), "Denied.")
+    agent = build_team("Kunemi", "x", model, _backend())
+    result = agent.invoke({"messages": [{"role": "user", "content": "check it"}]})
     denied = [m for m in result["messages"] if m.type == "tool"][0]
-    assert "denied" in str(denied.content).lower()
+    assert denied.status == "error" and "unavailable" in denied.content
+    assert len(model.received) == 2
 
 
 def test_an_unknown_lead_is_refused() -> None:
@@ -176,13 +157,13 @@ def test_an_agent_reports_stages_and_submits_a_result() -> None:
                                            "refs": ["auth.py"]}]),
         "One high-severity finding.",
     )
-    reviewer = spec(output="finding", pipeline="reviewer.commit")
-    agent = build_team("Kunemi", "x", model, _backend(), checkpointer=InMemorySaver(), agents=[*builtin_specs(), reviewer],
-                       lead="security", result_sink=lambda schema, items: results.append((schema, items)),
+    reviewer = builtin("reviewer").model_copy(update={"output": "finding", "pipeline": "reviewer.commit"})
+    agent = build_team("Kunemi", "x", model, _backend(), checkpointer=InMemorySaver(), agents=[s for s in builtin_specs() if s.handle != "reviewer"] + [reviewer],
+                       lead="reviewer", result_sink=lambda schema, items: results.append((schema, items)),
                        stage_sink=lambda handle, name: stages.append((handle, name)))
     result = agent.invoke({"messages": [{"role": "user", "content": "review"}]}, {"configurable": {"thread_id": "o1"}})
     assert result["messages"][-1].content == "One high-severity finding."
-    assert stages == [("security", "diff")]
+    assert stages == [("reviewer", "diff")]
     assert results == [("finding", [{"severity": "high", "title": "Token in logs", "detail": "auth.py logs it",
                                      "refs": ["auth.py"], "suggested_fix": ""}])]
     system = str(model.received[0][0].content)
