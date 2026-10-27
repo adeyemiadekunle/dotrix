@@ -1,7 +1,7 @@
 // Shell: sidebar, top bar, the page, and on phones a
 // bottom bar. dotrix adds Chat to the Workspace group; the Inbox holds people's items and the
 // agents' (approvals, plans, findings).
-import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 import { openPop, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
@@ -89,6 +89,13 @@ export function Shell({ children }: { children: ReactNode }) {
   // Going to another page from anywhere in the drawer (a project, a view) closes it too.
   const { route: here, params: hereParams } = useRoute();
   const at = `${here}/${JSON.stringify(hereParams)}`;
+  const navTrigger = useRef<HTMLButtonElement | null>(null);
+  const navWasOpen = useRef(false);
+  const openNavigation = (e: MouseEvent<HTMLButtonElement>) => {
+    navTrigger.current = e.currentTarget;
+    S.ui.mnav = true;
+    render();
+  };
   useEffect(() => {
     if (S.ui.mnav) {
       S.ui.mnav = false;
@@ -102,6 +109,11 @@ export function Shell({ children }: { children: ReactNode }) {
     mqs.forEach((mq) => mq.addEventListener("change", onChange));
     return () => mqs.forEach((mq) => mq.removeEventListener("change", onChange));
   }, []);
+  useEffect(() => {
+    if (u.mnav && narrow()) document.querySelector<HTMLButtonElement>('[aria-label="Close menu"]')?.focus();
+    else if (navWasOpen.current) navTrigger.current?.focus();
+    navWasOpen.current = u.mnav;
+  }, [u.mnav]);
   return (
     <>
       <a className="skip" href="#main-content">
@@ -114,7 +126,8 @@ export function Shell({ children }: { children: ReactNode }) {
         <SideTip />
         {u.mnav && <div className="side-scrim" onClick={() => ((S.ui.mnav = false), render())} />}
         <main className="main" id="main">
-          <Topbar />
+          <Topbar openNavigation={openNavigation} />
+          {!agentsShown() && <Notices />}
           {u.offline && (
             <div className="offline-bar" role="alert">
               <Ic n="wifi-off" s={15} />
@@ -137,11 +150,9 @@ export function Shell({ children }: { children: ReactNode }) {
             <AgentsPanel />
           </>
         )}
-        <BottomNav />
+        <BottomNav openNavigation={openNavigation} />
       </div>
       <PopLayer />
-      {/* The panel lists the same things: notices only while it's closed. */}
-      {!agentsShown() && <Notices />}
       <Toasts />
     </>
   );
@@ -211,7 +222,7 @@ function Sidebar() {
   const projs = visibleProjects().filter((p) => p.status !== "complete");
   const inProj = route === "project" ? projByKey(params.id)?.id : null;
   return (
-    <nav className="side" aria-label="Main">
+    <nav id="main-navigation" className="side" aria-label="Main" inert={narrow() && !u.mnav ? true : undefined}>
       <div className="side-top">
         <div className="row" style={{ gap: 2 }}>
           <button className="ws grow" onClick={(e) => openPop(e.currentTarget, "ws")} aria-haspopup="menu" aria-label="Switch workspace">
@@ -224,7 +235,7 @@ function Sidebar() {
           {!sideCollapsed() && (
             // In the drawer (narrow screens) it closes the drawer; collapsing to icons is for wide screens.
             <button
-              className="ibtn ibtn-sm hide-m"
+              className="ibtn ibtn-sm"
               onClick={() => (narrow() ? ((S.ui.mnav = false), render()) : toggleSide())}
               data-tip={narrow() ? "Close menu" : "Collapse sidebar  ["}
               aria-label={narrow() ? "Close menu" : "Collapse sidebar"}
@@ -421,12 +432,12 @@ function Crumbs() {
   );
 }
 
-function Topbar() {
+function Topbar({ openNavigation }: { openNavigation: (e: MouseEvent<HTMLButtonElement>) => void }) {
   const unread = D().notifs.some((n) => !n.read);
   const waiting = presence().filter((p) => p.state === "needs" || p.state === "blocked").length;
   return (
     <header className="topbar">
-      <button className="ibtn mnav-btn" onClick={() => ((S.ui.mnav = true), rerender())} aria-label="Open navigation">
+      <button className="ibtn mnav-btn" onClick={openNavigation} aria-label="Open navigation" aria-controls="main-navigation" aria-expanded={S.ui.mnav}>
         <Ic n="menu" s={17} />
       </button>
       <Crumbs />
@@ -484,7 +495,7 @@ export function setPaletteOpener(f: () => void) {
   openPaletteSoon = f;
 }
 
-function BottomNav() {
+function BottomNav({ openNavigation }: { openNavigation: (e: MouseEvent<HTMLButtonElement>) => void }) {
   const { route } = useRoute();
   const unread = D().notifs.some((n) => !n.read);
   const b = (r: Route, label: string, icon: string, extra?: ReactNode) => (
@@ -500,7 +511,7 @@ function BottomNav() {
       {b("mytasks", "My Tasks", "circle-check")}
       {b("projects", "Projects", "folder-kanban")}
       {b("inbox", "Inbox", "inbox", unread ? <span className="bdot" /> : null)}
-      <button onClick={() => ((S.ui.mnav = true), rerender())}>
+      <button onClick={openNavigation} aria-controls="main-navigation" aria-expanded={S.ui.mnav}>
         <Ic n="ellipsis" s={19} />
         <span>More</span>
       </button>

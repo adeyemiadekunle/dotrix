@@ -6,11 +6,13 @@
 import { useEffect, useRef } from "react";
 
 import { decideChange, decideCoding } from "../core/agents";
+import { openDemoRequest } from "../core/demoRequest";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { waitingChanges } from "../core/presence";
 import { CODING_TOOLS } from "../data/seed-dotrix";
 import { D, S, render, task } from "../data/store";
+import { isLive } from "../data/live";
 import { Face } from "../ui/face";
 
 interface Notice {
@@ -45,7 +47,7 @@ function notices(): Notice[] {
       text: ws.length > 1 ? `${ws.length} changes · ${ws.map((x) => x.ch.title).join(", ")}` : w.ch.title,
       mood: "needs",
       act: one ? { label: "Approve", run: () => decideChange(w.ch.id, true) } : undefined,
-      open: () => go("chat", {}, { search: `thread=${w.th.id}` }),
+      open: () => (isLive() ? go("chat", {}, { search: `thread=${w.th.id}` }) : openDemoRequest({ thread: w.th.id })),
     });
   }
   // A real workspace's approvals arrive as notifications.
@@ -69,7 +71,7 @@ function notices(): Notice[] {
     const tool = CODING_TOOLS.find((t) => t.id === `agent:${cs.tool}`);
     const key = task(cs.task)?.key ?? "";
     if (!tool || (cs.status !== "awaiting_approval" && cs.status !== "failed")) continue;
-    const open = () => go("chat", {}, { search: `tab=coding&session=${cs.id}` });
+    const open = () => (isLive() ? go("chat", {}, { search: `tab=coding&session=${cs.id}` }) : openDemoRequest({ task: cs.task }));
     out.push(
       cs.status === "failed"
         ? {

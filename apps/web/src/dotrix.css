@@ -935,11 +935,10 @@
 }
 @media (max-width: 900px) {
   .notices {
-    right: 16px;
-    left: 16px;
-    top: calc(var(--topbar-h) + 8px);
-    bottom: auto;
+    position: static;
     width: auto;
+    flex-shrink: 0;
+    margin: 8px var(--gutter) 0;
   }
   .notices .notice {
     box-shadow: none;
@@ -950,7 +949,7 @@
     border: 1px solid var(--border-strong);
   }
   #toasts {
-    bottom: calc(76px + var(--notices-h, 0px));
+    bottom: 76px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1594,8 +1593,8 @@ body.resizing-row * {
   align-items: center;
   gap: 5px;
   height: 26px;
-  margin: 0 -8px;
-  padding: 0 8px;
+  margin: 0;
+  padding: 0;
   border: 0;
   border-radius: 999px;
   font: inherit;
@@ -1677,5 +1676,63 @@ body.resizing-row * {
 @media (prefers-reduced-motion: reduce) {
   .dots-loader .dots-loader-dot {
     animation: none;
+  }
+}
+:root[data-motion="reduce"] .dots-loader .dots-loader-dot {
+  animation: none;
+}
+
+.chat-new {
+  padding: 0 14px 8px;
+}
+.chat-new .btn {
+  width: 100%;
+  min-height: 34px;
+}
+.chat-new-back {
+  display: none;
+}
+.chat-pending {
+  margin: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+}
+.home-stats {
+  margin-bottom: 16px;
+}
+.home-decision-mobile {
+  display: none;
+}
+.home-table-scroll {
+  overflow-x: auto;
+}
+.home-table-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 14px 8px;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+@media (max-width: 900px) {
+  .chat-new-back {
+    display: inline-flex;
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 1;
+  }
+  .home-decision-mobile {
+    display: block;
+    margin-bottom: 16px;
+  }
+  .home-decision-desktop {
+    display: none;
   }
 }

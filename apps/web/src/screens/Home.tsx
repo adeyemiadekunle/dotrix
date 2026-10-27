@@ -1,7 +1,7 @@
 // Home, with dotrix's "Waiting for a decision": what the
 // agents ask you to approve or steer, first in the right column. The workspace's Overview and
 // Activity pages folded into this: its stats, workload, and milestones sit here, and the
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { openTask } from "../core/actions";
 import { allowed, canInvite } from "../core/can";
@@ -17,6 +17,7 @@ import { STATUSES } from "../core/constants";
 import { MiniRow } from "../components/TaskList";
 import { sortTasks, viewOf } from "../shell/viewEngine";
 import { Av, AvStack, Empty, PIcon, PStatus, PrIcon, ProgBar, StIcon } from "../ui/helpers";
+import { tabKeys } from "../ui/tabs";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -38,7 +39,7 @@ export function goTasks(f: "open" | "done" | "overdue") {
 function AgentItem({ n }: { n: Notif }) {
   const w = who(n.by);
   const p = n.project ? proj(n.project) : n.task ? proj(D().tasks.find((t) => t.id === n.task)?.project) : null;
-  const open = () => (n.thread ? go("chat", {}, { search: `thread=${n.thread}` }) : go("inbox", {}, { search: `n=${n.id}` }));
+  const open = () => (isLive() && n.thread ? go("chat", {}, { search: `thread=${n.thread}` }) : go("inbox", {}, { search: `n=${n.id}` }));
   return (
     <div className="row" style={{ alignItems: "flex-start", gap: 10, padding: "8px 0", cursor: "pointer" }} onClick={open} role="button" tabIndex={0}>
       <Av id={n.by} cls="md" tip={false} />
@@ -66,8 +67,41 @@ function AgentItem({ n }: { n: Notif }) {
   );
 }
 
+function DecisionPanel({ waiting }: { waiting: Notif[] }) {
+  return (
+    <section className="panel">
+      <div className="panel-h">
+        <h2>Waiting for a decision</h2>
+        <span className="badge amber">{waiting.length}</span>
+        <div className="acts">
+          <button className="btn btn-sm btn-ghost" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
+            View all
+          </button>
+        </div>
+      </div>
+      <div className="panel-b" style={{ paddingBottom: 6 }}>
+        {waiting.slice(0, 3).map((n) => (
+          <AgentItem key={n.id} n={n} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function Home() {
   const [tab, setTab] = useState<"upcoming" | "overdue" | "completed">("upcoming");
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [tableOverflow, setTableOverflow] = useState(false);
+  useEffect(() => {
+    const el = tableRef.current;
+    if (!el) return;
+    const measure = () => setTableOverflow(el.scrollWidth > el.clientWidth + 1);
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    measure();
+    return () => observer.disconnect();
+  }, []);
   const liveAll = useLiveAllTasks(live.ws?.id, isLive());
   const liveNotifs = useLiveNotifications(live.ws?.id, isLive());
   const all = isLive() ? (liveAll ?? []) : allTasks();
@@ -144,7 +178,12 @@ export function Home() {
           </button>
         </div>
       </div>
-      <div className="stats" style={{ marginBottom: 16 }}>
+      {waiting.length > 0 && (
+        <div className="home-decision-mobile">
+          <DecisionPanel waiting={waiting} />
+        </div>
+      )}
+      <div className="stats home-stats">
         <button className="stat" onClick={() => go("projects")}>
           <span className="k">
             <Ic n="folder-kanban" s={14} />
@@ -186,7 +225,7 @@ export function Home() {
             <div className="panel-h">
               <h2 id="h-mytasks">My tasks</h2>
               <div className="acts">
-                <div className="seg" role="tablist">
+                <div className="seg" role="tablist" aria-label="My tasks" onKeyDown={tabKeys}>
                   {(
                     [
                       ["upcoming", "Upcoming"],
@@ -194,7 +233,16 @@ export function Home() {
                       ["completed", "Completed"],
                     ] as const
                   ).map(([k, n]) => (
-                    <button key={k} role="tab" className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
+                    <button
+                      key={k}
+                      id={`home-tab-${k}`}
+                      role="tab"
+                      aria-selected={tab === k}
+                      aria-controls="home-task-panel"
+                      tabIndex={tab === k ? 0 : -1}
+                      className={tab === k ? "on" : ""}
+                      onClick={() => setTab(k)}
+                    >
                       {n} <span className="faint">{lists[k].length}</span>
                     </button>
                   ))}
@@ -204,21 +252,23 @@ export function Home() {
                 </button>
               </div>
             </div>
-            {cur.length ? (
-              cur.map((t) => <MiniRow key={t.id} t={t} av={false} />)
-            ) : (
-              <Empty
-                icon={tab === "overdue" ? "circle-check" : "list-checks"}
-                title={tab === "overdue" ? "Nothing overdue" : "No tasks here"}
-                text={tab === "overdue" ? "Every task assigned to you is on schedule." : "Add a task to get things moving."}
-                cls="sm"
-              />
-            )}
-            {lists[tab].length > 7 && (
-              <button className="addrow" style={{ paddingLeft: 14, borderTop: "1px solid var(--divider)", borderBottom: 0 }} onClick={() => go("mytasks")}>
-                View all {lists[tab].length} tasks <Ic n="arrow-right" s={13} />
-              </button>
-            )}
+            <div id="home-task-panel" role="tabpanel" aria-labelledby={`home-tab-${tab}`}>
+              {cur.length ? (
+                cur.map((t) => <MiniRow key={t.id} t={t} av={false} />)
+              ) : (
+                <Empty
+                  icon={tab === "overdue" ? "circle-check" : "list-checks"}
+                  title={tab === "overdue" ? "Nothing overdue" : "No tasks here"}
+                  text={tab === "overdue" ? "Every task assigned to you is on schedule." : "Add a task to get things moving."}
+                  cls="sm"
+                />
+              )}
+              {lists[tab].length > 7 && (
+                <button className="addrow" style={{ paddingLeft: 14, borderTop: "1px solid var(--divider)", borderBottom: 0 }} onClick={() => go("mytasks")}>
+                  View all {lists[tab].length} tasks <Ic n="arrow-right" s={13} />
+                </button>
+              )}
+            </div>
           </section>
           <section className="panel">
             <div className="panel-h">
@@ -229,7 +279,18 @@ export function Home() {
                 </button>
               </div>
             </div>
-            <div style={{ overflowX: "auto" }}>
+            {tableOverflow && (
+              <div className="home-table-hint">
+                Scroll to see more columns <Ic n="arrow-right" s={12} />
+              </div>
+            )}
+            <div
+              ref={tableRef}
+              className="home-table-scroll"
+              role="region"
+              aria-label={tableOverflow ? "Project progress, scroll to see more columns" : "Project progress"}
+              tabIndex={tableOverflow ? 0 : undefined}
+            >
               <table className="perm-t" style={{ minWidth: 560 }}>
                 <thead>
                   <tr>
@@ -315,22 +376,9 @@ export function Home() {
         </div>
         <div className="stack">
           {waiting.length > 0 && (
-            <section className="panel">
-              <div className="panel-h">
-                <h2>Waiting for a decision</h2>
-                <span className="badge amber">{waiting.length}</span>
-                <div className="acts">
-                  <button className="btn btn-sm btn-ghost" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
-                    View all
-                  </button>
-                </div>
-              </div>
-              <div className="panel-b" style={{ paddingBottom: 6 }}>
-                {waiting.slice(0, 3).map((n) => (
-                  <AgentItem key={n.id} n={n} />
-                ))}
-              </div>
-            </section>
+            <div className="home-decision-desktop">
+              <DecisionPanel waiting={waiting} />
+            </div>
           )}
           <section className="panel">
             <div className="panel-h">

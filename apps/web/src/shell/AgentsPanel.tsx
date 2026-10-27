@@ -4,9 +4,10 @@
 // shorter, at the bottom right, over the page. A row opens where that agent's work is: its conversation, its coding
 // session, or a new chat with it.
 import { Ic } from "../core/icons";
+import { openDemoRequest } from "../core/demoRequest";
 import { go } from "../core/nav";
 import { presence, today, type Presence } from "../core/presence";
-import { S, me, render, save } from "../data/store";
+import { D, S, me, render, save } from "../data/store";
 import { Face } from "../ui/face";
 import { useAgentActivity, useBuiltinTeam } from "@/lib/team";
 import { isLive, live } from "../data/live";
@@ -36,6 +37,10 @@ const LABEL: Record<Presence["state"], string> = { needs: "Needs you", working: 
 
 function openWork(p: Presence) {
   S.ui.agentsSheet = false;
+  if (!isLive() && (p.thread || p.session)) {
+    openDemoRequest({ thread: p.thread, task: D().coding.find((c) => c.id === p.session)?.task });
+    return;
+  }
   if (p.thread) go("chat", {}, { search: `thread=${p.thread}${p.project ? `&project=${p.project}` : ""}${p.review ? "&panel=review" : ""}` });
   else if (p.session) go("chat", {}, { search: `tab=coding&session=${p.session}` });
   else go("chat", {}, { search: `new=1&agent=${p.id}${p.review ? "&panel=review" : ""}` });
