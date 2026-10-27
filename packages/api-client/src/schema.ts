@@ -1618,7 +1618,7 @@ export interface paths {
         };
         /**
          * List Agents
-         * @description The workspace's agents: the six built-ins (as they are here) and its custom agents.
+         * @description The six thinking-agent configurations. The team roster also includes Kai.
          */
         get: operations["list_agents"];
         put?: never;
@@ -1664,7 +1664,7 @@ export interface paths {
         get: operations["get_agent"];
         /**
          * Save Agent
-         * @description Create a custom agent, or change one (a built-in's first change makes it customised).
+         * @description Configure a built-in agent (its first change makes it customised).
          *     Owners and admins; only owners let an agent act without asking (`allow`). Each save is a new
          *     version; send the `version` you edited as `base_version` (409 `agent_changed` otherwise).
          *     422 `invalid_agent` with the reason when the contract breaks a rule.
@@ -1673,7 +1673,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Agent
-         * @description Remove a custom agent, or reset a built-in to its default. Its history is kept.
+         * @description Reset a built-in to its default. Its history is kept.
          */
         delete: operations["delete_agent"];
         options?: never;
@@ -1755,14 +1755,13 @@ export interface paths {
         get: operations["get_project_agent"];
         /**
          * Save Project Agent
-         * @description Override an agent for this project only, or create an agent only this project has.
+         * @description Override permitted configuration for one built-in agent in this project.
          */
         put: operations["save_project_agent"];
         post?: never;
         /**
          * Delete Project Agent
-         * @description Drop this project's override (the workspace's agent applies again), or remove an agent
-         *     only this project had.
+         * @description Drop this project's override; the workspace's built-in configuration applies again.
          */
         delete: operations["delete_project_agent"];
         options?: never;
@@ -17579,7 +17578,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;

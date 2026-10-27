@@ -6684,7 +6684,7 @@
           "agents"
         ],
         "summary": "List Agents",
-        "description": "The workspace's agents: the six built-ins (as they are here) and its custom agents.",
+        "description": "The six thinking-agent configurations. The team roster also includes Kai.",
         "operationId": "list_agents",
         "security": [
           {
@@ -6905,7 +6905,7 @@
           "agents"
         ],
         "summary": "Save Agent",
-        "description": "Create a custom agent, or change one (a built-in's first change makes it customised).\nOwners and admins; only owners let an agent act without asking (`allow`). Each save is a new\nversion; send the `version` you edited as `base_version` (409 `agent_changed` otherwise).\n422 `invalid_agent` with the reason when the contract breaks a rule.",
+        "description": "Configure a built-in agent (its first change makes it customised).\nOwners and admins; only owners let an agent act without asking (`allow`). Each save is a new\nversion; send the `version` you edited as `base_version` (409 `agent_changed` otherwise).\n422 `invalid_agent` with the reason when the contract breaks a rule.",
         "operationId": "save_agent",
         "security": [
           {
@@ -7014,7 +7014,7 @@
           "agents"
         ],
         "summary": "Delete Agent",
-        "description": "Remove a custom agent, or reset a built-in to its default. Its history is kept.",
+        "description": "Reset a built-in to its default. Its history is kept.",
         "operationId": "delete_agent",
         "security": [
           {
@@ -7465,7 +7465,7 @@
           "agents"
         ],
         "summary": "Save Project Agent",
-        "description": "Override an agent for this project only, or create an agent only this project has.",
+        "description": "Override permitted configuration for one built-in agent in this project.",
         "operationId": "save_project_agent",
         "security": [
           {
@@ -7584,7 +7584,7 @@
           "agents"
         ],
         "summary": "Delete Project Agent",
-        "description": "Drop this project's override (the workspace's agent applies again), or remove an agent\nonly this project had.",
+        "description": "Drop this project's override; the workspace's built-in configuration applies again.",
         "operationId": "delete_project_agent",
         "security": [
           {
@@ -11702,7 +11702,7 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Request body or parameters failed validation",
             "content": {
               "application/problem+json": {
                 "schema": {
