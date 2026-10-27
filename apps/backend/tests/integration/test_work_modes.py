@@ -39,10 +39,9 @@ async def test_without_a_mode_the_team_works_as_before(db_client: AsyncClient, s
     ada, base = await _project(db_client, signup, create_team)
     model = agent_script.say(tool_call("write_file", file_path="/dotrix/notes/x.md", content="# X"), "Updated.")
     run = (await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={"message": "Write it down"})).json()
-    assert run["status"] == "awaiting_approval" and run["work_mode"] is None
+    assert run["status"] == "awaiting_approval" and run["work_mode"] == "discuss"
     offered = set(model.tools_received[0])
     assert "write_file" in offered and not offered & {"start_coding", "save_plan", "coding_evidence"}
-    assert "## Mode:" not in model.received[0][0].content
 
 
 async def test_plan_saves_versions_of_the_conversation_s_plan(

@@ -67,12 +67,18 @@ async def test_a_dismissed_finding_proposes_a_lesson_for_its_agent(
     db_client: AsyncClient, signup, create_team, add_member, agent_script
 ) -> None:
     ada, _, _, base = await _world(db_client, signup, create_team, add_member)
+    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
     agent_script.say(
+        tool_call("delegate_tasks", tasks=[{"key": "review", "agent": "reviewer", "brief": "Review the project",
+                                          "expected_result": "Findings"}]),
         tool_call("submit_result", items=[{"title": "No tests for login", "severity": "low", "detail": "x"}]),
         "One finding.",
+        "Nova sums up.",
     )
-    run = (await db_client.post(f"{base}/agent/runs", json={"message": "review", "agent": "reviewer"},
-                                headers=ada.headers)).json()
+    paused = (await db_client.post(f"{base}/agent/runs", json={"message": "review", "agent": "reviewer"},
+                                   headers=ada.headers)).json()
+    [task] = (await db_client.get(f"{base}/agent/runs/{paused['id']}/tasks", headers=ada.headers)).json()
+    run = (await db_client.get(f"{base}/agent/runs/{task['id']}", headers=ada.headers)).json()
     assert run["outputs"], run
     output = run["outputs"][0]
     url = f"{base}/agent/runs/{run['id']}/outputs/{output['id']}/items/0"

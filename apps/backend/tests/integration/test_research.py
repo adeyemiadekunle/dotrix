@@ -77,11 +77,23 @@ def _report(*claims: tuple[str, str, str]) -> object:
     ])
 
 
+def _delegate(agent: str, brief: str, changes_project: bool = False) -> dict:
+    task = {"key": agent, "agent": agent, "brief": brief, "expected_result": "Findings"}
+    if changes_project:
+        task["changes_project"] = True
+    return tool_call("delegate_tasks", tasks=[task])
+
+
 async def _research(db_client: AsyncClient, base: str, headers: dict, message: str = "What's the UK VAT rate?") -> dict:
+    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
     run = (await db_client.post(f"{base}/agent/runs", json={"message": message, "agent": "research"},
                                 headers=headers)).json()
-    assert run["status"] in ("completed", "awaiting_approval"), run
-    return run
+    assert run["status"] in ("completed", "awaiting_approval", "waiting_children"), run
+    # A mention is Nova's to coordinate: the research run is the delegated child.
+    tasks = (await db_client.get(f"{base}/agent/runs/{run['id']}/tasks", headers=headers)).json()
+    if not tasks:
+        return run
+    return (await db_client.get(f"{base}/agent/runs/{tasks[0]['id']}", headers=headers)).json()
 
 
 async def test_a_research_run_records_its_sources_and_checks_its_claims(
@@ -89,6 +101,7 @@ async def test_a_research_run_records_its_sources_and_checks_its_claims(
 ) -> None:
     ada, cat, _, base = await world()
     agent_script.say(
+        _delegate("research", "What's the UK VAT rate?"),
         tool_call("web_search", query="uk vat rate"),
         tool_call("fetch_page", url=GOV),
         _report(
@@ -96,7 +109,9 @@ async def test_a_research_run_records_its_sources_and_checks_its_claims(
             ("VAT will rise to 25%", "S1", "The standard rate of VAT will rise to 25% next year."),
             ("Rates may change", "S2", "Rates may change"),
         ),
+        tool_call("submit_specialist_result", summary="VAT findings", evidence=["research"]),
         "VAT is 20% [S1].",
+        "Nova sums up.",
     )
     run = await _research(db_client, base, ada.headers)
     assert run["reply"] == "VAT is 20% [S1]." and site == [GOV]
@@ -126,10 +141,12 @@ async def test_a_research_run_records_its_sources_and_checks_its_claims(
 async def test_source_ids_stay_the_same_when_a_run_resumes(world, web, db_client: AsyncClient, agent_script) -> None:
     ada, _, _, base = await world()
     agent_script.say(
+        _delegate("research", "UK VAT", changes_project=True),
         tool_call("web_search", query="uk vat rate"),
         tool_call("write_file", file_path="/dotrix/research/vat.md", content="# VAT\n\n20% [S1]\n"),
         tool_call("fetch_page", url=BLOG),
         "Saved; the blog [S2] agrees.",
+        "Nova sums up.",
     )
     run = await _research(db_client, base, ada.headers)
     assert run["status"] == "awaiting_approval"
@@ -149,7 +166,9 @@ async def test_pages_are_cached_per_workspace(
 ) -> None:
     ada, _, team, base = await world()
     for _ in range(2):
-        agent_script.say(tool_call("fetch_page", url=GOV), "Read it.")
+        agent_script.say(
+            _delegate("research", "Read it"), tool_call("fetch_page", url=GOV), "Read it.", "Nova sums up."
+        )
         await _research(db_client, base, ada.headers)
     assert site == [GOV]  # the second run read it from the workspace's cache
 
@@ -157,7 +176,9 @@ async def test_pages_are_cached_per_workspace(
     other = await create_team(eve.headers, "Other")
     project = (await db_client.post(f"/v1/workspaces/{other['id']}/projects", json={"key": "OTH", "name": "Other"},
                                     headers=eve.headers)).json()
-    agent_script.say(tool_call("fetch_page", url=GOV), "Read it.")
+    agent_script.say(
+        _delegate("research", "Read it"), tool_call("fetch_page", url=GOV), "Read it.", "Nova sums up."
+    )
     await _research(db_client, f"/v1/workspaces/{other['id']}/projects/{project['id']}", eve.headers)
     assert site == [GOV, GOV]  # never served from another workspace's cache
     owners = set(await db_session.scalars(select(WebPage.workspace_id)))
@@ -169,30 +190,42 @@ async def test_tavily_credits_are_capped_per_workspace_per_day(
 ) -> None:
     ada, _, _, base = await world()
     web.daily_credits = 1
-    agent_script.say(tool_call("web_search", query="uk vat rate"), "Found it.")
+    agent_script.say(_delegate("research", "UK VAT"), tool_call("web_search", query="uk vat rate"),
+                     "Found it.", "Nova sums up.")
     first = await _research(db_client, base, ada.headers)
     assert first["breakdown"]["web"]["credits"] == 1
 
-    model = agent_script.say(tool_call("web_search", query="uk vat rate"), "Out of searches.")
+    model = agent_script.say(_delegate("research", "UK VAT"), tool_call("web_search", query="uk vat rate"),
+                           "Out of searches.", "Nova sums up.")
     second = await _research(db_client, base, ada.headers)
     assert second["breakdown"]["web"] == {"searches": 0, "fetches": 0, "credits": 0, "flagged": []}
-    assert "allowance is used up" in str(model.received[-1][-1].content)
+    seen = [str(m.content) for call in model.received for m in call]
+    assert any("allowance is used up" in content for content in seen)
 
 
 async def test_searches_per_run_are_limited(world, web: WebResearch, db_client: AsyncClient, agent_script) -> None:
     ada, _, _, base = await world()
     web.max_searches = 1
-    model = agent_script.say(tool_call("web_search", query="one"), tool_call("web_search", query="two"), "Done.")
+    model = agent_script.say(_delegate("research", "UK VAT"), tool_call("web_search", query="one"),
+                           tool_call("web_search", query="two"), "Done.", "Nova sums up.")
     run = await _research(db_client, base, ada.headers)
     assert run["breakdown"]["web"]["searches"] == 1
-    assert "searches are used up" in str(model.received[-1][-1].content)
+    seen = [str(m.content) for call in model.received for m in call]
+    assert any("searches are used up" in content for content in seen)
 
 
 async def test_research_moves_with_its_project(
     world, web, db_client: AsyncClient, agent_script, create_team, db_session: AsyncSession
 ) -> None:
     ada, _, _, base = await world()
-    agent_script.say(tool_call("web_search", query="vat"), _report(("VAT is 20%", "S1", QUOTE)), "Done.")
+    agent_script.say(
+        _delegate("research", "UK VAT"),
+        tool_call("web_search", query="vat"),
+        _report(("VAT is 20%", "S1", QUOTE)),
+        tool_call("submit_specialist_result", summary="VAT", evidence=["research"]),
+        "Done.",
+        "Nova sums up.",
+    )
     await _research(db_client, base, ada.headers)
     acme = await create_team(ada.headers, "Acme")
     moved = await db_client.post(f"{base}/move", json={"workspace_id": acme["id"]}, headers=ada.headers)
@@ -204,10 +237,13 @@ async def test_research_moves_with_its_project(
 async def test_a_report_is_saved_as_a_research_note(world, web, db_client: AsyncClient, agent_script) -> None:
     ada, cat, _, base = await world()
     agent_script.say(
+        _delegate("research", "What's the UK VAT rate?"),
         tool_call("web_search", query="uk vat rate"),
         tool_call("fetch_page", url=GOV),
         _report(("VAT is 20%", "S1", QUOTE), ("VAT will rise", "S1", "It will rise to 25% next year, they said.")),
+        tool_call("submit_specialist_result", summary="VAT findings", evidence=["research"]),
         "It's 20% [S1].",
+        "Nova sums up.",
     )
     run = await _research(db_client, base, ada.headers)
     [output] = run["outputs"]
@@ -218,7 +254,7 @@ async def test_a_report_is_saved_as_a_research_note(world, web, db_client: Async
     saved = await db_client.post(url, headers=ada.headers)
     assert saved.status_code == 200, saved.text
     path = saved.json()["outputs"][0]["note"]
-    assert path.startswith("research/") and path.endswith("-uk-vat-rate.md")
+    assert path.startswith("research/") and "uk-vat-rate" in path and path.endswith(".md")
 
     note = (await db_client.get(f"{base}/knowledge/files/{path}", headers=ada.headers)).json()
     assert note["version"] == 1
@@ -240,9 +276,17 @@ async def test_a_report_is_saved_as_a_research_note(world, web, db_client: Async
 
 async def test_only_reports_are_saved_as_notes(world, db_client: AsyncClient, agent_script) -> None:
     ada, _, _, base = await world()
-    agent_script.say(tool_call("submit_result", items=[{"severity": "low", "title": "Gap", "detail": "x"}]), "One.")
-    run = (await db_client.post(f"{base}/agent/runs", json={"message": "review", "agent": "reviewer"},
-                                headers=ada.headers)).json()
+    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
+    agent_script.say(
+        _delegate("reviewer", "Review the project"),
+        tool_call("submit_result", items=[{"severity": "low", "title": "Gap", "detail": "x"}]),
+        "One.",
+        "Nova sums up.",
+    )
+    paused = (await db_client.post(f"{base}/agent/runs", json={"message": "review", "agent": "reviewer"},
+                                   headers=ada.headers)).json()
+    [task] = (await db_client.get(f"{base}/agent/runs/{paused['id']}/tasks", headers=ada.headers)).json()
+    run = (await db_client.get(f"{base}/agent/runs/{task['id']}", headers=ada.headers)).json()
     [output] = run["outputs"]
     res = await db_client.post(f"{base}/agent/runs/{run['id']}/outputs/{output['id']}/note", headers=ada.headers)
     assert res.status_code == 404
