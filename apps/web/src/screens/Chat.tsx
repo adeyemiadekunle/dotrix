@@ -763,7 +763,15 @@ function Composer({
         />
         <div className="cbox-row">
           {(contexts || (mode && setMode)) && (
-            <button type="button" className="cpill pick" onClick={at.start} aria-label="Project and mode" data-tip="Pick a project or a mode (or type @)">
+            <button
+              type="button"
+              className="cpill pick"
+              onClick={at.start}
+              aria-label="Project and mode"
+              aria-haspopup="listbox"
+              aria-expanded={at.open}
+              data-tip="Pick a project or a mode (or type @)"
+            >
               <Ic n="plus" s={12} />
             </button>
           )}
@@ -772,6 +780,8 @@ function Composer({
               className="cpill pick"
               onClick={at.start}
               aria-label={`Project: ${contexts.find(([v]) => v === context)?.[1]}`}
+              aria-haspopup="listbox"
+              aria-expanded={at.open}
               data-tip="Pick a project or a mode (or type @)"
             >
               <Ic n={context ? "at-sign" : "layers"} s={12} />
@@ -786,7 +796,14 @@ function Composer({
             )
           )}
           {mode && setMode && (
-            <button className="cpill pick" onClick={at.start} aria-label={`Mode: ${modeLabel}`} data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
+            <button
+              className="cpill pick"
+              onClick={at.start}
+              aria-label={`Mode: ${modeLabel}`}
+              aria-haspopup="listbox"
+              aria-expanded={at.open}
+              data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}
+            >
               <Ic n={MODE_ICONS[mode]} s={12} />
               <span className="trunc">{modeLabel}</span>
             </button>
@@ -1150,6 +1167,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
   const [tid, setTid] = useState(issue0 ? (isLive() ? issue0 : (D().tasks.find((t) => t.key === issue0)?.id ?? "")) : "");
   const [note, setNote] = useState("");
   const [menu, setMenu] = useState<string | null>(null);
+  const [menuBtn, setMenuBtn] = useState(false);
   const [hl, setHl] = useState(0);
   const ref = useRef<HTMLTextAreaElement>(null);
   const t = mine.find((issue) => issue.id === tid) ?? task(tid);
@@ -1195,7 +1213,9 @@ function NewSession({ issue0 }: { issue0: string | null }) {
       .finally(() => setAdding(false));
   };
   const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location, agent, model);
-  const found = menu === null ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes(menu.toLowerCase())).slice(0, 8);
+  // The issue list opens two ways: typing "@" or "/" (menu is the query) or the Issue button (menuBtn); the button never touches the note.
+  const menuOpen = menu !== null || menuBtn;
+  const found = !menuOpen ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes((menu ?? "").toLowerCase())).slice(0, 8);
   const go_ = () => {
     if (!t) return;
     if (!ready || start.isPending) return;
@@ -1208,17 +1228,23 @@ function NewSession({ issue0 }: { issue0: string | null }) {
     setNote(el.value);
     const m = el.value.slice(0, el.selectionStart).match(/(?:^|\s)[@/]([\w-]*)$/);
     setMenu(m ? m[1]! : null);
+    setMenuBtn(false);
     setHl(0);
   };
   const pick = (id: string) => {
     setTid(id);
-    setNote(note.replace(/(^|\s)[@/][\w-]*$/, "$1").replace(/\s+$/, ""));
+    if (menu !== null) setNote(note.replace(/(^|\s)[@/][\w-]*$/, "$1").replace(/\s+$/, ""));
     setMenu(null);
+    setMenuBtn(false);
     ref.current?.focus();
   };
   const ask = () => {
-    setNote(note + (note && !note.endsWith(" ") ? " @" : "@"));
-    setMenu("");
+    if (menuOpen) {
+      setMenu(null);
+      setMenuBtn(false);
+      return;
+    }
+    setMenuBtn(true);
     setHl(0);
     ref.current?.focus();
   };
@@ -1243,7 +1269,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
               }
               onChange={(e) => onText(e.target)}
               onKeyDown={(e) => {
-                if (menu !== null && found.length) {
+                if (menuOpen && found.length) {
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
                     setHl((hl + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
@@ -1255,14 +1281,15 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                     return;
                   }
                 }
-                if (e.key === "Escape" && menu !== null) {
+                if (e.key === "Escape" && menuOpen) {
                   e.stopPropagation();
                   setMenu(null);
+                  setMenuBtn(false);
                 }
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) go_();
               }}
               aria-label="What should it do"
-              aria-expanded={menu !== null}
+              aria-expanded={menuOpen}
               aria-controls="cs-issues"
             />
             <div className="cbox-row">
@@ -1277,7 +1304,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                   </button>
                 </span>
               ) : (
-                <button className="cpill pick" onClick={ask} aria-label="Pick an issue">
+                <button className="cpill pick" onClick={ask} aria-label="Pick an issue" aria-haspopup="listbox" aria-expanded={menuOpen}>
                   <Ic n="at-sign" s={12} />
                   Issue
                 </button>
@@ -1354,40 +1381,50 @@ function NewSession({ issue0 }: { issue0: string | null }) {
               </button>
             </div>
           </div>
-          {menu !== null && (
-            <div
-              className="pop"
-              id="cs-issues"
-              role="listbox"
-              aria-label="Issues"
-              style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, maxWidth: 520 }}
-            >
-              {found.length ? (
-                found.map((x, i) => (
-                  <button
-                    key={x.id}
-                    role="option"
-                    aria-selected={i === hl}
-                    className={`mi ${i === hl ? "hl" : ""}`}
-                    onMouseEnter={() => setHl(i)}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => pick(x.id)}
-                  >
-                    <span className="faint" style={{ fontSize: 12, width: 64, flexShrink: 0 }}>
-                      {x.key}
-                    </span>
-                    <span className="trunc" style={{ flex: 1 }}>
-                      {x.title}
-                    </span>
-                    <span className="r">{proj(x.project)?.name}</span>
-                  </button>
-                ))
-              ) : (
-                <div className="faint" style={{ padding: "8px 10px", fontSize: 12.5 }}>
-                  {mine.length ? "No issue matches." : personal ? "No open issues." : "No open issues are assigned to you."}
-                </div>
-              )}
-            </div>
+          {menuOpen && (
+            <>
+              <span
+                className="pick-veil"
+                aria-hidden
+                onClick={() => {
+                  setMenu(null);
+                  setMenuBtn(false);
+                }}
+              />
+              <div
+                className="pop"
+                id="cs-issues"
+                role="listbox"
+                aria-label="Issues"
+                style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, maxWidth: 520, zIndex: 80 }}
+              >
+                {found.length ? (
+                  found.map((x, i) => (
+                    <button
+                      key={x.id}
+                      role="option"
+                      aria-selected={i === hl}
+                      className={`mi ${i === hl ? "hl" : ""}`}
+                      onMouseEnter={() => setHl(i)}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pick(x.id)}
+                    >
+                      <span className="faint" style={{ fontSize: 12, width: 64, flexShrink: 0 }}>
+                        {x.key}
+                      </span>
+                      <span className="trunc" style={{ flex: 1 }}>
+                        {x.title}
+                      </span>
+                      <span className="r">{proj(x.project)?.name}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="faint" style={{ padding: "8px 10px", fontSize: 12.5 }}>
+                    {mine.length ? "No issue matches." : personal ? "No open issues." : "No open issues are assigned to you."}
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>

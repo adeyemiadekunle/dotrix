@@ -1,6 +1,6 @@
 // "@" (or the + pill) in a message box: offers the projects (where the box can change its project)
 // and the work modes; Nova always answers and brings in whoever the work needs.
-// Chat's composer and Home's ask box.
+// Chat's composer.
 import { useState, type KeyboardEvent, type RefObject } from "react";
 
 import { MODE_ICONS, type WorkMode } from "@/lib/agent";
@@ -31,38 +31,45 @@ export function useAtPicker({
   mode?: string;
   onMode?: (m: WorkMode) => void;
 }) {
+  // Open two ways: typing "@" (q is the query after it) or a button (btn); the button never touches the text.
   const [q, setQ] = useState<string | null>(null);
+  const [btn, setBtn] = useState(false);
   const [hl, setHl] = useState(0);
+  const open = q !== null || btn;
   const ql = (q ?? "").toLowerCase();
-  const items: Item[] =
-    q === null
-      ? []
-      : [
-          ...(projects && onProject
-            ? projects.filter(([, l]) => l.toLowerCase().includes(ql)).map(([id, l]) => ({ kind: "project" as const, id, label: l }))
-            : []),
-          ...(modes && onMode ? modes.filter(([, l]) => l.toLowerCase().includes(ql)).map(([v, l]) => ({ kind: "mode" as const, id: v, label: l })) : []),
-        ];
+  const items: Item[] = !open
+    ? []
+    : [
+        ...(projects && onProject
+          ? projects.filter(([, l]) => l.toLowerCase().includes(ql)).map(([id, l]) => ({ kind: "project" as const, id, label: l }))
+          : []),
+        ...(modes && onMode ? modes.filter(([, l]) => l.toLowerCase().includes(ql)).map(([v, l]) => ({ kind: "mode" as const, id: v, label: l })) : []),
+      ];
+  const close = () => {
+    setQ(null);
+    setBtn(false);
+  };
   const choose = (it: Item) => {
     if (it.kind === "project") onProject?.(it.id);
     else onMode?.(it.id as WorkMode);
-    setText(text.replace(/(^|\s)@[\w-]*$/, "$1"));
-    setQ(null);
+    if (q !== null) setText(text.replace(/(^|\s)@[\w-]*$/, "$1"));
+    close();
     ref.current?.focus();
   };
   const label = items.some((i) => i.kind === "project") ? (items.some((i) => i.kind === "mode") ? "Projects and modes" : "Projects") : "Modes";
   return {
-    open: q !== null,
+    open,
     /** The textarea's onChange. */
     onChange(el: HTMLTextAreaElement) {
       setText(el.value);
       const m = el.value.slice(0, el.selectionStart).match(/(?:^|\s)@([\w-]*)$/);
       setQ(m ? m[1]! : null);
+      setBtn(false);
       setHl(0);
     },
     /** Call first in the textarea's onKeyDown; true when the list used the key. */
     onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): boolean {
-      if (q === null) return false;
+      if (!open) return false;
       if (items.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
         e.preventDefault();
         setHl((hl + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length);
@@ -75,29 +82,29 @@ export function useAtPicker({
       }
       if (e.key === "Escape") {
         e.stopPropagation();
-        setQ(null);
+        close();
         return true;
       }
       return false;
     },
-    /** Types "@" and opens the list (the + pill's click); a second click closes it. */
+    /** The + pill and the project/mode chips: open the same list without typing "@" into the box; a second click closes it. */
     start() {
-      if (q !== null) {
-        setQ(null);
+      if (open) {
+        close();
         return;
       }
-      setText(text + (text && !text.endsWith(" ") ? " @" : "@"));
-      setQ("");
+      setBtn(true);
       setHl(0);
       ref.current?.focus();
     },
-    menu:
-      q === null ? null : (
+    menu: !open ? null : (
+      <>
+        <span className="pick-veil" aria-hidden onClick={close} />
         <div
           className="pop"
           role="listbox"
           aria-label={label}
-          style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 260, maxHeight: 300, overflowY: "auto", zIndex: 5, textAlign: "left" }}
+          style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 260, maxHeight: 300, overflowY: "auto", zIndex: 80, textAlign: "left" }}
         >
           {items.length ? (
             items.map((it, i) => (
@@ -130,6 +137,7 @@ export function useAtPicker({
             </div>
           )}
         </div>
-      ),
+      </>
+    ),
   };
 }

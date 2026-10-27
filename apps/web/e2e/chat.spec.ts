@@ -110,6 +110,37 @@ test("a specialist mention keeps Nova as the adviser", async ({ page }) => {
   await expect(page.locator(".chat-msg.agent .who b").last()).toHaveText("Nova");
 });
 
+test("the + menu opens and cancels without touching the draft", async ({ page }) => {
+  await signUp(page);
+  await addProject(page, "Kumove", "KUM");
+  await openChat(page, "?project=KUM");
+
+  const box = page.getByLabel("Message");
+  const plus = page.getByRole("button", { name: "Project and mode" });
+  const menu = page.locator(".pop[role='listbox']");
+
+  await plus.click();
+  await expect(menu).toBeVisible();
+  // Clicking where the pill is cancels (the veil catches it) and an empty box stays empty.
+  const r = (await plus.boundingBox())!;
+  await page.mouse.click(r.x + r.width / 2, r.y + r.height / 2);
+  await expect(menu).toBeHidden();
+  await expect(box).toHaveValue("");
+
+  await box.fill("Ship it");
+  await plus.click();
+  await page.mouse.click(20, 20); // a click away cancels, and the draft is untouched
+  await expect(menu).toBeHidden();
+  await expect(box).toHaveValue("Ship it");
+
+  // A typed @ still opens the same list, and a pick removes the trigger.
+  await box.fill("Ship it @");
+  await expect(menu).toBeVisible();
+  await menu.getByRole("option", { name: "Plan", exact: true }).click();
+  await expect(box).toHaveValue("Ship it ");
+  await expect(page.getByRole("button", { name: "Mode: Plan" })).toBeVisible();
+});
+
 test("one conversation moves from Discuss to Plan to Build, and the plan is kept to build from", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
