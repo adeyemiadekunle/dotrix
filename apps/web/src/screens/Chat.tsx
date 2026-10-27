@@ -22,6 +22,7 @@ import {
   wasStopped,
   WORK_MODES,
   APPROVAL_MODES,
+  MODE_ICONS,
   type AgentId,
   type ApprovalMode,
   type Plan,
@@ -556,7 +557,6 @@ function RunSteps({ scope, runId }: { scope: Scope | undefined; runId: string })
 }
 
 const MODELS_ICON = "cpu";
-const MODE_ICONS: Record<WorkMode, string> = { discuss: "message-circle", plan: "list-checks", build: "hammer", review: "eye" };
 
 /** A version of the conversation's plan; the latest can be built (a Build message naming its version). */
 function PlanCard({ plan, latest, busy, onBuild }: { plan: Plan; latest: boolean; busy: boolean; onBuild: () => void }) {
@@ -711,7 +711,7 @@ function Composer({
   placeholder: string;
   onSend: (text: string, agent: string) => void;
   agent: string;
-  setAgent: (a: string) => void;
+  setAgent?: (a: string) => void;
   model?: string;
   setModel?: (m: string) => void;
   models?: [string, string][];
@@ -729,27 +729,19 @@ function Composer({
   const [text, setText] = useState(initial);
   const ref = useRef<HTMLTextAreaElement>(null);
   const a = D().agents.find((x) => x.handle === agent);
-  // Typing "@" offers the projects (in a new chat) and the agents.
-  const at = useAtPicker({ text, setText, ref, projects: contexts, project: context, onProject: setContext, agent, onAgent: setAgent });
+  // "+" (or typing "@") offers the projects (in a new chat) and the work modes; Nova always answers.
+  const at = useAtPicker({ text, setText, ref, projects: contexts, project: context, onProject: setContext, modes: WORK_MODES, mode, onMode: setMode });
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
   const send = () => {
-    let q = text.trim();
+    const q = text.trim();
     if (!q || S.ui.offline) return;
-    // "@vega …" (or its handle, "@research") picks the agent
-    const m = q.match(/^@(\w+)\s+/);
-    let pick = agent;
-    const named = m && D().agents.find((x) => x.handle === m[1] || x.name.toLowerCase() === m[1]!.toLowerCase());
-    if (m && named) {
-      pick = named.handle;
-      q = q.slice(m[0].length);
-      setAgent(pick);
-    }
-    onSend(q, pick);
-    setAgent("auto");
+    onSend(q, agent);
+    setAgent?.("auto");
     setText("");
   };
+  const modeLabel = WORK_MODES.find(([v]) => v === mode)?.[1] ?? "";
   return (
     <div style={{ position: "relative" }}>
       <div className="cbox">
@@ -770,12 +762,17 @@ function Composer({
           aria-expanded={at.open}
         />
         <div className="cbox-row">
+          {(contexts || (mode && setMode)) && (
+            <button type="button" className="cpill pick" onClick={at.start} aria-label="Project and mode" data-tip="Pick a project or a mode (or type @)">
+              <Ic n="plus" s={12} />
+            </button>
+          )}
           {contexts && setContext && context !== undefined ? (
             <button
               className="cpill pick"
               onClick={at.start}
-              aria-label={`Project: ${contexts.find(([v]) => v === context)?.[1]}. Type @ to change it`}
-              data-tip="Type @ to pick another project"
+              aria-label={`Project: ${contexts.find(([v]) => v === context)?.[1]}`}
+              data-tip="Pick a project or a mode (or type @)"
             >
               <Ic n={context ? "at-sign" : "layers"} s={12} />
               <span className="trunc">{contexts.find(([v]) => v === context)?.[1]}</span>
@@ -789,15 +786,10 @@ function Composer({
             )
           )}
           {mode && setMode && (
-            <span data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
-              <Pick
-                value={mode}
-                onChange={(v) => setMode(v as WorkMode)}
-                options={WORK_MODES.map(([v, l]): [string, string] => [v, l])}
-                label="Mode"
-                lead={<Ic n={MODE_ICONS[mode]} s={12} />}
-              />
-            </span>
+            <button className="cpill pick" onClick={at.start} aria-label={`Mode: ${modeLabel}`} data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
+              <Ic n={MODE_ICONS[mode]} s={12} />
+              <span className="trunc">{modeLabel}</span>
+            </button>
           )}
           {approval && setApproval && approvals.length > 1 && (
             <span data-tip={APPROVAL_MODES.find(([v]) => v === approval)?.[2]}>
@@ -810,11 +802,7 @@ function Composer({
               />
             </span>
           )}
-          <span className="cpill" aria-label="Nova is the lead adviser">
-            <Face c={D().agents.find((x) => x.handle === "auto")?.c ?? "var(--acc)"} size={16} mood="idle" />
-            Nova · Lead adviser
-          </span>
-          {agent !== "auto" && a && (
+          {agent !== "auto" && a && setAgent && (
             <button className="cpill" onClick={() => setAgent("auto")} aria-label={`Remove request to involve ${a.name}`}>
               Involve {a.name} <Ic n="x" s={10} />
             </button>
@@ -861,8 +849,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const sendCross = useSendCross(ws);
   const stop = useStopRun(scope);
   const stopCross = useStopCross(ws);
-  const [picked, setAgent] = useState<string | null>(null);
-  const agent = picked ?? "auto";
+  const agent = "auto";
   // How you're working: what you picked, else how the conversation was going, else Discuss.
   const [pickedMode, setMode] = useState<WorkMode | null>(null);
   const mode = pickedMode ?? lastUser?.work_mode ?? "discuss";
@@ -897,13 +884,11 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   }, [id, runs.length, busy, stream.text]);
-  const say = (message: string, a: string, m: WorkMode = mode) =>
-    projectId
-      ? send.mutate({ message, threadId: id, agent: a as AgentId, workMode: m, approvalMode: approval })
-      : sendCross.mutate({ message, thread_id: id, agent: a as AgentId });
+  const say = (message: string, m: WorkMode = mode) =>
+    projectId ? send.mutate({ message, threadId: id, agent, workMode: m, approvalMode: approval }) : sendCross.mutate({ message, thread_id: id, agent });
   const build = (plan: Plan) => {
     setMode("build");
-    say(`Build plan version ${plan.version}: ${plan.title}`, agent, "build");
+    say(`Build plan version ${plan.version}: ${plan.title}`, "build");
   };
   const halt = () => working && (projectId ? stop.mutate(working.id) : stopCross.mutate(working.id));
   const about = [...new Set(runs.flatMap((r) => r.project_ids ?? []))].map((pid) => proj(pid)?.name).filter(Boolean);
@@ -1011,12 +996,11 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           <Composer
             key={fixDraft.version}
             initial={fixDraft.text}
-            placeholder="Ask Nova, or type @ to involve a specialist"
+            placeholder="Ask Nova, or type @ to pick a mode"
             agent={agent}
-            setAgent={setAgent}
             model={modelName(last?.conversation_model) || undefined}
             context={p?.name ?? "All projects"}
-            onSend={(q, a) => say(q, a)}
+            onSend={(q) => say(q)}
             mode={projectId ? mode : undefined}
             setMode={projectId ? setMode : undefined}
             approval={projectId ? approval : undefined}
@@ -1055,7 +1039,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   const ps = visibleProjects().filter((p) => canSee(p) && !p.archived);
   const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ps[0]?.id ?? ""));
   const [picked, setPicked] = useState<string[]>(ps.slice(0, 3).map((p) => p.id));
-  const [agent, setAgent] = useState(agent0 ?? S.ui.chatAgent);
+  const [agent, setAgent] = useState(agent0 ?? "auto");
   const models = useModels(ws).data ?? [];
   const [chosen, setModel] = useState<string | null>(null);
   const model = chosen ?? models[0]?.id ?? "";
@@ -1065,7 +1049,6 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   const send = useSendMessage(scope);
   const sendCross = useSendCross(ws);
   const start = (text: string, a: string) => {
-    S.ui.chatAgent = a;
     const body = { agent: a as AgentId, model: model || null };
     const started = pid
       ? send
@@ -1104,7 +1087,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           )}
           <Composer
             key={q}
-            placeholder="Ask anything, or type @ to pick a project or an agent"
+            placeholder="Ask anything, or type @ to pick a project or a mode"
             agent={agent}
             setAgent={setAgent}
             model={model}

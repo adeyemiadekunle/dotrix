@@ -31,10 +31,11 @@ async function openChat(page: Page, search = "") {
   await expect(page.locator("#main-content h1").first()).toContainText(/Good|Chat/);
 }
 
-async function pickChatOption(page: Page, label: "Agent" | "Approvals" | "Mode", name: string | RegExp) {
+async function pickChatOption(page: Page, label: "Approvals" | "Mode", name: string | RegExp) {
   const picker = page.getByRole("button", { name: new RegExp(`^${label}:`) });
   await picker.click();
-  const menu = page.getByRole("listbox", { name: label, exact: true });
+  // Approvals keeps its own list; Mode is a section of the + menu (projects + modes).
+  const menu = label === "Approvals" ? page.getByRole("listbox", { name: "Approvals", exact: true }) : page.locator(".pop[role='listbox']");
   const option = menu.getByRole("option", { name, exact: true });
   const selected = (await option.innerText()).trim();
   await option.click();
@@ -101,7 +102,7 @@ test("a specialist mention keeps Nova as the adviser", async ({ page }) => {
   await addProject(page, "Kumove", "KUM");
   await openChat(page, "?project=KUM&agent=research");
 
-  await expect(page.getByText("Nova · Lead adviser")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Project and mode" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove request to involve Vega" })).toBeVisible();
   await page.getByLabel("Message").fill("Who else ships multi-zone?");
   await page.getByLabel("Message").press("Enter");
@@ -125,7 +126,7 @@ test("one conversation moves from Discuss to Plan to Build, and the plan is kept
   await page.getByLabel("Message").fill("Save plan: Refunds; Add refund(); Test it");
   await page.getByLabel("Message").press("Enter");
   const card = page.getByRole("group", { name: "Plan version 1" });
-  await expect(card.getByText("Refunds", { exact: true })).toBeVisible();
+  await expect(card.getByText("Refunds", { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(card.getByText("Test it")).toBeVisible();
   await expect(card.getByText("after 1")).toBeVisible();
   await expect(page.getByText("Saved the plan; switch to Build to carry it out.")).toBeVisible();

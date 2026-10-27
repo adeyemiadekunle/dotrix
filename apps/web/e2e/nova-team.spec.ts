@@ -8,7 +8,6 @@ test("the fixed team opens Juno's keyboard-accessible review panel", async ({ pa
   await agents.getByRole("button", { name: /Juno Review/ }).click();
   const review = page.getByRole("complementary", { name: "Juno's review" });
   await expect(review).toBeVisible();
-  await expect(page.getByText("Nova · Lead adviser")).toBeVisible();
   await review.getByRole("tab", { name: "Findings" }).click();
   await review.getByRole("tab", { name: "Findings" }).press("ArrowRight");
   await expect(review.getByRole("tab", { name: "Evidence" })).toHaveAttribute("aria-selected", "true");

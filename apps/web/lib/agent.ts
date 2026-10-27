@@ -34,6 +34,9 @@ export const WORK_MODES: [WorkMode, string, string][] = [
   ["build", "Build", "Do it: changes wait for your approval, and code goes to Kai"],
   ["review", "Review", "What changed, with its evidence; no coding"],
 ];
+
+/** Each mode's icon, in the composer and its menu. */
+export const MODE_ICONS: Record<WorkMode, string> = { discuss: "message-circle", plan: "list-checks", build: "hammer", review: "eye" };
 export type ModelOption = Schemas["ModelOption"];
 
 export const isActive = (run: Pick<Run, "status">) => ["queued", "running", "waiting_children", "waiting_dependency"].includes(run.status);

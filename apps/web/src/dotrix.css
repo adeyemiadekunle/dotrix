@@ -960,38 +960,6 @@
   }
 }
 
-/* Home's ask box (screens/Home.tsx AskHero). */
-.ask-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  margin: 4px 0 26px;
-}
-.ask-wrap {
-  position: relative;
-  width: 100%;
-  max-width: 640px;
-}
-.ask-box {
-  width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--border);
-}
-.ask-sugg {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  max-width: 680px;
-}
-.ask-sugg .cpill {
-  max-width: none;
-  height: 28px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-}
-
 /* Chat's switch between conversations and coding sessions: icons beside the heading. */
 .seg-icons button {
   position: relative;

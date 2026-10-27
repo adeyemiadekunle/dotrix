@@ -1,14 +1,14 @@
-// "@" in a message box: offers the projects (where the box can change its project) and the agents;
-// picking one sets it and drops the "@…" typed. Chat's composer and Home's ask box.
+// "@" (or the + pill) in a message box: offers the projects (where the box can change its project)
+// and the work modes; Nova always answers and brings in whoever the work needs.
+// Chat's composer and Home's ask box.
 import { useState, type KeyboardEvent, type RefObject } from "react";
 
+import { MODE_ICONS, type WorkMode } from "@/lib/agent";
 import { Ic } from "../core/icons";
-import { D, proj } from "../data/store";
-import { Face } from "../ui/face";
-import { CODING_AGENT } from "../data/seed-dotrix";
+import { proj } from "../data/store";
 import { PIcon } from "../ui/helpers";
 
-type Item = { kind: "project" | "agent"; id: string; label: string; sub?: string; c?: string };
+type Item = { kind: "project" | "mode"; id: string; label: string };
 
 export function useAtPicker({
   text,
@@ -17,8 +17,9 @@ export function useAtPicker({
   projects,
   project,
   onProject,
-  agent,
-  onAgent,
+  modes,
+  mode,
+  onMode,
 }: {
   text: string;
   setText: (t: string) => void;
@@ -26,8 +27,9 @@ export function useAtPicker({
   projects?: [string, string][];
   project?: string;
   onProject?: (id: string) => void;
-  agent: string;
-  onAgent: (handle: string) => void;
+  modes?: [WorkMode, string, string][];
+  mode?: string;
+  onMode?: (m: WorkMode) => void;
 }) {
   const [q, setQ] = useState<string | null>(null);
   const [hl, setHl] = useState(0);
@@ -39,20 +41,16 @@ export function useAtPicker({
           ...(projects && onProject
             ? projects.filter(([, l]) => l.toLowerCase().includes(ql)).map(([id, l]) => ({ kind: "project" as const, id, label: l }))
             : []),
-          ...D()
-            .agents.filter((x) => `${x.name} ${x.handle} ${x.role}`.toLowerCase().includes(ql))
-            .map((x) => ({ kind: "agent" as const, id: x.handle, label: x.name, sub: x.role, c: x.c })),
-          ...("kai coding".includes(ql)
-            ? [{ kind: "agent" as const, id: "coding-agent", label: "Kai", sub: "Coding · through Nova in Build mode", c: CODING_AGENT.c }]
-            : []),
+          ...(modes && onMode ? modes.filter(([, l]) => l.toLowerCase().includes(ql)).map(([v, l]) => ({ kind: "mode" as const, id: v, label: l })) : []),
         ];
   const choose = (it: Item) => {
     if (it.kind === "project") onProject?.(it.id);
-    else onAgent(it.id);
+    else onMode?.(it.id as WorkMode);
     setText(text.replace(/(^|\s)@[\w-]*$/, "$1"));
     setQ(null);
     ref.current?.focus();
   };
+  const label = items.some((i) => i.kind === "project") ? (items.some((i) => i.kind === "mode") ? "Projects and modes" : "Projects") : "Modes";
   return {
     open: q !== null,
     /** The textarea's onChange. */
@@ -82,8 +80,12 @@ export function useAtPicker({
       }
       return false;
     },
-    /** Types "@" and opens the list (a pill's click). */
+    /** Types "@" and opens the list (the + pill's click); a second click closes it. */
     start() {
+      if (q !== null) {
+        setQ(null);
+        return;
+      }
       setText(text + (text && !text.endsWith(" ") ? " @" : "@"));
       setQ("");
       setHl(0);
@@ -94,7 +96,7 @@ export function useAtPicker({
         <div
           className="pop"
           role="listbox"
-          aria-label={onProject ? "Projects and agents" : "Agents"}
+          aria-label={label}
           style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 260, maxHeight: 300, overflowY: "auto", zIndex: 5, textAlign: "left" }}
         >
           {items.length ? (
@@ -102,7 +104,7 @@ export function useAtPicker({
               <div key={it.kind + it.id}>
                 {(i === 0 || items[i - 1]!.kind !== it.kind) && (
                   <div className="faint" style={{ fontSize: 11, padding: "6px 10px 2px", fontWeight: 500 }}>
-                    {it.kind === "project" ? "Project" : "Agent"}
+                    {it.kind === "project" ? "Project" : "Mode"}
                   </div>
                 )}
                 <button
@@ -114,12 +116,11 @@ export function useAtPicker({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => choose(it)}
                 >
-                  {it.kind === "agent" ? <Face c={it.c!} size={16} mood="idle" /> : it.id ? <PIcon p={proj(it.id)!} s={12} /> : <Ic n="layers" s={13} />}
+                  {it.kind === "mode" ? <Ic n={MODE_ICONS[it.id as WorkMode]} s={13} /> : it.id ? <PIcon p={proj(it.id)!} s={12} /> : <Ic n="layers" s={13} />}
                   <span className="trunc" style={{ flex: 1 }}>
                     {it.label}
                   </span>
-                  {it.sub && <span className="r">{it.sub}</span>}
-                  {((it.kind === "project" && it.id === project) || (it.kind === "agent" && it.id === agent)) && <Ic n="check" s={13} />}
+                  {((it.kind === "project" && it.id === project) || (it.kind === "mode" && it.id === mode)) && <Ic n="check" s={13} />}
                 </button>
               </div>
             ))
