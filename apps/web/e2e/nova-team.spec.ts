@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test";
 
 test("the fixed team opens Juno's keyboard-accessible review panel", async ({ page }) => {
   await page.goto("/w/dotrix");
-  await page.getByRole("checkbox", { name: "Show the agents panel" }).click();
   const agents = page.getByRole("complementary", { name: "Agents" });
   await expect(agents.locator(".ap-row")).toHaveCount(7);
   await expect(agents.getByText("Kai", { exact: true })).toHaveCount(1);

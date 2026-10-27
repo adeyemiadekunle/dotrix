@@ -60,6 +60,13 @@ def main() -> None:
         "DOTRIX_SEARCH_PROVIDER": "fake",
         # Search by keywords only: no embedding calls with a developer's key.
         "DOTRIX_EMBEDDING_MODEL": "",
+        # Tests cover the not-set-up states: a developer's GitHub config must not leak in.
+        "DOTRIX_GITHUB_APP_ID": "",
+        "DOTRIX_GITHUB_APP_SLUG": "",
+        "DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH": "",
+        "DOTRIX_GITHUB_WEBHOOK_SECRET": "",
+        "DOTRIX_GITHUB_CLIENT_ID": "",
+        "DOTRIX_GITHUB_CLIENT_SECRET": "",
         # Only used if no secret is configured (e.g. CI); this server holds throwaway data.
         # A fresh key each run (the database is thrown away too): organisations' model keys.
         "DOTRIX_ENCRYPTION_KEY": Fernet.generate_key().decode(),
