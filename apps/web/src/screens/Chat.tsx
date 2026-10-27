@@ -1937,12 +1937,6 @@ export function Chat() {
               <button className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
                 <Ic n="panel-left-open" s={16} />
               </button>
-              <button className="ibtn" onClick={() => open("new=1")} aria-label="New chat" data-tip="New chat" data-tip-pos="right">
-                <Ic n="square-pen" s={15} />
-              </button>
-              <button className="ibtn" onClick={() => open("tab=coding")} aria-label="New coding session" data-tip="New coding session" data-tip-pos="right">
-                <Ic n="code" s={15} />
-              </button>
             </div>
           ) : (
             <>
@@ -1966,15 +1960,6 @@ export function Chat() {
                     aria-label="Find"
                   />
                 </div>
-                {/* Start something new, under the search: a conversation, or Kai on an issue. */}
-                <button className={`sitem chat-new ${!hasSel || search.get("new") ? "on" : ""}`} onClick={() => open("new=1")}>
-                  <Ic n="square-pen" s={15} />
-                  <span className="trunc">New chat</span>
-                </button>
-                <button className={`sitem chat-new ${newSession ? "on" : ""}`} onClick={() => open("tab=coding")}>
-                  <Ic n="code" s={15} />
-                  <span className="trunc">New coding session</span>
-                </button>
               </div>
               <nav className="chat-list" aria-label="Conversations">
                 {ps.map((p) => {

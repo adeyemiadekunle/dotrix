@@ -979,12 +979,6 @@
   font-weight: 600;
   line-height: 1;
 }
-.chat-new {
-  margin-top: 8px;
-  width: 100%;
-  font-weight: 500;
-}
-
 /* A coding session's working tree (screens/Chat.tsx WorkingTree). */
 .cs-tree {
   overflow: hidden;

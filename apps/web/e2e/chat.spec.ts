@@ -157,16 +157,15 @@ test("ask across projects: the conversation reads only and is listed apart, with
   await expect(conversations.getByRole("button", { name: /How are both projects doing/ })).toContainText(/ALP|KUM/);
 });
 
-test("one list for conversations and coding sessions: a new session starts from it, and New chat goes back", async ({ page }) => {
+test("one list for conversations and coding sessions: a coding link opens beside the same list", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await openChat(page);
   await expect(page.getByRole("tab", { name: "Code" })).toHaveCount(0); // no separate Code tab
-  await page.getByRole("button", { name: "New coding session" }).click();
-  await expect(page).toHaveURL(/tab=coding/);
+  // Coding starts from an issue's link (or Build mode); the form opens beside the conversations.
+  await page.goto(`/w/${slugOf(page)}/chat?tab=coding`);
   await expect(page.getByRole("heading", { name: "Start a coding session" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Conversations" })).toBeVisible(); // the same list beside it
-  await page.getByRole("button", { name: "New chat", exact: true }).click();
-  await expect(page).not.toHaveURL(/tab=coding/);
+  await page.goto(`/w/${slugOf(page)}/chat`);
   await expect(page.getByLabel("Message")).toBeVisible();
 });
