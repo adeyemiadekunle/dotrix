@@ -10,6 +10,8 @@ The team is fixed: Nova advises and coordinates Lyra, Orion, Vega, Juno, and Ech
 
 `DOTRIX_DURABLE_DELEGATION` (default false) pilots new durable specialist task trees in project conversations; existing trees continue to recover when it is off. Run the worker queue in deployments that need restart recovery. Children have isolated checkpoints, inherit the requester's permissions and keys, and cannot delegate. Two independent read-only specialists can run together; project-changing specialist work is serialized. The outbox, leases, fencing, permissions and approval gates remain authoritative. Cross-project conversations stay read-only and do not launch specialist tasks. Kai remains in the coding service; completed changed turns produce Juno reviews and a queued Nova summary in the original conversation. See [docs/nova-team.md](docs/nova-team.md).
 
+The isolated [chat runtime experiment](experiments/fx-chat/README.md) compares the engine's experimental `DeepAgentsRuntime` and `FxRuntime` with read-only built-in role conversations and host-owned delegation. Neither is connected to the platform runner. The boundary, model policy and evaluation gates are in [docs/chat-runtime-evaluation.md](docs/chat-runtime-evaluation.md).
+
 ## Repo map
 
 | Path | What | Stack |

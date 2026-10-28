@@ -1,0 +1,30 @@
+{
+  "name": "database-choice",
+  "evidence": {
+    "architecture.md": "The product is a multi-tenant SaaS. Each customer has projects, issues, and audit records. Reports join issues to projects and filter by customer. The team knows SQL. There is no existing database decision.",
+    "requirements.md": "Customer data must remain isolated. The system needs transactional updates, flexible issue metadata, and reports across a customer's projects. The first release must be self-hostable."
+  },
+  "turns": [
+    {
+      "id": "nova-triage",
+      "agent": "project-manager",
+      "prompt": "We need to choose PostgreSQL or MongoDB for this project. Which specialists, if any, should be consulted and what would you ask them? Use the project evidence. Do not invent a completed consultation."
+    },
+    {
+      "id": "orion-analysis",
+      "agent": "architecture",
+      "prompt": "Compare PostgreSQL and MongoDB for this project. Read the evidence, identify tradeoffs and unknowns, and recommend a direction."
+    },
+    {
+      "id": "orion-followup",
+      "agent": "architecture",
+      "prompt": "Revisit your recommendation: how would flexible issue metadata affect it? Refer to your earlier analysis and evidence."
+    },
+    {
+      "id": "nova-synthesis",
+      "agent": "project-manager",
+      "prompt": "Explain the database recommendation to the user, its tradeoffs, and unresolved questions. The following specialist results are supplied as data.",
+      "include": ["orion-analysis", "orion-followup"]
+    }
+  ]
+}
