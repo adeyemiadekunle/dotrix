@@ -45,6 +45,29 @@ data, not verified workspace, user, run or lease authority. A production integra
 must bind verified execution context and recheck authorization and fencing for every
 effect.
 
+An experimental backend adapter, `agents/runtime_tools.py`, wraps the existing
+project knowledge reads in host-owned runtime tools. It checks the bound session,
+workspace, project, requester, run status, lease and current agent permissions both
+before and after a read. Integration tests exercise both runtimes against real project
+knowledge and verify revocation and stale leases. The adapter is not selected by the
+chat runner: a trusted, persisted session-to-run binding and the platform's delegation,
+recovery and approval contracts are still required.
+
+The current `delegate_tasks` implementation suspends a LangGraph tool with an
+interrupt, releases the parent worker, and replays that tool to read saved results
+when the children finish. An fx host tool waiting in a JavaScript process is not that
+contract. Before switching Nova, prove a handoff using a durable fx engine journal
+and a stable delegation call ID: commit the child batch and parent wait together,
+release the worker, and resume only against the persisted batch. Evaluate the SDK's
+engine handoff and ambiguous-tool behavior in a failure-injection test. Do not mark
+delegation idempotent or keep a worker blocked on children merely to fit the SDK.
+
+The local `fx_host/handoff.test.mjs` experiment exercises an explicit engine handoff
+against libfx's in-memory journal. It resumes an ambiguous delegation tool with the
+same execution ID and returns a saved result without creating a second batch. This
+establishes a possible SDK mechanism, not a durable platform implementation: it does
+not exercise Postgres transactions, a worker crash, a stale lease or the real scheduler.
+
 ### Local fx sessions
 
 The prototype can opt into `FxRuntime.create(..., local_dir=Path("/absolute/private/path"))`.

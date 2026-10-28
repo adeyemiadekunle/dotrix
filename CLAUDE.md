@@ -12,6 +12,10 @@ The team is fixed: Nova advises and coordinates Lyra, Orion, Vega, Juno, and Ech
 
 The isolated [chat runtime experiment](experiments/fx-chat/README.md) compares the engine's experimental `DeepAgentsRuntime` and `FxRuntime` with read-only built-in role conversations and host-owned delegation. Neither is connected to the platform runner. The boundary, model policy and evaluation gates are in [docs/chat-runtime-evaluation.md](docs/chat-runtime-evaluation.md).
 
+`agents/runtime_tools.py` can wrap the platform's read-only knowledge tools for a runtime session bound to an admitted run. It rechecks the session, requester, project access, current agent contract and lease before and after each call. This is not yet connected to production chat; it does not implement a trusted session binding, delegation, writes or approvals.
+
+The opt-in `fx_host/handoff.test.mjs` probes libfx engine handoff and resumption with an in-memory journal; it is not a test of the durable platform scheduler.
+
 ## Repo map
 
 | Path | What | Stack |
