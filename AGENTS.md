@@ -1,6 +1,14 @@
 # AGENTS.md
 
-Read [CLAUDE.md](CLAUDE.md) before any change: it is this repo's single guide for every coding agent (Codex, Claude Code, and others), with the repo map, commands, the rules that always apply, conventions, where things stand, and the plan. Keep it the one copy: update CLAUDE.md, not this file.
+Read [CLAUDE.md](CLAUDE.md) before any change: it has the repo map, commands, rules, conventions, implementation status, and detailed product direction. Keep this file's summary aligned with it when those decisions change.
+
+## Chat and Coding direction
+
+- Dotrix owns the built-in identities: Nova coordinates the thinking specialists, and Kai is the coding agent. Chat and coding sessions are separate, linked areas.
+- Put **Coding** in the sidebar directly below **Chat** for now. Each has its own session list; a chat can link to a coding session and receive its outcome.
+- An explicit coding request goes from Nova through a structured, permission-checked handoff to Kai. Keep the origin and results linked, preserve the person's privacy and approval mode, and return the outcome and Juno's review to Nova when available.
+- Support runtime choice behind Dotrix-owned boundaries: the existing DeepAgents chat runner and Claude Code, Codex, and OpenCode coding tools remain available. Evaluate fx/libfx for both Chat and Kai; fx coding and the new navigation are planned, not implemented.
+- Dotrix owns delegation, workspaces, model policy, permissions, approvals, leases, audit, and recovery. A runtime and its subagents must not bypass those controls. Use per-agent or task model tiers only through host-authorized policy.
 
 The rules that always apply, in short (CLAUDE.md has them in full):
 
