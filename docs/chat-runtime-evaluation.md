@@ -32,18 +32,26 @@ as a durable event outbox. Store runtime type, pinned version and session mappin
 the run so that a restart or configuration change cannot resume it through a
 different engine by accident.
 
-The first boundary now provides a common prompt/result API, in-memory sessions,
-host-defined tools and streaming events. `FxRuntime` also exposes in-process
-steering and cancellation, and optional local session persistence;
-`DeepAgentsRuntime` accepts a caller-configured model.
+The first boundary provides session creation, prompt/result, streaming, cancellation,
+capability discovery, and explicit unsupported-operation failures. `FxRuntime` also
+exposes in-process steering and optional local persistence and resume;
+`DeepAgentsRuntime` accepts a caller-configured model but cannot steer or resume an
+interrupted turn through this prototype interface.
 The fx host is a private Node subprocess and calls tools back in Python. These
-implementations advertise no platform crash recovery or approval support and are not
-selected by the backend. Production adapters must implement and validate those
-contracts before the platform routes a run to them. An optional scoped tool handler
+implementations advertise no platform crash recovery or approval support. An optional scoped tool handler
 receives the runtime's session ID and, on fx, its execution ID. These are correlation
 data, not verified workspace, user, run or lease authority. A production integration
 must bind verified execution context and recheck authorization and fencing for every
 effect.
+
+libfx's engine can steer a running turn and queue a follow-up. The current Dotrix
+chat runner instead rejects another message while a conversation is active; its
+approval and delegation interrupts are not live steering or a message queue. The
+fx wrapper's in-process `steer` is not yet exposed to people, and the wrapper does
+not expose `followUp`. Add those capabilities only with Dotrix-owned authorization,
+durable ordering, cancellation, and audit, including access checks when a queued
+message is delivered. A DeepAgents adapter could implement the same product contract
+using host-managed state and scheduling; do not infer identical runtime semantics.
 
 An experimental backend adapter, `agents/runtime_tools.py`, wraps the existing
 project knowledge reads in host-owned runtime tools. It checks the bound session,
@@ -54,8 +62,8 @@ persists one session binding per run, pins runtime type, version and configurati
 and only admits a running, leased run with current project access. Competing bindings
 are serialized or rejected by database constraints; a new attempt can retrieve the
 same binding after it acquires a new lease. Tool calls must match the persisted binding.
-The chat runner does not select this adapter, and mapping a session does not persist
-its runtime journal, enforce a safe prompt or provide delegation and approval contracts.
+Mapping a session does not persist its runtime journal or provide delegation and
+approval contracts.
 
 This initial binding deliberately does not reuse a session across runs: a runtime
 session ID belongs to one run. Reusable specialist conversations need a separate
@@ -65,21 +73,29 @@ version its tool implementations and policies. `fx_configuration_digest` produce
 the same public-settings digest as the local fx store; it does not hash tool code or
 credentials. Authorization and the lease still need checking at every external effect.
 
-`agents/fx_pilot.py` now composes the binding and scoped knowledge reads for an
-internal, explicitly invoked Nova turn. It obtains the selected model, fixed provider
+`agents/fx_pilot.py` composes the binding and scoped knowledge reads for an opt-in
+read-only Nova conversation. It obtains the selected model, fixed provider
 endpoint, requester's personal key, built-in role and current guidance from an admitted
 run. It checks access and the lease before forwarding each runtime event and before
 returning the answer. Real-Postgres tests with a local fake model check the role, key,
 project read, duplicate refusal, and mid-turn membership or lease revocation.
 
-The pilot is deliberately limited to a first, interactive Discuss turn with no token
+The pilot is deliberately limited to interactive Discuss turns with no token
 budget, no automation, no delegation and no writes. It supports the configured
 OpenAI-compatible provider endpoints, not direct Anthropic or Google APIs. The fx
 journal is in memory; a previously bound run is refused instead of silently replayed.
-The helper does not persist the reply, activity or usage and is not selected by the
-production runner or exposed through an API. It does not yet include the full
+The platform runner persists replies and events, and passes bounded recent history to
+later turns. It records available usage and marks unreported usage incomplete. Set
+`DOTRIX_FX_CHAT_PILOT=true` on both the API and worker to expose the selector; new
+conversations default to DeepAgents and remain pinned to their selected runtime. It does not yet include the full
 production context pack, workspace rules, board tools, model policy, specialist
 sessions, approvals, or distributed recovery.
+
+For native development, install Node 22 and run
+`npm ci --prefix packages/engine/src/dotrix_engine/runtimes/fx_host` before enabling
+the preview. The production backend image includes Node and the pinned fx host.
+Development Compose mounts the engine source from the host, so it also needs the
+host-side `npm ci` when the preview is enabled.
 
 The current `delegate_tasks` implementation suspends a LangGraph tool with an
 interrupt, releases the parent worker, and replays that tool to read saved results

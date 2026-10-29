@@ -142,6 +142,8 @@ class Settings(DatabaseSettings):
     # picked up again from its last checkpoint by the worker's sweep, at most AGENT_MAX_ATTEMPTS times.
     agent_lease_seconds: int = Field(default=90, ge=15, le=3600)
     durable_delegation: bool = False
+    # Opt-in read-only Nova preview; existing conversations keep their original runtime.
+    fx_chat_pilot: bool = False
     # A session's sandbox stays up between turns (Phase B) until it's unused this long, at most this
     # many per workspace (0: never kept; each turn starts fresh and resumes from the saved transcript).
     coding_idle_minutes: int = Field(default=30, ge=1, le=24 * 60)

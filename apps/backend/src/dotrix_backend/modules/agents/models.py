@@ -38,6 +38,11 @@ class WorkMode(enum.StrEnum):
     REVIEW = "review"  # what changed, with its evidence
 
 
+class ChatRuntime(enum.StrEnum):
+    DEEPAGENTS = "deepagents"
+    FX = "fx"
+
+
 class RunStatus(enum.StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
@@ -127,6 +132,10 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # The conversation's model, fixed when it starts (every run of a thread has the same one).
     # Null only on conversations from before models were chosen: they use the project's.
     conversation_model: Mapped[str | None] = mapped_column(String(100))
+    # Fixed at conversation creation; recovered runs never switch runtime.
+    chat_runtime: Mapped[ChatRuntime] = mapped_column(
+        str_enum(ChatRuntime, 16), default=ChatRuntime.DEEPAGENTS, server_default="deepagents"
+    )
     # The project's model when the run last worked, and the tokens it used over all its steps
     # (start, then resuming after approvals), the title included.
     model: Mapped[str | None] = mapped_column(String(100))

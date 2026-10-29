@@ -44,6 +44,7 @@ from .models import (
     AgentRun,
     AgentRunOutput,
     ApprovalStatus,
+    ChatRuntime,
     ConversationPlan,
     RunKind,
     RunStatus,
@@ -128,6 +129,10 @@ class ModelLocked(Conflict):
     code = "model_locked"
 
 
+class RuntimeLocked(Conflict):
+    code = "runtime_locked"
+
+
 class ModelNotAvailable(Unprocessable):
     code = "model_not_available"
 
@@ -207,12 +212,16 @@ class AgentService:
             ).with_for_update())
             await self._check_thread(project.id, data.thread_id, member)
             model = await self._thread_model(project.id, data.thread_id)
+            runtime = await self._thread_runtime(project.workspace_id, project.id, data.thread_id, member.user_id)
+            if data.chat_runtime is not None and data.chat_runtime is not runtime:
+                raise RuntimeLocked("A conversation keeps the runtime it started with; start a new one to change it")
             if data.model is not None and data.model != (model or project.model):
                 raise ModelLocked(
                     "A conversation keeps the model it started with; start a new conversation to use another"
                 )
         else:
             model = data.model
+            runtime = data.chat_runtime or ChatRuntime.DEEPAGENTS
             if model is None and automation_id is None:
                 # Their own model for this agent, else their default, where they may use it.
                 user = await self.session.get(User, member.user_id)
@@ -233,7 +242,22 @@ class AgentService:
                 if available is not None and model not in available:
                     raise ModelNotAvailable(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
         keys = run_key.keys
-        self.runner.model_factory(project, model, keys=keys)  # fail fast (503) if the model can't run
+        if runtime is ChatRuntime.FX:
+            from .fx_pilot import validate_fx_pilot_model
+
+            if not self.runner.settings or not self.runner.settings.fx_chat_pilot:
+                raise Unprocessable("The read-only fx chat preview is not enabled")
+            if not interactive or data.work_mode is not WorkMode.DISCUSS or requested_agent not in ("auto", PM_ROLE):
+                raise Unprocessable("The fx preview supports Nova in Discuss mode without specialist delegation")
+            if project.token_budget is not None:
+                raise Unprocessable("The fx preview cannot yet enforce this project's token budget")
+            lead = next((item.spec for item in await AgentDefinitionRepository(self.session).resolve(
+                project.workspace_id, project.id) if item.spec.handle == PM_ROLE), None)
+            if lead is None or lead.budget_tokens is not None:
+                raise Unprocessable("The fx preview cannot run with the current Nova configuration")
+            validate_fx_pilot_model(model, keys)
+        else:
+            self.runner.model_factory(project, model, keys=keys)  # fail fast (503) if the model can't run
         now = _now()
         run = AgentRun(
             id=uuid7(),
@@ -251,10 +275,12 @@ class AgentService:
             approval_mode=effective(data.approval_mode if automation_id is None else None, member).value,
             automation_id=automation_id,
             conversation_model=model,
+            chat_runtime=runtime,
             requested_by_id=member.user_id,
             created_at=now,
             updated_at=now,
-            orchestration=bool(interactive and self.runner.settings and self.runner.settings.durable_delegation),
+            orchestration=bool(runtime is ChatRuntime.DEEPAGENTS and interactive and self.runner.settings
+                               and self.runner.settings.durable_delegation),
         )
         self.session.add(run)
         if data.mentions:
@@ -271,6 +297,7 @@ class AgentService:
             actor_user_id=member.user_id,
             instructed_by_id=member.user_id,
             details={"kind": kind.value, "thread_id": str(thread_id), "agent": data.agent, "model": model,
+                     "chat_runtime": runtime.value,
                      **({"mode": mode} if mode else {}),
                      **({"work_mode": data.work_mode.value} if data.work_mode else {}),
                      **({"automation_id": str(automation_id)} if automation_id else {})},
@@ -422,6 +449,7 @@ class AgentService:
                     func.coalesce(func.sum(AgentRun.input_tokens), 0),
                     func.coalesce(func.sum(AgentRun.output_tokens), 0),
                     func.coalesce(func.sum(AgentRun.model_calls), 0),
+                    func.count(AgentRun.id).filter(AgentRun.chat_runtime == ChatRuntime.FX),
                 ).where(AgentRun.project_id.in_(visible), AgentRun.created_at >= since)
             )
         ).one()
@@ -450,6 +478,7 @@ class AgentService:
             input_tokens=totals[1],
             output_tokens=totals[2],
             model_calls=totals[3],
+            incomplete_usage_runs=totals[4],
             approved=decisions.get(ApprovalStatus.APPROVED, 0),
             rejected=decisions.get(ApprovalStatus.REJECTED, 0),
             by_agent=[AgentRunCount(agent=name, runs=count) for name, count in per_agent],
@@ -628,6 +657,8 @@ class AgentService:
         )
         if run is None:
             raise NotFound("Run not found")
+        if run.chat_runtime is ChatRuntime.FX:
+            raise NothingToContinue("The fx preview cannot resume an interrupted turn; send a new message")
         if run.status is not RunStatus.FAILED or run.error_kind not in ("model_limit", "interrupted"):
             raise NothingToContinue("Only a run that stopped at its model's limit, or was interrupted, can be continued")
         later = await self.session.scalar(
@@ -835,6 +866,15 @@ class AgentService:
             .limit(1)
         )
 
+    async def _thread_runtime(
+        self, workspace_id: uuid.UUID, project_id: uuid.UUID, thread_id: uuid.UUID, user_id: uuid.UUID,
+    ) -> ChatRuntime:
+        runtime = await self.session.scalar(select(AgentRun.chat_runtime).where(
+            AgentRun.workspace_id == workspace_id, AgentRun.project_id == project_id,
+            AgentRun.thread_id == thread_id, AgentRun.requested_by_id == user_id,
+        ).order_by(AgentRun.created_at, AgentRun.id).limit(1))
+        return runtime or ChatRuntime.DEEPAGENTS
+
     async def _check_thread(
         self, project_id: uuid.UUID, thread_id: uuid.UUID, member: Membership | None = None
     ) -> None:
@@ -877,6 +917,10 @@ def _read(access: ProjectAccess, run: AgentRun) -> AgentRunRead:
 def read_run(member: Membership, run: AgentRun) -> AgentRunRead:
     """A run as its viewer may see it: token usage and the model only with usage:view."""
     read = AgentRunRead.model_validate(run).model_copy(update={"outputs": _outputs(run), "sources": _sources(run)})
+    if run.chat_runtime is ChatRuntime.FX:
+        reported = set((run.usage or {}).get("fx_usage_fields", []))
+        missing = {name: None for name in ("input_tokens", "output_tokens", "cached_input_tokens") if name not in reported}
+        read = read.model_copy(update={**missing, "model_calls": None, "usage_complete": False})
     if not can(member, Permission.VIEW_USAGE):
         return read.model_copy(
             update={
@@ -936,6 +980,7 @@ async def continue_due_runs(session: AsyncSession, runner: AgentRunner) -> int:
     conditions = (
         AgentRun.status == RunStatus.FAILED, AgentRun.error_kind == "model_limit",
         AgentRun.continue_at_reset.is_(True), AgentRun.resumes_at <= _now(),
+        AgentRun.chat_runtime != ChatRuntime.FX,
     )
     # Enumerate internal scheduler references, then lock/recheck each workspace's run.
     # Committing one continuation releases locks; a snapshot of locked ORM rows

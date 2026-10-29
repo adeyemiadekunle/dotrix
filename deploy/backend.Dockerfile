@@ -4,10 +4,16 @@
 #
 # The worker starts coding sandboxes on the host's Docker (DOTRIX_CODING_SANDBOX=docker), so the
 # image carries the Docker CLI and git; it reaches the daemon through DOCKER_HOST (a socket proxy).
+FROM node:22-bookworm-slim AS fx-host
+WORKDIR /fx
+COPY packages/engine/src/dotrix_engine/runtimes/fx_host/package.json packages/engine/src/dotrix_engine/runtimes/fx_host/package-lock.json ./
+RUN npm ci --omit=dev
+
 FROM python:3.13-slim-bookworm
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /bin/
 COPY --from=docker:27.5.1-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=fx-host /usr/local/bin/node /usr/local/bin/node
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
@@ -22,6 +28,7 @@ COPY apps/backend/pyproject.toml apps/backend/
 RUN uv sync --frozen --no-dev --no-install-workspace --package dotrix-backend
 
 COPY packages/engine packages/engine
+COPY --from=fx-host /fx/node_modules packages/engine/src/dotrix_engine/runtimes/fx_host/node_modules
 COPY apps/cli apps/cli
 COPY apps/backend apps/backend
 RUN uv sync --frozen --no-dev --package dotrix-backend

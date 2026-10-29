@@ -8,6 +8,7 @@ from .contracts import (
     RuntimeTool,
     RuntimeToolContext,
     TurnResult,
+    UnsupportedRuntimeOperation,
 )
 from .deepagents import DeepAgentsRuntime
 from .fx import FxRuntime, fx_configuration_digest
@@ -25,5 +26,6 @@ __all__ = [
     "RuntimeTool",
     "RuntimeToolContext",
     "TurnResult",
+    "UnsupportedRuntimeOperation",
     "fx_configuration_digest",
 ]

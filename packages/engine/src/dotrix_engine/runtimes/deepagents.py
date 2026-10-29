@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import json
+import uuid
 from typing import Any
 
 from deepagents import create_deep_agent
@@ -20,6 +21,7 @@ from .contracts import (
     RuntimeEvent,
     RuntimeToolContext,
     TurnResult,
+    UnsupportedRuntimeOperation,
     validate_session,
 )
 
@@ -54,7 +56,7 @@ class _ToolBoundary(AgentMiddleware):
 class DeepAgentsRuntime:
     """In-memory prototype. It does not replace Dotrix's durable production graph."""
 
-    capabilities = RuntimeCapabilities()
+    capabilities = RuntimeCapabilities(streaming=True, cancellation=True)
 
     def __init__(self, config: AgentRuntimeConfig, model: Any):
         tools = []
@@ -81,7 +83,13 @@ class DeepAgentsRuntime:
             checkpointer=InMemorySaver(), subagents=[], middleware=[_ToolBoundary({t.name for t in config.tools})],
         )
         self._locks: dict[str, asyncio.Lock] = {}
+        self._active: dict[str, asyncio.Task] = {}
         self._closed = False
+
+    async def new_session(self) -> str:
+        if self._closed:
+            raise RuntimeError("Runtime is closed")
+        return f"deepagents-{uuid.uuid4().hex}"
 
     async def prompt(self, session_id: str, message: str, *, on_event: EventHandler | None = None) -> TurnResult:
         if self._closed:
@@ -90,51 +98,72 @@ class DeepAgentsRuntime:
         async with self._locks.setdefault(session_id, asyncio.Lock()):
             if self._closed:
                 raise RuntimeError("Runtime is closed")
-            config = {"configurable": {"thread_id": session_id}, "recursion_limit": 150}
-            previous = await self.graph.aget_state(config)
-            count = len(previous.values.get("messages", [])) if previous.values else 0
-            latest: dict = {}
-            tools: list[str] = []
-            token = _SESSION.set(session_id)
+            task = asyncio.current_task()
+            assert task is not None
+            self._active[session_id] = task
             try:
-                async for mode, value in self.graph.astream(
-                    {"messages": [{"role": "user", "content": message}]}, config,
-                    stream_mode=["messages", "updates", "values"],
-                ):
-                    if mode == "values":
-                        latest = value
-                    elif mode == "messages":
-                        chunk, _ = value
-                        if isinstance(chunk, AIMessageChunk) and isinstance(chunk.content, str) and chunk.content and on_event:
-                            await on_event(RuntimeEvent("text_delta", session_id, text=chunk.content))
-                    elif mode == "updates" and isinstance(value, dict):
-                        for output in value.values():
-                            if not isinstance(output, dict):
-                                continue
-                            messages = output.get("messages")
-                            for item in messages if isinstance(messages, list) else []:
-                                if isinstance(item, AIMessage):
-                                    for call in item.tool_calls:
-                                        tools.append(call["name"])
-                                        if on_event:
-                                            await on_event(RuntimeEvent("tool_start", session_id, tool=call["name"]))
-                                elif isinstance(item, ToolMessage) and on_event:
-                                    await on_event(RuntimeEvent("tool_end", session_id, tool=item.name))
+                return await self._prompt(session_id, message, on_event=on_event)
             finally:
-                _SESSION.reset(token)
-            messages = latest.get("messages", [])[count:]
-            ai = [item for item in messages if isinstance(item, AIMessage)]
-            if not ai:
-                raise RuntimeError("DeepAgents returned no model response")
-            final = ai[-1]
-            reason = final.response_metadata.get("finish_reason") or "stop"
-            usage = [item.usage_metadata for item in ai if item.usage_metadata]
-            totals = ({"input_tokens": sum(u.get("input_tokens", 0) for u in usage),
-                       "output_tokens": sum(u.get("output_tokens", 0) for u in usage)}
-                      if len(usage) == len(ai) else None)
-            content = final.content if isinstance(final.content, str) else final.text
-            return TurnResult(text=content, stop_reason="end_turn" if reason == "stop" else reason,
-                              usage=totals, tools=tuple(tools))
+                self._active.pop(session_id, None)
+
+    async def _prompt(self, session_id: str, message: str, *, on_event: EventHandler | None) -> TurnResult:
+        config = {"configurable": {"thread_id": session_id}, "recursion_limit": 150}
+        previous = await self.graph.aget_state(config)
+        count = len(previous.values.get("messages", [])) if previous.values else 0
+        latest: dict = {}
+        tools: list[str] = []
+        token = _SESSION.set(session_id)
+        try:
+            async for mode, value in self.graph.astream(
+                {"messages": [{"role": "user", "content": message}]}, config,
+                stream_mode=["messages", "updates", "values"],
+            ):
+                if mode == "values":
+                    latest = value
+                elif mode == "messages":
+                    chunk, _ = value
+                    if isinstance(chunk, AIMessageChunk) and isinstance(chunk.content, str) and chunk.content and on_event:
+                        await on_event(RuntimeEvent("text_delta", session_id, text=chunk.content))
+                elif mode == "updates" and isinstance(value, dict):
+                    for output in value.values():
+                        if not isinstance(output, dict):
+                            continue
+                        messages = output.get("messages")
+                        for item in messages if isinstance(messages, list) else []:
+                            if isinstance(item, AIMessage):
+                                for call in item.tool_calls:
+                                    tools.append(call["name"])
+                                    if on_event:
+                                        await on_event(RuntimeEvent("tool_start", session_id, tool=call["name"]))
+                            elif isinstance(item, ToolMessage) and on_event:
+                                await on_event(RuntimeEvent("tool_end", session_id, tool=item.name))
+        finally:
+            _SESSION.reset(token)
+        messages = latest.get("messages", [])[count:]
+        ai = [item for item in messages if isinstance(item, AIMessage)]
+        if not ai:
+            raise RuntimeError("DeepAgents returned no model response")
+        final = ai[-1]
+        reason = final.response_metadata.get("finish_reason") or "stop"
+        usage = [item.usage_metadata for item in ai if item.usage_metadata]
+        totals = ({"input_tokens": sum(u.get("input_tokens", 0) for u in usage),
+                   "output_tokens": sum(u.get("output_tokens", 0) for u in usage)}
+                  if len(usage) == len(ai) else None)
+        content = final.content if isinstance(final.content, str) else final.text
+        return TurnResult(text=content, stop_reason="end_turn" if reason == "stop" else reason,
+                          usage=totals, tools=tuple(tools))
+
+    async def resume(self, session_id: str, *, on_event: EventHandler | None = None) -> TurnResult:
+        raise UnsupportedRuntimeOperation("The in-memory DeepAgents runtime cannot resume interrupted turns")
+
+    async def steer(self, session_id: str, message: str) -> None:
+        raise UnsupportedRuntimeOperation("The in-memory DeepAgents runtime does not support steering")
+
+    async def cancel(self, session_id: str) -> None:
+        if task := self._active.get(session_id):
+            task.cancel()
 
     async def close(self) -> None:
         self._closed = True
+        for task in self._active.values():
+            task.cancel()
