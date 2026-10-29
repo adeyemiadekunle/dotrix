@@ -66,7 +66,14 @@ class RuntimeCapabilities:
     persistent_sessions: bool = False
     crash_recovery: bool = False
     approvals: bool = False
+    streaming: bool = False
+    cancellation: bool = False
+    resume: bool = False
     steering: bool = False
+
+
+class UnsupportedRuntimeOperation(RuntimeError):
+    """An operation the selected runtime cannot provide in this configuration."""
 
 
 @dataclass(frozen=True)
@@ -91,6 +98,14 @@ class TurnResult:
 class ConversationRuntime(Protocol):
     capabilities: RuntimeCapabilities
 
+    async def new_session(self) -> str: ...
+
     async def prompt(self, session_id: str, message: str, *, on_event: EventHandler | None = None) -> TurnResult: ...
+
+    async def resume(self, session_id: str, *, on_event: EventHandler | None = None) -> TurnResult: ...
+
+    async def steer(self, session_id: str, message: str) -> None: ...
+
+    async def cancel(self, session_id: str) -> None: ...
 
     async def close(self) -> None: ...

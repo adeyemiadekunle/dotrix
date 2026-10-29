@@ -8218,6 +8218,95 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runtime-options": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Chat Runtime Options",
+        "description": "The available chat preview and its compatible personal model providers.",
+        "operationId": "chat_runtime_options",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRuntimeOptions"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs": {
       "post": {
         "tags": [
@@ -23208,6 +23297,11 @@
             "title": "Conversation Model",
             "description": "The model the conversation runs on (fixed when it started); null on older conversations, which use the project's model"
           },
+          "chat_runtime": {
+            "$ref": "#/components/schemas/ChatRuntime",
+            "description": "Runtime fixed for this conversation",
+            "default": "deepagents"
+          },
           "model": {
             "anyOf": [
               {
@@ -23267,6 +23361,18 @@
             ],
             "title": "Model Calls",
             "description": "Model calls the run made (each re-sends the prompt). Owners and admins only (null otherwise)"
+          },
+          "usage_complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Complete",
+            "description": "False when runtime usage is incomplete"
           },
           "breakdown": {
             "anyOf": [
@@ -24471,6 +24577,37 @@
           "file"
         ],
         "title": "Body_upload_document"
+      },
+      "ChatRuntime": {
+        "type": "string",
+        "enum": [
+          "deepagents",
+          "fx"
+        ],
+        "title": "ChatRuntime"
+      },
+      "ChatRuntimeOptions": {
+        "properties": {
+          "fx_available": {
+            "type": "boolean",
+            "title": "Fx Available",
+            "description": "Whether the read-only fx preview is enabled"
+          },
+          "fx_providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fx Providers",
+            "description": "Compatible providers; the requesting person must connect their own key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fx_available",
+          "fx_providers"
+        ],
+        "title": "ChatRuntimeOptions"
       },
       "ChecklistItem": {
         "properties": {
@@ -31839,6 +31976,17 @@
             "title": "Model",
             "description": "For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model."
           },
+          "chat_runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatRuntime"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a new project conversation: `deepagents` (default) or the opt-in read-only `fx` preview. A conversation keeps its runtime; omit on follow-up."
+          },
           "work_mode": {
             "anyOf": [
               {
@@ -33750,6 +33898,12 @@
           "model_calls": {
             "type": "integer",
             "title": "Model Calls"
+          },
+          "incomplete_usage_runs": {
+            "type": "integer",
+            "title": "Incomplete Usage Runs",
+            "description": "Runs whose model call or token usage is incomplete",
+            "default": 0
           },
           "approved": {
             "type": "integer",

@@ -1,5 +1,6 @@
 """Experimental runtime tools recheck project access and the run lease at each call."""
 import asyncio
+import hashlib
 import json
 import shutil
 import threading
@@ -11,15 +12,35 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 
 import pytest
+from cryptography.fernet import Fernet
+from httpx import ASGITransport, AsyncClient
 from langchain_openai import ChatOpenAI
-from sqlalchemy import delete, select
+from langgraph.checkpoint.memory import InMemorySaver
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from uuid_utils.compat import uuid7
 
+from dotrix_backend.core.crypto import Secrets
+from dotrix_backend.core.email import get_email_sender
 from dotrix_backend.core.errors import Conflict, Forbidden
-from dotrix_backend.modules.agents import runtime_tools
+from dotrix_backend.core.jobs import InlineJobs, JobContext
+from dotrix_backend.core.security import create_access_token
+from dotrix_backend.core.storage import get_storage, optional_storage
+from dotrix_backend.jobs import JOBS
+from dotrix_backend.main import create_app
+from dotrix_backend.modules.agent_definitions.models import AgentPreference
+from dotrix_backend.modules.agents import fx_pilot, runtime_tools
 from dotrix_backend.modules.agents.delegation import DelegationService
-from dotrix_backend.modules.agents.models import AgentRun, AgentRuntimeBinding, RunKind, RunStatus
+from dotrix_backend.modules.agents.llm import ModelUnavailable
+from dotrix_backend.modules.agents.models import (
+    AgentRun,
+    AgentRuntimeBinding,
+    ChatRuntime,
+    RunKind,
+    RunStatus,
+    WorkMode,
+)
+from dotrix_backend.modules.agents.runner import AgentRunner
 from dotrix_backend.modules.agents.runtime_sessions import (
     RuntimeIdentity,
     bind_runtime_session,
@@ -27,6 +48,8 @@ from dotrix_backend.modules.agents.runtime_sessions import (
 )
 from dotrix_backend.modules.agents.runtime_tools import RuntimeRunScope, scoped_knowledge_tools
 from dotrix_backend.modules.auth.models import User
+from dotrix_backend.modules.knowledge.models import KnowledgeFile
+from dotrix_backend.modules.model_keys.models import UserModelKey
 from dotrix_backend.modules.projects.models import Project, ProjectSource
 from dotrix_backend.modules.workspaces.models import Membership, Role, Workspace, WorkspaceKind
 from dotrix_engine.builtins import builtin
@@ -334,7 +357,7 @@ async def test_a_read_is_not_returned_after_access_revocation(runtime_world, db_
 
 
 @contextmanager
-def model_server():
+def model_server(requests=None, started=None, gate=None):
     """A deterministic Chat Completions endpoint that asks for one real project read."""
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -342,6 +365,12 @@ def model_server():
 
         def do_POST(self):
             request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if requests is not None:
+                requests.append({"request": request, "authorization": self.headers.get("Authorization")})
+            if started is not None:
+                started.set()
+            if gate is not None:
+                gate.wait(timeout=15)
             messages = request["messages"]
             if messages[-1]["role"] == "tool":
                 message = {"role": "assistant", "content": messages[-1]["content"]}
@@ -372,9 +401,358 @@ def model_server():
     try:
         yield f"http://127.0.0.1:{server.server_port}/v1"
     finally:
+        if gate is not None:
+            gate.set()
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+@pytest.fixture
+async def nova_pilot_world(engine):
+    """Committed test rows so runtime callbacks can use separate real connections."""
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    user_id, colleague_id, workspace_id, project_id, run_id = (uuid7() for _ in range(5))
+    now = datetime.now(UTC)
+    secrets = Secrets(Fernet.generate_key().decode())
+    content = "# Evidence\n\nPrivate project evidence.\n"
+    async with sessions() as session:
+        session.add_all([User(id=user_id, email=f"{user_id}@example.com", display_name="Ada"),
+                         User(id=colleague_id, email=f"{colleague_id}@example.com", display_name="Colleague")])
+        await session.flush()
+        session.add(Workspace(id=workspace_id, name="Pilot", slug=f"pilot-{workspace_id}",
+                              kind=WorkspaceKind.ORGANIZATION, created_by_id=user_id))
+        await session.flush()
+        session.add_all([
+            Membership(workspace_id=workspace_id, user_id=user_id, role=Role.OWNER),
+            Membership(workspace_id=workspace_id, user_id=colleague_id, role=Role.MEMBER),
+            Project(id=project_id, workspace_id=workspace_id, key="FXT", name="Runtime",
+                    source=ProjectSource.DOCS_ONLY, model="openai:test-model", created_by_id=user_id),
+            AgentPreference(workspace_id=workspace_id, user_id=user_id, handle="project-manager",
+                            instructions="Use concise numbered answers."),
+            AgentPreference(workspace_id=workspace_id, user_id=colleague_id, handle="project-manager",
+                            instructions="A colleague's private preference."),
+            UserModelKey(user_id=user_id, provider="openai", encrypted=secrets.encrypt("personal-pilot-key"), last4="-key"),
+            UserModelKey(user_id=colleague_id, provider="openai", encrypted=secrets.encrypt("colleague-key"), last4="-key"),
+        ])
+        await session.flush()
+        session.add(KnowledgeFile(workspace_id=workspace_id, project_id=project_id, path="research/runtime.md",
+                                  version=1, revision=1, content=content, content_hash=hashlib.sha256(content.encode()).hexdigest(),
+                                  size=len(content.encode()), created_at=now, updated_at=now))
+        run = AgentRun(id=run_id, workspace_id=workspace_id, project_id=project_id, thread_id=uuid7(),
+                       kind=RunKind.CHAT, status=RunStatus.RUNNING, agent=None, work_mode=WorkMode.DISCUSS,
+                       requested_by_id=user_id, message="Investigate", model="openai:test-model", lease_token=1,
+                       lease_expires_at=now + timedelta(minutes=5), created_at=now, updated_at=now)
+        session.add(run)
+        await session.commit()
+    try:
+        yield run, sessions, secrets
+    finally:
+        async with sessions() as session:
+            await session.execute(delete(Workspace).where(Workspace.id == workspace_id))
+            await session.execute(delete(User).where(User.id.in_([user_id, colleague_id])))
+            await session.commit()
+
+
+async def test_fx_nova_pilot_uses_admitted_run_and_personal_credentials(nova_pilot_world, monkeypatch):
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    run, sessions, secrets = nova_pilot_world
+    requests, events = [], []
+
+    async def observe(event):
+        events.append(event)
+
+    with model_server(requests) as base_url:
+        monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", base_url)
+        turn = await asyncio.wait_for(fx_pilot.run_fx_nova_pilot(
+            sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets, on_event=observe,
+        ), 30)
+        assert turn.stop_reason == "end_turn" and "Private project evidence" in turn.text
+        assert "read_section" in turn.tools
+        assert requests and all(item["authorization"] == "Bearer personal-pilot-key" for item in requests)
+        first = requests[0]["request"]
+        assert first["model"] == "test-model"
+        assert "You are Nova" in str(first["messages"])
+        assert "Use concise numbered answers" in str(first["messages"])
+        assert "A colleague's private preference" not in str(first["messages"])
+        assert any(message.get("role") == "user" and message.get("content") == "Investigate"
+                   for message in first["messages"])
+        exposed = {tool["function"]["name"] for tool in first["tools"]}
+        assert exposed == {"read_section", "read_skill", "document_outline", "search_knowledge"}
+        assert any(event.type == "text_delta" for event in events)
+        async with sessions() as session:
+            binding = await session.scalar(select(AgentRuntimeBinding).where(AgentRuntimeBinding.run_id == run.id))
+            assert binding.runtime == "fx" and binding.session_id.startswith("fx-pilot-")
+        with pytest.raises(Conflict, match="cannot resume"):
+            await fx_pilot.run_fx_nova_pilot(
+                sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets,
+            )
+        assert len(requests) == 2  # The blocked retry did not send another prompt.
+
+
+async def test_fx_nova_pilot_requires_a_personal_key_and_supported_run(nova_pilot_world):
+    run, sessions, secrets = nova_pilot_world
+    async with sessions() as session:
+        await session.execute(delete(UserModelKey).where(UserModelKey.user_id == run.requested_by_id))
+        await session.commit()
+    with pytest.raises(ModelUnavailable, match="personal key"):
+        await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets)
+    async with sessions() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(work_mode=WorkMode.BUILD))
+        await session.commit()
+    with pytest.raises(Conflict, match="read-only"):
+        await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets)
+    async with sessions() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(work_mode=WorkMode.DISCUSS, token_budget=100))
+        await session.commit()
+    with pytest.raises(Conflict, match="token budget"):
+        await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets)
+    async with sessions() as session:
+        assert await session.scalar(select(AgentRuntimeBinding.id).where(AgentRuntimeBinding.run_id == run.id)) is None
+
+
+async def test_fx_nova_pilot_rejects_budgets_and_stale_owners(nova_pilot_world):
+    run, sessions, secrets = nova_pilot_world
+    for workspace_id, token in ((uuid7(), 1), (run.workspace_id, 2)):
+        with pytest.raises(Conflict):
+            await fx_pilot.run_fx_nova_pilot(
+                sessions, workspace_id=workspace_id, run_id=run.id, token=token, secrets=secrets,
+            )
+    async with sessions() as session:
+        await session.execute(update(Project).where(Project.id == run.project_id).values(token_budget=100))
+        await session.commit()
+    with pytest.raises(Conflict, match="token budget"):
+        await fx_pilot.run_fx_nova_pilot(
+            sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets,
+        )
+    async with sessions() as session:
+        assert await session.scalar(select(AgentRuntimeBinding.id).where(AgentRuntimeBinding.run_id == run.id)) is None
+
+
+async def test_fx_nova_pilot_includes_only_the_requesters_prior_conversation(nova_pilot_world, monkeypatch):
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    run, sessions, secrets = nova_pilot_world
+    async with sessions() as session:
+        colleague = await session.scalar(select(Membership.user_id).where(
+            Membership.workspace_id == run.workspace_id, Membership.user_id != run.requested_by_id))
+        earlier = run.created_at - timedelta(minutes=1)
+        for user_id, text in ((run.requested_by_id, "My earlier question"), (colleague, "Another person's private question")):
+            session.add(AgentRun(id=uuid7(), workspace_id=run.workspace_id, project_id=run.project_id,
+                                 thread_id=run.thread_id, kind=RunKind.CHAT, status=RunStatus.COMPLETED,
+                                 requested_by_id=user_id, message=text, reply="Earlier answer",
+                                 created_at=earlier, updated_at=earlier))
+        await session.commit()
+    requests = []
+    with model_server(requests=requests) as base_url:
+        monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", base_url)
+        await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets)
+        messages = str(requests[0]["request"]["messages"])
+        assert "My earlier question" in messages and "Earlier answer" in messages
+        assert "Another person's private question" not in messages
+        assert "Latest message" in messages and "Investigate" in messages
+
+
+async def test_fx_chat_runs_through_api_and_keeps_its_runtime(
+    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts,
+):
+    """Exercise public chat with real libfx, real tools, and separate database connections."""
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    existing, sessions, secrets = nova_pilot_world
+    settings = db_client._transport.app.state.settings.model_copy(update={"fx_chat_pilot": True})
+    app = create_app(settings)
+    app.state.sessionmaker = sessions
+    app.state.secrets = secrets
+    app.state.checkouts = checkouts
+    app.dependency_overrides[get_email_sender] = lambda: outbox
+    app.dependency_overrides[get_storage] = lambda: storage
+    app.dependency_overrides[optional_storage] = lambda: storage
+    app.state.runner = runner = AgentRunner(
+        session_factory=sessions, checkpointer=InMemorySaver(), model_factory=agent_script.factory,
+        inline=True, checkouts=checkouts, secrets=secrets, settings=settings,
+    )
+    app.state.jobs = InlineJobs(JobContext(sessions, settings, outbox, storage, checkouts=checkouts, runner=runner), JOBS)
+    runner.jobs = app.state.jobs
+    token = create_access_token(existing.requested_by_id, secret=settings.jwt_secret.get_secret_value(),
+                                issuer=settings.jwt_issuer, ttl=timedelta(minutes=10))
+    headers = {"Authorization": f"Bearer {token}"}
+    base = f"/v1/workspaces/{existing.workspace_id}/projects/{existing.project_id}/agent"
+    requests = []
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        options = await client.get(f"{base}/runtime-options", headers=headers)
+        assert options.status_code == 200 and "openai" in options.json()["fx_providers"]
+        with model_server(requests=requests) as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            first = await client.post(f"{base}/runs", headers=headers, json={
+                "message": "What is the evidence?", "chat_runtime": "fx", "work_mode": "discuss",
+            })
+            assert first.status_code == 202, first.text
+            first_run = first.json()
+            assert first_run["status"] == "completed", first.text
+            assert first_run["chat_runtime"] == "fx" and "Private project evidence" in first_run["reply"]
+            assert first_run["model_calls"] is None and first_run["usage_complete"] is False
+            assert first_run["input_tokens"] is None and first_run["output_tokens"] is None
+            events = await client.get(f"{base}/runs/{first_run['id']}/events", headers=headers)
+            assert events.status_code == 200 and "Private project evidence" in events.text
+            second = await client.post(f"{base}/runs", headers=headers, json={
+                "message": "And what else?", "thread_id": first_run["thread_id"], "work_mode": "discuss",
+            })
+            assert second.status_code == 202 and second.json()["status"] == "completed", second.text
+            assert second.json()["chat_runtime"] == "fx"
+            assert "What is the evidence?" in str(requests[2]["request"]["messages"])
+            assert all(item["authorization"] == "Bearer personal-pilot-key" for item in requests)
+        switched = await client.post(f"{base}/runs", headers=headers, json={
+            "message": "Switch", "thread_id": first_run["thread_id"], "chat_runtime": "deepagents",
+        })
+        assert switched.status_code == 409 and switched.json()["type"].endswith("/runtime_locked")
+        unsupported = await client.post(f"{base}/runs", headers=headers, json={
+            "message": "Implement it", "chat_runtime": "fx", "work_mode": "build",
+        })
+        assert unsupported.status_code == 422
+        async with sessions() as session:
+            colleague = await session.scalar(select(Membership.user_id).where(
+                Membership.workspace_id == existing.workspace_id, Membership.user_id != existing.requested_by_id))
+            await session.execute(update(Project).where(Project.id == existing.project_id).values(token_budget=100))
+            await session.commit()
+        colleague_token = create_access_token(colleague, secret=settings.jwt_secret.get_secret_value(),
+                                              issuer=settings.jwt_issuer, ttl=timedelta(minutes=10))
+        forbidden = await client.get(f"{base}/runs/{first_run['id']}",
+                                     headers={"Authorization": f"Bearer {colleague_token}"})
+        assert forbidden.status_code == 404
+        budgeted = await client.post(f"{base}/runs", headers=headers, json={
+            "message": "Budgeted", "chat_runtime": "fx", "work_mode": "discuss",
+        })
+        assert budgeted.status_code == 422 and "budget" in budgeted.text
+        async with sessions() as session:
+            await session.execute(update(Project).where(Project.id == existing.project_id).values(token_budget=None))
+            await session.commit()
+
+        # Stop acts on the running worker and prevents its incomplete output from becoming a reply.
+        runner.inline = False
+        started, gate = threading.Event(), threading.Event()
+        with model_server(started=started, gate=gate) as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            pending = await client.post(f"{base}/runs", headers=headers, json={
+                "message": "Stop this", "chat_runtime": "fx", "work_mode": "discuss",
+            })
+            assert pending.status_code == 202
+            assert await asyncio.to_thread(started.wait, 10)
+            stopped = await client.post(f"{base}/runs/{pending.json()['id']}/stop", headers=headers)
+            assert stopped.status_code == 200 and stopped.json()["status"] == "failed", stopped.text
+            gate.set()
+            stopped_run = await client.get(f"{base}/runs/{pending.json()['id']}", headers=headers)
+            assert stopped_run.json()["reply"] is None
+            continued = await client.post(f"{base}/runs/{pending.json()['id']}/continue", headers=headers, json={})
+            assert continued.status_code == 409 and "send a new message" in continued.text
+        runner.inline = True
+        settings.fx_chat_pilot = False
+        disabled = await client.post(f"{base}/runs", headers=headers, json={
+            "message": "Another", "chat_runtime": "fx", "work_mode": "discuss",
+        })
+        assert disabled.status_code == 422
+        agent_script.say("Default DeepAgents answer")
+        default = await client.post(f"{base}/runs", headers=headers, json={"message": "Default?"})
+        assert default.status_code == 202 and default.json()["chat_runtime"] == "deepagents", default.text
+        assert default.json()["reply"] == "Default DeepAgents answer"
+
+
+async def test_fx_queued_run_fails_if_project_access_was_removed_before_it_starts(nova_pilot_world, agent_script):
+    existing, sessions, secrets = nova_pilot_world
+    run_id = uuid7()
+    now = datetime.now(UTC)
+    async with sessions() as session:
+        await session.execute(update(Membership).where(
+            Membership.workspace_id == existing.workspace_id, Membership.user_id == existing.requested_by_id,
+        ).values(role=Role.GUEST))
+        session.add(AgentRun(id=run_id, workspace_id=existing.workspace_id, project_id=existing.project_id,
+                             thread_id=uuid7(), kind=RunKind.CHAT, status=RunStatus.QUEUED,
+                             chat_runtime=ChatRuntime.FX, work_mode=WorkMode.DISCUSS,
+                             requested_by_id=existing.requested_by_id, message="Question", created_at=now, updated_at=now))
+        await session.commit()
+    runner = AgentRunner(session_factory=sessions, checkpointer=InMemorySaver(), model_factory=agent_script.factory,
+                         inline=True, secrets=secrets)
+    await runner.execute(run_id, {"kind": "start", "message": "Question"})
+    async with sessions() as session:
+        denied = await session.get(AgentRun, run_id)
+        assert denied.status is RunStatus.FAILED and "no longer sees this project" in denied.error
+
+
+@pytest.mark.parametrize("revoked", ["membership", "lease"])
+async def test_fx_nova_pilot_stops_returning_results_after_revocation(nova_pilot_world, monkeypatch, revoked):
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    run, sessions, secrets = nova_pilot_world
+    started, gate, events = threading.Event(), threading.Event(), []
+
+    async def observe(event):
+        events.append(event)
+
+    with model_server(started=started, gate=gate) as base_url:
+        monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", base_url)
+        task = asyncio.create_task(fx_pilot.run_fx_nova_pilot(
+            sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets, on_event=observe,
+        ))
+        try:
+            assert await asyncio.wait_for(asyncio.to_thread(started.wait), 15)
+            async with sessions() as session:
+                if revoked == "membership":
+                    await session.execute(update(Membership).where(Membership.workspace_id == run.workspace_id,
+                                                                   Membership.user_id == run.requested_by_id).values(role=Role.GUEST))
+                else:
+                    await session.execute(update(AgentRun).where(AgentRun.workspace_id == run.workspace_id,
+                                                                 AgentRun.id == run.id).values(lease_token=2))
+                await session.commit()
+            gate.set()
+            with pytest.raises(Forbidden if revoked == "membership" else Conflict):
+                await asyncio.wait_for(task, 30)
+            assert not any(event.type == "text_delta" and "Private project evidence" in event.text for event in events)
+        finally:
+            gate.set()
+            if not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+
+async def test_fx_nova_pilot_cancellation_does_not_silently_replay(nova_pilot_world, monkeypatch):
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    run, sessions, secrets = nova_pilot_world
+    started, gate, requests = threading.Event(), threading.Event(), []
+    with model_server(requests=requests, started=started, gate=gate) as base_url:
+        monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", base_url)
+        task = asyncio.create_task(fx_pilot.run_fx_nova_pilot(
+            sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets,
+        ))
+        try:
+            assert await asyncio.wait_for(asyncio.to_thread(started.wait), 15)
+            with pytest.raises(Conflict, match="cannot resume"):
+                await fx_pilot.run_fx_nova_pilot(
+                    sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets,
+                )
+            task.cancel()
+            gate.set()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 30)
+            assert len(requests) == 1
+        finally:
+            gate.set()
+            if not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
 
 
 @pytest.mark.parametrize("kind", ["deepagents", "fx"])

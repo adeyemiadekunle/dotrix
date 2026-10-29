@@ -1877,6 +1877,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runtime-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chat Runtime Options
+         * @description The available chat preview and its compatible personal model providers.
+         */
+        get: operations["chat_runtime_options"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs": {
         parameters: {
             query?: never;
@@ -4904,6 +4924,11 @@ export interface components {
              */
             conversation_model?: string | null;
             /**
+             * @description Runtime fixed for this conversation
+             * @default deepagents
+             */
+            chat_runtime: components["schemas"]["ChatRuntime"];
+            /**
              * Model
              * @description The project's model when the run last worked, e.g. `google_genai:gemini-3.8-flash`. Owners and admins only (null otherwise)
              */
@@ -4928,6 +4953,11 @@ export interface components {
              * @description Model calls the run made (each re-sends the prompt). Owners and admins only (null otherwise)
              */
             model_calls?: number | null;
+            /**
+             * Usage Complete
+             * @description False when runtime usage is incomplete
+             */
+            usage_complete?: boolean | null;
             /** @description Where the tokens went: by agent, by tool, and the files read. Owners and admins only (null otherwise) */
             breakdown?: components["schemas"]["RunBreakdown"] | null;
             /**
@@ -5400,6 +5430,24 @@ export interface components {
              * @description PDF, DOCX, PPTX, XLSX, XLS, HTML, CSV, JSON, XML, MD, TXT
              */
             file: string;
+        };
+        /**
+         * ChatRuntime
+         * @enum {string}
+         */
+        ChatRuntime: "deepagents" | "fx";
+        /** ChatRuntimeOptions */
+        ChatRuntimeOptions: {
+            /**
+             * Fx Available
+             * @description Whether the read-only fx preview is enabled
+             */
+            fx_available: boolean;
+            /**
+             * Fx Providers
+             * @description Compatible providers; the requesting person must connect their own key
+             */
+            fx_providers: string[];
         };
         /**
          * ChecklistItem
@@ -8524,6 +8572,8 @@ export interface components {
              * @description For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model.
              */
             model?: string | null;
+            /** @description For a new project conversation: `deepagents` (default) or the opt-in read-only `fx` preview. A conversation keeps its runtime; omit on follow-up. */
+            chat_runtime?: components["schemas"]["ChatRuntime"] | null;
             /** @description How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, `.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with its evidence). Changes wait for approval in every mode; only `build` engages Kai. Omit for no mode (as before work modes: no plans or evidence tools) */
             work_mode?: components["schemas"]["WorkMode"] | null;
             /** @description How much goes through without waiting: `manual` (every change waits for a yes; the default), `accept_edits` (what you ask for goes through, recorded as approved by you, and coding starts at once), `auto` (the same, and checkpoints don't pause). Never above the workspace's cap, and Manual for people who may not approve agent changes */
@@ -9338,6 +9388,12 @@ export interface components {
             output_tokens: number;
             /** Model Calls */
             model_calls: number;
+            /**
+             * Incomplete Usage Runs
+             * @description Runs whose model call or token usage is incomplete
+             * @default 0
+             */
+            incomplete_usage_runs: number;
             /**
              * Approved
              * @description Changes people approved
@@ -15389,6 +15445,65 @@ export interface operations {
             };
             /** @description Missing, invalid, or expired credentials */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    chat_runtime_options: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRuntimeOptions"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -21,6 +21,7 @@ from .contracts import (
     RuntimeEvent,
     RuntimeToolContext,
     TurnResult,
+    UnsupportedRuntimeOperation,
     validate_session,
 )
 
@@ -74,11 +75,12 @@ def _prepare_local_dir(path: Path, config: AgentRuntimeConfig, model: str, base_
 class FxRuntime:
     """Experimental local/memory runtime; it is not platform recovery or an approval gate."""
 
-    capabilities = RuntimeCapabilities(steering=True)
+    capabilities = RuntimeCapabilities(streaming=True, cancellation=True, steering=True)
 
     def __init__(self, config: AgentRuntimeConfig, process: asyncio.subprocess.Process, *, local: bool = False):
         self.process = process
-        self.capabilities = RuntimeCapabilities(persistent_sessions=local, steering=True)
+        self.capabilities = RuntimeCapabilities(persistent_sessions=local, streaming=True, cancellation=True,
+                                                resume=local, steering=True)
         self._local = local
         self._tools = {tool.name: tool for tool in config.tools}
         self._sequence = itertools.count(1)
@@ -241,7 +243,7 @@ class FxRuntime:
         if self._closed:
             raise RuntimeError("Runtime is closed")
         if not self._local:
-            raise RuntimeError("Resume requires explicitly configured local session storage")
+            raise UnsupportedRuntimeOperation("Resume requires explicitly configured local session storage")
         validate_session(session_id, "resume")
         self._validate_local_session(session_id)
         return await self._turn(session_id, {"op": "resume"}, on_event)

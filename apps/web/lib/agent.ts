@@ -17,6 +17,7 @@ export type Decision = Schemas["Decision"];
 
 export type AgentId = NonNullable<Schemas["RunCreate"]["agent"]>;
 export type WorkMode = NonNullable<Schemas["RunCreate"]["work_mode"]>;
+export type ChatRuntime = NonNullable<Schemas["RunCreate"]["chat_runtime"]>;
 export type Plan = Schemas["PlanRead"];
 export type ApprovalMode = NonNullable<Schemas["RunCreate"]["approval_mode"]>;
 
@@ -92,6 +93,16 @@ export function runTitle(run: Pick<Run, "kind" | "message">): string {
 }
 
 const path = (s: Scope) => ({ workspace_id: s.workspaceId, project_id: s.projectId });
+
+/** Preview availability is scoped to the project and requires chat access. */
+export function useChatRuntimeOptions(scope: Scope | undefined) {
+  return useQuery({
+    queryKey: ["chat-runtime-options", scope?.workspaceId, scope?.projectId],
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runtime-options", { params: { path: path(scope!) } })),
+    enabled: Boolean(scope),
+    staleTime: 60_000,
+  });
+}
 const POLL_MS = 1500;
 const WAITING_POLL_MS = 5000;
 
@@ -205,6 +216,7 @@ export function useSendMessage(scope: Scope | undefined) {
         mentions = [],
         workMode = null,
         approvalMode = null,
+        chatRuntime = null,
       }: {
         message: string;
         threadId: string | null;
@@ -213,13 +225,23 @@ export function useSendMessage(scope: Scope | undefined) {
         mentions?: string[];
         workMode?: WorkMode | null;
         approvalMode?: ApprovalMode | null;
+        chatRuntime?: ChatRuntime | null;
       },
     ) =>
       unwrap(
         api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs", {
           params: { path: path(s) },
           // The model only for a new conversation: an existing one keeps its own.
-          body: { message, thread_id: threadId, agent, model: threadId ? null : (model ?? null), mentions, work_mode: workMode, approval_mode: approvalMode },
+          body: {
+            message,
+            thread_id: threadId,
+            agent,
+            model: threadId ? null : (model ?? null),
+            mentions,
+            work_mode: workMode,
+            approval_mode: approvalMode,
+            chat_runtime: threadId ? null : chatRuntime,
+          },
         }),
       ),
   );

@@ -10,7 +10,7 @@ from dotrix_backend.modules.coding.models import CodingRunStatus
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 from dotrix_engine.catalog import action_for
 
-from .models import ApprovalStatus, RunEventKind, RunKind, RunStatus, WorkMode
+from .models import ApprovalStatus, ChatRuntime, RunEventKind, RunKind, RunStatus, WorkMode
 
 # A built-in specialist hint. Nova remains the coordinator for interactive conversations.
 AgentChoice = Annotated[str, Field(pattern=r"^(auto|[a-z][a-z0-9-]{1,30})$")]
@@ -35,6 +35,11 @@ class RunCreate(BaseModel):
         "needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use "
         "the project's model.",
     )
+    chat_runtime: ChatRuntime | None = Field(
+        default=None,
+        description="For a new project conversation: `deepagents` (default) or the opt-in read-only `fx` preview. "
+        "A conversation keeps its runtime; omit on follow-up.",
+    )
     work_mode: WorkMode | None = Field(
         default=None,
         description="How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, "
@@ -54,6 +59,11 @@ class RunCreate(BaseModel):
         description="People @mentioned (user ids). Each is told if \"@Their Name\" is in the text and they "
         "can see the project; others are ignored",
     )
+
+
+class ChatRuntimeOptions(BaseModel):
+    fx_available: bool = Field(description="Whether the read-only fx preview is enabled")
+    fx_providers: list[str] = Field(description="Compatible providers; the requesting person must connect their own key")
 
 
 class ModelOption(BaseModel):
@@ -147,6 +157,7 @@ class WorkspaceAgentUsage(BaseModel):
     input_tokens: int
     output_tokens: int
     model_calls: int
+    incomplete_usage_runs: int = Field(default=0, description="Runs whose model call or token usage is incomplete")
     approved: int = Field(description="Changes people approved")
     rejected: int = Field(description="Changes people rejected")
     by_agent: list[AgentRunCount] = Field(description="Runs per agent, most first")
@@ -361,6 +372,7 @@ class AgentRunRead(BaseModel):
         description="The model the conversation runs on (fixed when it started); null on older conversations, "
         "which use the project's model",
     )
+    chat_runtime: ChatRuntime = Field(default=ChatRuntime.DEEPAGENTS, description="Runtime fixed for this conversation")
     # Usage is for owners and admins (the usage:view permission); null for everyone else.
     model: str | None = Field(
         default=None,
@@ -386,6 +398,7 @@ class AgentRunRead(BaseModel):
         default=None,
         description="Model calls the run made (each re-sends the prompt). Owners and admins only (null otherwise)",
     )
+    usage_complete: bool | None = Field(default=None, description="False when runtime usage is incomplete")
     breakdown: RunBreakdown | None = Field(
         default=None,
         description="Where the tokens went: by agent, by tool, and the files read. Owners and admins only "

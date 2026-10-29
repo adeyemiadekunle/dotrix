@@ -88,6 +88,7 @@ from .models import (
     AgentRun,
     AgentRunOutput,
     ApprovalStatus,
+    ChatRuntime,
     RunEventKind,
     RunKind,
     RunStatus,
@@ -557,15 +558,16 @@ class AgentRunner:
                 await session.commit()
                 executing = True
                 holder = self._hold_lease(run_id, token)
-                rules = await self._rules(session, project.id, list(resolved), workspace_id=project.workspace_id)
-                context = await build_context_pack(session, project, run, self.embedder)
+                fx_preview = run.chat_runtime is ChatRuntime.FX
+                rules = {} if fx_preview else await self._rules(session, project.id, list(resolved), workspace_id=project.workspace_id)
+                context = "" if fx_preview else await build_context_pack(session, project, run, self.embedder)
                 kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
                 name, description, project_key = project.name, project.description, project.key
                 keys = (await run_keys(
                     session, self.secrets, run.workspace_id, run.requested_by_id
                 )).keys
-                choice = self.model_factory(project, run.model, keys=keys)
+                choice = None if fx_preview else self.model_factory(project, run.model, keys=keys)
                 lead = run.agent  # None: Auto (the Project Manager)
                 mode = run.mode
                 work_mode = run.work_mode
@@ -585,6 +587,34 @@ class AgentRunner:
                 )
                 prior_web = (run.usage or {}).get("web")
 
+            if fx_preview:
+                from .fx_pilot import run_fx_nova_pilot
+
+                if retry or payload["kind"] != "start":
+                    raise Conflict("The fx preview cannot recover this turn; send a new message")
+                recording = await self._record(run_id, workspace_id, token, payload)
+
+                async def fx_event(event):
+                    if event.type == "text_delta":
+                        await recording.publish(event.text)
+                    elif event.type == "tool_start" and event.tool:
+                        if label := activity_label(event.tool, None):
+                            await recording.activity(label)
+
+                turn = await run_fx_nova_pilot(
+                    self.session_factory, workspace_id=workspace_id, run_id=run_id, token=token,
+                    secrets=self.secrets, embedder=self.embedder, on_event=fx_event,
+                )
+                reported = turn.usage or {}
+                usage.input_tokens = int(reported.get("input_tokens", 0))
+                usage.output_tokens = int(reported.get("output_tokens", 0))
+                usage.cached_input_tokens = int(reported.get("cached_input_tokens", 0))
+                await recording.flush()
+                await self._finish(run_id, {"messages": [AIMessage(content=turn.text)]}, usage,
+                                   fx_usage_fields=list(reported))
+                return
+
+            assert choice is not None
             # A briefing is one call with no tools: it doesn't read code.
             code_tools, context = (
                 (None, context) if kind is RunKind.BRIEFING else await self._code(workspace_id, project_id, context)
@@ -951,14 +981,25 @@ class AgentRunner:
         return result
 
     async def _finish(self, run_id: uuid.UUID, result: dict, usage: TokenUsage, speaker: str = PM_ROLE,
-                      specialist_result: dict | None = None) -> None:
+                      specialist_result: dict | None = None, fx_usage_fields: list[str] | None = None) -> None:
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id, with_for_update=True)
             assert run is not None
             if _fenced_off(run):
                 return
+            if run.chat_runtime is ChatRuntime.FX:
+                from .runtime_sessions import admit_runtime_run
+
+                token = _LEASE.get()
+                if token is None:
+                    raise Conflict("The fx run no longer owns this work")
+                await admit_runtime_run(session, run.workspace_id, run.id, token)
             now = _now()
             tokens = _add_tokens(run, usage)
+            if run.chat_runtime is ChatRuntime.FX:
+                fields = fx_usage_fields or []
+                run.usage = {**(run.usage or {}), "fx_usage_fields": fields}
+                tokens = {name: value for name, value in tokens.items() if name in fields}
             pending = hitl.pending_actions(result)
             if pending:
                 files = {
@@ -1060,7 +1101,13 @@ class AgentRunner:
             run = await session.get(AgentRun, run_id, with_for_update=True)
             if run is None or run.status in (RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.BLOCKED, RunStatus.CANCELLED) or _fenced_off(run):
                 return
+            if (run.chat_runtime is ChatRuntime.FX and _LEASE.get() is not None and
+                    (run.lease_expires_at is None or run.lease_expires_at <= _now())):
+                return
             tokens = _add_tokens(run, usage)
+            if run.chat_runtime is ChatRuntime.FX:
+                run.usage = {**(run.usage or {}), "fx_usage_fields": []}
+                tokens = {}
             run.status, run.error = RunStatus.FAILED, error[:2000]
             run.updated_at = run.finished_at = _now()
             await add_event(session, run, RunEventKind.STATUS, {"status": "failed", "error": run.error})

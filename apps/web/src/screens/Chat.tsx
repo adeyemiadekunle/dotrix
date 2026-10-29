@@ -13,6 +13,7 @@ import {
   useContinueRun,
   useRunSteps,
   useModels,
+  useChatRuntimeOptions,
   useRunStream,
   useSendMessage,
   useStopRun,
@@ -25,6 +26,7 @@ import {
   MODE_ICONS,
   type AgentId,
   type ApprovalMode,
+  type ChatRuntime,
   type Plan,
   type Run,
   type RunStreamState,
@@ -450,8 +452,8 @@ function Message({ m, projectId, tag, children }: { m: Msg; projectId: string | 
 /** A run as two messages: what was asked, and the agent's reply (as it's written, while it works). */
 function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: string | null; scope: Scope | undefined; stream: RunStreamState | null }) {
   const cont = useContinueRun(scope);
-  const limited = run.error_kind === "model_limit";
-  const interrupted = run.status === "failed" && run.error_kind === "interrupted";
+  const limited = run.chat_runtime !== "fx" && run.error_kind === "model_limit";
+  const interrupted = run.chat_runtime !== "fx" && run.status === "failed" && run.error_kind === "interrupted";
   const failed = ["failed", "cancelled", "blocked"].includes(run.status) && !limited;
   const text = stream ? stream.text : (run.reply ?? "");
   const reply: Msg = {
@@ -715,6 +717,10 @@ function Composer({
   setMode,
   approval,
   setApproval,
+  runtime,
+  setRuntime,
+  modeOptions = WORK_MODES,
+  disabled = false,
 }: {
   placeholder: string;
   onSend: (text: string, agent: string) => void;
@@ -732,19 +738,23 @@ function Composer({
   setMode?: (m: WorkMode) => void;
   approval?: ApprovalMode;
   setApproval?: (m: ApprovalMode) => void;
+  runtime?: ChatRuntime;
+  setRuntime?: (runtime: ChatRuntime) => void;
+  modeOptions?: typeof WORK_MODES;
+  disabled?: boolean;
 }) {
   const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
   const [text, setText] = useState(initial);
   const ref = useRef<HTMLTextAreaElement>(null);
   const a = D().agents.find((x) => x.handle === agent);
   // "+" (or typing "@") offers the projects (in a new chat) and the work modes; Nova always answers.
-  const at = useAtPicker({ text, setText, ref, projects: contexts, project: context, onProject: setContext, modes: WORK_MODES, mode, onMode: setMode });
+  const at = useAtPicker({ text, setText, ref, projects: contexts, project: context, onProject: setContext, modes: modeOptions, mode, onMode: setMode });
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
   const send = () => {
     const q = text.trim();
-    if (!q || S.ui.offline) return;
+    if (!q || S.ui.offline || disabled) return;
     onSend(q, agent);
     setAgent?.("auto");
     setText("");
@@ -832,6 +842,24 @@ function Composer({
               Involve {a.name} <Ic n="x" s={10} />
             </button>
           )}
+          {runtime &&
+            (setRuntime ? (
+              <Pick
+                value={runtime}
+                onChange={(v) => setRuntime(v as ChatRuntime)}
+                options={[
+                  ["deepagents", "Standard"],
+                  ["fx", "fx preview"],
+                ]}
+                label="Chat runtime"
+              />
+            ) : (
+              runtime === "fx" && (
+                <span className="cpill" data-tip="This conversation uses the read-only fx preview">
+                  fx preview
+                </span>
+              )
+            ))}
           {setModel && models?.length ? (
             <Pick value={model ?? ""} onChange={setModel} options={models ?? []} label="Model" lead={<Ic n={MODELS_ICON} s={12} />} />
           ) : (
@@ -843,7 +871,7 @@ function Composer({
             )
           )}
           <span className="sp" />
-          <button className="cbox-send" onClick={send} disabled={!text.trim() || S.ui.offline} aria-label="Send">
+          <button className="cbox-send" onClick={send} disabled={!text.trim() || S.ui.offline || disabled} aria-label="Send">
             <Ic n="arrow-up" s={14} />
           </button>
         </div>
@@ -862,6 +890,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const runs = (projectId ? own.data : cross.data) ?? [];
   const last = runs.at(-1);
   const lastUser = runs.filter((run) => run.source === "user").at(-1);
+  const fxPreview = projectId ? own.data?.find((run) => run.source === "user")?.chat_runtime === "fx" : false;
   const delegated = useConversationTasks(scope, runs);
   const routeSearch = useRoute().search;
   const [fixDraft, setFixDraft] = useState({ text: "", version: 0 });
@@ -877,7 +906,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const agent = "auto";
   // How you're working: what you picked, else how the conversation was going, else Discuss.
   const [pickedMode, setMode] = useState<WorkMode | null>(null);
-  const mode = pickedMode ?? lastUser?.work_mode ?? "discuss";
+  const mode = fxPreview ? "discuss" : (pickedMode ?? lastUser?.work_mode ?? "discuss");
   // How much goes through without waiting: what you picked, else how the conversation was going (if you still may), else the default.
   const [pickedApproval, setApproval] = useState<ApprovalMode | null>(null);
   const lastApproval = lastUser?.approval_mode && approvalModes().includes(lastUser.approval_mode) ? lastUser.approval_mode : null;
@@ -1031,10 +1060,17 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
             onSend={(q) => say(q)}
             mode={projectId ? mode : undefined}
             setMode={projectId ? setMode : undefined}
+            modeOptions={fxPreview ? WORK_MODES.filter(([value]) => value === "discuss") : WORK_MODES}
+            runtime={fxPreview ? "fx" : undefined}
             approval={projectId ? approval : undefined}
             setApproval={projectId ? setApproval : undefined}
             autoFocus
           />
+          {fxPreview && (
+            <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
+              The fx preview reads project knowledge. It cannot delegate, change data, or start coding yet.
+            </div>
+          )}
           {!projectId && (
             <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
               <Ic n="lock" s={11} /> In all projects the agents only read; for a change they'll say which project's chat to ask in.
@@ -1070,17 +1106,21 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   const [agent, setAgent] = useState(agent0 ?? "auto");
   const models = useModels(ws).data ?? [];
   const [chosen, setModel] = useState<string | null>(null);
-  const model = chosen ?? models[0]?.id ?? "";
   const [mode, setMode] = useState<WorkMode>("discuss");
+  const [runtime, setRuntime] = useState<ChatRuntime>("deepagents");
   const [approval, setApproval] = useState<ApprovalMode>(defaultApproval());
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
+  const runtimeOptions = useChatRuntimeOptions(scope).data;
+  const availableModels = runtime === "fx" ? models.filter((m) => m.source === "personal" && runtimeOptions?.fx_providers.includes(m.provider)) : models;
+  const model = availableModels.some((m) => m.id === chosen) ? chosen! : (availableModels[0]?.id ?? "");
+  const unavailable = runtime === "fx" && !model;
   const send = useSendMessage(scope);
   const sendCross = useSendCross(ws);
   const start = (text: string, a: string) => {
     const body = { agent: a as AgentId, model: model || null };
     const started = pid
       ? send
-          .mutateAsync({ message: text, threadId: null, ...body, workMode: mode, approvalMode: approval })
+          .mutateAsync({ message: text, threadId: null, ...body, workMode: mode, approvalMode: approval, chatRuntime: runtime })
           .then((run) => `thread=${run.thread_id}&project=${proj(pid)?.key}`)
       : sendCross.mutateAsync({ message: text, thread_id: null, project_ids: picked, ...body }).then((run) => `thread=${run.thread_id}&across=1`);
     started.then(open, () => {});
@@ -1123,21 +1163,45 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
             setAgent={setAgent}
             model={model}
             setModel={setModel}
-            models={models.map((m): [string, string] => [m.id, m.name])}
+            models={availableModels.map((m): [string, string] => [m.id, m.name])}
             context={pid}
             contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "All projects"]]}
-            setContext={setPid}
+            setContext={(value) => {
+              setPid(value);
+              if (!value) setRuntime("deepagents");
+            }}
             mode={pid ? mode : undefined}
             setMode={pid ? setMode : undefined}
+            modeOptions={runtime === "fx" ? WORK_MODES.filter(([value]) => value === "discuss") : WORK_MODES}
+            runtime={pid && runtimeOptions?.fx_available ? runtime : undefined}
+            setRuntime={
+              pid && runtimeOptions?.fx_available
+                ? (value) => {
+                    setRuntime(value);
+                    if (value === "fx") {
+                      setMode("discuss");
+                      setAgent("auto");
+                    }
+                  }
+                : undefined
+            }
+            disabled={unavailable}
             approval={pid ? approval : undefined}
             setApproval={pid ? setApproval : undefined}
             onSend={start}
             autoFocus
             initial={q}
           />
+          {runtime === "fx" && (
+            <div className="faint" style={{ fontSize: 11.5, marginTop: 6, textAlign: "center" }}>
+              {unavailable
+                ? "Connect a compatible personal model in settings to use the fx preview."
+                : "The fx preview reads project knowledge. It cannot delegate, change data, or start coding yet."}
+            </div>
+          )}
           <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 14, justifyContent: "center" }}>
             {sugg.map(([i, s]) => (
-              <button key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={!pid && !picked.length}>
+              <button key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={unavailable || (!pid && !picked.length)}>
                 <Ic n={i!} s={13} />
                 {s}
               </button>
