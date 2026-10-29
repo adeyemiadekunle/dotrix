@@ -65,6 +65,22 @@ version its tool implementations and policies. `fx_configuration_digest` produce
 the same public-settings digest as the local fx store; it does not hash tool code or
 credentials. Authorization and the lease still need checking at every external effect.
 
+`agents/fx_pilot.py` now composes the binding and scoped knowledge reads for an
+internal, explicitly invoked Nova turn. It obtains the selected model, fixed provider
+endpoint, requester's personal key, built-in role and current guidance from an admitted
+run. It checks access and the lease before forwarding each runtime event and before
+returning the answer. Real-Postgres tests with a local fake model check the role, key,
+project read, duplicate refusal, and mid-turn membership or lease revocation.
+
+The pilot is deliberately limited to a first, interactive Discuss turn with no token
+budget, no automation, no delegation and no writes. It supports the configured
+OpenAI-compatible provider endpoints, not direct Anthropic or Google APIs. The fx
+journal is in memory; a previously bound run is refused instead of silently replayed.
+The helper does not persist the reply, activity or usage and is not selected by the
+production runner or exposed through an API. It does not yet include the full
+production context pack, workspace rules, board tools, model policy, specialist
+sessions, approvals, or distributed recovery.
+
 The current `delegate_tasks` implementation suspends a LangGraph tool with an
 interrupt, releases the parent worker, and replays that tool to read saved results
 when the children finish. An fx host tool waiting in a JavaScript process is not that

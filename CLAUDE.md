@@ -14,6 +14,8 @@ The isolated [chat runtime experiment](experiments/fx-chat/README.md) compares t
 
 `agents/runtime_tools.py` can wrap the platform's read-only knowledge tools for a runtime session bound to an admitted run. `agents/runtime_sessions.py` persists an experimental one-run binding and checks its runtime version and configuration on recovery; each tool rechecks that binding, requester, project access, current agent contract and lease before and after a call. This is not yet connected to production chat and does not implement a durable runtime journal, delegation, writes or approvals.
 
+`agents/fx_pilot.py` composes those pieces for an explicitly invoked, single-turn, read-only Nova pilot. It derives the requester, selected model, personal key, role and allowed tools from the admitted run, uses fixed OpenAI-compatible provider endpoints, and rechecks access and lease while streaming and before returning. It refuses follow-up conversations, configured token budgets, and repeat attempts because its journal is in memory. The production runner and API do not call it; it does not persist a reply or usage, delegate, or support direct Anthropic/Google providers. Tests use real Postgres, the real libfx host, and a local fake model.
+
 The opt-in `fx_host/handoff.test.mjs` probes libfx engine handoff and resumption with an in-memory journal. A separate integration probe connects that mechanism to Dotrix's scheduler; neither proves distributed crash recovery.
 
 ## Chat, Coding, and the Nova–Kai handoff (current product direction)

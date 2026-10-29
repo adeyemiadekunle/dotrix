@@ -44,7 +44,8 @@ class RuntimeIdentity:
             raise ValueError("Invalid runtime identity")
 
 
-async def _admitted_run(session: AsyncSession, workspace_id: uuid.UUID, run_id: uuid.UUID, token: int) -> AgentRun:
+async def admit_runtime_run(session: AsyncSession, workspace_id: uuid.UUID, run_id: uuid.UUID, token: int) -> AgentRun:
+    """Validate a run and hold its row lock until the caller's transaction ends."""
     # The lock serializes binding with lease changes and another attempt binding this run.
     run = await session.scalar(select(AgentRun).where(
         AgentRun.workspace_id == workspace_id, AgentRun.id == run_id,
@@ -86,7 +87,7 @@ async def bind_runtime_session(
     """Bind once, or repeat the identical binding after verifying the live lease and access."""
     validate_session(session_id, "bind")
     async with sessions() as session:
-        run = await _admitted_run(session, workspace_id, run_id, token)
+        run = await admit_runtime_run(session, workspace_id, run_id, token)
         binding = await session.scalar(select(AgentRuntimeBinding).where(
             AgentRuntimeBinding.workspace_id == workspace_id, AgentRuntimeBinding.run_id == run_id,
         ))
@@ -116,7 +117,7 @@ async def get_runtime_session(
 ) -> RuntimeRunScope:
     """Find an existing binding for a new lease; this does not resume the runtime itself."""
     async with sessions() as session:
-        run = await _admitted_run(session, workspace_id, run_id, token)
+        run = await admit_runtime_run(session, workspace_id, run_id, token)
         binding = await session.scalar(select(AgentRuntimeBinding).where(
             AgentRuntimeBinding.workspace_id == workspace_id, AgentRuntimeBinding.run_id == run_id,
         ))
