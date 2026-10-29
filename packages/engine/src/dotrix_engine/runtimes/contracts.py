@@ -77,6 +77,27 @@ class UnsupportedRuntimeOperation(RuntimeError):
 
 
 @dataclass(frozen=True)
+class RuntimeJournalSnapshot:
+    checkpoint: tuple[str, bytes] | None
+    records: tuple[tuple[str, bytes], ...]
+
+
+class RuntimeJournalStore(Protocol):
+    """Opaque journal storage owned and authorized by the host."""
+
+    async def load(self) -> RuntimeJournalSnapshot: ...
+
+    async def append(self, *, expected: str | None, idempotency_key: str, data: bytes) -> str: ...
+
+    async def save_checkpoint(self, *, through: str, data: bytes) -> None: ...
+
+
+@dataclass(frozen=True)
+class RuntimeHandoff:
+    """A host tool has saved work that must complete outside this runtime process."""
+
+
+@dataclass(frozen=True)
 class RuntimeEvent:
     type: Literal["turn_accepted", "text_delta", "tool_start", "tool_end"]
     session_id: str
@@ -93,6 +114,7 @@ class TurnResult:
     tools: tuple[str, ...] = field(default_factory=tuple)
     message_id: str | None = None
     repeated: bool = False
+    handoff: str | None = None
 
 
 class ConversationRuntime(Protocol):

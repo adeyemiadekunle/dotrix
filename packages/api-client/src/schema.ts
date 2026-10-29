@@ -5448,6 +5448,12 @@ export interface components {
              * @description Compatible providers; the requesting person must connect their own key
              */
             fx_providers: string[];
+            /**
+             * Fx Delegation Available
+             * @description Whether the fx preview may delegate read-only work
+             * @default false
+             */
+            fx_delegation_available: boolean;
         };
         /**
          * ChecklistItem

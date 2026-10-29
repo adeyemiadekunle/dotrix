@@ -144,6 +144,8 @@ class Settings(DatabaseSettings):
     durable_delegation: bool = False
     # Opt-in read-only Nova preview; existing conversations keep their original runtime.
     fx_chat_pilot: bool = False
+    # Separately opt in to scheduler-backed, read-only fx delegation.
+    fx_chat_durable_delegation: bool = False
     # A session's sandbox stays up between turns (Phase B) until it's unused this long, at most this
     # many per workspace (0: never kept; each turn starts fresh and resumes from the saved transcript).
     coding_idle_minutes: int = Field(default=30, ge=1, le=24 * 60)

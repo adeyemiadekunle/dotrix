@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import hashlib
 import itertools
@@ -19,6 +20,8 @@ from .contracts import (
     EventHandler,
     RuntimeCapabilities,
     RuntimeEvent,
+    RuntimeHandoff,
+    RuntimeJournalStore,
     RuntimeToolContext,
     TurnResult,
     UnsupportedRuntimeOperation,
@@ -73,15 +76,19 @@ def _prepare_local_dir(path: Path, config: AgentRuntimeConfig, model: str, base_
 
 
 class FxRuntime:
-    """Experimental local/memory runtime; it is not platform recovery or an approval gate."""
+    """Experimental memory, local or host-journal runtime; platform controls remain external."""
 
     capabilities = RuntimeCapabilities(streaming=True, cancellation=True, steering=True)
 
-    def __init__(self, config: AgentRuntimeConfig, process: asyncio.subprocess.Process, *, local: bool = False):
+    def __init__(self, config: AgentRuntimeConfig, process: asyncio.subprocess.Process, *, local: bool = False,
+                 journal: RuntimeJournalStore | None = None, engine_session: str | None = None):
         self.process = process
-        self.capabilities = RuntimeCapabilities(persistent_sessions=local, streaming=True, cancellation=True,
-                                                resume=local, steering=True)
+        durable = local or journal is not None
+        self.capabilities = RuntimeCapabilities(persistent_sessions=durable, streaming=True, cancellation=True,
+                                                resume=durable, steering=True)
         self._local = local
+        self._journal = journal
+        self._engine_session = engine_session
         self._tools = {tool.name: tool for tool in config.tools}
         self._sequence = itertools.count(1)
         self._pending: dict[str, asyncio.Future] = {}
@@ -97,6 +104,7 @@ class FxRuntime:
     async def create(
         cls, config: AgentRuntimeConfig, *, model: str, base_url: str | None = None, api_key: str | None = None,
         effort: str | None = None, context_window: int = 128_000, node: str = "node", local_dir: Path | None = None,
+        journal: RuntimeJournalStore | None = None, engine_session: str | None = None,
     ) -> FxRuntime:
         if base_url is not None:
             parsed = urlparse(base_url)
@@ -110,6 +118,10 @@ class FxRuntime:
             raise ValueError("Reasoning effort must be nonempty")
         if not model or context_window < 1:
             raise ValueError("Invalid agent name, model, or context window")
+        if (journal is None) != (engine_session is None) or (journal is not None and local_dir is not None):
+            raise ValueError("A host journal needs exactly one engine session and cannot use local storage")
+        if engine_session is not None:
+            validate_session(engine_session, "session")
         if not (_HOST / "node_modules" / "libfx").exists():
             raise RuntimeError(f"libfx is not installed; run npm ci --prefix {_HOST}")
         if local_dir is not None:
@@ -119,12 +131,13 @@ class FxRuntime:
             node, str(_HOST / "worker.mjs"), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL, limit=16 * 1024 * 1024,
         )
-        runtime = cls(config, process, local=local_dir is not None)
+        runtime = cls(config, process, local=local_dir is not None, journal=journal, engine_session=engine_session)
         try:
             await runtime._request({
                 "op": "init", "name": config.name, "instructions": config.instructions, "model": model,
                 "baseUrl": base_url, "apiKey": api_key, "effort": effort, "contextWindow": context_window,
                 "localDir": str(local_dir) if local_dir is not None else None,
+                "persistence": journal is not None, "sessionId": engine_session,
                 "tools": [{"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema,
                            "idempotent": tool.idempotent, "writes": tool.writes} for tool in config.tools],
             })
@@ -191,11 +204,45 @@ class FxRuntime:
             else:
                 assert spec.execute is not None
                 result = await spec.execute(event["args"])
-            # Check serializability before sending, so a malformed host result fails the tool, not the bridge.
-            json.dumps(result)
-            reply = {"op": "tool_reply", "id": event["id"], "ok": True, "result": result}
+            if isinstance(result, RuntimeHandoff):
+                if self._journal is None or spec.name != "delegate_tasks":
+                    raise ValueError("Only a durable delegation tool can hand off")
+                reply = {"op": "tool_reply", "id": event["id"], "ok": True, "handoff": True}
+            else:
+                # Check serializability before sending, so a malformed host result fails the tool, not the bridge.
+                json.dumps(result)
+                reply = {"op": "tool_reply", "id": event["id"], "ok": True, "result": result}
         except Exception:
             reply = {"op": "tool_reply", "id": event.get("id"), "ok": False}
+        with contextlib.suppress(BrokenPipeError, ConnectionError, RuntimeError):
+            await self._send(reply)
+
+    async def _storage(self, event: dict) -> None:
+        try:
+            if self._journal is None:
+                raise ValueError("No host journal")
+            op = event.get("op")
+            if op == "load":
+                snapshot = await self._journal.load()
+                checkpoint = ({"through": snapshot.checkpoint[0], "data": base64.b64encode(snapshot.checkpoint[1]).decode()}
+                              if snapshot.checkpoint else None)
+                result = {"checkpoint": checkpoint, "records": [
+                    {"cursor": cursor, "data": base64.b64encode(data).decode()} for cursor, data in snapshot.records
+                ]}
+            elif op in ("append", "checkpoint"):
+                data = base64.b64decode(event["data"], validate=True)
+                if op == "append":
+                    result = {"cursor": await self._journal.append(expected=event.get("expected"),
+                               idempotency_key=event["idempotencyKey"], data=data)}
+                else:
+                    await self._journal.save_checkpoint(through=event["through"], data=data)
+                    result = {}
+            else:
+                raise ValueError("Unknown journal operation")
+            reply = {"op": "storage_reply", "id": event["id"], "ok": True, "result": result}
+        except Exception as exc:
+            reply = {"op": "storage_reply", "id": event.get("id"), "ok": False,
+                     "fenced": getattr(exc, "code", None) == "runtime_journal_fenced"}
         with contextlib.suppress(BrokenPipeError, ConnectionError, RuntimeError):
             await self._send(reply)
 
@@ -215,6 +262,10 @@ class FxRuntime:
                     task = asyncio.create_task(self._tool(event))
                     self._tool_tasks.add(task)
                     task.add_done_callback(self._tool_tasks.discard)
+                elif event.get("kind") == "storage":
+                    task = asyncio.create_task(self._storage(event))
+                    self._tool_tasks.add(task)
+                    task.add_done_callback(self._tool_tasks.discard)
                 elif event.get("kind") == "event" and event.get("id") in self._events:
                     self._events[event["id"]].put_nowait(event["event"])
         except (ValueError, asyncio.LimitOverrunError):
@@ -230,27 +281,42 @@ class FxRuntime:
         return (await self._request({"op": "new_session"}))["sessionId"]
 
     async def prompt(self, session_id: str, message: str, *, on_event: EventHandler | None = None,
-                     message_id: str | None = None) -> TurnResult:
+                     message_id: str | None = None, rerun_tools: tuple[str, ...] = ()) -> TurnResult:
         if self._closed:
             raise RuntimeError("Runtime is closed")
         validate_session(session_id, message)
         self._validate_local_session(session_id)
         if message_id is not None:
             validate_session(message_id, "message")
-        return await self._turn(session_id, {"op": "prompt", "message": message, "messageId": message_id}, on_event)
+        self._validate_rerun_tools(rerun_tools)
+        return await self._turn(session_id, {"op": "prompt", "message": message, "messageId": message_id,
+                                              "rerunTools": list(rerun_tools)}, on_event)
 
-    async def resume(self, session_id: str, *, on_event: EventHandler | None = None) -> TurnResult:
+    async def resume(self, session_id: str, *, on_event: EventHandler | None = None,
+                     rerun_tools: tuple[str, ...] = (), message_id: str | None = None) -> TurnResult:
         if self._closed:
             raise RuntimeError("Runtime is closed")
-        if not self._local:
-            raise UnsupportedRuntimeOperation("Resume requires explicitly configured local session storage")
+        if not self._local and self._journal is None:
+            raise UnsupportedRuntimeOperation("Resume requires explicitly configured local storage or a host journal")
         validate_session(session_id, "resume")
+        if message_id is not None:
+            validate_session(message_id, "message")
         self._validate_local_session(session_id)
-        return await self._turn(session_id, {"op": "resume"}, on_event)
+        self._validate_rerun_tools(rerun_tools)
+        return await self._turn(session_id, {"op": "resume", "rerunTools": list(rerun_tools),
+                                              "messageId": message_id}, on_event)
 
     def _validate_local_session(self, session_id: str) -> None:
+        if self._engine_session is not None and session_id != self._engine_session:
+            raise ValueError("The journal belongs to a different engine session")
         if self._local and not _LOCAL_SESSION.fullmatch(session_id):
             raise ValueError("Local sessions need an ID returned by new_session()")
+
+    def _validate_rerun_tools(self, names: tuple[str, ...]) -> None:
+        if names and self._journal is None:
+            raise ValueError("Explicit tool retries require a host journal")
+        if any(name not in self._tools or (not self._tools[name].idempotent and name != "delegate_tasks") for name in names):
+            raise ValueError("Only explicitly safe tools can be retried on resume")
 
     async def _turn(self, session_id: str, command: dict, on_event: EventHandler | None) -> TurnResult:
         async with self._locks.setdefault(session_id, asyncio.Lock()):
@@ -272,7 +338,7 @@ class FxRuntime:
         ) if source in usage} if usage else None)
         return TurnResult(text=result["text"], stop_reason=result["stopReason"], usage=normalized,
                           tools=tuple(result["tools"]), message_id=result.get("messageId"),
-                          repeated=result.get("repeated", False))
+                          repeated=result.get("repeated", False), handoff=result.get("handoff"))
 
     async def steer(self, session_id: str, message: str) -> None:
         if self._closed or session_id not in self._active:

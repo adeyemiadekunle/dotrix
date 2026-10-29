@@ -22,25 +22,28 @@ from uuid_utils.compat import uuid7
 
 from dotrix_backend.core.crypto import Secrets
 from dotrix_backend.core.email import get_email_sender
-from dotrix_backend.core.errors import Conflict, Forbidden
+from dotrix_backend.core.errors import Conflict, Forbidden, Unprocessable
 from dotrix_backend.core.jobs import InlineJobs, JobContext
 from dotrix_backend.core.security import create_access_token
 from dotrix_backend.core.storage import get_storage, optional_storage
 from dotrix_backend.jobs import JOBS
 from dotrix_backend.main import create_app
 from dotrix_backend.modules.agent_definitions.models import AgentPreference
-from dotrix_backend.modules.agents import fx_pilot, runtime_tools
+from dotrix_backend.modules.agents import fx_pilot, runtime_journal, runtime_tools
 from dotrix_backend.modules.agents.delegation import DelegationService
 from dotrix_backend.modules.agents.llm import ModelUnavailable
 from dotrix_backend.modules.agents.models import (
     AgentRun,
     AgentRuntimeBinding,
+    AgentRuntimeCheckpoint,
+    AgentRuntimeJournal,
     ChatRuntime,
     RunKind,
     RunStatus,
     WorkMode,
 )
 from dotrix_backend.modules.agents.runner import AgentRunner
+from dotrix_backend.modules.agents.runtime_journal import JournalFenced, RuntimeJournal
 from dotrix_backend.modules.agents.runtime_sessions import (
     RuntimeIdentity,
     bind_runtime_session,
@@ -58,9 +61,12 @@ from dotrix_engine.runtimes import (
     AgentRuntimeConfig,
     DeepAgentsRuntime,
     FxRuntime,
+    RuntimeHandoff,
+    RuntimeTool,
     RuntimeToolContext,
     fx_configuration_digest,
 )
+from dotrix_engine.testing import tool_call
 
 
 @pytest.fixture
@@ -213,6 +219,422 @@ async def test_runtime_binding_is_deleted_with_its_run(runtime_world, db_session
         AgentRuntimeBinding.workspace_id == scope.workspace_id, AgentRuntimeBinding.run_id == scope.run_id)) is None
 
 
+@pytest.fixture
+async def journal_world(nova_pilot_world):
+    run, sessions, secrets = nova_pilot_world
+    identity = RuntimeIdentity("fx", "test-1", "b" * 64)
+    await bind_runtime_session(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1,
+                               identity=identity, session_id="journal-session")
+    return run, sessions, secrets, identity, RuntimeJournal(
+        sessions, secrets, workspace_id=run.workspace_id, run_id=run.id, token=1,
+        identity=identity, session_id="journal-session",
+    )
+
+
+async def test_runtime_journal_persists_encrypted_records_and_checkpoints(journal_world):
+    run, sessions, _, _, journal = journal_world
+    assert (await journal.load()).records == ()
+    assert await journal.append(expected=None, idempotency_key="one", data=b"private prompt") == "1"
+    assert await journal.append(expected=None, idempotency_key="one", data=b"private prompt") == "1"
+    with pytest.raises(Conflict):
+        await journal.append(expected=None, idempotency_key="one", data=b"different prompt")
+    with pytest.raises(JournalFenced):
+        await journal.append(expected=None, idempotency_key="other", data=b"stale write")
+    assert await journal.append(expected="1", idempotency_key="two", data=b"private result") == "2"
+    await journal.save_checkpoint(through="1", data=b"private checkpoint")
+    snapshot = await journal.load()
+    assert snapshot.checkpoint == ("1", b"private checkpoint")
+    assert snapshot.records == (("2", b"private result"),)
+    await journal.save_checkpoint(through="1", data=b"private checkpoint")
+    with pytest.raises(JournalFenced):
+        await journal.save_checkpoint(through="1", data=b"another checkpoint")
+    async with sessions() as session:
+        records = list(await session.scalars(select(AgentRuntimeJournal).where(AgentRuntimeJournal.workspace_id == run.workspace_id)))
+        checkpoint = await session.scalar(select(AgentRuntimeCheckpoint).where(AgentRuntimeCheckpoint.workspace_id == run.workspace_id))
+        assert len(records) == 2
+        assert all("private" not in row.encrypted for row in records) and "private" not in checkpoint.encrypted
+        await session.execute(delete(AgentRun).where(AgentRun.workspace_id == run.workspace_id, AgentRun.id == run.id))
+        await session.commit()
+        assert not list(await session.scalars(select(AgentRuntimeJournal).where(AgentRuntimeJournal.workspace_id == run.workspace_id)))
+        assert await session.scalar(select(AgentRuntimeCheckpoint.id).where(AgentRuntimeCheckpoint.workspace_id == run.workspace_id)) is None
+
+
+async def test_runtime_journal_serializes_competing_and_duplicate_writers(journal_world):
+    _, _, _, _, journal = journal_world
+    concurrent = await asyncio.gather(
+        journal.append(expected=None, idempotency_key="first", data=b"one"),
+        journal.append(expected=None, idempotency_key="second", data=b"two"),
+        return_exceptions=True,
+    )
+    assert concurrent.count("1") == 1 and sum(isinstance(item, JournalFenced) for item in concurrent) == 1
+    repeated = await asyncio.gather(
+        journal.append(expected="1", idempotency_key="repeat", data=b"same"),
+        journal.append(expected="1", idempotency_key="repeat", data=b"same"),
+    )
+    assert repeated == ["2", "2"]
+    assert len((await journal.load()).records) == 2
+
+
+async def test_runtime_journal_rechecks_access_and_fences_expired_or_old_workers(journal_world):
+    run, sessions, secrets, identity, journal = journal_world
+    await journal.append(expected=None, idempotency_key="one", data=b"private")
+    async with sessions() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(
+            lease_token=2, lease_expires_at=datetime.now(UTC) + timedelta(minutes=5)))
+        await session.commit()
+    with pytest.raises(Conflict):
+        await journal.load()
+    recovered = RuntimeJournal(sessions, secrets, workspace_id=run.workspace_id, run_id=run.id, token=2,
+                               identity=identity, session_id="journal-session")
+    assert (await recovered.load()).records == (("1", b"private"),)
+    async with sessions() as session:
+        await session.execute(update(Membership).where(Membership.workspace_id == run.workspace_id,
+                                                        Membership.user_id == run.requested_by_id).values(role=Role.GUEST))
+        await session.commit()
+    with pytest.raises(Forbidden):
+        await recovered.load()
+
+
+async def test_runtime_journal_rejects_unreadable_data_and_oversize_writes(journal_world, monkeypatch):
+    run, sessions, _, identity, journal = journal_world
+    monkeypatch.setattr(runtime_journal, "MAX_JOURNAL_BYTES", 6)
+    assert await journal.append(expected=None, idempotency_key="one", data=b"1234") == "1"
+    with pytest.raises(Unprocessable, match="size limit"):
+        await journal.append(expected="1", idempotency_key="two", data=b"567")
+    wrong_key = RuntimeJournal(sessions, Secrets(Fernet.generate_key().decode()), workspace_id=run.workspace_id,
+                               run_id=run.id, token=1, identity=identity, session_id="journal-session")
+    with pytest.raises(Conflict, match="cannot be decrypted"):
+        await wrong_key.load()
+    assert (await journal.load()).records == (("1", b"1234"),)
+
+
+@pytest.mark.parametrize("settlement", ["completion", "sweep", "expired"])
+async def test_failed_fx_parent_cancels_its_unstarted_specialists(journal_world, settlement):
+    from dotrix_backend.modules.agents.coding_outcomes import sweep_team
+    from dotrix_backend.modules.execution.service import expire_agent_leases
+
+    run, sessions, secrets, _, _ = journal_world
+    stopped = []
+
+    async def stop(run_id, reason):
+        stopped.append((run_id, reason))
+
+    runner = SimpleNamespace(session_factory=sessions, queue=None, stop_reasons=None, secrets=secrets, stop=stop)
+    scheduler = DelegationService(runner)
+    async with sessions() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(
+            orchestration=True, chat_runtime=ChatRuntime.FX))
+        await session.commit()
+    batch = SpecialistBatch(tasks=[{"key": "research", "agent": "research", "brief": "Review",
+                                   "expected_result": "Evidence"}])
+    await scheduler.submit(run.workspace_id, run.id, 1, "tool-call", batch, verify_runtime_batch=True)
+    async with sessions() as session:
+        values = ({"lease_expires_at": datetime.now(UTC) - timedelta(seconds=1)} if settlement == "expired"
+                  else {"status": RunStatus.FAILED})
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(**values))
+        await session.commit()
+    if settlement == "completion":
+        await scheduler.completed(run.workspace_id, run.id)
+    else:
+        if settlement == "expired":
+            assert await expire_agent_leases(sessions, queue_name="test-fx") == 1
+        await sweep_team(runner)
+    async with sessions() as session:
+        child = await session.scalar(select(AgentRun).where(AgentRun.workspace_id == run.workspace_id,
+                                                             AgentRun.parent_run_id == run.id))
+        assert child.status is RunStatus.CANCELLED and stopped[0][0] == child.id
+
+
+async def test_fx_delegation_cannot_commit_after_its_lease_expires(journal_world, monkeypatch):
+    from dotrix_backend.modules.agents import delegation
+
+    run, sessions, secrets, _, _ = journal_world
+    async with sessions() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(
+            orchestration=True, lease_expires_at=datetime.now(UTC) + timedelta(seconds=2)))
+        await session.commit()
+    resolve = delegation.AgentDefinitionRepository.resolve
+
+    async def slow_resolve(self, *args, **kwargs):
+        await asyncio.sleep(2.1)
+        return await resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(delegation.AgentDefinitionRepository, "resolve", slow_resolve)
+    scheduler = DelegationService(SimpleNamespace(session_factory=sessions, secrets=secrets))
+    batch = SpecialistBatch(tasks=[{"key": "research", "agent": "research", "brief": "Review",
+                                   "expected_result": "Evidence"}])
+    with pytest.raises(Conflict):
+        await scheduler.submit(run.workspace_id, run.id, 1, "tool-call", batch, verify_runtime_batch=True)
+    async with sessions() as session:
+        assert await session.scalar(select(AgentRun.id).where(AgentRun.workspace_id == run.workspace_id,
+                                                             AgentRun.parent_run_id == run.id)) is None
+
+
+async def test_expired_fx_worker_cannot_renew_or_clear_the_lease(journal_world, agent_script):
+    run, sessions, secrets, _, _ = journal_world
+    expired = datetime.now(UTC) - timedelta(seconds=1)
+    async with sessions() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(lease_expires_at=expired))
+        await session.commit()
+    runner = AgentRunner(session_factory=sessions, checkpointer=InMemorySaver(), model_factory=agent_script.factory,
+                         inline=True, secrets=secrets, settings=SimpleNamespace(agent_lease_seconds=0.06))
+
+    async def worker():
+        renewal = runner._hold_lease(run.id, 1)
+        try:
+            await asyncio.Event().wait()
+        finally:
+            renewal.cancel()
+
+    task = asyncio.create_task(worker())
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 5)
+    await runner._release_lease(run.id, 1, None)
+    async with sessions() as session:
+        stored = await session.get(AgentRun, run.id)
+        assert stored.status is RunStatus.RUNNING and stored.lease_expires_at == expired
+
+
+async def test_fx_restarts_an_interrupted_read_from_the_database_journal(journal_world):
+    """A killed fx host resumes its open turn using the Postgres journal."""
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    run, sessions, _, _, journal = journal_world
+    scope = RuntimeRunScope(run.workspace_id, run.project_id, run.id, run.requested_by_id,
+                            "project-manager", 1, "journal-session")
+    read = next(tool for tool in scoped_knowledge_tools(sessions, scope=scope, spec=builtin("project-manager"),
+                                                        embedder=None) if tool.name == "read_section")
+    started = asyncio.Event()
+    recovered = False
+    executions = []
+
+    async def interrupted_read(arguments, context):
+        executions.append(context.execution_id)
+        if not recovered:
+            started.set()
+            await asyncio.Event().wait()
+        return await read.execute_scoped(arguments, context)
+
+    config = AgentRuntimeConfig("project-manager", "Use the project knowledge tool.",
+                                (replace(read, execute_scoped=interrupted_read),))
+    requests = []
+    with model_server(requests=requests, report_usage=True) as url:
+        first = await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
+                                       journal=journal, engine_session="journal-session")
+        task = asyncio.create_task(first.prompt("journal-session", "Read the evidence", message_id="turn-1"))
+        await asyncio.wait_for(started.wait(), 20)
+        first.process.kill()
+        with pytest.raises(RuntimeError):
+            await task
+        await first.close()
+        assert (await journal.load()).records
+        recovered = True
+        second = await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
+                                        journal=journal, engine_session="journal-session")
+        try:
+            result = await asyncio.wait_for(second.resume("journal-session", rerun_tools=("read_section",)), 20)
+            assert result.stop_reason == "end_turn" and "Private project evidence" in result.text
+            assert result.usage is None  # Recovery cannot promise usage from before the crash.
+            assert len(requests) >= 2
+            assert len(executions) == 2 and executions[0] == executions[1]
+        finally:
+            await second.close()
+
+
+async def test_fx_handoff_survives_process_restart_with_the_real_scheduler(journal_world):
+    """Persist the handoff, release the parent, and read one saved child result on resume."""
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    run, sessions, secrets, identity, journal = journal_world
+    async with sessions() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(orchestration=True))
+        await session.commit()
+    dispatched, executions = [], []
+    submitted = asyncio.Event()
+    interrupted = True
+
+    async def dispatch(run_id, payload):
+        dispatched.append((run_id, payload))
+
+    scheduler = DelegationService(SimpleNamespace(session_factory=sessions, queue=None, stop_reasons=None, secrets=secrets,
+                                                   _dispatch=dispatch))
+    token = 1
+
+    async def delegate(arguments, context):
+        executions.append(context.execution_id)
+        batch = SpecialistBatch.model_validate(arguments)
+        result = await scheduler.submit(run.workspace_id, run.id, token, context.execution_id, batch,
+                                        verify_runtime_batch=True)
+        if result is None and interrupted:
+            submitted.set()
+            await asyncio.Event().wait()
+        return RuntimeHandoff() if result is None else {"tasks": result}
+
+    tool = RuntimeTool("delegate_tasks", "Delegate a read-only specialist task",
+                       SpecialistBatch.model_json_schema(), execute_scoped=delegate, writes=True)
+    config = AgentRuntimeConfig("project-manager", "Ask a specialist for a review.", (tool,))
+    args = {"tasks": [{"key": "research", "agent": "research", "brief": "Review the evidence",
+                       "expected_result": "Evidence"}]}
+    with model_server(tool_name="delegate_tasks", tool_args=args) as url:
+        first = await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
+                                       journal=journal, engine_session="journal-session")
+        try:
+            task = asyncio.create_task(first.prompt("journal-session", "Ask for a review", message_id="turn-1"))
+            await asyncio.wait_for(submitted.wait(), 20)
+            first.process.kill()  # Crash after child creation, before acknowledging the handoff.
+            with pytest.raises(RuntimeError):
+                await task
+        finally:
+            await first.close()
+        interrupted, token = False, 2
+        async with sessions() as session:
+            await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(
+                lease_token=token, lease_expires_at=datetime.now(UTC) + timedelta(minutes=5)))
+            await session.commit()
+        recovered_journal = RuntimeJournal(sessions, secrets, workspace_id=run.workspace_id, run_id=run.id, token=token,
+                                           identity=identity, session_id="journal-session")
+        second = await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
+                                        journal=recovered_journal, engine_session="journal-session")
+        try:
+            handoff = await asyncio.wait_for(second.prompt("journal-session", "Ask for a review", message_id="turn-1",
+                                                           rerun_tools=("delegate_tasks",)), 20)
+            assert handoff.stop_reason == "handoff" and handoff.handoff
+        finally:
+            await second.close()
+        with pytest.raises(Conflict, match="different batch"):
+            changed = SpecialistBatch(tasks=[{"key": "research", "agent": "research", "brief": "Different brief",
+                                              "expected_result": "Evidence"}])
+            await scheduler.submit(run.workspace_id, run.id, token, handoff.handoff, changed, verify_runtime_batch=True)
+        with pytest.raises(Forbidden, match="read-only"):
+            writes = SpecialistBatch(tasks=[{"key": "write", "agent": "documentation", "brief": "Change a file",
+                                             "expected_result": "Updated", "changes_project": True}])
+            await scheduler.submit(run.workspace_id, run.id, token, "write-call", writes, verify_runtime_batch=True)
+        await scheduler.wait(run.workspace_id, run.id, token, {"fx-handoff": handoff.handoff}, require_live_lease=True)
+        async with sessions() as session:
+            parent = await session.get(AgentRun, run.id)
+            children = list(await session.scalars(select(AgentRun).where(AgentRun.workspace_id == run.workspace_id,
+                                                                          AgentRun.parent_run_id == run.id)))
+            assert parent.status is RunStatus.WAITING_CHILDREN
+            assert len(children) == 1 and children[0].status is RunStatus.QUEUED
+            assert dispatched[0][0] == children[0].id
+            children[0].status = RunStatus.COMPLETED
+            children[0].task_result = SpecialistResult(summary="Saved specialist evidence").model_dump(mode="json")
+            await session.commit()
+        await scheduler.advance(run.workspace_id, run.id)
+        assert dispatched[-1][0] == run.id and dispatched[-1][1]["kind"] == "delegation_ready"
+        token = 3
+        async with sessions() as session:
+            await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(
+                status=RunStatus.RUNNING, lease_token=token, lease_expires_at=datetime.now(UTC) + timedelta(minutes=5)))
+            await session.commit()
+        resumed_journal = RuntimeJournal(sessions, secrets, workspace_id=run.workspace_id, run_id=run.id, token=token,
+                                         identity=identity, session_id="journal-session")
+        third = await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
+                                       journal=resumed_journal, engine_session="journal-session")
+        try:
+            result = await asyncio.wait_for(third.prompt("journal-session", "Ask for a review", message_id="turn-1",
+                                                         rerun_tools=("delegate_tasks",)), 20)
+            assert result.stop_reason == "end_turn" and "Saved specialist evidence" in result.text
+            assert len(executions) >= 3 and set(executions) == {handoff.handoff}
+        finally:
+            await third.close()
+        async with sessions() as session:
+            children = list(await session.scalars(select(AgentRun.id).where(AgentRun.workspace_id == run.workspace_id,
+                                                                             AgentRun.parent_run_id == run.id)))
+            assert len(children) == 1
+
+
+async def test_fx_repeats_a_completed_turn_after_losing_the_host_response(journal_world):
+    """The saved result must be recoverable without charging for a second model turn."""
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    run, sessions, _, _, journal = journal_world
+    scope = RuntimeRunScope(run.workspace_id, run.project_id, run.id, run.requested_by_id,
+                            "project-manager", 1, "journal-session")
+    read = next(tool for tool in scoped_knowledge_tools(sessions, scope=scope, spec=builtin("project-manager"),
+                                                        embedder=None) if tool.name == "read_section")
+    config = AgentRuntimeConfig("project-manager", "Use the project knowledge tool.", (read,))
+    requests = []
+    with model_server(requests=requests, report_usage=True) as url:
+        first = await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
+                                       journal=journal, engine_session="journal-session")
+        try:
+            answer = await first.prompt("journal-session", "Read the evidence", message_id="turn-1")
+            assert "Private project evidence" in answer.text
+            assert answer.usage and answer.usage["input_tokens"] > 0
+        finally:
+            await first.close()
+        calls = len(requests)
+        second = await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
+                                        journal=journal, engine_session="journal-session")
+        try:
+            repeated = await second.prompt("journal-session", "Read the evidence", message_id="turn-1")
+            assert repeated.text == answer.text and repeated.repeated and repeated.usage is None
+            resumed = await second.resume("journal-session", message_id="turn-1")
+            assert resumed.text == answer.text and resumed.repeated
+            assert len(requests) == calls
+        finally:
+            await second.close()
+
+
+@pytest.mark.parametrize("record", [b"not json", b'{"format":"libfx-journal-v2","events":[]}'])
+async def test_fx_refuses_an_unknown_or_invalid_journal_format(journal_world, record):
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    *_, journal = journal_world
+    await journal.append(expected=None, idempotency_key="unsupported", data=record)
+    config = AgentRuntimeConfig("project-manager", "Answer questions.")
+    requests = []
+    with model_server(requests=requests) as url:
+        with pytest.raises(RuntimeError):
+            await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
+                                   journal=journal, engine_session="journal-session")
+    assert requests == []
+
+
+@pytest.mark.parametrize("final_finish", ["length", "content_filter"])
+async def test_fx_replay_does_not_treat_a_truncated_or_refused_answer_as_complete(journal_world, final_finish):
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    run, sessions, _, _, journal = journal_world
+    scope = RuntimeRunScope(run.workspace_id, run.project_id, run.id, run.requested_by_id,
+                            "project-manager", 1, "journal-session")
+    read = next(tool for tool in scoped_knowledge_tools(sessions, scope=scope, spec=builtin("project-manager"),
+                                                        embedder=None) if tool.name == "read_section")
+    config = AgentRuntimeConfig("project-manager", "Use the project knowledge tool.", (read,))
+    requests = []
+    with model_server(requests=requests, final_finish=final_finish) as url:
+        first = await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
+                                       journal=journal, engine_session="journal-session")
+        try:
+            try:
+                truncated = await first.prompt("journal-session", "Read the evidence", message_id="turn-1")
+            except RuntimeError:
+                truncated = None
+            assert truncated is None or truncated.stop_reason != "end_turn"
+        finally:
+            await first.close()
+        calls = len(requests)
+        second = await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
+                                        journal=journal, engine_session="journal-session")
+        try:
+            with pytest.raises(RuntimeError):
+                await second.prompt("journal-session", "Read the evidence", message_id="turn-1")
+            assert len(requests) == calls
+        finally:
+            await second.close()
+
+
 async def test_binding_requires_current_membership_and_an_unexpired_lease(runtime_world, db_session):
     _, _, _, run, scope, sessions = runtime_world
     member = await db_session.scalar(select(Membership).where(Membership.workspace_id == scope.workspace_id,
@@ -357,7 +779,8 @@ async def test_a_read_is_not_returned_after_access_revocation(runtime_world, db_
 
 
 @contextmanager
-def model_server(requests=None, started=None, gate=None):
+def model_server(requests=None, started=None, gate=None, tool_name="read_section", tool_args=None, final_finish="stop",
+                 report_usage=False):
     """A deterministic Chat Completions endpoint that asks for one real project read."""
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -374,16 +797,18 @@ def model_server(requests=None, started=None, gate=None):
             messages = request["messages"]
             if messages[-1]["role"] == "tool":
                 message = {"role": "assistant", "content": messages[-1]["content"]}
-                finish = "stop"
+                finish = final_finish
             else:
                 message = {"role": "assistant", "tool_calls": [{"index": 0, "id": "read-1", "type": "function",
-                    "function": {"name": "read_section", "arguments": json.dumps({
+                    "function": {"name": tool_name, "arguments": json.dumps(tool_args or {
                         "file_path": "/dotrix/research/runtime.md", "heading": "Evidence"})}}]}
                 finish = "tool_calls"
             if request.get("stream"):
                 base = {"id": "test", "object": "chat.completion.chunk", "created": 1, "model": request["model"]}
                 chunks = [{**base, "choices": [{"index": 0, "delta": message, "finish_reason": None}]},
                           {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": finish}]}]
+                if report_usage:
+                    chunks.append({**base, "choices": [], "usage": {"prompt_tokens": 12, "completion_tokens": 6}})
                 payload = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks) + "data: [DONE]\n\n"
                 content_type = "text/event-stream"
             else:
@@ -683,6 +1108,58 @@ async def test_fx_queued_run_fails_if_project_access_was_removed_before_it_start
     async with sessions() as session:
         denied = await session.get(AgentRun, run_id)
         assert denied.status is RunStatus.FAILED and "no longer sees this project" in denied.error
+
+
+async def test_fx_chat_delegates_through_real_child_runner_and_returns_the_saved_result(
+    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts,
+):
+    """Public chat runs Nova in fx and a cheaper specialist through Dotrix's scheduler."""
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    existing, sessions, secrets = nova_pilot_world
+    settings = db_client._transport.app.state.settings.model_copy(update={
+        "fx_chat_pilot": True, "fx_chat_durable_delegation": True,
+    })
+    async with sessions() as session:
+        await session.execute(update(Project).where(Project.id == existing.project_id).values(
+            specialist_model="openai:cheap-model"))
+        await session.commit()
+    app = create_app(settings)
+    app.state.sessionmaker, app.state.secrets, app.state.checkouts = sessions, secrets, checkouts
+    app.dependency_overrides[get_email_sender] = lambda: outbox
+    app.dependency_overrides[get_storage] = lambda: storage
+    app.dependency_overrides[optional_storage] = lambda: storage
+    app.state.runner = runner = AgentRunner(
+        session_factory=sessions, checkpointer=InMemorySaver(), model_factory=agent_script.factory,
+        inline=True, checkouts=checkouts, secrets=secrets, settings=settings,
+    )
+    app.state.jobs = InlineJobs(JobContext(sessions, settings, outbox, storage, checkouts=checkouts, runner=runner), JOBS)
+    runner.jobs = app.state.jobs
+    agent_script.say(tool_call("submit_specialist_result", summary="Saved specialist evidence", evidence=["runtime.md"]),
+                     "Research complete.")
+    token = create_access_token(existing.requested_by_id, secret=settings.jwt_secret.get_secret_value(),
+                                issuer=settings.jwt_issuer, ttl=timedelta(minutes=10))
+    headers = {"Authorization": f"Bearer {token}"}
+    base = f"/v1/workspaces/{existing.workspace_id}/projects/{existing.project_id}/agent"
+    args = {"tasks": [{"key": "research", "agent": "research", "brief": "Review the evidence",
+                       "expected_result": "Evidence"}]}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        options = await client.get(f"{base}/runtime-options", headers=headers)
+        assert options.json()["fx_delegation_available"] is True
+        with model_server(tool_name="delegate_tasks", tool_args=args) as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            response = await client.post(f"{base}/runs", headers=headers, json={
+                "message": "Ask the research specialist", "chat_runtime": "fx", "work_mode": "discuss",
+            })
+        assert response.status_code == 202, response.text
+        root = response.json()
+        assert root["status"] == "completed" and "Saved specialist evidence" in root["reply"], response.text
+        tasks = await client.get(f"{base}/runs/{root['id']}/tasks", headers=headers)
+        assert tasks.status_code == 200 and len(tasks.json()) == 1
+        assert tasks.json()[0]["task_result"]["summary"] == "Saved specialist evidence"
+        assert "openai:cheap-model" in agent_script.models_used
 
 
 @pytest.mark.parametrize("revoked", ["membership", "lease"])
