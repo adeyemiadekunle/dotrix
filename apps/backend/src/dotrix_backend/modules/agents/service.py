@@ -83,6 +83,12 @@ from .schemas import (
     WorkspaceApprovalRead,
     WorkspaceThread,
 )
+from .specialist_sessions import (
+    SpecialistSessionBusy,
+    lock_specialist_project,
+    require_specialist_slot,
+    specialist_result_visible,
+)
 from .titles import title_from_message
 
 # The architecture is set up by owners and admins; only they approve changes to it.
@@ -378,7 +384,7 @@ class AgentService:
             .execution_options(populate_existing=True)
         )
         run = await self.session.scalar(stmt if acted else stmt.where(run_openable_by(access.member)))
-        if run is None:
+        if run is None or not await specialist_result_visible(self.session, run):
             raise NotFound("Run not found")
         return _read(access, run)
 
@@ -399,8 +405,8 @@ class AgentService:
         return [_read(access, r) for r in await self.session.scalars(stmt)]
 
     async def pending_approvals(self, access: ProjectAccess) -> list[ApprovalRead]:
-        result = await self.session.scalars(
-            select(AgentApproval)
+        result = await self.session.execute(
+            select(AgentApproval, AgentRun)
             .join(AgentRun, AgentRun.id == AgentApproval.run_id)
             .where(
                 AgentApproval.project_id == access.project.id,
@@ -409,12 +415,13 @@ class AgentService:
             )
             .order_by(AgentApproval.created_at, AgentApproval.position)
         )
-        return [ApprovalRead.model_validate(a) for a in result]
+        return [ApprovalRead.model_validate(a) for a, run in result
+                if await specialist_result_visible(self.session, run)]
 
     async def workspace_pending(self, member: Membership) -> list[WorkspaceApprovalRead]:
         """Every pending action in the workspace's projects you can see, oldest first."""
         rows = await self.session.execute(
-            select(AgentApproval, Project.key, Project.name, AgentRun.message, AgentRun.requested_by_id)
+            select(AgentApproval, Project.key, Project.name, AgentRun)
             .join(Project, Project.id == AgentApproval.project_id)
             .join(AgentRun, AgentRun.id == AgentApproval.run_id)
             .where(
@@ -431,10 +438,11 @@ class AgentService:
                 project_id=approval.project_id,
                 project_key=key,
                 project_name=name,
-                run_message=message,
-                requested_by_id=requested_by_id,
+                run_message=run.message,
+                requested_by_id=run.requested_by_id,
             )
-            for approval, key, name, message, requested_by_id in rows
+            for approval, key, name, run in rows
+            if await specialist_result_visible(self.session, run)
         ]
 
     async def workspace_usage(self, member: Membership, *, days: int) -> WorkspaceAgentUsage:
@@ -553,6 +561,7 @@ class AgentService:
         """Decide every pending action of a paused run, then resume it. Changes need the approve
         permission; checkpoints, whoever asked or anyone who may approve."""
         member = access.member
+        await lock_specialist_project(self.session, member.workspace_id, access.project.id)
         run = await self.session.scalar(
             select(AgentRun)
             .where(AgentRun.project_id == access.project.id, AgentRun.id == run_id)
@@ -594,6 +603,7 @@ class AgentService:
             if decision.decision == "steer" and (approval.tool != CHECKPOINT or not (decision.reason or "").strip()):
                 raise Unprocessable("Steer only answers a checkpoint, with the changes as the reason")
 
+        await require_specialist_slot(self.session, run)
         now, audit = _now(), AuditLog(self.session)
         for approval in pending:
             decision = by_id[approval.id]
@@ -651,6 +661,7 @@ class AgentService:
     async def continue_run(self, access: ProjectAccess, run_id: uuid.UUID, data: ContinueRun) -> AgentRunRead:
         """A run that stopped at its model's limit goes on from where it stopped: now, or once the
         limit resets (`when_reset`, when the provider said when). Only whoever asked."""
+        await lock_specialist_project(self.session, access.member.workspace_id, access.project.id)
         run = await self.session.scalar(
             select(AgentRun)
             .where(AgentRun.project_id == access.project.id, AgentRun.id == run_id,
@@ -844,20 +855,22 @@ class AgentService:
         """A run's kept events after `after` (events.py), for whoever may open the run."""
         run = await self.session.scalar(select(AgentRun).where(
             AgentRun.project_id == access.project.id, AgentRun.id == run_id, run_openable_by(access.member)))
-        if run is None:
+        if run is None or not await specialist_result_visible(self.session, run):
             raise NotFound("Run not found")
         rows = await events_after(self.session, run, after, limit)
         return RunEventPage(events=[RunEventRead.model_validate(r) for r in rows],
                             active=run.status in (RunStatus.QUEUED, RunStatus.RUNNING))
 
-    async def check_run(self, access: ProjectAccess, run_id: uuid.UUID) -> None:
+    async def check_run(self, access: ProjectAccess, run_id: uuid.UUID) -> bool:
         found = await self.session.scalar(
-            select(AgentRun.id).where(
+            select(AgentRun).where(
                 AgentRun.project_id == access.project.id, AgentRun.id == run_id, run_openable_by(access.member)
             )
         )
-        if found is None:
+        if found is None or not await specialist_result_visible(self.session, found):
             raise NotFound("Run not found")
+        return bool(found.parent_run_id and (found.specialist_session_id is not None
+                    or found.specialist_history is not None or found.depends_on))
 
     async def _thread_model(self, project_id: uuid.UUID, thread_id: uuid.UUID) -> str | None:
         """The conversation's model, from its first run."""
@@ -963,6 +976,8 @@ def _breakdown(run: AgentRun) -> RunBreakdown:
 async def resume_limited(session: AsyncSession, runner: AgentRunner, run: AgentRun) -> None:
     """Queue a run that stopped at its model's limit (or was interrupted) to go on from its last
     checkpoint. An interrupted one asks for approval before every change, as a recovered attempt does."""
+    await lock_specialist_project(session, run.workspace_id, run.project_id)
+    await require_specialist_slot(session, run)
     recovered = run.error_kind == "interrupted"
     run.status, run.error, run.error_kind = RunStatus.QUEUED, None, None
     run.continue_at_reset, run.finished_at, run.updated_at = False, None, _now()
@@ -988,14 +1003,20 @@ async def continue_due_runs(session: AsyncSession, runner: AgentRunner) -> int:
     # Committing one continuation releases locks; a snapshot of locked ORM rows
     # would let another worker continue a later run from the same stale snapshot.
     due = list((await session.execute(
-        select(AgentRun.workspace_id, AgentRun.id).where(*conditions)
+        select(AgentRun.workspace_id, AgentRun.project_id, AgentRun.id).where(*conditions)
     )).all())
     continued = 0
-    for workspace_id, run_id in due:
+    for workspace_id, project_id, run_id in due:
+        await lock_specialist_project(session, workspace_id, project_id)
         run = await session.scalar(select(AgentRun).where(
             AgentRun.workspace_id == workspace_id, AgentRun.id == run_id, *conditions,
         ).with_for_update(skip_locked=True).execution_options(populate_existing=True))
         if run is not None:
-            await resume_limited(session, runner, run)
-            continued += 1
+            try:
+                await resume_limited(session, runner, run)
+                continued += 1
+            except SpecialistSessionBusy:
+                await session.rollback()  # keep the due flag; retry at the next sweep
+        else:
+            await session.rollback()
     return continued

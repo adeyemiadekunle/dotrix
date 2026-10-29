@@ -181,11 +181,22 @@ async def stream_run(run_id: uuid.UUID, access: Chatter, agents: Agents) -> Stre
     far, first), then `delta` (each new piece), then `end`. `activity` says what the PM is doing
     meanwhile ("Reading roadmap.md"); each replaces the last. If the run isn't working right
     now it's just `end`: read the run for its saved reply. `ping` events keep the connection open."""
-    await agents.check_run(access, run_id)
+    guarded = await agents.check_run(access, run_id)
     runner = agents.runner
 
     async def events():
         async for event, data in follow_run(runner.streams, runner.session_factory, access.project.workspace_id, run_id):
+            if guarded:
+                from .models import AgentRun
+                from .specialist_sessions import specialist_result_visible
+
+                async with runner.session_factory() as session:
+                    task = await session.get(AgentRun, run_id)
+                    allowed = (task is not None and task.workspace_id == access.member.workspace_id
+                               and await specialist_result_visible(session, task))
+                if not allowed:
+                    yield 'event: end\ndata: {"text": ""}\n\n'
+                    return
             if event == "ping":
                 yield ": ping\n\n"
                 continue

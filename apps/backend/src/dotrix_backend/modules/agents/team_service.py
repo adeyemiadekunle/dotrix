@@ -15,6 +15,7 @@ from dotrix_engine.team import TEAM
 
 from .models import AgentRun
 from .privacy import run_openable_by, runs_visible_to
+from .specialist_sessions import specialist_result_visible
 from .team_schemas import AgentActivityRead, SpecialistTaskRead, TeamMemberRead
 
 
@@ -38,13 +39,21 @@ class TeamService:
             AgentRun.workspace_id == access.member.workspace_id, AgentRun.project_id == access.project.id,
             AgentRun.parent_run_id == run_id, runs_visible_to(access.member)
         ).order_by(AgentRun.created_at, AgentRun.task_key))
-        return [SpecialistTaskRead.model_validate(task) for task in tasks]
+        result = []
+        for task in tasks:
+            fields = {name: getattr(task, name) for name in SpecialistTaskRead.model_fields}
+            if not await specialist_result_visible(self.session, task):
+                fields.update(message="Specialist details are unavailable", task_result=None,
+                              error=None, review_context=None)
+            result.append(SpecialistTaskRead.model_validate(fields))
+        return result
 
     async def activity(self, member: Membership) -> list[AgentActivityRead]:
         rows = (await self.session.execute(select(AgentRun, Project.key).join(Project, Project.id == AgentRun.project_id).where(
             AgentRun.workspace_id == member.workspace_id, Project.workspace_id == member.workspace_id,
             runs_visible_to(member), visible_to(member.user_id, member.role),
         ).order_by(AgentRun.updated_at.desc()).limit(100))).all()
+        rows = [(run, key) for run, key in rows if await specialist_result_visible(self.session, run)]
         parent_ids = {run.parent_run_id for run, _ in rows if run.parent_run_id}
         parents = {run.id: run for run in await self.session.scalars(select(AgentRun).where(
             AgentRun.workspace_id == member.workspace_id, AgentRun.id.in_(parent_ids), runs_visible_to(member)))}

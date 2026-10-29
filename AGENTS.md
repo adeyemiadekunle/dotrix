@@ -11,6 +11,7 @@ Read [CLAUDE.md](CLAUDE.md) before any change: it has the repo map, commands, ru
 - Dotrix owns delegation, workspaces, model policy, permissions, approvals, leases, audit, and recovery. A runtime and its subagents must not bypass those controls. Use per-agent or task model tiers only through host-authorized policy.
 - Project settings expose the shared specialist model and default per-run token budget. Scheduled specialists pin the applicable personal, agent, specialist, or conversation/project model at submission; the requester must still supply the provider key. These controls do not automatically classify importance or enforce a combined cost budget.
 - The optional specialist-continuity preview keeps completed read-only briefs and findings private to the same person, project, conversation, and role. Each task keeps its own checkpoint; preserve scoped access and serialize tasks that share a specialist session.
+- Reauthorize saved specialist content and dependency provenance when it is read or executed. Keep task status visible with unavailable details redacted. Continuations reserve their specialist session under the scheduler's project lock; a busy automatic continuation remains pending.
 
 The rules that always apply, in short (CLAUDE.md has them in full):
 

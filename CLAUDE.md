@@ -20,6 +20,8 @@ The isolated [chat runtime experiment](experiments/fx-chat/README.md) compares t
 
 The opt-in `fx_host/handoff.test.mjs` probes libfx engine handoff and resumption with an in-memory journal. Postgres-backed integration tests additionally exercise killed-host recovery and the production scheduler/child runner with synthetic models; broader distributed failure testing remains required.
 
+Saved continuity-bound specialist content is reauthorized at task, activity, run, approval and event reads, streamed delivery, and scheduler result handoffs. Dependency references retain their source policy through queued tasks and subsequent history reuse. Unavailable task details are redacted while status remains visible; direct content reads return not found. Model-limit and checkpoint continuations reserve their specialist session under the scheduler's project lock before becoming queued. Manual continuation returns a busy conflict if another task holds the session; a scheduled model-limit continuation keeps its due flag for the next sweep. These checks do not erase evidence already incorporated into a previously authorized conversation.
+
 ## Chat, Coding, and the Nova–Kai handoff (current product direction)
 
 Dotrix owns the built-in agents, their policies, and the relationship between their work. Nova leads Chat with Lyra, Orion, Vega, Juno, and Echo. Kai leads Coding. Juno can independently review plans, architecture, research, coding changes, and PRs. Agents remain fixed product identities even when the runtime or model changes.
