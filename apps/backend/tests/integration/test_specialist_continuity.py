@@ -1,0 +1,444 @@
+"""Private specialist history, using real Postgres, the scheduler and both chat runtimes."""
+import asyncio
+import uuid
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from langchain_core.messages import AIMessage
+from langgraph.checkpoint.memory import InMemorySaver
+from sqlalchemy import delete, select, update
+from uuid_utils.compat import uuid7
+
+from apps.backend.tests.integration.test_runtime_tools import model_server
+from dotrix_backend.core.email import get_email_sender
+from dotrix_backend.core.errors import Conflict, Forbidden
+from dotrix_backend.core.jobs import InlineJobs, JobContext
+from dotrix_backend.core.security import create_access_token
+from dotrix_backend.core.storage import get_storage, optional_storage
+from dotrix_backend.jobs import JOBS
+from dotrix_backend.main import create_app
+from dotrix_backend.modules.agents import fx_pilot
+from dotrix_backend.modules.agents.delegation import DelegationService
+from dotrix_backend.modules.agents.models import (
+    AgentRun,
+    AgentSpecialistSession,
+    RunKind,
+    RunStatus,
+    WorkMode,
+)
+from dotrix_backend.modules.agents.runner import _LEASE, AgentRunner
+from dotrix_backend.modules.agents.specialist_sessions import (
+    _current_policy,
+    specialist_history,
+)
+from dotrix_backend.modules.agents.usage import TokenUsage
+from dotrix_backend.modules.projects.models import Project, ProjectSource
+from dotrix_backend.modules.workspaces.models import Membership, Role
+from dotrix_engine.delegation import SpecialistBatch, SpecialistResult
+from dotrix_engine.testing import tool_call
+
+pytest_plugins = ["apps.backend.tests.integration.test_runtime_tools"]
+
+
+def _batch(brief: str, agent: str = "research", *, changes_project: bool = False) -> SpecialistBatch:
+    return SpecialistBatch(tasks=[{"key": "task", "agent": agent, "brief": brief, "expected_result": "Findings",
+                                   "changes_project": changes_project}])
+
+
+async def test_private_sessions_serialize_work_and_resume_with_saved_history(nova_pilot_world, monkeypatch):
+    from dotrix_backend.modules.agents import specialist_sessions
+
+    root, sessions, secrets = nova_pilot_world
+    async with sessions() as session:
+        people = list(await session.scalars(select(Membership).where(Membership.workspace_id == root.workspace_id)))
+        colleague = next(member.user_id for member in people if member.user_id != root.requested_by_id)
+        now = datetime.now(UTC)
+        project = Project(id=uuid7(), workspace_id=root.workspace_id, key="OTHER", name="Other",
+                          source=ProjectSource.DOCS_ONLY, created_by_id=root.requested_by_id)
+        session.add(project)
+        await session.flush()
+
+        def parent(*, owner=root.requested_by_id, thread=root.thread_id, project_id=root.project_id):
+            return AgentRun(id=uuid7(), workspace_id=root.workspace_id, project_id=project_id,
+                            thread_id=thread, requested_by_id=owner, kind=RunKind.CHAT,
+                            status=RunStatus.RUNNING, message="Ask the team", work_mode=WorkMode.DISCUSS,
+                            orchestration=True, lease_token=1, lease_expires_at=now + timedelta(minutes=5),
+                            created_at=now, updated_at=now)
+
+        same, other_thread, other_owner, other_role, other_project, writer = (
+            parent(), parent(thread=uuid7()), parent(owner=colleague), parent(), parent(project_id=project.id), parent()
+        )
+        session.add_all([same, other_thread, other_owner, other_role, other_project, writer])
+        await session.commit()
+    dispatched = []
+
+    async def dispatch(run_id, payload):
+        dispatched.append((run_id, payload))
+
+    runner = SimpleNamespace(session_factory=sessions, secrets=secrets, queue=None, stop_reasons=None,
+                             settings=SimpleNamespace(specialist_continuity=True), _dispatch=dispatch)
+    scheduler = DelegationService(runner)
+    await asyncio.gather(*(scheduler.submit(root.workspace_id, parent.id, 1, "call", _batch("Concurrent research"))
+                           for parent in (root, same)))
+    for parent, agent in [(other_thread, "research"), (other_owner, "research"),
+                          (other_role, "architecture"), (other_project, "research")]:
+        await scheduler.submit(root.workspace_id, parent.id, 1, "call", _batch(f"Work for {parent.id}", agent))
+    await scheduler.submit(root.workspace_id, writer.id, 1, "call", _batch("Update project", changes_project=True))
+    async with sessions() as session:
+        children = {child.parent_run_id: child for child in await session.scalars(select(AgentRun).where(
+            AgentRun.workspace_id == root.workspace_id, AgentRun.parent_run_id.in_(
+                [root.id, same.id, other_thread.id, other_owner.id, other_role.id, other_project.id, writer.id])))}
+        ids = [children[parent.id].specialist_session_id for parent in (
+            root, same, other_thread, other_owner, other_role, other_project)]
+        assert None not in ids and ids[0] == ids[1] and len(set(ids)) == 5
+        assert children[writer.id].specialist_session_id is None
+        assert len(list(await session.scalars(select(AgentSpecialistSession.id).where(
+            AgentSpecialistSession.workspace_id == root.workspace_id)))) == 5
+    # Turning the flag off cannot silently remove the history from already-created tasks.
+    runner.settings.specialist_continuity = False
+    await scheduler.wait(root.workspace_id, root.id, 1, {"interrupt": "call"})
+    await scheduler.wait(root.workspace_id, same.id, 1, {"interrupt": "call"})
+    async with sessions() as session:
+        first = await session.get(AgentRun, children[root.id].id)
+        second = await session.get(AgentRun, children[same.id].id)
+        assert first.status is RunStatus.QUEUED and second.status is RunStatus.WAITING_DEPENDENCY
+        first.status, first.finished_at = RunStatus.COMPLETED, datetime.now(UTC)
+        first.task_result = SpecialistResult(summary="Private finding: use PostgreSQL").model_dump(mode="json")
+        first.reply = "The investigation is complete."
+        await session.commit()
+    await scheduler.completed(root.workspace_id, first.id)
+    async with sessions() as session:
+        second = await session.get(AgentRun, second.id)
+        assert second.status is RunStatus.QUEUED
+        assert second.specialist_history == {"version": 1, "ids": [str(first.id)], "omitted": False,
+                                             "policy": first.specialist_history["policy"]}
+        second.status, second.lease_token = RunStatus.RUNNING, 2
+        second.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+        await session.commit()
+    first_history = await specialist_history(sessions, workspace_id=root.workspace_id, run_id=second.id, token=2)
+    assert "Private finding: use PostgreSQL" in first_history and "untrusted evidence" in first_history
+    async with sessions() as session:
+        await session.execute(update(AgentRun).where(AgentRun.workspace_id == root.workspace_id,
+                                                     AgentRun.id == second.id).values(
+            lease_token=3, lease_expires_at=datetime.now(UTC) + timedelta(minutes=5)))
+        await session.commit()
+    assert await specialist_history(sessions, workspace_id=root.workspace_id, run_id=second.id, token=3) == first_history
+    with pytest.raises(Conflict):
+        await specialist_history(sessions, workspace_id=root.workspace_id, run_id=second.id, token=2)
+    with pytest.raises(Conflict):
+        await specialist_history(sessions, workspace_id=uuid7(), run_id=second.id, token=3)
+    # A forged session ID cannot make another person's task read this history.
+    async with sessions() as session:
+        foreign = await session.get(AgentRun, children[other_owner.id].id)
+        foreign.specialist_session_id = ids[0]
+        foreign.specialist_history = {"version": 1, "ids": [str(first.id)], "omitted": False}
+        foreign.status, foreign.lease_token = RunStatus.RUNNING, 1
+        foreign.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+        await session.commit()
+    with pytest.raises(Forbidden):
+        await specialist_history(sessions, workspace_id=root.workspace_id, run_id=foreign.id, token=1)
+    resolve = specialist_sessions.AgentDefinitionRepository.resolve
+
+    async def changed_permissions(self, *args, **kwargs):
+        definitions = await resolve(self, *args, **kwargs)
+        return [replace(item, spec=item.spec.model_copy(update={"tools": []})) if item.spec.handle == "research" else item
+                for item in definitions]
+
+    monkeypatch.setattr(specialist_sessions.AgentDefinitionRepository, "resolve", changed_permissions)
+    with pytest.raises(Forbidden, match="permissions changed"):
+        await specialist_history(sessions, workspace_id=root.workspace_id, run_id=second.id, token=3)
+    monkeypatch.setattr(specialist_sessions.AgentDefinitionRepository, "resolve", resolve)
+    # A person who still has chat access must not receive history from a more privileged role.
+    async with sessions() as session:
+        await session.execute(update(Membership).where(Membership.workspace_id == root.workspace_id,
+            Membership.user_id == root.requested_by_id).values(role=Role.MEMBER))
+        await session.commit()
+    with pytest.raises(Forbidden, match="permissions changed"):
+        await specialist_history(sessions, workspace_id=root.workspace_id, run_id=second.id, token=3)
+    async with sessions() as session:
+        await session.execute(update(Membership).where(Membership.workspace_id == root.workspace_id,
+            Membership.user_id == root.requested_by_id).values(role=Role.OWNER))
+        await session.commit()
+    load = specialist_sessions._load_history
+    reads = 0
+
+    async def revoke_after_read(*args, **kwargs):
+        nonlocal reads
+        result = await load(*args, **kwargs)
+        reads += 1
+        if reads == 1:
+            async with sessions() as session:
+                await session.execute(update(Membership).where(Membership.workspace_id == root.workspace_id,
+                    Membership.user_id == root.requested_by_id).values(role=Role.GUEST))
+                await session.commit()
+        return result
+
+    monkeypatch.setattr(specialist_sessions, "_load_history", revoke_after_read)
+    with pytest.raises(Forbidden):
+        await specialist_history(sessions, workspace_id=root.workspace_id, run_id=second.id, token=3)
+    monkeypatch.setattr(specialist_sessions, "_load_history", load)
+    async with sessions() as session:
+        await session.execute(update(Membership).where(Membership.workspace_id == root.workspace_id,
+                                                        Membership.user_id == root.requested_by_id).values(role=Role.OWNER))
+        await session.execute(delete(AgentSpecialistSession).where(AgentSpecialistSession.workspace_id == root.workspace_id,
+                                                                   AgentSpecialistSession.id == ids[0]))
+        await session.commit()
+    with pytest.raises(Forbidden):
+        await specialist_history(sessions, workspace_id=root.workspace_id, run_id=second.id, token=3)
+
+
+async def test_history_is_bounded_and_fixed_when_a_task_is_queued(nova_pilot_world):
+    root, sessions, secrets = nova_pilot_world
+
+    async def dispatch(_run_id, _payload):
+        pass
+
+    runner = SimpleNamespace(session_factory=sessions, secrets=secrets, queue=None, stop_reasons=None,
+                             settings=SimpleNamespace(specialist_continuity=True), _dispatch=dispatch)
+    scheduler = DelegationService(runner)
+    await scheduler.submit(root.workspace_id, root.id, 1, "call", _batch("Review the history"))
+    async with sessions() as session:
+        current = await session.scalar(select(AgentRun).where(AgentRun.workspace_id == root.workspace_id,
+                                                               AgentRun.parent_run_id == root.id))
+        saved = await session.get(AgentSpecialistSession, current.specialist_session_id)
+        history_snapshot = {"version": 1, "ids": [], "omitted": False, "policy": await _current_policy(session, saved)}
+        now = datetime.now(UTC)
+        previous = []
+        for i in range(10):
+            item = AgentRun(id=uuid7(), workspace_id=root.workspace_id, project_id=root.project_id,
+                            thread_id=uuid7(), parent_run_id=root.id, delegation_key=f"old-{i}", task_key=f"old-{i}",
+                            specialist_session_id=current.specialist_session_id, specialist_history=history_snapshot,
+                            requested_by_id=root.requested_by_id,
+                            source="specialist", agent="research", kind=RunKind.CHAT, status=RunStatus.COMPLETED,
+                            message=f"Earlier task {i}", reply=f"Earlier reply {i}",
+                            task_result=SpecialistResult(summary=f"<finding {i}>").model_dump(mode="json"),
+                            created_at=now, updated_at=now, finished_at=now + timedelta(seconds=i))
+            previous.append(item)
+            session.add(item)
+        for key, status, result_status in [("partial", RunStatus.COMPLETED, "partial"),
+                                           ("failed", RunStatus.FAILED, "completed")]:
+            session.add(AgentRun(
+                id=uuid7(), workspace_id=root.workspace_id, project_id=root.project_id, thread_id=uuid7(),
+                parent_run_id=root.id, delegation_key=key, task_key=key,
+                specialist_session_id=current.specialist_session_id, specialist_history=history_snapshot,
+                requested_by_id=root.requested_by_id,
+                source="specialist", agent="research", kind=RunKind.CHAT, status=status,
+                message=f"Unfinished {key}", task_result=SpecialistResult(summary=key, status=result_status).model_dump(mode="json"),
+                created_at=now, updated_at=now, finished_at=now + timedelta(minutes=2),
+            ))
+        await session.commit()
+    await scheduler.wait(root.workspace_id, root.id, 1, {"interrupt": "call"})
+    async with sessions() as session:
+        current = await session.get(AgentRun, current.id)
+        assert current.specialist_history == {"version": 1, "ids": [str(item.id) for item in previous[2:]], "omitted": True,
+                                              "policy": history_snapshot["policy"]}
+        current.status, current.lease_token = RunStatus.RUNNING, 1
+        current.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+        # A later completion cannot change the list chosen for this attempt.
+        late = AgentRun(id=uuid7(), workspace_id=root.workspace_id, project_id=root.project_id,
+                        thread_id=uuid7(), parent_run_id=root.id, delegation_key="late", task_key="late",
+                        specialist_session_id=current.specialist_session_id, specialist_history=history_snapshot,
+                        requested_by_id=root.requested_by_id,
+                        source="specialist", agent="research", kind=RunKind.CHAT, status=RunStatus.COMPLETED,
+                        message="Late finding", task_result=SpecialistResult(summary="Too late").model_dump(mode="json"),
+                        created_at=now, updated_at=now, finished_at=now + timedelta(minutes=1))
+        session.add(late)
+        await session.commit()
+    history = await specialist_history(sessions, workspace_id=root.workspace_id, run_id=current.id, token=1)
+    assert "Some older specialist work was omitted" in history
+    assert "Earlier task 0" not in history and "Earlier task 2" in history
+    assert "&lt;finding 9&gt;" in history and "Too late" not in history
+
+
+async def test_cancelling_a_parent_releases_its_specialist_session(nova_pilot_world):
+    root, sessions, secrets = nova_pilot_world
+    now = datetime.now(UTC)
+    async with sessions() as session:
+        other = AgentRun(id=uuid7(), workspace_id=root.workspace_id, project_id=root.project_id,
+                         thread_id=root.thread_id, requested_by_id=root.requested_by_id, kind=RunKind.CHAT,
+                         status=RunStatus.RUNNING, message="Another question", work_mode=WorkMode.DISCUSS,
+                         orchestration=True, lease_token=1, lease_expires_at=now + timedelta(minutes=5),
+                         created_at=now, updated_at=now)
+        session.add(other)
+        await session.commit()
+    dispatched = []
+
+    async def dispatch(run_id, payload):
+        dispatched.append((run_id, payload))
+
+    async def stop(_run_id, _reason):
+        pass
+
+    runner = SimpleNamespace(session_factory=sessions, secrets=secrets, queue=None, stop_reasons=None, stop=stop,
+                             settings=SimpleNamespace(specialist_continuity=True), _dispatch=dispatch)
+    scheduler = DelegationService(runner)
+    for parent in (root, other):
+        await scheduler.submit(root.workspace_id, parent.id, 1, "call", _batch("Research"))
+        await scheduler.wait(root.workspace_id, parent.id, 1, {"interrupt": "call"})
+    async with sessions() as session:
+        waiting = await session.scalar(select(AgentRun).where(AgentRun.workspace_id == root.workspace_id,
+                                                               AgentRun.parent_run_id == other.id))
+        assert waiting.status is RunStatus.WAITING_DEPENDENCY
+    await scheduler.cancel(root.workspace_id, root.id, "Stopped")
+    async with sessions() as session:
+        waiting = await session.get(AgentRun, waiting.id)
+        assert waiting.status is RunStatus.QUEUED and waiting.specialist_history["ids"] == []
+        assert dispatched[-1][0] == waiting.id
+
+
+async def test_a_permission_change_during_work_excludes_the_result_from_later_history(
+    nova_pilot_world, agent_script,
+):
+    root, sessions, secrets = nova_pilot_world
+    settings = SimpleNamespace(specialist_continuity=True)
+    runner = AgentRunner(session_factory=sessions, checkpointer=InMemorySaver(), model_factory=agent_script.factory,
+                         inline=True, secrets=secrets, settings=settings)
+
+    async def dispatch(_run_id, _payload):
+        pass
+
+    runner._dispatch = dispatch
+    scheduler = DelegationService(runner)
+    await scheduler.submit(root.workspace_id, root.id, 1, "call", _batch("Investigate"))
+    await scheduler.wait(root.workspace_id, root.id, 1, {"interrupt": "call"})
+    async with sessions() as session:
+        child = await session.scalar(select(AgentRun).where(AgentRun.workspace_id == root.workspace_id,
+                                                             AgentRun.parent_run_id == root.id))
+        child.status, child.lease_token = RunStatus.RUNNING, 1
+        child.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+        await session.execute(update(Membership).where(Membership.workspace_id == root.workspace_id,
+            Membership.user_id == root.requested_by_id).values(role=Role.MEMBER))
+        await session.commit()
+    lease = _LEASE.set(1)
+    try:
+        await runner._finish(child.id, {"messages": [AIMessage(content="Finished")]}, TokenUsage(), speaker="research",
+                             specialist_result=SpecialistResult(summary="Sensitive finding").model_dump(mode="json"))
+    finally:
+        _LEASE.reset(lease)
+    async with sessions() as session:
+        saved = await session.get(AgentRun, child.id)
+        assert saved.status is RunStatus.COMPLETED and saved.specialist_history["policy"] is None
+        await session.execute(update(Membership).where(Membership.workspace_id == root.workspace_id,
+            Membership.user_id == root.requested_by_id).values(role=Role.OWNER))
+        now = datetime.now(UTC)
+        later = AgentRun(id=uuid7(), workspace_id=root.workspace_id, project_id=root.project_id,
+                         thread_id=root.thread_id, requested_by_id=root.requested_by_id, kind=RunKind.CHAT,
+                         status=RunStatus.RUNNING, message="Follow up", work_mode=WorkMode.DISCUSS,
+                         orchestration=True, lease_token=1, lease_expires_at=now + timedelta(minutes=5),
+                         created_at=now, updated_at=now)
+        session.add(later)
+        await session.commit()
+    await scheduler.submit(root.workspace_id, later.id, 1, "later", _batch("Follow up"))
+    await scheduler.wait(root.workspace_id, later.id, 1, {"interrupt": "later"})
+    async with sessions() as session:
+        follow_up = await session.scalar(select(AgentRun).where(AgentRun.workspace_id == root.workspace_id,
+                                                                 AgentRun.parent_run_id == later.id))
+        assert follow_up.status is RunStatus.QUEUED and follow_up.specialist_history["ids"] == []
+
+
+async def test_fx_nova_reuses_a_specialists_completed_work_in_the_same_conversation(
+    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts,
+):
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    existing, sessions, secrets = nova_pilot_world
+    settings = db_client._transport.app.state.settings.model_copy(update={
+        "fx_chat_pilot": True, "fx_chat_durable_delegation": True, "specialist_continuity": True,
+    })
+    async with sessions() as session:
+        await session.execute(update(Project).where(Project.id == existing.project_id).values(
+            specialist_model="openai:cheap-model"))
+        await session.commit()
+    app = create_app(settings)
+    app.state.sessionmaker, app.state.secrets, app.state.checkouts = sessions, secrets, checkouts
+    app.dependency_overrides[get_email_sender] = lambda: outbox
+    app.dependency_overrides[get_storage] = lambda: storage
+    app.dependency_overrides[optional_storage] = lambda: storage
+    app.state.runner = runner = AgentRunner(
+        session_factory=sessions, checkpointer=InMemorySaver(), model_factory=agent_script.factory,
+        inline=True, checkouts=checkouts, secrets=secrets, settings=settings,
+    )
+    app.state.jobs = InlineJobs(JobContext(sessions, settings, outbox, storage, checkouts=checkouts, runner=runner), JOBS)
+    runner.jobs = app.state.jobs
+    model = agent_script.say(
+        tool_call("submit_specialist_result", summary="Earlier architecture finding: use PostgreSQL"), "First work complete.",
+        tool_call("submit_specialist_result", summary="The earlier finding still applies"), "Second work complete.",
+    )
+    token = create_access_token(existing.requested_by_id, secret=settings.jwt_secret.get_secret_value(),
+                                issuer=settings.jwt_issuer, ttl=timedelta(minutes=10))
+    headers = {"Authorization": f"Bearer {token}"}
+    base = f"/v1/workspaces/{existing.workspace_id}/projects/{existing.project_id}/agent"
+    args = {"tasks": [{"key": "research", "agent": "research", "brief": "Investigate the data store",
+                       "expected_result": "Recommendation"}]}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with model_server(tool_name="delegate_tasks", tool_args=args) as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            first = await client.post(f"{base}/runs", headers=headers, json={
+                "message": "Investigate the data store", "chat_runtime": "fx", "work_mode": "discuss",
+            })
+            assert first.status_code == 202 and first.json()["status"] == "completed", first.text
+            args["tasks"][0]["brief"] = "Check the earlier recommendation"
+            second = await client.post(f"{base}/runs", headers=headers, json={
+                "message": "Check that recommendation", "thread_id": first.json()["thread_id"],
+                "chat_runtime": "fx", "work_mode": "discuss",
+            })
+            assert second.status_code == 202 and second.json()["status"] == "completed", second.text
+        first_children = (await client.get(f"{base}/runs/{first.json()['id']}/tasks", headers=headers)).json()
+        second_children = (await client.get(f"{base}/runs/{second.json()['id']}/tasks", headers=headers)).json()
+        async with sessions() as session:
+            child1 = await session.get(AgentRun, uuid.UUID(first_children[0]["id"]))
+            child2 = await session.get(AgentRun, uuid.UUID(second_children[0]["id"]))
+            assert child1.specialist_session_id == child2.specialist_session_id
+            assert child1.thread_id != child2.thread_id  # task checkpoints remain isolated
+            assert child2.specialist_history["ids"] == [str(child1.id)]
+        follow_up = next(messages for messages in model.received if "Check the earlier recommendation" in str(messages[-1].content))
+        assert "Earlier architecture finding: use PostgreSQL" in str(follow_up[-1].content)
+        assert "openai:cheap-model" in agent_script.models_used
+
+
+async def test_deepagents_nova_also_reuses_the_specialists_completed_work(
+    nova_pilot_world, db_client, agent_script, outbox, storage, checkouts,
+):
+    existing, sessions, secrets = nova_pilot_world
+    settings = db_client._transport.app.state.settings.model_copy(update={
+        "durable_delegation": True, "specialist_continuity": True,
+    })
+    app = create_app(settings)
+    app.state.sessionmaker, app.state.secrets, app.state.checkouts = sessions, secrets, checkouts
+    app.dependency_overrides[get_email_sender] = lambda: outbox
+    app.dependency_overrides[get_storage] = lambda: storage
+    app.dependency_overrides[optional_storage] = lambda: storage
+    app.state.runner = runner = AgentRunner(
+        session_factory=sessions, checkpointer=InMemorySaver(), model_factory=agent_script.factory,
+        inline=True, checkouts=checkouts, secrets=secrets, settings=settings,
+    )
+    app.state.jobs = InlineJobs(JobContext(sessions, settings, outbox, storage, checkouts=checkouts, runner=runner), JOBS)
+    runner.jobs = app.state.jobs
+    model = agent_script.say(
+        tool_call("delegate_tasks", tasks=_batch("Investigate architecture", "architecture").model_dump()["tasks"]),
+        tool_call("submit_specialist_result", summary="Prior architecture finding: isolate the gateway"),
+        "First review complete.", "Here is the first answer.",
+        tool_call("delegate_tasks", tasks=_batch("Revisit the earlier decision", "architecture").model_dump()["tasks"]),
+        tool_call("submit_specialist_result", summary="That earlier choice remains sound"),
+        "Second review complete.", "Here is the follow-up answer.",
+    )
+    token = create_access_token(existing.requested_by_id, secret=settings.jwt_secret.get_secret_value(),
+                                issuer=settings.jwt_issuer, ttl=timedelta(minutes=10))
+    headers = {"Authorization": f"Bearer {token}"}
+    base = f"/v1/workspaces/{existing.workspace_id}/projects/{existing.project_id}/agent"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.post(f"{base}/runs", headers=headers, json={
+            "message": "Investigate architecture", "work_mode": "discuss",
+        })
+        assert first.status_code == 202 and first.json()["status"] == "completed", first.text
+        second = await client.post(f"{base}/runs", headers=headers, json={
+            "message": "Revisit the architecture", "thread_id": first.json()["thread_id"], "work_mode": "discuss",
+        })
+        assert second.status_code == 202 and second.json()["status"] == "completed", second.text
+    follow_up = next(messages for messages in model.received if "Revisit the earlier decision" in str(messages[-1].content))
+    assert "Prior architecture finding: isolate the gateway" in str(follow_up[-1].content)
