@@ -176,6 +176,20 @@ class AgentApproval(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     run: Mapped[AgentRun] = relationship(back_populates="approvals", lazy="raise")
 
 
+class AgentRuntimeBinding(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """An experimental runtime session pinned to one private run and its configuration."""
+
+    __tablename__ = "agent_runtime_bindings"
+    __table_args__ = (UniqueConstraint("run_id"), UniqueConstraint("runtime", "session_id"))
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"))
+    runtime: Mapped[str] = mapped_column(String(32))
+    runtime_version: Mapped[str] = mapped_column(String(80))
+    config_digest: Mapped[str] = mapped_column(String(64))
+    session_id: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ConversationPlan(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     """A version of a conversation's plan, saved in Plan mode (`save_plan`): what Build works from.
     Seen by whoever sees the conversation."""

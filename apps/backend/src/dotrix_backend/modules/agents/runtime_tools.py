@@ -23,7 +23,7 @@ from dotrix_engine.contracts import PM_HANDLE, AgentSpec
 from dotrix_engine.runtimes import RuntimeTool, RuntimeToolContext
 
 from .knowledge_tools import build_knowledge_tools
-from .models import AgentRun, RunStatus
+from .models import AgentRun, AgentRuntimeBinding, RunStatus
 from .storage_backend import SessionFactory
 
 _READ_TOOLS = frozenset({"document_outline", "read_section", "read_skill", "search_knowledge"})
@@ -57,6 +57,12 @@ async def _authorize_read(
                 or run.lease_expires_at is None or run.lease_expires_at <= now
                 or (run.agent or PM_HANDLE) != scope.agent):
             raise Conflict("The run no longer owns this work")
+        binding = await session.scalar(select(AgentRuntimeBinding.id).where(
+            AgentRuntimeBinding.workspace_id == scope.workspace_id, AgentRuntimeBinding.run_id == scope.run_id,
+            AgentRuntimeBinding.session_id == scope.session_id,
+        ))
+        if binding is None:
+            raise Forbidden("This runtime session is not bound to the run")
         project = await ProjectRepository(session).get(scope.workspace_id, scope.project_id)
         member = await MembershipRepository(session).get(scope.workspace_id, scope.requested_by_id)
         if (project is None or member is None or not can(member, Permission.CHAT)

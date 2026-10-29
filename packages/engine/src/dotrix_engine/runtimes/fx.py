@@ -29,6 +29,24 @@ _LOCAL_METADATA = ".dotrix-fx-runtime.json"
 _LOCAL_SESSION = re.compile(r"^wrun_[A-Za-z0-9]+$")
 
 
+def fx_configuration_digest(
+    config: AgentRuntimeConfig, *, model: str, base_url: str | None = None, effort: str | None = None,
+    context_window: int = 128_000,
+) -> str:
+    """Fingerprint the same public settings used to bind a local fx session store.
+
+    The host must separately version its own tool implementations and policies.
+    Credentials are deliberately excluded.
+    """
+    identity = {
+        "version": "libfx-0.0.15", "name": config.name, "instructions": config.instructions,
+        "model": model, "base_url": base_url, "effort": effort, "context_window": context_window,
+        "tools": [{"name": tool.name, "description": tool.description, "schema": tool.input_schema,
+                   "idempotent": tool.idempotent, "writes": tool.writes} for tool in config.tools],
+    }
+    return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 def _prepare_local_dir(path: Path, config: AgentRuntimeConfig, model: str, base_url: str | None, effort: str | None,
                        context_window: int) -> None:
     """Prevent accidental reuse under another runtime configuration; this is not authorization."""
@@ -38,13 +56,7 @@ def _prepare_local_dir(path: Path, config: AgentRuntimeConfig, model: str, base_
     info = path.stat()
     if os.name == "posix" and (stat.S_IMODE(info.st_mode) & 0o077 or info.st_uid != os.geteuid()):
         raise ValueError("The local session directory must be owned by this user and private")
-    identity = {
-        "version": "libfx-0.0.15", "name": config.name, "instructions": config.instructions,
-        "model": model, "base_url": base_url, "effort": effort, "context_window": context_window,
-        "tools": [{"name": tool.name, "description": tool.description, "schema": tool.input_schema,
-                   "idempotent": tool.idempotent, "writes": tool.writes} for tool in config.tools],
-    }
-    digest = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    digest = fx_configuration_digest(config, model=model, base_url=base_url, effort=effort, context_window=context_window)
     metadata = path / _LOCAL_METADATA
     lock = path / ".dotrix-fx-runtime.lock"
     with FileLock(str(lock), timeout=5):

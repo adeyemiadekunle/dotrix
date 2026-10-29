@@ -49,9 +49,21 @@ An experimental backend adapter, `agents/runtime_tools.py`, wraps the existing
 project knowledge reads in host-owned runtime tools. It checks the bound session,
 workspace, project, requester, run status, lease and current agent permissions both
 before and after a read. Integration tests exercise both runtimes against real project
-knowledge and verify revocation and stale leases. The adapter is not selected by the
-chat runner: a trusted, persisted session-to-run binding and the platform's delegation,
-recovery and approval contracts are still required.
+knowledge and verify revocation and stale leases. `agents/runtime_sessions.py` now
+persists one session binding per run, pins runtime type, version and configuration,
+and only admits a running, leased run with current project access. Competing bindings
+are serialized or rejected by database constraints; a new attempt can retrieve the
+same binding after it acquires a new lease. Tool calls must match the persisted binding.
+The chat runner does not select this adapter, and mapping a session does not persist
+its runtime journal, enforce a safe prompt or provide delegation and approval contracts.
+
+This initial binding deliberately does not reuse a session across runs: a runtime
+session ID belongs to one run. Reusable specialist conversations need a separate
+explicit ownership and concurrency model. The trusted host must derive the stored
+fingerprint from the actual configuration, isolate runtime storage per owner, and
+version its tool implementations and policies. `fx_configuration_digest` produces
+the same public-settings digest as the local fx store; it does not hash tool code or
+credentials. Authorization and the lease still need checking at every external effect.
 
 The current `delegate_tasks` implementation suspends a LangGraph tool with an
 interrupt, releases the parent worker, and replays that tool to read saved results
