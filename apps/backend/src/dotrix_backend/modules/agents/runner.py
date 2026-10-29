@@ -493,6 +493,8 @@ class AgentRunner:
             if original is None:
                 return
             across = original.project_id is None
+            history_validation_pending = bool(original.parent_run_id and
+                (original.specialist_session_id is not None or original.specialist_history is not None))
         if across:
             await self._execute_across(run_id, payload, operation, retry_operation)
             return
@@ -527,7 +529,8 @@ class AgentRunner:
                 instructor = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) if run.requested_by_id else None
                 if instructor is None or not can(instructor, Permission.CHAT) or not await ProjectRepository(session).can_see(project, instructor.user_id):
                     await session.rollback()
-                    await self._fail(run_id, "The person who asked no longer sees this project", usage)
+                    await self._fail(run_id, "The person who asked no longer sees this project", usage,
+                                     discard_specialist_result=history_validation_pending)
                     return
                 # The agents in effect for this project: its overrides, the workspace's, the built-ins.
                 resolved = {a.spec.handle: a for a in await AgentDefinitionRepository(session).resolve(
@@ -537,7 +540,7 @@ class AgentRunner:
                 if lead_agent is None:
                     gone = f"The @{run.agent} agent no longer exists; pick another agent"
                     await session.rollback()
-                    await self._fail(run_id, gone, usage)
+                    await self._fail(run_id, gone, usage, discard_specialist_result=history_validation_pending)
                     return
                 specs = [a.spec for a in resolved.values()]
                 if run.automation_id is None and run.requested_by_id is not None:
@@ -751,18 +754,33 @@ class AgentRunner:
                 if resuming
                 else {"messages": [{"role": "user", "content": payload["message"]}]}
             )
+            expected_message = payload.get("message")
             if payload["kind"] == "delegation_ready":
                 graph_input = Command(resume=payload["interrupts"])
             elif read_only_run and not child and payload["kind"] == "start":
                 graph_input = {"messages": [SystemMessage(payload["message"])]}
-            elif child and has_specialist_history and payload["kind"] == "start":
-                previous = await specialist_history(self.session_factory, workspace_id=workspace_id, run_id=run_id, token=token)
-                if previous:
-                    graph_input = {"messages": [{"role": "user", "content": f"{previous}\n\nCurrent task:\n{payload['message']}"}]}
+            if child and has_specialist_history:
+                # A checkpoint can already contain private history. Validate its binding,
+                # requester and policy for every attempt before reading or resuming it.
+                try:
+                    previous = await specialist_history(self.session_factory, workspace_id=workspace_id, run_id=run_id, token=token)
+                except Exception as exc:
+                    # A result submitted before a pause can itself contain that history. Do not
+                    # return it to the parent if this attempt cannot validate the snapshot.
+                    logger.warning("agent run %s: specialist history validation failed", run_id, exc_info=True)
+                    await self._fail(run_id, getattr(exc, "detail", None) or "The specialist history could not be validated",
+                                     usage, discard_specialist_result=True)
+                    return
+                history_validation_pending = False
+                if payload["kind"] == "start" and previous:
+                    expected_message = f"{previous}\n\nCurrent task:\n{payload['message']}"
+                    graph_input = {"messages": [{"role": "user", "content": expected_message}]}
             stream = recording = await self._record(run_id, workspace_id, token, payload)
             result = None
             if retry:
-                graph_input, result = await _continue_from_checkpoint(agent, config, payload, graph_input)
+                graph_input, result = await _continue_from_checkpoint(
+                    agent, config, payload, graph_input, expected_message=expected_message,
+                )
             speaker = lead or PM_ROLE  # whose words are streamed to the person
             if result is None and kind is RunKind.BRIEFING and not resuming:
                 # One model call with no tools: the context pack already says what happened.
@@ -804,10 +822,11 @@ class AgentRunner:
             if reason is None and self.stop_reasons is not None:
                 reason = await self.stop_reasons.stop_reason(run_id)
             if reason is not None:
-                await self._fail(run_id, reason, usage)  # a person stopped it
+                await self._fail(run_id, reason, usage, discard_specialist_result=history_validation_pending)  # a person stopped it
                 return
             if self.stop_reasons is None:
-                await self._fail(run_id, "Stopped because the server shut down; send the message again", usage)
+                await self._fail(run_id, "Stopped because the server shut down; send the message again", usage,
+                                 discard_specialist_result=history_validation_pending)
             # In the worker the run stays "running": its job is retried and continues from the
             # last checkpoint.
             raise
@@ -815,18 +834,21 @@ class AgentRunner:
             if recording is not None:
                 await recording.flush()
             logger.info("agent run %s: %s", run_id, exc)
-            await self._fail(run_id, BUDGET_ERROR.format(used=exc.used, budget=exc.budget), usage)
+            await self._fail(run_id, BUDGET_ERROR.format(used=exc.used, budget=exc.budget), usage,
+                             discard_specialist_result=history_validation_pending)
         except Exception as exc:
             if recording is not None:
                 await recording.flush()
             if (budget := _budget_error(exc)) is not None:  # raised inside a tool (a subagent)
                 logger.info("agent run %s: %s", run_id, budget)
-                await self._fail(run_id, BUDGET_ERROR.format(used=budget.used, budget=budget.budget), usage)
+                await self._fail(run_id, BUDGET_ERROR.format(used=budget.used, budget=budget.budget), usage,
+                                 discard_specialist_result=history_validation_pending)
                 return
-            if await self._limited(run_id, exc, usage):
+            if await self._limited(run_id, exc, usage, discard_specialist_result=history_validation_pending):
                 return
             logger.exception("agent run %s failed", run_id)
-            await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}", usage)
+            await self._fail(run_id, getattr(exc, "detail", None) or f"{exc.__class__.__name__}: {exc}", usage,
+                             discard_specialist_result=history_validation_pending)
         finally:
             if run_web is not None:
                 await run_web.aclose()
@@ -1084,7 +1106,8 @@ class AgentRunner:
         else:
             await keys.limit_reached(owner, provider, said)
 
-    async def _limited(self, run_id: uuid.UUID, exc: BaseException, usage: TokenUsage) -> bool:
+    async def _limited(self, run_id: uuid.UUID, exc: BaseException, usage: TokenUsage, *,
+                       discard_specialist_result: bool = False) -> bool:
         """A provider refused for its rate limit, quota, or credit: the run fails saying so, and
         the requesting person's key records it in Account → Your models. False for any other failure."""
         said = limit_error(exc)
@@ -1097,7 +1120,8 @@ class AgentRunner:
                 await self._key_limit(session, run, provider, said)
         label = PROVIDERS[provider].label if provider in PROVIDERS else "The model provider"
         logger.info("agent run %s: %s limit reached: %s", run_id, label, said)
-        await self._fail(run_id, MODEL_LIMIT_ERROR.format(provider=label, said=said), usage)
+        await self._fail(run_id, MODEL_LIMIT_ERROR.format(provider=label, said=said), usage,
+                         discard_specialist_result=discard_specialist_result)
         # It can continue from where it stopped (`continue_run`); tell whoever asked.
         wait = limit_resets_in(exc)
         async with self.session_factory() as session:
@@ -1115,7 +1139,7 @@ class AgentRunner:
             await session.commit()
         return True
 
-    async def _fail(self, run_id: uuid.UUID, error: str, usage: TokenUsage) -> None:
+    async def _fail(self, run_id: uuid.UUID, error: str, usage: TokenUsage, *, discard_specialist_result: bool = False) -> None:
         """Stopped and failed runs keep the tokens they used."""
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id, with_for_update=True)
@@ -1124,6 +1148,28 @@ class AgentRunner:
             if (run.chat_runtime is ChatRuntime.FX and _LEASE.get() is not None and
                     (run.lease_expires_at is None or run.lease_expires_at <= _now())):
                 return
+            if run.parent_run_id and (run.specialist_session_id is not None or run.specialist_history is not None):
+                # Failure can happen before the normal history check, or after a permission
+                # change during work. Preserve partial results only while their policy still holds.
+                try:
+                    projects = ProjectRepository(session)
+                    project = await projects.get(run.workspace_id, run.project_id) if run.project_id else None
+                    member = (await MembershipRepository(session).get(run.workspace_id, run.requested_by_id)
+                              if run.requested_by_id else None)
+                    if (project is None or member is None or not can(member, Permission.CHAT)
+                            or not await projects.can_see(project, member.user_id)):
+                        discard_specialist_result = True
+                    await seal_history(session, run)
+                    snapshot = run.specialist_history
+                    discard_specialist_result |= (
+                        run.specialist_session_id is None or not isinstance(snapshot, dict)
+                        or not isinstance(snapshot.get("policy"), str)
+                    )
+                except Exception:
+                    logger.warning("agent run %s: could not validate failed specialist result", run_id, exc_info=True)
+                    discard_specialist_result = True
+            if discard_specialist_result:
+                run.task_result = None
             tokens = _add_tokens(run, usage)
             if run.chat_runtime is ChatRuntime.FX:
                 run.usage = {**(run.usage or {}), "fx_usage_fields": []}
@@ -1410,7 +1456,7 @@ def _last_user_message(values: dict) -> str | None:
 
 
 async def _continue_from_checkpoint(
-    agent: Any, config: dict, payload: dict[str, Any], graph_input: Any
+    agent: Any, config: dict, payload: dict[str, Any], graph_input: Any, *, expected_message: str | None = None,
 ) -> tuple[Any, dict | None]:
     """A retried step whose previous attempt was cut off: (input to send, or the result if the
     step already finished). Never sends the person's message twice."""
@@ -1429,7 +1475,7 @@ async def _continue_from_checkpoint(
                     for call in cut if call.get("name") != "delegate_tasks"
                 ]}, as_node="tools")
         return None, None  # continue the pending steps from the last checkpoint
-    if payload["kind"] == "start" and _last_user_message(state.values) != payload["message"]:
+    if payload["kind"] == "start" and _last_user_message(state.values) != (expected_message or payload["message"]):
         return graph_input, None  # the message never reached the graph: send it now
     # The step had finished; only recording its outcome was cut off.
     result = dict(state.values)

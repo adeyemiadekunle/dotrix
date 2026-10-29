@@ -23,6 +23,7 @@ from dotrix_backend.main import create_app
 from dotrix_backend.modules.agents import fx_pilot
 from dotrix_backend.modules.agents.delegation import DelegationService
 from dotrix_backend.modules.agents.models import (
+    AgentApproval,
     AgentRun,
     AgentSpecialistSession,
     RunKind,
@@ -35,10 +36,10 @@ from dotrix_backend.modules.agents.specialist_sessions import (
     specialist_history,
 )
 from dotrix_backend.modules.agents.usage import TokenUsage
-from dotrix_backend.modules.projects.models import Project, ProjectSource
+from dotrix_backend.modules.projects.models import Project, ProjectAccessLevel, ProjectSource
 from dotrix_backend.modules.workspaces.models import Membership, Role
 from dotrix_engine.delegation import SpecialistBatch, SpecialistResult
-from dotrix_engine.testing import tool_call
+from dotrix_engine.testing import ScriptedChatModel, tool_call
 
 pytest_plugins = ["apps.backend.tests.integration.test_runtime_tools"]
 
@@ -337,6 +338,148 @@ async def test_a_permission_change_during_work_excludes_the_result_from_later_hi
         follow_up = await session.scalar(select(AgentRun).where(AgentRun.workspace_id == root.workspace_id,
                                                                  AgentRun.parent_run_id == later.id))
         assert follow_up.status is RunStatus.QUEUED and follow_up.specialist_history["ids"] == []
+
+
+@pytest.mark.parametrize("continuation", ["continue", "resume", "recovered_start", "approval"])
+@pytest.mark.parametrize("change", ["none", "role", "specialist", "access", "project_access", "early_error"])
+async def test_checkpoint_continuation_revalidates_specialist_history(
+    nova_pilot_world, agent_script, monkeypatch, continuation, change,
+):
+    """A checkpoint must not expose old history under a different permission policy."""
+    from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
+    from dotrix_backend.modules.agents import runner as runner_module
+
+    class LimitedModel(ScriptedChatModel):
+        def _generate(self, messages, *args, **kwargs):
+            if not self.received:
+                return super()._generate(messages, *args, **kwargs)
+            self.received.append(list(messages))
+            raise RuntimeError("429 rate limit: try again in 30 seconds")
+
+    root, sessions, secrets = nova_pilot_world
+    if change == "project_access":
+        async with sessions() as session:
+            await session.execute(update(Membership).where(Membership.workspace_id == root.workspace_id,
+                Membership.user_id == root.requested_by_id).values(role=Role.MEMBER))
+            await session.commit()
+    settings = SimpleNamespace(specialist_continuity=True, agent_lease_seconds=300)
+    runner = AgentRunner(session_factory=sessions, checkpointer=InMemorySaver(), model_factory=agent_script.factory,
+                         inline=True, secrets=secrets, settings=settings)
+
+    async def dispatch(_run_id, _payload):
+        pass
+
+    monkeypatch.setattr(runner, "_dispatch", dispatch)
+    scheduler = DelegationService(runner)
+    await scheduler.submit(root.workspace_id, root.id, 1, "first", _batch("Earlier investigation"))
+    await scheduler.wait(root.workspace_id, root.id, 1, {"interrupt": "first"})
+    now = datetime.now(UTC)
+    async with sessions() as session:
+        prior = await session.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
+        prior.status, prior.finished_at = RunStatus.COMPLETED, now
+        prior.task_result = SpecialistResult(summary="Private prior finding").model_dump(mode="json")
+        prior.reply = "Earlier work finished."
+        later = AgentRun(id=uuid7(), workspace_id=root.workspace_id, project_id=root.project_id,
+                         thread_id=root.thread_id, requested_by_id=root.requested_by_id, kind=RunKind.CHAT,
+                         status=RunStatus.RUNNING, message="Follow up", work_mode=WorkMode.DISCUSS,
+                         orchestration=True, lease_token=1, lease_expires_at=now + timedelta(minutes=5),
+                         created_at=now, updated_at=now)
+        session.add(later)
+        await session.commit()
+    await scheduler.submit(root.workspace_id, later.id, 1, "second", _batch("Check earlier work"))
+    await scheduler.wait(root.workspace_id, later.id, 1, {"interrupt": "second"})
+    async with sessions() as session:
+        child = await session.scalar(select(AgentRun).where(AgentRun.parent_run_id == later.id))
+        assert child.specialist_history["ids"] == [str(prior.id)]
+        child_id, message = child.id, child.message
+    limited = LimitedModel.of(tool_call("submit_specialist_result", summary="Private prior finding"))
+    if continuation == "approval":
+        # Current read-only specialists disable pipeline checkpoints; preserve the pipeline
+        # here to exercise a real previously paused checkpoint if that configuration changes.
+        read_only = runner_module.read_only
+        monkeypatch.setattr(runner_module, "read_only", lambda spec: read_only(spec).model_copy(update={"pipeline": spec.pipeline}))
+        initial = agent_script.say(tool_call("submit_specialist_result", summary="Private prior finding"),
+                                   tool_call("checkpoint", summary="A research plan", plan=["Check sources"]))
+    else:
+        initial = agent_script.model = limited
+    await runner.execute(child_id, {"kind": "start", "message": message})
+    async with sessions() as session:
+        child = await session.get(AgentRun, child_id)
+        if continuation == "approval":
+            assert child.status is RunStatus.AWAITING_APPROVAL, child.error
+            approval = await session.scalar(select(AgentApproval).where(AgentApproval.run_id == child_id))
+            assert approval and approval.tool == "checkpoint" and child.task_result["summary"] == "Private prior finding"
+            interrupt_id = approval.interrupt_id
+        else:
+            assert child.status is RunStatus.FAILED and child.error_kind == "model_limit", child.error
+            assert child.task_result["summary"] == "Private prior finding"  # an ordinary limit retains it
+        assert any("Private prior finding" in str(msg.content) for msg in initial.received[0])
+        child.status, child.error, child.error_kind = RunStatus.QUEUED, None, None
+        if change in ("role", "access", "early_error"):
+            await session.execute(update(Membership).where(Membership.workspace_id == root.workspace_id,
+                Membership.user_id == root.requested_by_id).values(role=Role.GUEST if change == "access" else Role.MEMBER))
+        if change == "project_access":
+            await session.execute(update(Project).where(Project.id == root.project_id).values(access=ProjectAccessLevel.RESTRICTED))
+        await session.commit()
+    if change == "specialist":
+        resolve = AgentDefinitionRepository.resolve
+
+        async def changed_permissions(self, *args, **kwargs):
+            definitions = await resolve(self, *args, **kwargs)
+            return [replace(item, spec=item.spec.model_copy(update={"tools": []})) if item.spec.handle == "research" else item
+                    for item in definitions]
+
+        monkeypatch.setattr(AgentDefinitionRepository, "resolve", changed_permissions)
+    model = agent_script.say(tool_call("submit_specialist_result", summary="Checked"), "Done.")
+    if change == "early_error":
+        from dotrix_backend.modules.agents.llm import ModelUnavailable
+
+        def unavailable(*_args, **_kwargs):
+            raise ModelUnavailable("The specialist's provider key is unavailable")
+
+        monkeypatch.setattr(runner, "model_factory", unavailable)
+    if continuation == "approval":
+        payload = {"kind": "resume", "interrupt_ids": [interrupt_id], "decisions": [["approve", None]]}
+    elif continuation == "resume":
+        payload = {"kind": "resume", "interrupt_ids": [], "decisions": [], "recovered": True}
+    elif continuation == "recovered_start":
+        payload = {"kind": "start", "message": message, "recovered": True}
+    else:
+        payload = {"kind": "continue", "message": message}
+    await runner.execute(child_id, payload)
+    async with sessions() as session:
+        child = await session.get(AgentRun, child_id)
+        if change == "none":
+            assert child.status is RunStatus.COMPLETED, child.error
+            assert model.received
+            history = [str(msg.content) for msg in model.received[0] if getattr(msg, "type", None) == "human"]
+            assert sum(text.count("Private prior finding") for text in history) == 1
+        else:
+            assert child.status is RunStatus.FAILED
+            expected = ("no longer sees" if change in ("access", "project_access") else
+                        "provider key is unavailable" if change == "early_error" else "permissions changed")
+            assert expected in child.error
+            assert child.task_result is None
+            assert not model.received
+            if change not in ("access", "project_access"):
+                parent = await session.get(AgentRun, later.id)
+                assert parent.status is RunStatus.QUEUED
+                parent.status, parent.lease_token = RunStatus.RUNNING, 1
+                await session.commit()
+    if change not in ("none", "access", "project_access"):
+        returned = await scheduler.submit(root.workspace_id, later.id, 1, "second", _batch("Check earlier work"))
+        assert returned[0]["status"] == "failed" and returned[0]["result"] is None
+    if change == "none" and continuation == "recovered_start":
+        calls = len(model.received)
+        async with sessions() as session:
+            child = await session.get(AgentRun, child_id)
+            child.status, child.reply = RunStatus.RUNNING, None  # outcome lost after graph completion
+            await session.commit()
+        await runner.execute(child_id, payload)
+        async with sessions() as session:
+            child = await session.get(AgentRun, child_id)
+            assert child.status is RunStatus.COMPLETED and child.reply == "Done."
+        assert len(model.received) == calls  # neither the model nor the history was sent again
 
 
 async def test_fx_nova_reuses_a_specialists_completed_work_in_the_same_conversation(
