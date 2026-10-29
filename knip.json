@@ -20,5 +20,5 @@
       "project": ["src/**/*.ts"]
     }
   },
-  "ignore": ["infra/coding/egress-proxy.mjs"]
+  "ignore": ["infra/coding/egress-proxy.mjs", "packages/engine/src/dotrix_engine/runtimes/fx_host/**"]
 }
