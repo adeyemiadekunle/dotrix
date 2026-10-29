@@ -2,6 +2,51 @@ import { expect, test } from "@playwright/test";
 
 import { signUp } from "./helpers";
 
+test("project agent models and per-run limits can be saved and reset", async ({ page }) => {
+  await signUp(page);
+  const slug = new URL(page.url()).pathname.split("/")[2]!;
+  await page.evaluate(async (workspaceSlug) => {
+    const headers = { "Content-Type": "application/json", "X-Requested-With": "e2e" };
+    const workspaces = await (await fetch("/v1/workspaces", { headers })).json();
+    const workspace = workspaces.find((w: { slug: string }) => w.slug === workspaceSlug);
+    const response = await fetch(`/v1/workspaces/${workspace.id}/projects`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ key: "ROUTE", name: "Model routing", source: "docs_only" }),
+    });
+    if (!response.ok) throw new Error(`Project creation failed: ${response.status}`);
+  }, slug);
+  await page.goto(`/w/${slug}/p/ROUTE/overview`);
+  await page.getByRole("button", { name: "Project settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Project settings" });
+  await expect(dialog.getByLabel("Project model", { exact: true })).toHaveValue("e2e:rules");
+  await dialog.getByLabel("Specialist model").fill("openai:cheap-model");
+  await dialog.getByLabel("Default token limit per agent run").fill("10000");
+  const saved = page.waitForResponse((r) => r.url().includes("/projects/") && r.request().method() === "PATCH");
+  await dialog.getByRole("button", { name: "Save agent models" }).click();
+  expect((await saved).status()).toBe(200);
+  await expect(page.getByText("Agent model settings saved")).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Project settings", exact: true }).click();
+  await expect(dialog.getByLabel("Specialist model")).toHaveValue("openai:cheap-model");
+  await expect(dialog.getByLabel("Default token limit per agent run")).toHaveValue("10000");
+  await dialog.getByLabel("Specialist model").fill("openai:other-model");
+  await dialog.getByLabel("Specialist model").press("Enter");
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "Project settings", exact: true }).click();
+  await expect(dialog.getByLabel("Specialist model")).toHaveValue("openai:other-model");
+  await dialog.getByLabel("Specialist model").fill("unsupported-model");
+  await dialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(dialog.getByRole("alert")).toContainText(/provider/i);
+  await dialog.getByLabel("Specialist model").fill("");
+  await dialog.getByLabel("Default token limit per agent run").fill("");
+  const reset = page.waitForResponse((r) => r.url().includes("/projects/") && r.request().method() === "PATCH");
+  await dialog.getByRole("button", { name: "Save agent models" }).click();
+  expect((await reset).status()).toBe(200);
+  await expect(dialog.getByLabel("Specialist model")).toHaveValue("");
+  await expect(dialog.getByLabel("Default token limit per agent run")).toHaveValue("");
+});
+
 test("a missing provider blocks the workspace until an encrypted personal key is connected", async ({ page }) => {
   let ready = false;
   await page.route("**/model-access", (route) =>

@@ -261,6 +261,19 @@ export const agentDetail = (handle: string) =>
   unwrap(api.GET("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }));
 export const agentCatalog = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/agents/catalog", wsPath()));
 export const models = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/models", wsPath()));
+export const projectAgentModels = (projectId: string) =>
+  unwrap(
+    api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}", {
+      params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
+    }),
+  );
+export const projectAgentModelsSaved = (projectId: string, body: Pick<Schemas["ProjectUpdate"], "model" | "specialist_model" | "token_budget">) =>
+  send(
+    api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}", {
+      params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
+      body,
+    }),
+  );
 
 export type AgentFields = Schemas["AgentFields"];
 /** The fields of a contract as saved (everything an AgentRead carries that a save takes). */

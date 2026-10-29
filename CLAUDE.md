@@ -32,6 +32,8 @@ Dotrix owns the built-in agents, their policies, and the relationship between th
 
 Dotrix remains authoritative for tasks, delegation, user keys, model routing, permissions, approvals, worktrees/sandboxes, audit, durable state, and recovery. Any fx subagent must stay within its parent's limits and Dotrix's scheduler; start with one level of delegation. Route Nova or important reviews to a stronger model and routine specialist work to a cheaper model only when an authorized host policy selects those tiers. Record usage and measure real quality and cost before choosing defaults. The optional specialist history is not a native long-lived runtime session, and the fx journal does not yet prove production crash recovery.
 
+Project settings expose the project model, the optional shared specialist model, and the default token budget for each agent run. The scheduler pins a specialist's model when it creates the task: the requester's personal agent model wins, then the project/workspace agent override, shared specialist model, conversation model, and project model. Already queued tasks keep that choice; older tasks without a pinned model use the effective settings when they start. The requester must still have a personal key for the chosen provider at execution. Changes to these project settings are audited. Agent-specific budgets override the project default, and the check runs before the next model call, so usage can exceed the limit. This is role-based configuration, not automatic task-importance routing or a combined monetary budget; the fx Nova preview still refuses a configured project budget.
+
 ## Repo map
 
 | Path | What | Stack |

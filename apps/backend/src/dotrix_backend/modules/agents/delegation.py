@@ -16,6 +16,7 @@ from sqlalchemy.orm import aliased
 from uuid_utils.compat import uuid7
 
 from dotrix_backend.core.errors import Conflict, Forbidden
+from dotrix_backend.modules.agent_definitions.preferences import preferences_for
 from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
@@ -105,8 +106,9 @@ class DelegationService:
             project = await ProjectRepository(session).get(workspace_id, parent.project_id)
             if member is None or project is None or not can(member, Permission.CHAT) or not await ProjectRepository(session).can_see(project, member.user_id):
                 raise Forbidden("The person who asked no longer sees the project")
-            lead = next(a.spec for a in await AgentDefinitionRepository(session).resolve(workspace_id, project.id)
-                        if a.spec.handle == "project-manager")
+            resolved = await AgentDefinitionRepository(session).resolve(workspace_id, project.id)
+            specs = {item.spec.handle: item.spec for item in resolved}
+            lead = specs["project-manager"]
             if not lead.can("delegate") or any("*" not in lead.can_call and task.agent not in lead.can_call for task in batch.tasks):
                 raise Forbidden("The coordinator's policy does not allow this delegation")
             existing = list(await session.scalars(select(AgentRun).where(
@@ -142,12 +144,19 @@ class DelegationService:
             if unfinished_batch:
                 raise Conflict("Submit independent work in one batch; wait for the current batch before creating another")
             now = datetime.now(UTC)
+            preferences = (await preferences_for(session, workspace_id, parent.requested_by_id)
+                           if parent.automation_id is None and parent.requested_by_id else {})
             settings = getattr(self.runner, "settings", None)
             continuity = bool(getattr(settings, "specialist_continuity", False)
                               and parent.source == "user" and parent.automation_id is None
                               and parent.kind.value == "chat")
             sessions: dict[str, uuid.UUID] = {}
             for task in batch.tasks:
+                preference = preferences.get(task.agent)
+                # Pin the model when the task is created. Later changes to project or personal
+                # settings must not silently reroute an already queued or recovered task.
+                chosen_model = ((preference.model if preference else None) or specs[task.agent].model
+                                or project.specialist_model or parent.conversation_model or project.model)
                 if continuity and not task.changes_project and task.agent not in sessions:
                     sessions[task.agent] = await bind_specialist(session, parent, task.agent)
                 session.add(AgentRun(
@@ -158,7 +167,7 @@ class DelegationService:
                     specialist_session_id=sessions.get(task.agent) if not task.changes_project else None,
                     message=f"{task.brief}\n\nExpected result: {task.expected_result}", agent=task.agent,
                     work_mode=parent.work_mode, approval_mode=parent.approval_mode,
-                    conversation_model=parent.conversation_model, requested_by_id=parent.requested_by_id,
+                    conversation_model=parent.conversation_model, model=chosen_model, requested_by_id=parent.requested_by_id,
                     automation_id=parent.automation_id, created_at=now, updated_at=now,
                 ))
             verify_lease()

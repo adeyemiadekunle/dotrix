@@ -552,7 +552,7 @@ class AgentRunner:
                 run.status, run.updated_at = RunStatus.RUNNING, _now()
                 token = self._take_lease(run)
                 active_spec = next(spec for spec in specs if spec.handle == (run.agent or PM_ROLE))
-                run.model = ((active_spec.model or project.specialist_model) if run.parent_run_id else None) or run.conversation_model or project.model
+                run.model = ((run.model or active_spec.model or project.specialist_model) if run.parent_run_id else None) or run.conversation_model or project.model
                 run.agent_version = lead_agent.version
                 # The budget covers every step of the run: what earlier steps used counts. The
                 # leading agent's own budget wins over the project's.
@@ -574,7 +574,12 @@ class AgentRunner:
                 keys = (await run_keys(
                     session, self.secrets, run.workspace_id, run.requested_by_id
                 )).keys
-                choice = None if fx_preview else self.model_factory(project, run.model, keys=keys)
+                # A scheduled specialist has its own pinned model and cannot delegate further.
+                # Its summaries must use that model too, without requiring a key for a project
+                # specialist model which may have changed since the task was submitted.
+                model_project = (SimpleNamespace(model=project.model, specialist_model=None)
+                                 if run.parent_run_id is not None else project)
+                choice = None if fx_preview else self.model_factory(model_project, run.model, keys=keys)
                 lead = run.agent  # None: Auto (the Project Manager)
                 mode = run.mode
                 work_mode = run.work_mode
