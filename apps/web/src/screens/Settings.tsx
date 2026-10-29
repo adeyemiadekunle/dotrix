@@ -491,7 +491,7 @@ function LiveAgent({ handle }: { handle: string }) {
           </button>
         </SRow>
       ) : (
-        <SRow t="Model" d="Which model this agent uses; the run's model when unset.">
+        <SRow t="Model" d="Which model this agent uses. Specialists use the project's specialist model when unset.">
           <select
             className="select"
             style={{ width: "auto", minWidth: 180 }}
@@ -499,7 +499,7 @@ function LiveAgent({ handle }: { handle: string }) {
             onChange={(e) => set({ model: e.target.value || null })}
             aria-label="Model"
           >
-            <option value="">The run's model</option>
+            <option value="">Project or conversation default</option>
             {(ms.data ?? []).map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}

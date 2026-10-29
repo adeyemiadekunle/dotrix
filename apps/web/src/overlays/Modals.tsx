@@ -1,8 +1,9 @@
 // Modals, same markup. Each
 // open modal is an entry in S.ui.modals; its form lives on the entry.
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 
 import { applyPatch, copy, createTask, openPop, openTask } from "../core/actions";
+import { allowed } from "../core/can";
 import { PCOLORS, PICONS } from "../core/constants";
 import { Ic } from "../core/icons";
 import { closeModal, createProject, escapeHtml, restore, snapshot, TEMPLATES } from "../core/more";
@@ -10,7 +11,7 @@ import { currentSlug, go } from "../core/nav";
 import { MOD, ago, fmtDate, uid } from "../core/utils";
 import type { Schemas } from "@/lib/api";
 
-import { inviteLinkCreated, invitesSent, projectMemberSet, projectMembers } from "../data/account";
+import { inviteLinkCreated, invitesSent, models, projectAgentModels, projectAgentModelsSaved, projectMemberSet, projectMembers, useApi } from "../data/account";
 import { filesAttached, isLive, live, projectChanged } from "../data/live";
 import { D, S, mem, mutate, pColor, proj, render, task, tasksOf, type Modal } from "../data/store";
 import type { FileItem, Member, Task } from "../data/types";
@@ -398,22 +399,154 @@ export function taskForm(): TaskForm | null {
 }
 
 /* ---------- project ---------- */
+type AgentModelsDraft = { model: string; specialist: string; budget: string };
+type AgentModelsControl = { saveIfChanged: () => Promise<boolean> };
+
+/** Project-wide defaults; personal and per-agent choices still take precedence. */
+function ProjectAgentModels({ projectId, control }: { projectId: string; control: Ref<AgentModelsControl> }) {
+  const current = useApi(() => projectAgentModels(projectId), [projectId]);
+  const options = useApi(models);
+  const [saved, setSaved] = useState<Schemas["ProjectRead"]>();
+  const [edited, setEdited] = useState<AgentModelsDraft | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const listId = useId();
+  const project = saved ?? current.data;
+  const form = project && (edited ?? { model: project.model, specialist: project.specialist_model ?? "", budget: project.token_budget?.toString() ?? "" });
+  const changed = Boolean(
+    project &&
+    form &&
+    (form.model.trim() !== project.model ||
+      form.specialist.trim() !== (project.specialist_model ?? "") ||
+      form.budget.trim() !== (project.token_budget?.toString() ?? "")),
+  );
+  const save = async (announce = true): Promise<boolean> => {
+    if (!project || !form || !changed) return true;
+    if (busy) return false;
+    const budget = form.budget.trim();
+    if (budget && (!/^\d+$/.test(budget) || Number(budget) < 10_000 || Number(budget) > 10_000_000)) {
+      setError("The token budget must be between 10,000 and 10,000,000, or left empty.");
+      return false;
+    }
+    if (!form.model.trim()) {
+      setError("Choose a project model.");
+      return false;
+    }
+    const body: Pick<Schemas["ProjectUpdate"], "model" | "specialist_model" | "token_budget"> = {};
+    if (form.model.trim() !== project.model) body.model = form.model.trim();
+    if (form.specialist.trim() !== (project.specialist_model ?? "")) body.specialist_model = form.specialist.trim() || null;
+    if (budget !== (project.token_budget?.toString() ?? "")) body.token_budget = budget ? Number(budget) : null;
+    setBusy(true);
+    try {
+      const updated = await projectAgentModelsSaved(projectId, body);
+      setSaved(updated);
+      setEdited(null);
+      if (announce) toast("Agent model settings saved");
+      return true;
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "The agent model settings didn't save.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  useImperativeHandle(control, () => ({ saveIfChanged: () => save(false) }));
+  if (current.error) return <div className="alert danger">{current.error}</div>;
+  if (!project || !form) return <p className="faint">Loading model settings…</p>;
+  const set = (patch: Partial<AgentModelsDraft>) => (setEdited({ ...form, ...patch }), setError(""));
+  return (
+    <fieldset
+      className="sblock"
+      style={{ border: 0, padding: 0, margin: "18px 0" }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+          event.preventDefault();
+          event.currentTarget.closest("form")?.requestSubmit();
+        }
+      }}
+    >
+      <legend style={{ fontWeight: 600, marginBottom: 8 }}>Agent models</legend>
+      <p className="muted" style={{ fontSize: 12.5 }}>
+        Choose a project default and an optional model for specialist work. Individual agent or personal model settings take precedence. Already queued
+        specialist tasks keep their selected model. Each person needs a personal key for the model providers their agents use.
+      </p>
+      <datalist id={listId}>
+        {(options.data ?? []).map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.name}
+          </option>
+        ))}
+      </datalist>
+      <div className="field">
+        <label className="label" htmlFor={`${listId}-model`}>
+          Project model
+        </label>
+        <input className="input" id={`${listId}-model`} list={listId} value={form.model} onChange={(e) => set({ model: e.target.value })} />
+      </div>
+      <div className="field">
+        <label className="label" htmlFor={`${listId}-specialist`}>
+          Specialist model
+        </label>
+        <input
+          className="input"
+          id={`${listId}-specialist`}
+          list={listId}
+          value={form.specialist}
+          onChange={(e) => set({ specialist: e.target.value })}
+          placeholder="Use the conversation or project model"
+        />
+      </div>
+      <div className="field">
+        <label className="label" htmlFor={`${listId}-budget`}>
+          Default token limit per agent run
+        </label>
+        <input
+          className="input"
+          id={`${listId}-budget`}
+          inputMode="numeric"
+          value={form.budget}
+          onChange={(e) => set({ budget: e.target.value })}
+          placeholder="No project limit"
+        />
+        <span className="faint" style={{ fontSize: 12 }}>
+          Agent-specific limits override this default. A run can stop before its next model call; the fx chat preview cannot run when this default is set.
+        </span>
+      </div>
+      {error && (
+        <div className="alert danger" role="alert">
+          {error}
+        </div>
+      )}
+      <button type="button" className="btn btn-secondary btn-sm" disabled={busy || !changed} onClick={() => void save()}>
+        {busy ? "Saving…" : "Save agent models"}
+      </button>
+    </fieldset>
+  );
+}
+
 type ProjectForm = { name: string; desc: string; icon: string; color: string; lead: string; due: string; tmpl: string };
 function ProjectModal({ m }: { m: Modal }) {
   const f = m.form as ProjectForm;
   const err = m.err as string | undefined;
+  const modelSettings = useRef<AgentModelsControl>(null);
+  const [saving, setSaving] = useState(false);
   const set = (k: keyof ProjectForm, v: string) => {
     f[k] = v;
     if (k === "name" && m.err && v.trim()) m.err = undefined;
     render();
   };
-  const submit = () => {
+  const submit = async () => {
     f.name = f.name.trim();
     if (!f.name) {
       m.err = "Give the project a name";
       return render();
     }
     if (m.edit) {
+      if (saving) return;
+      setSaving(true);
+      const saved = await modelSettings.current?.saveIfChanged();
+      setSaving(false);
+      if (saved === false) return;
       const p = proj(m.edit as string)!;
       mutate(() =>
         Object.assign(p, {
@@ -449,7 +582,7 @@ function ProjectModal({ m }: { m: Modal }) {
         className="modal-b"
         onSubmit={(e) => {
           e.preventDefault();
-          submit();
+          void submit();
         }}
       >
         <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
@@ -490,6 +623,7 @@ function ProjectModal({ m }: { m: Modal }) {
             placeholder="What is this project about?"
           />
         </div>
+        {Boolean(m.edit) && isLive() && allowed("projects:manage") && <ProjectAgentModels projectId={m.edit as string} control={modelSettings} />}
         <div className="row" style={{ gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div className="field" style={{ flex: 1, minWidth: 220 }}>
             <span className="label">Icon</span>
@@ -579,7 +713,7 @@ function ProjectModal({ m }: { m: Modal }) {
         <button className="btn btn-secondary" onClick={closeModal}>
           Cancel
         </button>
-        <button className="btn btn-primary" data-submit onClick={submit}>
+        <button className="btn btn-primary" data-submit disabled={saving} onClick={() => void submit()}>
           {m.edit ? "Save changes" : "Create project"}
         </button>
       </div>

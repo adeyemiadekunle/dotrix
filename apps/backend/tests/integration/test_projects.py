@@ -133,6 +133,31 @@ async def test_project_model_choice(signup, create_team, db_client: AsyncClient)
         assert res.status_code == 422, bad
 
 
+async def test_project_model_changes_are_authorized_and_audited(signup, create_team, add_member, db_client: AsyncClient) -> None:
+    owner = await signup()
+    member = await signup(email="member@example.com")
+    team = await create_team(owner.headers)
+    await add_member(team["id"], member.id, Role.MEMBER)
+    project = (await db_client.post(projects_url(team), json={"key": "MODEL", "name": "Models"}, headers=owner.headers)).json()
+    url = f"{projects_url(team)}/{project['id']}"
+    settings = {"model": "openai:strong", "specialist_model": "openai:small", "token_budget": 10000}
+    assert (await db_client.patch(url, json=settings, headers=member.headers)).status_code == 403
+    assert (await db_client.patch(url, json=settings, headers=owner.headers)).status_code == 200
+    assert (await db_client.patch(url, json=settings, headers=owner.headers)).status_code == 200  # no-op
+    audit = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=owner.headers,
+                                 params={"action": "project.agent_model_settings_changed"})).json()
+    assert len(audit) == 1
+    assert audit[0]["details"]["changes"] == {
+        "model": {"from": project["model"], "to": "openai:strong"},
+        "specialist_model": {"from": None, "to": "openai:small"},
+        "token_budget": {"from": None, "to": 10000},
+    }
+    assert (await db_client.patch(url, json={"specialist_model": None, "token_budget": None}, headers=owner.headers)).status_code == 200
+    audit = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=owner.headers,
+                                 params={"action": "project.agent_model_settings_changed"})).json()
+    assert len(audit) == 2
+
+
 async def test_repo_urls_are_canonical_and_matchable(signup, create_team, db_client: AsyncClient) -> None:
     ada = await signup()
     team = await create_team(ada.headers)

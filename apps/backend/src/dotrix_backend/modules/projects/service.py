@@ -104,6 +104,15 @@ class ProjectService:
         return [ProjectRead.model_validate(p) for p in projects]
 
     async def update(self, project: Project, data: ProjectUpdate, actor: Membership) -> ProjectRead:
+        model_changes = {}
+        for name in ("model", "specialist_model", "token_budget"):
+            if name in data.model_fields_set:
+                before, after = getattr(project, name), getattr(data, name)
+                # A null project model means no change; null clears the other two fields.
+                if before != after and (name != "model" or after is not None):
+                    model_changes[name] = {"from": before, "to": after}
+        if model_changes:
+            self._audit(actor, project, "project.agent_model_settings_changed", changes=model_changes)
         if data.access is not None and data.access is not project.access:
             self._audit(actor, project, "project.access_changed", **{"from": project.access.value, "to": data.access.value})
             project.access = data.access

@@ -152,6 +152,87 @@ async def test_checkpointed_child_result_returns_to_nova(nova_world, db_client, 
     assert len(model.received) == 4
 
 
+async def test_specialist_models_are_pinned_before_settings_change(nova_world, db_client, agent_script, db_session, monkeypatch):
+    from dotrix_backend.modules.agent_definitions.models import AgentPreference
+    from dotrix_backend.modules.projects.models import Project
+
+    root = await parent_run(db_session, nova_world)
+    project = await db_session.get(Project, root.project_id)
+    project.specialist_model = "openai:routine"
+    root.conversation_model = "openai:coordinator"
+    preference = AgentPreference(workspace_id=root.workspace_id, user_id=root.requested_by_id,
+                                 handle="research", model="openai:strong")
+    db_session.add(preference)
+    await db_session.commit()
+    runner = db_client._transport.app.state.runner
+    scheduler = DelegationService(runner)
+    tasks = SpecialistBatch(tasks=[
+        {"key": "product", "agent": "product", "brief": "Summarise", "expected_result": "Summary"},
+        {"key": "research", "agent": "research", "brief": "Review", "expected_result": "Evidence"},
+    ])
+    await scheduler.submit(root.workspace_id, root.id, 1, "batch", tasks)
+    children = list(await db_session.scalars(select(AgentRun).where(
+        AgentRun.workspace_id == root.workspace_id, AgentRun.parent_run_id == root.id).order_by(AgentRun.task_key)))
+    assert {child.agent: child.model for child in children} == {"product": "openai:routine", "research": "openai:strong"}
+    project.specialist_model, preference.model = "openai:new-routine", "openai:new-strong"
+    root.status, root.waiting_interrupts = RunStatus.WAITING_CHILDREN, {"interrupt": "batch"}
+    for child in children:
+        child.status = RunStatus.QUEUED
+    await db_session.commit()
+    agent_script.say(tool_call("submit_specialist_result", summary="Summary"), "Done.",
+                     tool_call("submit_specialist_result", summary="Evidence"), "Done.")
+
+    async def dispatch(_run_id, _payload):
+        pass
+
+    monkeypatch.setattr(runner, "_dispatch", dispatch)
+    for child in children:
+        await runner.execute(child.id, {"kind": "start", "message": child.message})
+        await db_session.refresh(child)
+        assert child.status is RunStatus.COMPLETED
+    assert "openai:routine" in agent_script.models_used and "openai:strong" in agent_script.models_used
+    assert "openai:new-routine" not in agent_script.models_used and "openai:new-strong" not in agent_script.models_used
+
+
+async def test_pinned_specialist_does_not_require_new_project_model_key(nova_world, db_client, agent_script, db_session, monkeypatch):
+    from dotrix_backend.modules.agents import llm
+    from dotrix_backend.modules.agents import runner as runner_module
+    from dotrix_backend.modules.projects.models import Project
+
+    root = await parent_run(db_session, nova_world)
+    project = await db_session.get(Project, root.project_id)
+    project.specialist_model = "openai:original"
+    await db_session.commit()
+    runner = db_client._transport.app.state.runner
+    await DelegationService(runner).submit(root.workspace_id, root.id, 1, "batch", batch("a"))
+    child = await db_session.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
+    assert child.model == "openai:original"
+    project.specialist_model = "google_genai:changed"
+    root.status, root.waiting_interrupts, child.status = RunStatus.WAITING_CHILDREN, {"interrupt": "batch"}, RunStatus.QUEUED
+    await db_session.commit()
+    model = agent_script.say(tool_call("submit_specialist_result", summary="Evidence"), "Done.")
+    built = []
+
+    async def keys(*_args, **_kwargs):
+        return SimpleNamespace(keys={"openai": "personal-key"})
+
+    def build(name, key):
+        built.append((name, key))
+        return model
+
+    async def dispatch(_run_id, _payload):
+        pass
+
+    monkeypatch.setattr(runner_module, "run_keys", keys)
+    monkeypatch.setattr(llm, "build_chat_model", build)
+    monkeypatch.setattr(runner, "model_factory", llm.settings_model_factory(runner.settings))
+    monkeypatch.setattr(runner, "_dispatch", dispatch)
+    await runner.execute(child.id, {"kind": "start", "message": child.message})
+    await db_session.refresh(child)
+    assert child.status is RunStatus.COMPLETED, child.error
+    assert built == [("openai:original", "personal-key")]
+
+
 async def test_two_children_overlap_third_waits_and_completed_results_are_reused(nova_world, db_session):
     root = await parent_run(db_session, nova_world)
     started = []
