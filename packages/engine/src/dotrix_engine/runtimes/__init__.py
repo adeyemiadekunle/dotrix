@@ -10,7 +10,7 @@ from .contracts import (
     TurnResult,
 )
 from .deepagents import DeepAgentsRuntime
-from .fx import FxRuntime
+from .fx import FxRuntime, fx_configuration_digest
 from .model_policy import ModelPolicy, ModelSelection
 
 __all__ = [
@@ -25,4 +25,5 @@ __all__ = [
     "RuntimeTool",
     "RuntimeToolContext",
     "TurnResult",
+    "fx_configuration_digest",
 ]

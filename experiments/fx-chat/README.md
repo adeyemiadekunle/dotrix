@@ -78,6 +78,7 @@ DeepAgents runtimes against a local fake model server:
 
 ```sh
 uv run --package dotrix-engine python -m unittest discover -s experiments/fx-chat -p 'test_*.py' -v
+node --test packages/engine/src/dotrix_engine/runtimes/fx_host/handoff.test.mjs
 ```
 
 ## What this does and does not establish

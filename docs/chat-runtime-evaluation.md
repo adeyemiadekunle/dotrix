@@ -45,6 +45,46 @@ data, not verified workspace, user, run or lease authority. A production integra
 must bind verified execution context and recheck authorization and fencing for every
 effect.
 
+An experimental backend adapter, `agents/runtime_tools.py`, wraps the existing
+project knowledge reads in host-owned runtime tools. It checks the bound session,
+workspace, project, requester, run status, lease and current agent permissions both
+before and after a read. Integration tests exercise both runtimes against real project
+knowledge and verify revocation and stale leases. `agents/runtime_sessions.py` now
+persists one session binding per run, pins runtime type, version and configuration,
+and only admits a running, leased run with current project access. Competing bindings
+are serialized or rejected by database constraints; a new attempt can retrieve the
+same binding after it acquires a new lease. Tool calls must match the persisted binding.
+The chat runner does not select this adapter, and mapping a session does not persist
+its runtime journal, enforce a safe prompt or provide delegation and approval contracts.
+
+This initial binding deliberately does not reuse a session across runs: a runtime
+session ID belongs to one run. Reusable specialist conversations need a separate
+explicit ownership and concurrency model. The trusted host must derive the stored
+fingerprint from the actual configuration, isolate runtime storage per owner, and
+version its tool implementations and policies. `fx_configuration_digest` produces
+the same public-settings digest as the local fx store; it does not hash tool code or
+credentials. Authorization and the lease still need checking at every external effect.
+
+The current `delegate_tasks` implementation suspends a LangGraph tool with an
+interrupt, releases the parent worker, and replays that tool to read saved results
+when the children finish. An fx host tool waiting in a JavaScript process is not that
+contract. Before switching Nova, prove a handoff using a durable fx engine journal
+and a stable delegation call ID: commit the child batch and parent wait together,
+release the worker, and resume only against the persisted batch. Evaluate the SDK's
+engine handoff and ambiguous-tool behavior in a failure-injection test. Do not mark
+delegation idempotent or keep a worker blocked on children merely to fit the SDK.
+
+The local `fx_host/handoff.test.mjs` experiment exercises an explicit engine handoff
+against libfx's in-memory journal. It resumes an ambiguous delegation tool with the
+same execution ID and returns a saved result without creating a second batch. A second
+probe, `test_fx_handoff_uses_the_real_delegation_scheduler`, drives that mechanism
+through the Postgres-backed `DelegationService`: the parent waits, the real scheduler
+queues a child and later the parent, and a resumed call reads the child's saved result.
+It checks the old lease token is fenced off and only one child exists. The fx journal
+is still in memory and the test controls child completion and worker transitions; this
+does not prove atomic handoff, recovery after process death, distributed fencing or
+production runner integration.
+
 ### Local fx sessions
 
 The prototype can opt into `FxRuntime.create(..., local_dir=Path("/absolute/private/path"))`.
@@ -84,6 +124,12 @@ does not enforce an allowed-model list, budgets, provider credentials or cost li
 those remain platform responsibilities. The policy does not automatically assess
 importance, and SDK/model support for reasoning effort must be checked rather than
 silently assumed.
+
+The integration test `test_delegated_specialists_use_their_model_override_or_project_default`
+checks the current runner with actual delegated child runs: a project-wide specialist
+model handles one child, while another specialist's configured model takes precedence.
+Neither that test nor the synthetic fx comparison measures real provider cost or
+decides how a task's importance should select a tier.
 
 Dotrix must remain the authority for the workspace and requester, model-key choice,
 the resolved agent contract, tool permissions, approvals, audit, usage budgets, and

@@ -1,9 +1,16 @@
 """The runtime validates host configuration and model policy."""
+import json
 import os
 
 import pytest
 
-from dotrix_engine.runtimes import AgentRuntimeConfig, ModelPolicy, ModelSelection, RuntimeTool
+from dotrix_engine.runtimes import (
+    AgentRuntimeConfig,
+    ModelPolicy,
+    ModelSelection,
+    RuntimeTool,
+    fx_configuration_digest,
+)
 from dotrix_engine.runtimes.fx import _prepare_local_dir
 
 
@@ -34,6 +41,8 @@ def test_local_store_is_bound_to_its_agent_and_configuration(tmp_path):
     _prepare_local_dir(path, config, "model-a", None, None, 128_000)
     _prepare_local_dir(path, config, "model-a", None, None, 128_000)
     assert "Private project instructions" not in (path / ".dotrix-fx-runtime.json").read_text()
+    assert json.loads((path / ".dotrix-fx-runtime.json").read_text())["digest"] == fx_configuration_digest(
+        config, model="model-a")
     with pytest.raises(ValueError, match="different runtime configuration"):
         _prepare_local_dir(path, config, "model-b", None, None, 128_000)
     with pytest.raises(ValueError, match="different runtime configuration"):
