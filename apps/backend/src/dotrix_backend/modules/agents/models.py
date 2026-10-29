@@ -84,6 +84,11 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     depends_on: Mapped[list[str] | None] = mapped_column(JSONB)
     task_mutates: Mapped[bool] = mapped_column(default=False, server_default="false")
     task_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # A private specialist conversation is distinct from this task's checkpoint.
+    specialist_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_specialist_sessions.id", ondelete="SET NULL", use_alter=True), index=True
+    )
+    specialist_history: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     waiting_interrupts: Mapped[dict[str, str] | None] = mapped_column(JSONB)
     orchestration: Mapped[bool] = mapped_column(default=False, server_default="false")
     source: Mapped[str] = mapped_column(String(24), default="user", server_default="user")
@@ -207,6 +212,21 @@ class AgentRuntimeBinding(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     config_digest: Mapped[str] = mapped_column(String(64))
     session_id: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AgentSpecialistSession(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """A person's specialist within one project conversation, not a shared project memory."""
+
+    __tablename__ = "agent_specialist_sessions"
+    __table_args__ = (UniqueConstraint("workspace_id", "project_id", "owner_id", "thread_id", "agent"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    thread_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    agent: Mapped[str] = mapped_column(String(32))
+    origin_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class AgentRuntimeJournal(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):

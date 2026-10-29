@@ -225,16 +225,47 @@ plan for SDK checkpoint incompatibility and rollback.
 
 ## Specialist continuity
 
-The existing child checkpoint is per delegated task; it does not by itself establish
-a reusable specialist conversation across future tasks. A persistent specialist
-session should be scoped at least to workspace, project, requesting person,
-specialist and an explicit conversation or task context. Sharing a single project
-session would risk exposing one person's private conversation to another. Define
-retention, deletion, access revocation, configuration-version changes, context
-compaction, and how stale project evidence is refreshed before enabling reuse.
-An ephemeral task remains useful when continuity is unnecessary or inappropriate.
-Treat steering as an authorized new input to a specific running turn, audit its
-origin and outcome, and distinguish it from the existing checkpoint response.
+`DOTRIX_SPECIALIST_CONTINUITY=true` enables a limited private continuity preview
+for read-only specialist tasks from an interactive project conversation, whether
+Nova runs on DeepAgents or fx. Set it on the worker and API; it is off by default.
+The session identity is the workspace, project, requesting person, parent chat
+thread and built-in specialist. Another person, chat thread, project or specialist
+gets a different session. Automations, coding outcomes and tasks that may change
+project data do not use this feature.
+
+Each task keeps its own LangGraph checkpoint. The session stores metadata and the
+scheduler selects up to eight earlier **completed** briefs, replies and structured
+results; the task stores their run IDs when it is queued, so retries select the
+same history. The input is capped at 24,000 characters after escaping and is passed
+to the specialist as untrusted evidence with a reminder to recheck stale project
+facts. Failed, blocked and partial work is excluded. A fingerprint records the
+specialist’s permissions and the requester’s role and workspace permissions at
+queue time. History is selected only when that fingerprint matches, and the worker
+checks it before and after reading. A result is not reused if permissions at task
+completion differ from those at queue time. A change while a task is queued fails closed; model changes do not
+reset history by themselves. This is bounded continuity of committed work, not the
+complete model/tool transcript or a native long-lived fx specialist session. A new chat thread starts new specialist histories.
+
+The scheduler serializes queued, running and approval-waiting tasks sharing a
+session, including across parent runs. It wakes a waiting coordinator when the
+session becomes free; the existing periodic team sweep repairs a lost wake-up.
+The worker rechecks the task lease, current project access, session ownership and
+each referenced task and current permissions before and after reading history.
+Missing or mismatched history fails closed. The selection remains attached to an already queued task if the flag is
+later disabled, and a recovered task uses its own existing checkpoint.
+
+Session metadata belongs to the source run, owner and project and is cascaded
+when they are deleted. History content remains in the existing agent run records
+and LangGraph checkpoints, which retain their existing lifecycle and storage
+properties; this preview does not add encryption to those records, an independent
+retention schedule, or a user-facing forget/export control. It passes only the
+bounded selected history into each new task. Revoked members cannot read it through
+the preview, and deleting a session makes a queued snapshot unavailable rather
+than falling back to another person's work. Project-wide shared agent memory and
+explicit lifecycle controls require separate product and privacy design.
+
+Steering is an authorized new input to a specific running turn; audit its origin
+and outcome and distinguish it from an existing checkpoint response.
 
 ## Comparison and rollout
 

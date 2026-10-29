@@ -146,6 +146,8 @@ class Settings(DatabaseSettings):
     fx_chat_pilot: bool = False
     # Separately opt in to scheduler-backed, read-only fx delegation.
     fx_chat_durable_delegation: bool = False
+    # Preserve a bounded private history for read-only built-in specialist tasks.
+    specialist_continuity: bool = False
     # A session's sandbox stays up between turns (Phase B) until it's unused this long, at most this
     # many per workspace (0: never kept; each turn starts fresh and resumes from the saved transcript).
     coding_idle_minutes: int = Field(default=30, ge=1, le=24 * 60)

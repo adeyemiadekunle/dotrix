@@ -9,6 +9,7 @@ Read [CLAUDE.md](CLAUDE.md) before any change: it has the repo map, commands, ru
 - An explicit coding request goes from Nova through a structured, permission-checked handoff to Kai. Keep the origin and results linked, preserve the person's privacy and approval mode, and return the outcome and Juno's review to Nova when available.
 - Support runtime choice behind Dotrix-owned boundaries: DeepAgents remains the default chat runner, with an opt-in read-only fx Nova preview and separately gated durable specialist delegation. Claude Code, Codex, and OpenCode coding tools remain available. Evaluate fx for Kai; fx coding and the new navigation are planned, not implemented.
 - Dotrix owns delegation, workspaces, model policy, permissions, approvals, leases, audit, and recovery. A runtime and its subagents must not bypass those controls. Use per-agent or task model tiers only through host-authorized policy.
+- The optional specialist-continuity preview keeps completed read-only briefs and findings private to the same person, project, conversation, and role. Each task keeps its own checkpoint; preserve scoped access and serialize tasks that share a specialist session.
 
 The rules that always apply, in short (CLAUDE.md has them in full):
 

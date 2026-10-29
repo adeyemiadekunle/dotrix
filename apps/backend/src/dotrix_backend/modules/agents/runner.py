@@ -94,6 +94,7 @@ from .models import (
     RunStatus,
 )
 from .queue import RunQueue
+from .specialist_sessions import seal_history, specialist_history
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
 from .unattended import Unattended, accepting, changes_today, effective_specs
@@ -576,6 +577,7 @@ class AgentRunner:
                 work_mode = run.work_mode
                 durable = run.orchestration
                 child = run.parent_run_id is not None
+                has_specialist_history = run.specialist_session_id is not None or run.specialist_history is not None
                 read_only_run = (child and not run.task_mutates) or run.source == "coding_outcome"
                 specs, unattended_left, accepted, approval = await self._unattended_specs(
                     session, run, specs, resolved, recovered=bool(payload.get("recovered")),
@@ -753,6 +755,10 @@ class AgentRunner:
                 graph_input = Command(resume=payload["interrupts"])
             elif read_only_run and not child and payload["kind"] == "start":
                 graph_input = {"messages": [SystemMessage(payload["message"])]}
+            elif child and has_specialist_history and payload["kind"] == "start":
+                previous = await specialist_history(self.session_factory, workspace_id=workspace_id, run_id=run_id, token=token)
+                if previous:
+                    graph_input = {"messages": [{"role": "user", "content": f"{previous}\n\nCurrent task:\n{payload['message']}"}]}
             stream = recording = await self._record(run_id, workspace_id, token, payload)
             result = None
             if retry:
@@ -1042,6 +1048,7 @@ class AgentRunner:
             else:
                 run.reply = _reply(result)
                 if run.parent_run_id:
+                    await seal_history(session, run)
                     run.task_result = specialist_result or run.task_result or SpecialistResult(
                         summary=run.reply or "The specialist supplied no summary", status="partial",
                         risks=["No structured evidence was supplied; verify this result before relying on it"],
