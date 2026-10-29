@@ -308,7 +308,11 @@ async def test_runtime_journal_rejects_unreadable_data_and_oversize_writes(journ
     assert (await journal.load()).records == (("1", b"1234"),)
 
 
-async def test_failed_fx_parent_cancels_its_unstarted_specialists(journal_world):
+@pytest.mark.parametrize("settlement", ["completion", "sweep", "expired"])
+async def test_failed_fx_parent_cancels_its_unstarted_specialists(journal_world, settlement):
+    from dotrix_backend.modules.agents.coding_outcomes import sweep_team
+    from dotrix_backend.modules.execution.service import expire_agent_leases
+
     run, sessions, secrets, _, _ = journal_world
     stopped = []
 
@@ -325,9 +329,16 @@ async def test_failed_fx_parent_cancels_its_unstarted_specialists(journal_world)
                                    "expected_result": "Evidence"}])
     await scheduler.submit(run.workspace_id, run.id, 1, "tool-call", batch, verify_runtime_batch=True)
     async with sessions() as session:
-        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(status=RunStatus.FAILED))
+        values = ({"lease_expires_at": datetime.now(UTC) - timedelta(seconds=1)} if settlement == "expired"
+                  else {"status": RunStatus.FAILED})
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(**values))
         await session.commit()
-    await scheduler.completed(run.workspace_id, run.id)
+    if settlement == "completion":
+        await scheduler.completed(run.workspace_id, run.id)
+    else:
+        if settlement == "expired":
+            assert await expire_agent_leases(sessions, queue_name="test-fx") == 1
+        await sweep_team(runner)
     async with sessions() as session:
         child = await session.scalar(select(AgentRun).where(AgentRun.workspace_id == run.workspace_id,
                                                              AgentRun.parent_run_id == run.id))

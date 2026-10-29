@@ -254,17 +254,21 @@ class DelegationService:
             await self.advance(workspace_id, parent_id)
         else:
             if cancel_children:
-                await self.cancel(workspace_id, run_id, "The coordinating fx run did not complete")
+                await self.cancel(workspace_id, run_id, "The coordinating fx run did not complete", failed_fx_parent_only=True)
             from .coding_outcomes import start_ready_outcomes
             await start_ready_outcomes(self.runner)
 
-    async def cancel(self, workspace_id: uuid.UUID, parent_id: uuid.UUID, reason: str):
+    async def cancel(self, workspace_id: uuid.UUID, parent_id: uuid.UUID, reason: str, *, failed_fx_parent_only: bool = False):
         ids = []
         async with self.sessions() as session:
             runs = list(await session.scalars(select(AgentRun).where(
                 AgentRun.workspace_id == workspace_id,
                 (AgentRun.id == parent_id) | (AgentRun.parent_run_id == parent_id)
             ).with_for_update()))
+            if failed_fx_parent_only:
+                parent = next((run for run in runs if run.id == parent_id), None)
+                if parent is None or parent.chat_runtime is not ChatRuntime.FX or parent.status not in (RunStatus.FAILED, RunStatus.CANCELLED):
+                    return
             now = datetime.now(UTC)
             for run in runs:
                 if run.status in TERMINAL:

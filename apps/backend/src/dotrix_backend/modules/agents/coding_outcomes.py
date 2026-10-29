@@ -14,8 +14,8 @@ from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
 from dotrix_backend.modules.execution.service import RunDispatcher, record_dispatch
 from dotrix_backend.modules.projects.models import Project
 
-from .delegation import DelegationService
-from .models import ACTIVE_STATUSES, AgentRun, RunKind, RunStatus, WorkMode
+from .delegation import TERMINAL, DelegationService
+from .models import ACTIVE_STATUSES, AgentRun, ChatRuntime, RunKind, RunStatus, WorkMode
 
 FINAL_CODING = (CodingRunStatus.PR_OPENED, CodingRunStatus.NO_CHANGES, CodingRunStatus.FAILED,
                 CodingRunStatus.STOPPED, CodingRunStatus.REJECTED)
@@ -132,9 +132,18 @@ async def start_ready_outcomes(runner):
 
 async def sweep_team(runner):
     """Wake waiting parents even if the worker stopped after recording a child's result."""
+    child = aliased(AgentRun)
     async with runner.session_factory() as session:
         parents = list((await session.execute(select(AgentRun.workspace_id, AgentRun.id).where(
             AgentRun.status == RunStatus.WAITING_CHILDREN).limit(100))).all())
+        failed_fx = list((await session.execute(select(AgentRun.workspace_id, AgentRun.id).where(
+            AgentRun.chat_runtime == ChatRuntime.FX, AgentRun.status.in_((RunStatus.FAILED, RunStatus.CANCELLED)),
+            exists(select(child.id).where(child.workspace_id == AgentRun.workspace_id,
+                child.parent_run_id == AgentRun.id, child.status.not_in(TERMINAL))),
+        ).limit(100))).all())
     for workspace_id, parent_id in parents:
         await DelegationService(runner).advance(workspace_id, parent_id)
+    for workspace_id, parent_id in failed_fx:
+        await DelegationService(runner).cancel(workspace_id, parent_id, "The coordinating fx run did not complete",
+                                             failed_fx_parent_only=True)
     await sync_coding_outcomes(runner)

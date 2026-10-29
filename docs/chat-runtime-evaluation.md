@@ -129,7 +129,8 @@ and replays only explicitly permitted read tools and the verified delegation cal
 The prompt's stable message ID is the run ID. Child creation and parent waiting are
 separate transactions: a crash between them relies on the existing expired-lease
 recovery and the saved batch to retry safely. Failed/cancelled fx parents cancel
-unfinished children. Expired workers cannot renew their lease or clear the expiry
+unfinished children; the team sweep repairs a lost completion callback or a parent
+failed by the lease sweeper, rechecking its locked status before cancellation. Expired workers cannot renew their lease or clear the expiry
 that the recovery sweeper needs.
 
 The low-level libfx engine currently returns no saved answer text when replaying an
