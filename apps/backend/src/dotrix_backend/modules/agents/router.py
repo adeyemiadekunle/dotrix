@@ -79,7 +79,8 @@ async def chat_runtime_options(access: Chatter, settings: SettingsDep) -> ChatRu
     from .fx_pilot import fx_pilot_providers
 
     return ChatRuntimeOptions(fx_available=settings.fx_chat_pilot,
-                              fx_providers=fx_pilot_providers() if settings.fx_chat_pilot else [])
+                              fx_providers=fx_pilot_providers() if settings.fx_chat_pilot else [],
+                              fx_delegation_available=settings.fx_chat_pilot and settings.fx_chat_durable_delegation)
 
 
 @router.post("/runs", status_code=status.HTTP_202_ACCEPTED, responses=errors(403, 409, 422, 503))

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import html
 import json
 import uuid
@@ -26,7 +27,15 @@ from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.delegation import SpecialistBatch, SpecialistResult, SpecialistTask
 
 from .events import add_event
-from .models import AgentApproval, AgentRun, ApprovalStatus, RunEventKind, RunStatus
+from .models import (
+    AgentApproval,
+    AgentRun,
+    AgentRuntimeDelegation,
+    ApprovalStatus,
+    ChatRuntime,
+    RunEventKind,
+    RunStatus,
+)
 
 TERMINAL = {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.BLOCKED, RunStatus.CANCELLED}
 OCCUPIED = {RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_APPROVAL}
@@ -70,12 +79,20 @@ class DelegationService:
         self.sessions = runner.session_factory
 
     async def submit(self, workspace_id: uuid.UUID, parent_id: uuid.UUID, token: int,
-                     key: str, batch: SpecialistBatch) -> list[dict[str, Any]] | None:
+                     key: str, batch: SpecialistBatch, *, verify_runtime_batch: bool = False) -> list[dict[str, Any]] | None:
         async with self.sessions() as session:
             parent = await session.scalar(select(AgentRun).where(
                 AgentRun.workspace_id == workspace_id, AgentRun.id == parent_id).with_for_update())
             if parent is None or parent.parent_run_id or parent.lease_token != token or parent.status is not RunStatus.RUNNING:
                 raise Conflict("This coordinator no longer owns the delegation")
+            def verify_lease():
+                if verify_runtime_batch and (parent.lease_expires_at is None
+                                             or parent.lease_expires_at <= datetime.now(UTC)):
+                    raise Conflict("This coordinator no longer owns the delegation")
+
+            verify_lease()
+            if verify_runtime_batch and any(task.changes_project for task in batch.tasks):
+                raise Forbidden("The fx preview permits only read-only specialist tasks")
             member = await MembershipRepository(session).get(workspace_id, parent.requested_by_id)
             project = await ProjectRepository(session).get(workspace_id, parent.project_id)
             if member is None or project is None or not can(member, Permission.CHAT) or not await ProjectRepository(session).can_see(project, member.user_id):
@@ -87,7 +104,26 @@ class DelegationService:
             existing = list(await session.scalars(select(AgentRun).where(
                 AgentRun.workspace_id == workspace_id, AgentRun.parent_run_id == parent.id,
                 AgentRun.delegation_key == key).order_by(AgentRun.created_at, AgentRun.task_key)))
+            if verify_runtime_batch:
+                if not isinstance(key, str) or not 1 <= len(key) <= 200:
+                    raise Conflict("Invalid runtime delegation identity")
+                canonical = json.dumps(batch.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+                saved = await session.scalar(select(AgentRuntimeDelegation).where(
+                    AgentRuntimeDelegation.workspace_id == workspace_id, AgentRuntimeDelegation.parent_run_id == parent.id,
+                    AgentRuntimeDelegation.execution_id == key))
+                if saved is not None:
+                    original = self.runner.secrets.decrypt(saved.encrypted_batch)
+                    if original is None or not hmac.compare_digest(original, canonical):
+                        raise Conflict("The runtime delegation identity belongs to a different batch")
+                elif existing:
+                    raise Conflict("The existing delegation has no verified runtime batch")
+                else:
+                    session.add(AgentRuntimeDelegation(
+                        workspace_id=workspace_id, parent_run_id=parent.id, execution_id=key,
+                        encrypted_batch=self.runner.secrets.encrypt(canonical), created_at=datetime.now(UTC),
+                    ))
             if existing:
+                verify_lease()
                 if all(task.status in TERMINAL for task in existing):
                     return [{"key": task.task_key, "agent": task.agent, "status": task.status.value,
                              "result": task.task_result, "error": task.error} for task in existing]
@@ -109,20 +145,25 @@ class DelegationService:
                     conversation_model=parent.conversation_model, requested_by_id=parent.requested_by_id,
                     automation_id=parent.automation_id, created_at=now, updated_at=now,
                 ))
+            verify_lease()
             await session.commit()
         return None
 
-    async def wait(self, workspace_id: uuid.UUID, parent_id: uuid.UUID, token: int, interrupts: dict[str, str]):
+    async def wait(self, workspace_id: uuid.UUID, parent_id: uuid.UUID, token: int, interrupts: dict[str, str],
+                   *, require_live_lease: bool = False):
         async with self.sessions() as session:
             parent = await session.scalar(select(AgentRun).where(
                 AgentRun.workspace_id == workspace_id, AgentRun.id == parent_id).with_for_update())
             if parent is None or parent.lease_token != token or parent.status is not RunStatus.RUNNING:
-                return
+                return False
+            if require_live_lease and (parent.lease_expires_at is None or parent.lease_expires_at <= datetime.now(UTC)):
+                return False
             parent.status, parent.waiting_interrupts = RunStatus.WAITING_CHILDREN, interrupts
             parent.updated_at, parent.lease_expires_at = datetime.now(UTC), None
             await add_event(session, parent, RunEventKind.STATUS, {"status": parent.status.value})
             await session.commit()
         await self.advance(workspace_id, parent_id)
+        return True
 
     async def advance(self, workspace_id: uuid.UUID, parent_id: uuid.UUID):
         dispatches = []
@@ -199,6 +240,8 @@ class DelegationService:
             if child is None or child.status not in TERMINAL:
                 return
             parent_id = child.parent_run_id
+            cancel_children = (parent_id is None and child.chat_runtime is ChatRuntime.FX
+                               and child.status in (RunStatus.FAILED, RunStatus.CANCELLED))
             if parent_id:
                 parent = await session.scalar(select(AgentRun).where(
                     AgentRun.workspace_id == workspace_id, AgentRun.id == parent_id).with_for_update())
@@ -210,6 +253,8 @@ class DelegationService:
         if parent_id:
             await self.advance(workspace_id, parent_id)
         else:
+            if cancel_children:
+                await self.cancel(workspace_id, run_id, "The coordinating fx run did not complete")
             from .coding_outcomes import start_ready_outcomes
             await start_ready_outcomes(self.runner)
 

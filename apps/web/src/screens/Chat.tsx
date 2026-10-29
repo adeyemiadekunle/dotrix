@@ -890,7 +890,8 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const runs = (projectId ? own.data : cross.data) ?? [];
   const last = runs.at(-1);
   const lastUser = runs.filter((run) => run.source === "user").at(-1);
-  const fxPreview = projectId ? own.data?.find((run) => run.source === "user")?.chat_runtime === "fx" : false;
+  const fxRun = projectId ? own.data?.filter((run) => run.source === "user").at(-1) : undefined;
+  const fxPreview = fxRun?.chat_runtime === "fx";
   const delegated = useConversationTasks(scope, runs);
   const routeSearch = useRoute().search;
   const [fixDraft, setFixDraft] = useState({ text: "", version: 0 });
@@ -1068,7 +1069,9 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           />
           {fxPreview && (
             <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
-              The fx preview reads project knowledge. It cannot delegate, change data, or start coding yet.
+              {fxRun?.orchestration
+                ? "The fx preview can ask built-in specialists for read-only work. It cannot change data or start coding yet."
+                : "The fx preview reads project knowledge. It cannot delegate, change data, or start coding yet."}
             </div>
           )}
           {!projectId && (
@@ -1196,7 +1199,9 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
             <div className="faint" style={{ fontSize: 11.5, marginTop: 6, textAlign: "center" }}>
               {unavailable
                 ? "Connect a compatible personal model in settings to use the fx preview."
-                : "The fx preview reads project knowledge. It cannot delegate, change data, or start coding yet."}
+                : runtimeOptions?.fx_delegation_available
+                  ? "The fx preview can ask built-in specialists for read-only work. It cannot change data or start coding yet."
+                  : "The fx preview reads project knowledge. It cannot delegate, change data, or start coding yet."}
             </div>
           )}
           <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 14, justifyContent: "center" }}>

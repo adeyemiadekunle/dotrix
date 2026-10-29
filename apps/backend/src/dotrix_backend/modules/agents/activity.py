@@ -88,6 +88,8 @@ def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
             return "Recording the result"
         case "checkpoint":
             return "Showing the plan before going on"
+        case "delegate_tasks":
+            return "Asking specialists"
         case "task":
             name = str(args.get("subagent_type") or "")
             custom = f"@{name.removesuffix('-agent')}" if _AGENT_NAME.match(name) else "a specialist agent"

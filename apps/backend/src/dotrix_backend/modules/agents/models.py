@@ -13,7 +13,17 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -196,6 +206,46 @@ class AgentRuntimeBinding(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     runtime_version: Mapped[str] = mapped_column(String(80))
     config_digest: Mapped[str] = mapped_column(String(64))
     session_id: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AgentRuntimeJournal(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """Encrypted opaque records for one bound runtime session."""
+
+    __tablename__ = "agent_runtime_journal"
+    __table_args__ = (UniqueConstraint("binding_id", "sequence"), UniqueConstraint("binding_id", "idempotency_key"))
+
+    binding_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runtime_bindings.id", ondelete="CASCADE"), index=True)
+    sequence: Mapped[int] = mapped_column(BigInteger)
+    expected_sequence: Mapped[int] = mapped_column(BigInteger)
+    idempotency_key: Mapped[str] = mapped_column(String(200))
+    encrypted: Mapped[str] = mapped_column(Text)
+    byte_count: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AgentRuntimeCheckpoint(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """The latest encrypted checkpoint, covering the journal through a cursor."""
+
+    __tablename__ = "agent_runtime_checkpoints"
+    __table_args__ = (UniqueConstraint("binding_id"),)
+
+    binding_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runtime_bindings.id", ondelete="CASCADE"))
+    through: Mapped[int] = mapped_column(BigInteger)
+    encrypted: Mapped[str] = mapped_column(Text)
+    byte_count: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AgentRuntimeDelegation(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """The immutable specialist batch associated with one runtime tool call."""
+
+    __tablename__ = "agent_runtime_delegations"
+    __table_args__ = (UniqueConstraint("parent_run_id", "execution_id"),)
+
+    parent_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    execution_id: Mapped[str] = mapped_column(String(200))
+    encrypted_batch: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 

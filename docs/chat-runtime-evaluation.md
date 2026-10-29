@@ -62,8 +62,8 @@ persists one session binding per run, pins runtime type, version and configurati
 and only admits a running, leased run with current project access. Competing bindings
 are serialized or rejected by database constraints; a new attempt can retrieve the
 same binding after it acquires a new lease. Tool calls must match the persisted binding.
-Mapping a session does not persist its runtime journal or provide delegation and
-approval contracts.
+The binding alone does not persist a journal or grant delegation and approval
+contracts; the separately gated journal integration below builds on it.
 
 This initial binding deliberately does not reuse a session across runs: a runtime
 session ID belongs to one run. Reusable specialist conversations need a separate
@@ -81,15 +81,15 @@ returning the answer. Real-Postgres tests with a local fake model check the role
 project read, duplicate refusal, and mid-turn membership or lease revocation.
 
 The pilot is deliberately limited to interactive Discuss turns with no token
-budget, no automation, no delegation and no writes. It supports the configured
-OpenAI-compatible provider endpoints, not direct Anthropic or Google APIs. The fx
-journal is in memory; a previously bound run is refused instead of silently replayed.
+budget, no automation and no writes. Delegation requires a separate flag. It supports the configured
+OpenAI-compatible provider endpoints, not direct Anthropic or Google APIs. Without the durable delegation flag, the fx journal stays in memory and a previously
+bound run is refused instead of silently replayed.
 The platform runner persists replies and events, and passes bounded recent history to
 later turns. It records available usage and marks unreported usage incomplete. Set
 `DOTRIX_FX_CHAT_PILOT=true` on both the API and worker to expose the selector; new
 conversations default to DeepAgents and remain pinned to their selected runtime. It does not yet include the full
 production context pack, workspace rules, board tools, model policy, specialist
-sessions, approvals, or distributed recovery.
+reusable sessions, approvals, or proven production recovery.
 
 For native development, install Node 22 and run
 `npm ci --prefix packages/engine/src/dotrix_engine/runtimes/fx_host` before enabling
@@ -97,25 +97,65 @@ the preview. The production backend image includes Node and the pinned fx host.
 Development Compose mounts the engine source from the host, so it also needs the
 host-side `npm ci` when the preview is enabled.
 
-The current `delegate_tasks` implementation suspends a LangGraph tool with an
-interrupt, releases the parent worker, and replays that tool to read saved results
-when the children finish. An fx host tool waiting in a JavaScript process is not that
-contract. Before switching Nova, prove a handoff using a durable fx engine journal
-and a stable delegation call ID: commit the child batch and parent wait together,
-release the worker, and resume only against the persisted batch. Evaluate the SDK's
-engine handoff and ambiguous-tool behavior in a failure-injection test. Do not mark
-delegation idempotent or keep a worker blocked on children merely to fit the SDK.
+### Durable read-only delegation preview
 
-The local `fx_host/handoff.test.mjs` experiment exercises an explicit engine handoff
-against libfx's in-memory journal. It resumes an ambiguous delegation tool with the
-same execution ID and returns a saved result without creating a second batch. A second
-probe, `test_fx_handoff_uses_the_real_delegation_scheduler`, drives that mechanism
-through the Postgres-backed `DelegationService`: the parent waits, the real scheduler
-queues a child and later the parent, and a resumed call reads the child's saved result.
-It checks the old lease token is fenced off and only one child exists. The fx journal
-is still in memory and the test controls child completion and worker transitions; this
-does not prove atomic handoff, recovery after process death, distributed fencing or
-production runner integration.
+Set `DOTRIX_FX_CHAT_DURABLE_DELEGATION=true` alongside `DOTRIX_FX_CHAT_PILOT=true`
+on the API and worker to opt new fx runs into durable delegation. The run records
+that choice; disabling either flag does not change an existing run's recovery
+contract. Nova may selectively ask built-in specialists for read-only work through
+Dotrix's existing `DelegationService`. Children keep their existing isolated
+DeepAgents checkpoints, structured results, dependency rules, requester permissions,
+personal credentials, and project specialist model/per-agent overrides. Native fx
+subagents do not create another task tree. This allows a stronger Nova model and
+cheaper specialist models using the existing settings; automatic importance-based
+routing, budget enforcement and measured cost savings remain open.
+
+`agents/runtime_journal.py` stores encrypted opaque records and checkpoints in
+Postgres, bound to one run and runtime configuration. Every operation rechecks
+workspace, requester access, run status, current lease and configuration. A run-row
+lock serializes appends with lease acquisition, and expected cursors fence competing
+journal writers. Idempotent retries must match the original bytes and expected
+cursor. Records are limited to 2 MiB and the whole journal plus checkpoint to 8 MiB;
+exceeding the limit fails the turn. Run deletion cascades to the journal. This is
+per-run durability, not a reusable private specialist conversation.
+
+A stable fx tool execution ID identifies the specialist batch. Dotrix stores an
+encrypted canonical brief with child creation in one transaction; a retry must
+match that brief before it can reuse the children or their saved results. The host
+then cancels the fx turn with a handoff marker, closes the subprocess, and moves the
+parent into `waiting_children`, releasing its worker. The scheduler runs children
+and queues the parent when results are ready. A fresh fx process reloads the journal
+and replays only explicitly permitted read tools and the verified delegation call.
+The prompt's stable message ID is the run ID. Child creation and parent waiting are
+separate transactions: a crash between them relies on the existing expired-lease
+recovery and the saved batch to retry safely. Failed/cancelled fx parents cancel
+unfinished children. Expired workers cannot renew their lease or clear the expiry
+that the recovery sweeper needs.
+
+The low-level libfx engine currently returns no saved answer text when replaying an
+already committed turn. The host therefore has a deliberately narrow compatibility
+reader for **libfx 0.0.15**, **libfx-journal-v1**, extracting only committed successful
+assistant output. It rejects unknown formats and package versions. Truncated,
+interrupted or refused turns cannot become a successful reply on replay. Automatic
+checkpointing is set above the journal quota to retain the full record history that
+this reader needs; historical records are not compacted. This private-format
+dependency must be retested on SDK upgrades and replaced when a suitable public
+result-history API is available. A turn restored from an existing journal marks
+usage incomplete, since pre-crash or pre-handoff usage may be absent; it does not
+claim zero cost. Previously delivered streaming events may be repeated across
+attempts; they are observations, not an exactly-once event contract.
+
+Real-Postgres tests kill the fx host during a read and after specialist child creation
+before handoff acknowledgment. A new process recovers the same execution ID without
+duplicating children. Tests also cover competing appends, stale leases, revoked
+membership, encryption, quota failure, changed-brief rejection, completed-output
+recovery and unsuccessful-answer replay. An API integration runs a real fx Nova,
+the real scheduler and a real DeepAgents child runner with a scripted model, and
+checks its cheaper specialist model and saved result. The older in-memory probe and
+Node handoff test remain useful SDK checks. These synthetic-provider tests do not
+establish paid-provider quality/cost, all distributed failure windows, or production
+readiness. Streaming, Stop and existing Agents activity use the normal run ledger;
+steering and queued follow-ups still need product APIs and authorization.
 
 ### Local fx sessions
 

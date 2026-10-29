@@ -28,7 +28,7 @@ from langchain_core.messages import (
 )
 from langchain_core.tools import StructuredTool
 from langgraph.types import Command
-from sqlalchemy import select, update
+from sqlalchemy import case, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.crypto import Secrets
@@ -286,6 +286,7 @@ class AgentRunner:
                         held = await session.execute(update(AgentRun).where(
                             AgentRun.id == run_id, AgentRun.lease_token == token,
                             AgentRun.status == RunStatus.RUNNING,
+                            AgentRun.lease_expires_at > _now(),
                         ).values(lease_expires_at=_now() + timedelta(seconds=self.lease_seconds)))
                         await session.commit()
                 except Exception:
@@ -316,7 +317,9 @@ class AgentRunner:
             async with self.session_factory() as session:
                 await session.execute(update(AgentRun).where(
                     AgentRun.id == run_id, AgentRun.lease_token == token,
-                ).values(lease_expires_at=None))
+                ).values(lease_expires_at=case(
+                    (AgentRun.status == RunStatus.RUNNING, AgentRun.lease_expires_at), else_=None,
+                )))
                 await session.commit()
         except Exception:
             logger.warning("agent run %s: couldn't release its lease (it expires)", run_id, exc_info=True)
@@ -590,8 +593,10 @@ class AgentRunner:
             if fx_preview:
                 from .fx_pilot import run_fx_nova_pilot
 
-                if retry or payload["kind"] != "start":
+                if not durable and (retry or payload["kind"] != "start"):
                     raise Conflict("The fx preview cannot recover this turn; send a new message")
+                if durable and payload["kind"] not in ("start", "delegation_ready"):
+                    raise Conflict("This fx turn cannot use that continuation")
                 recording = await self._record(run_id, workspace_id, token, payload)
 
                 async def fx_event(event):
@@ -604,7 +609,15 @@ class AgentRunner:
                 turn = await run_fx_nova_pilot(
                     self.session_factory, workspace_id=workspace_id, run_id=run_id, token=token,
                     secrets=self.secrets, embedder=self.embedder, on_event=fx_event,
+                    delegation=DelegationService(self) if durable else None,
                 )
+                if turn.handoff:
+                    if not durable:
+                        raise Conflict("This fx turn cannot delegate")
+                    await recording.flush()
+                    await DelegationService(self).wait(workspace_id, run_id, token, {"fx": turn.handoff},
+                                                       require_live_lease=True)
+                    return
                 reported = turn.usage or {}
                 usage.input_tokens = int(reported.get("input_tokens", 0))
                 usage.output_tokens = int(reported.get("output_tokens", 0))

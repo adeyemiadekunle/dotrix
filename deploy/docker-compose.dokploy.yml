@@ -15,6 +15,7 @@ x-dotrix: &dotrix
     DOTRIX_REDIS_URL: redis://redis:6379/0
     DOTRIX_JOBS: worker
     DOTRIX_FX_CHAT_PILOT: ${DOTRIX_FX_CHAT_PILOT:-false}
+    DOTRIX_FX_CHAT_DURABLE_DELEGATION: ${DOTRIX_FX_CHAT_DURABLE_DELEGATION:-false}
     DOTRIX_RATE_LIMITS: redis
     # Traefik and nginx, on Docker's private networks.
     DOTRIX_TRUSTED_PROXIES: '["127.0.0.1", "172.16.0.0/12", "10.0.0.0/8"]'

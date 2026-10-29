@@ -279,8 +279,10 @@ class AgentService:
             requested_by_id=member.user_id,
             created_at=now,
             updated_at=now,
-            orchestration=bool(runtime is ChatRuntime.DEEPAGENTS and interactive and self.runner.settings
-                               and self.runner.settings.durable_delegation),
+            orchestration=bool(interactive and self.runner.settings and (
+                (runtime is ChatRuntime.DEEPAGENTS and self.runner.settings.durable_delegation)
+                or (runtime is ChatRuntime.FX and self.runner.settings.fx_chat_durable_delegation)
+            )),
         )
         self.session.add(run)
         if data.mentions:
