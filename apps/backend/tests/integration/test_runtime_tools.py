@@ -4,10 +4,11 @@ import json
 import shutil
 import threading
 import uuid
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import SimpleNamespace
 
 import pytest
 from langchain_openai import ChatOpenAI
@@ -16,10 +17,12 @@ from uuid_utils.compat import uuid7
 
 from dotrix_backend.core.errors import Conflict, Forbidden
 from dotrix_backend.modules.agents import runtime_tools
+from dotrix_backend.modules.agents.delegation import DelegationService
 from dotrix_backend.modules.agents.models import AgentRun, RunKind, RunStatus
 from dotrix_backend.modules.agents.runtime_tools import RuntimeRunScope, scoped_knowledge_tools
 from dotrix_backend.modules.workspaces.models import Membership, Role
 from dotrix_engine.builtins import builtin
+from dotrix_engine.delegation import SpecialistBatch, SpecialistResult
 from dotrix_engine.runtimes import (
     AgentRuntimeConfig,
     DeepAgentsRuntime,
@@ -72,6 +75,16 @@ async def test_read_tools_use_the_real_project_and_expose_no_write_tools(runtime
     assert {tool.name for tool in scoped_knowledge_tools(sessions, scope=scope, spec=restricted, embedder=None)} == {
         "search_knowledge"
     }
+
+
+async def test_nova_run_uses_its_builtin_identity_for_scoped_reads(runtime_world, db_session):
+    _, _, _, run, scope, sessions = runtime_world
+    run.agent = None  # The platform stores the default coordinator with no explicit handle.
+    await db_session.commit()
+    scope = replace(scope, agent="project-manager")
+    tools = scoped_knowledge_tools(sessions, scope=scope, spec=builtin("project-manager"), embedder=None)
+    read = next(tool for tool in tools if tool.name == "read_section")
+    assert "Private project evidence" in await invoke(read)
 
 
 async def test_wrong_session_workspace_requester_agent_or_stale_lease_cannot_read(runtime_world, db_session):
@@ -199,3 +212,82 @@ async def test_runtime_reads_real_project_knowledge_through_scoped_tools(runtime
             assert "Private project evidence" in result.text
         finally:
             await runtime.close()
+
+
+async def test_fx_handoff_uses_the_real_delegation_scheduler(runtime_world, db_session):
+    """An in-memory fx journal hands off to the real scheduler and returns its saved result."""
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    _, _, _, parent, _, _ = runtime_world
+    parent.agent, parent.orchestration = None, True
+    await db_session.commit()
+    dispatches = []
+
+    @asynccontextmanager
+    async def sessions():
+        yield db_session
+
+    async def dispatch(run_id, payload):
+        dispatches.append((run_id, payload))
+
+    service = DelegationService(SimpleNamespace(session_factory=sessions, queue=None, stop_reasons=None,
+                                                 _dispatch=dispatch))
+    process = await asyncio.create_subprocess_exec(
+        "node", str(_HOST / "platform-handoff-probe.mjs"),
+        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+
+    async def read():
+        line = await asyncio.wait_for(process.stdout.readline(), 30)
+        if not line:
+            raise AssertionError(f"fx probe stopped: {(await process.stderr.read()).decode()}")
+        return json.loads(line)
+
+    async def send(data):
+        process.stdin.write((json.dumps(data) + "\n").encode())
+        await process.stdin.drain()
+
+    try:
+        first = await read()
+        assert first["kind"] == "delegate"
+        batch = SpecialistBatch(tasks=[{"key": "review", "agent": "research", "brief": first["input"]["brief"],
+                                       "expected_result": "Evidence"}])
+        key = first["executionId"]
+        assert await service.submit(parent.workspace_id, parent.id, 1, key, batch) is None
+        await service.wait(parent.workspace_id, parent.id, 1, {"fx-handoff": key})
+        assert parent.status is RunStatus.WAITING_CHILDREN
+        children = list(await db_session.scalars(select(AgentRun).where(AgentRun.parent_run_id == parent.id)))
+        assert len(children) == 1 and children[0].status is RunStatus.QUEUED
+        assert dispatches[0][0] == children[0].id
+        await send({"action": "suspend"})
+        assert (await read())["kind"] == "suspended"
+
+        child = children[0]
+        child.status = RunStatus.COMPLETED
+        child.task_result = SpecialistResult(summary="Saved specialist evidence").model_dump(mode="json")
+        await db_session.commit()
+        await service.advance(parent.workspace_id, parent.id)
+        assert parent.status is RunStatus.QUEUED and dispatches[-1][0] == parent.id
+        parent.status, parent.lease_token = RunStatus.RUNNING, 2
+        await db_session.commit()
+        await send({"action": "resume"})
+        replay = await read()
+        assert replay == first  # fx retains the same delegation execution ID and input.
+        with pytest.raises(Conflict):
+            await service.submit(parent.workspace_id, parent.id, 1, key, batch)
+        saved = await service.submit(parent.workspace_id, parent.id, 2, key, batch)
+        assert saved[0]["result"]["summary"] == "Saved specialist evidence"
+        assert len(list(await db_session.scalars(select(AgentRun).where(AgentRun.parent_run_id == parent.id)))) == 1
+        await send({"action": "result", "result": {"tasks": saved}})
+        finished = await read()
+        assert finished["kind"] == "finished" and finished["stopReason"] == "end_turn"
+        assert "Saved specialist evidence" in finished["text"]
+        process.stdin.close()
+        assert await asyncio.wait_for(process.wait(), 10) == 0
+    finally:
+        if process.returncode is None:
+            with suppress(ProcessLookupError):
+                process.kill()
+            await process.wait()

@@ -142,6 +142,45 @@ async def test_a_conversation_keeps_its_model(project, db_client: AsyncClient, a
     assert plain["conversation_model"] == CLAUDE
 
 
+async def test_delegated_specialists_use_their_model_override_or_project_default(
+    project, db_client: AsyncClient, agent_script, connected
+) -> None:
+    from dotrix_backend.modules.agent_definitions.schemas import AgentFields
+
+    ada, _, base = await project()
+    await connected(ada, "google_genai")
+    await connected(ada, "anthropic")
+    db_client._transport.app.state.runner.settings.durable_delegation = True
+    configured = await db_client.patch(base, json={"specialist_model": GEMINI}, headers=ada.headers)
+    assert configured.status_code == 200, configured.text
+    research = (await db_client.get(f"{base}/agents/research", headers=ada.headers)).json()
+    fields = {key: research[key] for key in AgentFields.model_fields if key in research}
+    fields["model"] = CLAUDE
+    saved = await db_client.put(f"{base}/agents/research", json={"agent": fields}, headers=ada.headers)
+    assert saved.status_code == 200, saved.text
+
+    agent_script.say(
+        tool_call("delegate_tasks", tasks=[
+            {"key": "product", "agent": "product", "brief": "Summarise the requirements", "expected_result": "Summary"},
+            {"key": "research", "agent": "research", "brief": "Review the requirements", "expected_result": "Evidence",
+             "depends_on": ["product"]},
+        ]),
+        tool_call("submit_specialist_result", summary="Requirements"), "Product done.",
+        tool_call("submit_specialist_result", summary="Review evidence"), "Research done.",
+        "The team completed the review.",
+    )
+    response = await send(db_client, base, ada.headers, "Review the requirements")
+    assert response.status_code == 202, response.text
+    parent = response.json()
+    assert parent["status"] == "completed"
+    tasks = (await db_client.get(f"{base}/agent/runs/{parent['id']}/tasks", headers=ada.headers)).json()
+    children = [(await db_client.get(f"{base}/agent/runs/{task['id']}", headers=ada.headers)).json() for task in tasks]
+    child_models = {child["agent"]: child["model"] for child in children}
+    assert parent["model"] == CLAUDE
+    assert child_models == {"product": GEMINI, "research": CLAUDE}
+    assert GEMINI in agent_script.models_used and CLAUDE in agent_script.models_used
+
+
 async def test_who_may_choose_a_model(project, db_client: AsyncClient, agent_script, connected, signup, add_member) -> None:
     ada, team, base = await project()
     await connected(ada)

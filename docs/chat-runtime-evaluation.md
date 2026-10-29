@@ -64,9 +64,14 @@ delegation idempotent or keep a worker blocked on children merely to fit the SDK
 
 The local `fx_host/handoff.test.mjs` experiment exercises an explicit engine handoff
 against libfx's in-memory journal. It resumes an ambiguous delegation tool with the
-same execution ID and returns a saved result without creating a second batch. This
-establishes a possible SDK mechanism, not a durable platform implementation: it does
-not exercise Postgres transactions, a worker crash, a stale lease or the real scheduler.
+same execution ID and returns a saved result without creating a second batch. A second
+probe, `test_fx_handoff_uses_the_real_delegation_scheduler`, drives that mechanism
+through the Postgres-backed `DelegationService`: the parent waits, the real scheduler
+queues a child and later the parent, and a resumed call reads the child's saved result.
+It checks the old lease token is fenced off and only one child exists. The fx journal
+is still in memory and the test controls child completion and worker transitions; this
+does not prove atomic handoff, recovery after process death, distributed fencing or
+production runner integration.
 
 ### Local fx sessions
 
@@ -107,6 +112,12 @@ does not enforce an allowed-model list, budgets, provider credentials or cost li
 those remain platform responsibilities. The policy does not automatically assess
 importance, and SDK/model support for reasoning effort must be checked rather than
 silently assumed.
+
+The integration test `test_delegated_specialists_use_their_model_override_or_project_default`
+checks the current runner with actual delegated child runs: a project-wide specialist
+model handles one child, while another specialist's configured model takes precedence.
+Neither that test nor the synthetic fx comparison measures real provider cost or
+decides how a task's importance should select a tier.
 
 Dotrix must remain the authority for the workspace and requester, model-key choice,
 the resolved agent contract, tool permissions, approvals, audit, usage budgets, and
