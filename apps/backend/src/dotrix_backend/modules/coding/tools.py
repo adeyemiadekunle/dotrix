@@ -647,9 +647,10 @@ class Fx:
             return out
         match event.get("type"):
             case "started":
-                said = "Continued the conversation" if event.get("resumed") else "Started"
+                # Named like the other engines' first step ("Codex started"): which engine ran shows in the steps.
+                said = "fx continued the conversation" if event.get("resumed") else "fx started"
                 if event.get("fresh"):
-                    said = "Started a new conversation (the earlier one couldn't be restored)"
+                    said = "fx started a new conversation (the earlier one couldn't be restored)"
                 out.steps.append(Step("step", f"{said} ({event.get('model') or 'default model'})"))
             case "text" if str(event.get("text", "")).strip():
                 out.steps.append(Step("text", _clip(str(event["text"]))))

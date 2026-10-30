@@ -103,7 +103,7 @@ def test_fx_lines_become_steps_terminal_output_and_tokens() -> None:
         failed = parsed.failed or failed
     said = [(s.kind, s.text, s.ref) for s in steps]
     assert said == [
-        ("step", "Started (gpt-6.1)", None),
+        ("step", "fx started (gpt-6.1)", None),
         ("text", "Looking at the tests.", None),
         ("tool", "Ran pytest -q", "c1"),
         ("output", "3 passed", "c1"),

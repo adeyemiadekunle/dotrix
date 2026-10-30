@@ -88,7 +88,7 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
   `~/.fx/settings.json` each turn (one OpenAI-compatible provider, its key read from the provider's
   variable by name, auto-upgrade off) and drives `fx acp`; the sandbox, not fx, is the boundary, and
   nobody is there to answer fx's permission prompts. fx's web tools reach nothing (the sandbox blocks
-  them). People see Kai; which engine ran is on the run, in the audit log, and in the worker's log.
+  them). People see Kai as the agent; the engine is named in a turn's steps ("fx started") and failures, and recorded on the run, in the audit log, and in the worker's log.
 - **Filesystem.** The repo and `/tmp` are writable; the system is read-only. The agent runs as
   the image's unprivileged `sandbox` user (uid 1500).
 - **Limits.** Personal BYOK has no platform token-budget setting or coding token-cap enforcement.
