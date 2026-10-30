@@ -78,7 +78,10 @@ budget, no automation and no writes. Delegation requires a separate flag. It sup
 OpenAI-compatible provider endpoints, Anthropic's included (its OpenAI-compatible endpoint, checked live on
 Claude Haiku 5.5 on 2026-10-30: tools, follow-ups, steering, a journal reopened and a retry answered from it, and
 `test_live_fx_chat_on_anthropic_reads_project_knowledge` through the public API when given
-`DOTRIX_LIVE_ANTHROPIC_API_KEY`); not Google's API. Without the durable delegation flag, the fx journal stays in memory and a previously
+`DOTRIX_LIVE_ANTHROPIC_API_KEY`); not Google's API. The `experiments/fx-chat` comparison also ran on Claude Haiku 5.5
+through that endpoint (2026-10-30): the scripted scenario and live delegation finished on both runtimes, with the same
+specialists chosen, the same recommendation, and similar caveats (one run each, not a ranking). The delegation team now
+names the evidence documents in its instructions; without them both runtimes guessed paths and found nothing. Without the durable delegation flag, the fx journal stays in memory and a previously
 bound run is refused instead of silently replayed.
 The platform runner persists replies and events, and passes bounded recent history to
 later turns. It records available usage and marks unreported usage incomplete. Set
