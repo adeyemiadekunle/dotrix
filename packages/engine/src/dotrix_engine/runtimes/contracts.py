@@ -39,6 +39,10 @@ class RuntimeTool:
     idempotent: bool = False
     writes: bool = True
     execute_scoped: ScopedToolHandler | None = None
+    # The host may end the turn from this tool (RuntimeHandoff) to finish its work elsewhere, e.g. a
+    # change waiting for a person's approval. Such a tool must be safe to run again under the same
+    # execution ID: it is retried when the turn resumes.
+    hands_off: bool = False
 
     def __post_init__(self) -> None:
         if (self.execute is None) == (self.execute_scoped is None):

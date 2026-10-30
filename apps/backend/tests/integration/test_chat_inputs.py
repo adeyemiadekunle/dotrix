@@ -398,15 +398,12 @@ async def test_only_resumable_failures_keep_follow_ups_waiting(nova_pilot_world,
     assert not dispatched
     async with sessions() as session:
         rows = [await session.get(ChatInput, item.id) for item in (first, second)]
-        assert {item.status for item in rows} == ({"rejected"} if runtime is ChatRuntime.FX else {"pending"})
+        # Both runtimes resume such a turn (DeepAgents from its checkpoint, fx from its journal).
+        assert {item.status for item in rows} == {"pending"}
     async with sessions() as session:
         service, access = AgentService(session, runner), await access_for(session, run)
-        if runtime is ChatRuntime.FX:
-            new = await service.create_run(access, RunCreate(message="A new question", thread_id=run.thread_id))
-            assert new.status is RunStatus.QUEUED and new.chat_runtime is ChatRuntime.FX
-        else:
-            with pytest.raises(ThreadBusy, match="Queued messages"):
-                await service.create_run(access, RunCreate(message="A new question", thread_id=run.thread_id))
+        with pytest.raises(ThreadBusy, match="Queued messages"):
+            await service.create_run(access, RunCreate(message="A new question", thread_id=run.thread_id))
 
 
 @pytest.mark.parametrize("limited", [True, False])

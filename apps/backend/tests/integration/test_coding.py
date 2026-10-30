@@ -210,7 +210,7 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert {name: availability[name] for name in expected} == expected
     assert availability["default_tool"] == "claude-code" and availability["local_tools"] == []
     assert {tool["agent"]: tool["available"] for tool in availability["tools"]} == {
-        "claude-code": True, "codex": False, "opencode": True,
+        "claude-code": True, "codex": False, "opencode": True, "fx": True,  # fx: Anthropic's OpenAI-compatible endpoint
     }
     # Members can't instruct the coding agent unless the workspace lets them.
     assert (await db_client.post(f"{base}/coding/issues/{story['key']}/runs", json={},
@@ -864,7 +864,7 @@ async def test_tool_choice_personal_default_and_session_tool_are_kept(db_client:
     await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": "claude-code"}, headers=ada.headers)
     available = (await db_client.get(f"{base}/coding", headers=ada.headers)).json()
     assert available["default_tool"] == "claude-code"
-    assert {t["agent"] for t in available["tools"] if t["available"]} == {"claude-code", "codex", "opencode"}
+    assert {t["agent"] for t in available["tools"] if t["available"]} == {"claude-code", "codex", "opencode", "fx"}
     task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Tool choice"}, headers=ada.headers)).json()
     first = await db_client.post(f"{base}/coding/issues/{task['key']}/runs",
                                  json={"agent": "opencode", "model": "xai:grok-4.7"}, headers=ada.headers)

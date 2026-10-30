@@ -66,29 +66,33 @@ version its tool implementations and policies. `fx_configuration_digest` produce
 the same public-settings digest as the local fx store; it does not hash tool code or
 credentials. Authorization and the lease still need checking at every external effect.
 
-`agents/fx_pilot.py` composes the binding and scoped knowledge reads for an opt-in
-read-only Nova conversation. It obtains the selected model, fixed provider
+`agents/fx_pilot.py` composes the binding, scoped reads and (through `agents/fx_tools.py`)
+approved changes for an opt-in Nova conversation. It obtains the selected model, fixed provider
 endpoint, requester's personal key, built-in role and current guidance from an admitted
 run. It checks access and the lease before forwarding each runtime event and before
 returning the answer. Real-Postgres tests with a local fake model check the role, key,
 project read, duplicate refusal, and mid-turn membership or lease revocation.
 
-The pilot is deliberately limited to interactive Discuss turns with no token
-budget, no automation and no writes. Delegation requires a separate flag. It supports the configured
+The pilot runs interactive Nova turns in every work mode (2026-10-30), with no token
+budget and no automation. Its changes use DeepAgents' builders and approval rules: a change that
+asks saves a pending approval and hands the turn off, and the decided call resumes from the journal
+with its approver, or hears the rejection. Each change is claimed before it runs and its result saved
+after (`agent_runtime_calls`), so a recovered turn never changes the project twice; a call cut off
+between the two is reported as such, not retried. Every turn is journaled, so the dispatch sweep's
+recovered attempts and Continue resume it. Delegation, project-changing tasks included, requires a separate flag. It supports the configured
 OpenAI-compatible provider endpoints, Anthropic's included (its OpenAI-compatible endpoint, checked live on
 Claude Haiku 5.5 on 2026-10-30: tools, follow-ups, steering, a journal reopened and a retry answered from it, and
 `test_live_fx_chat_on_anthropic_reads_project_knowledge` through the public API when given
 `DOTRIX_LIVE_ANTHROPIC_API_KEY`); not Google's API. The `experiments/fx-chat` comparison also ran on Claude Haiku 5.5
 through that endpoint (2026-10-30): the scripted scenario and live delegation finished on both runtimes, with the same
 specialists chosen, the same recommendation, and similar caveats (one run each, not a ranking). The delegation team now
-names the evidence documents in its instructions; without them both runtimes guessed paths and found nothing. Without the durable delegation flag, the fx journal stays in memory and a previously
-bound run is refused instead of silently replayed.
+names the evidence documents in its instructions; without them both runtimes guessed paths and found nothing. A run bound to an older pilot version (in-memory or read-only) fails closed rather than resuming on this one.
 The platform runner persists replies and events, and passes bounded recent history to
 later turns. It records available usage and marks unreported usage incomplete. Set
 `DOTRIX_FX_CHAT_PILOT=true` on both the API and worker to expose the selector; new
-conversations default to DeepAgents and remain pinned to their selected runtime. It does not yet include the full
-production context pack, workspace rules, board tools, model policy, specialist
-reusable sessions, approvals, or proven production recovery.
+conversations default to DeepAgents and remain pinned to their selected runtime. It shares the context pack,
+workspace rules, board tools and approvals with DeepAgents; it does not yet have reusable specialist sessions,
+token budgets, or recovery proven across distributed workers on real models.
 
 For native development, install Node 22 and run
 `npm ci --prefix packages/engine/src/dotrix_engine/runtimes/fx_host` before enabling

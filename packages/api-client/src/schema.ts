@@ -5547,7 +5547,7 @@ export interface components {
         ChatRuntimeOptions: {
             /**
              * Fx Available
-             * @description Whether the read-only fx preview is enabled
+             * @description Whether the fx preview is enabled (Nova on fx, in every work mode)
              */
             fx_available: boolean;
             /**
@@ -5557,7 +5557,7 @@ export interface components {
             fx_providers: string[];
             /**
              * Fx Delegation Available
-             * @description Whether the fx preview may delegate read-only work
+             * @description Whether the fx preview may delegate to specialists
              * @default false
              */
             fx_delegation_available: boolean;

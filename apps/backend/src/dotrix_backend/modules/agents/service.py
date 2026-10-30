@@ -259,9 +259,11 @@ class AgentService:
             from .fx_pilot import validate_fx_pilot_model
 
             if not self.runner.settings or not self.runner.settings.fx_chat_pilot:
-                raise Unprocessable("The read-only fx chat preview is not enabled")
-            if not interactive or data.work_mode is not WorkMode.DISCUSS or requested_agent not in ("auto", PM_ROLE):
-                raise Unprocessable("The fx preview supports Nova in Discuss mode without specialist delegation")
+                raise Unprocessable("The fx chat preview is not enabled")
+            if not interactive or data.work_mode is None:
+                raise Unprocessable("The fx preview supports Nova's interactive turns in a work mode")
+            if requested_agent not in ("auto", PM_ROLE) and not self.runner.settings.fx_chat_durable_delegation:
+                raise Unprocessable("The fx preview involves specialists only with delegation enabled")
             if project.token_budget is not None:
                 raise Unprocessable("The fx preview cannot yet enforce this project's token budget")
             lead = next((item.spec for item in await AgentDefinitionRepository(self.session).resolve(
@@ -694,8 +696,6 @@ class AgentService:
         )
         if run is None:
             raise NotFound("Run not found")
-        if run.chat_runtime is ChatRuntime.FX:
-            raise NothingToContinue("The fx preview cannot resume an interrupted turn; send a new message")
         if run.status is not RunStatus.FAILED or run.error_kind not in ("model_limit", "interrupted"):
             raise NothingToContinue("Only a run that stopped at its model's limit, or was interrupted, can be continued")
         later = await self.session.scalar(

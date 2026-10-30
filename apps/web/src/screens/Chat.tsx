@@ -92,6 +92,9 @@ const ACROSS = [
   ["triangle-alert", "What's at risk this week?"],
 ];
 
+// What the fx preview does, under its composer.
+const FX_NOTE = "Nova runs on the fx preview, in every mode. Its changes follow your approval mode, as usual.";
+
 function open(search: string) {
   go("chat", {}, { search });
 }
@@ -465,8 +468,8 @@ function Message({ m, projectId, tag, children }: { m: Msg; projectId: string | 
 /** A run as two messages: what was asked, and the agent's reply (as it's written, while it works). */
 function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: string | null; scope: Scope | undefined; stream: RunStreamState | null }) {
   const cont = useContinueRun(scope);
-  const limited = run.chat_runtime !== "fx" && run.error_kind === "model_limit";
-  const interrupted = run.chat_runtime !== "fx" && run.status === "failed" && run.error_kind === "interrupted";
+  const limited = run.error_kind === "model_limit";
+  const interrupted = run.status === "failed" && run.error_kind === "interrupted";
   const failed = ["failed", "cancelled", "blocked"].includes(run.status) && !limited;
   const text = stream ? stream.text : (run.reply ?? "");
   const reply: Msg = {
@@ -872,7 +875,7 @@ function Composer({
               />
             ) : (
               runtime === "fx" && (
-                <span className="cpill" data-tip="This conversation uses the read-only fx preview">
+                <span className="cpill" data-tip="This conversation uses the fx preview">
                   fx preview
                 </span>
               )
@@ -929,7 +932,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const agent = "auto";
   // How you're working: what you picked, else how the conversation was going, else Discuss.
   const [pickedMode, setMode] = useState<WorkMode | null>(null);
-  const mode = fxPreview ? "discuss" : (pickedMode ?? lastUser?.work_mode ?? "discuss");
+  const mode = pickedMode ?? lastUser?.work_mode ?? "discuss";
   // How much goes through without waiting: what you picked, else how the conversation was going (if you still may), else the default.
   const [pickedApproval, setApproval] = useState<ApprovalMode | null>(null);
   const lastApproval = lastUser?.approval_mode && approvalModes().includes(lastUser.approval_mode) ? lastUser.approval_mode : null;
@@ -1098,7 +1101,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
             onSend={(q) => say(q)}
             mode={projectId ? mode : undefined}
             setMode={projectId ? setMode : undefined}
-            modeOptions={fxPreview ? WORK_MODES.filter(([value]) => value === "discuss") : WORK_MODES}
+            modeOptions={WORK_MODES}
             runtime={fxPreview ? "fx" : undefined}
             approval={projectId ? approval : undefined}
             setApproval={projectId ? setApproval : undefined}
@@ -1106,9 +1109,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           />
           {fxPreview && (
             <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
-              {fxRun?.orchestration
-                ? "The fx preview can ask built-in specialists for read-only work. It cannot change data or start coding yet."
-                : "The fx preview reads project knowledge. It cannot delegate, change data, or start coding yet."}
+              {fxRun?.orchestration ? FX_NOTE : `${FX_NOTE} It can't involve specialists here.`}
             </div>
           )}
           {!projectId && (
@@ -1196,16 +1197,13 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
             }}
             mode={pid ? mode : undefined}
             setMode={pid ? setMode : undefined}
-            modeOptions={runtime === "fx" ? WORK_MODES.filter(([value]) => value === "discuss") : WORK_MODES}
+            modeOptions={WORK_MODES}
             runtime={pid && runtimeOptions?.fx_available ? runtime : undefined}
             setRuntime={
               pid && runtimeOptions?.fx_available
                 ? (value) => {
                     setRuntime(value);
-                    if (value === "fx") {
-                      setMode("discuss");
-                      setAgent("auto");
-                    }
+                    if (value === "fx" && !runtimeOptions?.fx_delegation_available) setAgent("auto");
                   }
                 : undefined
             }
@@ -1221,8 +1219,8 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
               {unavailable
                 ? "Connect a compatible personal model in settings to use the fx preview."
                 : runtimeOptions?.fx_delegation_available
-                  ? "The fx preview can ask built-in specialists for read-only work. It cannot change data or start coding yet."
-                  : "The fx preview reads project knowledge. It cannot delegate, change data, or start coding yet."}
+                  ? FX_NOTE
+                  : `${FX_NOTE} It can't involve specialists here.`}
             </div>
           )}
           <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 14, justifyContent: "center" }}>

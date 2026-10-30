@@ -25046,7 +25046,7 @@
           "fx_available": {
             "type": "boolean",
             "title": "Fx Available",
-            "description": "Whether the read-only fx preview is enabled"
+            "description": "Whether the fx preview is enabled (Nova on fx, in every work mode)"
           },
           "fx_providers": {
             "items": {
@@ -25059,7 +25059,7 @@
           "fx_delegation_available": {
             "type": "boolean",
             "title": "Fx Delegation Available",
-            "description": "Whether the fx preview may delegate read-only work",
+            "description": "Whether the fx preview may delegate to specialists",
             "default": false
           }
         },
