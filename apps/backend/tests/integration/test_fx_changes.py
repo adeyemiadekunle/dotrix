@@ -43,6 +43,7 @@ from dotrix_backend.modules.audit.models import AuditEvent
 from dotrix_backend.modules.knowledge.models import KnowledgeFile
 from dotrix_backend.modules.knowledge.service import KnowledgeService
 from dotrix_backend.modules.model_keys.models import UserModelKey
+from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.workspaces.models import Workspace
 from dotrix_engine.builtins import builtin
 from dotrix_engine.contracts import AgentPolicy
@@ -364,3 +365,74 @@ async def test_live_fx_build_change_on_anthropic_waits_for_approval(
         written = await _file(sessions, existing.project_id, "progress/status.md")
         assert written is not None and "Runtime check passed." in written.content and written.version == 1
         print("LIVE REPLY:", done["reply"])
+
+
+async def test_fx_runs_with_a_token_budget_and_stops_at_its_next_step_once_used(
+    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts,  # noqa: F811
+):
+    """A project's budget per run doesn't keep fx out; once a run has used it, its next step (here, after a
+    decision) stops before asking the model again, and the decided change doesn't go through."""
+    existing, sessions, _ = nova_pilot_world
+    async with sessions() as session:
+        await session.execute(update(Project).where(Project.id == existing.project_id).values(token_budget=1000))
+        await session.commit()
+    async with fx_chat(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script) as fx:
+        requests = []
+        with scripted_model("write_file", PLAN, requests=requests) as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            asked = await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+                "message": "Write the plan document", "chat_runtime": "fx", "work_mode": "build",
+            })
+            assert asked.status_code == 202 and asked.json()["status"] == "awaiting_approval", asked.text
+            run = asked.json()
+            async with sessions() as session:  # what the first step used, as a provider might report it
+                await session.execute(update(AgentRun).where(AgentRun.id == uuid.UUID(run["id"])).values(
+                    input_tokens=900, output_tokens=200))
+                await session.commit()
+            asked_model = len(requests)
+            decided = await fx.client.post(f"{fx.base}/runs/{run['id']}/decisions", headers=fx.headers, json={
+                "decisions": [{"approval_id": run["approvals"][0]["id"], "decision": "approve"}],
+            })
+            assert decided.status_code == 200, decided.text
+        done = (await fx.client.get(f"{fx.base}/runs/{run['id']}", headers=fx.headers)).json()
+        assert done["status"] == "failed" and "budget" in done["error"].lower(), done
+        assert len(requests) == asked_model
+        assert await _file(sessions, existing.project_id) is None
+
+
+@pytest.mark.parametrize("version", ["libfx-0.0.16-pilot-2", "libfx-0.0.15-delegation-1", "libfx-9.9-unknown"])
+async def test_a_run_bound_by_an_earlier_fx_version_runs_on_this_one(nova_pilot_world, monkeypatch, version):  # noqa: F811
+    """A run an earlier pilot bound (no pinned context; 0.0.15's journal unreadable by 0.0.16) is moved to this
+    version and answers; a version this one doesn't know still fails closed."""
+    from datetime import UTC, datetime
+
+    from apps.backend.tests.integration.test_runtime_tools import model_server
+    from dotrix_backend.modules.agents.models import AgentRuntimeBinding, AgentRuntimeJournal
+
+    run, sessions, secrets = nova_pilot_world
+    async with sessions() as session:
+        binding = AgentRuntimeBinding(workspace_id=run.workspace_id, run_id=run.id, runtime="fx", runtime_version=version,
+                                      config_digest="0" * 64, session_id="fx-pilot-earlier", created_at=datetime.now(UTC))
+        session.add(binding)
+        await session.flush()
+        session.add(AgentRuntimeJournal(workspace_id=run.workspace_id, binding_id=binding.id, sequence=1, expected_sequence=0,
+                                        idempotency_key="old", encrypted=secrets.encrypt("not a libfx 0.0.16 record"),
+                                        byte_count=26, created_at=datetime.now(UTC)))
+        await session.commit()
+    with model_server() as url:
+        monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+        if version.startswith("libfx-9"):
+            with pytest.raises(Exception, match="another runtime session or configuration"):
+                await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets)
+            return
+        if version.startswith("libfx-0.0.16"):  # its journal is kept: here it has none an engine could read
+            async with sessions() as session:
+                await session.execute(AgentRuntimeJournal.__table__.delete().where(AgentRuntimeJournal.binding_id == binding.id))
+                await session.commit()
+        turn = await asyncio.wait_for(fx_pilot.run_fx_nova_pilot(
+            sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets), 60)
+    assert turn.stop_reason == "end_turn" and "Private project evidence" in turn.text
+    async with sessions() as session:
+        upgraded = await session.get(AgentRuntimeBinding, binding.id)
+        assert upgraded.runtime_version == fx_pilot._VERSION and upgraded.session_id == "fx-pilot-earlier"
+        assert upgraded.encrypted_context is not None

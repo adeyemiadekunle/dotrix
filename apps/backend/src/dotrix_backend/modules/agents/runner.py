@@ -605,6 +605,10 @@ class AgentRunner:
                 # each resumes the same journaled turn (fx_pilot.py).
                 if payload["kind"] not in ("start", "resume", "delegation_ready", "continue"):
                     raise Conflict("This fx turn cannot use that continuation")
+                # libfx reports a turn's usage when the turn ends, so fx checks the run's token budget
+                # (if one is set) before each step, not before each model call.
+                if usage.budget is not None and usage.used >= usage.budget:
+                    raise TokenBudgetExceeded(usage.used, usage.budget)
                 recording = await self._record(run_id, workspace_id, token, payload)
 
                 async def fx_event(event):

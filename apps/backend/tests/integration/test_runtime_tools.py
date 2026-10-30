@@ -957,30 +957,17 @@ async def test_fx_nova_pilot_requires_a_personal_key_and_supported_run(nova_pilo
         await session.commit()
     with pytest.raises(Conflict, match="work mode"):
         await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets)
-
-    async with sessions() as session:
-        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(work_mode=WorkMode.DISCUSS, token_budget=100))
-        await session.commit()
-    with pytest.raises(Conflict, match="token budget"):
-        await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets)
     async with sessions() as session:
         assert await session.scalar(select(AgentRuntimeBinding.id).where(AgentRuntimeBinding.run_id == run.id)) is None
 
 
-async def test_fx_nova_pilot_rejects_budgets_and_stale_owners(nova_pilot_world):
+async def test_fx_nova_pilot_rejects_stale_owners(nova_pilot_world):
     run, sessions, secrets = nova_pilot_world
     for workspace_id, token in ((uuid7(), 1), (run.workspace_id, 2)):
         with pytest.raises(Conflict):
             await fx_pilot.run_fx_nova_pilot(
                 sessions, workspace_id=workspace_id, run_id=run.id, token=token, secrets=secrets,
             )
-    async with sessions() as session:
-        await session.execute(update(Project).where(Project.id == run.project_id).values(token_budget=100))
-        await session.commit()
-    with pytest.raises(Conflict, match="token budget"):
-        await fx_pilot.run_fx_nova_pilot(
-            sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets,
-        )
     async with sessions() as session:
         assert await session.scalar(select(AgentRuntimeBinding.id).where(AgentRuntimeBinding.run_id == run.id)) is None
 
@@ -1119,20 +1106,11 @@ async def test_fx_chat_runs_through_api_and_keeps_its_runtime(
         async with sessions() as session:
             colleague = await session.scalar(select(Membership.user_id).where(
                 Membership.workspace_id == existing.workspace_id, Membership.user_id != existing.requested_by_id))
-            await session.execute(update(Project).where(Project.id == existing.project_id).values(token_budget=100))
-            await session.commit()
         colleague_token = create_access_token(colleague, secret=settings.jwt_secret.get_secret_value(),
                                               issuer=settings.jwt_issuer, ttl=timedelta(minutes=10))
         forbidden = await client.get(f"{base}/runs/{first_run['id']}",
                                      headers={"Authorization": f"Bearer {colleague_token}"})
         assert forbidden.status_code == 404
-        budgeted = await client.post(f"{base}/runs", headers=headers, json={
-            "message": "Budgeted", "chat_runtime": "fx", "work_mode": "discuss",
-        })
-        assert budgeted.status_code == 422 and "budget" in budgeted.text
-        async with sessions() as session:
-            await session.execute(update(Project).where(Project.id == existing.project_id).values(token_budget=None))
-            await session.commit()
 
         # Stop acts on the running worker and prevents its incomplete output from becoming a reply.
         runner.inline = False

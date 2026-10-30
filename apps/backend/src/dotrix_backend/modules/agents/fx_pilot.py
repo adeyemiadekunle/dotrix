@@ -53,6 +53,7 @@ from .runtime_sessions import (
     admit_runtime_run,
     bind_runtime_session,
     get_runtime_session,
+    upgrade_runtime_binding,
 )
 from .runtime_tools import RuntimeRunScope, scoped_project_tools
 from .storage_backend import SessionFactory
@@ -71,6 +72,10 @@ _FX_ENDPOINTS = {
 # Since -3 every turn is journaled and may change the project through approvals.
 _VERSION = "libfx-0.0.16-chat-3"
 _DURABLE_VERSION = "libfx-0.0.16-delegation-3"
+# Earlier pilots' bindings, upgraded to these when their run works again: True where the journal was
+# written by libfx 0.0.15, which 0.0.16 can't read, so the turn starts again from its message.
+_EARLIER = {"libfx-0.0.15-pilot-1": True, "libfx-0.0.15-delegation-1": True,
+            "libfx-0.0.16-pilot-2": False, "libfx-0.0.16-delegation-2": False}
 _HISTORY_TURNS = 16
 _HISTORY_CHARS = 30_000
 _GUIDE = """Answer the person using the project tools you are given.
@@ -175,8 +180,6 @@ async def _turn(
                 or run.agent not in (None, PM_HANDLE) or run.automation_id is not None or run.mode is not None
                 or run.source != "user"):
             raise Conflict("The fx pilot only supports an interactive Nova turn in a work mode")
-        if run.token_budget is not None:
-            raise Conflict("The fx pilot cannot yet enforce this run's token budget")
         previous = list(await session.scalars(select(AgentRun).where(
             AgentRun.workspace_id == workspace_id, AgentRun.project_id == run.project_id,
             AgentRun.thread_id == run.thread_id, AgentRun.requested_by_id == run.requested_by_id,
@@ -205,20 +208,15 @@ async def _turn(
             person = await session.get(User, run.requested_by_id)
             specs = with_preferences(specs, preferences, person.display_name if person else "the person")
         spec = next(item for item in specs if item.handle == PM_HANDLE)
-        if project.token_budget is not None or spec.budget_tokens is not None:
-            raise Conflict("The fx pilot cannot yet enforce this run's token budget")
         keys = (await run_keys(session, secrets, workspace_id, run.requested_by_id)).keys
         connection = _connection(run.model, keys)
         scope = RuntimeRunScope(workspace_id, run.project_id, run_id, run.requested_by_id,
                                 PM_HANDLE, token, session_id)
         guide = _DELEGATION_GUIDE if durable and spec.can("delegate") else _GUIDE
         instructions = f"{introduce(spec, project.name)}\n\n{role_instructions(spec)}\n\n{guide}{work_mode_guide(work_mode.value)}"
-        if existing is not None:
-            saved = secrets.decrypt(existing.encrypted_context) if existing.encrypted_context else None
-            if saved is None:
-                raise Conflict("The fx run has no readable pinned project context")
-            snapshot = json.loads(saved)
-        else:
+        if existing is not None and existing.encrypted_context:
+            snapshot = json.loads(secrets.decrypt(existing.encrypted_context))
+        else:  # a new run, or one bound before the context was pinned: today's context
             snapshot = {
                 "rules": await project_rules(session, project.id, [PM_HANDLE], workspace_id),
                 "context": await build_context_pack(session, project, run, embedder),
@@ -314,6 +312,10 @@ async def _turn(
             await on_event(event)
 
     try:
+        if existing is not None and existing.runtime_version in _EARLIER:
+            # Bound by an earlier pilot: move it to this version rather than fail it (runtime_sessions.py).
+            await upgrade_runtime_binding(sessions, workspace_id=workspace_id, run_id=run_id, token=token,
+                                          identity=identity, earlier=_EARLIER, encrypted_context=encrypted_context)
         bound = await bind_runtime_session(sessions, workspace_id=workspace_id, run_id=run_id,
                                            token=token, identity=identity, session_id=session_id,
                                            encrypted_context=encrypted_context)

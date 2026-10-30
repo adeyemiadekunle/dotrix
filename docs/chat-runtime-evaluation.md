@@ -73,8 +73,8 @@ run. It checks access and the lease before forwarding each runtime event and bef
 returning the answer. Real-Postgres tests with a local fake model check the role, key,
 project read, duplicate refusal, and mid-turn membership or lease revocation.
 
-The pilot runs interactive Nova turns in every work mode (2026-10-30), with no token
-budget and no automation. Its changes use DeepAgents' builders and approval rules: a change that
+The pilot runs interactive Nova turns in every work mode (2026-10-30), with no
+automation; a token budget is checked before each step. Its changes use DeepAgents' builders and approval rules: a change that
 asks saves a pending approval and hands the turn off, and the decided call resumes from the journal
 with its approver, or hears the rejection. Each change is claimed before it runs and its result saved
 after (`agent_runtime_calls`), so a recovered turn never changes the project twice; a call cut off
@@ -86,13 +86,13 @@ Claude Haiku 5.5 on 2026-10-30: tools, follow-ups, steering, a journal reopened 
 `DOTRIX_LIVE_ANTHROPIC_API_KEY`); not Google's API. The `experiments/fx-chat` comparison also ran on Claude Haiku 5.5
 through that endpoint (2026-10-30): the scripted scenario and live delegation finished on both runtimes, with the same
 specialists chosen, the same recommendation, and similar caveats (one run each, not a ranking). The delegation team now
-names the evidence documents in its instructions; without them both runtimes guessed paths and found nothing. A run bound to an older pilot version (in-memory or read-only) fails closed rather than resuming on this one.
+names the evidence documents in its instructions; without them both runtimes guessed paths and found nothing. A run bound by an earlier pilot version is moved to this one when it works again: a libfx 0.0.16 binding keeps its journal, a 0.0.15 one starts its turn again (0.0.16 can't read its journal); an unknown version fails closed.
 The platform runner persists replies and events, and passes bounded recent history to
 later turns. It records available usage and marks unreported usage incomplete. The selector
 needs no switch (2026-10-30: `DOTRIX_FX_CHAT_PILOT` was removed); new
 conversations default to DeepAgents and remain pinned to their selected runtime. It shares the context pack,
 workspace rules, board tools and approvals with DeepAgents; it does not yet have reusable specialist sessions,
-token budgets, or recovery proven across distributed workers on real models.
+budget checks between model calls, or recovery proven across distributed workers on real models.
 
 For native development, install Node 22 and run
 `npm ci --prefix packages/engine/src/dotrix_engine/runtimes/fx_host` before enabling
@@ -200,7 +200,7 @@ project/workspace agent override, shared specialist model, conversation model, t
 project model. Existing unpinned tasks resolve when they start; personal provider keys
 are checked at execution. Changing project model settings is audited. Agent-specific
 budgets override the project default, and the check before a model call can allow the
-limit to be exceeded by that call. The fx Nova preview still refuses a project budget.
+limit to be exceeded by that call. fx runs under it too, checked before each step rather than each model call (libfx reports usage when a turn ends).
 A routing policy alone
 does not enforce an allowed-model list, budgets, provider credentials or cost limits;
 those remain platform responsibilities. The policy does not automatically assess

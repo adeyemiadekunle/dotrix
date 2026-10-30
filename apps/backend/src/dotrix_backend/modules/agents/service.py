@@ -260,12 +260,6 @@ class AgentService:
 
             if not interactive or data.work_mode is None:
                 raise Unprocessable("fx runs Nova's interactive turns in a work mode")
-            if project.token_budget is not None:
-                raise Unprocessable("fx cannot yet enforce this project's token budget")
-            lead = next((item.spec for item in await AgentDefinitionRepository(self.session).resolve(
-                project.workspace_id, project.id) if item.spec.handle == PM_ROLE), None)
-            if lead is None or lead.budget_tokens is not None:
-                raise Unprocessable("fx cannot run with the current Nova configuration")
             validate_fx_pilot_model(model, keys)
         else:
             self.runner.model_factory(project, model, keys=keys)  # fail fast (503) if the model can't run
