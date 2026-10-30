@@ -125,6 +125,10 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             "thread_id": run["thread_id"],
             "approval_id": run["approvals"][0]["id"],
         }
+        queued = await db_client.post(f"{base}/agent/threads/{run['thread_id']}/inputs", headers=h,
+            json={"client_id": str(uuid.uuid4()), "kind": "queue", "message": "Compare alternatives afterward"})
+        assert queued.status_code == 202, queued.text
+        params["input_id"] = queued.json()["id"]
         # A rejected change with a reason: a proposed lesson.
         agent_script.say(
             tool_call("write_file", file_path="/dotrix/vision.md", content="# V\n"), "Fine."
@@ -220,6 +224,9 @@ def _fill(template: str, params: dict[str, str]) -> str:
 # their resource up in the service, after it.
 BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("PATCH", "/v1/workspaces/{workspace_id}/members/{user_id}"): {"role": "admin"},
+    ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}/inputs"): {
+        "client_id": "01a0e000-0000-7000-8000-000000000010", "kind": "queue", "message": "Compare alternatives afterward",
+    },
     (
         "PATCH",
         "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}",
@@ -306,6 +313,7 @@ async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
         "approval_id",
         "provider",
         "runner_id",
+        "input_id",
     }
     routes = _scoped_routes(db_client)
     assert len(routes) > 60  # sanity: the whole API is being walked

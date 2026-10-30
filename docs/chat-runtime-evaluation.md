@@ -44,14 +44,7 @@ data, not verified workspace, user, run or lease authority. A production integra
 must bind verified execution context and recheck authorization and fencing for every
 effect.
 
-libfx's engine can steer a running turn and queue a follow-up. The current Dotrix
-chat runner instead rejects another message while a conversation is active; its
-approval and delegation interrupts are not live steering or a message queue. The
-fx wrapper's in-process `steer` is not yet exposed to people, and the wrapper does
-not expose `followUp`. Add those capabilities only with Dotrix-owned authorization,
-durable ordering, cancellation, and audit, including access checks when a queued
-message is delivered. A DeepAgents adapter could implement the same product contract
-using host-managed state and scheduling; do not infer identical runtime semantics.
+Project Chat now exposes host-owned steering and ordered queued follow-ups for both production runners. DeepAgents injects a stable-ID human message before the next model call; fx uses its active-turn steering API with a stable input ID. A queued follow-up becomes a normal run only after the current turn completes, with current access and approval checks. Inputs persist independently of the web connection; cancellation applies before delivery, and Stop cancels pending inputs. Runtime acceptance does not prove model placement or task completion. Steering does not propagate into already-running specialist tasks or bypass an approval wait. Cross-project conversations retain their existing single-active-turn behavior. The isolated `DeepAgentsRuntime` prototype still advertises steering as unsupported; the platform implements it through host middleware and scheduling.
 
 An experimental backend adapter, `agents/runtime_tools.py`, wraps the existing
 project knowledge reads in host-owned runtime tools. It checks the bound session,
@@ -156,7 +149,7 @@ checks its cheaper specialist model and saved result. The older in-memory probe 
 Node handoff test remain useful SDK checks. These synthetic-provider tests do not
 establish paid-provider quality/cost, all distributed failure windows, or production
 readiness. Streaming, Stop and existing Agents activity use the normal run ledger;
-steering and queued follow-ups still need product APIs and authorization.
+steering and queued follow-ups use private product APIs and delivery authorization.
 
 ### Local fx sessions
 

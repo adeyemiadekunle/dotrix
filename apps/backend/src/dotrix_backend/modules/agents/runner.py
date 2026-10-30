@@ -706,6 +706,8 @@ class AgentRunner:
                     prior=prior_web,
                 )
                 usage.web = run_web.usage
+            from .chat_inputs import ChatSteering
+
             agent = build_team(
                 name,
                 description,
@@ -742,6 +744,8 @@ class AgentRunner:
                 checkpoints=approval is not ApprovalMode.AUTO,
                 platform_delegation=True,
                 delegated=child,
+                lead_middleware=[ChatSteering(self.session_factory, workspace_id, run_id, token)]
+                    if not child and kind is RunKind.CHAT and original.source == "user" else None,
                 result_sink=lambda schema, items: results.append((schema, items)),
                 # Stages show as live activity from the `stage` calls themselves (activity.py);
                 # here they split the run's tokens by stage.
@@ -874,6 +878,10 @@ class AgentRunner:
             _LEASE.set(None)
             if original.orchestration and admitted:
                 await DelegationService(self).completed(original.workspace_id, run_id)
+            if admitted and not original.parent_run_id:
+                from .chat_inputs import deliver_queued
+                await deliver_queued(self.session_factory, self, workspace_id=original.workspace_id,
+                                     thread_id=original.thread_id)
 
     async def _execute_across(
         self, run_id: uuid.UUID, payload: dict[str, Any],
@@ -1092,6 +1100,8 @@ class AgentRunner:
                 run.status, run.finished_at = RunStatus.COMPLETED, now
                 action_name = "agent_run.completed"
                 await _changes_approved(session, run)
+            from .chat_inputs import finish_steering
+            await finish_steering(session, run, result.get("messages", ()))
             run.updated_at = now
             await add_event(session, run, RunEventKind.STATUS, {"status": run.status.value, "pending": len(pending)})
             await _notify(session, run, pending, speaker, now)
@@ -1200,6 +1210,8 @@ class AgentRunner:
                 instructed_by_id=run.requested_by_id,
                 details={"error": run.error, **tokens},
             )
+            from .chat_inputs import finish_steering
+            await finish_steering(session, run)
             await session.commit()
 
     async def _save_outputs(
@@ -1463,8 +1475,11 @@ def _unanswered_calls(values: dict) -> list[dict]:
 
 
 def _last_user_message(values: dict) -> str | None:
+    from .chat_inputs import STEERING_MARK
+
     for message in reversed(values.get("messages") or []):
-        if getattr(message, "type", None) == "human" and not _is_follow_up(message):
+        if (getattr(message, "type", None) == "human" and not _is_follow_up(message)
+                and not (getattr(message, "additional_kwargs", {}) or {}).get(STEERING_MARK)):
             return _text(message.content)
     return None
 

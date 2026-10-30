@@ -237,3 +237,65 @@ test("one list for conversations and coding sessions: a coding link opens beside
   await page.goto(`/w/${slugOf(page)}/chat`);
   await expect(page.getByLabel("Message")).toBeVisible();
 });
+
+test("active project chat can queue, cancel, and steer without losing a failed draft", async ({ page }) => {
+  await signUp(page);
+  await addProject(page, "Kumove", "KUM");
+  await openChat(page, "?project=KUM");
+  await page.getByLabel("Message").fill("Check the project");
+  await page.getByLabel("Message").press("Enter");
+  await expect(page.getByText("Test model reply: Check the project")).toBeVisible({ timeout: 30_000 });
+  const location = page.url();
+  let entries: Record<string, unknown>[] = [];
+  let reject = false;
+  await page.route("**/agent/runs?**", async (route) => {
+    const response = await route.fetch();
+    const runs = (await response.json()) as { id: string; status: string }[];
+    await route.fulfill({ json: runs.map((run) => ({ ...run, status: "running", reply: null })) });
+  });
+  await page.route("**/agent/runs/*/stream", (route) =>
+    route.fulfill({ contentType: "text/event-stream", body: 'event: activity\ndata: {"text":"Reading evidence"}\n\n' }),
+  );
+  await page.route("**/agent/threads/*/inputs**", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") return route.fulfill({ json: entries });
+    if (request.method() === "DELETE") {
+      const id = request.url().split("/").at(-1);
+      entries = entries.map((item) => (item.id === id ? { ...item, status: "cancelled" } : item));
+      return route.fulfill({ json: entries.find((item) => item.id === id) });
+    }
+    if (reject) return route.fulfill({ status: 409, json: { detail: "The turn has just finished" } });
+    const body = request.postDataJSON() as { message: string; kind: string; client_id: string };
+    const item = {
+      ...body,
+      id: body.client_id,
+      status: "pending",
+      run_id: crypto.randomUUID(),
+      delivered_run_id: null,
+      error: null,
+      created_at: new Date().toISOString(),
+    };
+    entries = [item, ...entries];
+    return route.fulfill({ status: 202, json: item });
+  });
+  await page.goto(location);
+  await expect(page.getByLabel("Delivery action")).toHaveValue("queue");
+  const box = page.getByLabel("Message");
+  await box.fill("Compare the alternatives afterward");
+  await box.press("Enter");
+  await expect(box).toHaveValue("");
+  await expect(page.getByText("Queued follow-up: Compare the alternatives afterward")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByText("Queued follow-up: Compare the alternatives afterward")).toBeHidden();
+  await page.getByLabel("Delivery action").selectOption("steer");
+  reject = true;
+  await box.fill("Only consider self-hosted options");
+  await box.press("Enter");
+  await expect(page.getByText("The turn has just finished")).toBeVisible();
+  await expect(box).toHaveValue("Only consider self-hosted options");
+  reject = false;
+  await expect(box).toBeEnabled();
+  await box.press("Enter");
+  await expect(page.getByText("Steering: Only consider self-hosted options")).toBeVisible();
+  expect(entries[0]?.kind).toBe("steer");
+});

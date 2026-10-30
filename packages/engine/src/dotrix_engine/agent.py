@@ -387,6 +387,7 @@ def build_team(
     checkpoints: bool = True,
     platform_delegation: bool = False,
     delegated: bool = False,
+    lead_middleware: list[Any] | None = None,
 ):
     """The Project Manager plus the specialists, over any storage backend.
 
@@ -586,7 +587,7 @@ blockers, and documentation status. A briefing never writes.
             tools=[*_tools_for(leader, specialist_box), *extras(leader)[0]],
             system_prompt=prompt(leader),
             subagents=[] if platform_delegation else [subagent(spec) for spec in _callable(leader, specs)],
-            middleware=middleware(),
+            middleware=[*(lead_middleware or []), *middleware()],
             permissions=_permissions(leader),
             backend=backend,
             checkpointer=checkpointer,
@@ -601,7 +602,7 @@ blockers, and documentation status. A briefing never writes.
             pm_instructions.replace("`task`", "`delegate_tasks`") if platform_delegation else pm_instructions
         ) + extras(pm)[1] + guides(pm)), context),
         subagents=[] if platform_delegation else [subagent(spec) for spec in team],
-        middleware=middleware(),
+        middleware=[*(lead_middleware or []), *middleware()],
         permissions=_permissions(pm),
         backend=backend,
         checkpointer=checkpointer,

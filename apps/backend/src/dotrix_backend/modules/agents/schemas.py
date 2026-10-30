@@ -483,3 +483,24 @@ class RunEventRead(BaseModel):
 class RunEventPage(BaseModel):
     events: list[RunEventRead]
     active: bool = Field(description="The run is still working: more events will come")
+
+
+class ChatInputCreate(BaseModel):
+    client_id: uuid.UUID
+    kind: Literal["steer", "queue"]
+    message: str = Field(min_length=1, max_length=20_000)
+    work_mode: WorkMode = WorkMode.DISCUSS
+    approval_mode: ApprovalMode = ApprovalMode.MANUAL
+
+
+class ChatInputRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    run_id: uuid.UUID
+    kind: Literal["steer", "queue"]
+    status: Literal["pending", "sending", "accepted", "delivered", "cancelled", "rejected"]
+    message: str
+    delivered_run_id: uuid.UUID | None
+    error: str | None
+    created_at: datetime

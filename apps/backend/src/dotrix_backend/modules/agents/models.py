@@ -18,6 +18,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -327,3 +328,27 @@ class AgentRunEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     kind: Mapped[RunEventKind] = mapped_column(str_enum(RunEventKind, 16))
     data: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ChatInput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """Private, ordered instructions accepted while a project conversation is busy."""
+
+    __tablename__ = "agent_chat_inputs"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "project_id", "owner_id", "client_id"),
+        Index("ix_agent_chat_inputs_due", "kind", "status", "created_at", "id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    thread_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    client_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    kind: Mapped[str] = mapped_column(String(16))  # steer | queue
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    message: Mapped[str] = mapped_column(Text)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    delivered_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))
+    error: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

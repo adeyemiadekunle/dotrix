@@ -44,6 +44,7 @@ from .models import (
     AgentRun,
     AgentRunOutput,
     ApprovalStatus,
+    ChatInput,
     ChatRuntime,
     ConversationPlan,
     RunKind,
@@ -192,6 +193,7 @@ class AgentService:
         available: list[str] | None = None,
         mode: str | None = None,
         automation_id: uuid.UUID | None = None,
+        queued_input: ChatInput | None = None,
     ) -> AgentRunRead:
         """Start a run. A new thread gets a title: `title` if given (built-in requests), else one
         made from the message (`titles.py`; no model call), and its model, fixed from then on.
@@ -217,7 +219,12 @@ class AgentService:
                 Project.workspace_id == project.workspace_id, Project.id == project.id,
             ).with_for_update())
             await self._check_thread(project.id, data.thread_id, member)
-            model = await self._thread_model(project.id, data.thread_id)
+            if queued_input is None and await self.session.scalar(select(ChatInput.id).where(
+                ChatInput.workspace_id == project.workspace_id, ChatInput.project_id == project.id,
+                ChatInput.thread_id == data.thread_id, ChatInput.owner_id == member.user_id,
+                ChatInput.kind == "queue", ChatInput.status == "pending").limit(1)):
+                raise ThreadBusy("Queued messages are waiting; cancel them before sending another message")
+            model = (await self._thread_model(project.id, data.thread_id)) or project.model
             runtime = await self._thread_runtime(project.workspace_id, project.id, data.thread_id, member.user_id)
             if data.chat_runtime is not None and data.chat_runtime is not runtime:
                 raise RuntimeLocked("A conversation keeps the runtime it started with; start a new one to change it")
@@ -314,6 +321,11 @@ class AgentService:
         if interactive and requested_agent not in ("auto", PM_ROLE):
             message = f"The person asks you to involve {requested_agent} where useful.\n\n{message}"
         dispatch = self.runner.prepare_dispatch(self.session, run, {"kind": "start", "message": message})
+        if queued_input is not None:
+            from .chat_inputs import audit
+            queued_input.status, queued_input.delivered_run_id = "delivered", run.id
+            queued_input.updated_at = now
+            audit(self.session, queued_input, "delivered")
         await self.session.commit()
         await self.runner.start(run.id, message, dispatch=dispatch)
         return await self.get(access, run.id)
@@ -702,6 +714,11 @@ class AgentService:
             raise Conflict("Only a run that's still working can be stopped")
         if run.requested_by_id != member.user_id and not can(member, Permission.MANAGE_PROJECTS):
             raise Forbidden("Only whoever asked, or an owner or admin, can stop this run")
+        for item in await self.session.scalars(select(ChatInput).where(
+            ChatInput.workspace_id == run.workspace_id, ChatInput.thread_id == run.thread_id,
+            ChatInput.owner_id == run.requested_by_id, ChatInput.status == "pending",
+        ).with_for_update()):
+            item.status, item.updated_at = "cancelled", _now()
         user = await self.session.get(User, member.user_id)
         reason = f"Stopped by {user.display_name if user else 'a member'}"
         if run.orchestration:
