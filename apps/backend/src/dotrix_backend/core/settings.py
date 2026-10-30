@@ -136,7 +136,7 @@ class Settings(DatabaseSettings):
     coding_opencode_model: str | None = None
     # fx as Kai's engine (infra/coding/fx-acp.mjs drives `fx acp` in the sandbox): off until turned on, and
     # then only chosen when a person picks it or `coding_agent` is "fx". Its model: "provider:model" on an
-    # OpenAI-compatible provider (OpenAI, xAI, DeepSeek, Mistral, Groq, OpenRouter).
+    # OpenAI-compatible endpoint (OpenAI, Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter).
     coding_fx: bool = False
     coding_fx_model: str | None = None
     coding_fx_driver: str = "/opt/dotrix/fx-acp.mjs"  # where the coding image puts the driver

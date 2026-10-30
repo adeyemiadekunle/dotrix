@@ -53,9 +53,11 @@ def test_fx_runs_on_openai_compatible_providers_only() -> None:
     assert model_for(on, CodingAgent.FX, {"openai"}) == "openai:gpt-6.1"
     assert "openai:gpt-6.1" in models_for(on, CodingAgent.FX, {"openai"})
     assert all(m.partition(":")[0] in FX_PROVIDERS for m in fx_models(on, {"openai", "anthropic", "xai"}))
-    assert "anthropic" not in FX_PROVIDERS  # Messages, not Chat Completions
+    assert "google_genai" not in FX_PROVIDERS  # not yet: no OpenAI-compatible endpoint checked
     assert isinstance(tool_for(CodingAgent.FX, "xai:grok-4.7", on), Fx)
-    assert tool_for(CodingAgent.FX, "anthropic:claude-sonnet-5-5", on) is None
+    anthropic = tool_for(CodingAgent.FX, "anthropic:claude-haiku-5-5", on)  # Anthropic's OpenAI-compatible endpoint
+    assert isinstance(anthropic, Fx) and "https://api.anthropic.com/v1" in anthropic.command("anthropic:claude-haiku-5-5")
+    assert tool_for(CodingAgent.FX, "google_genai:gemini-3.8-flash", on) is None
     assert tool_for(CodingAgent.FX, "openai", on) is None  # no model
 
 

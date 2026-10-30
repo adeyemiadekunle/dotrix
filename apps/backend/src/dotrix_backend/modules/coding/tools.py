@@ -561,10 +561,12 @@ class OpenCode:
         return out
 
 
-# fx: OpenAI-compatible endpoints only (fx's custom providers speak Chat Completions), the same set its chat
-# preview uses (agents/fx_pilot.py); the key's variable and host as OpenCode has them.
+# fx: OpenAI-compatible endpoints only (fx's custom providers speak Chat Completions): those of its chat preview
+# (agents/fx_pilot.py), and Anthropic's OpenAI-compatible endpoint (checked with fx 0.0.16 on Claude Haiku 5.5,
+# 2026-10-30); the key's variable and host as OpenCode has them.
 FX_ENDPOINTS = {
     "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/v1",
     **{name: provider.base_url for name, provider in PROVIDERS.items() if provider.base_url},
 }
 FX_PROVIDERS = {name: p for name, p in OPENCODE_PROVIDERS.items() if name in FX_ENDPOINTS}
@@ -602,8 +604,9 @@ def _describe_fx_tool(name: str, title: str, args: dict[str, Any]) -> str | None
 
 
 class Fx:
-    """fx on one OpenAI-compatible provider, through ACP (infra/coding/fx-acp.mjs prints its JSON lines).
-    Not yet run against the real fx binary here: checked against a fake ACP server (tests/unit/test_fx_coding.py)."""
+    """fx on one OpenAI-compatible provider, through ACP (infra/coding/fx-acp.mjs prints its JSON lines). Checked
+    with the real fx 0.0.16 against a fake model and on Claude Haiku 5.5 (a turn, resume, a restored session, Stop),
+    and against a fake ACP server in tests/unit/test_fx_coding.py."""
 
     agent = CodingAgent.FX
     name = "fx"
@@ -618,7 +621,10 @@ class Fx:
         self.provider_type = f"dotrix-fx-{provider.opencode}"  # infra/coding/dotrix-fx-*.yaml
 
     def _base_url(self) -> str:
-        return os.environ.get(self.base_url_env, "").rstrip("/") or FX_ENDPOINTS[self.provider]
+        # A proxy in front of the provider takes the same path after it as OpenCode's (Anthropic's: /v1).
+        if proxy := os.environ.get(self.base_url_env, "").rstrip("/"):
+            return proxy + self.fx_provider.base_url_suffix
+        return FX_ENDPOINTS[self.provider]
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
         name = (model or "").partition(":")[2] or (model or "")

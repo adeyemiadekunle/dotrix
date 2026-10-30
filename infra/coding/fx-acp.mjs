@@ -225,9 +225,18 @@ try {
   else emit({ type: "error", message: String(error?.message ?? error).slice(0, 2000) });
   process.exitCode = cancelled ? 0 : 1;
 } finally {
+  // fx ends when its input closes; wait for it, so no fx outlives the turn, and stop it if it doesn't.
   if (!exited) {
     fx.stdin.end();
-    const stop = setTimeout(() => fx.kill("SIGTERM"), 3_000);
-    stop.unref();
+    await new Promise((resolve) => {
+      const stop = setTimeout(() => {
+        fx.kill("SIGTERM");
+        resolve();
+      }, 3_000);
+      fx.once("exit", () => {
+        clearTimeout(stop);
+        resolve();
+      });
+    });
   }
 }

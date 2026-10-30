@@ -372,7 +372,8 @@ def test_a_session_codes_on_its_model_and_the_engine_follows_it() -> None:
     # A preferred engine (Account → Your models) wins where it can run the model.
     assert engine_for(settings, gpt, keys, "opencode") is CodingAgent.OPENCODE
     assert engine_for(settings, grok, keys, "fx") is CodingAgent.FX
-    assert engine_for(settings, claude, keys, "fx") is CodingAgent.CLAUDE_CODE  # fx can't run Anthropic
+    assert engine_for(settings, claude, keys, "fx") is CodingAgent.FX  # through Anthropic's OpenAI-compatible endpoint
+    assert engine_for(settings, claude, keys) is CodingAgent.CLAUDE_CODE  # but Auto stays on Claude Code
     assert engine_for(settings, claude, keys, "codex") is CodingAgent.CLAUDE_CODE
     assert "anthropic:x" not in kai_models(settings, {"openai"})
 

@@ -896,7 +896,7 @@ async def test_fx_is_offered_only_once_turned_on_and_keeps_its_model(db_client: 
     assert fx["available"] and fx["model"] == "openai:gpt-6.1" and "openai:gpt-6.1" in fx["models"]
     assert on["default_tool"] == "codex"  # on, but never chosen for someone who didn't pick it
     wrong = await db_client.post(f"{base}/coding/issues/{task['key']}/runs",
-                                 json={"agent": "fx", "model": "anthropic:claude-haiku-5-5"}, headers=ada.headers)
+                                 json={"agent": "fx", "model": "google_genai:gemini-3.8-flash"}, headers=ada.headers)
     assert wrong.status_code == 422
     asked = await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"agent": "fx"}, headers=ada.headers)
     assert asked.status_code == 201, asked.text
