@@ -108,6 +108,7 @@ logger = logging.getLogger(__name__)
 
 # The attempt this task is running (its lease token); a newer attempt fences it off.
 _LEASE: contextvars.ContextVar[int | None] = contextvars.ContextVar("agent_lease", default=None)
+_GRAPH: contextvars.ContextVar[tuple[uuid.UUID, Any] | None] = contextvars.ContextVar("agent_graph", default=None)
 DEFAULT_LEASE_SECONDS = 90
 CUT_OFF_TOOL = (
     "Cut off: the worker running this conversation stopped while this ran, so it may or may not have "
@@ -510,6 +511,7 @@ class AgentRunner:
         run_web: RunWeb | None = None
         executing = False
         recording: RecordingStream | None = None
+        graph_token = None
         try:
             async with self.session_factory() as session:
                 query = select(AgentRun).where(AgentRun.id == run_id)
@@ -751,6 +753,7 @@ class AgentRunner:
                 # here they split the run's tokens by stage.
                 stage_sink=usage.enter_stage,
             )
+            graph_token = _GRAPH.set((run_id, agent))
             config = {
                 "configurable": {"thread_id": str(thread_id)},
                 "recursion_limit": RECURSION_LIMIT,
@@ -876,6 +879,8 @@ class AgentRunner:
                 await self.streams.close(run_id)
                 await self._release_lease(run_id, token, holder)
             _LEASE.set(None)
+            if graph_token is not None:
+                _GRAPH.reset(graph_token)
             if original.orchestration and admitted:
                 await DelegationService(self).completed(original.workspace_id, run_id)
             if admitted and not original.parent_run_id:
@@ -1145,8 +1150,8 @@ class AgentRunner:
         label = PROVIDERS[provider].label if provider in PROVIDERS else "The model provider"
         logger.info("agent run %s: %s limit reached: %s", run_id, label, said)
         await self._fail(run_id, MODEL_LIMIT_ERROR.format(provider=label, said=said), usage,
-                         discard_specialist_result=discard_specialist_result)
-        # It can continue from where it stopped (`continue_run`); tell whoever asked.
+                         discard_specialist_result=discard_specialist_result, error_kind="model_limit")
+        # DeepAgents can continue from where it stopped (`continue_run`); tell whoever asked.
         wait = limit_resets_in(exc)
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id)
@@ -1163,7 +1168,8 @@ class AgentRunner:
             await session.commit()
         return True
 
-    async def _fail(self, run_id: uuid.UUID, error: str, usage: TokenUsage, *, discard_specialist_result: bool = False) -> None:
+    async def _fail(self, run_id: uuid.UUID, error: str, usage: TokenUsage, *, discard_specialist_result: bool = False,
+                    error_kind: str | None = None) -> None:
         """Stopped and failed runs keep the tokens they used."""
         async with self.session_factory() as session:
             run = await session.get(AgentRun, run_id, with_for_update=True)
@@ -1198,7 +1204,7 @@ class AgentRunner:
             if run.chat_runtime is ChatRuntime.FX:
                 run.usage = {**(run.usage or {}), "fx_usage_fields": []}
                 tokens = {}
-            run.status, run.error = RunStatus.FAILED, error[:2000]
+            run.status, run.error, run.error_kind = RunStatus.FAILED, error[:2000], error_kind
             run.updated_at = run.finished_at = _now()
             await add_event(session, run, RunEventKind.STATUS, {"status": "failed", "error": run.error})
             AuditLog(session).record(
@@ -1210,8 +1216,10 @@ class AgentRunner:
                 instructed_by_id=run.requested_by_id,
                 details={"error": run.error, **tokens},
             )
-            from .chat_inputs import finish_steering
-            await finish_steering(session, run)
+            from .chat_inputs import reconcile_failed_steering
+            current = _GRAPH.get()
+            graph = current[1] if current is not None and current[0] == run.id else None
+            await reconcile_failed_steering(session, run, self.checkpointer, graph=graph)
             await session.commit()
 
     async def _save_outputs(
