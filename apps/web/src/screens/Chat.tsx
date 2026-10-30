@@ -1,8 +1,9 @@
 // dotrix's workspace Chat: conversations grouped by project (and
 // "All projects"), a new chat with project, agent, and model; replies with what the agent did
-// and the changes it proposes; and Kai's coding sessions: inline in the conversation that started them, else listed beside the conversations. Conversations
-// and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
-// URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?session=ID (a coding session), ?tab=coding (a new one), ?q=, ?agent=.
+// and the changes it proposes; and a card for each of Kai's coding sessions started from a conversation, linking to it in Coding.
+// The coding session itself (its turns, the new-session form, the list) is screens/Coding.tsx, built from the pieces exported here.
+// Conversations and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
+// URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?q=, ?agent=. Older ?session= and ?tab=coding links open in Coding.
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
@@ -94,6 +95,10 @@ const ACROSS = [
 
 function open(search: string) {
   go("chat", {}, { search });
+}
+/** Somewhere in Coding: a session (`session=ID`), a new one (`new=1&issue=KEY`), or the list. */
+export function openCoding(search: string) {
+  go("coding", {}, { search });
 }
 
 /* ---------- the list ---------- */
@@ -209,7 +214,7 @@ const BUSY: CodingSession["status"][] = ["awaiting_approval", "queued", "running
 // Waiting on a person: to start, or (Manual) to push what it changed.
 const WAITING: CodingSession["status"][] = ["awaiting_approval", "changes_ready"];
 
-function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
+export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
   const [label0, c] = STATUS[cs.status];
   const label = cs.location === "local" && cs.status === "queued" ? "Waiting for your computer" : label0;
   return (
@@ -217,11 +222,16 @@ function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
       <button
         className={`sitem ${on ? "on" : ""}`}
         style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start", width: "100%" }}
-        onClick={() => open(`session=${cs.session_id}`)}
+        onClick={() => openCoding(`session=${cs.session_id}`)}
       >
         <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
           <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
             {cs.pinned && <Ic n="pin" s={11} cls="cs-pin" />}
+            {cs.thread_id && (
+              <span className="faint" aria-label="Started from a conversation" title="Started from a conversation">
+                <Ic n="message-square" s={11} />{" "}
+              </span>
+            )}
             <span className="mono faint" style={{ fontSize: 11 }}>
               {cs.issue_key}
             </span>{" "}
@@ -336,8 +346,8 @@ function SessionCard({ cs }: { cs: CodingSession }) {
           </button>
         )}
         <span className="sp" />
-        <button className="btn btn-sm btn-ghost" onClick={() => open(`session=${cs.session_id}`)}>
-          Open the session
+        <button className="btn btn-sm btn-ghost" onClick={() => openCoding(`session=${cs.session_id}`)}>
+          Open in Coding
           <Ic n="arrow-right" s={12} />
         </button>
       </div>
@@ -1303,7 +1313,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
 
 /* ---------- a new coding session ---------- */
 
-function NewSession({ issue0 }: { issue0: string | null }) {
+export function NewSession({ issue0 }: { issue0: string | null }) {
   // Issues a tool could work on: open ones in the projects you see, and in an organisation only yours.
   const ps = new Set(
     visibleProjects()
@@ -1375,7 +1385,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
     if (!t) return;
     if (!ready || start.isPending) return;
     start.mutateAsync(note.trim() || null).then(
-      (run) => open(`session=${run.session_id}`),
+      (run) => openCoding(`session=${run.session_id}`),
       () => {},
     );
   };
@@ -1591,7 +1601,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
 
 const fileOf = (f: Record<string, unknown>) => String(f.path ?? f.file ?? f.name ?? "");
 
-function Session({ cs }: { cs: CodingSession }) {
+export function Session({ cs }: { cs: CodingSession }) {
   const ws = wsId();
   const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
   const turns = useCodingSession(scope, cs.session_id).data ?? [];
@@ -1610,7 +1620,7 @@ function Session({ cs }: { cs: CodingSession }) {
       query.delete("panel");
       query.delete("file");
       query.delete("line");
-      go("chat", {}, { search: query.toString(), replace: true });
+      go("coding", {}, { search: query.toString(), replace: true });
     }
     setPanel(false);
   };
@@ -1668,11 +1678,7 @@ function Session({ cs }: { cs: CodingSession }) {
     <div className="conv">
       <div className="conv-main">
         <div className="row cs-head">
-          <button
-            className="ibtn ibtn-sm"
-            onClick={() => open(cs.thread_id ? `thread=${cs.thread_id}&project=${cs.project_key}` : "")}
-            aria-label={cs.thread_id ? "Back to the conversation" : "Back to conversations"}
-          >
+          <button className="ibtn ibtn-sm" onClick={() => openCoding("")} aria-label="Back to coding sessions">
             <Ic n="arrow-left" s={15} />
           </button>
           <button
@@ -1700,6 +1706,17 @@ function Session({ cs }: { cs: CodingSession }) {
             <Ic n="ellipsis-vertical" s={15} />
           </button>
           <span className={`badge ${c}`}>{label}</span>
+          {cs.thread_id && (
+            // Started from a conversation: its outcome goes back there; the link opens it (it stays private to whoever started it).
+            <button
+              className="pillbtn"
+              onClick={() => open(`thread=${cs.thread_id}&project=${cs.project_key}`)}
+              data-tip="The conversation this session came from"
+            >
+              <Ic n="message-square" s={12} />
+              From a conversation
+            </button>
+          )}
           <span className="sp" />
           <button
             className={`ibtn ibtn-sm ${panel ? "on" : ""}`}
@@ -2081,7 +2098,19 @@ function Session({ cs }: { cs: CodingSession }) {
 
 const MISSING_THREAD = "This conversation isn't here: it was deleted, or isn't one you can see.";
 
-const Pending = ({ text, loading = false, onRetry, inbox = false }: { text: string; loading?: boolean; onRetry?: () => void; inbox?: boolean }) => (
+export const Pending = ({
+  text,
+  loading = false,
+  onRetry,
+  inbox = false,
+  back = ["Back to conversations", () => open("")],
+}: {
+  text: string;
+  loading?: boolean;
+  onRetry?: () => void;
+  inbox?: boolean;
+  back?: [string, () => void];
+}) => (
   <div className="chat-scroll" style={{ display: "flex" }}>
     <div className="chat-pending" role={loading ? "status" : undefined}>
       {loading && <DotsLoader px={44} />}
@@ -2097,66 +2126,61 @@ const Pending = ({ text, loading = false, onRetry, inbox = false }: { text: stri
         </button>
       )}
       {!loading && (
-        <button className="btn btn-ghost btn-sm" onClick={() => open("")}>
-          Back to conversations
+        <button className="btn btn-ghost btn-sm" onClick={back[1]}>
+          {back[0]}
         </button>
       )}
     </div>
   </div>
 );
 
+/** Older links to a coding session or a new one (`?session=`, `?tab=coding`) open in Coding. */
+function ToCoding({ search }: { search: URLSearchParams }) {
+  const query = new URLSearchParams(search);
+  if (query.get("tab") === "coding") {
+    query.delete("tab");
+    if (!query.has("session")) query.set("new", "1");
+  }
+  const to = query.toString();
+  useEffect(() => go("coding", {}, { search: to, replace: true }), [to]);
+  return null;
+}
+
 export function Chat() {
   const { search } = useRoute();
+  if (search.has("session") || search.get("tab") === "coding") return <ToCoding search={search} />;
+  return <Conversations search={search} />;
+}
+
+function Conversations({ search }: { search: URLSearchParams }) {
   const ws = wsId();
   const projectKey = search.get("project");
   const across = search.get("across") === "1";
   const threadId = search.get("thread");
-  const sessionId = search.get("session");
-  // A new coding session (`?tab=coding`, as "Start coding" links it); otherwise a conversation.
-  const newSession = search.get("tab") === "coding" && !sessionId;
   const q = S.ui.chatQ.toLowerCase();
   const ps = visibleProjects().filter(canSee);
   const { rows, loaded, failed, retry } = useRows(ws);
-  const sessionsQ = useCodingSessions(ws);
-  const allSessions = sessionsQ.data ?? [];
+  const allSessions = useCodingSessions(ws).data ?? [];
   const row = rows.find((r) => r.id === threadId);
   // A conversation just started isn't listed yet: its address says where it is.
   const thread =
     threadId && (row || across || projectKey)
       ? { id: threadId, projectId: row ? row.projectId : across ? null : (projByKey(projectKey!)?.id ?? null), title: row?.title ?? "" }
       : null;
-  const cs = allSessions.find((c) => c.session_id === sessionId) ?? null;
   // Conversations waiting on a decision, Kai's in them included.
   const waitingIn = new Set(allSessions.filter((c) => c.thread_id && WAITING.includes(c.status)).map((c) => c.thread_id));
   const threads = rows
     .filter((r) => !q || r.title.toLowerCase().includes(q))
     .map((r) => (waitingIn.has(r.id) ? { ...r, waiting: true } : r))
     .sort((a, b) => b.at - a.at);
-  // Sessions started from a conversation show in it; the others are listed beside the conversations.
-  const ownSessions = allSessions.filter((c) => !c.thread_id && (!q || `${c.issue_key} ${c.title ?? c.issue_title}`.toLowerCase().includes(q)));
-  const archivedCount = ownSessions.filter((c) => c.archived).length;
-  const sessions = ownSessions.filter((c) => c.archived === Boolean(S.ui.showArchivedSessions));
-  const hasSel = Boolean(threadId || sessionId || projectKey || across || newSession || search.get("q") || search.get("new"));
+  const hasSel = Boolean(threadId || projectKey || across || search.get("q") || search.get("new"));
   // Column widths, dragged by their edges and kept in this browser.
   const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 300, 220, 480);
-  // The list folds to a rail (like the sidebar) to give the conversation or session the room; not on phones.
+  // The list folds to a rail (like the sidebar) to give the conversation the room; not on phones.
   const [listMinSet, setListMin] = useStoredFlag("dotrix.chat.listMin");
   const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;
-  // A project's conversations and its own coding sessions, together: pinned sessions first, then the latest.
-  const itemsOf = (projectId: string) =>
-    [
-      ...threads
-        .filter((t) => t.projectId === projectId)
-        .map((t) => ({ key: t.id, at: t.at, pinned: false, el: <ThreadRow key={t.id} row={t} on={threadId === t.id} /> })),
-      ...sessions
-        .filter((c) => c.project_id === projectId)
-        .map((c) => ({
-          key: c.session_id,
-          at: ms(c.updated_at),
-          pinned: c.pinned,
-          el: <SessionRow key={c.session_id} cs={c} on={sessionId === c.session_id} />,
-        })),
-    ].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.at - a.at);
+  // A project's conversations, the latest first. Coding sessions are listed in Coding.
+  const itemsOf = (projectId: string) => threads.filter((t) => t.projectId === projectId).map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />);
   return (
     <div className="page flush">
       <div className={`chat-grid ${hasSel ? "has-sel" : ""}`} style={css({ "--list-w": listMin ? "52px" : `${listW}px` })}>
@@ -2191,7 +2215,7 @@ export function Chat() {
                   <input
                     className="input search-sm"
                     style={{ width: "100%" }}
-                    placeholder="Find a conversation or session"
+                    placeholder="Find a conversation"
                     value={S.ui.chatQ}
                     onChange={(e) => ((S.ui.chatQ = e.target.value), render())}
                     aria-label="Find"
@@ -2205,7 +2229,7 @@ export function Chat() {
                   return (
                     <Group key={p.id} title={p.name} color={pColor(p)} onNew={() => open(`project=${p.key}`)}>
                       {list.length ? (
-                        list.map((i) => i.el)
+                        list
                       ) : (
                         <div className="faint" style={{ fontSize: 12, padding: "2px 8px 4px" }}>
                           No conversations yet
@@ -2221,31 +2245,13 @@ export function Chat() {
                       <ThreadRow key={t.id} row={t} on={threadId === t.id} />
                     ))}
                 </Group>
-                {(archivedCount > 0 || S.ui.showArchivedSessions) && (
-                  <button className="linkbtn cs-archived" onClick={() => ((S.ui.showArchivedSessions = !S.ui.showArchivedSessions), render())}>
-                    {S.ui.showArchivedSessions ? "Hide archived sessions" : `Show archived sessions (${archivedCount})`}
-                  </button>
-                )}
               </nav>
             </>
           )}
         </aside>
         <section className="chat-main">
-          {!isLive() && (threadId || sessionId) ? (
+          {!isLive() && threadId ? (
             <Pending text="This conversation isn't available in the demo. Review the request in Inbox." inbox />
-          ) : sessionId ? (
-            cs ? (
-              <Session key={cs.session_id} cs={cs} />
-            ) : sessionsQ.isError ? (
-              <Pending text="The session couldn't be loaded." onRetry={() => void sessionsQ.refetch()} />
-            ) : (
-              <Pending
-                text={sessionsQ.isFetched ? "This session isn't here: it was deleted, or isn't one you can see." : "Loading the session…"}
-                loading={!sessionsQ.isFetched}
-              />
-            )
-          ) : newSession ? (
-            <NewSession key={search.get("issue") ?? ""} issue0={search.get("issue")} />
           ) : threadId ? (
             thread ? (
               <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />

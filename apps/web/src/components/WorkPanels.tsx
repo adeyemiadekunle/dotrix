@@ -116,9 +116,9 @@ export function WorkPanels({
       setReference((previous) => ({ turn, path, line, version: (previous?.version ?? 0) + 1 }));
       setTab("files");
     } else {
-      const search = new URLSearchParams({ tab: "coding", session, turn, file: path, panel: "coding" });
+      const search = new URLSearchParams({ session, turn, file: path, panel: "coding" });
       if (line) search.set("line", String(line));
-      go("chat", {}, { search: search.toString() });
+      go("coding", {}, { search: search.toString() });
     }
   };
   const tabs: { id: WorkTab; label: string; count?: number }[] = [

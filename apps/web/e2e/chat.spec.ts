@@ -225,15 +225,24 @@ test("ask across projects: the conversation reads only and is listed apart, with
   await expect(conversations.getByRole("button", { name: /How are both projects doing/ })).toContainText(/ALP|KUM/);
 });
 
-test("one list for conversations and coding sessions: a coding link opens beside the same list", async ({ page }) => {
+test("Chat and Coding are separate pages, Coding right below Chat in the sidebar", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await openChat(page);
-  await expect(page.getByRole("tab", { name: "Code" })).toHaveCount(0); // no separate Code tab
-  // Coding starts from an issue's link (or Build mode); the form opens beside the conversations.
-  await page.goto(`/w/${slugOf(page)}/chat?tab=coding`);
+  const side = page.getByRole("navigation", { name: "Main" });
+  const items = await side.locator(".sitem").allInnerTexts();
+  const chatAt = items.findIndex((t) => t.trim() === "Chat");
+  expect(items[chatAt + 1]?.trim()).toBe("Coding");
+  await expect(page.getByRole("navigation", { name: "Coding sessions" })).toHaveCount(0); // Chat lists conversations only
+  await side.getByRole("button", { name: "Coding", exact: true }).click();
+  await expect(page).toHaveURL(/\/coding$/);
   await expect(page.getByRole("heading", { name: "Start a coding session" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Conversations" })).toBeVisible(); // the same list beside it
+  await expect(page.getByRole("navigation", { name: "Coding sessions" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Conversations" })).toHaveCount(0);
+  // An older link to a new coding session in Chat opens Coding.
+  await page.goto(`/w/${slugOf(page)}/chat?tab=coding`);
+  await expect(page).toHaveURL(/\/coding\?new=1$/);
+  await expect(page.getByRole("heading", { name: "Start a coding session" })).toBeVisible();
   await page.goto(`/w/${slugOf(page)}/chat`);
   await expect(page.getByLabel("Message")).toBeVisible();
 });

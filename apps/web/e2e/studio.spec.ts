@@ -14,6 +14,7 @@ test("every screen renders", async ({ page }) => {
     ["notifications", "Inbox"],
     ["overview", "Good"],
     ["chat", "Chat"],
+    ["coding", "Coding"],
     ["projects", "Projects"],
     ["tasks", "Good"],
     ["calendar", "Good"],

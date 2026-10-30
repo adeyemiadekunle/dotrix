@@ -74,7 +74,7 @@ async function mockWorkspace(
   page: Page,
   context: BrowserContext,
   baseURL: string,
-  search = "?tab=coding&session=session1",
+  search = "coding?session=session1",
   openPanel = true,
   reviewAvailable = () => true,
 ) {
@@ -131,7 +131,7 @@ async function mockWorkspace(
     }
     await route.fulfill({ status: 200, json: data });
   });
-  await page.goto(`/w/test-workspace/chat${search}`);
+  await page.goto(`/w/test-workspace/${search}`);
   if (openPanel) await page.getByRole("button", { name: "Kai's work" }).click();
 }
 
@@ -175,9 +175,11 @@ test("the work panel keeps turn data and connects Juno's findings to files", asy
   await expect(panel.getByText("No screenshots were captured in this turn.")).toBeVisible();
 });
 
-test("a linked review reference opens its turn and file directly", async ({ page, context, baseURL }) => {
+test("a linked review reference opens its turn and file directly, from an older Chat link too", async ({ page, context, baseURL }) => {
+  // Links from before Coding had its own page (chat?tab=coding&session=…) open the session in Coding.
   const search = new URLSearchParams({ tab: "coding", session: "session1", turn: "turn2", file: path, line: "2" });
-  await mockWorkspace(page, context, baseURL!, `?${search}`, false);
+  await mockWorkspace(page, context, baseURL!, `chat?${search}`, false);
+  await expect(page).toHaveURL(/\/coding\?session=session1/);
   const panel = page.locator(".kai-panel");
   await expect(panel.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
   await expect(panel.locator(".kp-line-reference")).toContainText("const href = '#plans'");

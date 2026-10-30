@@ -140,6 +140,7 @@ export function installKeyboard() {
         i: "inbox",
         s: "settings",
         a: "chat",
+        c: "coding",
       };
       const r = map[k.toLowerCase()];
       if (r) {
