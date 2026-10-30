@@ -359,7 +359,7 @@ def test_a_run_uses_only_a_supplied_personal_key() -> None:
 def test_a_session_codes_on_its_model_and_the_engine_follows_it() -> None:
     from dotrix_backend.modules.coding.tools import engine_for, kai_models
 
-    settings = _settings(coding_fx=True, coding_fx_model="openai:gpt-6.1")
+    settings = _settings(coding_fx_model="openai:gpt-6.1")
     keys = {"anthropic", "openai", "xai"}
     models = kai_models(settings, keys)
     claude = next(m for m in models if m.startswith("anthropic:"))

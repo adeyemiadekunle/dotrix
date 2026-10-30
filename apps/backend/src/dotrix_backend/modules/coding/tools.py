@@ -9,7 +9,7 @@ what the run page shows (steps) and what the run used (tokens).
 - OpenCode 2: `opencode run --standalone --format json --auto`, the brief on stdin, on any provider's
   model (one OpenCode per provider: its key and the one host the sandbox lets it reach). Its config
   is ours, never the repo's (`OPENCODE_DISABLE_PROJECT_CONFIG`, `OPENCODE_CONFIG_CONTENT`).
-- fx (opt-in, `DOTRIX_CODING_FX`): `fx acp` driven by infra/coding/fx-acp.mjs, the brief on stdin, on an
+- fx: `fx acp` driven by infra/coding/fx-acp.mjs, the brief on stdin, on an
   OpenAI-compatible provider's model (one per provider, like OpenCode), in fx's full-access mode.
 """
 from __future__ import annotations
@@ -740,9 +740,7 @@ def coding_models(settings: Settings, providers: frozenset[str] | set[str]) -> l
 
 
 def fx_models(settings: Settings, providers: frozenset[str] | set[str]) -> list[str]:
-    """The models fx can run on for these providers; none while fx is off (`DOTRIX_CODING_FX`)."""
-    if not settings.coding_fx:
-        return []
+    """The models fx can run on for these providers (OpenAI-compatible endpoints)."""
     return [m for m in available_models(settings, *([settings.coding_fx_model] if settings.coding_fx_model else []),
                                        connected=set(providers))
             if m.partition(":")[0] in FX_PROVIDERS]
@@ -791,14 +789,12 @@ def choose_agent(
     preferred: str | None = None, preferred_model: str | None = None,
 ) -> CodingAgent | None:
     """A compatible personal/server default, otherwise Codex, Claude Code, then OpenCode. fx only when it's
-    asked for (a person's or the server's default) and on (`DOTRIX_CODING_FX`)."""
+    asked for (a person's or the server's default)."""
     order = [preferred, settings.coding_agent, CodingAgent.CODEX, CodingAgent.CLAUDE_CODE, CodingAgent.OPENCODE]
     for name in dict.fromkeys(order):
         if name in (None, "auto") or name not in set(CodingAgent):
             continue
         agent = CodingAgent(name)
-        if agent is CodingAgent.FX and not settings.coding_fx:
-            continue
         model = model_for(settings, agent, providers, preferred_model=preferred_model)
         tool = tool_for(agent, model, settings)
         if tool and tool.provider in providers:

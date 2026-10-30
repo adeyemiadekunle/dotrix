@@ -879,22 +879,17 @@ async def test_tool_choice_personal_default_and_session_tool_are_kept(db_client:
     assert (follow.json()["agent"], follow.json()["model"]) == ("opencode", "xai:grok-4.7")
 
 
-async def test_fx_is_offered_only_once_turned_on_and_keeps_its_model(db_client: AsyncClient, coding) -> None:
+async def test_fx_is_offered_and_keeps_its_model(db_client: AsyncClient, coding) -> None:
     ada, _, ws, kun, _, _ = coding
     await _save_key(db_client, ada.headers, "openai", "test-openai-personal-provider-key")
     base = f"{ws}/projects/{kun['id']}"
     task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "fx"}, headers=ada.headers)).json()
-    off = (await db_client.get(f"{base}/coding", headers=ada.headers)).json()
-    assert "fx" not in {t["agent"] for t in off["tools"]}
-    refused = await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"agent": "fx"}, headers=ada.headers)
-    assert refused.status_code == 409 and "fx" not in refused.text.lower()
-
     settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
-    settings.coding_fx, settings.coding_fx_model = True, "openai:gpt-6.1"
+    settings.coding_fx_model = "openai:gpt-6.1"
     on = (await db_client.get(f"{base}/coding", headers=ada.headers)).json()
     fx = next(t for t in on["tools"] if t["agent"] == "fx")
     assert fx["available"] and fx["model"] == "openai:gpt-6.1" and "openai:gpt-6.1" in fx["models"]
-    assert on["default_tool"] == "codex"  # on, but never chosen for someone who didn't pick it
+    assert on["default_tool"] == "codex"  # never chosen for someone who didn't pick it
     wrong = await db_client.post(f"{base}/coding/issues/{task['key']}/runs",
                                  json={"agent": "fx", "model": "google_genai:gemini-3.8-flash"}, headers=ada.headers)
     assert wrong.status_code == 422

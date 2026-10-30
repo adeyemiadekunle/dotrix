@@ -38,18 +38,16 @@ def _settings(**values) -> Settings:
     return Settings(**{**base, **values})  # type: ignore[arg-type]
 
 
-def test_fx_is_off_until_turned_on_and_never_the_automatic_choice() -> None:
-    off = _settings()
-    assert fx_models(off, {"openai"}) == []
-    assert choose_agent(off, {"openai"}, preferred="fx") is CodingAgent.CODEX  # asked for, but off
-    on = _settings(coding_fx=True, coding_fx_model="openai:gpt-6.1")
-    assert choose_agent(on, {"openai"}) is CodingAgent.CODEX  # on, but nobody asked for it
+def test_fx_is_offered_but_never_the_automatic_choice() -> None:
+    on = _settings(coding_fx_model="openai:gpt-6.1")
+    assert "openai:gpt-6.1" in fx_models(on, {"openai"})
+    assert choose_agent(on, {"openai"}) is CodingAgent.CODEX  # nobody asked for it
     assert choose_agent(on, {"openai"}, preferred="fx") is CodingAgent.FX
-    assert choose_agent(_settings(coding_fx=True, coding_agent="fx", coding_fx_model="openai:gpt-6.1"), {"openai"}) is CodingAgent.FX
+    assert choose_agent(_settings(coding_agent="fx", coding_fx_model="openai:gpt-6.1"), {"openai"}) is CodingAgent.FX
 
 
 def test_fx_runs_on_openai_compatible_providers_only() -> None:
-    on = _settings(coding_fx=True, coding_fx_model="openai:gpt-6.1")
+    on = _settings(coding_fx_model="openai:gpt-6.1")
     assert model_for(on, CodingAgent.FX, {"openai"}) == "openai:gpt-6.1"
     assert "openai:gpt-6.1" in models_for(on, CodingAgent.FX, {"openai"})
     assert all(m.partition(":")[0] in FX_PROVIDERS for m in fx_models(on, {"openai", "anthropic", "xai"}))
@@ -63,7 +61,7 @@ def test_fx_runs_on_openai_compatible_providers_only() -> None:
 
 def test_fx_command_reaches_one_provider_with_its_key_by_name(monkeypatch) -> None:
     monkeypatch.delenv("XAI_BASE_URL", raising=False)
-    settings = _settings(coding_fx=True, coding_fx_driver="/opt/dotrix/fx-acp.mjs")
+    settings = _settings(coding_fx_driver="/opt/dotrix/fx-acp.mjs")
     tool = tool_for(CodingAgent.FX, "xai:grok-4.7", settings)
     assert tool is not None
     assert tool.command("xai:grok-4.7") == [

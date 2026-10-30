@@ -84,7 +84,7 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 - **OpenCode's own settings are ours.** Its config comes from `OPENCODE_CONFIG_CONTENT` (that
   provider only; `webfetch`, `websearch` and `question` denied). A repo's `opencode.json` never
   loads (`OPENCODE_DISABLE_PROJECT_CONFIG`), and no model list is fetched.
-- **fx (opt-in) runs in its full-access mode, with settings we write.** `fx-acp.mjs` writes
+- **fx runs in its full-access mode, with settings we write.** `fx-acp.mjs` writes
   `~/.fx/settings.json` each turn (one OpenAI-compatible provider, its key read from the provider's
   variable by name, auto-upgrade off) and drives `fx acp`; the sandbox, not fx, is the boundary, and
   nobody is there to answer fx's permission prompts. fx's web tools reach nothing (the sandbox blocks
@@ -114,7 +114,6 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 | `DOTRIX_CODING_AGENT` | `auto` | `claude-code`, `codex`, `opencode`, or `fx` |
 | `DOTRIX_CODING_CLAUDE_MODEL`, `DOTRIX_CODING_CODEX_MODEL` | the tool's default | A model for Claude Code or Codex |
 | `DOTRIX_CODING_OPENCODE_MODEL` | first available catalogue model | Optional server default, e.g. `xai:grok-4.7` |
-| `DOTRIX_CODING_FX` | `false` | Offer fx as Kai's engine. Off: fx is never offered or chosen. On: only for someone who picks it (or `DOTRIX_CODING_AGENT=fx`) |
 | `DOTRIX_CODING_FX_MODEL` | first available model | fx's default, on an OpenAI-compatible endpoint: OpenAI, Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter (not Google yet) |
 | `DOTRIX_CODING_FX_DRIVER` | `/opt/dotrix/fx-acp.mjs` | Where the image puts the ACP driver |
 | `DOTRIX_CODING_TIMEOUT_MINUTES` | 30 | Per turn |
@@ -181,7 +180,7 @@ checks all of this against a real container (it's skipped where the image isn't 
    openshell provider profile import -f infra/coding/dotrix-opencode-anthropic.yaml --global
    openshell provider profile import -f infra/coding/dotrix-opencode-openai.yaml --global
    openshell provider profile import -f infra/coding/dotrix-opencode-google.yaml --global
-   # fx, one per provider it may run on (DOTRIX_CODING_FX=true; not yet checked on a gateway):
+   # fx, one per provider it may run on (not yet checked on a gateway):
    for p in openai anthropic xai deepseek mistral groq openrouter; do
      openshell provider profile import -f "infra/coding/dotrix-fx-$p.yaml" --global
    done

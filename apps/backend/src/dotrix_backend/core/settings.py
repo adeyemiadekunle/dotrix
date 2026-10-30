@@ -134,10 +134,9 @@ class Settings(DatabaseSettings):
     # OpenCode's model, as everywhere in dotrix ("anthropic:claude-sonnet-5-5"): its provider decides
     # the key it runs on and the one host the sandbox lets it reach. Required for OpenCode.
     coding_opencode_model: str | None = None
-    # fx as Kai's engine (infra/coding/fx-acp.mjs drives `fx acp` in the sandbox): off until turned on, and
-    # then only chosen when a person picks it or `coding_agent` is "fx". Its model: "provider:model" on an
-    # OpenAI-compatible endpoint (OpenAI, Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter).
-    coding_fx: bool = False
+    # fx as Kai's engine (infra/coding/fx-acp.mjs drives `fx acp` in the sandbox): chosen when a person picks it
+    # or `coding_agent` is "fx". Its model: "provider:model" on an OpenAI-compatible endpoint (OpenAI,
+    # Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter).
     coding_fx_model: str | None = None
     coding_fx_driver: str = "/opt/dotrix/fx-acp.mjs"  # where the coding image puts the driver
     coding_timeout_minutes: int = Field(default=30, ge=1, le=240)
