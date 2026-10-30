@@ -1016,7 +1016,7 @@ async def test_fx_nova_pilot_includes_only_the_requesters_prior_conversation(nov
 async def test_live_fx_chat_on_anthropic_reads_project_knowledge(
     nova_pilot_world, db_client, agent_script, outbox, storage, checkouts,
 ):
-    """The fx preview through the public API on a real Anthropic model (its OpenAI-compatible endpoint): Nova
+    """fx chat through the public API on a real Anthropic model (its OpenAI-compatible endpoint): Nova
     reads the project's knowledge with the platform's tools, and a follow-up keeps the conversation."""
     from dotrix_engine.runtimes.fx import _HOST
 
@@ -1027,7 +1027,7 @@ async def test_live_fx_chat_on_anthropic_reads_project_knowledge(
         session.add(UserModelKey(user_id=existing.requested_by_id, provider="anthropic",
                                  encrypted=secrets.encrypt(os.environ["DOTRIX_LIVE_ANTHROPIC_API_KEY"]), last4="live"))
         await session.commit()
-    settings = db_client._transport.app.state.settings.model_copy(update={"fx_chat_pilot": True})
+    settings = db_client._transport.app.state.settings
     app = create_app(settings)
     app.state.sessionmaker, app.state.secrets, app.state.checkouts = sessions, secrets, checkouts
     app.dependency_overrides[get_email_sender] = lambda: outbox
@@ -1070,7 +1070,7 @@ async def test_fx_chat_runs_through_api_and_keeps_its_runtime(
     if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
         pytest.skip("Install the optional fx host to exercise the real libfx runtime")
     existing, sessions, secrets = nova_pilot_world
-    settings = db_client._transport.app.state.settings.model_copy(update={"fx_chat_pilot": True})
+    settings = db_client._transport.app.state.settings
     app = create_app(settings)
     app.state.sessionmaker = sessions
     app.state.secrets = secrets
@@ -1152,11 +1152,6 @@ async def test_fx_chat_runs_through_api_and_keeps_its_runtime(
             continued = await client.post(f"{base}/runs/{pending.json()['id']}/continue", headers=headers, json={})
             assert continued.status_code == 409 and "can be continued" in continued.text  # stopped, not cut off
         runner.inline = True
-        settings.fx_chat_pilot = False
-        disabled = await client.post(f"{base}/runs", headers=headers, json={
-            "message": "Another", "chat_runtime": "fx", "work_mode": "discuss",
-        })
-        assert disabled.status_code == 422
         agent_script.say("Default DeepAgents answer")
         default = await client.post(f"{base}/runs", headers=headers, json={"message": "Default?"})
         assert default.status_code == 202 and default.json()["chat_runtime"] == "deepagents", default.text
@@ -1193,9 +1188,7 @@ async def test_fx_chat_delegates_through_real_child_runner_and_returns_the_saved
     if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
         pytest.skip("Install the optional fx host to exercise the real libfx runtime")
     existing, sessions, secrets = nova_pilot_world
-    settings = db_client._transport.app.state.settings.model_copy(update={
-        "fx_chat_pilot": True, "fx_chat_durable_delegation": True,
-    })
+    settings = db_client._transport.app.state.settings.model_copy(update={"fx_chat_durable_delegation": True})
     async with sessions() as session:
         await session.execute(update(Project).where(Project.id == existing.project_id).values(
             specialist_model="openai:cheap-model"))

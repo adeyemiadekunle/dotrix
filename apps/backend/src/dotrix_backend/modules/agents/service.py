@@ -258,18 +258,17 @@ class AgentService:
         if runtime is ChatRuntime.FX:
             from .fx_pilot import validate_fx_pilot_model
 
-            if not self.runner.settings or not self.runner.settings.fx_chat_pilot:
-                raise Unprocessable("The fx chat preview is not enabled")
             if not interactive or data.work_mode is None:
-                raise Unprocessable("The fx preview supports Nova's interactive turns in a work mode")
-            if requested_agent not in ("auto", PM_ROLE) and not self.runner.settings.fx_chat_durable_delegation:
-                raise Unprocessable("The fx preview involves specialists only with delegation enabled")
+                raise Unprocessable("fx runs Nova's interactive turns in a work mode")
+            if requested_agent not in ("auto", PM_ROLE) and not (
+                    self.runner.settings and self.runner.settings.fx_chat_durable_delegation):
+                raise Unprocessable("fx involves specialists only with delegation enabled")
             if project.token_budget is not None:
-                raise Unprocessable("The fx preview cannot yet enforce this project's token budget")
+                raise Unprocessable("fx cannot yet enforce this project's token budget")
             lead = next((item.spec for item in await AgentDefinitionRepository(self.session).resolve(
                 project.workspace_id, project.id) if item.spec.handle == PM_ROLE), None)
             if lead is None or lead.budget_tokens is not None:
-                raise Unprocessable("The fx preview cannot run with the current Nova configuration")
+                raise Unprocessable("fx cannot run with the current Nova configuration")
             validate_fx_pilot_model(model, keys)
         else:
             self.runner.model_factory(project, model, keys=keys)  # fail fast (503) if the model can't run

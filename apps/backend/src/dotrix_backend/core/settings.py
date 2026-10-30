@@ -147,8 +147,6 @@ class Settings(DatabaseSettings):
     # picked up again from its last checkpoint by the worker's sweep, at most AGENT_MAX_ATTEMPTS times.
     agent_lease_seconds: int = Field(default=90, ge=15, le=3600)
     durable_delegation: bool = False
-    # Opt-in Nova on fx, in every work mode with the usual approvals; existing conversations keep their runtime.
-    fx_chat_pilot: bool = False
     # Separately opt in to scheduler-backed fx delegation.
     fx_chat_durable_delegation: bool = False
     # Preserve a bounded private history for read-only built-in specialist tasks.

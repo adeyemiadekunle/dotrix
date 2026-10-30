@@ -8224,7 +8224,7 @@
           "agents"
         ],
         "summary": "Chat Runtime Options",
-        "description": "The available chat preview and its compatible personal model providers.",
+        "description": "The chat runtimes besides the default (fx) and fx's compatible personal model providers.",
         "operationId": "chat_runtime_options",
         "security": [
           {
@@ -25046,7 +25046,7 @@
           "fx_available": {
             "type": "boolean",
             "title": "Fx Available",
-            "description": "Whether the fx preview is enabled (Nova on fx, in every work mode)"
+            "description": "Whether a new conversation can run on fx (Nova on libfx, in every work mode); always true"
           },
           "fx_providers": {
             "items": {
@@ -25059,7 +25059,7 @@
           "fx_delegation_available": {
             "type": "boolean",
             "title": "Fx Delegation Available",
-            "description": "Whether the fx preview may delegate to specialists",
+            "description": "Whether fx conversations may delegate to specialists",
             "default": false
           }
         },

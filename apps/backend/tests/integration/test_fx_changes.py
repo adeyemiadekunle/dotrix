@@ -107,9 +107,9 @@ def scripted_model(tool: str, args: dict, *, requests: list | None = None, hold:
 
 @asynccontextmanager
 async def fx_chat(world, db_client, outbox, storage, checkouts, agent_script):
-    """The public API with the fx preview on, its runner inline, and the requester's headers."""
+    """The public API with its runner inline, and the requester's headers."""
     existing, sessions, secrets = world
-    settings = db_client._transport.app.state.settings.model_copy(update={"fx_chat_pilot": True})
+    settings = db_client._transport.app.state.settings
     app = create_app(settings)
     app.state.sessionmaker, app.state.secrets, app.state.checkouts = sessions, secrets, checkouts
     app.dependency_overrides[get_email_sender] = lambda: outbox

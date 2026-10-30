@@ -88,8 +88,8 @@ through that endpoint (2026-10-30): the scripted scenario and live delegation fi
 specialists chosen, the same recommendation, and similar caveats (one run each, not a ranking). The delegation team now
 names the evidence documents in its instructions; without them both runtimes guessed paths and found nothing. A run bound to an older pilot version (in-memory or read-only) fails closed rather than resuming on this one.
 The platform runner persists replies and events, and passes bounded recent history to
-later turns. It records available usage and marks unreported usage incomplete. Set
-`DOTRIX_FX_CHAT_PILOT=true` on both the API and worker to expose the selector; new
+later turns. It records available usage and marks unreported usage incomplete. The selector
+needs no switch (2026-10-30: `DOTRIX_FX_CHAT_PILOT` was removed); new
 conversations default to DeepAgents and remain pinned to their selected runtime. It shares the context pack,
 workspace rules, board tools and approvals with DeepAgents; it does not yet have reusable specialist sessions,
 token budgets, or recovery proven across distributed workers on real models.
@@ -102,9 +102,9 @@ host-side `npm ci` when the preview is enabled.
 
 ### Durable read-only delegation preview
 
-Set `DOTRIX_FX_CHAT_DURABLE_DELEGATION=true` alongside `DOTRIX_FX_CHAT_PILOT=true`
+Set `DOTRIX_FX_CHAT_DURABLE_DELEGATION=true`
 on the API and worker to opt new fx runs into durable delegation. The run records
-that choice; disabling either flag does not change an existing run's recovery
+that choice; disabling the flag does not change an existing run's recovery
 contract. Nova may selectively ask built-in specialists for read-only work through
 Dotrix's existing `DelegationService`. Children keep their existing isolated
 DeepAgents checkpoints, structured results, dependency rules, requester permissions,

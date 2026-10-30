@@ -167,7 +167,7 @@ async def test_queue_is_ordered_and_dispatch_is_atomic(nova_pilot_world, monkeyp
     second = await submit(sessions, run, "Second follow-up", "queue")
     runner = AgentRunner(session_factory=sessions, checkpointer=InMemorySaver(), secrets=secrets,
         model_factory=lambda *args, **kwargs: SimpleNamespace(model=ScriptedChatModel.of("Done")))
-    runner.settings = SimpleNamespace(fx_chat_pilot=True, fx_chat_durable_delegation=True, durable_delegation=True)
+    runner.settings = SimpleNamespace(fx_chat_durable_delegation=True, durable_delegation=True)
     dispatched = []
 
     async def start(run_id, message, **kwargs):
@@ -387,7 +387,7 @@ async def test_only_resumable_failures_keep_follow_ups_waiting(nova_pilot_world,
         await session.commit()
     runner = AgentRunner(session_factory=sessions, checkpointer=InMemorySaver(), secrets=secrets,
         model_factory=lambda *args, **kwargs: SimpleNamespace(model=ScriptedChatModel.of("Done")),
-        settings=SimpleNamespace(fx_chat_pilot=True, fx_chat_durable_delegation=True, durable_delegation=True))
+        settings=SimpleNamespace(fx_chat_durable_delegation=True, durable_delegation=True))
     dispatched = []
 
     async def start(*args, **kwargs):

@@ -92,8 +92,8 @@ const ACROSS = [
   ["triangle-alert", "What's at risk this week?"],
 ];
 
-// What the fx preview does, under its composer.
-const FX_NOTE = "Nova runs on the fx preview, in every mode. Its changes follow your approval mode, as usual.";
+// What fx does, under its composer.
+const FX_NOTE = "Nova runs on fx, in every mode. Its changes follow your approval mode, as usual.";
 
 function open(search: string) {
   go("chat", {}, { search });
@@ -869,14 +869,14 @@ function Composer({
                 onChange={(v) => setRuntime(v as ChatRuntime)}
                 options={[
                   ["deepagents", "Standard"],
-                  ["fx", "fx preview"],
+                  ["fx", "fx"],
                 ]}
                 label="Chat runtime"
               />
             ) : (
               runtime === "fx" && (
-                <span className="cpill" data-tip="This conversation uses the fx preview">
-                  fx preview
+                <span className="cpill" data-tip="This conversation runs on fx">
+                  fx
                 </span>
               )
             ))}
@@ -1217,7 +1217,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           {runtime === "fx" && (
             <div className="faint" style={{ fontSize: 11.5, marginTop: 6, textAlign: "center" }}>
               {unavailable
-                ? "Connect a compatible personal model in settings to use the fx preview."
+                ? "Connect a compatible personal model in settings to use fx."
                 : runtimeOptions?.fx_delegation_available
                   ? FX_NOTE
                   : `${FX_NOTE} It can't involve specialists here.`}

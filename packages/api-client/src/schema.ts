@@ -1886,7 +1886,7 @@ export interface paths {
         };
         /**
          * Chat Runtime Options
-         * @description The available chat preview and its compatible personal model providers.
+         * @description The chat runtimes besides the default (fx) and fx's compatible personal model providers.
          */
         get: operations["chat_runtime_options"];
         put?: never;
@@ -5547,7 +5547,7 @@ export interface components {
         ChatRuntimeOptions: {
             /**
              * Fx Available
-             * @description Whether the fx preview is enabled (Nova on fx, in every work mode)
+             * @description Whether a new conversation can run on fx (Nova on libfx, in every work mode); always true
              */
             fx_available: boolean;
             /**
@@ -5557,7 +5557,7 @@ export interface components {
             fx_providers: string[];
             /**
              * Fx Delegation Available
-             * @description Whether the fx preview may delegate to specialists
+             * @description Whether fx conversations may delegate to specialists
              * @default false
              */
             fx_delegation_available: boolean;
