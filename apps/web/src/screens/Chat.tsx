@@ -70,7 +70,7 @@ import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT } from "../data/seed-dotrix";
-import { CODING_VIEWS, ChatPanel, CodingPanel, type CodingView } from "../components/SidePanel";
+import { CODING_VIEWS, CodingPanel, type CodingView } from "../components/SidePanel";
 import { useConversationTasks, useReviewRuns, type SpecialistTask } from "@/lib/team";
 import { useAtPicker } from "../components/AtPicker";
 import { Splitter, useStoredFlag, useStoredSize, useStoredText } from "../ui/splitter";
@@ -939,10 +939,6 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   // Kai's sessions started from this conversation, each after the message that started it.
   const coded = (useCodingSessions(ws, Boolean(projectId)).data ?? []).filter((c) => c.thread_id === id);
   const anchorOf = (c: CodingSession) => runs.filter((r) => ms(r.created_at) <= ms(c.started_at)).at(-1)?.id ?? last?.id;
-  // Kai's latest session here: what Build mode's messages go to (its next turn), and whose files and terminal the side panel shows.
-  const kai = [...coded].filter((c) => c.state !== "closed" && !c.archived).sort((a, b) => ms(b.updated_at) - ms(a.updated_at))[0] ?? null;
-  const [panelSet, setPanel] = useStoredFlag("dotrix.chat.panel");
-  const panel = Boolean(kai) && panelSet;
   const latestPlan = plans.at(-1);
   const end = useRef<HTMLDivElement>(null);
   const busy = active && !stream.text;
@@ -1007,17 +1003,6 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               ) : null;
             })}
           </span>
-          {kai && (
-            <button
-              className={`ibtn ibtn-sm ${panel ? "on" : ""}`}
-              onClick={() => setPanel(!panel)}
-              aria-pressed={panel}
-              aria-label="Files and terminal"
-              data-tip="Files and terminal"
-            >
-              <Ic n="panel-right" s={15} />
-            </button>
-          )}
         </div>
         <div className="chat-scroll">
           <div className="chat-col">
@@ -1134,7 +1119,6 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           )}
         </div>
       </div>
-      {panel && kai && <ChatPanel key={kai.session_id} scope={scope} cs={kai} onClose={() => setPanel(false)} />}
     </div>
   );
 }

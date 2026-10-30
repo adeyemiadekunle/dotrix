@@ -1,8 +1,7 @@
-// The right side panel beside a coding session (Coding) or a conversation (Chat), resizable by its left edge.
-// Coding: one of the selected turn's Changes, Files, Terminal, or Juno's Review, picked by the buttons in the
+// The right side panel beside one of Kai's sessions in Codes, resizable by its left edge.
+// It shows one of the selected turn's Changes, Files, Terminal, or Juno's Review, picked by the buttons in the
 // session header (as Claude Code's title bar opens its panes); Juno's findings also show on their lines in Changes.
-// Chat: the files and terminal of the session the conversation started, one above the other, no tabs.
-// Both: a turn picker and a close button in the header; on narrow screens the panel floats over the page.
+// A turn picker and a close button in its header; on narrow screens the panel floats over the page.
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -291,56 +290,6 @@ export function CodingPanel({
           </>
         )}
       </div>
-    </PanelFrame>
-  );
-}
-
-/** Chat: the files and terminal of the session a conversation started, stacked, no tabs; the line between them drags. */
-export function ChatPanel({ scope, cs, onClose }: { scope: Scope | undefined; cs: CodingSession; onClose: () => void }) {
-  const { turnsQuery, turns, turn, setPicked, files } = useTurn(scope, cs, null);
-  const [filesH, setFilesH] = useStoredSize("dotrix.chat.panel.filesHeight", 360, 120, 1200);
-  return (
-    <PanelFrame
-      label="Files and terminal"
-      widthKey="dotrix.chat.panel.width"
-      onClose={onClose}
-      title={
-        <span className="side-panel-title trunc">
-          <Ic n="square-terminal" s={14} />
-          <span className="mono faint">{cs.issue_key}</span>
-        </span>
-      }
-      tools={<TurnPicker turns={turns} turn={turn} onPick={setPicked} />}
-    >
-      {turn ? (
-        <div className="side-stack">
-          <section className="side-pane" aria-label="Files" style={{ flexBasis: filesH }}>
-            <div className="side-pane-head">
-              <Ic n="folder-tree" s={13} />
-              Files
-            </div>
-            <div className="side-panel-body">
-              <FilesView scope={scope} run={turn} files={files} />
-            </div>
-          </section>
-          <Splitter dir="row" className="side-stack-split" label="Resize the files and terminal" onDrag={(delta) => setFilesH((h) => h + delta)} />
-          <section className="side-pane grow-pane" aria-label="Terminal">
-            <div className="side-pane-head">
-              <Ic n="square-terminal" s={13} />
-              Terminal
-              <span className="sp" />
-              <span className="faint">Recorded output · read-only</span>
-            </div>
-            <div className="side-panel-body">
-              <TerminalView scope={scope} run={turn} />
-            </div>
-          </section>
-        </div>
-      ) : (
-        <div className="side-panel-body">
-          <NoTurn query={turnsQuery} />
-        </div>
-      )}
     </PanelFrame>
   );
 }

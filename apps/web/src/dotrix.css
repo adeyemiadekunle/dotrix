@@ -1900,40 +1900,6 @@ body.resizing-row * {
 section.side-panel-body[hidden] {
   display: none;
 }
-/* Chat: files above the terminal, the line between them drags. */
-.side-stack {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-.side-pane {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 0;
-  flex-shrink: 1;
-  min-height: 80px;
-}
-.side-pane.grow-pane {
-  flex: 1 1 0;
-}
-.side-pane-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-3);
-  font-size: 12px;
-  font-weight: 500;
-  flex-shrink: 0;
-}
-.side-stack-split {
-  flex-shrink: 0;
-  border-top: 1px solid var(--border);
-}
-
 /* A session's side-panel buttons (Changes, Files, Terminal, Review), as Claude Code's title bar opens its panes:
  * icons, named on hover. */
 .cs-views {
