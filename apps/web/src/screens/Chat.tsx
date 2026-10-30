@@ -70,7 +70,7 @@ import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT } from "../data/seed-dotrix";
-import { WorkPanels } from "../components/WorkPanels";
+import { ChatPanel, CodingPanel } from "../components/SidePanel";
 import { useConversationTasks, useReviewRuns, type SpecialistTask } from "@/lib/team";
 import { useAtPicker } from "../components/AtPicker";
 import { Splitter, useStoredFlag, useStoredSize } from "../ui/splitter";
@@ -518,7 +518,7 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
 }
 
 /** What the agents did for a reply (kept after the run), folded until asked for. */
-function SpecialistTasks({ tasks, scope, onReview }: { tasks: SpecialistTask[]; scope: Scope | undefined; onReview: () => void }) {
+function SpecialistTasks({ tasks, scope }: { tasks: SpecialistTask[]; scope: Scope | undefined }) {
   if (!tasks.length) return null;
   return (
     <section className="specialist-tasks" aria-label="Specialist activity">
@@ -544,11 +544,6 @@ function SpecialistTasks({ tasks, scope, onReview }: { tasks: SpecialistTask[]; 
               ))}
             </ul>
           ) : null}
-          {task.agent === "reviewer" && (
-            <button className="btn btn-sm" onClick={onReview}>
-              Open Juno's review
-            </button>
-          )}
           {task.status === "awaiting_approval" && <TaskApproval scope={scope} id={task.id} />}
         </details>
       ))}
@@ -915,8 +910,6 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const fxRun = projectId ? own.data?.filter((run) => run.source === "user").at(-1) : undefined;
   const fxPreview = fxRun?.chat_runtime === "fx";
   const delegated = useConversationTasks(scope, runs);
-  const routeSearch = useRoute().search;
-  const [fixDraft, setFixDraft] = useState({ text: "", version: 0 });
   const working = runs.find((run) => isActive(run) && run.status !== "waiting_dependency");
   const active = Boolean(working);
   const ownStream = useRunStream(scope, working?.id ?? "", Boolean(projectId) && active);
@@ -945,23 +938,10 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   // Kai's sessions started from this conversation, each after the message that started it.
   const coded = (useCodingSessions(ws, Boolean(projectId)).data ?? []).filter((c) => c.thread_id === id);
   const anchorOf = (c: CodingSession) => runs.filter((r) => ms(r.created_at) <= ms(c.started_at)).at(-1)?.id ?? last?.id;
-  // Kai's latest session here: what Build mode's messages go to (its next turn), and what the panel shows.
+  // Kai's latest session here: what Build mode's messages go to (its next turn), and whose files and terminal the side panel shows.
   const kai = [...coded].filter((c) => c.state !== "closed" && !c.archived).sort((a, b) => ms(b.updated_at) - ms(a.updated_at))[0] ?? null;
-  const [panelSet, setPanel] = useStoredFlag("dotrix.chat.kaiPanel");
-  const panel = panelSet || routeSearch.get("panel") === "review";
-  const panelView = routeSearch.get("panel") === "review" ? "review" : "coding";
-  const openSide = (view: "coding" | "review") => {
-    const query = new URLSearchParams(routeSearch);
-    query.set("panel", view);
-    go("chat", {}, { search: query.toString(), replace: true });
-    setPanel(true);
-  };
-  const closeSide = () => {
-    const query = new URLSearchParams(routeSearch);
-    query.delete("panel");
-    go("chat", {}, { search: query.toString(), replace: true });
-    setPanel(false);
-  };
+  const [panelSet, setPanel] = useStoredFlag("dotrix.chat.panel");
+  const panel = Boolean(kai) && panelSet;
   const latestPlan = plans.at(-1);
   const end = useRef<HTMLDivElement>(null);
   const busy = active && !stream.text;
@@ -1029,29 +1009,21 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           {kai && (
             <button
               className={`ibtn ibtn-sm ${panel ? "on" : ""}`}
-              onClick={() => (panel && panelView === "coding" ? closeSide() : openSide("coding"))}
+              onClick={() => setPanel(!panel)}
               aria-pressed={panel}
-              aria-label={`${CODING_AGENT.name}'s work`}
-              data-tip={`${CODING_AGENT.name}'s work: changes, files, terminal, browser, and review`}
+              aria-label="Files and terminal"
+              data-tip="Files and terminal"
             >
               <Ic n="panel-right" s={15} />
             </button>
           )}
-          <button
-            className={`ibtn ibtn-sm ${panel && panelView === "review" ? "on" : ""}`}
-            aria-label="Juno's review"
-            onClick={() => openSide("review")}
-            data-tip="Juno's review"
-          >
-            <Ic n="shield-check" s={15} />
-          </button>
         </div>
         <div className="chat-scroll">
           <div className="chat-col">
             {runs.map((r) => (
               <div key={r.id}>
                 <RunMessages run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
-                <SpecialistTasks tasks={delegated.filter((task) => task.parent_run_id === r.id)} scope={scope} onReview={() => openSide("review")} />
+                <SpecialistTasks tasks={delegated.filter((task) => task.parent_run_id === r.id)} scope={scope} />
                 {plans
                   .filter((pl) => pl.run_id === r.id)
                   .map((pl) => (
@@ -1134,8 +1106,6 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               </div>
             ))}
           <Composer
-            key={fixDraft.version}
-            initial={fixDraft.text}
             placeholder="Ask Nova, or type @ to pick a mode"
             agent={agent}
             model={modelName(last?.conversation_model) || undefined}
@@ -1163,27 +1133,12 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           )}
         </div>
       </div>
-      {panel && (
-        <WorkPanels
-          key={panelView}
-          scope={scope}
-          cs={kai}
-          tasks={delegated}
-          roots={runs}
-          initial={panelView}
-          onClose={closeSide}
-          onAskFix={(text) => {
-            setMode("build");
-            setFixDraft((draft) => ({ text, version: draft.version + 1 }));
-          }}
-        />
-      )}
+      {panel && kai && <ChatPanel key={kai.session_id} scope={scope} cs={kai} onClose={() => setPanel(false)} />}
     </div>
   );
 }
 
 function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null; across: boolean; q: string; agent0: string | null }) {
-  const route = useRoute();
   const ws = wsId();
   const ps = visibleProjects().filter((p) => canSee(p) && !p.archived);
   const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ps[0]?.id ?? ""));
@@ -1296,17 +1251,6 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           </div>
         </div>
       </div>
-      {route.search.get("panel") === "review" && (
-        <WorkPanels
-          scope={scope}
-          initial="review"
-          onClose={() => {
-            const query = new URLSearchParams(route.search);
-            query.delete("panel");
-            go("chat", {}, { search: query.toString(), replace: true });
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -1612,7 +1556,7 @@ export function Session({ cs }: { cs: CodingSession }) {
   const revert = useRevertCoding(scope, cs.issue_key, defaultApproval());
   const follow = useFollowUp(scope, cs.session_id, cs.issue_key, defaultApproval());
   const search = useRoute().search;
-  const [panelSet, setPanel] = useStoredFlag("dotrix.chat.kaiPanel");
+  const [panelSet, setPanel] = useStoredFlag("dotrix.coding.panel");
   const panel = panelSet || search.has("panel") || search.has("file");
   const closePanel = () => {
     if (search.has("panel") || search.has("file")) {
@@ -1722,8 +1666,8 @@ export function Session({ cs }: { cs: CodingSession }) {
             className={`ibtn ibtn-sm ${panel ? "on" : ""}`}
             onClick={() => (panel ? closePanel() : setPanel(true))}
             aria-pressed={panel}
-            aria-label={`${CODING_AGENT.name}'s work`}
-            data-tip={`${CODING_AGENT.name}'s work: changes, files, terminal, browser, and review`}
+            aria-label="Changes, files, terminal, and review"
+            data-tip="Changes, files, terminal, and review"
           >
             <Ic n="panel-right" s={15} />
           </button>
@@ -2083,10 +2027,10 @@ export function Session({ cs }: { cs: CodingSession }) {
         </div>
       </div>
       {panel && (
-        <WorkPanels
+        <CodingPanel
           scope={scope}
           cs={cs}
-          initial={search.get("panel") === "review" ? "review" : "coding"}
+          initial={search.get("panel") === "review" ? "review" : "changes"}
           onClose={closePanel}
           onAskFix={setAsk}
           fixLabel={`Ask ${CODING_AGENT.name} to fix`}

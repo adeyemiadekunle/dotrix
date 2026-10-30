@@ -224,7 +224,7 @@ apps/web/
 │   ├── shell/                   Shell (sidebar, top bar), Studio (screens by route, overlays), AgentsPanel (who needs you, who is working), Notices (corner notices), viewEngine (filters, sort, group, toolbar)
 │   ├── overlays/                PopLayer (every popover and context menu), Modals, Drawer (the task), Palette (⌘K)
 │   ├── views/                   Board, Table, Calendar, Timeline, Files, project Overview
-│   ├── components/              TaskList, Changes (proposed changes, checkpoints), LimitNotice, KaiPanel (Kai's Changes, Files, Terminal beside a conversation or a session)
+│   ├── components/              TaskList, Changes (proposed changes, checkpoints), LimitNotice, SidePanel + TurnViews (the right side panel: Coding's Changes, Files, Terminal, Review tabs; Chat's Files over Terminal)
 │   ├── ui/                      helpers (small render helpers), toast, face (an agent's face)
 │   └── screens/                 one module per page (Home, Inbox, Chat, Coding, Projects + Overview, Project, Knowledge, TaskPages, Members, Settings, Archive, Search, DesignSystem, Onboarding)
 ├── pages/(auth)/                the sign-in pages: login, signup (+ finish), forgot/reset password, verify-email, magic link, device, invites/accept

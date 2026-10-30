@@ -41,9 +41,9 @@ function openWork(p: Presence) {
     openDemoRequest({ thread: p.thread, task: D().coding.find((c) => c.id === p.session)?.task });
     return;
   }
-  if (p.thread) go("chat", {}, { search: `thread=${p.thread}${p.project ? `&project=${p.project}` : ""}${p.review ? "&panel=review" : ""}` });
-  else if (p.session) go("coding", {}, { search: `session=${p.session}` });
-  else go("chat", {}, { search: `new=1&agent=${p.id}${p.review ? "&panel=review" : ""}` });
+  if (p.thread) go("chat", {}, { search: `thread=${p.thread}${p.project ? `&project=${p.project}` : ""}` });
+  else if (p.session) go("coding", {}, { search: `session=${p.session}${p.review ? "&panel=review" : ""}` });
+  else go("chat", {}, { search: `new=1&agent=${p.id}` });
 }
 
 function Row({ p }: { p: Presence }) {

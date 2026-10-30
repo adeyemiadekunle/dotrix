@@ -132,13 +132,13 @@ async function mockWorkspace(
     await route.fulfill({ status: 200, json: data });
   });
   await page.goto(`/w/test-workspace/${search}`);
-  if (openPanel) await page.getByRole("button", { name: "Kai's work" }).click();
+  if (openPanel) await page.getByRole("button", { name: "Changes, files, terminal, and review" }).click();
 }
 
 test("the work panel keeps turn data and connects Juno's findings to files", async ({ page, context, baseURL }) => {
   await mockWorkspace(page, context, baseURL!);
-  const panel = page.locator(".kai-panel");
-  const tabs = panel.getByRole("tablist", { name: "Agent work" });
+  const panel = page.locator(".side-panel");
+  const tabs = panel.getByRole("tablist", { name: "Session work" });
   const changes = tabs.getByRole("tab", { name: /^Changes/ });
   await expect(changes).toHaveAttribute("aria-selected", "true");
   await expect(panel.getByText(path, { exact: true })).toBeVisible();
@@ -148,14 +148,10 @@ test("the work panel keeps turn data and connects Juno's findings to files", asy
   await panel.getByRole("treeitem", { name: /Navigation.tsx/ }).click();
   await expect(panel.getByRole("button", { name: "Back to the files" })).toBeVisible();
   await tabs.getByRole("tab", { name: "Terminal" }).click();
-  await expect(panel.getByText("Recorded output · read-only")).toBeVisible();
   await expect(panel.getByText("24 tests passed")).toBeVisible();
   await tabs.getByRole("tab", { name: "Files" }).click();
   await expect(panel.getByRole("button", { name: "Back to the files" })).toBeVisible();
-  await tabs.getByRole("tab", { name: "Browser" }).click();
-  await expect(panel.getByText("Captured screenshots")).toBeVisible();
-  await expect(panel.getByRole("img", { name: "Screenshot: pricing.png" })).toBeVisible();
-  await expect(panel.getByRole("link", { name: "Open image" })).toHaveAttribute("href", /turn2\/screenshots\/0$/);
+  await expect(tabs.getByRole("tab", { name: "Browser" })).toHaveCount(0); // a live browser comes later
   await tabs.getByRole("tab", { name: /^Review/ }).click();
   await expect(panel.getByText("Keyboard focus is difficult to see")).toBeVisible();
   await panel.getByRole("button", { name: "Ask Kai to fix" }).click();
@@ -171,8 +167,6 @@ test("the work panel keeps turn data and connects Juno's findings to files", asy
   await tabs.getByRole("tab", { name: /^Review/ }).click();
   await expect(panel.getByText("Earlier finding")).toBeVisible();
   await expect(panel.getByText("Superseded by a later coding turn")).toBeVisible();
-  await tabs.getByRole("tab", { name: "Browser" }).click();
-  await expect(panel.getByText("No screenshots were captured in this turn.")).toBeVisible();
 });
 
 test("a linked review reference opens its turn and file directly, from an older Chat link too", async ({ page, context, baseURL }) => {
@@ -180,7 +174,7 @@ test("a linked review reference opens its turn and file directly, from an older 
   const search = new URLSearchParams({ tab: "coding", session: "session1", turn: "turn2", file: path, line: "2" });
   await mockWorkspace(page, context, baseURL!, `chat?${search}`, false);
   await expect(page).toHaveURL(/\/coding\?session=session1/);
-  const panel = page.locator(".kai-panel");
+  const panel = page.locator(".side-panel");
   await expect(panel.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
   await expect(panel.locator(".kp-line-reference")).toContainText("const href = '#plans'");
   await panel.getByRole("button", { name: "Close the panel" }).click();
@@ -191,7 +185,7 @@ test("a linked review reference opens its turn and file directly, from an older 
 test("an unavailable review can be retried without showing a different turn's review", async ({ page, context, baseURL }) => {
   let available = false;
   await mockWorkspace(page, context, baseURL!, undefined, true, () => available);
-  const panel = page.locator(".kai-panel");
+  const panel = page.locator(".side-panel");
   await panel.getByRole("tab", { name: /^Review/ }).click();
   await expect(panel.getByText("Some reviews couldn't be loaded.")).toBeVisible({ timeout: 20_000 });
   await expect(panel.getByText("Earlier finding")).toHaveCount(0);
@@ -203,17 +197,17 @@ test("an unavailable review can be retried without showing a different turn's re
 test("the work panel is closeable and keyboard accessible on mobile", async ({ page, context, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockWorkspace(page, context, baseURL!);
-  const panel = page.locator(".kai-panel");
+  const panel = page.locator(".side-panel");
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("button", { name: "Close the panel" })).toBeFocused();
-  await panel.getByRole("tab", { name: "Browser" }).click();
-  await expect(panel.getByText("Captured screenshots")).toBeVisible();
+  await panel.getByRole("tab", { name: "Terminal" }).click();
+  await expect(panel.getByText("24 tests passed")).toBeVisible();
   await panel.getByRole("tab", { name: /^Review/ }).click();
   await panel.getByRole("button", { name: "Ask Kai to fix" }).click();
   await expect(panel).toHaveCount(0);
   await expect(page.getByLabel("Follow-up")).toHaveValue(/Keyboard focus is difficult to see/);
-  await page.getByRole("button", { name: "Kai's work" }).click();
+  await page.getByRole("button", { name: "Changes, files, terminal, and review" }).click();
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Kai's work" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Changes, files, terminal, and review" })).toBeFocused();
 });

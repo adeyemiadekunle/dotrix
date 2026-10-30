@@ -1,5 +1,5 @@
-// The selected coding turn's diff, repository files, recorded commands, and browser captures.
-// Desktop turns can also show the live worktree on this computer.
+// A coding turn's work as the side panel shows it (components/SidePanel.tsx): its diff, the repository's
+// files as the turn leaves it, and the commands it ran. Desktop turns show the live worktree on this computer.
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useCodingEvents, useCodingFile, useCodingTree, type CodingRun } from "@/lib/coding";
@@ -10,94 +10,82 @@ import { Ic } from "../core/icons";
 import { buildTree, terminal, type DiffFile, type DiffHunk, type TreeNode } from "../core/kaiWork";
 import { toast } from "../ui/toast";
 
-type Tab = "changes" | "files" | "terminal" | "browser" | "review";
 const LONG_OUTPUT = 24; // lines of a command's output shown before "Show all"
 
-export function KaiPanel({
+/** The turn's diff, file by file. */
+export function ChangesView({
+  run,
+  files,
+  loading,
+  error,
+  onRetry,
+}: {
+  run: CodingRun;
+  files: DiffFile[];
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+}) {
+  return error ? (
+    <p className="muted">
+      The changes couldn't be loaded.{" "}
+      <button className="btn btn-sm btn-ghost" onClick={onRetry}>
+        Try again
+      </button>
+    </p>
+  ) : (
+    <Changes files={files} loading={loading} turn={run} />
+  );
+}
+
+/** The repository as the turn leaves it (live from the worktree when it codes on this computer). */
+export function FilesView({
   scope,
   run,
-  tab,
-  id,
   files,
-  diffLoading,
-  diffError,
-  retryDiff,
   initialFile,
   initialLine,
   referenceVersion,
+  enabled = true,
 }: {
   scope: Scope | undefined;
   run: CodingRun;
-  tab: Tab;
-  id: string;
   files: DiffFile[];
-  diffLoading: boolean;
-  diffError: boolean;
-  retryDiff: () => void;
   initialFile?: string;
   initialLine?: number;
   referenceVersion?: number;
+  enabled?: boolean;
 }) {
-  const events = useCodingEvents(scope, run, tab === "terminal");
-  const commands = useMemo(() => terminal(events.data ?? run.events ?? []), [events.data, run.events]);
   const worktree = worktreeHere(run, useDesktopRunners());
   return (
-    <>
-      <section role="tabpanel" id={`${id}-changes-panel`} aria-labelledby={`${id}-changes-tab`} hidden={tab !== "changes"}>
-        <div className="work-section-head">
-          <b>Changes</b>
-          <span className="badge">Kai · Turn {run.turn}</span>
-        </div>
-        {diffError ? (
-          <p className="muted">
-            The changes couldn't be loaded.{" "}
-            <button className="btn btn-sm btn-ghost" onClick={retryDiff}>
-              Try again
-            </button>
-          </p>
-        ) : (
-          <Changes files={files} loading={diffLoading} turn={run} />
-        )}
-      </section>
-      <section role="tabpanel" id={`${id}-files-panel`} aria-labelledby={`${id}-files-tab`} hidden={tab !== "files"}>
-        <div className="work-section-head">
-          <b>Files</b>
-          <span className="badge">Turn {run.turn}</span>
-        </div>
-        <Files
-          key={`${initialFile ?? ""}:${initialLine ?? ""}:${referenceVersion ?? ""}`}
-          scope={scope}
-          run={run}
-          diffs={files}
-          worktree={worktree}
-          initialPath={initialFile}
-          initialLine={initialLine}
-          enabled={tab === "files"}
-        />
-      </section>
-      <section role="tabpanel" id={`${id}-terminal-panel`} aria-labelledby={`${id}-terminal-tab`} hidden={tab !== "terminal"}>
-        <div className="work-section-head">
-          <b>Terminal</b>
-          <span className="badge">Recorded output · read-only</span>
-        </div>
-        {events.isLoading ? (
-          <p className="muted">Loading commands…</p>
-        ) : events.isError ? (
-          <p className="muted">
-            The commands couldn't be loaded.{" "}
-            <button className="btn btn-sm btn-ghost" onClick={() => void events.refetch()}>
-              Try again
-            </button>
-          </p>
-        ) : (
-          <Terminal entries={commands} working={run.status === "running"} />
-        )}
-      </section>
-      <section role="tabpanel" id={`${id}-browser-panel`} aria-labelledby={`${id}-browser-tab`} hidden={tab !== "browser"}>
-        <Browser scope={scope} run={run} active={tab === "browser"} />
-      </section>
-    </>
+    <Files
+      key={`${run.id}:${initialFile ?? ""}:${initialLine ?? ""}:${referenceVersion ?? ""}`}
+      scope={scope}
+      run={run}
+      diffs={files}
+      worktree={worktree}
+      initialPath={initialFile}
+      initialLine={initialLine}
+      enabled={enabled}
+    />
   );
+}
+
+/** Each command the turn ran, with its recorded output (read-only). */
+export function TerminalView({ scope, run, enabled = true }: { scope: Scope | undefined; run: CodingRun; enabled?: boolean }) {
+  const events = useCodingEvents(scope, run, enabled);
+  const commands = useMemo(() => terminal(events.data ?? run.events ?? []), [events.data, run.events]);
+  if (events.isLoading) return <p className="muted">Loading commands…</p>;
+  if (events.isError)
+    return (
+      <p className="muted">
+        The commands couldn't be loaded.{" "}
+        <button className="btn btn-sm btn-ghost" onClick={() => void events.refetch()}>
+          Try again
+        </button>
+      </p>
+    );
+  return <Terminal entries={commands} working={run.status === "running"} />;
 }
 
 /* ---------- Changes: each file's diff ---------- */
@@ -358,87 +346,6 @@ function FileView({
             </div>
           ))}
         </div>
-      )}
-    </div>
-  );
-}
-
-/* ---------- Browser: screenshots captured by the selected turn ---------- */
-
-function Browser({ scope, run, active }: { scope: Scope | undefined; run: CodingRun; active: boolean }) {
-  const screenshots = run.screenshots ?? [];
-  const [selected, setSelected] = useState<number | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  const shot = screenshots.find((candidate) => candidate.index === selected) ?? screenshots[0];
-  const src =
-    scope && shot
-      ? `/v1/workspaces/${encodeURIComponent(scope.workspaceId)}/projects/${encodeURIComponent(scope.projectId)}/coding/runs/${encodeURIComponent(run.id)}/screenshots/${shot.index}`
-      : null;
-  return (
-    <div className="work-browser">
-      <div className="work-section-head">
-        <b>Browser</b>
-        <span className="badge">Captured screenshots</span>
-      </div>
-      <p className="faint">Saved by Kai during Turn {run.turn}; this is not a live browser.</p>
-      {!shot || !src ? (
-        <p className="muted">
-          {run.status === "running" || run.status === "queued" ? "No screenshots captured yet." : "No screenshots were captured in this turn."}
-        </p>
-      ) : (
-        <>
-          {screenshots.length > 1 && (
-            <div className="work-captures" aria-label="Screenshots">
-              {screenshots.map((candidate) => (
-                <button
-                  key={candidate.index}
-                  className={`btn btn-sm ${candidate.index === shot.index ? "btn-secondary" : "btn-ghost"}`}
-                  aria-pressed={candidate.index === shot.index}
-                  onClick={() => {
-                    setSelected(candidate.index);
-                    setFailed(false);
-                  }}
-                >
-                  {candidate.name}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="work-capture-head">
-            <span className="trunc">{shot.name}</span>
-            <span className="sp" />
-            <a href={src} target="_blank" rel="noreferrer">
-              Open image
-            </a>
-          </div>
-          {active && (
-            <>
-              {failed && (
-                <p className="muted">
-                  This screenshot couldn't be loaded.{" "}
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    onClick={() => {
-                      setFailed(false);
-                      setAttempt((value) => value + 1);
-                    }}
-                  >
-                    Try again
-                  </button>
-                </p>
-              )}
-              <img
-                key={`${src}-${attempt}`}
-                className="work-capture"
-                src={src}
-                alt={`Screenshot: ${shot.name}`}
-                hidden={failed}
-                onError={() => setFailed(true)}
-              />
-            </>
-          )}
-        </>
       )}
     </div>
   );
