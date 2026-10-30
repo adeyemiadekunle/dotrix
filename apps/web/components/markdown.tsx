@@ -15,9 +15,10 @@ function fenced(children: ReactNode): { code: string; language?: string } {
 /**
  * Markdown from issues, comments, and agents. Raw HTML is not rendered (react-markdown's
  * default), so text written by agents or pasted from docs can't inject markup. Fenced code
- * gets a CodeBlock (language, copy, highlighting).
+ * gets a CodeBlock (language, copy, highlighting). `onCode` may turn inline code into a button
+ * (a file path that opens the file): it returns what a click does, or nothing to leave it as text.
  */
-export function Markdown({ children, className }: { children: string; className?: string }) {
+export function Markdown({ children, className, onCode }: { children: string; className?: string; onCode?: (code: string) => (() => void) | undefined }) {
   return (
     <div
       className={cn(
@@ -36,6 +37,19 @@ export function Markdown({ children, className }: { children: string; className?
         components={{
           a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" />,
           pre: ({ node: _node, children }) => <CodeBlock {...fenced(children)} />,
+          code: ({ node: _node, className: codeClass, children: code, ...props }) => {
+            const text = String(code ?? "");
+            const click = !codeClass && !text.includes("\n") ? onCode?.(text) : undefined;
+            return click ? (
+              <button type="button" className="path-link" onClick={click} data-tip="Open in Files">
+                <code>{text}</code>
+              </button>
+            ) : (
+              <code className={codeClass} {...props}>
+                {code}
+              </code>
+            );
+          },
         }}
       >
         {children}

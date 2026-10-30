@@ -1,5 +1,6 @@
 // The right side panel beside a coding session (Coding) or a conversation (Chat), resizable by its left edge.
-// Coding: the selected turn's Changes, Files, Terminal, and Juno's Review, as tabs.
+// Coding: one of the selected turn's Changes, Files, Terminal, or Juno's Review, picked by the buttons in the
+// session header (as Claude Code's title bar opens its panes); Juno's findings also show on their lines in Changes.
 // Chat: the files and terminal of the session the conversation started, one above the other, no tabs.
 // Both: a turn picker and a close button in the header; on narrow screens the panel floats over the page.
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -21,11 +22,10 @@ import { me } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
 import { tabKeys } from "../ui/tabs";
 import { toast } from "../ui/toast";
-import { ChangesView, FilesView, TerminalView } from "./TurnViews";
+import { ChangesView, FilesView, TerminalView, type DiffNote } from "./TurnViews";
 
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const narrowPanel = () => window.matchMedia("(max-width: 1200px)").matches;
-type CodingTab = "changes" | "files" | "terminal" | "review";
 
 /** The panel's frame: the drag edge, a one-line header (what it shows, the turn, close), and the body. */
 function PanelFrame({
@@ -117,28 +117,62 @@ function NoTurn({ query }: { query: ReturnType<typeof useCodingSession> }) {
   );
 }
 
-/** Coding: a session's turn as tabs (Changes, Files, Terminal, Review). */
+/** What Coding's panel shows; the session header's buttons pick it (screens/Chat.tsx Session). */
+export type CodingView = "changes" | "files" | "terminal" | "review";
+export const CODING_VIEWS: { id: CodingView; label: string; icon: string }[] = [
+  { id: "changes", label: "Changes", icon: "git-compare" },
+  { id: "files", label: "Files", icon: "folder-tree" },
+  { id: "terminal", label: "Terminal", icon: "square-terminal" },
+  { id: "review", label: "Review", icon: "shield-check" },
+];
+
+/** Juno's findings with a `path:line` reference, by path: shown on those lines in Changes. */
+function findingNotes(review: Run | undefined, turn: CodingRun | undefined): Map<string, DiffNote[]> {
+  const notes = new Map<string, DiffNote[]>();
+  if (!review || !turn || text(review.review_context?.coding_run_id) !== turn.id) return notes;
+  for (const output of review.outputs ?? []) {
+    if (output.kind !== "finding") continue;
+    for (const item of output.items) {
+      const finding = item.data as Record<string, unknown>;
+      for (const ref of Array.isArray(finding.refs) ? finding.refs : []) {
+        const match = text(ref).match(/^(.*?):(\d+)(?:[-:]\d+)?$/);
+        if (!match) continue;
+        const list = notes.get(match[1]!) ?? [];
+        list.push({ line: Number(match[2]), title: text(finding.title) || "Finding", severity: text(finding.severity) });
+        notes.set(match[1]!, list);
+      }
+    }
+  }
+  return notes;
+}
+
+/** Coding: one view of a session's turn at a time (Changes, Files, Terminal, Review), picked from the session header. */
 export function CodingPanel({
   scope,
   cs,
-  initial = "changes",
+  view,
+  onView,
   onClose,
   onAskFix,
   fixLabel,
 }: {
   scope: Scope | undefined;
   cs: CodingSession;
-  initial?: "changes" | "review";
+  view: CodingView;
+  onView: (view: CodingView) => void;
   onClose: () => void;
   onAskFix?: (message: string) => void;
   fixLabel: string;
 }) {
   const query = useRoute().search;
-  const [tab, setTab] = useState<CodingTab>(() => (initial === "review" ? "review" : query.has("file") ? "files" : "changes"));
-  const { turnsQuery, turns, turn, setPicked, diff, files } = useTurn(scope, cs, query.get("turn"));
+  const queryTurn = query.get("turn");
+  const { turnsQuery, turns, turn, setPicked, diff, files } = useTurn(scope, cs, queryTurn);
+  // A link that names a turn (a file path in the transcript, a review reference) picks it.
+  useEffect(() => {
+    if (queryTurn) setPicked(queryTurn);
+  }, [queryTurn, setPicked]);
   const [selectedReview, setSelectedReview] = useState<string | null>(null);
   const [reference, setReference] = useState<{ turn: string; path: string; line?: number; version: number } | null>(null);
-  const id = useId();
   const latestChanged = [...turns].reverse().find((turn) => turn.files_changed.length && ["pr_opened", "changes_ready"].includes(turn.status));
   const reviewQueries = useReviewRunQueries(
     scope,
@@ -150,13 +184,10 @@ export function CodingPanel({
     : turn?.review_run_id
       ? reviews.find((candidate) => candidate.id === turn.review_run_id)
       : (reviews.find((candidate) => turn && text(candidate.review_context?.coding_run_id) === turn.id) ?? reviews[0]);
-  const findingCount = (review?.outputs ?? []).filter((output) => output.kind === "finding").reduce((count, output) => count + output.items.length, 0);
+  const turnReview = turn?.review_run_id ? reviews.find((candidate) => candidate.id === turn.review_run_id) : undefined;
+  const notes = useMemo(() => findingNotes(turnReview, turn), [turnReview, turn]);
   const initialFile =
-    reference && reference.turn === turn?.id
-      ? reference.path
-      : !query.get("turn") || query.get("turn") === turn?.id
-        ? (query.get("file") ?? undefined)
-        : undefined;
+    reference && reference.turn === turn?.id ? reference.path : !queryTurn || queryTurn === turn?.id ? (query.get("file") ?? undefined) : undefined;
   const lineFromQuery = Number(query.get("line"));
   const initialLine =
     reference && reference.turn === turn?.id ? reference.line : initialFile && Number.isInteger(lineFromQuery) && lineFromQuery > 0 ? lineFromQuery : undefined;
@@ -171,47 +202,26 @@ export function CodingPanel({
     if (cs.session_id === session) {
       setPicked(turn);
       setReference((previous) => ({ turn, path, line, version: (previous?.version ?? 0) + 1 }));
-      setTab("files");
+      onView("files");
     } else {
-      const search = new URLSearchParams({ session, turn, file: path, panel: "changes" });
+      const search = new URLSearchParams({ session, turn, file: path, panel: "files" });
       if (line) search.set("line", String(line));
       go("coding", {}, { search: search.toString() });
     }
   };
-  const tabs: { id: CodingTab; label: string; icon: string; count?: number }[] = [
-    { id: "changes", label: "Changes", icon: "git-compare", count: files.length },
-    { id: "files", label: "Files", icon: "folder-tree" },
-    { id: "terminal", label: "Terminal", icon: "square-terminal" },
-    { id: "review", label: "Review", icon: "shield-check", count: findingCount },
-  ];
-  const panelOf = (which: CodingTab, body: ReactNode) => (
-    <section role="tabpanel" id={`${id}-${which}-panel`} aria-labelledby={`${id}-${which}-tab`} hidden={tab !== which} className="side-panel-body">
-      {body}
-    </section>
-  );
+  const current = CODING_VIEWS.find((item) => item.id === view)!;
   return (
     <PanelFrame
-      label="Session work"
+      label={current.label}
       widthKey="dotrix.coding.panel.width"
       onClose={onClose}
+      closeLabel={`Close ${current.label}`}
       title={
-        <div className="side-tabs" role="tablist" aria-label="Session work" onKeyDown={tabKeys}>
-          {tabs.map((item) => (
-            <button
-              key={item.id}
-              id={`${id}-${item.id}-tab`}
-              role="tab"
-              aria-selected={tab === item.id}
-              aria-controls={`${id}-${item.id}-panel`}
-              tabIndex={tab === item.id ? 0 : -1}
-              onClick={() => setTab(item.id)}
-            >
-              <Ic n={item.icon} s={13} />
-              <span>{item.label}</span>
-              {!!item.count && <span className="side-tab-count">{item.count}</span>}
-            </button>
-          ))}
-        </div>
+        <span className="side-panel-title">
+          <Ic n={current.icon} s={14} />
+          <b>{current.label}</b>
+          {view === "terminal" && <span className="faint">Recorded output · read-only</span>}
+        </span>
       }
       tools={
         <TurnPicker
@@ -225,55 +235,62 @@ export function CodingPanel({
         />
       }
     >
-      {panelOf(
-        "changes",
-        turn ? (
-          <ChangesView run={turn} files={files} loading={diff.isLoading} error={diff.isError} onRetry={() => void diff.refetch()} />
-        ) : (
-          <NoTurn query={turnsQuery} />
-        ),
-      )}
-      {panelOf(
-        "files",
-        turn ? (
-          <FilesView
+      <div className="side-panel-body">
+        {view === "review" ? (
+          <ReviewPanel
             scope={scope}
-            run={turn}
-            files={files}
-            initialFile={initialFile}
-            initialLine={initialLine}
-            referenceVersion={reference?.version}
-            enabled={tab === "files"}
+            reviews={reviews}
+            run={review}
+            onSelectReview={setSelectedReview}
+            latestTurn={latestChanged?.id}
+            sessionId={cs.session_id}
+            loading={reviewQueries.some((result) => result.isLoading)}
+            failed={reviewQueries.some((result) => result.isError)}
+            onRetry={() => reviewQueries.filter((result) => result.isError).forEach((result) => void result.refetch())}
+            onAskFix={
+              onAskFix
+                ? (message) => {
+                    onAskFix(message);
+                    if (narrowPanel()) onClose();
+                  }
+                : undefined
+            }
+            fixLabel={fixLabel}
+            onReference={openReference}
           />
-        ) : (
+        ) : !turn ? (
           <NoTurn query={turnsQuery} />
-        ),
-      )}
-      {panelOf("terminal", turn ? <TerminalView scope={scope} run={turn} enabled={tab === "terminal"} /> : <NoTurn query={turnsQuery} />)}
-      {panelOf(
-        "review",
-        <ReviewPanel
-          scope={scope}
-          reviews={reviews}
-          run={review}
-          onSelectReview={setSelectedReview}
-          latestTurn={latestChanged?.id}
-          sessionId={cs.session_id}
-          loading={reviewQueries.some((result) => result.isLoading)}
-          failed={reviewQueries.some((result) => result.isError)}
-          onRetry={() => reviewQueries.filter((result) => result.isError).forEach((result) => void result.refetch())}
-          onAskFix={
-            onAskFix
-              ? (message) => {
-                  onAskFix(message);
-                  if (narrowPanel()) onClose();
-                }
-              : undefined
-          }
-          fixLabel={fixLabel}
-          onReference={openReference}
-        />,
-      )}
+        ) : (
+          // All three stay mounted while the panel is open, so a file opened in Files is still open on the way back.
+          <>
+            <div hidden={view !== "changes"}>
+              <ChangesView
+                run={turn}
+                files={files}
+                loading={diff.isLoading}
+                error={diff.isError}
+                onRetry={() => void diff.refetch()}
+                notes={notes}
+                onNote={() => onView("review")}
+              />
+            </div>
+            <div hidden={view !== "files"}>
+              <FilesView
+                scope={scope}
+                run={turn}
+                files={files}
+                initialFile={initialFile}
+                initialLine={initialLine}
+                referenceVersion={reference?.version}
+                enabled={view === "files"}
+              />
+            </div>
+            <div hidden={view !== "terminal"}>
+              <TerminalView scope={scope} run={turn} enabled={view === "terminal"} />
+            </div>
+          </>
+        )}
+      </div>
     </PanelFrame>
   );
 }

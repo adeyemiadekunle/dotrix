@@ -82,3 +82,22 @@ export function useStoredFlag(key: string): [boolean, (on: boolean) => void] {
   }, [key, on]);
   return [on, setOn];
 }
+
+/** A short text kept in this browser (the fallback when storage is gone). */
+export function useStoredText(key: string, fallback: string): [string, (value: string) => void] {
+  const [value, setValue] = useState(() => {
+    try {
+      return localStorage.getItem(key) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      /* storage off: it lasts until the page reloads */
+    }
+  }, [key, value]);
+  return [value, setValue];
+}

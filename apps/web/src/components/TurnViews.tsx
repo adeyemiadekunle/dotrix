@@ -1,6 +1,6 @@
 // A coding turn's work as the side panel shows it (components/SidePanel.tsx): its diff, the repository's
 // files as the turn leaves it, and the commands it ran. Desktop turns show the live worktree on this computer.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { useCodingEvents, useCodingFile, useCodingTree, type CodingRun } from "@/lib/coding";
 import type { Scope } from "@/lib/issues";
@@ -12,19 +12,30 @@ import { toast } from "../ui/toast";
 
 const LONG_OUTPUT = 24; // lines of a command's output shown before "Show all"
 
-/** The turn's diff, file by file. */
+/** A note on one line of the new file (Juno's finding), shown under that line in the diff. */
+export interface DiffNote {
+  line: number;
+  title: string;
+  severity: string;
+}
+
+/** The turn's diff, file by file, with any notes on their lines. */
 export function ChangesView({
   run,
   files,
   loading,
   error,
   onRetry,
+  notes,
+  onNote,
 }: {
   run: CodingRun;
   files: DiffFile[];
   loading: boolean;
   error: boolean;
   onRetry: () => void;
+  notes?: Map<string, DiffNote[]>;
+  onNote?: () => void;
 }) {
   return error ? (
     <p className="muted">
@@ -34,7 +45,7 @@ export function ChangesView({
       </button>
     </p>
   ) : (
-    <Changes files={files} loading={loading} turn={run} />
+    <Changes files={files} loading={loading} turn={run} notes={notes} onNote={onNote} />
   );
 }
 
@@ -90,7 +101,19 @@ export function TerminalView({ scope, run, enabled = true }: { scope: Scope | un
 
 /* ---------- Changes: each file's diff ---------- */
 
-function Changes({ files, loading, turn }: { files: DiffFile[]; loading: boolean; turn: CodingRun }) {
+function Changes({
+  files,
+  loading,
+  turn,
+  notes,
+  onNote,
+}: {
+  files: DiffFile[];
+  loading: boolean;
+  turn: CodingRun;
+  notes?: Map<string, DiffNote[]>;
+  onNote?: () => void;
+}) {
   const [closed, setClosed] = useState<Set<string>>(new Set());
   if (loading) return <p className="muted">Loading the changes…</p>;
   if (!files.length)
@@ -122,10 +145,17 @@ function Changes({ files, loading, turn }: { files: DiffFile[]; loading: boolean
               <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
               <span className={`kp-st ${f.status}`}>{f.status === "added" ? "A" : f.status === "deleted" ? "D" : "M"}</span>
               <span className="trunc grow mono">{f.path}</span>
+              {!!notes?.get(f.path)?.length && (
+                <span className="kp-note-count" title="Juno's findings on this file">
+                  <Ic n="shield-check" s={11} />
+                  {notes.get(f.path)!.length}
+                </span>
+              )}
               <span style={{ color: "var(--green)" }}>+{f.added}</span>
               <span style={{ color: "var(--red)" }}>-{f.removed}</span>
             </button>
-            {open && (f.binary ? <p className="muted kp-note">A binary file: not shown.</p> : <Hunks hunks={f.hunks} />)}
+            {open &&
+              (f.binary ? <p className="muted kp-note">A binary file: not shown.</p> : <Hunks hunks={f.hunks} notes={notes?.get(f.path)} onNote={onNote} />)}
           </section>
         );
       })}
@@ -133,19 +163,32 @@ function Changes({ files, loading, turn }: { files: DiffFile[]; loading: boolean
   );
 }
 
-function Hunks({ hunks }: { hunks: DiffHunk[] }) {
+function Hunks({ hunks, notes = [], onNote }: { hunks: DiffHunk[]; notes?: DiffNote[]; onNote?: () => void }) {
   return (
     <div className="kp-diff mono" role="table" aria-label="Diff">
       {hunks.map((h, i) => (
         <div key={i}>
           <div className="kp-hunk">{h.header}</div>
           {h.lines.map((l, j) => (
-            <div key={j} className={`kp-line ${l.kind}`} role="row">
-              <span className="kp-no">{l.old ?? ""}</span>
-              <span className="kp-no">{l.new ?? ""}</span>
-              <span className="kp-sign">{l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}</span>
-              <span className="kp-text">{l.text || " "}</span>
-            </div>
+            <Fragment key={j}>
+              <div className={`kp-line ${l.kind}`} role="row">
+                <span className="kp-no">{l.old ?? ""}</span>
+                <span className="kp-no">{l.new ?? ""}</span>
+                <span className="kp-sign">{l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}</span>
+                <span className="kp-text">{l.text || " "}</span>
+              </div>
+              {l.kind !== "del" &&
+                notes
+                  .filter((n) => n.line === l.new)
+                  .map((n, k) => (
+                    <button key={k} className="kp-finding" onClick={onNote} aria-label={`Juno's finding on line ${n.line}: ${n.title}`}>
+                      <Ic n="shield-check" s={12} />
+                      <b>Juno</b>
+                      {n.severity && <span className="badge">{n.severity}</span>}
+                      <span className="trunc">{n.title}</span>
+                    </button>
+                  ))}
+            </Fragment>
           ))}
         </div>
       ))}

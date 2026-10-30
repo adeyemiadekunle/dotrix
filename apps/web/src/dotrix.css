@@ -1534,7 +1534,7 @@ body.resizing-row * {
   .cs-head > .sp {
     display: none;
   }
-  .cs-head > .cs-panes {
+  .cs-head > .cs-views {
     width: 100%;
     justify-content: flex-end;
   }
@@ -1884,47 +1884,6 @@ body.resizing-row * {
 .side-panel-select {
   width: auto;
 }
-.side-tabs {
-  display: flex;
-  gap: 2px;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.side-tabs button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-  height: 28px;
-  padding: 0 9px;
-  border: 0;
-  border-radius: var(--r);
-  background: none;
-  color: var(--text-3);
-  font: inherit;
-  cursor: pointer;
-}
-.side-tabs button:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-.side-tabs button[aria-selected="true"] {
-  background: var(--surface-3);
-  color: var(--text);
-  font-weight: 500;
-}
-.side-tabs button:focus-visible {
-  outline: 2px solid var(--accent-line);
-  outline-offset: -2px;
-}
-.side-tab-count {
-  padding: 0 5px;
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--text-3);
-  font-size: 10.5px;
-}
 section.side-panel-body[hidden] {
   display: none;
 }
@@ -1960,4 +1919,87 @@ section.side-panel-body[hidden] {
 .side-stack-split {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
+}
+
+/* A session's side-panel buttons (Changes, Files, Terminal, Review), as Claude Code's title bar opens its panes:
+ * icons, named on hover. */
+.cs-views {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.cs-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r);
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.cs-view:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.cs-view.on {
+  background: var(--surface-3);
+  color: var(--text);
+  font-weight: 500;
+}
+.cs-view:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: -2px;
+}
+.line-counts {
+  font-size: 12px;
+  white-space: nowrap;
+}
+/* A file path that opens the file in the side panel. */
+.path-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+.path-link:hover {
+  color: var(--acc);
+  text-decoration-color: currentColor;
+}
+/* Juno's finding under the line it is about, in Changes. */
+.kp-finding {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 2px 0;
+  padding: 4px 8px 4px 12px;
+  border: 0;
+  border-left: 2px solid var(--amber);
+  background: var(--amber-soft);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font);
+  font-size: 12px;
+  white-space: normal;
+  text-align: left;
+  cursor: pointer;
+}
+.kp-note-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--amber);
+  font-size: 11px;
 }

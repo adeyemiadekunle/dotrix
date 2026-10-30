@@ -3,7 +3,7 @@
 // links back to it, and still shows as a card there. Stopping, archiving, or deleting a session here leaves the
 // conversation alone, and the other way round.
 // URL: ?session=ID (a session, with &panel=, &turn=, &file=, &line=), ?new=1 (a new session, &issue=KEY), else the list.
-import { type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 import { useCodingSessions } from "@/lib/coding";
 import { Ic } from "../core/icons";
@@ -34,7 +34,12 @@ export function Coding() {
   const hasSel = Boolean(sessionId || search.get("new") || issue);
   const [listW, setListW] = useStoredSize("dotrix.coding.listWidth", 300, 220, 480);
   const [listMinSet, setListMin] = useStoredFlag("dotrix.coding.listMin");
-  const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;
+  // While a session's side panel is open on a screen without room for all three, the list folds to its rail
+  // (unless you open it again); it comes back when the panel closes.
+  const [keepList, setKeepList] = useState(false);
+  const crowded = Boolean(sessionId && search.get("panel")) && window.matchMedia("(max-width: 1599px)").matches;
+  useEffect(() => setKeepList(false), [crowded]);
+  const listMin = (listMinSet || (crowded && !keepList)) && !window.matchMedia("(max-width: 900px)").matches;
   const itemsOf = (projectId: string) =>
     sessions
       .filter((c) => c.project_id === projectId)
@@ -46,7 +51,13 @@ export function Coding() {
         <aside className={`chat-side ${listMin ? "min" : ""}`}>
           {listMin ? (
             <div className="chat-rail">
-              <button className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
+              <button
+                className="ibtn"
+                onClick={() => (listMinSet ? setListMin(false) : setKeepList(true))}
+                aria-label="Show the list"
+                data-tip="Show the list"
+                data-tip-pos="right"
+              >
                 <Ic n="panel-left-open" s={16} />
               </button>
               <button className="ibtn" onClick={() => openCoding("new=1")} aria-label="New coding session" data-tip="New coding session" data-tip-pos="right">
@@ -59,7 +70,15 @@ export function Coding() {
               <div style={{ padding: "18px 16px 8px" }} className="row">
                 <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Coding</h1>
                 <span className="sp" />
-                <button className="ibtn ibtn-sm chat-fold" onClick={() => setListMin(true)} aria-label="Hide the list" data-tip="Hide the list">
+                <button
+                  className="ibtn ibtn-sm chat-fold"
+                  onClick={() => {
+                    setListMin(true);
+                    setKeepList(false);
+                  }}
+                  aria-label="Hide the list"
+                  data-tip="Hide the list"
+                >
                   <Ic n="panel-left-close" s={15} />
                 </button>
               </div>

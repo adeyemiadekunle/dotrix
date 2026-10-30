@@ -70,10 +70,10 @@ import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT } from "../data/seed-dotrix";
-import { ChatPanel, CodingPanel } from "../components/SidePanel";
+import { CODING_VIEWS, ChatPanel, CodingPanel, type CodingView } from "../components/SidePanel";
 import { useConversationTasks, useReviewRuns, type SpecialistTask } from "@/lib/team";
 import { useAtPicker } from "../components/AtPicker";
-import { Splitter, useStoredFlag, useStoredSize } from "../ui/splitter";
+import { Splitter, useStoredFlag, useStoredSize, useStoredText } from "../ui/splitter";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const agentName = (h: string) => D().agents.find((a) => a.handle === h)?.name ?? h;
@@ -297,9 +297,10 @@ function SessionCard({ cs }: { cs: CodingSession }) {
             PR #{cs.pr_number}
           </a>
         )}
-        {files.length > 0 && (
-          <span>
+        {files.length > 0 && latest && (
+          <span className="row" style={{ gap: 6 }}>
             {files.length} file{files.length === 1 ? "" : "s"} changed
+            <LineCounts files={files} onClick={() => openCoding(`session=${cs.session_id}&turn=${latest.id}&panel=changes`)} tip="Open the changes in Coding" />
           </span>
         )}
       </div>
@@ -1544,6 +1545,44 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
 /* ---------- a coding session ---------- */
 
 const fileOf = (f: Record<string, unknown>) => String(f.path ?? f.file ?? f.name ?? "");
+/** A turn's lines added and removed, from its changed files. */
+const lineCounts = (files: Record<string, unknown>[]) =>
+  files.reduce<[number, number]>((sum, f) => [sum[0] + (Number(f.added) || 0), sum[1] + (Number(f.removed) || 0)], [0, 0]);
+/** Lines added and removed, as Claude Code shows them; a button when it opens the changes. */
+function LineCounts({ files, onClick, tip }: { files: Record<string, unknown>[]; onClick?: () => void; tip?: string }) {
+  const [added, removed] = lineCounts(files);
+  const body = (
+    <>
+      <span style={{ color: "var(--green)" }}>+{added}</span> <span style={{ color: "var(--red)" }}>−{removed}</span>
+    </>
+  );
+  return onClick ? (
+    <button className="pillbtn mono line-counts" onClick={onClick} data-tip={tip} aria-label={`${added} lines added, ${removed} removed. ${tip ?? ""}`.trim()}>
+      {body}
+    </button>
+  ) : (
+    <span className="mono line-counts">{body}</span>
+  );
+}
+/** Text with the paths it names (from `paths`) as buttons that open them. */
+function PathLinks({ text, paths, onPath }: { text: string; paths: string[]; onPath: (path: string) => void }) {
+  const found = paths.filter((path) => path && text.includes(path)).sort((a, b) => b.length - a.length);
+  if (!found.length) return <>{text}</>;
+  const pattern = new RegExp(`(${found.map((path) => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`);
+  return (
+    <>
+      {text.split(pattern).map((part, i) =>
+        found.includes(part) ? (
+          <button key={i} className="path-link mono" onClick={() => onPath(part)} data-tip="Open in Files">
+            {part}
+          </button>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
 
 export function Session({ cs }: { cs: CodingSession }) {
   const ws = wsId();
@@ -1556,18 +1595,51 @@ export function Session({ cs }: { cs: CodingSession }) {
   const revert = useRevertCoding(scope, cs.issue_key, defaultApproval());
   const follow = useFollowUp(scope, cs.session_id, cs.issue_key, defaultApproval());
   const search = useRoute().search;
-  const [panelSet, setPanel] = useStoredFlag("dotrix.coding.panel");
-  const panel = panelSet || search.has("panel") || search.has("file");
-  const closePanel = () => {
-    if (search.has("panel") || search.has("file")) {
-      const query = new URLSearchParams(search);
-      query.delete("panel");
-      query.delete("file");
-      query.delete("line");
-      go("coding", {}, { search: query.toString(), replace: true });
-    }
-    setPanel(false);
+  // Which view the side panel shows: the address's (`panel=`, or Files for a `file=` link), else the last one
+  // opened in this browser ("" when it was closed). Older links say `panel=coding`: Changes.
+  const [lastView, setLastView] = useStoredText("dotrix.coding.panelView", "");
+  const asked = search.get("panel") === "coding" ? "changes" : search.get("panel");
+  const view = (CODING_VIEWS.find((v) => v.id === (asked ?? (search.has("file") ? "files" : lastView)))?.id ?? null) as CodingView | null;
+  const showView = (next: CodingView | null, extra: Record<string, string> = {}) => {
+    const query = new URLSearchParams(search);
+    // Switching views keeps the file and turn a link opened; closing, or opening something new, lets them go.
+    for (const key of !next || Object.keys(extra).length ? ["panel", "file", "line", "turn"] : ["panel"]) query.delete(key);
+    if (next) query.set("panel", next);
+    for (const [key, value] of Object.entries(extra)) query.set(key, value);
+    go("coding", {}, { search: query.toString(), replace: true });
+    setLastView(next ?? "");
   };
+  const closePanel = () => showView(null);
+  // The address always says when the panel is open (the list beside the session folds for it: screens/Coding.tsx).
+  useEffect(() => {
+    if (view && !search.has("panel")) showView(view);
+  });
+  const toggleView = (next: CodingView) => showView(view === next ? null : next);
+  /** A file the session changed, opened in Files (in the latest turn that changed it, or the latest). */
+  const openPath = (path: string, turnId?: string) => {
+    const owner = turnId ?? [...turns].reverse().find((t) => t.files_changed.some((f) => fileOf(f) === path))?.id ?? latest?.id;
+    showView("files", { file: path, ...(owner ? { turn: owner } : {}) });
+  };
+  // Claude Code's shortcuts: ⌘/Ctrl+\ closes the panel, ⌘/Ctrl+Shift+D the changes, Ctrl+` the terminal.
+  const keys = useRef({ view, toggleView, closePanel });
+  keys.current = { view, toggleView, closePanel };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === "\\" && keys.current.view) {
+        e.preventDefault();
+        keys.current.closePanel();
+      } else if (mod && e.shiftKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        keys.current.toggleView("changes");
+      } else if (e.ctrlKey && e.key === "`") {
+        e.preventDefault();
+        keys.current.toggleView("terminal");
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
   const t = isLive() ? { id: cs.issue_key, key: cs.issue_key } : D().tasks.find((x) => x.key === cs.issue_key);
   const p = proj(cs.project_id);
   const tool = AGENT_NAMES[cs.agent];
@@ -1617,6 +1689,7 @@ export function Session({ cs }: { cs: CodingSession }) {
   };
   const at = infoBtn.current?.getBoundingClientRect();
   const files = latest?.files_changed ?? [];
+  const changedTurn = [...turns].reverse().find((t) => t.files_changed.length > 0);
   const shotSrc = (runId: string, index: number) => `/v1/workspaces/${ws}/projects/${cs.project_id}/coding/runs/${runId}/screenshots/${index}`;
   return (
     <div className="conv">
@@ -1662,15 +1735,28 @@ export function Session({ cs }: { cs: CodingSession }) {
             </button>
           )}
           <span className="sp" />
-          <button
-            className={`ibtn ibtn-sm ${panel ? "on" : ""}`}
-            onClick={() => (panel ? closePanel() : setPanel(true))}
-            aria-pressed={panel}
-            aria-label="Changes, files, terminal, and review"
-            data-tip="Changes, files, terminal, and review"
-          >
-            <Ic n="panel-right" s={15} />
-          </button>
+          {changedTurn && (
+            <LineCounts
+              files={changedTurn.files_changed}
+              onClick={() => showView("changes", { turn: changedTurn.id })}
+              tip={`Changes in turn ${changedTurn.turn}`}
+            />
+          )}
+          {/* Each view opens the side panel on it, as Claude Code's title bar opens its panes (icons, named on hover); the open one closes it. */}
+          <div className="cs-views" role="group" aria-label="Side panel">
+            {CODING_VIEWS.map((v) => (
+              <button
+                key={v.id}
+                className={`cs-view ${view === v.id ? "on" : ""}`}
+                onClick={() => toggleView(v.id)}
+                aria-pressed={view === v.id}
+                aria-label={v.label}
+                data-tip={v.id === "changes" ? `${v.label}  ${MOD}⇧D` : v.id === "terminal" ? `${v.label}  Ctrl \`` : v.label}
+              >
+                <Ic n={v.icon} s={15} />
+              </button>
+            ))}
+          </div>
         </div>
         {shot && (
           <div className="cs-lightbox" role="dialog" aria-label={`Screenshot: ${shot.name}`} onClick={() => setShot(null)}>
@@ -1776,12 +1862,14 @@ export function Session({ cs }: { cs: CodingSession }) {
                   <b style={{ fontWeight: 500 }}>
                     {files.length} file{files.length > 1 ? "s" : ""} changed
                   </b>
+                  <span className="sp" />
+                  <LineCounts files={files} onClick={() => latest && showView("changes", { turn: latest.id })} tip="Open the changes" />
                 </div>
                 <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
                   {files.map((f, i) => (
-                    <span key={i} className="trunc">
+                    <button key={i} className="path-link trunc" onClick={() => openPath(fileOf(f), latest?.id)} data-tip="Open in Files">
                       {fileOf(f)}
-                    </span>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -1814,13 +1902,21 @@ export function Session({ cs }: { cs: CodingSession }) {
                           .map((e, j) => (
                             <span key={j}>
                               <Ic n={e.kind === "error" ? "triangle-alert" : "check"} s={11} />
-                              {e.text}
+                              <PathLinks text={e.text} paths={turn.files_changed.map(fileOf)} onPath={(path) => openPath(path, turn.id)} />
                             </span>
                           ))}
                       </div>
                       {turn.summary && (
                         <div className="md">
-                          <Markdown>{turn.summary}</Markdown>
+                          <Markdown
+                            onCode={(code) =>
+                              turn.files_changed.some((f) => fileOf(f) === code.replace(/:\d+$/, ""))
+                                ? () => openPath(code.replace(/:\d+$/, ""), turn.id)
+                                : undefined
+                            }
+                          >
+                            {turn.summary}
+                          </Markdown>
                         </div>
                       )}
                       {turn.error && <div className="faint">{turn.error}</div>}
@@ -1901,7 +1997,9 @@ export function Session({ cs }: { cs: CodingSession }) {
                   <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
                     {latest.files_changed.map((f) => (
                       <span key={fileOf(f)} className="row" style={{ gap: 8 }}>
-                        <span className="trunc grow">{fileOf(f)}</span>
+                        <button className="path-link trunc grow" onClick={() => openPath(fileOf(f), latest.id)} data-tip="Open in Files">
+                          {fileOf(f)}
+                        </button>
                         <span style={{ color: "var(--green)" }}>+{String(f.added ?? 0)}</span>
                         <span style={{ color: "var(--red)" }}>-{String(f.removed ?? 0)}</span>
                       </span>
@@ -2026,15 +2124,8 @@ export function Session({ cs }: { cs: CodingSession }) {
           </div>
         </div>
       </div>
-      {panel && (
-        <CodingPanel
-          scope={scope}
-          cs={cs}
-          initial={search.get("panel") === "review" ? "review" : "changes"}
-          onClose={closePanel}
-          onAskFix={setAsk}
-          fixLabel={`Ask ${CODING_AGENT.name} to fix`}
-        />
+      {view && (
+        <CodingPanel scope={scope} cs={cs} view={view} onView={showView} onClose={closePanel} onAskFix={setAsk} fixLabel={`Ask ${CODING_AGENT.name} to fix`} />
       )}
     </div>
   );
