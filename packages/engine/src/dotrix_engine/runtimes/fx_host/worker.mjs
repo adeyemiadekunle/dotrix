@@ -16,6 +16,8 @@ let handedOff;
 let engineSession;
 let restoredAnswers = new Map();
 let restoredJournal = false;
+// Host tools that may end the turn to finish outside this process (delegation, approvals).
+let handoffTools = new Set(["delegate_tasks"]);
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 
 async function callHost(name, args, context) {
@@ -25,7 +27,7 @@ async function callHost(name, args, context) {
     send({ kind: "tool", id, name, args, sessionId: context.sessionId, executionId: context.executionId });
   });
   if (!reply.handoff) return reply.result;
-  if (!engine || !activeTurn || name !== "delegate_tasks") throw new Error("Invalid handoff");
+  if (!engine || !activeTurn || !handoffTools.has(name)) throw new Error("Invalid handoff");
   handedOff = context.executionId;
   setImmediate(() => activeTurn.cancel({ reason: "handoff" }));
   await new Promise((_resolve, reject) => {
@@ -116,6 +118,7 @@ async function storedTurn(session, messageId) {
 async function handle(command) {
   if (command.op === "init") {
     if (agent || engine) throw new Error("Already initialized");
+    handoffTools = new Set(["delegate_tasks", ...command.tools.filter((tool) => tool.handsOff).map((tool) => tool.name)]);
     const options = {
       name: command.name,
       instructions: command.instructions,
@@ -162,8 +165,10 @@ async function handle(command) {
       if (command.sessionId !== engineSession || activeTurn) throw new Error("Invalid engine session");
       handedOff = undefined;
       const onAmbiguous = (call) => ((command.rerunTools ?? []).includes(call.name) ? "rerun" : undefined);
-      activeTurn =
-        command.op === "prompt" ? engine.prompt(command.message, { turnId: command.messageId ?? undefined, onAmbiguous }) : engine.resume({ onAmbiguous });
+      const prompt = () => engine.prompt(command.message, { turnId: command.messageId ?? undefined, onAmbiguous });
+      // Resume the turn a dead process left open; with no open turn (it ended, or was handed off),
+      // a resume that names its turn and message enters it again by ID, as a prompt would.
+      activeTurn = command.op === "prompt" ? prompt() : (engine.resume({ onAmbiguous }) ?? (command.message && command.messageId ? prompt() : null));
       if (!activeTurn) {
         const text = restoredAnswers.get(command.messageId);
         if (typeof text !== "string") throw new Error("No recoverable turn");

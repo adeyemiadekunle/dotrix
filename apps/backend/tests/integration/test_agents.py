@@ -293,7 +293,6 @@ async def test_subagent_writes_are_attributed_to_its_role(
     project, db_client: AsyncClient, agent_script
 ) -> None:
     ada, _, base = await project()
-    db_client._transport.app.state.runner.settings.durable_delegation = True
     agent_script.say(
         # PM delegates to the Product agent...
         tool_call("delegate_tasks", tasks=[{"key": "story", "agent": "product", "brief": "Add a scheduled-delivery story",
@@ -534,7 +533,6 @@ async def test_tokens_add_up_across_an_approval(project, db_client: AsyncClient,
 
 async def test_subagent_calls_are_counted(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
-    db_client._transport.app.state.runner.settings.durable_delegation = True
     agent_script.say(
         used(tool_call("delegate_tasks", tasks=[{"key": "vision", "agent": "research", "brief": "Summarise the vision",
                                                  "expected_result": "Summary"}]), 100, 10),
@@ -564,7 +562,6 @@ async def test_owners_see_where_the_tokens_went(
     project, db_client: AsyncClient, agent_script, signup, add_member
 ) -> None:
     ada, team, base = await project()
-    db_client._transport.app.state.runner.settings.durable_delegation = True
     agent_script.say(
         used(tool_call("read_file", file_path="/dotrix/project.md"), 100, 10),
         used(tool_call("delegate_tasks", tasks=[{"key": "vision", "agent": "research", "brief": "Check the vision",
@@ -614,7 +611,6 @@ async def test_a_run_stops_at_its_token_budget(project, db_client: AsyncClient, 
 
 async def test_the_budget_covers_specialists_too(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
-    db_client._transport.app.state.runner.settings.durable_delegation = True
     await db_client.patch(base, json={"token_budget": 10_000}, headers=ada.headers)
     agent_script.say(
         used(tool_call("delegate_tasks", tasks=[{"key": "research", "agent": "research", "brief": "Research it",
@@ -649,7 +645,6 @@ async def test_specialists_can_run_on_a_cheaper_model(project, db_client: AsyncC
 
     ada, _, base = await project()
     runner = db_client._transport.app.state.runner
-    runner.settings.durable_delegation = True
     saved_project = await db_session.get(Project, uuid.UUID(base.rsplit("/", 1)[-1]))
     saved_project.specialist_model = "test:cheap"
     await db_session.commit()

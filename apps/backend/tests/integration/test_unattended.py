@@ -194,7 +194,6 @@ def test_what_a_run_may_use_and_the_cap() -> None:
 
 async def test_always_allow_from_a_waiting_change(world, db_client: AsyncClient, agent_script) -> None:
     ada, bob, _, ws, base = await world()
-    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
     # Lyra (product) asks before writing; owners can turn that into a standing rule from the change.
     agent_script.say(
         tool_call("delegate_tasks", tasks=[{"key": "product", "agent": "product", "brief": "write it",
@@ -243,7 +242,6 @@ async def test_a_project_override_gets_the_rule_not_the_workspace(world, db_clie
     fields = {k: product[k] for k in ("name", "description", "instructions", "tools", "access", "issue_types", "can_call")}
     assert (await db_client.put(f"{base}/agents/product", json={"agent": fields | {"description": "Ours."}},
                                 headers=ada.headers)).status_code == 200
-    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
     agent_script.say(
         tool_call("delegate_tasks", tasks=[{"key": "product", "agent": "product", "brief": "write it",
                                           "expected_result": "Done", "changes_project": True}]),

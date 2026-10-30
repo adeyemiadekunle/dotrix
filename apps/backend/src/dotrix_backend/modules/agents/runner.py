@@ -601,10 +601,14 @@ class AgentRunner:
             if fx_preview:
                 from .fx_pilot import run_fx_nova_pilot
 
-                if not durable and (retry or payload["kind"] != "start"):
-                    raise Conflict("The fx preview cannot recover this turn; send a new message")
-                if durable and payload["kind"] not in ("start", "delegation_ready"):
+                # A start (or a recovered attempt of one), a decision, specialists' results, or Continue:
+                # each resumes the same journaled turn (fx_pilot.py).
+                if payload["kind"] not in ("start", "resume", "delegation_ready", "continue"):
                     raise Conflict("This fx turn cannot use that continuation")
+                # libfx reports a turn's usage when the turn ends, so fx checks the run's token budget
+                # (if one is set) before each step, not before each model call.
+                if usage.budget is not None and usage.used >= usage.budget:
+                    raise TokenBudgetExceeded(usage.used, usage.budget)
                 recording = await self._record(run_id, workspace_id, token, payload)
 
                 async def fx_event(event):
@@ -625,7 +629,20 @@ class AgentRunner:
                     delegation=DelegationService(self) if durable else None,
                     code_tools=fx_code_tools, code_context=fx_code_context,
                     web_tools=run_web.tools if run_web is not None else None,
+                    effective=(policy.spec(PM_ROLE), policy, unattended),
+                    mode_context=ModeContext(
+                        self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
+                        approval=approval, jobs=self.jobs,
+                    ),
                 )
+                reported = turn.usage or {}
+                if turn.handoff and await _fx_waits_for_approval(self.session_factory, workspace_id, run_id):
+                    usage.input_tokens = int(reported.get("input_tokens", 0))
+                    usage.output_tokens = int(reported.get("output_tokens", 0))
+                    usage.cached_input_tokens = int(reported.get("cached_input_tokens", 0))
+                    await recording.flush()
+                    await self._finish(run_id, {"messages": []}, usage, fx_usage_fields=list(reported))
+                    return
                 if turn.handoff:
                     if not durable:
                         raise Conflict("This fx turn cannot delegate")
@@ -633,7 +650,6 @@ class AgentRunner:
                     await DelegationService(self).wait(workspace_id, run_id, token, {"fx": turn.handoff},
                                                        require_live_lease=True)
                     return
-                reported = turn.usage or {}
                 usage.input_tokens = int(reported.get("input_tokens", 0))
                 usage.output_tokens = int(reported.get("output_tokens", 0))
                 usage.cached_input_tokens = int(reported.get("cached_input_tokens", 0))
@@ -1071,12 +1087,20 @@ class AgentRunner:
                 run.usage = {**(run.usage or {}), "fx_usage_fields": fields}
                 tokens = {name: value for name, value in tokens.items() if name in fields}
             pending = hitl.pending_actions(result)
+            saved: list[AgentApproval] = []
+            if run.chat_runtime is ChatRuntime.FX:
+                # fx's changes saved their own approvals as they asked (fx_tools.py).
+                saved = list(await session.scalars(select(AgentApproval).where(
+                    AgentApproval.workspace_id == run.workspace_id, AgentApproval.run_id == run.id,
+                    AgentApproval.status == ApprovalStatus.PENDING,
+                ).order_by(AgentApproval.position)))
+                pending = [{"tool": a.tool, "agent": a.agent, "args": a.args} for a in saved]
             if pending:
-                files = {
+                files = {} if saved else {
                     f"/dotrix/{f.path}": f.content
                     for f in await KnowledgeRepository(session).list_files(run.project_id)
                 }
-                for position, action in enumerate(pending):
+                for position, action in enumerate([] if saved else pending):
                     target, diff = _preview(action, files)
                     session.add(
                         AgentApproval(
@@ -1280,6 +1304,15 @@ async def _changes_approved(session: Any, run: AgentRun) -> None:
         summary=f'"{run.title or "A conversation"}": {len(targets)} approved change{"s" * (len(targets) != 1)} ({shown})',
         details={"run_id": str(run.id), "targets": [t for t in targets if t][:20]},
     )
+
+
+async def _fx_waits_for_approval(sessions: Any, workspace_id: uuid.UUID, run_id: uuid.UUID) -> bool:
+    """Whether an fx turn handed off for a change waiting on a person (else for its specialists)."""
+    async with sessions() as session:
+        return await session.scalar(select(AgentApproval.id).where(
+            AgentApproval.workspace_id == workspace_id, AgentApproval.run_id == run_id,
+            AgentApproval.status == ApprovalStatus.PENDING,
+        ).limit(1)) is not None
 
 
 async def _notify(session: Any, run: AgentRun, pending: list[dict], speaker: str, now: datetime) -> None:

@@ -733,7 +733,7 @@ async def test_fx_nova_reuses_a_specialists_completed_work_in_the_same_conversat
         pytest.skip("Install the optional fx host to exercise the real libfx runtime")
     existing, sessions, secrets = nova_pilot_world
     settings = db_client._transport.app.state.settings.model_copy(update={
-        "fx_chat_pilot": True, "fx_chat_durable_delegation": True, "specialist_continuity": True,
+        "specialist_continuity": True,
     })
     async with sessions() as session:
         await session.execute(update(Project).where(Project.id == existing.project_id).values(
@@ -791,7 +791,7 @@ async def test_deepagents_nova_also_reuses_the_specialists_completed_work(
 ):
     existing, sessions, secrets = nova_pilot_world
     settings = db_client._transport.app.state.settings.model_copy(update={
-        "durable_delegation": True, "specialist_continuity": True,
+        "specialist_continuity": True,
     })
     app = create_app(settings)
     app.state.sessionmaker, app.state.secrets, app.state.checkouts = sessions, secrets, checkouts

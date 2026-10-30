@@ -167,7 +167,7 @@ async def test_queue_is_ordered_and_dispatch_is_atomic(nova_pilot_world, monkeyp
     second = await submit(sessions, run, "Second follow-up", "queue")
     runner = AgentRunner(session_factory=sessions, checkpointer=InMemorySaver(), secrets=secrets,
         model_factory=lambda *args, **kwargs: SimpleNamespace(model=ScriptedChatModel.of("Done")))
-    runner.settings = SimpleNamespace(fx_chat_pilot=True, fx_chat_durable_delegation=True, durable_delegation=True)
+    runner.settings = SimpleNamespace()
     dispatched = []
 
     async def start(run_id, message, **kwargs):
@@ -387,7 +387,7 @@ async def test_only_resumable_failures_keep_follow_ups_waiting(nova_pilot_world,
         await session.commit()
     runner = AgentRunner(session_factory=sessions, checkpointer=InMemorySaver(), secrets=secrets,
         model_factory=lambda *args, **kwargs: SimpleNamespace(model=ScriptedChatModel.of("Done")),
-        settings=SimpleNamespace(fx_chat_pilot=True, fx_chat_durable_delegation=True, durable_delegation=True))
+        settings=SimpleNamespace())
     dispatched = []
 
     async def start(*args, **kwargs):
@@ -398,15 +398,12 @@ async def test_only_resumable_failures_keep_follow_ups_waiting(nova_pilot_world,
     assert not dispatched
     async with sessions() as session:
         rows = [await session.get(ChatInput, item.id) for item in (first, second)]
-        assert {item.status for item in rows} == ({"rejected"} if runtime is ChatRuntime.FX else {"pending"})
+        # Both runtimes resume such a turn (DeepAgents from its checkpoint, fx from its journal).
+        assert {item.status for item in rows} == {"pending"}
     async with sessions() as session:
         service, access = AgentService(session, runner), await access_for(session, run)
-        if runtime is ChatRuntime.FX:
-            new = await service.create_run(access, RunCreate(message="A new question", thread_id=run.thread_id))
-            assert new.status is RunStatus.QUEUED and new.chat_runtime is ChatRuntime.FX
-        else:
-            with pytest.raises(ThreadBusy, match="Queued messages"):
-                await service.create_run(access, RunCreate(message="A new question", thread_id=run.thread_id))
+        with pytest.raises(ThreadBusy, match="Queued messages"):
+            await service.create_run(access, RunCreate(message="A new question", thread_id=run.thread_id))
 
 
 @pytest.mark.parametrize("limited", [True, False])

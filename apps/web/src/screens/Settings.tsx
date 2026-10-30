@@ -1097,7 +1097,7 @@ function MyModels() {
             <option value="codex">Codex · OpenAI</option>
             <option value="claude-code">Claude Code · Anthropic</option>
             <option value="opencode">OpenCode · any connected provider</option>
-            <option value="fx">fx · OpenAI-compatible providers, where this server offers it</option>
+            <option value="fx">fx · OpenAI-compatible providers</option>
           </select>
         </SRow>
       </div>

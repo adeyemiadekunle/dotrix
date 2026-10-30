@@ -41,7 +41,7 @@ class CodingAgent(enum.StrEnum):
     CLAUDE_CODE = "claude-code"
     CODEX = "codex"
     OPENCODE = "opencode"  # any provider's model (`DOTRIX_CODING_OPENCODE_MODEL`)
-    FX = "fx"  # an OpenAI-compatible provider's model, opt-in (`DOTRIX_CODING_FX`, `DOTRIX_CODING_FX_MODEL`)
+    FX = "fx"  # an OpenAI-compatible provider's model, its default `DOTRIX_CODING_FX_MODEL`
 
     @property
     def assignee(self) -> AgentAssignee:

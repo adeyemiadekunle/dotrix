@@ -130,8 +130,6 @@ async def test_permission_revocation_fails_child_and_wakes_parent(nova_world, db
 
 async def test_checkpointed_child_result_returns_to_nova(nova_world, db_client, agent_script, db_session):
     person, _, _, _, base = nova_world
-    runner = db_client._transport.app.state.runner
-    runner.settings.durable_delegation = True
     model = agent_script.say(
         tool_call("delegate_tasks", tasks=batch("a").model_dump()["tasks"]),
         tool_call("submit_specialist_result", summary="Evidence from the project", evidence=["project.md:1"]),

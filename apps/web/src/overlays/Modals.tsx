@@ -525,7 +525,7 @@ function ProjectAgentModels({ projectId, control }: { projectId: string; control
           placeholder="No project limit"
         />
         <span className="faint" style={{ fontSize: 12 }}>
-          Agent-specific limits override this default. A run can stop before its next model call; the fx chat preview cannot run when this default is set.
+          Agent-specific limits override this default. A run can stop before its next model call; fx chat checks it before each step instead.
         </span>
       </div>
       {error && (

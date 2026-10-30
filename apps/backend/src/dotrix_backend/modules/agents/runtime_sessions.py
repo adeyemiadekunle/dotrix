@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,6 +109,34 @@ async def bind_runtime_session(
             await session.rollback()
             raise Conflict("The runtime session is already bound") from None
         return scope
+
+
+async def upgrade_runtime_binding(
+    sessions: SessionFactory, *, workspace_id: uuid.UUID, run_id: uuid.UUID, token: int, identity: RuntimeIdentity,
+    earlier: dict[str, bool], encrypted_context: str | None = None,
+) -> None:
+    """Move a run bound by an earlier version of the same runtime to `identity`, keeping its session.
+
+    `earlier` names the versions that may be upgraded, each True when this version can't read its journal:
+    then the journal and checkpoint are dropped and the turn starts again from its message (its changes,
+    if any, are still claimed once in `agent_runtime_calls`). A binding without a pinned context gets
+    `encrypted_context`. Any other binding is left alone, to fail closed as before."""
+    from .models import AgentRuntimeCheckpoint, AgentRuntimeJournal
+
+    async with sessions() as session:
+        await admit_runtime_run(session, workspace_id, run_id, token)
+        binding = await session.scalar(select(AgentRuntimeBinding).where(
+            AgentRuntimeBinding.workspace_id == workspace_id, AgentRuntimeBinding.run_id == run_id,
+        ).with_for_update())
+        if binding is None or binding.runtime != identity.runtime or binding.runtime_version not in earlier:
+            return
+        if earlier[binding.runtime_version]:
+            for table in (AgentRuntimeJournal, AgentRuntimeCheckpoint):
+                await session.execute(delete(table).where(table.workspace_id == workspace_id,
+                                                          table.binding_id == binding.id))
+        binding.runtime_version, binding.config_digest = identity.version, identity.config_digest
+        binding.encrypted_context = binding.encrypted_context or encrypted_context
+        await session.commit()
 
 
 async def get_runtime_session(

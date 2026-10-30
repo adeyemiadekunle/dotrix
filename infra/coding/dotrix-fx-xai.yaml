@@ -1,6 +1,6 @@
 # OpenShell provider profile for dotrix's coding runs with Kai on fx, on xAI (Grok). Import it once per gateway:
 #   openshell provider profile import -f infra/coding/dotrix-fx-xai.yaml --global
-# Coding runs on fx (DOTRIX_CODING_FX=true) with a xAI (Grok) model attach a provider of this type, made from the
+# Coding runs on fx with a xAI (Grok) model attach a provider of this type, made from the
 # run's XAI_API_KEY: the sandbox sees a placeholder, and OpenShell's proxy puts the key on requests to
 # api.x.ai from fx only (fx-acp.mjs starts it; node itself never calls the model).
 # Docker uses its selected-host egress proxy instead. Not yet exercised on a live OpenShell gateway.

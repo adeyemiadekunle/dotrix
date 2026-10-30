@@ -14,9 +14,6 @@ x-dotrix: &dotrix
     DOTRIX_DATABASE_URL: ${DOTRIX_DATABASE_URL:?the database URL (deploy/dokploy.env.example)}
     DOTRIX_REDIS_URL: redis://redis:6379/0
     DOTRIX_JOBS: worker
-    DOTRIX_DURABLE_DELEGATION: ${DOTRIX_DURABLE_DELEGATION:-false}
-    DOTRIX_FX_CHAT_PILOT: ${DOTRIX_FX_CHAT_PILOT:-false}
-    DOTRIX_FX_CHAT_DURABLE_DELEGATION: ${DOTRIX_FX_CHAT_DURABLE_DELEGATION:-false}
     DOTRIX_SPECIALIST_CONTINUITY: ${DOTRIX_SPECIALIST_CONTINUITY:-false}
     DOTRIX_RATE_LIMITS: redis
     # Traefik and nginx, on Docker's private networks.

@@ -109,8 +109,6 @@ class DelegationService:
                     raise Conflict("This coordinator no longer owns the delegation")
 
             verify_lease()
-            if verify_runtime_batch and any(task.changes_project for task in batch.tasks):
-                raise Forbidden("The fx preview permits only read-only specialist tasks")
             member = await MembershipRepository(session).get(workspace_id, parent.requested_by_id)
             project = await ProjectRepository(session).get(workspace_id, parent.project_id)
             if member is None or project is None or not can(member, Permission.CHAT) or not await ProjectRepository(session).can_see(project, member.user_id):

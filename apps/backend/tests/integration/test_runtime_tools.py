@@ -532,10 +532,6 @@ async def test_fx_handoff_survives_process_restart_with_the_real_scheduler(journ
             changed = SpecialistBatch(tasks=[{"key": "research", "agent": "research", "brief": "Different brief",
                                               "expected_result": "Evidence"}])
             await scheduler.submit(run.workspace_id, run.id, token, handoff.handoff, changed, verify_runtime_batch=True)
-        with pytest.raises(Forbidden, match="read-only"):
-            writes = SpecialistBatch(tasks=[{"key": "write", "agent": "documentation", "brief": "Change a file",
-                                             "expected_result": "Updated", "changes_project": True}])
-            await scheduler.submit(run.workspace_id, run.id, token, "write-call", writes, verify_runtime_batch=True)
         await scheduler.wait(run.workspace_id, run.id, token, {"fx-handoff": handoff.handoff}, require_live_lease=True)
         async with sessions() as session:
             parent = await session.get(AgentRun, run.id)
@@ -941,11 +937,12 @@ async def test_fx_nova_pilot_uses_admitted_run_and_personal_credentials(nova_pil
         async with sessions() as session:
             binding = await session.scalar(select(AgentRuntimeBinding).where(AgentRuntimeBinding.run_id == run.id))
             assert binding.runtime == "fx" and binding.session_id.startswith("fx-pilot-")
-        with pytest.raises(Conflict, match="cannot resume"):
-            await fx_pilot.run_fx_nova_pilot(
-                sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets,
-            )
-        assert len(requests) == 2  # The blocked retry did not send another prompt.
+        # A retry resumes the journaled turn: the saved answer, without asking the model again.
+        again = await fx_pilot.run_fx_nova_pilot(
+            sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets,
+        )
+        assert again.repeated and again.text == turn.text
+        assert len(requests) == 2
 
 
 async def test_fx_nova_pilot_requires_a_personal_key_and_supported_run(nova_pilot_world):
@@ -956,34 +953,21 @@ async def test_fx_nova_pilot_requires_a_personal_key_and_supported_run(nova_pilo
     with pytest.raises(ModelUnavailable, match="personal key"):
         await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets)
     async with sessions() as session:
-        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(work_mode=WorkMode.BUILD))
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(work_mode=None))
         await session.commit()
-    with pytest.raises(Conflict, match="read-only"):
-        await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets)
-
-    async with sessions() as session:
-        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(work_mode=WorkMode.DISCUSS, token_budget=100))
-        await session.commit()
-    with pytest.raises(Conflict, match="token budget"):
+    with pytest.raises(Conflict, match="work mode"):
         await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets)
     async with sessions() as session:
         assert await session.scalar(select(AgentRuntimeBinding.id).where(AgentRuntimeBinding.run_id == run.id)) is None
 
 
-async def test_fx_nova_pilot_rejects_budgets_and_stale_owners(nova_pilot_world):
+async def test_fx_nova_pilot_rejects_stale_owners(nova_pilot_world):
     run, sessions, secrets = nova_pilot_world
     for workspace_id, token in ((uuid7(), 1), (run.workspace_id, 2)):
         with pytest.raises(Conflict):
             await fx_pilot.run_fx_nova_pilot(
                 sessions, workspace_id=workspace_id, run_id=run.id, token=token, secrets=secrets,
             )
-    async with sessions() as session:
-        await session.execute(update(Project).where(Project.id == run.project_id).values(token_budget=100))
-        await session.commit()
-    with pytest.raises(Conflict, match="token budget"):
-        await fx_pilot.run_fx_nova_pilot(
-            sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets,
-        )
     async with sessions() as session:
         assert await session.scalar(select(AgentRuntimeBinding.id).where(AgentRuntimeBinding.run_id == run.id)) is None
 
@@ -1019,7 +1003,7 @@ async def test_fx_nova_pilot_includes_only_the_requesters_prior_conversation(nov
 async def test_live_fx_chat_on_anthropic_reads_project_knowledge(
     nova_pilot_world, db_client, agent_script, outbox, storage, checkouts,
 ):
-    """The fx preview through the public API on a real Anthropic model (its OpenAI-compatible endpoint): Nova
+    """fx chat through the public API on a real Anthropic model (its OpenAI-compatible endpoint): Nova
     reads the project's knowledge with the platform's tools, and a follow-up keeps the conversation."""
     from dotrix_engine.runtimes.fx import _HOST
 
@@ -1030,7 +1014,7 @@ async def test_live_fx_chat_on_anthropic_reads_project_knowledge(
         session.add(UserModelKey(user_id=existing.requested_by_id, provider="anthropic",
                                  encrypted=secrets.encrypt(os.environ["DOTRIX_LIVE_ANTHROPIC_API_KEY"]), last4="live"))
         await session.commit()
-    settings = db_client._transport.app.state.settings.model_copy(update={"fx_chat_pilot": True})
+    settings = db_client._transport.app.state.settings
     app = create_app(settings)
     app.state.sessionmaker, app.state.secrets, app.state.checkouts = sessions, secrets, checkouts
     app.dependency_overrides[get_email_sender] = lambda: outbox
@@ -1073,7 +1057,7 @@ async def test_fx_chat_runs_through_api_and_keeps_its_runtime(
     if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
         pytest.skip("Install the optional fx host to exercise the real libfx runtime")
     existing, sessions, secrets = nova_pilot_world
-    settings = db_client._transport.app.state.settings.model_copy(update={"fx_chat_pilot": True})
+    settings = db_client._transport.app.state.settings
     app = create_app(settings)
     app.state.sessionmaker = sessions
     app.state.secrets = secrets
@@ -1119,27 +1103,14 @@ async def test_fx_chat_runs_through_api_and_keeps_its_runtime(
             "message": "Switch", "thread_id": first_run["thread_id"], "chat_runtime": "deepagents",
         })
         assert switched.status_code == 409 and switched.json()["type"].endswith("/runtime_locked")
-        unsupported = await client.post(f"{base}/runs", headers=headers, json={
-            "message": "Implement it", "chat_runtime": "fx", "work_mode": "build",
-        })
-        assert unsupported.status_code == 422
         async with sessions() as session:
             colleague = await session.scalar(select(Membership.user_id).where(
                 Membership.workspace_id == existing.workspace_id, Membership.user_id != existing.requested_by_id))
-            await session.execute(update(Project).where(Project.id == existing.project_id).values(token_budget=100))
-            await session.commit()
         colleague_token = create_access_token(colleague, secret=settings.jwt_secret.get_secret_value(),
                                               issuer=settings.jwt_issuer, ttl=timedelta(minutes=10))
         forbidden = await client.get(f"{base}/runs/{first_run['id']}",
                                      headers={"Authorization": f"Bearer {colleague_token}"})
         assert forbidden.status_code == 404
-        budgeted = await client.post(f"{base}/runs", headers=headers, json={
-            "message": "Budgeted", "chat_runtime": "fx", "work_mode": "discuss",
-        })
-        assert budgeted.status_code == 422 and "budget" in budgeted.text
-        async with sessions() as session:
-            await session.execute(update(Project).where(Project.id == existing.project_id).values(token_budget=None))
-            await session.commit()
 
         # Stop acts on the running worker and prevents its incomplete output from becoming a reply.
         runner.inline = False
@@ -1152,18 +1123,13 @@ async def test_fx_chat_runs_through_api_and_keeps_its_runtime(
             assert pending.status_code == 202
             assert await asyncio.to_thread(started.wait, 10)
             stopped = await client.post(f"{base}/runs/{pending.json()['id']}/stop", headers=headers)
-            assert stopped.status_code == 200 and stopped.json()["status"] == "failed", stopped.text
+            assert stopped.status_code == 200 and stopped.json()["status"] == "cancelled", stopped.text
             gate.set()
             stopped_run = await client.get(f"{base}/runs/{pending.json()['id']}", headers=headers)
             assert stopped_run.json()["reply"] is None
             continued = await client.post(f"{base}/runs/{pending.json()['id']}/continue", headers=headers, json={})
-            assert continued.status_code == 409 and "send a new message" in continued.text
+            assert continued.status_code == 409 and "can be continued" in continued.text  # stopped, not cut off
         runner.inline = True
-        settings.fx_chat_pilot = False
-        disabled = await client.post(f"{base}/runs", headers=headers, json={
-            "message": "Another", "chat_runtime": "fx", "work_mode": "discuss",
-        })
-        assert disabled.status_code == 422
         agent_script.say("Default DeepAgents answer")
         default = await client.post(f"{base}/runs", headers=headers, json={"message": "Default?"})
         assert default.status_code == 202 and default.json()["chat_runtime"] == "deepagents", default.text
@@ -1200,9 +1166,7 @@ async def test_fx_chat_delegates_through_real_child_runner_and_returns_the_saved
     if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
         pytest.skip("Install the optional fx host to exercise the real libfx runtime")
     existing, sessions, secrets = nova_pilot_world
-    settings = db_client._transport.app.state.settings.model_copy(update={
-        "fx_chat_pilot": True, "fx_chat_durable_delegation": True,
-    })
+    settings = db_client._transport.app.state.settings
     async with sessions() as session:
         await session.execute(update(Project).where(Project.id == existing.project_id).values(
             specialist_model="openai:cheap-model"))
@@ -1227,8 +1191,6 @@ async def test_fx_chat_delegates_through_real_child_runner_and_returns_the_saved
     args = {"tasks": [{"key": "research", "agent": "research", "brief": "Review the evidence",
                        "expected_result": "Evidence"}]}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        options = await client.get(f"{base}/runtime-options", headers=headers)
-        assert options.json()["fx_delegation_available"] is True
         with model_server(tool_name="delegate_tasks", tool_args=args) as url:
             monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
             response = await client.post(f"{base}/runs", headers=headers, json={
@@ -1296,7 +1258,7 @@ async def test_fx_nova_pilot_cancellation_does_not_silently_replay(nova_pilot_wo
         ))
         try:
             assert await asyncio.wait_for(asyncio.to_thread(started.wait), 15)
-            with pytest.raises(Conflict, match="cannot resume"):
+            with pytest.raises(Conflict, match="already running"):
                 await fx_pilot.run_fx_nova_pilot(
                     sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets,
                 )
@@ -1434,6 +1396,9 @@ async def test_fx_context_guidance_is_private_encrypted_and_stable_on_recovery(n
             if len(configs) == 1:
                 return TurnResult("", "handoff", handoff="saved-specialist-batch")
             return TurnResult("Saved answer", "end_turn")
+
+        async def resume(self, *args, **kwargs):  # a bound run enters its turn again
+            return await self.prompt(*args, **kwargs)
 
         async def close(self):
             pass

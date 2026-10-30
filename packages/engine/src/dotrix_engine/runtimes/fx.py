@@ -46,7 +46,8 @@ def fx_configuration_digest(
         "version": "libfx-0.0.16", "name": config.name, "instructions": config.instructions,
         "model": model, "base_url": base_url, "effort": effort, "context_window": context_window,
         "tools": [{"name": tool.name, "description": tool.description, "schema": tool.input_schema,
-                   "idempotent": tool.idempotent, "writes": tool.writes} for tool in config.tools],
+                   "idempotent": tool.idempotent, "writes": tool.writes,
+                   **({"hands_off": True} if tool.hands_off else {})} for tool in config.tools],
     }
     return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
@@ -143,7 +144,8 @@ class FxRuntime:
                 "localDir": str(local_dir) if local_dir is not None else None,
                 "persistence": journal is not None, "ephemeralEngine": ephemeral_engine, "sessionId": engine_session,
                 "tools": [{"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema,
-                           "idempotent": tool.idempotent, "writes": tool.writes} for tool in config.tools],
+                           "idempotent": tool.idempotent, "writes": tool.writes, "handsOff": tool.hands_off}
+                          for tool in config.tools],
             })
         except BaseException:
             if process.returncode is None:
@@ -209,8 +211,8 @@ class FxRuntime:
                 assert spec.execute is not None
                 result = await spec.execute(event["args"])
             if isinstance(result, RuntimeHandoff):
-                if self._journal is None or spec.name != "delegate_tasks":
-                    raise ValueError("Only a durable delegation tool can hand off")
+                if self._journal is None or not (spec.hands_off or spec.name == "delegate_tasks"):
+                    raise ValueError("Only a durable delegation or approval tool can hand off")
                 reply = {"op": "tool_reply", "id": event["id"], "ok": True, "handoff": True}
             else:
                 # Check serializability before sending, so a malformed host result fails the tool, not the bridge.
@@ -297,7 +299,10 @@ class FxRuntime:
                                               "rerunTools": list(rerun_tools)}, on_event)
 
     async def resume(self, session_id: str, *, on_event: EventHandler | None = None,
-                     rerun_tools: tuple[str, ...] = (), message_id: str | None = None) -> TurnResult:
+                     rerun_tools: tuple[str, ...] = (), message_id: str | None = None,
+                     message: str | None = None) -> TurnResult:
+        """Resume the turn a stopped process left open. With `message` and `message_id`, a session whose
+        turn isn't open (it ended or handed off) enters that turn again by ID, like `prompt`."""
         if self._closed:
             raise RuntimeError("Runtime is closed")
         if not self._local and self._journal is None:
@@ -308,7 +313,7 @@ class FxRuntime:
         self._validate_local_session(session_id)
         self._validate_rerun_tools(rerun_tools)
         return await self._turn(session_id, {"op": "resume", "rerunTools": list(rerun_tools),
-                                              "messageId": message_id}, on_event)
+                                              "messageId": message_id, "message": message}, on_event)
 
     def _validate_local_session(self, session_id: str) -> None:
         if self._engine_session is not None and session_id != self._engine_session:
@@ -319,7 +324,8 @@ class FxRuntime:
     def _validate_rerun_tools(self, names: tuple[str, ...]) -> None:
         if names and self._journal is None:
             raise ValueError("Explicit tool retries require a host journal")
-        if any(name not in self._tools or (not self._tools[name].idempotent and name != "delegate_tasks") for name in names):
+        if any(name not in self._tools or not (self._tools[name].idempotent or self._tools[name].hands_off
+                                                or name == "delegate_tasks") for name in names):
             raise ValueError("Only explicitly safe tools can be retried on resume")
 
     async def _turn(self, session_id: str, command: dict, on_event: EventHandler | None) -> TurnResult:

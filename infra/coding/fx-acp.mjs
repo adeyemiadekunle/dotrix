@@ -17,9 +17,12 @@
 // the platform saves ~/.fx between turns. SIGINT cancels the turn, which still ends with "done".
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import http from "node:http";
+import https from "node:https";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import tls from "node:tls";
 
 const args = process.argv.slice(2);
 const arg = (name) => {
@@ -45,6 +48,50 @@ if (dotrixSession && !/^[A-Za-z0-9_-]{1,64}$/.test(dotrixSession)) fail("The cod
 const brief = readFileSync(0, "utf8");
 if (!brief.trim()) fail("The coding engine got an empty brief");
 
+// fx (0.0.16) makes its model requests directly and ignores HTTPS_PROXY, but in the Docker sandbox the egress proxy
+// is the only way out. So when a proxy is set, fx talks plain HTTP to a forwarder on 127.0.0.1 (fx allows http on
+// localhost), which sends each request on to the provider over HTTPS, tunnelled through that proxy. It forwards to
+// the configured provider only, so the egress proxy's allowlist stays the boundary. With no proxy, fx goes direct.
+const egress = process.env.HTTPS_PROXY || process.env.https_proxy;
+let egressRefused = false; // the egress proxy refused the provider: the turn's "refused" is the sandbox's, not the model's
+
+async function forwarder(target, proxy) {
+  const upstream = new URL(target);
+  const via = new URL(proxy);
+  if (upstream.protocol !== "https:") throw new Error("The provider must be HTTPS behind a proxy");
+  const agent = new https.Agent({ keepAlive: true });
+  agent.createConnection = (options, done) => {
+    const connect = http.request({ host: via.hostname, port: via.port || 80, method: "CONNECT", path: `${upstream.hostname}:${upstream.port || 443}` });
+    connect.once("connect", (res, socket) => {
+      if (res.statusCode !== 200) egressRefused = true;
+      if (res.statusCode !== 200) return done(Object.assign(new Error(`The egress proxy refused the provider (${res.statusCode})`), { refused: true }));
+      done(null, tls.connect({ socket, servername: upstream.hostname }));
+    });
+    connect.once("error", done);
+    connect.end();
+  };
+  const server = http.createServer((req, res) => {
+    const out = https.request(
+      { host: upstream.hostname, port: upstream.port || 443, method: req.method, path: req.url, agent, headers: { ...req.headers, host: upstream.host } },
+      (answer) => {
+        res.writeHead(answer.statusCode ?? 502, answer.headers);
+        answer.pipe(res);
+      },
+    );
+    // A refusal is final (403: fx doesn't retry it); anything else may pass (502: fx retries).
+    out.on("error", (error) => {
+      if (!res.headersSent) res.writeHead(error.refused ? 403 : 502, { "content-type": "text/plain" });
+      res.end(error.refused ? "The sandbox doesn't allow this provider" : "The provider couldn't be reached through the egress proxy");
+    });
+    req.pipe(out);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  server.unref();
+  // The provider's path (e.g. /v1) stays; only the origin becomes the forwarder's.
+  return `http://127.0.0.1:${server.address().port}${upstream.pathname.replace(/\/$/, "")}`;
+}
+const providerUrl = egress ? await forwarder(baseUrl, egress) : baseUrl;
+
 // fx's settings: the one provider this turn may use (configured_provider.zig's shape).
 const fxHome = join(homedir(), ".fx");
 const ours = join(fxHome, "dotrix");
@@ -57,7 +104,7 @@ writeFileSync(
     providers: {
       dotrix: {
         protocol: "openai-chat-completions",
-        base_url: baseUrl,
+        base_url: providerUrl,
         auth: { type: "bearer", env: keyEnv },
         model_metadata: { [model]: { supports_tool_use: true } },
       },
@@ -218,7 +265,10 @@ try {
   if (cancelled) notify("session/cancel", { sessionId });
   const result = await call("session/prompt", { sessionId, prompt: [{ type: "text", text: brief }] });
   flush();
-  emit({ type: "done", stopReason: result?.stopReason ?? "end_turn", usage: result?.usage ?? null, final: lastMessage });
+  if (egressRefused && result?.stopReason !== "end_turn") {
+    emit({ type: "error", message: "The sandbox doesn't allow this model provider (its egress proxy refused it)" });
+    process.exitCode = 1;
+  } else emit({ type: "done", stopReason: result?.stopReason ?? "end_turn", usage: result?.usage ?? null, final: lastMessage });
 } catch (error) {
   flush();
   if (cancelled) emit({ type: "done", stopReason: "cancelled", usage: null, final: lastMessage });

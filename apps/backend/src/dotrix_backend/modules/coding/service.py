@@ -159,8 +159,6 @@ class CodingService:
         if not fixed and model is not None:
             if model not in models_for(self.settings, selected, set(keys)):
                 raise Unprocessable("Choose an available provider:model")
-        if selected is CodingAgent.FX and not self.settings.coding_fx and not fixed:
-            raise CodingUnavailable("That coding tool isn't available on this server")
         tool = tool_for(selected, chosen, self.settings)
         if tool is None or not run_key(tool, self.settings, keys):
             raise CodingUnavailable(f"Connect a compatible provider key in Account → Your models to code with {CODING_AGENT_NAME}")
@@ -175,8 +173,6 @@ class CodingService:
                              preferred_model=user.default_model if user else None)
         tools = []
         for candidate in CodingAgent:
-            if candidate is CodingAgent.FX and not self.settings.coding_fx:
-                continue  # opt-in: not offered at all while off
             model = model_for(self.settings, candidate, providers, preferred_model=user.default_model if user else None)
             tool = tool_for(candidate, model, self.settings)
             usable = tool is not None and bool(run_key(tool, self.settings, keys))

@@ -62,9 +62,8 @@ class RunCreate(BaseModel):
 
 
 class ChatRuntimeOptions(BaseModel):
-    fx_available: bool = Field(description="Whether the read-only fx preview is enabled")
+    fx_available: bool = Field(description="Whether a new conversation can run on fx (Nova on libfx, in every work mode); always true")
     fx_providers: list[str] = Field(description="Compatible providers; the requesting person must connect their own key")
-    fx_delegation_available: bool = Field(default=False, description="Whether the fx preview may delegate read-only work")
 
 
 class ModelOption(BaseModel):

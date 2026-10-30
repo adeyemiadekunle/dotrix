@@ -271,6 +271,25 @@ class AgentRuntimeDelegation(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class AgentRuntimeCall(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """One project-changing runtime tool call, so it goes through at most once (fx_tools.py).
+
+    Claimed (`started_at`) in its own commit before the change; the encrypted result is saved after.
+    A call claimed with no result was cut off: whether its change went through is unknown, so it is
+    never run again unasked."""
+
+    __tablename__ = "agent_runtime_calls"
+    __table_args__ = (UniqueConstraint("run_id", "execution_id"),)
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    execution_id: Mapped[str] = mapped_column(String(200))
+    tool: Mapped[str] = mapped_column(String(64))
+    approval_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_approvals.id", ondelete="SET NULL"))
+    encrypted_result: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ConversationPlan(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     """A version of a conversation's plan, saved in Plan mode (`save_plan`): what Build works from.
     Seen by whoever sees the conversation."""

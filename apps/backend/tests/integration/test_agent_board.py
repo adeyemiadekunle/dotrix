@@ -81,7 +81,6 @@ async def test_pm_creates_an_epic_after_approval(project, db_client: AsyncClient
 
 async def test_specialists_open_only_their_issue_types(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
-    db_client._transport.app.state.runner.settings.durable_delegation = True
     await db_client.post(f"{base}/issues", json={"type": "epic", "title": "Scheduled delivery"}, headers=ada.headers)
     model = agent_script.say(
         tool_call("delegate_tasks", tasks=[{"key": "stories", "agent": "product", "brief": "Write the stories",
@@ -114,7 +113,6 @@ async def test_specialists_open_only_their_issue_types(project, db_client: Async
 
 async def test_only_the_pm_edits_and_closes(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
-    db_client._transport.app.state.runner.settings.durable_delegation = True
     await db_client.post(f"{base}/issues", json={"title": "Hub model", "status": "review"}, headers=ada.headers)
     model = agent_script.say(
         tool_call("delegate_tasks", tasks=[{"key": "tidy", "agent": "architecture", "brief": "Check KUN-1",

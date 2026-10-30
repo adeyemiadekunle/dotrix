@@ -212,8 +212,8 @@ async def reconcile_failed_steering(session: AsyncSession, run: AgentRun, checkp
 
 
 def waits_for_continuation(run: AgentRun) -> bool:
-    return (run.chat_runtime is ChatRuntime.DEEPAGENTS and run.status is RunStatus.FAILED
-            and run.error_kind in ("model_limit", "interrupted"))
+    # Both runtimes resume a turn: DeepAgents from its checkpoint, fx from its journal.
+    return run.status is RunStatus.FAILED and run.error_kind in ("model_limit", "interrupted")
 
 
 async def deliver_queued(sessions: SessionFactory, runner: AgentRunner, *, workspace_id: uuid.UUID | None = None,

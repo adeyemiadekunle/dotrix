@@ -44,42 +44,35 @@ async function pickChatOption(page: Page, label: "Approvals" | "Mode", name: str
   return selected;
 }
 
-for (const delegation of [false, true]) {
-  test(`the fx preview stays in Discuss with delegation ${delegation ? "enabled" : "disabled"}`, async ({ page }) => {
-    await signUp(page);
-    await addProject(page, "Kumove", "KUM");
-    await page.route("**/v1/workspaces/*/projects/*/agent/runtime-options", (route) =>
-      route.fulfill({ json: { fx_available: true, fx_delegation_available: delegation, fx_providers: ["openai"] } }),
-    );
-    await page.route("**/v1/workspaces/*/models", (route) =>
-      route.fulfill({
-        json: [
-          { id: "anthropic:test", provider: "anthropic", name: "Anthropic test", source: "personal" },
-          { id: "openai:test", provider: "openai", name: "OpenAI test", source: "personal" },
-        ],
-      }),
-    );
-    await openChat(page, "?project=KUM");
-    await expect(page.getByRole("button", { name: "Chat runtime: Standard" })).toBeVisible();
-    await pickChatOption(page, "Mode", "Plan");
-    await page.getByRole("button", { name: "Chat runtime: Standard" }).click();
-    await page.getByRole("option", { name: "fx preview" }).click();
-    await expect(page.getByRole("button", { name: "Mode: Discuss" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Model: OpenAI test" })).toBeVisible();
-    await expect(
-      page.getByText(delegation ? /can ask built-in specialists for read-only work/i : /cannot delegate, change data, or start coding yet/i),
-    ).toBeVisible();
-    await page.getByRole("button", { name: "Project and mode" }).click();
-    await expect(page.getByRole("option", { name: "Build", exact: true })).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await page.route("**/v1/workspaces/*/projects/*/agent/runs", (route) => route.fulfill({ status: 422, json: { detail: "Test only" } }));
-    const submitted = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/agent/runs"));
-    await page.getByLabel("Message").fill("What is in the project?");
-    await page.getByLabel("Message").press("Enter");
-    const body = (await submitted).postDataJSON();
-    expect(body).toMatchObject({ chat_runtime: "fx", model: "openai:test", work_mode: "discuss", agent: "auto" });
-  });
-}
+test("fx works in every mode", async ({ page }) => {
+  await signUp(page);
+  await addProject(page, "Kumove", "KUM");
+  await page.route("**/v1/workspaces/*/projects/*/agent/runtime-options", (route) => route.fulfill({ json: { fx_available: true, fx_providers: ["openai"] } }));
+  await page.route("**/v1/workspaces/*/models", (route) =>
+    route.fulfill({
+      json: [
+        { id: "anthropic:test", provider: "anthropic", name: "Anthropic test", source: "personal" },
+        { id: "openai:test", provider: "openai", name: "OpenAI test", source: "personal" },
+      ],
+    }),
+  );
+  await openChat(page, "?project=KUM");
+  await expect(page.getByRole("button", { name: "Chat runtime: Standard" })).toBeVisible();
+  await pickChatOption(page, "Mode", "Plan");
+  await page.getByRole("button", { name: "Chat runtime: Standard" }).click();
+  await page.getByRole("option", { name: "fx", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Mode: Plan" })).toBeVisible(); // the mode you picked stays
+  await expect(page.getByRole("button", { name: "Model: OpenAI test" })).toBeVisible();
+  await expect(page.getByText(/Nova runs on fx, in every mode/)).toBeVisible();
+  await expect(page.getByText(/can't involve specialists here/)).toHaveCount(0);
+  await pickChatOption(page, "Mode", "Build");
+  await page.route("**/v1/workspaces/*/projects/*/agent/runs", (route) => route.fulfill({ status: 422, json: { detail: "Test only" } }));
+  const submitted = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/agent/runs"));
+  await page.getByLabel("Message").fill("What is in the project?");
+  await page.getByLabel("Message").press("Enter");
+  const body = (await submitted).postDataJSON();
+  expect(body).toMatchObject({ chat_runtime: "fx", model: "openai:test", work_mode: "build", agent: "auto" });
+});
 
 test("the agents answer, and a change waits for approval before it happens", async ({ page }) => {
   await signUp(page);

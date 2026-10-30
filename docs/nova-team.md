@@ -7,8 +7,8 @@ Custom agent identities are retired, while their historical records remain attri
 
 ## Configuration and rollout
 
-Enable `DOTRIX_DURABLE_DELEGATION=true` for a pilot. It gates creation of new task trees,
-not recovery of trees already recorded. Use `DOTRIX_JOBS=worker` for durable queue
+Every new project conversation's Nova can create durable task trees (2026-10-30: the
+`DOTRIX_DURABLE_DELEGATION` and `DOTRIX_FX_CHAT_DURABLE_DELEGATION` switches were removed). Use `DOTRIX_JOBS=worker` for durable queue
 publication and lease recovery after a process restart. The migration archives custom
 definitions, disables their automations with a reason, rejects their pending approvals,
 and fences unfinished custom runs; it retains their historical records.
