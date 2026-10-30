@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+import os
 import shutil
 import threading
 import uuid
@@ -1011,6 +1012,56 @@ async def test_fx_nova_pilot_includes_only_the_requesters_prior_conversation(nov
         assert "My earlier question" in messages and "Earlier answer" in messages
         assert "Another person's private question" not in messages
         assert "Latest message" in messages and "Investigate" in messages
+
+
+@pytest.mark.skipif(not os.environ.get("DOTRIX_LIVE_ANTHROPIC_API_KEY"),
+                    reason="Live model test: set DOTRIX_LIVE_ANTHROPIC_API_KEY (it makes a few paid Claude Haiku calls)")
+async def test_live_fx_chat_on_anthropic_reads_project_knowledge(
+    nova_pilot_world, db_client, agent_script, outbox, storage, checkouts,
+):
+    """The fx preview through the public API on a real Anthropic model (its OpenAI-compatible endpoint): Nova
+    reads the project's knowledge with the platform's tools, and a follow-up keeps the conversation."""
+    from dotrix_engine.runtimes.fx import _HOST
+
+    if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
+        pytest.skip("Install the optional fx host to exercise the real libfx runtime")
+    existing, sessions, secrets = nova_pilot_world
+    async with sessions() as session:
+        session.add(UserModelKey(user_id=existing.requested_by_id, provider="anthropic",
+                                 encrypted=secrets.encrypt(os.environ["DOTRIX_LIVE_ANTHROPIC_API_KEY"]), last4="live"))
+        await session.commit()
+    settings = db_client._transport.app.state.settings.model_copy(update={"fx_chat_pilot": True})
+    app = create_app(settings)
+    app.state.sessionmaker, app.state.secrets, app.state.checkouts = sessions, secrets, checkouts
+    app.dependency_overrides[get_email_sender] = lambda: outbox
+    app.dependency_overrides[get_storage] = lambda: storage
+    app.dependency_overrides[optional_storage] = lambda: storage
+    app.state.runner = runner = AgentRunner(
+        session_factory=sessions, checkpointer=InMemorySaver(), model_factory=agent_script.factory,
+        inline=True, checkouts=checkouts, secrets=secrets, settings=settings,
+    )
+    app.state.jobs = InlineJobs(JobContext(sessions, settings, outbox, storage, checkouts=checkouts, runner=runner), JOBS)
+    runner.jobs = app.state.jobs
+    token = create_access_token(existing.requested_by_id, secret=settings.jwt_secret.get_secret_value(),
+                                issuer=settings.jwt_issuer, ttl=timedelta(minutes=10))
+    headers = {"Authorization": f"Bearer {token}"}
+    base = f"/v1/workspaces/{existing.workspace_id}/projects/{existing.project_id}/agent"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", timeout=180) as client:
+        assert "anthropic" in (await client.get(f"{base}/runtime-options", headers=headers)).json()["fx_providers"]
+        first = await client.post(f"{base}/runs", headers=headers, json={
+            "message": "Read research/runtime.md in the project's knowledge and quote its one sentence of evidence.",
+            "chat_runtime": "fx", "work_mode": "discuss", "model": "anthropic:claude-haiku-5-5",
+        })
+        assert first.status_code == 202, first.text
+        run = first.json()
+        assert run["status"] == "completed", run
+        assert run["chat_runtime"] == "fx" and run["model"] == "anthropic:claude-haiku-5-5"
+        assert "private project evidence" in run["reply"].lower(), run["reply"]
+        second = await client.post(f"{base}/runs", headers=headers, json={
+            "message": "Which file did you read? Just its path.", "thread_id": run["thread_id"], "work_mode": "discuss",
+        })
+        assert second.status_code == 202 and second.json()["status"] == "completed", second.text
+        assert "runtime.md" in second.json()["reply"], second.json()["reply"]
 
 
 async def test_fx_chat_runs_through_api_and_keeps_its_runtime(

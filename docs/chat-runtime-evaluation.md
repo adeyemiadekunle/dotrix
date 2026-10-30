@@ -75,7 +75,10 @@ project read, duplicate refusal, and mid-turn membership or lease revocation.
 
 The pilot is deliberately limited to interactive Discuss turns with no token
 budget, no automation and no writes. Delegation requires a separate flag. It supports the configured
-OpenAI-compatible provider endpoints, not direct Anthropic or Google APIs. Without the durable delegation flag, the fx journal stays in memory and a previously
+OpenAI-compatible provider endpoints, Anthropic's included (its OpenAI-compatible endpoint, checked live on
+Claude Haiku 5.5 on 2026-10-30: tools, follow-ups, steering, a journal reopened and a retry answered from it, and
+`test_live_fx_chat_on_anthropic_reads_project_knowledge` through the public API when given
+`DOTRIX_LIVE_ANTHROPIC_API_KEY`); not Google's API. Without the durable delegation flag, the fx journal stays in memory and a previously
 bound run is refused instead of silently replayed.
 The platform runner persists replies and events, and passes bounded recent history to
 later turns. It records available usage and marks unreported usage incomplete. Set
