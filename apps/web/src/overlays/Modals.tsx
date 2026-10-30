@@ -480,9 +480,12 @@ function ProjectAgentModels({ projectId, control }: { projectId: string; control
         specialist tasks keep their selected model. Each person needs a personal key for the model providers their agents use.
       </p>
       <label className="field" style={{ display: "flex", gap: 8 }}>
-        <input type="checkbox" checked={form.routing} onChange={(e) => set({ routing: e.target.checked })} />
-        Route architecture, reviews, and project-changing tasks to the conversation/project model; use the specialist model for routine tasks.
+        <input type="checkbox" checked={form.routing} aria-describedby={`${listId}-routing-help`} onChange={(e) => set({ routing: e.target.checked })} />
+        Automatic model routing
       </label>
+      <p className="muted" id={`${listId}-routing-help`} style={{ fontSize: 12.5 }}>
+        Route architecture, reviews, and project-changing tasks to the conversation/project model; use the specialist model for routine tasks.
+      </p>
       <datalist id={listId}>
         {(options.data ?? []).map((option) => (
           <option key={option.id} value={option.id}>

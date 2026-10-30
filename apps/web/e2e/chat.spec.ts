@@ -278,24 +278,29 @@ test("active project chat can queue, cancel, and steer without losing a failed d
     entries = [item, ...entries];
     return route.fulfill({ status: 202, json: item });
   });
-  await page.goto(location);
-  await expect(page.getByLabel("Delivery action")).toHaveValue("queue");
-  const box = page.getByLabel("Message");
-  await box.fill("Compare the alternatives afterward");
-  await box.press("Enter");
-  await expect(box).toHaveValue("");
-  await expect(page.getByText("Queued follow-up: Compare the alternatives afterward")).toBeVisible();
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.getByText("Queued follow-up: Compare the alternatives afterward")).toBeHidden();
-  await page.getByLabel("Delivery action").selectOption("steer");
-  reject = true;
-  await box.fill("Only consider self-hosted options");
-  await box.press("Enter");
-  await expect(page.getByText("The turn has just finished")).toBeVisible();
-  await expect(box).toHaveValue("Only consider self-hosted options");
-  reject = false;
-  await expect(box).toBeEnabled();
-  await box.press("Enter");
-  await expect(page.getByText("Steering: Only consider self-hosted options")).toBeVisible();
-  expect(entries[0]?.kind).toBe("steer");
+  try {
+    await page.goto(location);
+    await expect(page.getByLabel("Delivery action")).toHaveValue("queue");
+    const box = page.getByLabel("Message");
+    await box.fill("Compare the alternatives afterward");
+    await box.press("Enter");
+    await expect(box).toHaveValue("");
+    await expect(page.getByText("Queued follow-up: Compare the alternatives afterward")).toBeVisible();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByText("Queued follow-up: Compare the alternatives afterward")).toBeHidden();
+    await page.getByLabel("Delivery action").selectOption("steer");
+    reject = true;
+    await box.fill("Only consider self-hosted options");
+    await box.press("Enter");
+    await expect(page.getByText("The turn has just finished")).toBeVisible();
+    await expect(box).toHaveValue("Only consider self-hosted options");
+    reject = false;
+    await expect(box).toBeEnabled();
+    await box.press("Enter");
+    await expect(page.getByText("Steering: Only consider self-hosted options")).toBeVisible();
+    expect(entries[0]?.kind).toBe("steer");
+  } finally {
+    // Polling may leave a route.fetch response active when the assertions finish.
+    await page.unrouteAll({ behavior: "wait" });
+  }
 });
