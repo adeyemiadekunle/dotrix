@@ -50,7 +50,7 @@ def test_claude_code_events_become_steps_and_tokens() -> None:
     ]
     steps = [s for line in lines for s in tool.parse(json.dumps(line), usage).steps]
     assert [(s.kind, s.text) for s in steps] == [
-        ("step", "Claude Code started (claude-opus-5-5)"), ("text", "Looking."), ("tool", "Ran pytest -q"),
+        ("step", "Started (claude-opus-5-5)"), ("text", "Looking."), ("tool", "Ran pytest -q"),
         ("tool", "Edited src/a.py"),
     ]
     assert (usage.input_tokens, usage.output_tokens) == (1010, 55)
@@ -81,7 +81,7 @@ def test_codex_events_become_steps_and_tokens() -> None:
         {"type": "turn.completed", "usage": {"input_tokens": 300, "cached_input_tokens": 100, "output_tokens": 40}},
     )]
     assert [s.text for o in out for s in o.steps] == [
-        "Codex started", "Ran npm test", "2 passed", "Edited a.ts", "Changed a.ts; tests pass."]
+        "Started", "Ran npm test", "2 passed", "Edited a.ts", "Changed a.ts; tests pass."]
     assert out[1].steps[0].ref == out[2].steps[0].ref == "c1" and out[2].steps[0].kind == "output"
     assert out[4].summary == "Changed a.ts; tests pass." and usage.total == 340
     assert tool.parse(json.dumps({"type": "turn.failed", "error": {"message": "quota"}}), usage).failed == "quota"
@@ -238,7 +238,7 @@ def test_the_browser_s_steps_read_like_the_rest() -> None:
     tool, usage = ClaudeCode(), Usage()
     started = tool.parse(json.dumps({"type": "system", "subtype": "init", "model": "claude-haiku-5-5",
                                      "mcp_servers": [{"name": "browser", "status": "failed"}]}), usage)
-    assert [s.text for s in started.steps] == ["Claude Code started (claude-haiku-5-5)", "The browser didn't start (failed)"]
+    assert [s.text for s in started.steps] == ["Started (claude-haiku-5-5)", "The browser didn't start (failed)"]
     calls = [
         ("mcp__browser__browser_navigate", {"url": "http://localhost:8080/"}),
         ("mcp__browser__browser_click", {"element": "Subtract button", "ref": "e4"}),

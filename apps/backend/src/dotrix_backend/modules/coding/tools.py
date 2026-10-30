@@ -24,7 +24,7 @@ from typing import Any, Protocol
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.agents.llm import PROVIDERS, available_models
 
-from .models import CodingAgent
+from .models import CODING_AGENT_NAME, CodingAgent
 
 MAX_STEP = 300  # characters of one step shown on the run page
 CLAUDE_TOOLS = "Read,Edit,Write,MultiEdit,Glob,Grep,Bash,TodoWrite"
@@ -106,7 +106,7 @@ class CodingTool(Protocol):
     """What the runner and sandboxes need from a coding tool; nothing outside this module names one."""
 
     agent: CodingAgent
-    name: str  # as people read it: run steps, commits, PRs
+    name: str  # the engine, for logs and the record only: people see Kai (`CODING_AGENT_NAME`), never this
     provider: str  # whose model it runs on, as dotrix names it ("anthropic"): the key it takes (`run_key`)
     key_env: str  # the model key's environment variable
     provider_type: str  # its OpenShell provider profile
@@ -242,7 +242,7 @@ class ClaudeCode(_NoUsageCommand):
             return out
         kind = event.get("type")
         if kind == "system" and event.get("subtype") == "init":
-            out.steps.append(Step("step", f"Claude Code started ({event.get('model') or 'default model'})"))
+            out.steps.append(Step("step", f"Started ({event.get('model') or 'default model'})"))
             for server in event.get("mcp_servers") or []:  # a server that didn't start is said, not skipped
                 if server.get("name") == BROWSER_SERVER and server.get("status") != "connected":
                     out.steps.append(Step("error", f"The browser didn't start ({server.get('status') or 'unknown'})"))
@@ -289,7 +289,7 @@ class ClaudeCode(_NoUsageCommand):
             if event.get("total_cost_usd") is not None:
                 usage.cost_usd = float(event["total_cost_usd"])
             if event.get("is_error") or str(event.get("subtype", "")).startswith("error"):
-                out.failed = _clip(str(event.get("result") or event.get("subtype") or "Claude Code stopped"), 500)
+                out.failed = _clip(str(event.get("result") or event.get("subtype") or f"{CODING_AGENT_NAME} stopped"), 500)
             elif event.get("result"):
                 out.summary = str(event["result"])[:20_000]
         return out
@@ -333,7 +333,7 @@ class Codex(_NoUsageCommand):
         kind = event.get("type")
         item = event.get("item") or {}
         if kind == "thread.started":
-            out.steps.append(Step("step", "Codex started"))
+            out.steps.append(Step("step", "Started"))
         elif kind == "item.started" and item.get("type") == "command_execution":
             out.steps.append(Step("tool", f"Ran {_clip(str(item.get('command', '')), 160)}", item.get("id")))
         elif kind == "item.completed":
@@ -353,7 +353,7 @@ class Codex(_NoUsageCommand):
             usage.output_tokens += int(turn.get("output_tokens") or 0)
         elif kind in ("turn.failed", "error"):
             message = (event.get("error") or {}).get("message") if kind == "turn.failed" else event.get("message")
-            out.failed = _clip(str(message or "Codex stopped"), 500)
+            out.failed = _clip(str(message or f"{CODING_AGENT_NAME} stopped"), 500)
         return out
 
 
@@ -552,7 +552,7 @@ class OpenCode:
                     usage.output_tokens = sum(o for _, o in usage._calls.values())
             case "error":
                 error = event.get("error") or {}
-                out.failed = _clip(str(error.get("message") or error.get("type") or "OpenCode stopped"), 500)
+                out.failed = _clip(str(error.get("message") or error.get("type") or f"{CODING_AGENT_NAME} stopped"), 500)
         return out
 
 
@@ -567,7 +567,7 @@ FX_DATA = ".fx"  # under $HOME: fx's sessions, and ours (`.fx/dotrix`: the fx se
 FX_STOPS = {  # a turn that ended any other way than end_turn: what the person reads
     "cancelled": "Stopped",
     "max_tokens": "The model's output limit was reached",
-    "max_turn_requests": "fx reached its step limit for one turn",
+    "max_turn_requests": f"{CODING_AGENT_NAME} reached its step limit for one turn",
     "refusal": "The model refused",
     "refused": "The model refused",
 }
@@ -647,10 +647,9 @@ class Fx:
             return out
         match event.get("type"):
             case "started":
-                # Named like the other engines' first step ("Codex started"): which engine ran shows in the steps.
-                said = "fx continued the conversation" if event.get("resumed") else "fx started"
+                said = "Continued the conversation" if event.get("resumed") else "Started"
                 if event.get("fresh"):
-                    said = "fx started a new conversation (the earlier one couldn't be restored)"
+                    said = "Started a new conversation (the earlier one couldn't be restored)"
                 out.steps.append(Step("step", f"{said} ({event.get('model') or 'default model'})"))
             case "text" if str(event.get("text", "")).strip():
                 out.steps.append(Step("text", _clip(str(event["text"]))))
@@ -680,11 +679,11 @@ class Fx:
                 usage.output_tokens = int(totals.get("outputTokens") or 0) + int(totals.get("reasoningTokens") or 0)
                 reason = str(event.get("stopReason") or "end_turn")
                 if reason != "end_turn":
-                    out.failed = FX_STOPS.get(reason, f"fx stopped ({reason})")
+                    out.failed = FX_STOPS.get(reason, f"{CODING_AGENT_NAME} stopped ({reason})")
                 elif event.get("final"):
                     out.summary = str(event["final"])[:20_000]
             case "error":
-                out.failed = _clip(str(event.get("message") or "fx stopped"), 500)
+                out.failed = _clip(str(event.get("message") or f"{CODING_AGENT_NAME} stopped"), 500)
         return out
 
 

@@ -136,7 +136,7 @@ class CodingService:
                 raise CodingUnavailable(reason or "No coding tool is installed on your computer")
             selected = agent or (CodingAgent(preferred) if preferred in runner.tools else CodingAgent(runner.tools[0]))
             if selected.value not in runner.tools:
-                raise CodingUnavailable(f"{selected.value} isn't installed on your computer")
+                raise CodingUnavailable("The coding tool you picked isn't installed on your computer")
             return selected, model if fixed else None
         keys = await self._keys(project, user_id)
         selected = agent or choose_agent(
@@ -149,12 +149,12 @@ class CodingService:
         )
         if not fixed and model is not None:
             if model not in models_for(self.settings, selected, set(keys)):
-                raise Unprocessable(f"Choose an available provider:model for {selected.value}")
+                raise Unprocessable("Choose an available provider:model")
         if selected is CodingAgent.FX and not self.settings.coding_fx and not fixed:
-            raise CodingUnavailable("fx isn't turned on for coding on this server (DOTRIX_CODING_FX)")
+            raise CodingUnavailable("That coding tool isn't available on this server")
         tool = tool_for(selected, chosen, self.settings)
         if tool is None or not run_key(tool, self.settings, keys):
-            raise CodingUnavailable(f"Connect a compatible provider key to use {selected.value}")
+            raise CodingUnavailable(f"Connect a compatible provider key in Account → Your models to code with {CODING_AGENT_NAME}")
         return selected, chosen
 
     async def availability(self, project: Project, user_id: uuid.UUID | None) -> CodingAvailability:

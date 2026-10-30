@@ -17,7 +17,10 @@ from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.coding.models import CodingAgent
 from dotrix_backend.modules.coding.tools import (
     FX_PROVIDERS,
+    OPENCODE_PROVIDERS,
+    TOOLS,
     Fx,
+    OpenCode,
     Usage,
     choose_agent,
     fx_models,
@@ -103,7 +106,7 @@ def test_fx_lines_become_steps_terminal_output_and_tokens() -> None:
         failed = parsed.failed or failed
     said = [(s.kind, s.text, s.ref) for s in steps]
     assert said == [
-        ("step", "fx started (gpt-6.1)", None),
+        ("step", "Started (gpt-6.1)", None),
         ("text", "Looking at the tests.", None),
         ("tool", "Ran pytest -q", "c1"),
         ("output", "3 passed", "c1"),
@@ -118,8 +121,8 @@ def test_fx_lines_become_steps_terminal_output_and_tokens() -> None:
 def test_fx_turns_that_end_early_say_why() -> None:
     tool = Fx(FX_PROVIDERS["openai"])
     assert tool.parse(json.dumps({"type": "done", "stopReason": "cancelled"}), Usage()).failed == "Stopped"
-    assert tool.parse(json.dumps({"type": "done", "stopReason": "weird"}), Usage()).failed == "fx stopped (weird)"
-    assert tool.parse(json.dumps({"type": "error", "message": "fx didn't start"}), Usage()).failed == "fx didn't start"
+    assert tool.parse(json.dumps({"type": "done", "stopReason": "weird"}), Usage()).failed == "Kai stopped (weird)"
+    assert tool.parse(json.dumps({"type": "error", "message": "x"}), Usage()).failed == "x"
 
 
 # -- the driver, against a fake `fx acp` --------------------------------------------------------------------
@@ -244,3 +247,30 @@ def test_sigint_cancels_the_turn_and_it_still_ends_with_done(fake_fx) -> None:
     assert process.wait(timeout=10) == 0
     assert rest[-1]["type"] == "done" and rest[-1]["stopReason"] == "cancelled"
     assert "session/cancel" in [c["method"] for c in _calls(fake_fx)]
+
+
+ENGINES = ("claude", "codex", "opencode", "fx")
+
+
+@pytest.mark.parametrize("tool", [
+    TOOLS[CodingAgent.CLAUDE_CODE], TOOLS[CodingAgent.CODEX], OpenCode(OPENCODE_PROVIDERS["openai"]), Fx(FX_PROVIDERS["openai"]),
+], ids=lambda tool: tool.name)
+def test_what_people_read_never_names_the_engine(tool) -> None:
+    """Steps and failures reach Codes; the engine is only on the run, in the audit log, and in logs."""
+    starts = [  # each engine's first event, and a failure without its own message
+        {"type": "system", "subtype": "init", "model": "m"}, {"type": "result", "subtype": "error_during_execution"},
+        {"type": "thread.started"}, {"type": "turn.failed", "error": {}}, {"type": "error", "error": {}},
+        {"type": "started", "model": "m"}, {"type": "done", "stopReason": "max_turn_requests"}, {"type": "error"},
+    ]
+    said = []
+    for event in starts:
+        parsed = tool.parse(json.dumps(event), Usage())
+        said += [s.text for s in parsed.steps] + ([parsed.failed] if parsed.failed else [])
+    assert said, "no event was read"
+    assert not [text for text in said if any(name in text.lower() for name in ENGINES)]
+
+
+def test_the_driver_s_own_failures_never_name_fx(fake_fx) -> None:
+    env = {**fake_fx, "DOTRIX_FX_BIN": "/nonexistent/fx"}
+    events = _drive(env, "Fix it")
+    assert events[-1]["type"] == "error" and "fx" not in events[-1]["message"].lower()

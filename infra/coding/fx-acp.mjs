@@ -6,7 +6,7 @@
 //   {"type":"tool","id":…,"name":…,"title":…,"input":{…}}   a tool call starts
 //   {"type":"tool_result","id":…,"status":"completed"|"failed","output":…}
 //   {"type":"done","stopReason":…,"usage":{…},"final":…}    the turn ended
-//   {"type":"error","message":…}                      it couldn't run
+//   {"type":"error","message":…}                      it couldn't run (shown to people: never names fx)
 //
 //   node fx-acp.mjs --base-url URL --key-env NAME --model MODEL [--session ID [--resume]]  < brief
 //
@@ -39,11 +39,11 @@ const fail = (message) => {
   process.exit(1);
 };
 
-if (!baseUrl || !keyEnv || !model) fail("fx-acp: --base-url, --key-env and --model are required");
-if (dotrixSession && !/^[A-Za-z0-9_-]{1,64}$/.test(dotrixSession)) fail("fx-acp: invalid --session");
+if (!baseUrl || !keyEnv || !model) fail("The coding engine wasn't set up for this turn (base URL, key or model missing)");
+if (dotrixSession && !/^[A-Za-z0-9_-]{1,64}$/.test(dotrixSession)) fail("The coding engine wasn't set up for this turn (invalid session)");
 
 const brief = readFileSync(0, "utf8");
-if (!brief.trim()) fail("fx-acp: the brief (stdin) is empty");
+if (!brief.trim()) fail("The coding engine got an empty brief");
 
 // fx's settings: the one provider this turn may use (configured_provider.zig's shape).
 const fxHome = join(homedir(), ".fx");
@@ -81,7 +81,8 @@ const fx = spawn(fxBin, ["acp"], {
   stdio: ["pipe", "pipe", "inherit"],
   env: { ...process.env, FX_AUTO_UPGRADE: "0", FX_SOUND: "0", FX_DISABLE_KEYCHAIN: "1", FX_NO_OPEN_BROWSER: "1", NO_COLOR: "1" },
 });
-fx.on("error", (error) => fail(`fx didn't start: ${error.message}`));
+// The code only: the OS's message names the binary.
+fx.on("error", (error) => fail(`The coding engine didn't start (${error.code ?? "error"})`));
 
 // JSON-RPC 2.0 over fx's stdio: our requests, its notifications, and the few requests it makes of us.
 let nextId = 1;
@@ -166,7 +167,7 @@ createInterface({ input: fx.stdout, crlfDelay: Infinity }).on("line", (line) => 
 let exited = false;
 fx.on("exit", (code, signal) => {
   exited = true;
-  for (const { reject } of pending.values()) reject(new Error(`fx stopped (${signal ?? code})`));
+  for (const { reject } of pending.values()) reject(new Error(`The coding engine stopped (${signal ?? code})`));
   pending.clear();
 });
 

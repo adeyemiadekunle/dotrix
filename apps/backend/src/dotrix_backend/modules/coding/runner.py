@@ -339,7 +339,6 @@ class CodingWorker:
             # while the changes waited mustn't lose them).
             publish_only = accepted is not None or revert is not None
             tool = tool_for(agent, model, self.settings)
-            tool_name = tool.name if tool is not None else agent.value
             # People see Kai; the engine underneath is kept here, on the run, and in the audit log.
             logger.info("coding run %s: Kai on %s (model %s)%s", run.id, agent.value, model or "default",
                         ", publishing only" if publish_only else "")
@@ -354,7 +353,7 @@ class CodingWorker:
                 keys = await run_keys(session, self.secrets, run.workspace_id, run.requested_by_id)
                 key = run_key(tool, self.settings, keys.keys)
                 if key is None:
-                    raise RunFailed(f"There's no {tool.provider} key for {CODING_AGENT_NAME} ({tool.name}) here any "
+                    raise RunFailed(f"There's no {tool.provider} key for {CODING_AGENT_NAME} here any "
                                     "more (connect your own in Account → Your models)")
 
         # 1. Our checkout, with a token for this repo only (an hour long, never stored). With a fork
@@ -383,7 +382,7 @@ class CodingWorker:
         await self._update(run_id, base_sha=base_sha, step=f"Checked out {session_branch}" if session_branch
                            else "Checked out the repository")
         if publish_only:
-            await self._publish_only(run_id, work, host, source, ref, push, token, tool_name, session_branch,
+            await self._publish_only(run_id, work, host, source, ref, push, token, session_branch,
                                      session_pr, publication, accepted=accepted, revert=revert)
             return
         assert tool is not None and key is not None and self.sandbox is not None
@@ -451,7 +450,7 @@ class CodingWorker:
                 return
 
             # 4. Commit, push a new branch, open the PR.
-            await self._publish(run_id, host, ref, push, token, tool.name, summary, files, paths, changes.stdout,
+            await self._publish(run_id, host, ref, push, token, summary, files, paths, changes.stdout,
                                 session_branch, session_pr, publication, after_push=sandbox_moves_on)
         finally:
             # The conversation moved on even when the turn didn't push: save it for the next turn.
@@ -495,7 +494,7 @@ class CodingWorker:
 
     async def _publish_only(
         self, run_id: uuid.UUID, work: Path, host: Path, source: _PushTarget, ref: RepoRef, push: _PushTarget,
-        token: str, tool_name: str, session_branch: str | None, session_pr: tuple[int, str | None] | None,
+        token: str, session_branch: str | None, session_pr: tuple[int, str | None] | None,
         publication: _Publication, *, accepted: str | None, revert: tuple[int, str] | None,
     ) -> None:
         """A turn that doesn't run the agent: accepted changes, applied and checked again on the
@@ -525,11 +524,11 @@ class CodingWorker:
         if not paths:
             await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=summary)
             return
-        await self._publish(run_id, host, ref, push, token, tool_name, summary, files, paths, diff,
+        await self._publish(run_id, host, ref, push, token, summary, files, paths, diff,
                             session_branch, session_pr, publication)
 
     async def _publish(
-        self, run_id: uuid.UUID, host: Path, ref: RepoRef, push: _PushTarget, token: str, tool_name: str,
+        self, run_id: uuid.UUID, host: Path, ref: RepoRef, push: _PushTarget, token: str,
         summary: str | None, files: list[dict[str, Any]], paths: list[str], diff: str,
         session_branch: str | None, session_pr: tuple[int, str | None] | None, publication: _Publication, *,
         after_push: Callable[[str], Awaitable[None]] | None = None,
@@ -548,7 +547,7 @@ class CodingWorker:
         if branch == ref.default_branch:
             raise RunFailed("Refusing to push to the default branch")
         heading = f"{issue_key}: {title}" + (f" (turn {turn})" if turn > 1 else "")
-        message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({CODING_AGENT_NAME}, on {tool_name})"
+        message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({CODING_AGENT_NAME})"
         await run_git(host, "-c", f"user.name={CODING_AGENT_NAME} via dotrix", "-c", f"user.email={BOT_EMAIL}",
                       "commit", "-q", "--no-verify", "-m", message)
         commit_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
@@ -571,7 +570,7 @@ class CodingWorker:
             pr = await self.app.create_pull_request(
                 ref.installation_id, ref.full_name, head=push.head + branch, base=ref.default_branch,
                 title=f"{issue_key}: {title}",
-                body=pr_body(summary, issue_key, run_id, tool_name, files, guard.ci_sensitive(paths)),
+                body=pr_body(summary, issue_key, run_id, files, guard.ci_sensitive(paths)),
                 token=token,
             )
         publication.pr = pr
@@ -671,12 +670,12 @@ class CodingWorker:
         if result.timed_out:
             raise _Stopped(f"Stopped at the time limit ({self.settings.coding_timeout_minutes} minutes)")
         if result.cancelled and failed and not stop_reason:
-            raise RunFailed(f"{CODING_AGENT_NAME} didn't finish ({tool.name}): {failed}")
+            raise RunFailed(f"{CODING_AGENT_NAME} didn't finish: {failed}")
         if result.cancelled:
             raise _Stopped(stop_reason[0] if stop_reason else "Stopped")
         if failed or result.code != 0:
             detail = failed or (result.stderr.strip().splitlines() or [f"exit code {result.code}"])[-1]
-            raise RunFailed(f"{CODING_AGENT_NAME} didn't finish ({tool.name}): {detail[:500]}")
+            raise RunFailed(f"{CODING_AGENT_NAME} didn't finish: {detail[:500]}")
         return summary, (reported[-1] if reported else None)
 
     async def _totals(
@@ -1093,7 +1092,7 @@ async def issue_title(session: AsyncSession, run: CodingRun) -> str:
 
 
 def pr_body(
-    summary: str | None, key: str, run_id: uuid.UUID, tool_name: str, files: list[dict[str, Any]], ci_sensitive: list[str]
+    summary: str | None, key: str, run_id: uuid.UUID, files: list[dict[str, Any]], ci_sensitive: list[str]
 ) -> str:
     warning = [
         "> [!WARNING]",
@@ -1106,7 +1105,7 @@ def pr_body(
         (summary or "The agent left no summary.").strip()[:20_000],
         "",
         "---",
-        f"Written by {CODING_AGENT_NAME} (on {tool_name}) in a dotrix coding run for {key} ({run_id}), asked for and approved on "
+        f"Written by {CODING_AGENT_NAME} in a dotrix coding run for {key} ({run_id}), asked for and approved on "
         f"dotrix. {len(files)} file{'s' if len(files) != 1 else ''} changed. A person reviews and merges it.",
     ])
 
