@@ -122,7 +122,7 @@ async def test_stop_a_working_run(live, db_client: AsyncClient, add_member, sign
 
     stopped = await db_client.post(f"{base}/agent/runs/{run['id']}/stop", headers=ada.headers)
     assert stopped.status_code == 200, stopped.text
-    assert stopped.json() == {"id": run["id"], "status": "failed"}
+    assert stopped.json() == {"id": run["id"], "status": "cancelled"}  # with its specialist tasks
     own = (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=ada.headers)).json()
     assert own["error"] == "Stopped by Ada"
     again = await db_client.post(f"{base}/agent/runs/{run['id']}/stop", headers=ada.headers)

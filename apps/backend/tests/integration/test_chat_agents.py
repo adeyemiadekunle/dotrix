@@ -74,7 +74,6 @@ async def test_a_specialist_mention_keeps_nova_as_coordinator(project, db_client
 
 async def test_a_specialists_writes_are_its_own(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
-    db_client._transport.app.state.runner.settings.durable_delegation = True
     agent_script.say(
         tool_call("delegate_tasks", tasks=[{"key": "zones", "agent": "product", "brief": "Write up zones",
                                           "expected_result": "Requirements", "changes_project": True}]),
@@ -99,7 +98,6 @@ async def test_a_specialists_writes_are_its_own(project, db_client: AsyncClient,
 
 async def test_a_specialist_stays_in_its_folders(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
-    db_client._transport.app.state.runner.settings.durable_delegation = True
     agent_script.say(
         tool_call("delegate_tasks", tasks=[{"key": "architecture", "agent": "research", "brief": "Change the architecture",
                                           "expected_result": "Report", "changes_project": True}]),
@@ -150,7 +148,6 @@ async def test_delegated_specialists_use_their_model_override_or_project_default
     ada, _, base = await project()
     await connected(ada, "google_genai")
     await connected(ada, "anthropic")
-    db_client._transport.app.state.runner.settings.durable_delegation = True
     configured = await db_client.patch(base, json={"specialist_model": GEMINI}, headers=ada.headers)
     assert configured.status_code == 200, configured.text
     research = (await db_client.get(f"{base}/agents/research", headers=ada.headers)).json()

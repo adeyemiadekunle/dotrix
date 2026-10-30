@@ -67,7 +67,6 @@ async def test_a_dismissed_finding_proposes_a_lesson_for_its_agent(
     db_client: AsyncClient, signup, create_team, add_member, agent_script
 ) -> None:
     ada, _, _, base = await _world(db_client, signup, create_team, add_member)
-    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
     agent_script.say(
         tool_call("delegate_tasks", tasks=[{"key": "review", "agent": "reviewer", "brief": "Review the project",
                                           "expected_result": "Findings"}]),

@@ -1145,7 +1145,7 @@ async def test_fx_chat_runs_through_api_and_keeps_its_runtime(
             assert pending.status_code == 202
             assert await asyncio.to_thread(started.wait, 10)
             stopped = await client.post(f"{base}/runs/{pending.json()['id']}/stop", headers=headers)
-            assert stopped.status_code == 200 and stopped.json()["status"] == "failed", stopped.text
+            assert stopped.status_code == 200 and stopped.json()["status"] == "cancelled", stopped.text
             gate.set()
             stopped_run = await client.get(f"{base}/runs/{pending.json()['id']}", headers=headers)
             assert stopped_run.json()["reply"] is None
@@ -1188,7 +1188,7 @@ async def test_fx_chat_delegates_through_real_child_runner_and_returns_the_saved
     if not shutil.which("node") or not (_HOST / "node_modules" / "libfx").is_dir():
         pytest.skip("Install the optional fx host to exercise the real libfx runtime")
     existing, sessions, secrets = nova_pilot_world
-    settings = db_client._transport.app.state.settings.model_copy(update={"fx_chat_durable_delegation": True})
+    settings = db_client._transport.app.state.settings
     async with sessions() as session:
         await session.execute(update(Project).where(Project.id == existing.project_id).values(
             specialist_model="openai:cheap-model"))
@@ -1213,8 +1213,6 @@ async def test_fx_chat_delegates_through_real_child_runner_and_returns_the_saved
     args = {"tasks": [{"key": "research", "agent": "research", "brief": "Review the evidence",
                        "expected_result": "Evidence"}]}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        options = await client.get(f"{base}/runtime-options", headers=headers)
-        assert options.json()["fx_delegation_available"] is True
         with model_server(tool_name="delegate_tasks", tool_args=args) as url:
             monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
             response = await client.post(f"{base}/runs", headers=headers, json={

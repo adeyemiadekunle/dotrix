@@ -113,7 +113,7 @@ async def test_managers_can_stop_private_runs_without_reading_them(
     assert (await db_client.get(run_url, headers=manager.headers)).status_code == 404
     response = await db_client.post(f"{run_url}/stop", headers=manager.headers)
     assert response.status_code == 200, response.text
-    assert response.json() == {"id": run["id"], "status": "failed"}
+    assert response.json() == {"id": run["id"], "status": "cancelled"}
     assert (await db_client.get(run_url, headers=manager.headers)).status_code == 404
     own = (await db_client.get(run_url, headers=bob.headers)).json()
     assert own["message"] == "Bob's private instruction" and own["reply"] == "Bob's private reply"
@@ -192,7 +192,6 @@ async def test_people_touch_up_agents_for_themselves_within_limits(world, db_cli
 
     # His runs with Lyra carry them: Nova involves the product specialist, whose prompt keeps
     # his way of working; the contract itself is unchanged, and Ada's runs don't carry it.
-    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
     model = agent_script.say(
         tool_call("delegate_tasks", tasks=[{"key": "stories", "agent": "product", "brief": "stories",
                                           "expected_result": "Stories"}]),

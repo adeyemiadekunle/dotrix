@@ -1199,14 +1199,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
             setMode={pid ? setMode : undefined}
             modeOptions={WORK_MODES}
             runtime={pid && runtimeOptions?.fx_available ? runtime : undefined}
-            setRuntime={
-              pid && runtimeOptions?.fx_available
-                ? (value) => {
-                    setRuntime(value);
-                    if (value === "fx" && !runtimeOptions?.fx_delegation_available) setAgent("auto");
-                  }
-                : undefined
-            }
+            setRuntime={pid && runtimeOptions?.fx_available ? setRuntime : undefined}
             disabled={unavailable}
             approval={pid ? approval : undefined}
             setApproval={pid ? setApproval : undefined}
@@ -1216,11 +1209,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           />
           {runtime === "fx" && (
             <div className="faint" style={{ fontSize: 11.5, marginTop: 6, textAlign: "center" }}>
-              {unavailable
-                ? "Connect a compatible personal model in settings to use fx."
-                : runtimeOptions?.fx_delegation_available
-                  ? FX_NOTE
-                  : `${FX_NOTE} It can't involve specialists here.`}
+              {unavailable ? "Connect a compatible personal model in settings to use fx." : FX_NOTE}
             </div>
           )}
           <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 14, justifyContent: "center" }}>

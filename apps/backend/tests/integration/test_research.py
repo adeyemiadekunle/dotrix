@@ -85,7 +85,6 @@ def _delegate(agent: str, brief: str, changes_project: bool = False) -> dict:
 
 
 async def _research(db_client: AsyncClient, base: str, headers: dict, message: str = "What's the UK VAT rate?") -> dict:
-    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
     run = (await db_client.post(f"{base}/agent/runs", json={"message": message, "agent": "research"},
                                 headers=headers)).json()
     assert run["status"] in ("completed", "awaiting_approval", "waiting_children"), run
@@ -276,7 +275,6 @@ async def test_a_report_is_saved_as_a_research_note(world, web, db_client: Async
 
 async def test_only_reports_are_saved_as_notes(world, db_client: AsyncClient, agent_script) -> None:
     ada, _, _, base = await world()
-    db_client._transport.app.state.runner.settings.durable_delegation = True  # type: ignore[attr-defined]
     agent_script.say(
         _delegate("reviewer", "Review the project"),
         tool_call("submit_result", items=[{"severity": "low", "title": "Gap", "detail": "x"}]),

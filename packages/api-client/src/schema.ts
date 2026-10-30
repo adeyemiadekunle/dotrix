@@ -5555,12 +5555,6 @@ export interface components {
              * @description Compatible providers; the requesting person must connect their own key
              */
             fx_providers: string[];
-            /**
-             * Fx Delegation Available
-             * @description Whether fx conversations may delegate to specialists
-             * @default false
-             */
-            fx_delegation_available: boolean;
         };
         /**
          * ChecklistItem

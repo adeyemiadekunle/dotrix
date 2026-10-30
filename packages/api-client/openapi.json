@@ -25055,12 +25055,6 @@
             "type": "array",
             "title": "Fx Providers",
             "description": "Compatible providers; the requesting person must connect their own key"
-          },
-          "fx_delegation_available": {
-            "type": "boolean",
-            "title": "Fx Delegation Available",
-            "description": "Whether fx conversations may delegate to specialists",
-            "default": false
           }
         },
         "type": "object",

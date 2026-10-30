@@ -260,9 +260,6 @@ class AgentService:
 
             if not interactive or data.work_mode is None:
                 raise Unprocessable("fx runs Nova's interactive turns in a work mode")
-            if requested_agent not in ("auto", PM_ROLE) and not (
-                    self.runner.settings and self.runner.settings.fx_chat_durable_delegation):
-                raise Unprocessable("fx involves specialists only with delegation enabled")
             if project.token_budget is not None:
                 raise Unprocessable("fx cannot yet enforce this project's token budget")
             lead = next((item.spec for item in await AgentDefinitionRepository(self.session).resolve(
@@ -293,10 +290,8 @@ class AgentService:
             requested_by_id=member.user_id,
             created_at=now,
             updated_at=now,
-            orchestration=bool(interactive and self.runner.settings and (
-                (runtime is ChatRuntime.DEEPAGENTS and self.runner.settings.durable_delegation)
-                or (runtime is ChatRuntime.FX and self.runner.settings.fx_chat_durable_delegation)
-            )),
+            # Nova's specialists are child runs under the platform's scheduler (delegation.py), on either runtime.
+            orchestration=interactive,
         )
         self.session.add(run)
         if interactive and data.thread_id is not None:

@@ -146,9 +146,6 @@ class Settings(DatabaseSettings):
     # A working agent (chat) run's lease, renewed every third of it. A run whose lease lapses is
     # picked up again from its last checkpoint by the worker's sweep, at most AGENT_MAX_ATTEMPTS times.
     agent_lease_seconds: int = Field(default=90, ge=15, le=3600)
-    durable_delegation: bool = False
-    # Separately opt in to scheduler-backed fx delegation.
-    fx_chat_durable_delegation: bool = False
     # Preserve a bounded private history for read-only built-in specialist tasks.
     specialist_continuity: bool = False
     # A session's sandbox stays up between turns (Phase B) until it's unused this long, at most this

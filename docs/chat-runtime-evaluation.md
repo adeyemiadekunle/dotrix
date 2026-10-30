@@ -100,12 +100,11 @@ the preview. The production backend image includes Node and the pinned fx host.
 Development Compose mounts the engine source from the host, so it also needs the
 host-side `npm ci` when the preview is enabled.
 
-### Durable read-only delegation preview
+### Durable delegation
 
-Set `DOTRIX_FX_CHAT_DURABLE_DELEGATION=true`
-on the API and worker to opt new fx runs into durable delegation. The run records
-that choice; disabling the flag does not change an existing run's recovery
-contract. Nova may selectively ask built-in specialists for read-only work through
+Every new fx run may delegate (2026-10-30: `DOTRIX_FX_CHAT_DURABLE_DELEGATION` was removed); the run
+records that it may (`orchestration`), and older runs keep what they recorded. Nova may selectively
+ask built-in specialists for work, project-changing tasks included, through
 Dotrix's existing `DelegationService`. Children keep their existing isolated
 DeepAgents checkpoints, structured results, dependency rules, requester permissions,
 personal credentials, and project specialist model/per-agent overrides. Native fx

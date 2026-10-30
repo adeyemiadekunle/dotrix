@@ -76,12 +76,11 @@ IssueEditor = Annotated[ProjectAccess, Depends(require_project_permission(Permis
 
 
 @router.get("/runtime-options")
-async def chat_runtime_options(access: Chatter, settings: SettingsDep) -> ChatRuntimeOptions:
+async def chat_runtime_options(access: Chatter) -> ChatRuntimeOptions:
     """The chat runtimes besides the default (fx) and fx's compatible personal model providers."""
     from .fx_pilot import fx_pilot_providers
 
-    return ChatRuntimeOptions(fx_available=True, fx_providers=fx_pilot_providers(),
-                              fx_delegation_available=settings.fx_chat_durable_delegation)
+    return ChatRuntimeOptions(fx_available=True, fx_providers=fx_pilot_providers())
 
 
 @router.post("/runs", status_code=status.HTTP_202_ACCEPTED, responses=errors(403, 409, 422, 503))
