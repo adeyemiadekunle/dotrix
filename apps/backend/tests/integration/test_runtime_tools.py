@@ -1274,7 +1274,7 @@ async def test_runtime_reads_real_project_knowledge_through_scoped_tools(runtime
     config = AgentRuntimeConfig("research", "Read the requested project evidence.", tuple(tools))
     with model_server() as base_url:
         if kind == "fx":
-            identity = RuntimeIdentity("fx", "libfx-0.0.15", fx_configuration_digest(
+            identity = RuntimeIdentity("fx", "libfx-0.0.16", fx_configuration_digest(
                 config, model="test-model", base_url=base_url))
             await bind_runtime_session(sessions, workspace_id=scope.workspace_id, run_id=scope.run_id, token=1,
                                        identity=identity, session_id=scope.session_id)

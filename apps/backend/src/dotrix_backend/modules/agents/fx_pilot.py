@@ -56,8 +56,9 @@ _FX_ENDPOINTS = {
     "openai": "https://api.openai.com/v1",
     **{name: provider.base_url for name, provider in PROVIDERS.items() if provider.base_url},
 }
-_VERSION = "libfx-0.0.15-pilot-2"
-_DURABLE_VERSION = "libfx-0.0.15-delegation-2"
+# A run bound to another libfx version fails closed instead of resuming on this one (runtime_sessions.py).
+_VERSION = "libfx-0.0.16-pilot-2"
+_DURABLE_VERSION = "libfx-0.0.16-delegation-2"
 _HISTORY_TURNS = 16
 _HISTORY_CHARS = 30_000
 _GUIDE = """You are answering in a read-only chat.

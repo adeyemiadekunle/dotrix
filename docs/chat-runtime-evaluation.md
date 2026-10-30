@@ -128,7 +128,7 @@ that the recovery sweeper needs.
 
 The low-level libfx engine currently returns no saved answer text when replaying an
 already committed turn. The host therefore has a deliberately narrow compatibility
-reader for **libfx 0.0.15**, **libfx-journal-v1**, extracting only committed successful
+reader for **libfx 0.0.16**, **libfx-journal-v1**, extracting only committed successful
 assistant output. It rejects unknown formats and package versions. Truncated,
 interrupted or refused turns cannot become a successful reply on replay. Automatic
 checkpointing is set above the journal quota to retain the full record history that
@@ -291,7 +291,10 @@ and outcome and distinguish it from an existing checkpoint response.
    Establish a rollback path, observability and operational ownership before any
    wider migration. Keep DeepAgents available until results justify a change.
 
-The experiment pins `libfx` 0.0.15. Its [SDK documentation](https://github.com/vercel-labs/fx/tree/main/sdk)
+The experiment pins `libfx` 0.0.16 (from 0.0.15 on 2026-10-30: the same journal format and engine API;
+the experiment, handoff, journal, recovery, delegation, steering and continuity tests passed unchanged).
+A run bound to 0.0.15 refuses to resume on 0.0.16, and 0.0.15 can't read 0.0.16's journals, so let
+running fx conversations finish, then upgrade every worker together. Its [SDK documentation](https://github.com/vercel-labs/fx/tree/main/sdk)
 describes sessions, host tools, durability, steering, and provider support. Recheck
 the installed version's API and behavior before upgrading: the SDK is experimental
 and its main-branch documentation can evolve independently of this prototype.

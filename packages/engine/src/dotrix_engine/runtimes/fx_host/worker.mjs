@@ -45,7 +45,7 @@ async function callStorage(op, payload = {}) {
 const encode = (data) => Buffer.from(data).toString("base64");
 const decode = (data) => new Uint8Array(Buffer.from(data, "base64"));
 
-// libfx 0.0.15's low-level engine deliberately omits output for an already
+// libfx 0.0.16's low-level engine deliberately omits output for an already
 // completed turn. Its v1 journal is the only durable source of that output.
 // Keep this compatibility reader isolated and fail closed on a new format.
 function committedAnswers(records) {
@@ -140,7 +140,7 @@ async function handle(command) {
     } else if (command.apiKey) options.apiKey = command.apiKey;
     if (command.persistence || command.ephemeralEngine) {
       const version = createRequire(import.meta.url)("./node_modules/libfx/package.json").version;
-      if (version !== "0.0.15") throw new Error("Unsupported libfx journal version");
+      if (version !== "0.0.16") throw new Error("Unsupported libfx journal version");
       engineSession = command.sessionId;
       delete options.name;
       delete options.durability;
