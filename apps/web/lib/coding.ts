@@ -15,7 +15,7 @@ type ApprovalMode = NonNullable<Schemas["CodingRunCreate"]["approval_mode"]>;
 const path = (scope: Scope) => ({ workspace_id: scope.workspaceId, project_id: scope.projectId });
 const runsKey = (scope: Scope | undefined, issueKey?: string | null) => ["coding-runs", scope?.projectId, issueKey];
 
-export const AGENT_NAMES: Record<Schemas["CodingAgent"], string> = { "claude-code": "Claude Code", codex: "Codex", opencode: "OpenCode" };
+export const AGENT_NAMES: Record<Schemas["CodingAgent"], string> = { "claude-code": "Claude Code", codex: "Codex", opencode: "OpenCode", fx: "fx" };
 
 export const STATUS_LABELS: Record<CodingRunStatus, string> = {
   awaiting_approval: "Waiting for approval",

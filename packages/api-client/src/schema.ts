@@ -5618,7 +5618,7 @@ export interface components {
          * @description The coding tools we wrap; which one runs follows the model key the server has.
          * @enum {string}
          */
-        CodingAgent: "claude-code" | "codex" | "opencode";
+        CodingAgent: "claude-code" | "codex" | "opencode" | "fx";
         /** CodingAvailability */
         CodingAvailability: {
             /** Available */
@@ -6385,7 +6385,7 @@ export interface components {
         /** DefaultCodingToolSave */
         DefaultCodingToolSave: {
             /** Default Coding Tool */
-            default_coding_tool?: ("claude-code" | "codex" | "opencode") | null;
+            default_coding_tool?: ("claude-code" | "codex" | "opencode" | "fx") | null;
         };
         /** DefaultModelSave */
         DefaultModelSave: {
@@ -7988,7 +7988,7 @@ export interface components {
              */
             models: string[];
             /** Default Coding Tool */
-            default_coding_tool?: ("claude-code" | "codex" | "opencode") | null;
+            default_coding_tool?: ("claude-code" | "codex" | "opencode" | "fx") | null;
         };
         /**
          * PlanRead

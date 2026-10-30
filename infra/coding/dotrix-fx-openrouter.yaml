@@ -1,0 +1,28 @@
+# OpenShell provider profile for dotrix's coding runs with Kai on fx, on OpenRouter. Import it once per gateway:
+#   openshell provider profile import -f infra/coding/dotrix-fx-openrouter.yaml --global
+# Coding runs on fx (DOTRIX_CODING_FX=true) with a OpenRouter model attach a provider of this type, made from the
+# run's OPENROUTER_API_KEY: the sandbox sees a placeholder, and OpenShell's proxy puts the key on requests to
+# openrouter.ai from fx only (fx-acp.mjs starts it; node itself never calls the model).
+# Docker uses its selected-host egress proxy instead. Not yet exercised on a live OpenShell gateway.
+id: dotrix-fx-openrouter
+display_name: fx on OpenRouter (dotrix)
+description: fx CLI on OpenRouter models, for dotrix coding runs
+category: agent
+inference_capable: true
+credentials:
+  - name: api_key
+    description: OpenRouter API key used by fx
+    env_vars: [OPENROUTER_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [api_key]
+endpoints:
+  - host: openrouter.ai
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/fx

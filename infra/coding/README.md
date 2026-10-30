@@ -84,6 +84,11 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 - **OpenCode's own settings are ours.** Its config comes from `OPENCODE_CONFIG_CONTENT` (that
   provider only; `webfetch`, `websearch` and `question` denied). A repo's `opencode.json` never
   loads (`OPENCODE_DISABLE_PROJECT_CONFIG`), and no model list is fetched.
+- **fx (opt-in) runs in its full-access mode, with settings we write.** `fx-acp.mjs` writes
+  `~/.fx/settings.json` each turn (one OpenAI-compatible provider, its key read from the provider's
+  variable by name, auto-upgrade off) and drives `fx acp`; the sandbox, not fx, is the boundary, and
+  nobody is there to answer fx's permission prompts. fx's web tools reach nothing (the sandbox blocks
+  them). People see Kai; which engine ran is on the run, in the audit log, and in the worker's log.
 - **Filesystem.** The repo and `/tmp` are writable; the system is read-only. The agent runs as
   the image's unprivileged `sandbox` user (uid 1500).
 - **Limits.** Personal BYOK has no platform token-budget setting or coding token-cap enforcement.
@@ -104,9 +109,12 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 | --- | --- | --- |
 | `DOTRIX_CODING_SANDBOX` | `off` outside Compose; `docker` in Compose | `docker`, `openshell`, or `local` (development only: no isolation; production refuses it) |
 | `DOTRIX_CODING_IMAGE` | `dotrix-coding:latest` | The image built from this folder |
-| `DOTRIX_CODING_AGENT` | `auto` | `claude-code`, `codex`, or `opencode` |
+| `DOTRIX_CODING_AGENT` | `auto` | `claude-code`, `codex`, `opencode`, or `fx` |
 | `DOTRIX_CODING_CLAUDE_MODEL`, `DOTRIX_CODING_CODEX_MODEL` | the tool's default | A model for Claude Code or Codex |
 | `DOTRIX_CODING_OPENCODE_MODEL` | first available catalogue model | Optional server default, e.g. `xai:grok-4.7` |
+| `DOTRIX_CODING_FX` | `false` | Offer fx as Kai's engine. Off: fx is never offered or chosen. On: only for someone who picks it (or `DOTRIX_CODING_AGENT=fx`) |
+| `DOTRIX_CODING_FX_MODEL` | first available model | fx's default, on an OpenAI-compatible provider: OpenAI, xAI, DeepSeek, Mistral, Groq, OpenRouter (not Anthropic or Google yet) |
+| `DOTRIX_CODING_FX_DRIVER` | `/opt/dotrix/fx-acp.mjs` | Where the image puts the ACP driver |
 | `DOTRIX_CODING_TIMEOUT_MINUTES` | 30 | Per turn |
 | `DOTRIX_CODING_LEASE_SECONDS` | 120 | A lapsed lease means recovery, found within about this long |
 | `DOTRIX_CODING_WARM_MAX`, `DOTRIX_CODING_IDLE_MINUTES` | 3, 30 | Warm sandboxes kept per workspace, and for how long idle (0: every turn starts fresh and resumes from the saved session) |
@@ -159,7 +167,8 @@ checks all of this against a real container (it's skipped where the image isn't 
    young: test its isolation between tenants before you run other people's code on it.
    The machine that runs agents also needs the `openshell` CLI, selected to that gateway, and
    an `ssh` client: uploads to a sandbox go over SSH.
-2. Build the image, which installs Claude Code, Codex, OpenCode, and git:
+2. Build the image, which installs Claude Code, Codex, OpenCode, fx (pinned: `FX_VERSION`, from
+   releases.fx.sh, checked against its SHA-256), and git:
    `docker build -t dotrix-coding:latest infra/coding`
 3. Import the provider profiles:
    ```shell
@@ -169,6 +178,10 @@ checks all of this against a real container (it's skipped where the image isn't 
    openshell provider profile import -f infra/coding/dotrix-opencode-anthropic.yaml --global
    openshell provider profile import -f infra/coding/dotrix-opencode-openai.yaml --global
    openshell provider profile import -f infra/coding/dotrix-opencode-google.yaml --global
+   # fx, one per provider it may run on (DOTRIX_CODING_FX=true; not yet checked on a gateway):
+   for p in openai xai deepseek mistral groq openrouter; do
+     openshell provider profile import -f "infra/coding/dotrix-fx-$p.yaml" --global
+   done
    ```
 4. Add these to `.env` on the machine that runs agents: the worker, or the API in local mode.
    ```shell
@@ -198,6 +211,11 @@ it.
   - The OpenCode profiles on an OpenShell gateway.
   - OpenCode's browser.
   - Codex (needs an OpenAI key).
+  - **fx, beyond a fake.** `fx-acp.mjs` was checked against a fake `fx acp` (a turn, its steps and
+    command output, resume without replay, Stop with `session/cancel`; `tests/unit/test_fx_coding.py`),
+    written against fx 0.0.16's source and ACP tests. Not yet: building the image with the real fx
+    release, a turn with the real binary on a fake and a paid model, its profiles on a gateway, and fx's
+    browser.
   - Coding runs through Dokploy's Docker proxy (see [deploy/README.md](../../deploy/README.md)).
 
 ## Check a sandbox by hand

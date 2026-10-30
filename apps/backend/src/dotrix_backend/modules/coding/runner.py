@@ -338,7 +338,7 @@ class CodingWorker:
             # Pushing what's ready runs no model: it needs neither the tool nor a key (one removed
             # while the changes waited mustn't lose them).
             publish_only = accepted is not None or revert is not None
-            tool = tool_for(agent, model)
+            tool = tool_for(agent, model, self.settings)
             tool_name = tool.name if tool is not None else agent.value
             # People see Kai; the engine underneath is kept here, on the run, and in the audit log.
             logger.info("coding run %s: Kai on %s (model %s)%s", run.id, agent.value, model or "default",
@@ -349,7 +349,7 @@ class CodingWorker:
                     raise RunFailed("Cloud coding isn't set up on this server (DOTRIX_CODING_SANDBOX): "
                                     "code it on your computer")
                 if tool is None:
-                    raise RunFailed(f"OpenCode can't run {model or 'without a model'} here")
+                    raise RunFailed(f"{CODING_AGENT_NAME} can't run {model or 'without a model'} on this engine here")
                 # The same key chat would use for this person: their own, the workspace's, or the server's.
                 keys = await run_keys(session, self.secrets, run.workspace_id, run.requested_by_id)
                 key = run_key(tool, self.settings, keys.keys)

@@ -1284,7 +1284,9 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
     toolOptions[0]?.agent ??
     null;
   const tool = toolOptions.find((tool) => tool.agent === agent);
-  const model = agent === "opencode" && location === "cloud" ? ((tool?.models?.includes(chosenModel ?? "") ? chosenModel : tool?.model) ?? null) : null;
+  // OpenCode and fx run on a model you pick; the others on their own provider's.
+  const picksModel = agent === "opencode" || agent === "fx";
+  const model = picksModel && location === "cloud" ? ((tool?.models?.includes(chosenModel ?? "") ? chosenModel : tool?.model) ?? null) : null;
   const ready = (location === "local" ? avail?.local_available : avail?.available) && !!agent;
   // In the desktop app, a folder of this computer's picked here starts its runner (core/desktop.ts).
   const here = desktop();
@@ -1430,7 +1432,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                   options={toolOptions.map((tool) => [tool.agent, AGENT_NAMES[tool.agent]])}
                 />
               )}
-              {agent === "opencode" && model && (
+              {picksModel && model && (
                 <Pick
                   value={model}
                   label="Coding model"

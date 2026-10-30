@@ -69,7 +69,7 @@ from .schemas import (
     CodingSessionUpdate,
     CodingToolOption,
 )
-from .tools import choose_agent, coding_models, model_for, run_key, tool_for
+from .tools import choose_agent, model_for, models_for, run_key, tool_for
 
 MAX_LISTED = 50
 logger = logging.getLogger(__name__)
@@ -148,9 +148,11 @@ class CodingService:
             self.settings, selected, set(keys), preferred_model=user.default_model if user else None,
         )
         if not fixed and model is not None:
-            if selected is not CodingAgent.OPENCODE or model not in coding_models(self.settings, set(keys)):
-                raise Unprocessable("Choose an available provider:model for OpenCode")
-        tool = tool_for(selected, chosen)
+            if model not in models_for(self.settings, selected, set(keys)):
+                raise Unprocessable(f"Choose an available provider:model for {selected.value}")
+        if selected is CodingAgent.FX and not self.settings.coding_fx and not fixed:
+            raise CodingUnavailable("fx isn't turned on for coding on this server (DOTRIX_CODING_FX)")
+        tool = tool_for(selected, chosen, self.settings)
         if tool is None or not run_key(tool, self.settings, keys):
             raise CodingUnavailable(f"Connect a compatible provider key to use {selected.value}")
         return selected, chosen
@@ -164,12 +166,14 @@ class CodingService:
                              preferred_model=user.default_model if user else None)
         tools = []
         for candidate in CodingAgent:
+            if candidate is CodingAgent.FX and not self.settings.coding_fx:
+                continue  # opt-in: not offered at all while off
             model = model_for(self.settings, candidate, providers, preferred_model=user.default_model if user else None)
-            tool = tool_for(candidate, model)
+            tool = tool_for(candidate, model, self.settings)
             usable = tool is not None and bool(run_key(tool, self.settings, keys))
             tools.append(CodingToolOption(
                 agent=candidate, available=usable, model=model,
-                models=coding_models(self.settings, providers) if candidate is CodingAgent.OPENCODE else [],
+                models=models_for(self.settings, candidate, providers),
                 reason=None if usable else "Connect a compatible provider in Account → Your models",
             ))
         sandbox = None if self.settings.coding_sandbox == "off" else self.settings.coding_sandbox

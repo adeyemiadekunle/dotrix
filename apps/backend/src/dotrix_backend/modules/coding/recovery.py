@@ -107,7 +107,7 @@ async def recover(
                 f"Stopped after pushing {run.branch}; no PR was opened"))
         if (refused := await _refused(session, run)) is not None:
             return await _settle(session, run, Recovered.FAILED, by, error=refused + " The branch is on GitHub.")
-        tool = tool_for(run.agent, run.model)
+        tool = tool_for(run.agent, run.model, settings)
         paths = [f["path"] for f in run.files_changed]
         pr = await app.create_pull_request(
             installation.installation_id, repo.full_name, head=head_prefix + run.branch, base=run.base_branch,

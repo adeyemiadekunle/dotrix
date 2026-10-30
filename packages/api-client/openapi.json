@@ -25194,7 +25194,8 @@
         "enum": [
           "claude-code",
           "codex",
-          "opencode"
+          "opencode",
+          "fx"
         ],
         "title": "CodingAgent",
         "description": "The coding tools we wrap; which one runs follows the model key the server has."
@@ -27033,7 +27034,8 @@
                 "enum": [
                   "claude-code",
                   "codex",
-                  "opencode"
+                  "opencode",
+                  "fx"
                 ]
               },
               {
@@ -30858,7 +30860,8 @@
                 "enum": [
                   "claude-code",
                   "codex",
-                  "opencode"
+                  "opencode",
+                  "fx"
                 ]
               },
               {

@@ -9,6 +9,8 @@ what the run page shows (steps) and what the run used (tokens).
 - OpenCode 2: `opencode run --standalone --format json --auto`, the brief on stdin, on any provider's
   model (one OpenCode per provider: its key and the one host the sandbox lets it reach). Its config
   is ours, never the repo's (`OPENCODE_DISABLE_PROJECT_CONFIG`, `OPENCODE_CONFIG_CONTENT`).
+- fx (opt-in, `DOTRIX_CODING_FX`): `fx acp` driven by infra/coding/fx-acp.mjs, the brief on stdin, on an
+  OpenAI-compatible provider's model (one per provider, like OpenCode), in fx's full-access mode.
 """
 from __future__ import annotations
 
@@ -85,6 +87,8 @@ class Usage:
     _calls: dict[str, tuple[int, int]] = field(default_factory=dict)
     # The tool calls of this run that ran a command: their results are kept as the command's output.
     _commands: set[str] = field(default_factory=set)
+    # fx: each tool call's description, for when it fails (its result comes on a later line).
+    _tools: dict[str, str] = field(default_factory=dict)
 
     @property
     def total(self) -> int:
@@ -552,6 +556,137 @@ class OpenCode:
         return out
 
 
+# fx: OpenAI-compatible endpoints only (fx's custom providers speak Chat Completions), the same set its chat
+# preview uses (agents/fx_pilot.py); the key's variable and host as OpenCode has them.
+FX_ENDPOINTS = {
+    "openai": "https://api.openai.com/v1",
+    **{name: provider.base_url for name, provider in PROVIDERS.items() if provider.base_url},
+}
+FX_PROVIDERS = {name: p for name, p in OPENCODE_PROVIDERS.items() if name in FX_ENDPOINTS}
+FX_DATA = ".fx"  # under $HOME: fx's sessions, and ours (`.fx/dotrix`: the fx session of each dotrix session)
+FX_STOPS = {  # a turn that ended any other way than end_turn: what the person reads
+    "cancelled": "Stopped",
+    "max_tokens": "The model's output limit was reached",
+    "max_turn_requests": "fx reached its step limit for one turn",
+    "refusal": "The model refused",
+    "refused": "The model refused",
+}
+
+
+def _describe_fx_tool(name: str, title: str, args: dict[str, Any]) -> str | None:
+    path = _relative(str(args.get("path") or args.get("file_path") or ""))
+    request = args.get("request") if isinstance(args.get("request"), dict) else {}
+    match name:
+        case "shell":
+            command = request.get("command") or args.get("command")
+            return f"Ran {_clip(str(command), 160)}" if command else None  # its other actions read a running one
+        case "edit_file":
+            return f"Edited {path}"
+        case "write_file":
+            return f"Wrote {path}"
+        case "read_file":
+            return f"Read {path}"
+        case "glob_files" | "grep_files":
+            return f"Searched for {_clip(str(args.get('pattern') or args.get('query') or ''), 80)}"
+        case "subagent":
+            return f"Asked a subagent to {_clip(str(args.get('description') or args.get('prompt') or ''), 120)}"
+        case "read_tool_result" | "skill" | "skill_search" | "capability_search":
+            return None
+        case _:
+            return _clip(title, 160) if title else f"Used {name}"
+
+
+class Fx:
+    """fx on one OpenAI-compatible provider, through ACP (infra/coding/fx-acp.mjs prints its JSON lines).
+    Not yet run against the real fx binary here: checked against a fake ACP server (tests/unit/test_fx_coding.py)."""
+
+    agent = CodingAgent.FX
+    name = "fx"
+    resumes = True  # fx saves its sessions under ~/.fx; the driver continues ours with --resume
+    browser = False  # its own browser tools aren't passed in yet
+
+    def __init__(self, provider: OpenCodeProvider, driver: str = "/opt/dotrix/fx-acp.mjs") -> None:
+        self.fx_provider = provider
+        self.driver = driver
+        self.provider = provider.name
+        self.key_env, self.api_host, self.base_url_env = provider.key_env, provider.api_host, provider.base_url_env
+        self.provider_type = f"dotrix-fx-{provider.opencode}"  # infra/coding/dotrix-fx-*.yaml
+
+    def _base_url(self) -> str:
+        return os.environ.get(self.base_url_env, "").rstrip("/") or FX_ENDPOINTS[self.provider]
+
+    def command(self, model: str | None, browser: bool = False) -> list[str]:
+        name = (model or "").partition(":")[2] or (model or "")
+        return ["node", self.driver, "--base-url", self._base_url(), "--key-env", self.key_env, "--model", name]
+
+    def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
+        return ["--session", session.hex, *(["--resume"] if resumed else [])]
+
+    def save_state(self, session: uuid.UUID) -> str:  # its sessions and ours; the settings are written each turn
+        return f'cd "$HOME" && [ -d {FX_DATA} ] && tar -cz --exclude={FX_DATA}/settings.json {FX_DATA} | base64 -w0'
+
+    def restore_state(self, session: uuid.UUID) -> str:
+        return 'cd "$HOME" && base64 -d | tar -xz'
+
+    def usage_command(self, session: uuid.UUID) -> str | None:
+        return None  # the turn's end carries its usage
+
+    def read_usage(self, output: str, usage: Usage) -> None:
+        return None
+
+    def sandbox_env(self, model_key: str) -> dict[str, str]:
+        return {self.key_env: model_key}
+
+    def model(self, settings: Settings) -> str | None:
+        return settings.coding_fx_model
+
+    def parse(self, line: str, usage: Usage) -> Parsed:
+        out = Parsed()
+        event = _json(line)
+        if event is None:
+            return out
+        match event.get("type"):
+            case "started":
+                said = "Continued the conversation" if event.get("resumed") else "Started"
+                if event.get("fresh"):
+                    said = "Started a new conversation (the earlier one couldn't be restored)"
+                out.steps.append(Step("step", f"{said} ({event.get('model') or 'default model'})"))
+            case "text" if str(event.get("text", "")).strip():
+                out.steps.append(Step("text", _clip(str(event["text"]))))
+            case "tool":
+                ref = str(event.get("id") or "") or None
+                name, args = str(event.get("name") or ""), event.get("input") if isinstance(event.get("input"), dict) else {}
+                said = _describe_fx_tool(name, str(event.get("title") or ""), args)
+                command = name == "shell" and said is not None
+                if ref:
+                    usage._tools[ref] = said or name
+                    if command:
+                        usage._commands.add(ref)
+                if said:
+                    out.steps.append(Step("tool", said, ref if command else None))
+            case "tool_result":
+                ref = str(event.get("id") or "")
+                failed = event.get("status") == "failed"
+                if ref in usage._commands:
+                    out.steps.append(output_step(str(event.get("output") or ""), ref, failed=failed))
+                elif failed:
+                    detail = str(event.get("output") or "failed")
+                    out.steps.append(Step("error", _clip(f"{usage._tools.get(ref) or 'A tool'}: {detail}")))
+            case "done":
+                totals = event.get("usage") or {}
+                usage.input_tokens = int(totals.get("inputTokens") or 0) + int(totals.get("cacheReadTokens") or 0) \
+                    + int(totals.get("cacheWriteTokens") or 0)
+                usage.output_tokens = int(totals.get("outputTokens") or 0) + int(totals.get("reasoningTokens") or 0)
+                reason = str(event.get("stopReason") or "end_turn")
+                if reason != "end_turn":
+                    out.failed = FX_STOPS.get(reason, f"fx stopped ({reason})")
+                elif event.get("final"):
+                    out.summary = str(event["final"])[:20_000]
+            case "error":
+                out.failed = _clip(str(event.get("message") or "fx stopped"), 500)
+        return out
+
+
 def _json(line: str) -> dict[str, Any] | None:
     line = line.strip()
     if not line.startswith("{"):
@@ -566,13 +701,18 @@ def _json(line: str) -> dict[str, Any] | None:
 TOOLS: dict[CodingAgent, CodingTool] = {CodingAgent.CLAUDE_CODE: ClaudeCode(), CodingAgent.CODEX: Codex()}
 
 
-def tool_for(agent: CodingAgent, model: str | None = None) -> CodingTool | None:
-    """The tool for a run: OpenCode is one per provider, from its model ("anthropic:…"); None
-    when that provider isn't one OpenCode runs on here."""
-    if agent is not CodingAgent.OPENCODE:
+def tool_for(agent: CodingAgent, model: str | None = None, settings: Settings | None = None) -> CodingTool | None:
+    """The tool for a run: OpenCode and fx are one per provider, from its model ("anthropic:…"); None
+    when that provider isn't one they run on here."""
+    if agent in TOOLS:
         return TOOLS[agent]
-    provider = OPENCODE_PROVIDERS.get((model or "").partition(":")[0])
-    return OpenCode(provider) if provider is not None and (model or "").partition(":")[2] else None
+    name, _, rest = (model or "").partition(":")
+    if agent is CodingAgent.FX:
+        provider = FX_PROVIDERS.get(name)
+        driver = settings.coding_fx_driver if settings is not None else "/opt/dotrix/fx-acp.mjs"
+        return Fx(provider, driver) if provider is not None and rest else None
+    provider = OPENCODE_PROVIDERS.get(name)
+    return OpenCode(provider) if provider is not None and rest else None
 
 
 def run_key(tool: CodingTool, settings: Settings, keys: dict[str, str]) -> str | None:
@@ -588,18 +728,39 @@ def coding_models(settings: Settings, providers: frozenset[str] | set[str]) -> l
             if m.partition(":")[0] in OPENCODE_PROVIDERS]
 
 
+def fx_models(settings: Settings, providers: frozenset[str] | set[str]) -> list[str]:
+    """The models fx can run on for these providers; none while fx is off (`DOTRIX_CODING_FX`)."""
+    if not settings.coding_fx:
+        return []
+    return [m for m in available_models(settings, *([settings.coding_fx_model] if settings.coding_fx_model else []),
+                                       connected=set(providers))
+            if m.partition(":")[0] in FX_PROVIDERS]
+
+
+def models_for(settings: Settings, agent: CodingAgent, providers: frozenset[str] | set[str]) -> list[str]:
+    """The models a person picks from for this tool (the others run their provider's own)."""
+    if agent is CodingAgent.OPENCODE:
+        return coding_models(settings, providers)
+    if agent is CodingAgent.FX:
+        return fx_models(settings, providers)
+    return []
+
+
 def choose_agent(
     settings: Settings, providers: frozenset[str] | set[str] = frozenset(), *,
     preferred: str | None = None, preferred_model: str | None = None,
 ) -> CodingAgent | None:
-    """A compatible personal/server default, otherwise Codex, Claude Code, then OpenCode."""
+    """A compatible personal/server default, otherwise Codex, Claude Code, then OpenCode. fx only when it's
+    asked for (a person's or the server's default) and on (`DOTRIX_CODING_FX`)."""
     order = [preferred, settings.coding_agent, CodingAgent.CODEX, CodingAgent.CLAUDE_CODE, CodingAgent.OPENCODE]
     for name in dict.fromkeys(order):
-        if name in (None, "auto"):
+        if name in (None, "auto") or name not in set(CodingAgent):
             continue
         agent = CodingAgent(name)
+        if agent is CodingAgent.FX and not settings.coding_fx:
+            continue
         model = model_for(settings, agent, providers, preferred_model=preferred_model)
-        tool = tool_for(agent, model)
+        tool = tool_for(agent, model, settings)
         if tool and tool.provider in providers:
             return agent
     return None
@@ -617,4 +778,10 @@ def model_for(
         # Other providers have no native tool; use OpenCode with their first allowed model.
         return next((m for m in models if m.partition(":")[0] not in ("openai", "anthropic")),
                     next(iter(models), None))
+    if agent is CodingAgent.FX:
+        models = fx_models(settings, providers)
+        for model in (settings.coding_fx_model, preferred_model):
+            if model in models:
+                return model
+        return next(iter(models), None)
     return TOOLS[agent].model(settings)

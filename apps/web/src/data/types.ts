@@ -229,7 +229,7 @@ export interface CodingSession {
   id: string;
   project: string;
   task: string;
-  tool: "claude-code" | "codex" | "opencode";
+  tool: "claude-code" | "codex" | "opencode" | "fx";
   status: "awaiting_approval" | "queued" | "running" | "changes_ready" | "pr_opened" | "no_changes" | "failed" | "recovery_required" | "stopped" | "rejected";
   by: string;
   at: number;
