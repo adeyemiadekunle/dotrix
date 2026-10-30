@@ -51,8 +51,6 @@ from dotrix_backend.modules.execution.service import (
 )
 from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.knowledge.repository import KnowledgeRepository
-from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
-from dotrix_backend.modules.lessons.service import lessons_path
 from dotrix_backend.modules.model_keys.service import PersonalKeys, run_keys
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.models import Project
@@ -60,7 +58,7 @@ from dotrix_backend.modules.projects.repository import ProjectRepository, visibl
 from dotrix_backend.modules.repo_knowledge.tools import MODE as REPO_MODE
 from dotrix_backend.modules.repo_knowledge.tools import RepoContext, repo_tools
 from dotrix_backend.modules.research.service import RunWeb, WebResearch, check_report
-from dotrix_backend.modules.rules.service import WorkspaceRules, WorkspaceSkills, layered
+from dotrix_backend.modules.rules.service import WorkspaceRules, layered
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode, effective, goes_through
 from dotrix_backend.modules.workspaces.models import Workspace
 from dotrix_backend.modules.workspaces.permissions import Permission, can
@@ -70,9 +68,6 @@ from dotrix_engine.agent import PM_ROLE, briefing_system_prompt, build_team, rol
 from dotrix_engine.code import build_code_tools
 from dotrix_engine.contracts import AgentPolicy, AgentSpec
 from dotrix_engine.delegation import SpecialistResult
-from dotrix_engine.layout import AGENTS
-from dotrix_engine.skills import SKILLS_FOLDER, default_skills, skill_name, skills_guide
-from dotrix_engine.templates import TEMPLATES_GUIDE, default_templates
 
 from .activity import activity_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
@@ -619,10 +614,17 @@ class AgentRunner:
                         if label := activity_label(event.tool, None):
                             await recording.activity(label)
 
+                if self.web is not None:
+                    run_web = await self.web.for_run(self.session_factory, workspace_id=workspace_id,
+                        project_id=project_id, run_id=run_id, prior=prior_web)
+                    usage.web = run_web.usage
+                fx_code_tools, fx_code_context = await self._code(workspace_id, project_id, "")
                 turn = await run_fx_nova_pilot(
                     self.session_factory, workspace_id=workspace_id, run_id=run_id, token=token,
                     secrets=self.secrets, embedder=self.embedder, on_event=fx_event,
                     delegation=DelegationService(self) if durable else None,
+                    code_tools=fx_code_tools, code_context=fx_code_context,
+                    web_tools=run_web.tools if run_web is not None else None,
                 )
                 if turn.handoff:
                     if not durable:
@@ -1254,34 +1256,9 @@ class AgentRunner:
         workspace's rules, then the project's agent-rules/*.md and the lessons owners accepted
         (the more specific last); the base also lists the skills and points at the folder
         templates. Default templates and skills are written into projects made before them."""
-        files = await KnowledgeRepository(session).list_files(project_id)
-        names = ("base", *AGENTS, *(handles or []))
-        live = {f.path: f.content for f in files if not f.deleted}
-        ever = {f.path for f in files}  # a deleted template or skill stays deleted
-        missing = {path: text for path, text in {**default_templates(), **default_skills()}.items() if path not in ever}
-        if missing:
-            project = await session.get(Project, project_id)
-            knowledge = KnowledgeService(session)
-            for path, text in missing.items():
-                await knowledge.write(project, path, text, Actor.system(), message="Default template or skill")
-                live[path] = text
-        rules = {name: live[f"agent-rules/{name}.md"] for name in names if f"agent-rules/{name}.md" in live}
-        for name in names:
-            lessons = live.get(lessons_path(name), "").strip()
-            if lessons:
-                # Owners accepted these; the file's own heading is replaced by ours.
-                body = "\n".join(line for line in lessons.splitlines() if not line.startswith("# "))
-                rules[name] = f"{rules.get(name, '').rstrip()}\n\n## Lessons from this project\n{body.strip()}".strip()
-        skills: dict[str, str] = {}
-        if workspace_id is not None:
-            workspace_rules = await WorkspaceRules(session).texts(workspace_id)
-            rules = layered({h: t for h, t in workspace_rules.items() if h in names}, rules)
-            skills = await WorkspaceSkills(session).texts(workspace_id)
-        # The project's own skills win over the workspace's of the same name.
-        skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")}
-        skills = skills_guide(skills)
-        rules["base"] = "\n\n".join(part for part in (rules.get("base", "").rstrip(), TEMPLATES_GUIDE, skills) if part)
-        return rules
+        from .guidance import project_rules
+
+        return await project_rules(session, project_id, handles, workspace_id)
 
 
 async def _changes_approved(session: Any, run: AgentRun) -> None:

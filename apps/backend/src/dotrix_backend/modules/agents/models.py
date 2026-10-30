@@ -211,6 +211,7 @@ class AgentRuntimeBinding(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     runtime: Mapped[str] = mapped_column(String(32))
     runtime_version: Mapped[str] = mapped_column(String(80))
     config_digest: Mapped[str] = mapped_column(String(64))
+    encrypted_context: Mapped[str | None] = mapped_column(Text)
     session_id: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

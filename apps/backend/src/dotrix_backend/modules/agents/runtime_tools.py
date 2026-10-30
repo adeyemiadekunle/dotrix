@@ -1,6 +1,6 @@
 """Read-only platform tools for experimental chat runtimes.
 
-The production runner does not select these yet. A caller must first bind a runtime
+The fx pilot selects these for project Chat. A caller must first bind a runtime
 session to an admitted platform run; session IDs supplied by a model are not authority.
 """
 from __future__ import annotations
@@ -106,4 +106,65 @@ def scoped_knowledge_tools(
             name=tool.name, description=tool.description, input_schema=tool.args_schema.model_json_schema(),
             idempotent=True, writes=False, execute_scoped=execute,
         ))
+    return tools
+
+
+def scoped_project_tools(
+    sessions: SessionFactory, *, scope: RuntimeRunScope, spec: AgentSpec, embedder: Embedder | None,
+    code_tools: list | None = None, web_tools: list | None = None,
+) -> list[RuntimeTool]:
+    """The read-only project surface, with the same builders as DeepAgents.
+
+    Only explicit read capabilities may cross this boundary. Authorization surrounds
+    every invocation, including results that finish after a lease or access change.
+    """
+    from dataclasses import asdict
+
+    from .board_tools import BoardContext, build_board_tools
+    from .graph_tools import build_graph_tools
+    from .storage_backend import PlatformKnowledgeBackend
+
+    backend = PlatformKnowledgeBackend(sessions, workspace_id=scope.workspace_id, project_id=scope.project_id,
+                                       instructed_by_id=scope.requested_by_id)
+
+    def path(value: str) -> str:
+        return "/" + value.removeprefix("/dotrix/").lstrip("/")
+
+    async def read_file(file_path: str, offset: int = 0, limit: int = 2000) -> dict:
+        """Read a project document by /dotrix/ path, optionally a range of lines."""
+        return asdict(await backend.aread(path(file_path), offset, limit))
+
+    async def ls(path: str = "/dotrix/") -> dict:
+        """List a project document folder."""
+        return asdict(await backend.als("/" + path.removeprefix("/dotrix/").lstrip("/")))
+
+    async def glob(pattern: str, path: str = "/dotrix/") -> dict:
+        """Find project documents by glob pattern."""
+        return asdict(await backend.aglob(pattern, "/" + path.removeprefix("/dotrix/").lstrip("/")))
+
+    async def grep(pattern: str, path: str = "/dotrix/", glob: str | None = None) -> dict:
+        """Search within project documents. Prefer sections to large full reads."""
+        return asdict(await backend.agrep(pattern, "/" + path.removeprefix("/dotrix/").lstrip("/"), glob, max_count=100))
+
+    ctx = BoardContext(sessions, scope.workspace_id, scope.project_id, scope.requested_by_id, None, coding=False)
+    board, _, _ = build_board_tools(ctx)
+    functions = [read_file, ls, glob, grep, *board,
+                 *(fn for fn in build_graph_tools(ctx) if fn.__name__ != "link_items"), *(code_tools or []), *(web_tools or [])]
+    tools = scoped_knowledge_tools(sessions, scope=scope, spec=spec, embedder=embedder)
+    for fn in functions:
+        tool = fn if isinstance(fn, StructuredTool) else StructuredTool.from_function(coroutine=fn)
+        capability = tool_id(tool)
+        if capability not in {"knowledge.read", "board.read", "graph.read", "code.read", "web.search"}:
+            raise ValueError(f"Unexpected project read tool {tool.name}")
+        if not spec.can(capability):
+            continue
+
+        async def execute(arguments: dict, context: RuntimeToolContext, *, _tool=tool, _capability=capability):
+            await _authorize_read(sessions, scope, context, _capability)
+            result = await _tool.ainvoke(arguments)
+            await _authorize_read(sessions, scope, context, _capability)
+            return result
+
+        tools.append(RuntimeTool(tool.name, tool.description, tool.args_schema.model_json_schema(),
+                                 idempotent=True, writes=False, execute_scoped=execute))
     return tools

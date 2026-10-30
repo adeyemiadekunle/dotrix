@@ -159,12 +159,13 @@ class DelegationService:
                               and parent.source == "user" and parent.automation_id is None
                               and parent.kind.value == "chat")
             sessions: dict[str, uuid.UUID] = {}
+            from .model_routing import specialist_model
+
             for task in batch.tasks:
                 preference = preferences.get(task.agent)
                 # Pin the model when the task is created. Later changes to project or personal
                 # settings must not silently reroute an already queued or recovered task.
-                chosen_model = ((preference.model if preference else None) or specs[task.agent].model
-                                or project.specialist_model or parent.conversation_model or project.model)
+                chosen_model = specialist_model(project, parent, task, specs[task.agent], preference)
                 if continuity and not task.changes_project and task.agent not in sessions:
                     sessions[task.agent] = await bind_specialist(session, parent, task.agent)
                 session.add(AgentRun(
