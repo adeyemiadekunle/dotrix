@@ -39,11 +39,11 @@ class PersonalModelsRead(BaseModel):
     keys: list[ModelKeyRead] = Field(description="Each provider: whether you've connected your own key")
     default_model: str | None = Field(description="Your default model for new conversations; null: the project's")
     models: list[str] = Field(description="The models you can pick from")
-    default_coding_tool: Literal["claude-code", "codex", "opencode"] | None = None
+    default_coding_tool: Literal["claude-code", "codex", "opencode", "fx"] | None = None
 
 
 class DefaultCodingToolSave(BaseModel):
-    default_coding_tool: Literal["claude-code", "codex", "opencode"] | None = None
+    default_coding_tool: Literal["claude-code", "codex", "opencode", "fx"] | None = None
 
 
 class ModelAccessRead(BaseModel):

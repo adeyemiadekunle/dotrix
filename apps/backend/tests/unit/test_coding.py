@@ -50,7 +50,7 @@ def test_claude_code_events_become_steps_and_tokens() -> None:
     ]
     steps = [s for line in lines for s in tool.parse(json.dumps(line), usage).steps]
     assert [(s.kind, s.text) for s in steps] == [
-        ("step", "Claude Code started (claude-opus-5-5)"), ("text", "Looking."), ("tool", "Ran pytest -q"),
+        ("step", "Started (claude-opus-5-5)"), ("text", "Looking."), ("tool", "Ran pytest -q"),
         ("tool", "Edited src/a.py"),
     ]
     assert (usage.input_tokens, usage.output_tokens) == (1010, 55)
@@ -81,7 +81,7 @@ def test_codex_events_become_steps_and_tokens() -> None:
         {"type": "turn.completed", "usage": {"input_tokens": 300, "cached_input_tokens": 100, "output_tokens": 40}},
     )]
     assert [s.text for o in out for s in o.steps] == [
-        "Codex started", "Ran npm test", "2 passed", "Edited a.ts", "Changed a.ts; tests pass."]
+        "Started", "Ran npm test", "2 passed", "Edited a.ts", "Changed a.ts; tests pass."]
     assert out[1].steps[0].ref == out[2].steps[0].ref == "c1" and out[2].steps[0].kind == "output"
     assert out[4].summary == "Changed a.ts; tests pass." and usage.total == 340
     assert tool.parse(json.dumps({"type": "turn.failed", "error": {"message": "quota"}}), usage).failed == "quota"
@@ -238,7 +238,7 @@ def test_the_browser_s_steps_read_like_the_rest() -> None:
     tool, usage = ClaudeCode(), Usage()
     started = tool.parse(json.dumps({"type": "system", "subtype": "init", "model": "claude-haiku-5-5",
                                      "mcp_servers": [{"name": "browser", "status": "failed"}]}), usage)
-    assert [s.text for s in started.steps] == ["Claude Code started (claude-haiku-5-5)", "The browser didn't start (failed)"]
+    assert [s.text for s in started.steps] == ["Started (claude-haiku-5-5)", "The browser didn't start (failed)"]
     calls = [
         ("mcp__browser__browser_navigate", {"url": "http://localhost:8080/"}),
         ("mcp__browser__browser_click", {"element": "Subtract button", "ref": "e4"}),
@@ -354,3 +354,31 @@ def test_a_run_uses_only_a_supplied_personal_key() -> None:
     assert choose_agent(opencode, {"anthropic"}) is CodingAgent.OPENCODE
     assert choose_agent(opencode, {"google_genai"}) is CodingAgent.OPENCODE
     assert tool_for(CodingAgent.OPENCODE, "google_genai:gemini-3-pro").provider == "google_genai"
+
+
+def test_a_session_codes_on_its_model_and_the_engine_follows_it() -> None:
+    from dotrix_backend.modules.coding.tools import engine_for, kai_models
+
+    settings = _settings(coding_fx=True, coding_fx_model="openai:gpt-6.1")
+    keys = {"anthropic", "openai", "xai"}
+    models = kai_models(settings, keys)
+    claude = next(m for m in models if m.startswith("anthropic:"))
+    gpt = next(m for m in models if m.startswith("openai:"))
+    grok = next(m for m in models if m.startswith("xai:"))
+    # Nothing preferred: the model's provider's own engine, else OpenCode.
+    assert engine_for(settings, claude, keys) is CodingAgent.CLAUDE_CODE
+    assert engine_for(settings, gpt, keys) is CodingAgent.CODEX
+    assert engine_for(settings, grok, keys) is CodingAgent.OPENCODE
+    # A preferred engine (Account → Your models) wins where it can run the model.
+    assert engine_for(settings, gpt, keys, "opencode") is CodingAgent.OPENCODE
+    assert engine_for(settings, grok, keys, "fx") is CodingAgent.FX
+    assert engine_for(settings, claude, keys, "fx") is CodingAgent.FX  # through Anthropic's OpenAI-compatible endpoint
+    assert engine_for(settings, claude, keys) is CodingAgent.CLAUDE_CODE  # but Auto stays on Claude Code
+    assert engine_for(settings, claude, keys, "codex") is CodingAgent.CLAUDE_CODE
+    assert "anthropic:x" not in kai_models(settings, {"openai"})
+
+
+def test_claude_code_and_codex_take_the_model_as_their_engine_names_it() -> None:
+    assert ClaudeCode().command("anthropic:claude-haiku-5-5")[-2:] == ["--model", "claude-haiku-5-5"]
+    assert ClaudeCode().command("claude-haiku-5-5")[-2:] == ["--model", "claude-haiku-5-5"]  # a server setting's bare name
+    assert Codex().command("openai:gpt-5.5")[-3:] == ["-c", 'model="gpt-5.5"', "-"]

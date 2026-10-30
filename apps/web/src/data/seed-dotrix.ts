@@ -72,7 +72,7 @@ export const AGENTS: Agent[] = [
 /** Kai, the coding agent: assignable like people, it opens pull requests. Whatever engine codes for it
  * (OpenCode; Claude Code or Codex underneath), people see Kai, so every engine's id answers to Kai. */
 export const CODING_AGENT = { id: "agent:coding-agent", name: "Kai", c: "#3D6B8C" };
-export const CODING_TOOLS = [CODING_AGENT, ...["claude-code", "codex", "opencode"].map((engine) => ({ ...CODING_AGENT, id: `agent:${engine}` }))];
+export const CODING_TOOLS = [CODING_AGENT, ...["claude-code", "codex", "opencode", "fx"].map((engine) => ({ ...CODING_AGENT, id: `agent:${engine}` }))];
 
 const diffNav = ` # Navigation
 

@@ -13,9 +13,14 @@ def test_fx_pilot_resolves_a_fixed_openai_endpoint_without_exposing_the_key():
     assert "private-test-key" not in repr(connection)
 
 
+def test_fx_pilot_reaches_anthropic_through_its_openai_compatible_endpoint():
+    connection = _connection("anthropic:claude-haiku-5-5", {"anthropic": "private-test-key"})
+    assert (connection.model, connection.base_url) == ("claude-haiku-5-5", "https://api.anthropic.com/v1")
+
+
 @pytest.mark.parametrize("model,keys", [
     ("openai:example-model", {"anthropic": "other-provider-key"}),
-    ("anthropic:example-model", {"anthropic": "personal-key"}),
+    ("google_genai:example-model", {"google_genai": "personal-key"}),
     ("https://example.test/v1:model", {"https": "personal-key"}),
 ])
 def test_fx_pilot_rejects_missing_keys_or_unapproved_provider_endpoints(model, keys):

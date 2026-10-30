@@ -1,8 +1,9 @@
 // dotrix's workspace Chat: conversations grouped by project (and
 // "All projects"), a new chat with project, agent, and model; replies with what the agent did
-// and the changes it proposes; and Kai's coding sessions: inline in the conversation that started them, else listed beside the conversations. Conversations
-// and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
-// URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?session=ID (a coding session), ?tab=coding (a new one), ?q=, ?agent=.
+// and the changes it proposes; and a card for each of Kai's sessions started from a conversation, linking to it in Codes.
+// The coding session itself (its turns, the new-session form, the list) is screens/Coding.tsx, built from the pieces exported here.
+// Conversations and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
+// URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?q=, ?agent=. Older ?session= and ?tab=coding links open in Codes.
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
@@ -36,7 +37,6 @@ import {
   type WorkMode,
 } from "@/lib/agent";
 import {
-  AGENT_NAMES,
   useCodingAvailability,
   useCodingSession,
   useCodingSessions,
@@ -69,10 +69,10 @@ import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT } from "../data/seed-dotrix";
-import { WorkPanels } from "../components/WorkPanels";
+import { CODING_VIEWS, CodingPanel, type CodingView } from "../components/SidePanel";
 import { useConversationTasks, useReviewRuns, type SpecialistTask } from "@/lib/team";
 import { useAtPicker } from "../components/AtPicker";
-import { Splitter, useStoredFlag, useStoredSize } from "../ui/splitter";
+import { Splitter, useStoredFlag, useStoredSize, useStoredText } from "../ui/splitter";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const agentName = (h: string) => D().agents.find((a) => a.handle === h)?.name ?? h;
@@ -94,6 +94,10 @@ const ACROSS = [
 
 function open(search: string) {
   go("chat", {}, { search });
+}
+/** Somewhere in Codes: a session (`session=ID`), a new one (`new=1&issue=KEY`), or the list. */
+export function openCoding(search: string) {
+  go("codes", {}, { search });
 }
 
 /* ---------- the list ---------- */
@@ -209,7 +213,7 @@ const BUSY: CodingSession["status"][] = ["awaiting_approval", "queued", "running
 // Waiting on a person: to start, or (Manual) to push what it changed.
 const WAITING: CodingSession["status"][] = ["awaiting_approval", "changes_ready"];
 
-function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
+export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
   const [label0, c] = STATUS[cs.status];
   const label = cs.location === "local" && cs.status === "queued" ? "Waiting for your computer" : label0;
   return (
@@ -217,18 +221,23 @@ function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
       <button
         className={`sitem ${on ? "on" : ""}`}
         style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start", width: "100%" }}
-        onClick={() => open(`session=${cs.session_id}`)}
+        onClick={() => openCoding(`session=${cs.session_id}`)}
       >
         <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
           <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
             {cs.pinned && <Ic n="pin" s={11} cls="cs-pin" />}
+            {cs.thread_id && (
+              <span className="faint" aria-label="Started from a conversation" title="Started from a conversation">
+                <Ic n="message-square" s={11} />{" "}
+              </span>
+            )}
             <span className="mono faint" style={{ fontSize: 11 }}>
               {cs.issue_key}
             </span>{" "}
             {cs.title ?? cs.issue_title}
           </span>
           <span className="row faint" style={{ fontSize: 11.5, gap: 6 }}>
-            {AGENT_NAMES[cs.agent]} · {ago(ms(cs.updated_at))}
+            {CODING_AGENT.name} · {ago(ms(cs.updated_at))}
             {cs.pr_number && <span>· PR #{cs.pr_number}</span>}
           </span>
         </span>
@@ -287,9 +296,10 @@ function SessionCard({ cs }: { cs: CodingSession }) {
             PR #{cs.pr_number}
           </a>
         )}
-        {files.length > 0 && (
-          <span>
+        {files.length > 0 && latest && (
+          <span className="row" style={{ gap: 6 }}>
             {files.length} file{files.length === 1 ? "" : "s"} changed
+            <LineCounts files={files} onClick={() => openCoding(`session=${cs.session_id}&turn=${latest.id}&panel=changes`)} tip="Open the changes in Codes" />
           </span>
         )}
       </div>
@@ -336,8 +346,8 @@ function SessionCard({ cs }: { cs: CodingSession }) {
           </button>
         )}
         <span className="sp" />
-        <button className="btn btn-sm btn-ghost" onClick={() => open(`session=${cs.session_id}`)}>
-          Open the session
+        <button className="btn btn-sm btn-ghost" onClick={() => openCoding(`session=${cs.session_id}`)}>
+          Open in Codes
           <Ic n="arrow-right" s={12} />
         </button>
       </div>
@@ -508,7 +518,7 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
 }
 
 /** What the agents did for a reply (kept after the run), folded until asked for. */
-function SpecialistTasks({ tasks, scope, onReview }: { tasks: SpecialistTask[]; scope: Scope | undefined; onReview: () => void }) {
+function SpecialistTasks({ tasks, scope }: { tasks: SpecialistTask[]; scope: Scope | undefined }) {
   if (!tasks.length) return null;
   return (
     <section className="specialist-tasks" aria-label="Specialist activity">
@@ -534,11 +544,6 @@ function SpecialistTasks({ tasks, scope, onReview }: { tasks: SpecialistTask[]; 
               ))}
             </ul>
           ) : null}
-          {task.agent === "reviewer" && (
-            <button className="btn btn-sm" onClick={onReview}>
-              Open Juno's review
-            </button>
-          )}
           {task.status === "awaiting_approval" && <TaskApproval scope={scope} id={task.id} />}
         </details>
       ))}
@@ -905,8 +910,6 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const fxRun = projectId ? own.data?.filter((run) => run.source === "user").at(-1) : undefined;
   const fxPreview = fxRun?.chat_runtime === "fx";
   const delegated = useConversationTasks(scope, runs);
-  const routeSearch = useRoute().search;
-  const [fixDraft, setFixDraft] = useState({ text: "", version: 0 });
   const working = runs.find((run) => isActive(run) && run.status !== "waiting_dependency");
   const active = Boolean(working);
   const ownStream = useRunStream(scope, working?.id ?? "", Boolean(projectId) && active);
@@ -935,23 +938,6 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   // Kai's sessions started from this conversation, each after the message that started it.
   const coded = (useCodingSessions(ws, Boolean(projectId)).data ?? []).filter((c) => c.thread_id === id);
   const anchorOf = (c: CodingSession) => runs.filter((r) => ms(r.created_at) <= ms(c.started_at)).at(-1)?.id ?? last?.id;
-  // Kai's latest session here: what Build mode's messages go to (its next turn), and what the panel shows.
-  const kai = [...coded].filter((c) => c.state !== "closed" && !c.archived).sort((a, b) => ms(b.updated_at) - ms(a.updated_at))[0] ?? null;
-  const [panelSet, setPanel] = useStoredFlag("dotrix.chat.kaiPanel");
-  const panel = panelSet || routeSearch.get("panel") === "review";
-  const panelView = routeSearch.get("panel") === "review" ? "review" : "coding";
-  const openSide = (view: "coding" | "review") => {
-    const query = new URLSearchParams(routeSearch);
-    query.set("panel", view);
-    go("chat", {}, { search: query.toString(), replace: true });
-    setPanel(true);
-  };
-  const closeSide = () => {
-    const query = new URLSearchParams(routeSearch);
-    query.delete("panel");
-    go("chat", {}, { search: query.toString(), replace: true });
-    setPanel(false);
-  };
   const latestPlan = plans.at(-1);
   const end = useRef<HTMLDivElement>(null);
   const busy = active && !stream.text;
@@ -1016,32 +1002,13 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               ) : null;
             })}
           </span>
-          {kai && (
-            <button
-              className={`ibtn ibtn-sm ${panel ? "on" : ""}`}
-              onClick={() => (panel && panelView === "coding" ? closeSide() : openSide("coding"))}
-              aria-pressed={panel}
-              aria-label={`${CODING_AGENT.name}'s work`}
-              data-tip={`${CODING_AGENT.name}'s work: changes, files, terminal, browser, and review`}
-            >
-              <Ic n="panel-right" s={15} />
-            </button>
-          )}
-          <button
-            className={`ibtn ibtn-sm ${panel && panelView === "review" ? "on" : ""}`}
-            aria-label="Juno's review"
-            onClick={() => openSide("review")}
-            data-tip="Juno's review"
-          >
-            <Ic n="shield-check" s={15} />
-          </button>
         </div>
         <div className="chat-scroll">
           <div className="chat-col">
             {runs.map((r) => (
               <div key={r.id}>
                 <RunMessages run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
-                <SpecialistTasks tasks={delegated.filter((task) => task.parent_run_id === r.id)} scope={scope} onReview={() => openSide("review")} />
+                <SpecialistTasks tasks={delegated.filter((task) => task.parent_run_id === r.id)} scope={scope} />
                 {plans
                   .filter((pl) => pl.run_id === r.id)
                   .map((pl) => (
@@ -1124,8 +1091,6 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               </div>
             ))}
           <Composer
-            key={fixDraft.version}
-            initial={fixDraft.text}
             placeholder="Ask Nova, or type @ to pick a mode"
             agent={agent}
             model={modelName(last?.conversation_model) || undefined}
@@ -1153,27 +1118,11 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           )}
         </div>
       </div>
-      {panel && (
-        <WorkPanels
-          key={panelView}
-          scope={scope}
-          cs={kai}
-          tasks={delegated}
-          roots={runs}
-          initial={panelView}
-          onClose={closeSide}
-          onAskFix={(text) => {
-            setMode("build");
-            setFixDraft((draft) => ({ text, version: draft.version + 1 }));
-          }}
-        />
-      )}
     </div>
   );
 }
 
 function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null; across: boolean; q: string; agent0: string | null }) {
-  const route = useRoute();
   const ws = wsId();
   const ps = visibleProjects().filter((p) => canSee(p) && !p.archived);
   const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ps[0]?.id ?? ""));
@@ -1286,24 +1235,13 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           </div>
         </div>
       </div>
-      {route.search.get("panel") === "review" && (
-        <WorkPanels
-          scope={scope}
-          initial="review"
-          onClose={() => {
-            const query = new URLSearchParams(route.search);
-            query.delete("panel");
-            go("chat", {}, { search: query.toString(), replace: true });
-          }}
-        />
-      )}
     </div>
   );
 }
 
 /* ---------- a new coding session ---------- */
 
-function NewSession({ issue0 }: { issue0: string | null }) {
+export function NewSession({ issue0 }: { issue0: string | null }) {
   // Issues a tool could work on: open ones in the projects you see, and in an organisation only yours.
   const ps = new Set(
     visibleProjects()
@@ -1330,23 +1268,16 @@ function NewSession({ issue0 }: { issue0: string | null }) {
   const pid = t?.project;
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
   const avail = useCodingAvailability(scope).data;
-  const [chosenTool, setChosenTool] = useState<keyof typeof AGENT_NAMES | null>(null);
   const [chosenModel, setChosenModel] = useState<string | null>(null);
   // On the platform, or on your own computer when one of yours runs `dotrix runner` for this project.
   const [where, setWhere] = useState<"cloud" | "local" | null>(null);
   const location = where ?? (avail && !avail.available && avail.local_available ? "local" : "cloud");
-  const toolOptions =
-    location === "local"
-      ? (avail?.local_tools ?? []).map((agent) => ({ agent, available: true, model: null, models: [] as string[] }))
-      : (avail?.tools ?? []).filter((tool) => tool.available);
-  const agent =
-    toolOptions.find((tool) => tool.agent === chosenTool)?.agent ??
-    toolOptions.find((tool) => tool.agent === avail?.default_tool)?.agent ??
-    toolOptions[0]?.agent ??
-    null;
-  const tool = toolOptions.find((tool) => tool.agent === agent);
-  const model = agent === "opencode" && location === "cloud" ? ((tool?.models?.includes(chosenModel ?? "") ? chosenModel : tool?.model) ?? null) : null;
-  const ready = (location === "local" ? avail?.local_available : avail?.available) && !!agent;
+  // Kai codes on the model you pick here, your default model to start with. The engine that runs it follows from
+  // the model (your preferred engine in Account → Your models, else the model's provider's own); on your own
+  // computer, the tool signed in there decides.
+  const models = location === "cloud" ? (avail?.models ?? []) : [];
+  const model = location === "cloud" ? ((chosenModel && models.includes(chosenModel) ? chosenModel : avail?.default_model) ?? models[0] ?? null) : null;
+  const ready = location === "local" ? avail?.local_available && (avail.local_tools ?? []).length > 0 : avail?.available && !!model;
   // In the desktop app, a folder of this computer's picked here starts its runner (core/desktop.ts).
   const here = desktop();
   const runners = useDesktopRunners();
@@ -1367,7 +1298,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
       .catch((e: unknown) => toast(e instanceof Error ? e.message : "This computer's runner didn't start", { kind: "err" }))
       .finally(() => setAdding(false));
   };
-  const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location, agent, model);
+  const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location, null, model);
   // The issue list opens two ways: typing "@" or "/" (menu is the query) or the Issue button (menuBtn); the button never touches the note.
   const menuOpen = menu !== null || menuBtn;
   const found = !menuOpen ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes((menu ?? "").toLowerCase())).slice(0, 8);
@@ -1375,7 +1306,7 @@ function NewSession({ issue0 }: { issue0: string | null }) {
     if (!t) return;
     if (!ready || start.isPending) return;
     start.mutateAsync(note.trim() || null).then(
-      (run) => open(`session=${run.session_id}`),
+      (run) => openCoding(`session=${run.session_id}`),
       () => {},
     );
   };
@@ -1406,9 +1337,9 @@ function NewSession({ issue0 }: { issue0: string | null }) {
   return (
     <div className="chat-scroll" style={{ display: "flex" }}>
       <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
-        <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>Start a coding session</h2>
+        <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>Start a session</h2>
         <p className="muted" style={{ margin: "0 0 18px", textAlign: "center" }}>
-          A coding tool works on an issue on its own branch and opens a pull request. It starts once someone who may approve agent changes says yes.
+          Kai works on an issue on its own branch and opens a pull request. It starts once someone who may approve agent changes says yes.
         </p>
         <div style={{ position: "relative" }}>
           <div className="cbox">
@@ -1479,25 +1410,8 @@ function NewSession({ issue0 }: { issue0: string | null }) {
                   {location === "local" ? `On ${avail.local_runner ?? "your computer"}` : "Cloud"}
                 </button>
               )}
-              {toolOptions.length > 0 && agent && (
-                <Pick
-                  value={agent}
-                  label="Coding tool"
-                  lead={<Ic n="bot" s={12} />}
-                  onChange={(value) => {
-                    setChosenTool(value as keyof typeof AGENT_NAMES);
-                    setChosenModel(null);
-                  }}
-                  options={toolOptions.map((tool) => [tool.agent, AGENT_NAMES[tool.agent]])}
-                />
-              )}
-              {agent === "opencode" && model && (
-                <Pick
-                  value={model}
-                  label="Coding model"
-                  onChange={setChosenModel}
-                  options={(tool?.models ?? []).map((m) => [m, m.split(":").slice(1).join(":")])}
-                />
+              {model && (
+                <Pick value={model} label="Model" lead={<Ic n="sparkles" s={12} />} onChange={setChosenModel} options={models.map((m) => [m, modelName(m)])} />
               )}
               {avail && location === "cloud" && !avail.available && (
                 <span className="cpill" data-tip={avail.reason ?? undefined}>
@@ -1590,8 +1504,46 @@ function NewSession({ issue0 }: { issue0: string | null }) {
 /* ---------- a coding session ---------- */
 
 const fileOf = (f: Record<string, unknown>) => String(f.path ?? f.file ?? f.name ?? "");
+/** A turn's lines added and removed, from its changed files. */
+const lineCounts = (files: Record<string, unknown>[]) =>
+  files.reduce<[number, number]>((sum, f) => [sum[0] + (Number(f.added) || 0), sum[1] + (Number(f.removed) || 0)], [0, 0]);
+/** Lines added and removed, as Claude Code shows them; a button when it opens the changes. */
+function LineCounts({ files, onClick, tip }: { files: Record<string, unknown>[]; onClick?: () => void; tip?: string }) {
+  const [added, removed] = lineCounts(files);
+  const body = (
+    <>
+      <span style={{ color: "var(--green)" }}>+{added}</span> <span style={{ color: "var(--red)" }}>−{removed}</span>
+    </>
+  );
+  return onClick ? (
+    <button className="pillbtn mono line-counts" onClick={onClick} data-tip={tip} aria-label={`${added} lines added, ${removed} removed. ${tip ?? ""}`.trim()}>
+      {body}
+    </button>
+  ) : (
+    <span className="mono line-counts">{body}</span>
+  );
+}
+/** Text with the paths it names (from `paths`) as buttons that open them. */
+function PathLinks({ text, paths, onPath }: { text: string; paths: string[]; onPath: (path: string) => void }) {
+  const found = paths.filter((path) => path && text.includes(path)).sort((a, b) => b.length - a.length);
+  if (!found.length) return <>{text}</>;
+  const pattern = new RegExp(`(${found.map((path) => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`);
+  return (
+    <>
+      {text.split(pattern).map((part, i) =>
+        found.includes(part) ? (
+          <button key={i} className="path-link mono" onClick={() => onPath(part)} data-tip="Open in Files">
+            {part}
+          </button>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
 
-function Session({ cs }: { cs: CodingSession }) {
+export function Session({ cs }: { cs: CodingSession }) {
   const ws = wsId();
   const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
   const turns = useCodingSession(scope, cs.session_id).data ?? [];
@@ -1602,26 +1554,60 @@ function Session({ cs }: { cs: CodingSession }) {
   const revert = useRevertCoding(scope, cs.issue_key, defaultApproval());
   const follow = useFollowUp(scope, cs.session_id, cs.issue_key, defaultApproval());
   const search = useRoute().search;
-  const [panelSet, setPanel] = useStoredFlag("dotrix.chat.kaiPanel");
-  const panel = panelSet || search.has("panel") || search.has("file");
-  const closePanel = () => {
-    if (search.has("panel") || search.has("file")) {
-      const query = new URLSearchParams(search);
-      query.delete("panel");
-      query.delete("file");
-      query.delete("line");
-      go("chat", {}, { search: query.toString(), replace: true });
-    }
-    setPanel(false);
+  // Which view the side panel shows: the address's (`panel=`, or Files for a `file=` link), else the last one
+  // opened in this browser ("" when it was closed). Older links say `panel=coding`: Changes.
+  const [lastView, setLastView] = useStoredText("dotrix.coding.panelView", "");
+  const asked = search.get("panel") === "coding" ? "changes" : search.get("panel");
+  const view = (CODING_VIEWS.find((v) => v.id === (asked ?? (search.has("file") ? "files" : lastView)))?.id ?? null) as CodingView | null;
+  const showView = (next: CodingView | null, extra: Record<string, string> = {}) => {
+    const query = new URLSearchParams(search);
+    // Switching views keeps the file and turn a link opened; closing, or opening something new, lets them go.
+    for (const key of !next || Object.keys(extra).length ? ["panel", "file", "line", "turn"] : ["panel"]) query.delete(key);
+    if (next) query.set("panel", next);
+    for (const [key, value] of Object.entries(extra)) query.set(key, value);
+    go("codes", {}, { search: query.toString(), replace: true });
+    setLastView(next ?? "");
   };
+  const closePanel = () => showView(null);
+  // The address always says when the panel is open (the list beside the session folds for it: screens/Coding.tsx).
+  useEffect(() => {
+    if (view && !search.has("panel")) showView(view);
+  });
+  const toggleView = (next: CodingView) => showView(view === next ? null : next);
+  /** A file the session changed, opened in Files (in the latest turn that changed it, or the latest). */
+  const openPath = (path: string, turnId?: string) => {
+    const owner = turnId ?? [...turns].reverse().find((t) => t.files_changed.some((f) => fileOf(f) === path))?.id ?? latest?.id;
+    showView("files", { file: path, ...(owner ? { turn: owner } : {}) });
+  };
+  // Claude Code's shortcuts: ⌘/Ctrl+\ closes the panel, ⌘/Ctrl+Shift+D the changes, Ctrl+` the terminal.
+  const keys = useRef({ view, toggleView, closePanel });
+  keys.current = { view, toggleView, closePanel };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === "\\" && keys.current.view) {
+        e.preventDefault();
+        keys.current.closePanel();
+      } else if (mod && e.shiftKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        keys.current.toggleView("changes");
+      } else if (e.ctrlKey && e.key === "`") {
+        e.preventDefault();
+        keys.current.toggleView("terminal");
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
   const t = isLive() ? { id: cs.issue_key, key: cs.issue_key } : D().tasks.find((x) => x.key === cs.issue_key);
   const p = proj(cs.project_id);
-  const tool = AGENT_NAMES[cs.agent];
+  // People see Kai; the engine underneath (cs.agent) stays on the run and in the logs.
+  const kai = CODING_AGENT.name;
   const [ask, setAsk] = useState("");
   const [label0, c] = STATUS[cs.status];
   const label = latest ? statusLabel(latest) : label0;
   const busy = BUSY.includes(cs.status) || cs.state === "closed";
-  // Its details (tool, project, repo, branches, commit, PR) float over the chat from the ⋮: on hover,
+  // Its details (project, repo, branches, commit, PR) float over the chat from the ⋮: on hover,
   // or pinned by a click until a click elsewhere or Escape.
   const [info, setInfo] = useState<null | "hover" | "pinned">(null);
   // A screenshot opened large over everything; Escape or a click closes it.
@@ -1663,16 +1649,13 @@ function Session({ cs }: { cs: CodingSession }) {
   };
   const at = infoBtn.current?.getBoundingClientRect();
   const files = latest?.files_changed ?? [];
+  const changedTurn = [...turns].reverse().find((t) => t.files_changed.length > 0);
   const shotSrc = (runId: string, index: number) => `/v1/workspaces/${ws}/projects/${cs.project_id}/coding/runs/${runId}/screenshots/${index}`;
   return (
     <div className="conv">
       <div className="conv-main">
         <div className="row cs-head">
-          <button
-            className="ibtn ibtn-sm"
-            onClick={() => open(cs.thread_id ? `thread=${cs.thread_id}&project=${cs.project_key}` : "")}
-            aria-label={cs.thread_id ? "Back to the conversation" : "Back to conversations"}
-          >
+          <button className="ibtn ibtn-sm" onClick={() => openCoding("")} aria-label="Back to sessions">
             <Ic n="arrow-left" s={15} />
           </button>
           <button
@@ -1700,16 +1683,40 @@ function Session({ cs }: { cs: CodingSession }) {
             <Ic n="ellipsis-vertical" s={15} />
           </button>
           <span className={`badge ${c}`}>{label}</span>
+          {cs.thread_id && (
+            // Started from a conversation: its outcome goes back there; the link opens it (it stays private to whoever started it).
+            <button
+              className="pillbtn"
+              onClick={() => open(`thread=${cs.thread_id}&project=${cs.project_key}`)}
+              data-tip="The conversation this session came from"
+            >
+              <Ic n="message-square" s={12} />
+              From a conversation
+            </button>
+          )}
           <span className="sp" />
-          <button
-            className={`ibtn ibtn-sm ${panel ? "on" : ""}`}
-            onClick={() => (panel ? closePanel() : setPanel(true))}
-            aria-pressed={panel}
-            aria-label={`${CODING_AGENT.name}'s work`}
-            data-tip={`${CODING_AGENT.name}'s work: changes, files, terminal, browser, and review`}
-          >
-            <Ic n="panel-right" s={15} />
-          </button>
+          {changedTurn && (
+            <LineCounts
+              files={changedTurn.files_changed}
+              onClick={() => showView("changes", { turn: changedTurn.id })}
+              tip={`Changes in turn ${changedTurn.turn}`}
+            />
+          )}
+          {/* Each view opens the side panel on it, as Claude Code's title bar opens its panes (icons, named on hover); the open one closes it. */}
+          <div className="cs-views" role="group" aria-label="Side panel">
+            {CODING_VIEWS.map((v) => (
+              <button
+                key={v.id}
+                className={`cs-view ${view === v.id ? "on" : ""}`}
+                onClick={() => toggleView(v.id)}
+                aria-pressed={view === v.id}
+                aria-label={v.label}
+                data-tip={v.id === "changes" ? `${v.label}  ${MOD}⇧D` : v.id === "terminal" ? `${v.label}  Ctrl \`` : v.label}
+              >
+                <Ic n={v.icon} s={15} />
+              </button>
+            ))}
+          </div>
         </div>
         {shot && (
           <div className="cs-lightbox" role="dialog" aria-label={`Screenshot: ${shot.name}`} onClick={() => setShot(null)}>
@@ -1727,11 +1734,6 @@ function Session({ cs }: { cs: CodingSession }) {
             onMouseLeave={hoverOut}
           >
             <dl className="kv" style={{ margin: 0 }}>
-              <dt>
-                <Ic n="bot" s={14} />
-                Tool
-              </dt>
-              <dd>{tool}</dd>
               <dt>
                 <Ic n="folder" s={14} />
                 Project
@@ -1815,12 +1817,14 @@ function Session({ cs }: { cs: CodingSession }) {
                   <b style={{ fontWeight: 500 }}>
                     {files.length} file{files.length > 1 ? "s" : ""} changed
                   </b>
+                  <span className="sp" />
+                  <LineCounts files={files} onClick={() => latest && showView("changes", { turn: latest.id })} tip="Open the changes" />
                 </div>
                 <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
                   {files.map((f, i) => (
-                    <span key={i} className="trunc">
+                    <button key={i} className="path-link trunc" onClick={() => openPath(fileOf(f), latest?.id)} data-tip="Open in Files">
                       {fileOf(f)}
-                    </span>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -1841,10 +1845,10 @@ function Session({ cs }: { cs: CodingSession }) {
                 </div>
                 {(turn.events.length > 0 || turn.summary || turn.error) && (
                   <div className="chat-msg">
-                    <Av id={`agent:${cs.agent}`} cls="md" tip={false} />
+                    <Av id={CODING_AGENT.id} cls="md" tip={false} />
                     <div className="body">
                       <div className="who">
-                        <b>{tool}</b>
+                        <b>{kai}</b>
                       </div>
                       <div className="chat-act" style={{ flexDirection: "column", gap: 2 }}>
                         {turn.events
@@ -1853,13 +1857,21 @@ function Session({ cs }: { cs: CodingSession }) {
                           .map((e, j) => (
                             <span key={j}>
                               <Ic n={e.kind === "error" ? "triangle-alert" : "check"} s={11} />
-                              {e.text}
+                              <PathLinks text={e.text} paths={turn.files_changed.map(fileOf)} onPath={(path) => openPath(path, turn.id)} />
                             </span>
                           ))}
                       </div>
                       {turn.summary && (
                         <div className="md">
-                          <Markdown>{turn.summary}</Markdown>
+                          <Markdown
+                            onCode={(code) =>
+                              turn.files_changed.some((f) => fileOf(f) === code.replace(/:\d+$/, ""))
+                                ? () => openPath(code.replace(/:\d+$/, ""), turn.id)
+                                : undefined
+                            }
+                          >
+                            {turn.summary}
+                          </Markdown>
                         </div>
                       )}
                       {turn.error && <div className="faint">{turn.error}</div>}
@@ -1940,7 +1952,9 @@ function Session({ cs }: { cs: CodingSession }) {
                   <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
                     {latest.files_changed.map((f) => (
                       <span key={fileOf(f)} className="row" style={{ gap: 8 }}>
-                        <span className="trunc grow">{fileOf(f)}</span>
+                        <button className="path-link trunc grow" onClick={() => openPath(fileOf(f), latest.id)} data-tip="Open in Files">
+                          {fileOf(f)}
+                        </button>
                         <span style={{ color: "var(--green)" }}>+{String(f.added ?? 0)}</span>
                         <span style={{ color: "var(--red)" }}>-{String(f.removed ?? 0)}</span>
                       </span>
@@ -1987,7 +2001,7 @@ function Session({ cs }: { cs: CodingSession }) {
                   <i />
                 </span>
                 <span className="muted" style={{ fontSize: 12.5 }}>
-                  {latest.status === "queued" ? `${tool} starts soon` : `${tool} is working`}
+                  {latest.status === "queued" ? `${kai} starts soon` : `${kai} is working`}
                 </span>
                 <span className="sp" />
                 {latest.can_stop && (
@@ -2044,7 +2058,7 @@ function Session({ cs }: { cs: CodingSession }) {
                     ? "Recover the previous turn before continuing"
                     : busy
                       ? "A turn is waiting or working…"
-                      : `Ask ${tool} for a follow-up on the same branch`
+                      : `Ask ${kai} for a follow-up on the same branch`
               }
               value={ask}
               disabled={busy}
@@ -2065,15 +2079,8 @@ function Session({ cs }: { cs: CodingSession }) {
           </div>
         </div>
       </div>
-      {panel && (
-        <WorkPanels
-          scope={scope}
-          cs={cs}
-          initial={search.get("panel") === "review" ? "review" : "coding"}
-          onClose={closePanel}
-          onAskFix={setAsk}
-          fixLabel={`Ask ${CODING_AGENT.name} to fix`}
-        />
+      {view && (
+        <CodingPanel scope={scope} cs={cs} view={view} onView={showView} onClose={closePanel} onAskFix={setAsk} fixLabel={`Ask ${CODING_AGENT.name} to fix`} />
       )}
     </div>
   );
@@ -2081,7 +2088,19 @@ function Session({ cs }: { cs: CodingSession }) {
 
 const MISSING_THREAD = "This conversation isn't here: it was deleted, or isn't one you can see.";
 
-const Pending = ({ text, loading = false, onRetry, inbox = false }: { text: string; loading?: boolean; onRetry?: () => void; inbox?: boolean }) => (
+export const Pending = ({
+  text,
+  loading = false,
+  onRetry,
+  inbox = false,
+  back = ["Back to conversations", () => open("")],
+}: {
+  text: string;
+  loading?: boolean;
+  onRetry?: () => void;
+  inbox?: boolean;
+  back?: [string, () => void];
+}) => (
   <div className="chat-scroll" style={{ display: "flex" }}>
     <div className="chat-pending" role={loading ? "status" : undefined}>
       {loading && <DotsLoader px={44} />}
@@ -2097,66 +2116,61 @@ const Pending = ({ text, loading = false, onRetry, inbox = false }: { text: stri
         </button>
       )}
       {!loading && (
-        <button className="btn btn-ghost btn-sm" onClick={() => open("")}>
-          Back to conversations
+        <button className="btn btn-ghost btn-sm" onClick={back[1]}>
+          {back[0]}
         </button>
       )}
     </div>
   </div>
 );
 
+/** Older links to a coding session or a new one (`?session=`, `?tab=coding`) open in Codes. */
+function ToCoding({ search }: { search: URLSearchParams }) {
+  const query = new URLSearchParams(search);
+  if (query.get("tab") === "coding") {
+    query.delete("tab");
+    if (!query.has("session")) query.set("new", "1");
+  }
+  const to = query.toString();
+  useEffect(() => go("codes", {}, { search: to, replace: true }), [to]);
+  return null;
+}
+
 export function Chat() {
   const { search } = useRoute();
+  if (search.has("session") || search.get("tab") === "coding") return <ToCoding search={search} />;
+  return <Conversations search={search} />;
+}
+
+function Conversations({ search }: { search: URLSearchParams }) {
   const ws = wsId();
   const projectKey = search.get("project");
   const across = search.get("across") === "1";
   const threadId = search.get("thread");
-  const sessionId = search.get("session");
-  // A new coding session (`?tab=coding`, as "Start coding" links it); otherwise a conversation.
-  const newSession = search.get("tab") === "coding" && !sessionId;
   const q = S.ui.chatQ.toLowerCase();
   const ps = visibleProjects().filter(canSee);
   const { rows, loaded, failed, retry } = useRows(ws);
-  const sessionsQ = useCodingSessions(ws);
-  const allSessions = sessionsQ.data ?? [];
+  const allSessions = useCodingSessions(ws).data ?? [];
   const row = rows.find((r) => r.id === threadId);
   // A conversation just started isn't listed yet: its address says where it is.
   const thread =
     threadId && (row || across || projectKey)
       ? { id: threadId, projectId: row ? row.projectId : across ? null : (projByKey(projectKey!)?.id ?? null), title: row?.title ?? "" }
       : null;
-  const cs = allSessions.find((c) => c.session_id === sessionId) ?? null;
   // Conversations waiting on a decision, Kai's in them included.
   const waitingIn = new Set(allSessions.filter((c) => c.thread_id && WAITING.includes(c.status)).map((c) => c.thread_id));
   const threads = rows
     .filter((r) => !q || r.title.toLowerCase().includes(q))
     .map((r) => (waitingIn.has(r.id) ? { ...r, waiting: true } : r))
     .sort((a, b) => b.at - a.at);
-  // Sessions started from a conversation show in it; the others are listed beside the conversations.
-  const ownSessions = allSessions.filter((c) => !c.thread_id && (!q || `${c.issue_key} ${c.title ?? c.issue_title}`.toLowerCase().includes(q)));
-  const archivedCount = ownSessions.filter((c) => c.archived).length;
-  const sessions = ownSessions.filter((c) => c.archived === Boolean(S.ui.showArchivedSessions));
-  const hasSel = Boolean(threadId || sessionId || projectKey || across || newSession || search.get("q") || search.get("new"));
+  const hasSel = Boolean(threadId || projectKey || across || search.get("q") || search.get("new"));
   // Column widths, dragged by their edges and kept in this browser.
   const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 300, 220, 480);
-  // The list folds to a rail (like the sidebar) to give the conversation or session the room; not on phones.
+  // The list folds to a rail (like the sidebar) to give the conversation the room; not on phones.
   const [listMinSet, setListMin] = useStoredFlag("dotrix.chat.listMin");
   const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;
-  // A project's conversations and its own coding sessions, together: pinned sessions first, then the latest.
-  const itemsOf = (projectId: string) =>
-    [
-      ...threads
-        .filter((t) => t.projectId === projectId)
-        .map((t) => ({ key: t.id, at: t.at, pinned: false, el: <ThreadRow key={t.id} row={t} on={threadId === t.id} /> })),
-      ...sessions
-        .filter((c) => c.project_id === projectId)
-        .map((c) => ({
-          key: c.session_id,
-          at: ms(c.updated_at),
-          pinned: c.pinned,
-          el: <SessionRow key={c.session_id} cs={c} on={sessionId === c.session_id} />,
-        })),
-    ].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.at - a.at);
+  // A project's conversations, the latest first. Kai's sessions are listed in Codes.
+  const itemsOf = (projectId: string) => threads.filter((t) => t.projectId === projectId).map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />);
   return (
     <div className="page flush">
       <div className={`chat-grid ${hasSel ? "has-sel" : ""}`} style={css({ "--list-w": listMin ? "52px" : `${listW}px` })}>
@@ -2191,7 +2205,7 @@ export function Chat() {
                   <input
                     className="input search-sm"
                     style={{ width: "100%" }}
-                    placeholder="Find a conversation or session"
+                    placeholder="Find a conversation"
                     value={S.ui.chatQ}
                     onChange={(e) => ((S.ui.chatQ = e.target.value), render())}
                     aria-label="Find"
@@ -2205,7 +2219,7 @@ export function Chat() {
                   return (
                     <Group key={p.id} title={p.name} color={pColor(p)} onNew={() => open(`project=${p.key}`)}>
                       {list.length ? (
-                        list.map((i) => i.el)
+                        list
                       ) : (
                         <div className="faint" style={{ fontSize: 12, padding: "2px 8px 4px" }}>
                           No conversations yet
@@ -2221,31 +2235,13 @@ export function Chat() {
                       <ThreadRow key={t.id} row={t} on={threadId === t.id} />
                     ))}
                 </Group>
-                {(archivedCount > 0 || S.ui.showArchivedSessions) && (
-                  <button className="linkbtn cs-archived" onClick={() => ((S.ui.showArchivedSessions = !S.ui.showArchivedSessions), render())}>
-                    {S.ui.showArchivedSessions ? "Hide archived sessions" : `Show archived sessions (${archivedCount})`}
-                  </button>
-                )}
               </nav>
             </>
           )}
         </aside>
         <section className="chat-main">
-          {!isLive() && (threadId || sessionId) ? (
+          {!isLive() && threadId ? (
             <Pending text="This conversation isn't available in the demo. Review the request in Inbox." inbox />
-          ) : sessionId ? (
-            cs ? (
-              <Session key={cs.session_id} cs={cs} />
-            ) : sessionsQ.isError ? (
-              <Pending text="The session couldn't be loaded." onRetry={() => void sessionsQ.refetch()} />
-            ) : (
-              <Pending
-                text={sessionsQ.isFetched ? "This session isn't here: it was deleted, or isn't one you can see." : "Loading the session…"}
-                loading={!sessionsQ.isFetched}
-              />
-            )
-          ) : newSession ? (
-            <NewSession key={search.get("issue") ?? ""} issue0={search.get("issue")} />
           ) : threadId ? (
             thread ? (
               <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />

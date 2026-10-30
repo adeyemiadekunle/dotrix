@@ -81,10 +81,10 @@ test("a missing provider blocks the workspace until an encrypted personal key is
   await page.goto(`/w/${slug}/settings/my-models`);
   await expect(page.getByText("xAI (Grok)", { exact: true })).toBeVisible();
   await expect(page.getByText(fakeKey, { exact: true })).toHaveCount(0);
-  await page.getByLabel("Your default coding tool").selectOption("opencode");
-  await expect(page.getByText("Default coding tool saved")).toBeVisible();
+  await page.getByLabel("Kai's coding engine").selectOption("opencode");
+  await expect(page.getByText("Coding engine saved")).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Your default coding tool")).toHaveValue("opencode");
+  await expect(page.getByLabel("Kai's coding engine")).toHaveValue("opencode");
 });
 
 test("every user connects a personal key without shared-key controls", async ({ page }) => {
@@ -138,7 +138,7 @@ test("saving a personal key in Settings refreshes the mounted setup gate", async
   await expect(page.getByRole("navigation", { name: "Main", exact: true })).toBeVisible();
 });
 
-test("a new coding session offers compatible tools and sends the chosen OpenCode provider", async ({ page }) => {
+test("a new coding session picks a model, starting from your default, and leaves the engine to it", async ({ page }) => {
   await signUp(page);
   const slug = new URL(page.url()).pathname.split("/")[2]!;
   const issueKey = await page.evaluate(async (slug) => {
@@ -165,20 +165,18 @@ test("a new coding session offers compatible tools and sends the chosen OpenCode
         reason: null,
         local_available: false,
         local_tools: [],
-        tools: [
-          { agent: "codex", available: true, models: [] },
-          { agent: "claude-code", available: true, models: [] },
-          { agent: "opencode", available: true, model: "xai:grok-4.7", models: ["xai:grok-4.7", "google_genai:gemini-3.8-flash"] },
-        ],
+        tools: [],
+        models: ["openai:gpt-5.5", "xai:grok-4.7", "google_genai:gemini-3.8-flash"],
+        default_model: "openai:gpt-5.5",
       },
     }),
   );
   await page.route("**/coding/issues/*/runs", (route) => route.fulfill({ status: 409, json: { detail: "Test request captured" } }));
-  await page.goto(`/w/${slug}/chat?tab=coding&issue=${issueKey}`);
-  await page.getByRole("button", { name: "Coding tool: Codex", exact: true }).click();
-  await page.getByRole("option", { name: "OpenCode", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Coding model: grok-4.7", exact: true })).toBeVisible();
+  await page.goto(`/w/${slug}/codes?new=1&issue=${issueKey}`);
+  await expect(page.getByRole("button", { name: /Coding tool/ })).toHaveCount(0); // the engine is in Settings, not here
+  await page.getByRole("button", { name: "Model: gpt-5.5", exact: true }).click();
+  await page.getByRole("option", { name: "grok-4.7", exact: true }).click();
   const sent = page.waitForRequest((r) => r.method() === "POST" && /\/coding\/issues\/[^/]+\/runs$/.test(r.url()));
   await page.getByRole("button", { name: "Start coding", exact: true }).click();
-  expect((await sent).postDataJSON()).toMatchObject({ agent: "opencode", model: "xai:grok-4.7", location: "cloud" });
+  expect((await sent).postDataJSON()).toMatchObject({ agent: null, model: "xai:grok-4.7", location: "cloud" });
 });

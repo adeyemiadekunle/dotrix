@@ -38,7 +38,6 @@ from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from . import guard
 from .models import CODING_AGENT_NAME, CodingRun, CodingRunEvent, CodingRunStatus, PrState
 from .runner import MAX_EVENTS, issue_title, issue_to_review, pr_body
-from .tools import tool_for
 
 logger = logging.getLogger(__name__)
 
@@ -107,13 +106,11 @@ async def recover(
                 f"Stopped after pushing {run.branch}; no PR was opened"))
         if (refused := await _refused(session, run)) is not None:
             return await _settle(session, run, Recovered.FAILED, by, error=refused + " The branch is on GitHub.")
-        tool = tool_for(run.agent, run.model)
         paths = [f["path"] for f in run.files_changed]
         pr = await app.create_pull_request(
             installation.installation_id, repo.full_name, head=head_prefix + run.branch, base=run.base_branch,
             title=f"{run.issue_key}: {await issue_title(session, run)}",
-            body=pr_body(run.summary, run.issue_key, run.id, tool.name if tool else run.agent.value,
-                         run.files_changed, guard.ci_sensitive(paths)),
+            body=pr_body(run.summary, run.issue_key, run.id, run.files_changed, guard.ci_sensitive(paths)),
             token=token,
         )
         return await _settle(session, run, Recovered.OPENED_PR, by, pr=pr)

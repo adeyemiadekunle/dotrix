@@ -248,7 +248,7 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
           </button>
         )}
         {cs && (
-          <button className="btn btn-sm btn-secondary" onClick={() => go("chat", {}, { search: `tab=coding&session=${cs.id}` })}>
+          <button className="btn btn-sm btn-secondary" onClick={() => go("codes", {}, { search: `session=${cs.id}` })}>
             <Ic n="code" s={14} />
             Open the session
           </button>

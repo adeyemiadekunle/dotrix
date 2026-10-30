@@ -35,10 +35,11 @@ export const ROUTE_NAMES: Record<string, string> = {
   settings: "Settings",
   archive: "Archive",
   chat: "Chat",
+  codes: "Codes",
 };
 
-/** A page's name; Chat is "Code" while its Code tab is open. */
-export const routeName = (route: string) => (route === "chat" && new URLSearchParams(location.search).get("tab") === "coding" ? "Code" : ROUTE_NAMES[route]);
+/** A page's name. */
+export const routeName = (route: string) => ROUTE_NAMES[route];
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -120,7 +121,7 @@ export function Shell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
       <div
-        className={`shell ${sideCollapsed() ? "collapsed" : ""} ${u.mnav ? "mnav" : ""} ${agentsShown() && panelColumn() ? "with-agents" : ""} ${here === "chat" ? "no-topbar" : ""}`}
+        className={`shell ${sideCollapsed() ? "collapsed" : ""} ${u.mnav ? "mnav" : ""} ${agentsShown() && panelColumn() ? "with-agents" : ""} ${here === "chat" || here === "codes" ? "no-topbar" : ""}`}
       >
         <Sidebar />
         <SideTip />
@@ -255,6 +256,7 @@ function Sidebar() {
         <SItem route="inbox" label="Inbox" icon="inbox" ct={unreadInbox || ""} dot />
         <SItem route="mytasks" label="My Tasks" icon="circle-check" ct={myOpen || ""} />
         <SItem route="chat" label="Chat" icon="message-square" />
+        <SItem route="codes" label="Codes" icon="code" />
         <SItem route="projects" label="Projects" icon="folder-kanban" />
         <SItem route="activity" label="Activity" icon="activity" />
         <div className="sgroup" id="side-projects">

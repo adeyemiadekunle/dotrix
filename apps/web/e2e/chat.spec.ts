@@ -225,15 +225,25 @@ test("ask across projects: the conversation reads only and is listed apart, with
   await expect(conversations.getByRole("button", { name: /How are both projects doing/ })).toContainText(/ALP|KUM/);
 });
 
-test("one list for conversations and coding sessions: a coding link opens beside the same list", async ({ page }) => {
+test("Chat and Codes are separate pages, Codes right below Chat in the sidebar", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await openChat(page);
-  await expect(page.getByRole("tab", { name: "Code" })).toHaveCount(0); // no separate Code tab
-  // Coding starts from an issue's link (or Build mode); the form opens beside the conversations.
+  const side = page.getByRole("navigation", { name: "Main" });
+  const items = await side.locator(".sitem").allInnerTexts();
+  const chatAt = items.findIndex((t) => t.trim() === "Chat");
+  expect(items[chatAt + 1]?.trim()).toBe("Codes");
+  await expect(page.getByRole("navigation", { name: "Sessions" })).toHaveCount(0); // Chat lists conversations only
+  await side.getByRole("button", { name: "Codes", exact: true }).click();
+  await expect(page).toHaveURL(/\/codes$/);
+  await expect(page.getByRole("heading", { name: "Start a session" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New session" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Sessions" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Conversations" })).toHaveCount(0);
+  // An older link to a new coding session in Chat opens Codes.
   await page.goto(`/w/${slugOf(page)}/chat?tab=coding`);
-  await expect(page.getByRole("heading", { name: "Start a coding session" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Conversations" })).toBeVisible(); // the same list beside it
+  await expect(page).toHaveURL(/\/codes\?new=1$/);
+  await expect(page.getByRole("heading", { name: "Start a session" })).toBeVisible();
   await page.goto(`/w/${slugOf(page)}/chat`);
   await expect(page.getByLabel("Message")).toBeVisible();
 });

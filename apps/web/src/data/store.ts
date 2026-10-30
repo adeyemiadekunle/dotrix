@@ -107,7 +107,8 @@ export const S = {
     chatAgent: "auto",
     chatModel: "Gemini 3.8 Flash",
     chatQ: "",
-    showArchivedSessions: false, // Chat's Code tab lists its archived sessions instead
+    codingQ: "",
+    showArchivedSessions: false, // Coding lists its archived sessions instead
     searchQ: "",
     searchCat: "all",
     myView: "list" as "list" | "calendar",

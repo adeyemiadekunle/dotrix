@@ -56,6 +56,8 @@ function commands(): (Item & { id: string })[] {
       { id: "c-inbox", name: "Go to Inbox", icon: "inbox", kbd: "G I", run: () => go("inbox") },
       { id: "c-my", name: "Go to My Tasks", icon: "circle-check", kbd: "G T", run: () => go("mytasks") },
       { id: "c-chatgo", name: "Go to Chat", icon: "message-square", kbd: "G A", run: () => go("chat") },
+      { id: "c-codinggo", name: "Go to Codes", icon: "code", kbd: "G C", run: () => go("codes") },
+      { id: "c-coding", name: "Start a session with Kai", icon: "code", run: () => go("codes", {}, { search: "new=1" }) },
       { id: "c-projs", name: "Go to Projects", icon: "folder-kanban", kbd: "G P", run: () => go("projects") },
       { id: "c-mem", name: "Members settings", icon: "users", run: () => go("settings", { sec: "members" }) },
       { id: "c-set", name: "Open settings", icon: "settings", kbd: "G S", run: () => go("settings") },

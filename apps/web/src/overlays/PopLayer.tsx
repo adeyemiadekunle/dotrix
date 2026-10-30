@@ -1023,7 +1023,7 @@ function SessionMenu({ cs }: { cs: CodingSession }) {
               // The menu has closed by now, so the promise (not mutate's callbacks) says when it's gone.
               remove.mutateAsync().then(
                 () => {
-                  if (new URLSearchParams(location.search).get("session") === cs.session_id) go("chat");
+                  if (new URLSearchParams(location.search).get("session") === cs.session_id) go("codes");
                 },
                 () => {},
               ),

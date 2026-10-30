@@ -40,6 +40,8 @@ class CodingAvailability(BaseModel):
     tools: list[CodingToolOption] = Field(default_factory=list)
     local_tools: list[CodingAgent] = Field(default_factory=list)
     default_tool: CodingAgent | None = None
+    models: list[str] = Field(default_factory=list, description="Every model you can code on here (a new session picks one)")
+    default_model: str | None = Field(default=None, description="The model a new session starts on: your default model when you can code on it")
 
 
 _APPROVAL = ("`manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved "
@@ -54,8 +56,9 @@ class CodingRunCreate(BaseModel):
     note: str | None = Field(default=None, max_length=5_000, description="Anything to add to the issue for the agent")
     approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
     location: CodingLocation = Field(default=CodingLocation.CLOUD, description=_LOCATION)
-    agent: CodingAgent | None = Field(default=None, description="The tool for this session; otherwise your compatible default")
-    model: str | None = Field(default=None, max_length=100, description="An allowed provider:model for OpenCode")
+    agent: CodingAgent | None = Field(default=None, description="The engine for this session; otherwise the one for its model "
+                                      "(your preferred engine when it can run it, else the model's provider's own)")
+    model: str | None = Field(default=None, max_length=100, description="The provider:model to code on; otherwise your default model")
 
 
 class CodingFollowUp(BaseModel):

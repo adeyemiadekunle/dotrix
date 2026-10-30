@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "libfx": "0.0.15"
+    "libfx": "0.0.16"
   }
 }

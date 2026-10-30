@@ -71,7 +71,7 @@ function notices(): Notice[] {
     const tool = CODING_TOOLS.find((t) => t.id === `agent:${cs.tool}`);
     const key = task(cs.task)?.key ?? "";
     if (!tool || (cs.status !== "awaiting_approval" && cs.status !== "failed")) continue;
-    const open = () => (isLive() ? go("chat", {}, { search: `tab=coding&session=${cs.id}` }) : openDemoRequest({ task: cs.task }));
+    const open = () => (isLive() ? go("codes", {}, { search: `session=${cs.id}` }) : openDemoRequest({ task: cs.task }));
     out.push(
       cs.status === "failed"
         ? {

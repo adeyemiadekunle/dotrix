@@ -70,11 +70,14 @@ const review = (number: number) => ({
   ],
 });
 
+/** One of the session header's side-panel buttons (Changes, Files, Terminal, Review). */
+const view = (page: Page, name: string) => page.getByRole("group", { name: "Side panel" }).getByRole("button", { name, exact: true });
+
 async function mockWorkspace(
   page: Page,
   context: BrowserContext,
   baseURL: string,
-  search = "?tab=coding&session=session1",
+  search = "codes?session=session1",
   openPanel = true,
   reviewAvailable = () => true,
 ) {
@@ -131,57 +134,82 @@ async function mockWorkspace(
     }
     await route.fulfill({ status: 200, json: data });
   });
-  await page.goto(`/w/test-workspace/chat${search}`);
-  if (openPanel) await page.getByRole("button", { name: "Kai's work" }).click();
+  await page.goto(`/w/test-workspace/${search}`);
+  if (openPanel) await view(page, "Changes").click();
 }
 
-test("the work panel keeps turn data and connects Juno's findings to files", async ({ page, context, baseURL }) => {
+test("the session header opens each view of the side panel, and Juno's findings show on their lines", async ({ page, context, baseURL }) => {
   await mockWorkspace(page, context, baseURL!);
-  const panel = page.locator(".kai-panel");
-  const tabs = panel.getByRole("tablist", { name: "Agent work" });
-  const changes = tabs.getByRole("tab", { name: /^Changes/ });
-  await expect(changes).toHaveAttribute("aria-selected", "true");
+  const panel = page.locator(".side-panel");
+  await expect(view(page, "Changes")).toHaveAttribute("aria-pressed", "true");
   await expect(panel.getByText(path, { exact: true })).toBeVisible();
-  await changes.focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(tabs.getByRole("tab", { name: "Files" })).toBeFocused();
+  // Juno's finding on line 2 sits under that line in the diff, and opens the review.
+  await panel.getByRole("button", { name: /Juno's finding on line 2: Keyboard focus is difficult to see/ }).click();
+  await expect(view(page, "Review")).toHaveAttribute("aria-pressed", "true");
+  await view(page, "Files").click();
   await panel.getByRole("treeitem", { name: /Navigation.tsx/ }).click();
   await expect(panel.getByRole("button", { name: "Back to the files" })).toBeVisible();
-  await tabs.getByRole("tab", { name: "Terminal" }).click();
+  await view(page, "Terminal").click();
   await expect(panel.getByText("Recorded output · read-only")).toBeVisible();
   await expect(panel.getByText("24 tests passed")).toBeVisible();
-  await tabs.getByRole("tab", { name: "Files" }).click();
+  await view(page, "Files").click();
   await expect(panel.getByRole("button", { name: "Back to the files" })).toBeVisible();
-  await tabs.getByRole("tab", { name: "Browser" }).click();
-  await expect(panel.getByText("Captured screenshots")).toBeVisible();
-  await expect(panel.getByRole("img", { name: "Screenshot: pricing.png" })).toBeVisible();
-  await expect(panel.getByRole("link", { name: "Open image" })).toHaveAttribute("href", /turn2\/screenshots\/0$/);
-  await tabs.getByRole("tab", { name: /^Review/ }).click();
+  await expect(view(page, "Browser")).toHaveCount(0); // a live browser comes later
+  await view(page, "Review").click();
   await expect(panel.getByText("Keyboard focus is difficult to see")).toBeVisible();
+  // Juno's review details are keyboard tabs.
+  await panel.getByRole("tab", { name: /^Findings/ }).click();
+  await panel.getByRole("tab", { name: /^Findings/ }).press("ArrowRight");
+  await expect(panel.getByRole("tab", { name: "Evidence" })).toHaveAttribute("aria-selected", "true");
+  await panel.getByRole("tab", { name: "Summary" }).click();
+  await panel.getByRole("tab", { name: /^Findings/ }).click();
   await panel.getByRole("button", { name: "Ask Kai to fix" }).click();
   await expect(page.getByLabel("Follow-up")).toHaveValue(/Keyboard focus is difficult to see/);
   await panel.getByRole("button", { name: `${path}:2` }).click();
-  await expect(tabs.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+  await expect(view(page, "Files")).toHaveAttribute("aria-pressed", "true");
   await expect(panel.locator(".kp-line-reference")).toContainText("const href = '#plans'");
   await panel.getByRole("button", { name: "Back to the files" }).click();
-  await tabs.getByRole("tab", { name: /^Review/ }).click();
+  await view(page, "Review").click();
   await panel.getByRole("button", { name: `${path}:2` }).click();
   await expect(panel.locator(".kp-line-reference")).toBeVisible();
   await panel.getByLabel("Turn").selectOption("turn1");
-  await tabs.getByRole("tab", { name: /^Review/ }).click();
+  await view(page, "Review").click();
   await expect(panel.getByText("Earlier finding")).toBeVisible();
   await expect(panel.getByText("Superseded by a later coding turn")).toBeVisible();
-  await tabs.getByRole("tab", { name: "Browser" }).click();
-  await expect(panel.getByText("No screenshots were captured in this turn.")).toBeVisible();
+  // The open view's button closes the panel, and the shortcut opens Changes again.
+  await view(page, "Review").click();
+  await expect(panel).toHaveCount(0);
+  await page.keyboard.press("Control+Shift+D");
+  await expect(view(page, "Changes")).toHaveAttribute("aria-pressed", "true");
 });
 
-test("a linked review reference opens its turn and file directly", async ({ page, context, baseURL }) => {
+test("the session shows Kai, never the engine underneath", async ({ page, context, baseURL }) => {
+  await mockWorkspace(page, context, baseURL!, undefined, false);
+  const main = page.locator(".conv-main");
+  await expect(main.getByText("Kai", { exact: true }).first()).toBeVisible();
+  await expect(page.getByLabel("Follow-up")).toHaveAttribute("placeholder", /Ask Kai/);
+  await expect(page.locator(".chat-list")).not.toContainText("Codex");
+  await expect(main).not.toContainText("Codex");
+});
+
+test("a file path in the session opens it in Files", async ({ page, context, baseURL }) => {
+  await mockWorkspace(page, context, baseURL!, undefined, false);
+  await page.locator(".chat-col").getByRole("button", { name: path, exact: true }).first().click();
+  const panel = page.locator(".side-panel");
+  await expect(view(page, "Files")).toHaveAttribute("aria-pressed", "true");
+  await expect(panel.getByRole("button", { name: "Back to the files" })).toBeVisible();
+  await expect(page).toHaveURL(/file=/);
+});
+
+test("a linked review reference opens its turn and file directly, from an older Chat link too", async ({ page, context, baseURL }) => {
+  // Links from before Coding had its own page (chat?tab=coding&session=…) open the session in Coding.
   const search = new URLSearchParams({ tab: "coding", session: "session1", turn: "turn2", file: path, line: "2" });
-  await mockWorkspace(page, context, baseURL!, `?${search}`, false);
-  const panel = page.locator(".kai-panel");
-  await expect(panel.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+  await mockWorkspace(page, context, baseURL!, `chat?${search}`, false);
+  await expect(page).toHaveURL(/\/codes\?session=session1/);
+  const panel = page.locator(".side-panel");
+  await expect(view(page, "Files")).toHaveAttribute("aria-pressed", "true");
   await expect(panel.locator(".kp-line-reference")).toContainText("const href = '#plans'");
-  await panel.getByRole("button", { name: "Close the panel" }).click();
+  await panel.getByRole("button", { name: "Close Files" }).click();
   await expect(panel).toHaveCount(0);
   await expect(page).not.toHaveURL(/file=/);
 });
@@ -189,8 +217,8 @@ test("a linked review reference opens its turn and file directly", async ({ page
 test("an unavailable review can be retried without showing a different turn's review", async ({ page, context, baseURL }) => {
   let available = false;
   await mockWorkspace(page, context, baseURL!, undefined, true, () => available);
-  const panel = page.locator(".kai-panel");
-  await panel.getByRole("tab", { name: /^Review/ }).click();
+  const panel = page.locator(".side-panel");
+  await view(page, "Review").click();
   await expect(panel.getByText("Some reviews couldn't be loaded.")).toBeVisible({ timeout: 20_000 });
   await expect(panel.getByText("Earlier finding")).toHaveCount(0);
   available = true;
@@ -201,17 +229,14 @@ test("an unavailable review can be retried without showing a different turn's re
 test("the work panel is closeable and keyboard accessible on mobile", async ({ page, context, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockWorkspace(page, context, baseURL!);
-  const panel = page.locator(".kai-panel");
+  const panel = page.locator(".side-panel");
   await expect(panel).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Close the panel" })).toBeFocused();
-  await panel.getByRole("tab", { name: "Browser" }).click();
-  await expect(panel.getByText("Captured screenshots")).toBeVisible();
-  await panel.getByRole("tab", { name: /^Review/ }).click();
+  await expect(panel.getByRole("button", { name: "Close Changes" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(view(page, "Changes")).toBeFocused();
+  await view(page, "Review").click();
   await panel.getByRole("button", { name: "Ask Kai to fix" }).click();
   await expect(panel).toHaveCount(0);
   await expect(page.getByLabel("Follow-up")).toHaveValue(/Keyboard focus is difficult to see/);
-  await page.getByRole("button", { name: "Kai's work" }).click();
-  await page.keyboard.press("Escape");
-  await expect(panel).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Kai's work" })).toBeFocused();
 });

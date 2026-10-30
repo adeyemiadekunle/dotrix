@@ -25194,7 +25194,8 @@
         "enum": [
           "claude-code",
           "codex",
-          "opencode"
+          "opencode",
+          "fx"
         ],
         "title": "CodingAgent",
         "description": "The coding tools we wrap; which one runs follows the model key the server has."
@@ -25293,6 +25294,26 @@
                 "type": "null"
               }
             ]
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models",
+            "description": "Every model you can code on here (a new session picks one)"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model",
+            "description": "The model a new session starts on: your default model when you can code on it"
           }
         },
         "type": "object",
@@ -25779,7 +25800,7 @@
                 "type": "null"
               }
             ],
-            "description": "The tool for this session; otherwise your compatible default"
+            "description": "The engine for this session; otherwise the one for its model (your preferred engine when it can run it, else the model's provider's own)"
           },
           "model": {
             "anyOf": [
@@ -25792,7 +25813,7 @@
               }
             ],
             "title": "Model",
-            "description": "An allowed provider:model for OpenCode"
+            "description": "The provider:model to code on; otherwise your default model"
           }
         },
         "type": "object",
@@ -27033,7 +27054,8 @@
                 "enum": [
                   "claude-code",
                   "codex",
-                  "opencode"
+                  "opencode",
+                  "fx"
                 ]
               },
               {
@@ -30858,7 +30880,8 @@
                 "enum": [
                   "claude-code",
                   "codex",
-                  "opencode"
+                  "opencode",
+                  "fx"
                 ]
               },
               {

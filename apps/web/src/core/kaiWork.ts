@@ -1,5 +1,5 @@
 // What Kai did in a coding turn, for the panel beside a conversation or a session
-// (components/KaiPanel.tsx): its diff as files and hunks, the repository's paths as a tree, and its
+// (components/TurnViews.tsx): its diff as files and hunks, the repository's paths as a tree, and its
 // commands with their output.
 
 interface DiffLine {

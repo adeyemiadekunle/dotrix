@@ -43,7 +43,7 @@ def fx_configuration_digest(
     Credentials are deliberately excluded.
     """
     identity = {
-        "version": "libfx-0.0.15", "name": config.name, "instructions": config.instructions,
+        "version": "libfx-0.0.16", "name": config.name, "instructions": config.instructions,
         "model": model, "base_url": base_url, "effort": effort, "context_window": context_window,
         "tools": [{"name": tool.name, "description": tool.description, "schema": tool.input_schema,
                    "idempotent": tool.idempotent, "writes": tool.writes} for tool in config.tools],

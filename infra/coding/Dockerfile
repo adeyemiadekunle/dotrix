@@ -1,4 +1,4 @@
-# The image coding runs use in OpenShell (DOTRIX_CODING_IMAGE): Claude Code, Codex, OpenCode, git, and
+# The image coding runs use in OpenShell (DOTRIX_CODING_IMAGE): Claude Code, Codex, OpenCode, fx, git, and
 # common toolchains so the agent can run a project's tests. Add what your projects need.
 #
 #   docker build -t dotrix-coding:latest infra/coding
@@ -9,14 +9,36 @@
 FROM node:22-bookworm
 
 # The CLIs, installed globally; their binaries are what the provider profiles allow to reach
-# the model APIs (see dotrix-claude-code.yaml and dotrix-codex.yaml).
-RUN npm install -g @anthropic-ai/claude-code @openai/codex && claude --version && codex --version
+# the model APIs (see dotrix-claude-code.yaml and dotrix-codex.yaml). Pinned like OpenCode and fx, because
+# modules/coding/tools.py reads their headless events and passes their flags: Claude Code as checked on a
+# real model (2.1.296, docs/coding-agent.md Phase 0); Codex at the release its flags were checked against
+# (0.166.0: `exec --json --skip-git-repo-check --sandbox danger-full-access --ephemeral`; not yet run on a model).
+# Raise a version only after checking its events and flags.
+ARG CLAUDE_CODE_VERSION=2.1.296
+ARG CODEX_VERSION=0.166.0
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} \
+  && claude --version && codex --version
 
 # OpenCode 2 (DOTRIX_CODING_AGENT=opencode): any provider's model. Pinned, because its headless events
 # and session export are what modules/coding/tools.py reads (checked on 2.1.4); its profiles are
 # dotrix-opencode-*.yaml.
 ARG OPENCODE_VERSION=2.1.4
 RUN npm install -g @opencode/cli@${OPENCODE_VERSION} && opencode --version
+
+# fx (DOTRIX_CODING_FX=true): Kai on an OpenAI-compatible provider, driven over ACP by fx-acp.mjs. Pinned,
+# because the driver reads its ACP messages and modes (written against 0.0.16's source); the release is
+# fx's own (releases.fx.sh, what `fx upgrade` fetches), checked against its published SHA-256. Its profiles
+# are dotrix-fx-*.yaml. Needs releases.fx.sh reachable where the image is built, never in the sandbox.
+ARG FX_VERSION=0.0.16
+RUN set -eu; \
+  case "$(uname -m)" in x86_64) arch=x86_64 ;; aarch64|arm64) arch=aarch64 ;; *) echo "fx: unsupported $(uname -m)"; exit 1 ;; esac; \
+  base="https://releases.fx.sh/v${FX_VERSION}/fx-linux-${arch}.tar.gz"; \
+  cd /tmp && curl -fsSL -o fx.tar.gz "$base" && curl -fsSL -o fx.tar.gz.sha256 "$base.sha256"; \
+  echo "$(cut -d' ' -f1 fx.tar.gz.sha256)  fx.tar.gz" | sha256sum -c -; \
+  mkdir fx && tar -xzf fx.tar.gz -C fx && install -m 0755 "$(find fx -type f -name fx | head -n1)" /usr/local/bin/fx; \
+  rm -rf fx fx.tar.gz fx.tar.gz.sha256; \
+  fx --version
+COPY fx-acp.mjs /opt/dotrix/fx-acp.mjs
 
 # A browser for the agent (the platform passes it as an MCP server, `playwright-mcp`): Playwright's
 # Chromium, headless, in a shared folder the unprivileged user can run. It opens the app the agent

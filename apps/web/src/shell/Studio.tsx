@@ -17,6 +17,7 @@ import { installDragDrop } from "../core/dragdrop";
 import { installKeyboard } from "../core/keyboard";
 import { Palette } from "../overlays/Palette";
 import { Chat } from "../screens/Chat";
+import { Coding } from "../screens/Coding";
 import { MemberPage, Members } from "../screens/Members";
 import { Settings } from "../screens/Settings";
 import { ModelGate } from "../screens/ModelSetup";
@@ -50,6 +51,7 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   inbox: Inbox,
   notifications: ToInbox,
   chat: Chat,
+  codes: Coding,
   members: Members,
   member: MemberPage,
   teams: ToMembers,

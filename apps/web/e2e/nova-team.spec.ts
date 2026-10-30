@@ -1,18 +1,14 @@
 import { expect, test } from "@playwright/test";
 
-test("the fixed team opens Juno's keyboard-accessible review panel", async ({ page }) => {
+test("the fixed team is listed, and Juno opens in Chat without a side panel", async ({ page }) => {
   await page.goto("/w/dotrix");
   const agents = page.getByRole("complementary", { name: "Agents" });
   await expect(agents.locator(".ap-row")).toHaveCount(7);
   await expect(agents.getByText("Kai", { exact: true })).toHaveCount(1);
   await agents.getByRole("button", { name: /Juno Review/ }).click();
-  const review = page.getByRole("complementary", { name: "Juno's review" });
-  await expect(review).toBeVisible();
-  await review.getByRole("tab", { name: "Findings" }).click();
-  await review.getByRole("tab", { name: "Findings" }).press("ArrowRight");
-  await expect(review.getByRole("tab", { name: "Evidence" })).toHaveAttribute("aria-selected", "true");
-  await page.reload();
-  await expect(page.getByRole("complementary", { name: "Juno's review" })).toBeVisible();
+  await expect(page).toHaveURL(/\/chat\?new=1&agent=reviewer/);
+  // Juno's reviews of Kai's turns are in a Codes session's Review view (work-panel.spec.ts); Chat has no side panel.
+  await expect(page.locator(".side-panel")).toHaveCount(0);
 });
 
 test("Kai's instructions stay protected and additional guidance is editable", async ({ page }) => {
@@ -23,14 +19,4 @@ test("Kai's instructions stay protected and additional guidance is editable", as
   await page.getByLabel("Additional instructions").fill("Explain the changes clearly.");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Customised", { exact: true })).toBeVisible();
-});
-
-test("the review panel fits a small screen", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/w/dotrix/chat?new=1&agent=reviewer&panel=review");
-  const review = page.getByRole("complementary", { name: "Juno's review" });
-  await expect(review).toBeVisible();
-  await expect(review.getByRole("tab", { name: "Findings" })).toBeVisible();
-  await review.getByRole("button", { name: "Close the review panel" }).click();
-  await expect(review).toHaveCount(0);
 });

@@ -124,10 +124,10 @@ export function toggleReaction(c: Comment, e: string) {
   });
   commentReacted(c, e, on);
 }
-/** Leave the issue for Chat: the drawer closes so the session is in view at once. */
-function openInChat(search: string) {
+/** Leave the issue for Codes: the drawer closes so the session is in view at once. */
+function openInCoding(search: string) {
   closeDrawer();
-  go("chat", {}, { search });
+  go("codes", {}, { search });
 }
 export function CommentItem({ c }: { c: Comment }) {
   const w = who(c.by);
@@ -583,7 +583,7 @@ function CodingSection({ t }: { t: Task }) {
   const start = () => {
     S.ui.pop = null;
     if (!startCoding(t, "opencode")) return;
-    toast(`${CODING_AGENT.name} will start once someone approves`, { action: "Open Chat", onAction: () => openInChat("") });
+    toast(`${CODING_AGENT.name} will start once someone approves`, { action: "Open Codes", onAction: () => openInCoding("") });
   };
   const label: Record<string, [string, string]> = {
     awaiting_approval: ["Waiting for approval", "amber"],
@@ -632,7 +632,7 @@ function CodingSection({ t }: { t: Task }) {
                 PR #{latest.pr.number} · {latest.pr.state}
               </a>
             )}
-            <button className="btn btn-sm btn-ghost" onClick={() => openInChat(`tab=coding&session=${latest.id}&from=issue`)}>
+            <button className="btn btn-sm btn-ghost" onClick={() => openInCoding(`session=${latest.id}&from=issue`)}>
               <Ic n="arrow-up-right" s={13} />
               Open the session
             </button>

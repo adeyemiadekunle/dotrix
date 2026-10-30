@@ -5618,7 +5618,7 @@ export interface components {
          * @description The coding tools we wrap; which one runs follows the model key the server has.
          * @enum {string}
          */
-        CodingAgent: "claude-code" | "codex" | "opencode";
+        CodingAgent: "claude-code" | "codex" | "opencode" | "fx";
         /** CodingAvailability */
         CodingAvailability: {
             /** Available */
@@ -5656,6 +5656,16 @@ export interface components {
             /** Local Tools */
             local_tools?: components["schemas"]["CodingAgent"][];
             default_tool?: components["schemas"]["CodingAgent"] | null;
+            /**
+             * Models
+             * @description Every model you can code on here (a new session picks one)
+             */
+            models?: string[];
+            /**
+             * Default Model
+             * @description The model a new session starts on: your default model when you can code on it
+             */
+            default_model?: string | null;
         };
         /**
          * CodingClaim
@@ -5879,11 +5889,11 @@ export interface components {
              * @default cloud
              */
             location: components["schemas"]["CodingLocation"];
-            /** @description The tool for this session; otherwise your compatible default */
+            /** @description The engine for this session; otherwise the one for its model (your preferred engine when it can run it, else the model's provider's own) */
             agent?: components["schemas"]["CodingAgent"] | null;
             /**
              * Model
-             * @description An allowed provider:model for OpenCode
+             * @description The provider:model to code on; otherwise your default model
              */
             model?: string | null;
         };
@@ -6385,7 +6395,7 @@ export interface components {
         /** DefaultCodingToolSave */
         DefaultCodingToolSave: {
             /** Default Coding Tool */
-            default_coding_tool?: ("claude-code" | "codex" | "opencode") | null;
+            default_coding_tool?: ("claude-code" | "codex" | "opencode" | "fx") | null;
         };
         /** DefaultModelSave */
         DefaultModelSave: {
@@ -7988,7 +7998,7 @@ export interface components {
              */
             models: string[];
             /** Default Coding Tool */
-            default_coding_tool?: ("claude-code" | "codex" | "opencode") | null;
+            default_coding_tool?: ("claude-code" | "codex" | "opencode" | "fx") | null;
         };
         /**
          * PlanRead

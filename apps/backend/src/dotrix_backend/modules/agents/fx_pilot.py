@@ -50,14 +50,17 @@ from .runtime_sessions import (
 from .runtime_tools import RuntimeRunScope, scoped_project_tools
 from .storage_backend import SessionFactory
 
-# These are fixed platform endpoints, not URLs supplied by a model or browser.
-# Anthropic and Google use different APIs and need an explicitly tested adapter.
+# These are fixed platform endpoints, not URLs supplied by a model or browser. Anthropic's is its
+# OpenAI-compatible endpoint (checked with libfx 0.0.16 on Claude Haiku 5.5, 2026-10-30: tools, follow-ups,
+# steering, and a journal reopened and retried by a fresh host). Google's needs its own check first.
 _FX_ENDPOINTS = {
     "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/v1",
     **{name: provider.base_url for name, provider in PROVIDERS.items() if provider.base_url},
 }
-_VERSION = "libfx-0.0.15-pilot-2"
-_DURABLE_VERSION = "libfx-0.0.15-delegation-2"
+# A run bound to another libfx version fails closed instead of resuming on this one (runtime_sessions.py).
+_VERSION = "libfx-0.0.16-pilot-2"
+_DURABLE_VERSION = "libfx-0.0.16-delegation-2"
 _HISTORY_TURNS = 16
 _HISTORY_CHARS = 30_000
 _GUIDE = """You are answering in a read-only chat.
