@@ -16,6 +16,9 @@ import {
   useChatRuntimeOptions,
   useRunStream,
   useSendMessage,
+  useChatInputs,
+  useSubmitChatInput,
+  useCancelChatInput,
   useStopRun,
   useThread,
   useThreadPlans,
@@ -723,7 +726,7 @@ function Composer({
   disabled = false,
 }: {
   placeholder: string;
-  onSend: (text: string, agent: string) => void;
+  onSend: (text: string, agent: string) => unknown;
   agent: string;
   setAgent?: (a: string) => void;
   model?: string;
@@ -745,6 +748,7 @@ function Composer({
 }) {
   const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
   const [text, setText] = useState(initial);
+  const [submitting, setSubmitting] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const a = D().agents.find((x) => x.handle === agent);
   // "+" (or typing "@") offers the projects (in a new chat) and the work modes; Nova always answers.
@@ -752,12 +756,19 @@ function Composer({
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
-  const send = () => {
+  const send = async () => {
     const q = text.trim();
-    if (!q || S.ui.offline || disabled) return;
-    onSend(q, agent);
-    setAgent?.("auto");
-    setText("");
+    if (!q || S.ui.offline || disabled || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSend(q, agent);
+      setAgent?.("auto");
+      setText("");
+    } catch {
+      // The mutation reports the error; keep the person's draft for retry.
+    } finally {
+      setSubmitting(false);
+    }
   };
   const modeLabel = WORK_MODES.find(([v]) => v === mode)?.[1] ?? "";
   return (
@@ -768,6 +779,7 @@ function Composer({
           rows={2}
           placeholder={placeholder}
           value={text}
+          disabled={submitting}
           onChange={(e) => at.onChange(e.target)}
           onKeyDown={(e) => {
             if (at.onKeyDown(e)) return;
@@ -871,7 +883,7 @@ function Composer({
             )
           )}
           <span className="sp" />
-          <button className="cbox-send" onClick={send} disabled={!text.trim() || S.ui.offline || disabled} aria-label="Send">
+          <button className="cbox-send" onClick={send} disabled={!text.trim() || S.ui.offline || disabled || submitting} aria-label="Send">
             <Ic n="arrow-up" s={14} />
           </button>
         </div>
@@ -904,6 +916,13 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const sendCross = useSendCross(ws);
   const stop = useStopRun(scope);
   const stopCross = useStopCross(ws);
+  const chatInputs = useChatInputs(scope, id).data ?? [];
+  const submitInput = useSubmitChatInput(scope, id);
+  const cancelInput = useCancelChatInput(scope, id);
+  const [inputKind, setInputKind] = useState<"queue" | "steer">("queue");
+  const awaitingApproval = runs.some((run) => run.status === "awaiting_approval");
+  const inputBusy = Boolean(projectId) && (active || awaitingApproval);
+  const retryInput = useRef<{ signature: string; client_id: string } | null>(null);
   const agent = "auto";
   // How you're working: what you picked, else how the conversation was going, else Discuss.
   const [pickedMode, setMode] = useState<WorkMode | null>(null);
@@ -939,8 +958,21 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   }, [id, runs.length, busy, stream.text]);
-  const say = (message: string, m: WorkMode = mode) =>
-    projectId ? send.mutate({ message, threadId: id, agent, workMode: m, approvalMode: approval }) : sendCross.mutate({ message, thread_id: id, agent });
+  const say = (message: string, m: WorkMode = mode) => {
+    if (inputBusy) {
+      const kind = awaitingApproval ? "queue" : inputKind;
+      const retry = retryInput.current;
+      const signature = JSON.stringify([id, projectId, message, kind, m, approval]);
+      const client_id = retry?.signature === signature ? retry.client_id : crypto.randomUUID();
+      retryInput.current = { signature, client_id };
+      return submitInput.mutateAsync({ message, kind, client_id, work_mode: m, approval_mode: approval }).then(() => {
+        retryInput.current = null;
+      });
+    }
+    return projectId
+      ? send.mutateAsync({ message, threadId: id, agent, workMode: m, approvalMode: approval })
+      : sendCross.mutateAsync({ message, thread_id: id, agent });
+  };
   const build = (plan: Plan) => {
     setMode("build");
     say(`Build plan version ${plan.version}: ${plan.title}`, "build");
@@ -1051,6 +1083,46 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           </div>
         </div>
         <div className="chat-input">
+          {inputBusy && (
+            <label className="row muted" style={{ gap: 8, fontSize: 12, marginBottom: 8 }}>
+              Send as
+              <select
+                aria-label="Delivery action"
+                value={awaitingApproval ? "queue" : inputKind}
+                onChange={(event) => setInputKind(event.target.value as "queue" | "steer")}
+              >
+                <option value="queue">Queue after this turn</option>
+                {!awaitingApproval && <option value="steer">Steer this turn</option>}
+              </select>
+              <span>
+                {inputKind === "steer" && !awaitingApproval ? "Applies at the next safe point; keeps current approvals." : "Waits until this turn completes."}
+              </span>
+            </label>
+          )}
+          {chatInputs
+            .filter(
+              (item) =>
+                item.status === "pending" ||
+                item.status === "sending" ||
+                item.status === "rejected" ||
+                (item.status === "accepted" && item.run_id === working?.id),
+            )
+            .slice(0, 20)
+            .reverse()
+            .map((item) => (
+              <div key={item.id} className="row muted" style={{ gap: 8, fontSize: 12, marginBottom: 6 }}>
+                <span>
+                  {item.kind === "queue" ? "Queued follow-up" : "Steering"}: {item.message}
+                </span>
+                <span>{item.status === "accepted" ? "Steering accepted" : item.status}</span>
+                {item.error && <span>{item.error}</span>}
+                {item.status === "pending" && (
+                  <button className="btn btn-sm btn-ghost" disabled={cancelInput.isPending} onClick={() => cancelInput.mutate(item.id)}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            ))}
           <Composer
             key={fixDraft.version}
             initial={fixDraft.text}

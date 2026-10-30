@@ -138,17 +138,17 @@ async function handle(command) {
       };
       if (command.apiKey) options.credentials = async () => ({ apiKey: command.apiKey });
     } else if (command.apiKey) options.apiKey = command.apiKey;
-    if (command.persistence) {
+    if (command.persistence || command.ephemeralEngine) {
       const version = createRequire(import.meta.url)("./node_modules/libfx/package.json").version;
       if (version !== "0.0.15") throw new Error("Unsupported libfx journal version");
       engineSession = command.sessionId;
       delete options.name;
       delete options.durability;
       options.sessionId = engineSession;
-      options.persistence = persistence;
+      if (command.persistence) options.persistence = persistence;
       // The host limits a journal to 8 MiB; retain its full record history so
       // the pinned compatibility reader can recover a completed turn's text.
-      options.checkpointAfterBytes = 16 * 1024 * 1024;
+      if (command.persistence) options.checkpointAfterBytes = 16 * 1024 * 1024;
       engine = await createFxEngine(options);
     } else {
       agent = createFxAgent(options);
@@ -243,8 +243,8 @@ async function handle(command) {
   if (command.op === "steer") {
     if (engine) {
       if (!activeTurn || command.sessionId !== engineSession) throw new Error("No active turn");
-      await activeTurn.steer(command.message);
-    } else await agent.session(command.sessionId).steer(command.message);
+      await activeTurn.steer(command.message, command.messageId ?? undefined);
+    } else await agent.session(command.sessionId).steer(command.message, command.messageId ? { messageId: command.messageId } : undefined);
     return { accepted: true };
   }
   if (command.op === "cancel") {

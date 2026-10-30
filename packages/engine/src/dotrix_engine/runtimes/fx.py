@@ -105,6 +105,7 @@ class FxRuntime:
         cls, config: AgentRuntimeConfig, *, model: str, base_url: str | None = None, api_key: str | None = None,
         effort: str | None = None, context_window: int = 128_000, node: str = "node", local_dir: Path | None = None,
         journal: RuntimeJournalStore | None = None, engine_session: str | None = None,
+        ephemeral_engine: bool = False,
     ) -> FxRuntime:
         if base_url is not None:
             parsed = urlparse(base_url)
@@ -118,7 +119,10 @@ class FxRuntime:
             raise ValueError("Reasoning effort must be nonempty")
         if not model or context_window < 1:
             raise ValueError("Invalid agent name, model, or context window")
-        if (journal is None) != (engine_session is None) or (journal is not None and local_dir is not None):
+        if ephemeral_engine:
+            if engine_session is None or journal is not None or local_dir is not None:
+                raise ValueError("An ephemeral engine needs a session and cannot use persistent storage")
+        elif (journal is None) != (engine_session is None) or (journal is not None and local_dir is not None):
             raise ValueError("A host journal needs exactly one engine session and cannot use local storage")
         if engine_session is not None:
             validate_session(engine_session, "session")
@@ -137,7 +141,7 @@ class FxRuntime:
                 "op": "init", "name": config.name, "instructions": config.instructions, "model": model,
                 "baseUrl": base_url, "apiKey": api_key, "effort": effort, "contextWindow": context_window,
                 "localDir": str(local_dir) if local_dir is not None else None,
-                "persistence": journal is not None, "sessionId": engine_session,
+                "persistence": journal is not None, "ephemeralEngine": ephemeral_engine, "sessionId": engine_session,
                 "tools": [{"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema,
                            "idempotent": tool.idempotent, "writes": tool.writes} for tool in config.tools],
             })
@@ -340,12 +344,14 @@ class FxRuntime:
                           tools=tuple(result["tools"]), message_id=result.get("messageId"),
                           repeated=result.get("repeated", False), handoff=result.get("handoff"))
 
-    async def steer(self, session_id: str, message: str) -> None:
+    async def steer(self, session_id: str, message: str, *, message_id: str | None = None) -> None:
         if self._closed or session_id not in self._active:
             raise RuntimeError("No active turn to steer")
         if not message.strip():
             raise ValueError("Steering message must be nonempty")
-        await self._request({"op": "steer", "sessionId": session_id, "message": message})
+        if message_id is not None:
+            validate_session(message_id, "steering")
+        await self._request({"op": "steer", "sessionId": session_id, "message": message, "messageId": message_id})
 
     async def cancel(self, session_id: str) -> None:
         if not self._closed and session_id in self._active:

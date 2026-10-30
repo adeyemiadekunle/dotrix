@@ -1,6 +1,7 @@
 """An opt-in, read-only Nova turn using an admitted Dotrix run and libfx."""
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import uuid
@@ -32,9 +33,10 @@ from dotrix_engine.runtimes import (
 )
 from dotrix_engine.runtimes.contracts import EventHandler
 
+from .chat_inputs import accepted, steering
 from .delegation import DelegationService
 from .llm import ModelUnavailable
-from .models import AgentRun, AgentRuntimeBinding, RunKind, RunStatus, WorkMode
+from .models import AgentRun, AgentRuntimeBinding, ChatInput, RunKind, RunStatus, WorkMode
 from .runtime_journal import RuntimeJournal
 from .runtime_sessions import (
     RuntimeIdentity,
@@ -156,9 +158,17 @@ async def run_fx_nova_pilot(
         instructions = f"{introduce(spec, project.name)}\n\n{role_instructions(spec)}\n\n{guide}"
         history = []
         remaining = _HISTORY_CHARS
-        omitted = len(previous) > _HISTORY_TURNS
+        saved_steers = list(await session.scalars(select(ChatInput).where(
+            ChatInput.workspace_id == workspace_id, ChatInput.project_id == run.project_id,
+            ChatInput.owner_id == run.requested_by_id, ChatInput.thread_id == run.thread_id,
+            ChatInput.run_id.in_([earlier.id for earlier in previous[:_HISTORY_TURNS]]),
+            ChatInput.kind == "steer", ChatInput.status == "accepted",
+        ).order_by(ChatInput.created_at.desc(), ChatInput.id.desc()).limit(321)))
+        omitted = len(previous) > _HISTORY_TURNS or len(saved_steers) > 320
         for earlier in previous[:_HISTORY_TURNS]:
             item = {"user": earlier.message, "assistant": earlier.reply, "status": earlier.status.value}
+            if steers := [item.message for item in reversed(saved_steers[:320]) if item.run_id == earlier.id]:
+                item["steering"] = steers
             size = len(json.dumps(item, ensure_ascii=False))
             if size > remaining:
                 omitted = True
@@ -226,11 +236,38 @@ async def run_fx_nova_pilot(
                                  identity=identity, session_id=session_id) if durable else None
         runtime = await FxRuntime.create(config, model=connection.model, base_url=connection.base_url,
                                          api_key=connection.api_key, journal=journal,
-                                         engine_session=session_id if journal else None)
+                                         engine_session=session_id, ephemeral_engine=not durable)
         try:
             allowed = tuple(tool.name for tool in tools if tool.idempotent or tool.name == "delegate_tasks") if durable else ()
-            result = await runtime.prompt(session_id, message, on_event=observe,
-                                          message_id=str(run_id) if durable else None, rerun_tools=allowed)
+            turn = asyncio.create_task(runtime.prompt(session_id, message, on_event=observe,
+                message_id=str(run_id) if durable else None, rerun_tools=allowed))
+
+            async def deliver_steering():
+                while not turn.done():
+                    await asyncio.sleep(0.25)
+                    if turn.done():
+                        return
+                    for key, text in await steering(sessions, workspace_id, run_id, token):
+                        await authorize()
+                        try:
+                            await runtime.steer(session_id, text, message_id=str(key))
+                        except RuntimeError:
+                            if turn.done():
+                                return
+                            raise
+                        await accepted(sessions, workspace_id, run_id, token, key)
+
+            controls = asyncio.create_task(deliver_steering())
+            try:
+                done, _ = await asyncio.wait((turn, controls), return_when=asyncio.FIRST_COMPLETED)
+                if controls in done:
+                    controls.result()
+                result = await turn
+            finally:
+                controls.cancel()
+                if not turn.done():
+                    turn.cancel()
+                await asyncio.gather(controls, turn, return_exceptions=True)
         except Exception:
             if denied is not None:
                 raise denied from None

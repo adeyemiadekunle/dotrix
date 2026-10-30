@@ -456,3 +456,48 @@ export function useWorkspaceAgentUsage(workspaceId: string | undefined, enabled:
     enabled: Boolean(workspaceId) && enabled,
   });
 }
+
+export function useChatInputs(scope: Scope | undefined, threadId: string) {
+  const client = useQueryClient();
+  const query = useQuery({
+    queryKey: scope ? [...agentKeys.project(scope), "inputs", threadId] : ["chat-inputs", "none"],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}/inputs", {
+          params: { path: { ...path(scope!), thread_id: threadId } },
+        }),
+      ),
+    enabled: Boolean(scope && threadId),
+    refetchInterval: 1500,
+  });
+  const delivered = (query.data ?? [])
+    .map((item) => item.delivered_run_id)
+    .filter(Boolean)
+    .sort()
+    .join(",");
+  useEffect(() => {
+    if (scope && delivered) void client.invalidateQueries({ queryKey: agentKeys.thread(scope, threadId) });
+  }, [client, scope, threadId, delivered]);
+  return query;
+}
+
+export function useSubmitChatInput(scope: Scope | undefined, threadId: string) {
+  return useAgentMutation(scope, (s, body: Schemas["ChatInputCreate"]) =>
+    unwrap(
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}/inputs", {
+        params: { path: { ...path(s), thread_id: threadId } },
+        body,
+      }),
+    ),
+  );
+}
+
+export function useCancelChatInput(scope: Scope | undefined, threadId: string) {
+  return useAgentMutation(scope, (s, inputId: string) =>
+    unwrap(
+      api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}/inputs/{input_id}", {
+        params: { path: { ...path(s), thread_id: threadId, input_id: inputId } },
+      }),
+    ),
+  );
+}

@@ -158,7 +158,9 @@ async def run_automations(ctx: JobContext) -> dict[str, int]:
         ).run_due()
         # Runs whose person asked to continue once their model's limit reset.
         done["continued"] = await continue_due_runs(session, ctx.runner)
-    if done.get("fired") or done.get("skipped") or done.get("continued"):
+    from .modules.agents.chat_inputs import deliver_queued
+    done["chat_queued"] = await deliver_queued(ctx.session_factory, ctx.runner)
+    if done.get("fired") or done.get("skipped") or done.get("continued") or done.get("chat_queued"):
         logger.info("automations: %s", done)
     return done
 
