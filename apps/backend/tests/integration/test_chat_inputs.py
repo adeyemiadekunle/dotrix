@@ -17,7 +17,7 @@ from dotrix_backend.core.errors import Conflict, Forbidden
 from dotrix_backend.modules.agents import chat_inputs, fx_pilot
 from dotrix_backend.modules.agents.chat_inputs import ChatSteering
 from dotrix_backend.modules.agents.models import AgentRun, ChatInput, ChatRuntime, RunStatus
-from dotrix_backend.modules.agents.runner import AgentRunner, _continue_from_checkpoint
+from dotrix_backend.modules.agents.runner import _GRAPH, AgentRunner, _continue_from_checkpoint
 from dotrix_backend.modules.agents.schemas import ChatInputCreate
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
@@ -370,3 +370,136 @@ async def test_new_message_retires_unconfirmed_steering_of_abandoned_limit_turn(
     async with sessions() as session:
         saved = await session.get(ChatInput, item.id)
         assert saved.status == "rejected" and "before delivery could be confirmed" in saved.error
+
+
+@pytest.mark.parametrize("runtime", [ChatRuntime.DEEPAGENTS, ChatRuntime.FX])
+@pytest.mark.parametrize("error_kind", ["model_limit", "interrupted"])
+async def test_only_resumable_failures_keep_follow_ups_waiting(nova_pilot_world, monkeypatch, runtime, error_kind):
+    from dotrix_backend.modules.agents.schemas import RunCreate
+    from dotrix_backend.modules.agents.service import AgentService, ThreadBusy
+
+    run, sessions, secrets = nova_pilot_world
+    first = await submit(sessions, run, "First follow-up", "queue")
+    second = await submit(sessions, run, "Second follow-up", "queue")
+    async with sessions() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(
+            chat_runtime=runtime, status=RunStatus.FAILED, error_kind=error_kind))
+        await session.commit()
+    runner = AgentRunner(session_factory=sessions, checkpointer=InMemorySaver(), secrets=secrets,
+        model_factory=lambda *args, **kwargs: SimpleNamespace(model=ScriptedChatModel.of("Done")),
+        settings=SimpleNamespace(fx_chat_pilot=True, fx_chat_durable_delegation=True, durable_delegation=True))
+    dispatched = []
+
+    async def start(*args, **kwargs):
+        dispatched.append(args)
+
+    monkeypatch.setattr(runner, "start", start)
+    assert await chat_inputs.deliver_queued(sessions, runner) == 0
+    assert not dispatched
+    async with sessions() as session:
+        rows = [await session.get(ChatInput, item.id) for item in (first, second)]
+        assert {item.status for item in rows} == ({"rejected"} if runtime is ChatRuntime.FX else {"pending"})
+    async with sessions() as session:
+        service, access = AgentService(session, runner), await access_for(session, run)
+        if runtime is ChatRuntime.FX:
+            new = await service.create_run(access, RunCreate(message="A new question", thread_id=run.thread_id))
+            assert new.status is RunStatus.QUEUED and new.chat_runtime is ChatRuntime.FX
+        else:
+            with pytest.raises(ThreadBusy, match="Queued messages"):
+                await service.create_run(access, RunCreate(message="A new question", thread_id=run.thread_id))
+
+
+@pytest.mark.parametrize("limited", [True, False])
+async def test_failure_reconciles_checkpointed_steering_before_marking_it_rejected(nova_pilot_world, limited):
+    from dotrix_backend.modules.agents.usage import TokenUsage
+
+    class ProviderFailure(Exception):
+        pass
+
+    failure = ProviderFailure("429 rate limit exceeded" if limited else "provider connection failed")
+
+    class FailsOnce(ScriptedChatModel):
+        failures: list[bool] = [True]
+
+        def _generate(self, *args, **kwargs):
+            if self.failures:
+                self.failures.pop()
+                raise failure
+            return super()._generate(*args, **kwargs)
+
+    run, sessions, secrets = nova_pilot_world
+    item = await submit(sessions, run)
+    checkpointer = InMemorySaver()
+    model = FailsOnce.of("Recovered answer")
+    agent = create_deep_agent(model=model, checkpointer=checkpointer,
+        middleware=[ChatSteering(sessions, run.workspace_id, run.id, 1)])
+    config = {"configurable": {"thread_id": str(run.thread_id)}}
+    with pytest.raises(ProviderFailure):
+        await agent.ainvoke({"messages": [{"role": "user", "content": run.message}]}, config)
+    async with sessions() as session:
+        assert (await session.get(ChatInput, item.id)).status == "sending"
+    saved = await agent.aget_state(config)
+    assert sum(message.id == str(item.id) for message in saved.values["messages"]) == 1
+    runner = AgentRunner(session_factory=sessions, checkpointer=checkpointer, secrets=secrets,
+        model_factory=lambda *args, **kwargs: SimpleNamespace(model=model))
+    graph_token = _GRAPH.set((run.id, agent))
+    try:
+        if limited:
+            assert await runner._limited(run.id, failure, TokenUsage())
+        else:
+            await runner._fail(run.id, str(failure), TokenUsage())
+    finally:
+        _GRAPH.reset(graph_token)
+    async with sessions() as session:
+        stored, instruction = await session.get(AgentRun, run.id), await session.get(ChatInput, item.id)
+        assert stored.status is RunStatus.FAILED
+        assert stored.error_kind == ("model_limit" if limited else None)
+        assert instruction.status == "accepted" and instruction.error is None
+        if limited:
+            stored.status = RunStatus.RUNNING
+            await session.commit()
+    if limited:
+        result = await agent.ainvoke(None, config)
+        assert sum(message.id == str(item.id) for message in result["messages"]) == 1
+        assert await chat_inputs.steering(sessions, run.workspace_id, run.id, 1, result["messages"]) == []
+
+
+async def test_unreadable_checkpoint_does_not_claim_steering_was_rejected(nova_pilot_world):
+    from dotrix_backend.modules.agents.usage import TokenUsage
+
+    run, sessions, secrets = nova_pilot_world
+    item = await submit(sessions, run)
+    await chat_inputs.steering(sessions, run.workspace_id, run.id, 1)
+
+    async def unavailable(config):
+        raise OSError("Checkpoint store unavailable")
+
+    runner = AgentRunner(session_factory=sessions, checkpointer=SimpleNamespace(aget_tuple=unavailable), secrets=secrets,
+        model_factory=lambda *args, **kwargs: SimpleNamespace(model=ScriptedChatModel.of("Done")))
+    await runner._limited(run.id, RuntimeError("429 rate limit exceeded"), TokenUsage())
+    async with sessions() as session:
+        saved = await session.get(ChatInput, item.id)
+        assert saved.status == "sending" and saved.error is None
+
+
+async def test_runner_failure_uses_its_restored_graph_to_accept_checkpointed_steering(nova_pilot_world):
+    from dotrix_backend.modules.agents.llm import ModelChoice
+
+    class Limited(ScriptedChatModel):
+        def _generate(self, *args, **kwargs):
+            raise RuntimeError("429 rate limit exceeded")
+
+    run, sessions, secrets = nova_pilot_world
+    item = await submit(sessions, run)
+    async with sessions() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(
+            status=RunStatus.QUEUED, lease_expires_at=None))
+        await session.commit()
+    runner = AgentRunner(session_factory=sessions, checkpointer=InMemorySaver(), secrets=secrets,
+        model_factory=lambda *args, **kwargs: ModelChoice(model=Limited.of(), web_search=None))
+    await runner.execute(run.id, {"kind": "start", "message": run.message})
+    async with sessions() as session:
+        stored, instruction = await session.get(AgentRun, run.id), await session.get(ChatInput, item.id)
+        assert stored.status is RunStatus.FAILED and stored.error_kind == "model_limit"
+        assert instruction.status == "accepted" and instruction.error is None
+    assert _GRAPH.get() is None

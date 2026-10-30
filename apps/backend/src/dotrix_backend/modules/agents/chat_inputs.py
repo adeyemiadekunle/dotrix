@@ -1,6 +1,7 @@
 """Host-owned, private chat input ordering and delivery for both runtimes."""
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -19,12 +20,13 @@ from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
-from .models import ACTIVE_STATUSES, AgentRun, ChatInput, RunKind, RunStatus
+from .models import ACTIVE_STATUSES, AgentRun, ChatInput, ChatRuntime, RunKind, RunStatus
 from .runtime_sessions import admit_runtime_run
 from .schemas import ChatInputCreate, ChatInputRead, RunCreate
 from .storage_backend import SessionFactory
 
 STEERING_MARK = "dotrix_chat_steering"
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .runner import AgentRunner
@@ -168,7 +170,7 @@ class ChatSteering(AgentMiddleware):
 
 
 async def finish_steering(session: AsyncSession, run: AgentRun, messages: Any = ()) -> None:
-    seen = {getattr(message, "id", None) for message in messages}
+    seen = {getattr(message, "id", None) for message in messages or ()}
     for item in await session.scalars(select(ChatInput).where(
         ChatInput.workspace_id == run.workspace_id, ChatInput.run_id == run.id, ChatInput.kind == "steer",
         ChatInput.status.in_(("pending", "sending")),
@@ -176,9 +178,42 @@ async def finish_steering(session: AsyncSession, run: AgentRun, messages: Any = 
         if str(item.id) in seen:
             item.status = "accepted"
             audit(session, item, "accepted")
-        elif run.status not in ACTIVE_STATUSES:
+        elif messages is not None and run.status not in ACTIVE_STATUSES:
             item.status, item.error = "rejected", "The turn ended before delivery could be confirmed"
         item.updated_at = now()
+
+
+async def reconcile_failed_steering(session: AsyncSession, run: AgentRun, checkpointer: Any, *, graph: Any = None) -> None:
+    """A failed model call can already have checkpointed its steering message."""
+    pending = await session.scalar(select(ChatInput.id).where(
+        ChatInput.workspace_id == run.workspace_id, ChatInput.run_id == run.id,
+        ChatInput.kind == "steer", ChatInput.status.in_(("pending", "sending")),
+    ).limit(1))
+    if pending is None:
+        return
+    messages: Any = ()
+    if run.chat_runtime is ChatRuntime.DEEPAGENTS:
+        try:
+            config = {"configurable": {"thread_id": str(run.thread_id)}}
+            if graph is not None:
+                # The graph restores DeltaChannel history and pending writes;
+                # a raw checkpoint's channel_values can omit saved messages.
+                saved = await graph.aget_state(config)
+                messages = saved.values.get("messages", ())
+            else:
+                saved = await checkpointer.aget_tuple(config)
+                messages = () if saved is None else None
+        except Exception:
+            # Do not claim rejection when saved instructions might execute on
+            # continuation. The next attempt can reconcile their stable IDs.
+            logger.warning("Could not reconcile steering checkpoint for run %s", run.id, exc_info=True)
+            messages = None
+    await finish_steering(session, run, messages)
+
+
+def waits_for_continuation(run: AgentRun) -> bool:
+    return (run.chat_runtime is ChatRuntime.DEEPAGENTS and run.status is RunStatus.FAILED
+            and run.error_kind in ("model_limit", "interrupted"))
 
 
 async def deliver_queued(sessions: SessionFactory, runner: AgentRunner, *, workspace_id: uuid.UUID | None = None,
@@ -196,10 +231,11 @@ async def deliver_queued(sessions: SessionFactory, runner: AgentRunner, *, works
             AgentRun.source == "user").order_by(AgentRun.created_at.desc(), AgentRun.id.desc()).limit(1)
         latest_status = latest.with_only_columns(AgentRun.status).scalar_subquery()
         latest_error = latest.with_only_columns(AgentRun.error_kind).scalar_subquery()
+        latest_runtime = latest.with_only_columns(AgentRun.chat_runtime).scalar_subquery()
         query = select(ChatInput.id, ChatInput.workspace_id, ChatInput.project_id).where(
             ChatInput.kind == "queue", ChatInput.status == "pending",
             ~exists(select(AgentRun.id).where(*same_thread, AgentRun.status.in_(ACTIVE_STATUSES))),
-            or_(latest_status != RunStatus.FAILED, latest_error.is_(None),
+            or_(latest_status != RunStatus.FAILED, latest_runtime != ChatRuntime.DEEPAGENTS, latest_error.is_(None),
                 latest_error.not_in(("model_limit", "interrupted"))))
         if workspace_id is not None:
             query = query.where(ChatInput.workspace_id == workspace_id, ChatInput.thread_id == thread_id)
@@ -230,7 +266,7 @@ async def deliver_queued(sessions: SessionFactory, runner: AgentRunner, *, works
                     raise Forbidden("Conversation access changed before delivery")
                 previous = await owned_thread(session, ProjectAccess(project, member), item.thread_id)
                 if previous.status is not RunStatus.COMPLETED:
-                    if previous.error_kind in ("model_limit", "interrupted"):
+                    if waits_for_continuation(previous):
                         continue
                     raise Conflict("The previous turn stopped; send a new message when ready")
                 await AgentService(session, runner).create_run(ProjectAccess(project, member), RunCreate(
