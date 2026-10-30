@@ -94,7 +94,7 @@ from .models import (
     RunStatus,
 )
 from .queue import RunQueue
-from .specialist_sessions import seal_history, specialist_history
+from .specialist_sessions import seal_history, specialist_history, specialist_result_visible
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of
 from .unattended import Unattended, accepting, changes_today, effective_specs
@@ -585,6 +585,7 @@ class AgentRunner:
                 work_mode = run.work_mode
                 durable = run.orchestration
                 child = run.parent_run_id is not None
+                has_specialist_dependencies = bool(run.depends_on)
                 has_specialist_history = run.specialist_session_id is not None or run.specialist_history is not None
                 read_only_run = (child and not run.task_mutates) or run.source == "coding_outcome"
                 specs, unattended_left, accepted, approval = await self._unattended_specs(
@@ -780,6 +781,14 @@ class AgentRunner:
                 if payload["kind"] == "start" and previous:
                     expected_message = f"{previous}\n\nCurrent task:\n{payload['message']}"
                     graph_input = {"messages": [{"role": "user", "content": expected_message}]}
+            if child and has_specialist_dependencies:
+                async with self.session_factory() as session:
+                    task = await session.get(AgentRun, run_id)
+                    allowed = task is not None and await specialist_result_visible(session, task)
+                if not allowed:
+                    await self._fail(run_id, "A required specialist result is no longer available under the current permissions",
+                                     usage, discard_specialist_result=True)
+                    return
             stream = recording = await self._record(run_id, workspace_id, token, payload)
             result = None
             if retry:

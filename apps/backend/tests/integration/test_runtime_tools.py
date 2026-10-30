@@ -395,7 +395,7 @@ async def test_expired_fx_worker_cannot_renew_or_clear_the_lease(journal_world, 
         assert stored.status is RunStatus.RUNNING and stored.lease_expires_at == expired
 
 
-async def test_fx_restarts_an_interrupted_read_from_the_database_journal(journal_world):
+async def test_fx_restarts_an_interrupted_read_from_the_database_journal(journal_world, monkeypatch):
     """A killed fx host resumes its open turn using the Postgres journal."""
     from dotrix_engine.runtimes.fx import _HOST
 
@@ -406,6 +406,18 @@ async def test_fx_restarts_an_interrupted_read_from_the_database_journal(journal
                             "project-manager", 1, "journal-session")
     read = next(tool for tool in scoped_knowledge_tools(sessions, scope=scope, spec=builtin("project-manager"),
                                                         embedder=None) if tool.name == "read_section")
+    intent_saved = asyncio.Event()
+    original_append = journal.append
+
+    async def observe_append(**kwargs):
+        cursor = await original_append(**kwargs)
+        record = json.loads(kwargs["data"])
+        if any(event["type"] == "tool_intent" and any(call["name"] == "read_section" for call in event["data"])
+               for event in record["events"]):
+            intent_saved.set()
+        return cursor
+
+    monkeypatch.setattr(journal, "append", observe_append)
     started = asyncio.Event()
     recovered = False
     executions = []
@@ -424,7 +436,17 @@ async def test_fx_restarts_an_interrupted_read_from_the_database_journal(journal
         first = await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
                                        journal=journal, engine_session="journal-session")
         task = asyncio.create_task(first.prompt("journal-session", "Read the evidence", message_id="turn-1"))
-        await asyncio.wait_for(started.wait(), 20)
+        # Idempotent reads can start before libfx persists their intent. Crash
+        # only after that commit so this tests replay of a saved call, rather
+        # than a new model request racing an unpersisted speculative read.
+        try:
+            await asyncio.wait_for(started.wait(), 20)
+            await asyncio.wait_for(intent_saved.wait(), 20)
+        except BaseException:
+            await first.close()
+            with suppress(asyncio.CancelledError, RuntimeError):
+                await task
+            raise
         first.process.kill()
         with pytest.raises(RuntimeError):
             await task
@@ -795,8 +817,12 @@ def model_server(requests=None, started=None, gate=None, tool_name="read_section
             if gate is not None:
                 gate.wait(timeout=15)
             messages = request["messages"]
-            if messages[-1]["role"] == "tool":
-                message = {"role": "assistant", "content": messages[-1]["content"]}
+            # Recovery may append a steering message after the saved tool
+            # result. This single-tool model must still answer from that result
+            # instead of issuing a second, unrelated call with the same ID.
+            result = next((message for message in reversed(messages) if message["role"] == "tool"), None)
+            if result is not None:
+                message = {"role": "assistant", "content": result["content"]}
                 finish = final_finish
             else:
                 message = {"role": "assistant", "tool_calls": [{"index": 0, "id": "read-1", "type": "function",

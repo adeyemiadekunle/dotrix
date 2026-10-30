@@ -15,8 +15,10 @@ from uuid_utils.compat import uuid7
 
 from dotrix_backend.core.errors import Conflict, Forbidden
 from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
+from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_backend.modules.workspaces.models import Membership
-from dotrix_backend.modules.workspaces.permissions import effective_permissions
+from dotrix_backend.modules.workspaces.permissions import Permission, can, effective_permissions
+from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.contracts import AgentSpec
 
 from .models import AgentRun, AgentSpecialistSession, RunKind, RunStatus
@@ -25,6 +27,29 @@ from .storage_backend import SessionFactory
 
 MAX_TURNS = 8
 MAX_HISTORY_CHARS = 24_000  # after HTML escaping, before the current task
+
+
+class SpecialistSessionBusy(Conflict):
+    code = "specialist_session_busy"
+
+
+async def lock_specialist_project(session: AsyncSession, workspace_id: uuid.UUID, project_id: uuid.UUID | None) -> None:
+    """Use the scheduler's lock order: project before any run being resumed."""
+    if project_id is not None:
+        await ProjectRepository(session).get(workspace_id, project_id, for_update=True)
+
+
+async def require_specialist_slot(session: AsyncSession, task: AgentRun) -> None:
+    """Called under the project lock before changing a paused/failed task to queued."""
+    if task.specialist_session_id is None:
+        return
+    occupied = await session.scalar(select(AgentRun.id).where(
+        AgentRun.workspace_id == task.workspace_id, AgentRun.project_id == task.project_id,
+        AgentRun.specialist_session_id == task.specialist_session_id, AgentRun.id != task.id,
+        AgentRun.status.in_((RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_APPROVAL)),
+    ).limit(1))
+    if occupied is not None:
+        raise SpecialistSessionBusy("This specialist session is busy; continue this task after its current work finishes")
 
 
 async def bind_specialist(session: AsyncSession, parent: AgentRun, agent: str) -> uuid.UUID:
@@ -124,6 +149,9 @@ async def snapshot_history(session: AsyncSession, parent: AgentRun, task: AgentR
     selected: list[AgentRun] = []
     omitted = len(candidates) > MAX_TURNS
     for prior in candidates[:MAX_TURNS]:
+        if not await specialist_result_visible(session, prior):
+            omitted = True
+            continue
         proposed = [prior, *selected]
         if len(_encoded([_entry(item) for item in proposed])) > MAX_HISTORY_CHARS:
             omitted = True
@@ -149,6 +177,73 @@ async def seal_history(session: AsyncSession, task: AgentRun) -> None:
         policy = None
     if policy is None or task.specialist_history.get("policy") != policy:
         task.specialist_history = {**task.specialist_history, "policy": None}
+
+
+async def specialist_result_visible(session: AsyncSession, task: AgentRun) -> bool:
+    """Validate the saved result and its provenance without recursion or a running lease."""
+    stack = [(task, False)]
+    active: set[uuid.UUID] = set()
+    checked: set[uuid.UUID] = set()
+    while stack:
+        current, exiting = stack.pop()
+        if exiting:
+            active.remove(current.id)
+            checked.add(current.id)
+            continue
+        if current.id in active:
+            return False
+        if current.id in checked:
+            continue
+        sources = await _authorized_result_sources(session, current)
+        if sources is None:
+            return False
+        active.add(current.id)
+        stack.append((current, True))
+        stack.extend((source, False) for source in sources)
+    return True
+
+
+async def _authorized_result_sources(session: AsyncSession, task: AgentRun) -> list[AgentRun] | None:
+    sources = []
+    if task.parent_run_id is not None:
+        for key in task.depends_on or []:
+            source = await session.scalar(select(AgentRun).where(
+                AgentRun.workspace_id == task.workspace_id, AgentRun.parent_run_id == task.parent_run_id,
+                AgentRun.delegation_key == task.delegation_key, AgentRun.task_key == key,
+            ))
+            if source is None:
+                return None
+            sources.append(source)
+    if task.specialist_session_id is None and task.specialist_history is None:
+        return sources  # Legacy and ephemeral tasks can still contain dependency results.
+    parent = await session.scalar(select(AgentRun).where(
+        AgentRun.workspace_id == task.workspace_id, AgentRun.id == task.parent_run_id,
+    ))
+    if parent is None:
+        return None
+    try:
+        saved = await _bound(session, parent, task)
+        snapshot = task.specialist_history
+        if (not isinstance(snapshot, dict) or snapshot.get("version") != 1
+                or not isinstance(snapshot.get("policy"), str) or not snapshot["policy"]
+                or not isinstance(snapshot.get("ids"), list) or len(snapshot["ids"]) > MAX_TURNS
+                or not isinstance(snapshot.get("omitted"), bool)):
+            return None
+        ids = [uuid.UUID(value) for value in snapshot["ids"]]
+        if len(set(ids)) != len(ids):
+            return None
+        if snapshot["policy"] != await _current_policy(session, saved):
+            return None
+        member = await MembershipRepository(session).get(saved.workspace_id, saved.owner_id)
+        if not (member and can(member, Permission.CHAT)
+                and await ProjectRepository(session).visible(member, saved.project_id)):
+            return None
+        history = list(await session.scalars(_history_query(saved, snapshot["policy"]).where(AgentRun.id.in_(ids)))) if ids else []
+        if len(history) != len(ids):
+            return None
+        return [*sources, *history]
+    except (Forbidden, TypeError, ValueError, AttributeError):
+        return None
 
 
 async def _load_history(sessions: SessionFactory, *, workspace_id: uuid.UUID, run_id: uuid.UUID, token: int) -> str:
@@ -179,6 +274,8 @@ async def _load_history(sessions: SessionFactory, *, workspace_id: uuid.UUID, ru
         by_id = {row.id: row for row in rows}
         if len(by_id) != len(ids):
             raise Conflict("Earlier specialist history is no longer available")
+        if any([not await specialist_result_visible(session, row) for row in rows]):
+            raise Forbidden("Earlier specialist history is no longer available under the current permissions")
         evidence = _encoded([_entry(by_id[item]) for item in ids])
         if len(evidence) > MAX_HISTORY_CHARS or task.lease_expires_at <= datetime.now(UTC):
             raise Conflict("The specialist history or run lease is no longer valid")

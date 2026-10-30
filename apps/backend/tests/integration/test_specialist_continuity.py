@@ -290,6 +290,248 @@ async def test_cancelling_a_parent_releases_its_specialist_session(nova_pilot_wo
         assert dispatched[-1][0] == waiting.id
 
 
+@pytest.mark.parametrize("change", ["none", "role", "specialist", "sealed", "ephemeral"])
+async def test_saved_results_are_authorized_at_each_read(nova_pilot_world, monkeypatch, change):
+    from dotrix_backend.core.errors import NotFound
+    from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
+    from dotrix_backend.modules.agents.service import AgentService
+    from dotrix_backend.modules.agents.team_service import TeamService
+    from dotrix_backend.modules.projects.deps import ProjectAccess
+    from dotrix_backend.modules.workspaces.repository import MembershipRepository
+
+    root, sessions, secrets = nova_pilot_world
+
+    async def dispatch(_run_id, _payload):
+        pass
+
+    runner = SimpleNamespace(session_factory=sessions, secrets=secrets, queue=None, stop_reasons=None,
+                             settings=SimpleNamespace(specialist_continuity=change != "ephemeral"), _dispatch=dispatch)
+    scheduler = DelegationService(runner)
+    await scheduler.submit(root.workspace_id, root.id, 1, "call", _batch("Private task evidence"))
+    await scheduler.wait(root.workspace_id, root.id, 1, {"interrupt": "call"})
+    async with sessions() as session:
+        child = await session.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
+        child.status, child.finished_at = RunStatus.COMPLETED, datetime.now(UTC)
+        child.reply = "Private result evidence"
+        child.task_result = SpecialistResult(summary=child.reply).model_dump(mode="json")
+        if change == "sealed":
+            child.specialist_history = {**child.specialist_history, "policy": None}
+        if change in ("role", "ephemeral"):
+            await session.execute(update(Membership).where(Membership.workspace_id == root.workspace_id,
+                Membership.user_id == root.requested_by_id).values(role=Role.MEMBER))
+        parent = await session.get(AgentRun, root.id)
+        parent.status = RunStatus.RUNNING
+        child_id = child.id
+        await session.commit()
+    if change == "specialist":
+        resolve = AgentDefinitionRepository.resolve
+
+        async def changed(self, *args, **kwargs):
+            return [replace(item, spec=item.spec.model_copy(update={"tools": []})) if item.spec.handle == "research" else item
+                    for item in await resolve(self, *args, **kwargs)]
+
+        monkeypatch.setattr(AgentDefinitionRepository, "resolve", changed)
+    visible = change in ("none", "ephemeral")
+    async with sessions() as session:
+        member = await MembershipRepository(session).get(root.workspace_id, root.requested_by_id)
+        access = ProjectAccess(await session.get(Project, root.project_id), member)
+        team = TeamService(session)
+        listed = await team.tasks(access, root.id)
+        assert len(listed) == 1  # Status remains visible even when the stored content is withheld.
+        assert (listed[0].task_result is not None) is visible
+        if not visible:
+            assert "Private" not in listed[0].model_dump_json()
+        activity = await team.activity(member)
+        assert any(item.run_id == child_id for item in activity) is visible
+        service = AgentService(session, runner)
+        if visible:
+            assert (await service.get(access, child_id)).reply == "Private result evidence"
+            await service.run_events(access, child_id, 0, 100)
+            await service.check_run(access, child_id)
+        else:
+            for read in (service.get(access, child_id), service.run_events(access, child_id, 0, 100), service.check_run(access, child_id)):
+                with pytest.raises(NotFound):
+                    await read
+    result = await scheduler.submit(root.workspace_id, root.id, 1, "call", _batch("Private task evidence"))
+    assert (result[0]["result"] is not None) is visible
+    if not visible:
+        assert "Private" not in str(result)
+    if change == "none":
+        from dotrix_backend.modules.agents import router
+
+        async def stream(*_args):
+            yield "delta", "Before permission change"
+            async with sessions() as session:
+                await session.execute(update(Membership).where(Membership.workspace_id == root.workspace_id,
+                    Membership.user_id == root.requested_by_id).values(role=Role.MEMBER))
+                await session.commit()
+            yield "delta", "Private result after permission change"
+
+        monkeypatch.setattr(router, "follow_run", stream)
+        runner.streams = object()
+        async with sessions() as session:
+            member = await MembershipRepository(session).get(root.workspace_id, root.requested_by_id)
+            access = ProjectAccess(await session.get(Project, root.project_id), member)
+            response = await router.stream_run(child_id, access, AgentService(session, runner))
+            chunks = [piece async for piece in response.body_iterator]
+        body = "".join(piece.decode() if isinstance(piece, bytes) else piece for piece in chunks)
+        assert "Before permission change" in body and "Private result after permission change" not in body
+        assert "event: end" in body
+
+
+async def test_only_one_limit_continuation_can_reserve_a_specialist_session(nova_pilot_world):
+    from dotrix_backend.modules.agents.service import continue_due_runs, resume_limited
+    from dotrix_backend.modules.agents.specialist_sessions import SpecialistSessionBusy
+    from dotrix_backend.modules.agents.team_service import TeamService
+    from dotrix_backend.modules.projects.deps import ProjectAccess
+    from dotrix_backend.modules.workspaces.repository import MembershipRepository
+
+    root, sessions, secrets = nova_pilot_world
+    dispatched = []
+
+    async def dispatch(run_id, payload):
+        dispatched.append(run_id)
+
+    async def continue_run(run_id, message, **kwargs):
+        dispatched.append(run_id)
+
+    runner = SimpleNamespace(session_factory=sessions, secrets=secrets, queue=None, stop_reasons=None,
+                             settings=SimpleNamespace(specialist_continuity=True), _dispatch=dispatch,
+                             prepare_dispatch=lambda *_args: None, continue_run=continue_run)
+    scheduler = DelegationService(runner)
+    tasks = _batch("First").tasks + [*_batch("Second").tasks]
+    tasks[1] = tasks[1].model_copy(update={"key": "second"})
+    await scheduler.submit(root.workspace_id, root.id, 1, "call", SpecialistBatch(tasks=tasks))
+    await scheduler.wait(root.workspace_id, root.id, 1, {"interrupt": "call"})
+    async with sessions() as session:
+        children = list(await session.scalars(select(AgentRun).where(AgentRun.parent_run_id == root.id)))
+        member = await MembershipRepository(session).get(root.workspace_id, root.requested_by_id)
+        access = ProjectAccess(await session.get(Project, root.project_id), member)
+        listed = await TeamService(session).tasks(access, root.id)
+        assert len(listed) == 2
+        waiting = next(item for item in listed if item.status is RunStatus.WAITING_DEPENDENCY)
+        assert waiting.message == "Specialist details are unavailable"
+        assert children[0].specialist_session_id == children[1].specialist_session_id
+        ids = [child.id for child in children]
+        for child in children:
+            child.status, child.error_kind = RunStatus.FAILED, "model_limit"
+            child.resumes_at = datetime.now(UTC) - timedelta(seconds=1)
+        await session.commit()
+    dispatched.clear()
+
+    async def attempt(run_id):
+        async with sessions() as session:
+            run = await session.get(AgentRun, run_id)
+            await resume_limited(session, runner, run)
+
+    results = await asyncio.gather(*(attempt(run_id) for run_id in ids), return_exceptions=True)
+    assert results.count(None) == 1 and sum(isinstance(item, SpecialistSessionBusy) for item in results) == 1
+    assert len(dispatched) == 1
+    async with sessions() as session:
+        children = list(await session.scalars(select(AgentRun).where(AgentRun.id.in_(ids))))
+        winner = next(child for child in children if child.status is RunStatus.QUEUED)
+        loser = next(child for child in children if child.status is RunStatus.FAILED)
+        winner_id, loser_id = winner.id, loser.id
+        loser.continue_at_reset = True
+        await session.commit()
+        assert await continue_due_runs(session, runner) == 0
+    async with sessions() as session:
+        loser = await session.get(AgentRun, loser_id)
+        assert loser.continue_at_reset and loser.status is RunStatus.FAILED
+        winner = await session.get(AgentRun, winner_id)
+        winner.status = RunStatus.COMPLETED
+        await session.commit()
+        assert await continue_due_runs(session, runner) == 1
+    assert len(dispatched) == 2
+
+
+@pytest.mark.parametrize("change", ["none", "role", "specialist"])
+@pytest.mark.parametrize("when", ["before", "after"])
+async def test_dependency_handoff_withholds_results_under_changed_permissions(nova_pilot_world, monkeypatch, agent_script, change, when):
+    from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
+
+    root, sessions, secrets = nova_pilot_world
+
+    async def dispatch(_run_id, _payload):
+        pass
+
+    runner = AgentRunner(session_factory=sessions, secrets=secrets, checkpointer=InMemorySaver(),
+                         model_factory=agent_script.factory, inline=True,
+                         settings=SimpleNamespace(specialist_continuity=True, agent_lease_seconds=300))
+    monkeypatch.setattr(runner, "_dispatch", dispatch)
+    scheduler = DelegationService(runner)
+    batch = SpecialistBatch(tasks=[
+        {"key": "research", "agent": "research", "brief": "Investigate", "expected_result": "Evidence"},
+        {"key": "docs", "agent": "documentation", "brief": "Summarize", "expected_result": "Summary", "depends_on": ["research"]},
+    ])
+    await scheduler.submit(root.workspace_id, root.id, 1, "call", batch)
+    await scheduler.wait(root.workspace_id, root.id, 1, {"interrupt": "call"})
+    async with sessions() as session:
+        source = await session.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id, AgentRun.task_key == "research"))
+        source.status, source.finished_at = RunStatus.COMPLETED, datetime.now(UTC)
+        source.task_result = SpecialistResult(summary="Private dependency evidence").model_dump(mode="json")
+        await session.commit()
+    if when == "after":
+        await scheduler.advance(root.workspace_id, root.id)
+    if change == "role":
+        async with sessions() as session:
+            await session.execute(update(Membership).where(Membership.workspace_id == root.workspace_id,
+                Membership.user_id == root.requested_by_id).values(role=Role.MEMBER))
+            await session.commit()
+    if change == "specialist":
+        resolve = AgentDefinitionRepository.resolve
+
+        async def changed(self, *args, **kwargs):
+            return [replace(item, spec=item.spec.model_copy(update={"tools": []})) if item.spec.handle == "research" else item
+                    for item in await resolve(self, *args, **kwargs)]
+
+        monkeypatch.setattr(AgentDefinitionRepository, "resolve", changed)
+    await scheduler.advance(root.workspace_id, root.id)
+    async with sessions() as session:
+        dependent = await session.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id, AgentRun.task_key == "docs"))
+        assert dependent.status is (RunStatus.QUEUED if change == "none" or when == "after" else RunStatus.BLOCKED)
+        assert ("Private dependency evidence" in dependent.message) is (change == "none" or when == "after")
+        from dotrix_backend.modules.agents.specialist_sessions import specialist_result_visible
+
+        assert await specialist_result_visible(session, dependent) is (change == "none")
+        dependent_id, message = dependent.id, dependent.message
+    if when == "after" and change == "none":
+        async with sessions() as session:
+            dependent = await session.get(AgentRun, dependent_id)
+            dependent.status, dependent.finished_at = RunStatus.COMPLETED, datetime.now(UTC)
+            dependent.task_result = SpecialistResult(summary="Private derived evidence").model_dump(mode="json")
+            historical = AgentRun(
+                id=uuid7(), workspace_id=root.workspace_id, project_id=root.project_id, parent_run_id=root.id,
+                thread_id=uuid7(), requested_by_id=root.requested_by_id, source="specialist", agent="documentation",
+                specialist_session_id=dependent.specialist_session_id,
+                specialist_history={**dependent.specialist_history, "ids": [str(dependent.id)]},
+                task_key="history", delegation_key="history", depends_on=[], kind=RunKind.CHAT,
+                status=RunStatus.COMPLETED, message="Later task", reply="Private derived evidence",
+                task_result=SpecialistResult(summary="Private derived evidence").model_dump(mode="json"),
+                created_at=datetime.now(UTC), updated_at=datetime.now(UTC), finished_at=datetime.now(UTC),
+            )
+            session.add(historical)
+            await session.commit()
+            assert await specialist_result_visible(session, historical)
+        resolve = AgentDefinitionRepository.resolve
+
+        async def revoked(self, *args, **kwargs):
+            return [replace(item, spec=item.spec.model_copy(update={"tools": []})) if item.spec.handle == "research" else item
+                    for item in await resolve(self, *args, **kwargs)]
+
+        monkeypatch.setattr(AgentDefinitionRepository, "resolve", revoked)
+        async with sessions() as session:
+            historical = await session.get(AgentRun, historical.id)
+            assert not await specialist_result_visible(session, historical)
+    if when == "after" and change != "none":
+        model = agent_script.say("This must not run")
+        await runner.execute(dependent_id, {"kind": "start", "message": message})
+        assert not model.received
+        async with sessions() as session:
+            dependent = await session.get(AgentRun, dependent_id)
+            assert dependent.status is RunStatus.FAILED and dependent.task_result is None
+
+
 async def test_a_permission_change_during_work_excludes_the_result_from_later_history(
     nova_pilot_world, agent_script,
 ):
