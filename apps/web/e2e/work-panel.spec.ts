@@ -157,6 +157,12 @@ test("the session header opens each view of the side panel, and Juno's findings 
   await expect(view(page, "Browser")).toHaveCount(0); // a live browser comes later
   await view(page, "Review").click();
   await expect(panel.getByText("Keyboard focus is difficult to see")).toBeVisible();
+  // Juno's review details are keyboard tabs.
+  await panel.getByRole("tab", { name: /^Findings/ }).click();
+  await panel.getByRole("tab", { name: /^Findings/ }).press("ArrowRight");
+  await expect(panel.getByRole("tab", { name: "Evidence" })).toHaveAttribute("aria-selected", "true");
+  await panel.getByRole("tab", { name: "Summary" }).click();
+  await panel.getByRole("tab", { name: /^Findings/ }).click();
   await panel.getByRole("button", { name: "Ask Kai to fix" }).click();
   await expect(page.getByLabel("Follow-up")).toHaveValue(/Keyboard focus is difficult to see/);
   await panel.getByRole("button", { name: `${path}:2` }).click();
