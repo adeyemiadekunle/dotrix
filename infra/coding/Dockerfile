@@ -9,8 +9,15 @@
 FROM node:22-bookworm
 
 # The CLIs, installed globally; their binaries are what the provider profiles allow to reach
-# the model APIs (see dotrix-claude-code.yaml and dotrix-codex.yaml).
-RUN npm install -g @anthropic-ai/claude-code @openai/codex && claude --version && codex --version
+# the model APIs (see dotrix-claude-code.yaml and dotrix-codex.yaml). Pinned like OpenCode and fx, because
+# modules/coding/tools.py reads their headless events and passes their flags: Claude Code as checked on a
+# real model (2.1.296, docs/coding-agent.md Phase 0); Codex at the release its flags were checked against
+# (0.166.0: `exec --json --skip-git-repo-check --sandbox danger-full-access --ephemeral`; not yet run on a model).
+# Raise a version only after checking its events and flags.
+ARG CLAUDE_CODE_VERSION=2.1.296
+ARG CODEX_VERSION=0.166.0
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} \
+  && claude --version && codex --version
 
 # OpenCode 2 (DOTRIX_CODING_AGENT=opencode): any provider's model. Pinned, because its headless events
 # and session export are what modules/coding/tools.py reads (checked on 2.1.4); its profiles are

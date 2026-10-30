@@ -167,8 +167,9 @@ checks all of this against a real container (it's skipped where the image isn't 
    young: test its isolation between tenants before you run other people's code on it.
    The machine that runs agents also needs the `openshell` CLI, selected to that gateway, and
    an `ssh` client: uploads to a sandbox go over SSH.
-2. Build the image, which installs Claude Code, Codex, OpenCode, fx (pinned: `FX_VERSION`, from
-   releases.fx.sh, checked against its SHA-256), and git:
+2. Build the image, which installs Claude Code, Codex, OpenCode, fx, and git, each at a pinned version
+   (`CLAUDE_CODE_VERSION`, `CODEX_VERSION`, `OPENCODE_VERSION`, `FX_VERSION`; fx from releases.fx.sh,
+   checked against its SHA-256). Raise one with `--build-arg` only after checking its events and flags:
    `docker build -t dotrix-coding:latest infra/coding`
 3. Import the provider profiles:
    ```shell
