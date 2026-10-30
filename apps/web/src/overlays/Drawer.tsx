@@ -124,10 +124,10 @@ export function toggleReaction(c: Comment, e: string) {
   });
   commentReacted(c, e, on);
 }
-/** Leave the issue for Coding: the drawer closes so the session is in view at once. */
+/** Leave the issue for Codes: the drawer closes so the session is in view at once. */
 function openInCoding(search: string) {
   closeDrawer();
-  go("coding", {}, { search });
+  go("codes", {}, { search });
 }
 export function CommentItem({ c }: { c: Comment }) {
   const w = who(c.by);
@@ -583,7 +583,7 @@ function CodingSection({ t }: { t: Task }) {
   const start = () => {
     S.ui.pop = null;
     if (!startCoding(t, "opencode")) return;
-    toast(`${CODING_AGENT.name} will start once someone approves`, { action: "Open Coding", onAction: () => openInCoding("") });
+    toast(`${CODING_AGENT.name} will start once someone approves`, { action: "Open Codes", onAction: () => openInCoding("") });
   };
   const label: Record<string, [string, string]> = {
     awaiting_approval: ["Waiting for approval", "amber"],

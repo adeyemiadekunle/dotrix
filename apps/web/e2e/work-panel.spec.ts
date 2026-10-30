@@ -77,7 +77,7 @@ async function mockWorkspace(
   page: Page,
   context: BrowserContext,
   baseURL: string,
-  search = "coding?session=session1",
+  search = "codes?session=session1",
   openPanel = true,
   reviewAvailable = () => true,
 ) {
@@ -177,6 +177,15 @@ test("the session header opens each view of the side panel, and Juno's findings 
   await expect(view(page, "Changes")).toHaveAttribute("aria-pressed", "true");
 });
 
+test("the session shows Kai, never the engine underneath", async ({ page, context, baseURL }) => {
+  await mockWorkspace(page, context, baseURL!, undefined, false);
+  const main = page.locator(".conv-main");
+  await expect(main.getByText("Kai", { exact: true }).first()).toBeVisible();
+  await expect(page.getByLabel("Follow-up")).toHaveAttribute("placeholder", /Ask Kai/);
+  await expect(page.locator(".chat-list")).not.toContainText("Codex");
+  await expect(main).not.toContainText("Codex");
+});
+
 test("a file path in the session opens it in Files", async ({ page, context, baseURL }) => {
   await mockWorkspace(page, context, baseURL!, undefined, false);
   await page.locator(".chat-col").getByRole("button", { name: path, exact: true }).first().click();
@@ -190,7 +199,7 @@ test("a linked review reference opens its turn and file directly, from an older 
   // Links from before Coding had its own page (chat?tab=coding&session=…) open the session in Coding.
   const search = new URLSearchParams({ tab: "coding", session: "session1", turn: "turn2", file: path, line: "2" });
   await mockWorkspace(page, context, baseURL!, `chat?${search}`, false);
-  await expect(page).toHaveURL(/\/coding\?session=session1/);
+  await expect(page).toHaveURL(/\/codes\?session=session1/);
   const panel = page.locator(".side-panel");
   await expect(view(page, "Files")).toHaveAttribute("aria-pressed", "true");
   await expect(panel.locator(".kp-line-reference")).toContainText("const href = '#plans'");

@@ -206,7 +206,7 @@ export function CodingPanel({
     } else {
       const search = new URLSearchParams({ session, turn, file: path, panel: "files" });
       if (line) search.set("line", String(line));
-      go("coding", {}, { search: search.toString() });
+      go("codes", {}, { search: search.toString() });
     }
   };
   const current = CODING_VIEWS.find((item) => item.id === view)!;

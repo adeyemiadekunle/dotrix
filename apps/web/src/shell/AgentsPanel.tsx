@@ -28,9 +28,9 @@ export function toggleAgents() {
   } else S.ui.agentsSheet = !S.ui.agentsSheet;
   render();
 }
-/** Coding: the right side holds the session's own panels, so no agents panel there
+/** Codes: the right side holds the session's own panels, so no agents panel there
  * (the bell and the corner notices still say what needs you). */
-export const inCodeTab = () => /^\/w\/[^/]+\/coding\/?$/.test(location.pathname);
+export const inCodeTab = () => /^\/w\/[^/]+\/codes\/?$/.test(location.pathname);
 export const agentsShown = () => !inCodeTab() && (panelColumn() ? S.prefs.agentsPanel : S.ui.agentsSheet);
 
 const LABEL: Record<Presence["state"], string> = { needs: "Needs you", working: "Working", blocked: "Blocked", idle: "Idle" };
@@ -42,7 +42,7 @@ function openWork(p: Presence) {
     return;
   }
   if (p.thread) go("chat", {}, { search: `thread=${p.thread}${p.project ? `&project=${p.project}` : ""}` });
-  else if (p.session) go("coding", {}, { search: `session=${p.session}${p.review ? "&panel=review" : ""}` });
+  else if (p.session) go("codes", {}, { search: `session=${p.session}${p.review ? "&panel=review" : ""}` });
   else go("chat", {}, { search: `new=1&agent=${p.id}` });
 }
 

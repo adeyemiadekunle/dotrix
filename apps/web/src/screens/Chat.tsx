@@ -1,9 +1,9 @@
 // dotrix's workspace Chat: conversations grouped by project (and
 // "All projects"), a new chat with project, agent, and model; replies with what the agent did
-// and the changes it proposes; and a card for each of Kai's coding sessions started from a conversation, linking to it in Coding.
+// and the changes it proposes; and a card for each of Kai's sessions started from a conversation, linking to it in Codes.
 // The coding session itself (its turns, the new-session form, the list) is screens/Coding.tsx, built from the pieces exported here.
 // Conversations and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
-// URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?q=, ?agent=. Older ?session= and ?tab=coding links open in Coding.
+// URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?q=, ?agent=. Older ?session= and ?tab=coding links open in Codes.
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
@@ -96,9 +96,9 @@ const ACROSS = [
 function open(search: string) {
   go("chat", {}, { search });
 }
-/** Somewhere in Coding: a session (`session=ID`), a new one (`new=1&issue=KEY`), or the list. */
+/** Somewhere in Codes: a session (`session=ID`), a new one (`new=1&issue=KEY`), or the list. */
 export function openCoding(search: string) {
-  go("coding", {}, { search });
+  go("codes", {}, { search });
 }
 
 /* ---------- the list ---------- */
@@ -238,7 +238,7 @@ export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
             {cs.title ?? cs.issue_title}
           </span>
           <span className="row faint" style={{ fontSize: 11.5, gap: 6 }}>
-            {AGENT_NAMES[cs.agent]} · {ago(ms(cs.updated_at))}
+            {CODING_AGENT.name} · {ago(ms(cs.updated_at))}
             {cs.pr_number && <span>· PR #{cs.pr_number}</span>}
           </span>
         </span>
@@ -300,7 +300,7 @@ function SessionCard({ cs }: { cs: CodingSession }) {
         {files.length > 0 && latest && (
           <span className="row" style={{ gap: 6 }}>
             {files.length} file{files.length === 1 ? "" : "s"} changed
-            <LineCounts files={files} onClick={() => openCoding(`session=${cs.session_id}&turn=${latest.id}&panel=changes`)} tip="Open the changes in Coding" />
+            <LineCounts files={files} onClick={() => openCoding(`session=${cs.session_id}&turn=${latest.id}&panel=changes`)} tip="Open the changes in Codes" />
           </span>
         )}
       </div>
@@ -348,7 +348,7 @@ function SessionCard({ cs }: { cs: CodingSession }) {
         )}
         <span className="sp" />
         <button className="btn btn-sm btn-ghost" onClick={() => openCoding(`session=${cs.session_id}`)}>
-          Open in Coding
+          Open in Codes
           <Ic n="arrow-right" s={12} />
         </button>
       </div>
@@ -1361,9 +1361,9 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   return (
     <div className="chat-scroll" style={{ display: "flex" }}>
       <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
-        <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>Start a coding session</h2>
+        <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>Start a session</h2>
         <p className="muted" style={{ margin: "0 0 18px", textAlign: "center" }}>
-          A coding tool works on an issue on its own branch and opens a pull request. It starts once someone who may approve agent changes says yes.
+          Kai works on an issue on its own branch and opens a pull request. It starts once someone who may approve agent changes says yes.
         </p>
         <div style={{ position: "relative" }}>
           <div className="cbox">
@@ -1606,7 +1606,7 @@ export function Session({ cs }: { cs: CodingSession }) {
     for (const key of !next || Object.keys(extra).length ? ["panel", "file", "line", "turn"] : ["panel"]) query.delete(key);
     if (next) query.set("panel", next);
     for (const [key, value] of Object.entries(extra)) query.set(key, value);
-    go("coding", {}, { search: query.toString(), replace: true });
+    go("codes", {}, { search: query.toString(), replace: true });
     setLastView(next ?? "");
   };
   const closePanel = () => showView(null);
@@ -1642,12 +1642,13 @@ export function Session({ cs }: { cs: CodingSession }) {
   }, []);
   const t = isLive() ? { id: cs.issue_key, key: cs.issue_key } : D().tasks.find((x) => x.key === cs.issue_key);
   const p = proj(cs.project_id);
-  const tool = AGENT_NAMES[cs.agent];
+  // People see Kai; the engine underneath (cs.agent) stays on the run and in the logs.
+  const kai = CODING_AGENT.name;
   const [ask, setAsk] = useState("");
   const [label0, c] = STATUS[cs.status];
   const label = latest ? statusLabel(latest) : label0;
   const busy = BUSY.includes(cs.status) || cs.state === "closed";
-  // Its details (tool, project, repo, branches, commit, PR) float over the chat from the ⋮: on hover,
+  // Its details (project, repo, branches, commit, PR) float over the chat from the ⋮: on hover,
   // or pinned by a click until a click elsewhere or Escape.
   const [info, setInfo] = useState<null | "hover" | "pinned">(null);
   // A screenshot opened large over everything; Escape or a click closes it.
@@ -1695,7 +1696,7 @@ export function Session({ cs }: { cs: CodingSession }) {
     <div className="conv">
       <div className="conv-main">
         <div className="row cs-head">
-          <button className="ibtn ibtn-sm" onClick={() => openCoding("")} aria-label="Back to coding sessions">
+          <button className="ibtn ibtn-sm" onClick={() => openCoding("")} aria-label="Back to sessions">
             <Ic n="arrow-left" s={15} />
           </button>
           <button
@@ -1774,11 +1775,6 @@ export function Session({ cs }: { cs: CodingSession }) {
             onMouseLeave={hoverOut}
           >
             <dl className="kv" style={{ margin: 0 }}>
-              <dt>
-                <Ic n="bot" s={14} />
-                Tool
-              </dt>
-              <dd>{tool}</dd>
               <dt>
                 <Ic n="folder" s={14} />
                 Project
@@ -1890,10 +1886,10 @@ export function Session({ cs }: { cs: CodingSession }) {
                 </div>
                 {(turn.events.length > 0 || turn.summary || turn.error) && (
                   <div className="chat-msg">
-                    <Av id={`agent:${cs.agent}`} cls="md" tip={false} />
+                    <Av id={CODING_AGENT.id} cls="md" tip={false} />
                     <div className="body">
                       <div className="who">
-                        <b>{tool}</b>
+                        <b>{kai}</b>
                       </div>
                       <div className="chat-act" style={{ flexDirection: "column", gap: 2 }}>
                         {turn.events
@@ -2046,7 +2042,7 @@ export function Session({ cs }: { cs: CodingSession }) {
                   <i />
                 </span>
                 <span className="muted" style={{ fontSize: 12.5 }}>
-                  {latest.status === "queued" ? `${tool} starts soon` : `${tool} is working`}
+                  {latest.status === "queued" ? `${kai} starts soon` : `${kai} is working`}
                 </span>
                 <span className="sp" />
                 {latest.can_stop && (
@@ -2103,7 +2099,7 @@ export function Session({ cs }: { cs: CodingSession }) {
                     ? "Recover the previous turn before continuing"
                     : busy
                       ? "A turn is waiting or working…"
-                      : `Ask ${tool} for a follow-up on the same branch`
+                      : `Ask ${kai} for a follow-up on the same branch`
               }
               value={ask}
               disabled={busy}
@@ -2169,7 +2165,7 @@ export const Pending = ({
   </div>
 );
 
-/** Older links to a coding session or a new one (`?session=`, `?tab=coding`) open in Coding. */
+/** Older links to a coding session or a new one (`?session=`, `?tab=coding`) open in Codes. */
 function ToCoding({ search }: { search: URLSearchParams }) {
   const query = new URLSearchParams(search);
   if (query.get("tab") === "coding") {
@@ -2177,7 +2173,7 @@ function ToCoding({ search }: { search: URLSearchParams }) {
     if (!query.has("session")) query.set("new", "1");
   }
   const to = query.toString();
-  useEffect(() => go("coding", {}, { search: to, replace: true }), [to]);
+  useEffect(() => go("codes", {}, { search: to, replace: true }), [to]);
   return null;
 }
 
@@ -2214,7 +2210,7 @@ function Conversations({ search }: { search: URLSearchParams }) {
   // The list folds to a rail (like the sidebar) to give the conversation the room; not on phones.
   const [listMinSet, setListMin] = useStoredFlag("dotrix.chat.listMin");
   const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;
-  // A project's conversations, the latest first. Coding sessions are listed in Coding.
+  // A project's conversations, the latest first. Kai's sessions are listed in Codes.
   const itemsOf = (projectId: string) => threads.filter((t) => t.projectId === projectId).map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />);
   return (
     <div className="page flush">

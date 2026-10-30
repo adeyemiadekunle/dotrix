@@ -51,7 +51,7 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   inbox: Inbox,
   notifications: ToInbox,
   chat: Chat,
-  coding: Coding,
+  codes: Coding,
   members: Members,
   member: MemberPage,
   teams: ToMembers,

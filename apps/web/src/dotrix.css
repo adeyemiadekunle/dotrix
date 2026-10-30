@@ -268,13 +268,26 @@
     color: var(--text-3);
     font-size: var(--fs-xs);
   }
+  /* What a person wrote sits on the right, their avatar beside it; the agents' replies stay on the left. */
+  .chat-msg.user {
+    flex-direction: row-reverse;
+  }
+  .chat-msg.user .body {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .chat-msg.user .who {
+    flex-direction: row-reverse;
+  }
   .chat-msg.user .bubble {
     background: var(--surface-2);
     border-radius: var(--r-lg);
     padding: 8px 12px;
     display: inline-block;
-    max-width: 100%;
+    max-width: 85%;
     white-space: pre-wrap;
+    text-align: left;
     margin-top: 3px;
   }
   .chat-msg .md {

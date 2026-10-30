@@ -1,4 +1,4 @@
-// dotrix's Coding: Kai's sessions, apart from Chat's conversations. The list holds every coding session
+// dotrix's Codes: Kai's sessions, apart from Chat's conversations. The list holds every coding session
 // you can see, grouped by project (pinned first, then the latest); one started from a conversation is marked,
 // links back to it, and still shows as a card there. Stopping, archiving, or deleting a session here leaves the
 // conversation alone, and the other way round.
@@ -15,7 +15,7 @@ import { NewSession, Pending, Session, SessionRow, openCoding } from "./Chat";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const ms = (at: string | null | undefined) => (at ? new Date(at).getTime() : Date.now());
-const toList = (): [string, () => void] => ["Back to coding sessions", () => openCoding("")];
+const toList = (): [string, () => void] => ["Back to sessions", () => openCoding("")];
 
 export function Coding() {
   const { search } = useRoute();
@@ -60,7 +60,7 @@ export function Coding() {
               >
                 <Ic n="panel-left-open" s={16} />
               </button>
-              <button className="ibtn" onClick={() => openCoding("new=1")} aria-label="New coding session" data-tip="New coding session" data-tip-pos="right">
+              <button className="ibtn" onClick={() => openCoding("new=1")} aria-label="New session" data-tip="New session" data-tip-pos="right">
                 <Ic n="square-pen" s={16} />
               </button>
             </div>
@@ -68,7 +68,7 @@ export function Coding() {
             <>
               <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(d) => setListW((w) => w + d)} />
               <div style={{ padding: "18px 16px 8px" }} className="row">
-                <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Coding</h1>
+                <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Codes</h1>
                 <span className="sp" />
                 <button
                   className="ibtn ibtn-sm chat-fold"
@@ -84,7 +84,7 @@ export function Coding() {
               </div>
               <div className="chat-new">
                 <button className="btn btn-secondary" onClick={() => openCoding("new=1")}>
-                  <Ic n="square-pen" s={14} /> New coding session
+                  <Ic n="square-pen" s={14} /> New session
                 </button>
               </div>
               <div style={{ padding: "0 14px 8px" }}>
@@ -100,7 +100,7 @@ export function Coding() {
                   />
                 </div>
               </div>
-              <nav className="chat-list" aria-label="Coding sessions">
+              <nav className="chat-list" aria-label="Sessions">
                 {ps.map((p) => {
                   const list = itemsOf(p.id);
                   if (!list.length && q) return null;
@@ -114,7 +114,7 @@ export function Coding() {
                         list
                       ) : (
                         <div className="faint" style={{ fontSize: 12, padding: "2px 8px 4px" }}>
-                          No coding sessions yet
+                          No sessions yet
                         </div>
                       )}
                     </div>

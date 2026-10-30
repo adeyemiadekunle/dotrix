@@ -340,6 +340,9 @@ class CodingWorker:
             publish_only = accepted is not None or revert is not None
             tool = tool_for(agent, model)
             tool_name = tool.name if tool is not None else agent.value
+            # People see Kai; the engine underneath is kept here, on the run, and in the audit log.
+            logger.info("coding run %s: Kai on %s (model %s)%s", run.id, agent.value, model or "default",
+                        ", publishing only" if publish_only else "")
             key: str | None = None
             if not publish_only:
                 if self.sandbox is None:

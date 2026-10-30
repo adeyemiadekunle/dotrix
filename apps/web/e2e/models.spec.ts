@@ -174,7 +174,7 @@ test("a new coding session offers compatible tools and sends the chosen OpenCode
     }),
   );
   await page.route("**/coding/issues/*/runs", (route) => route.fulfill({ status: 409, json: { detail: "Test request captured" } }));
-  await page.goto(`/w/${slug}/coding?new=1&issue=${issueKey}`);
+  await page.goto(`/w/${slug}/codes?new=1&issue=${issueKey}`);
   await page.getByRole("button", { name: "Coding tool: Codex", exact: true }).click();
   await page.getByRole("option", { name: "OpenCode", exact: true }).click();
   await expect(page.getByRole("button", { name: "Coding model: grok-4.7", exact: true })).toBeVisible();
