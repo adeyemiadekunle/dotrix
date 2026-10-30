@@ -932,7 +932,10 @@ async def test_fx_nova_pilot_uses_admitted_run_and_personal_credentials(nova_pil
         assert any(message.get("role") == "user" and message.get("content") == "Investigate"
                    for message in first["messages"])
         exposed = {tool["function"]["name"] for tool in first["tools"]}
-        assert exposed == {"read_section", "read_skill", "document_outline", "search_knowledge"}
+        assert exposed == {"read_section", "read_skill", "document_outline", "search_knowledge",
+                           "read_file", "ls", "glob", "grep", "list_issues", "get_issue",
+                           "graph_neighbors", "graph_impact", "graph_path"}
+        assert "Project context: Runtime (FXT)" in str(first["messages"])
         assert any(event.type == "text_delta" for event in events)
         async with sessions() as session:
             binding = await session.scalar(select(AgentRuntimeBinding).where(AgentRuntimeBinding.run_id == run.id))
@@ -956,6 +959,7 @@ async def test_fx_nova_pilot_requires_a_personal_key_and_supported_run(nova_pilo
         await session.commit()
     with pytest.raises(Conflict, match="read-only"):
         await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1, secrets=secrets)
+
     async with sessions() as session:
         await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(work_mode=WorkMode.DISCUSS, token_budget=100))
         await session.commit()
@@ -1365,3 +1369,112 @@ async def test_fx_handoff_uses_the_real_delegation_scheduler(runtime_world, db_s
             with suppress(ProcessLookupError):
                 process.kill()
             await process.wait()
+
+
+async def test_fx_context_guidance_is_private_encrypted_and_stable_on_recovery(nova_pilot_world, monkeypatch):
+    from dotrix_backend.modules.rules.models import WorkspaceRule
+    from dotrix_engine.runtimes import TurnResult
+
+    run, sessions, secrets = nova_pilot_world
+    configs = []
+
+    class FakeRuntime:
+        async def prompt(self, *args, **kwargs):
+            if len(configs) == 1:
+                return TurnResult("", "handoff", handoff="saved-specialist-batch")
+            return TurnResult("Saved answer", "end_turn")
+
+        async def close(self):
+            pass
+
+    async def create(config, **kwargs):
+        configs.append(config)
+        return FakeRuntime()
+
+    monkeypatch.setattr(fx_pilot.FxRuntime, "create", create)
+    async with sessions() as session:
+        current = await session.get(AgentRun, run.id)
+        current.orchestration = True
+        session.add(WorkspaceRule(workspace_id=run.workspace_id, handle="base", content="Workspace guidance marker",
+                                  version=1, updated_at=datetime.now(UTC)))
+        session.add(KnowledgeFile(workspace_id=run.workspace_id, project_id=run.project_id,
+                                  path="agent-rules/project-manager.md", version=1, revision=2,
+                                  content="Project Nova guidance marker", content_hash="a" * 64, size=28,
+                                  created_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
+        await session.commit()
+    for revision in ("aaaa111", "bbbb222"):
+        await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1,
+                                       secrets=secrets, delegation=object(),
+                                       code_context=f"Connected repository acme/repo at {revision}")
+        async with sessions() as session:
+            binding = await session.scalar(select(AgentRuntimeBinding).where(AgentRuntimeBinding.run_id == run.id))
+            assert binding.encrypted_context and "guidance marker" not in binding.encrypted_context
+            saved = json.loads(secrets.decrypt(binding.encrypted_context))
+            assert saved["code_context"] == "Connected repository acme/repo at aaaa111"
+            await session.execute(update(KnowledgeFile).where(KnowledgeFile.project_id == run.project_id,
+                KnowledgeFile.path == "agent-rules/project-manager.md").values(content="Changed while children run"))
+            await session.commit()
+    assert configs[0].instructions == configs[1].instructions
+    assert "aaaa111" in configs[1].instructions and "bbbb222" not in configs[1].instructions
+    assert "Workspace guidance marker" in configs[0].instructions
+    assert "Project Nova guidance marker" in configs[0].instructions
+    assert "Project context: Runtime (FXT)" in configs[0].instructions
+    assert "A colleague's private preference" not in configs[0].instructions
+
+
+async def test_fx_project_reads_share_builders_and_recheck_access(runtime_world, db_session):
+    from dotrix_backend.modules.agents.runtime_tools import scoped_project_tools
+
+    _, _, _, run, scope, sessions = runtime_world
+    run.agent = None
+    await db_session.commit()
+    scope = await bind_scope(sessions, replace(scope, agent="project-manager"))
+    tools = {tool.name: tool for tool in scoped_project_tools(
+        sessions, scope=scope, spec=builtin("project-manager"), embedder=None)}
+    context = RuntimeToolContext(scope.session_id, "read")
+    assert all(not tool.writes and tool.idempotent for tool in tools.values())
+    result = await tools["read_file"].execute_scoped({"file_path": "/dotrix/research/runtime.md"}, context)
+    assert "Private project evidence" in str(result)
+    assert "research" in str(await tools["ls"].execute_scoped({}, context))
+    assert "research/runtime.md" in str(await tools["glob"].execute_scoped({"pattern": "**/*.md"}, context))
+    assert "Private project evidence" in str(await tools["grep"].execute_scoped({"pattern": "Private"}, context))
+    assert isinstance(await tools["list_issues"].execute_scoped({}, context), list)
+    await tools["graph_neighbors"].execute_scoped({"ref": "research/runtime.md"}, context)
+    member = await db_session.scalar(select(Membership).where(Membership.workspace_id == scope.workspace_id,
+                                                               Membership.user_id == scope.requested_by_id))
+    member.role = Role.GUEST
+    await db_session.commit()
+    for name, args in (("read_file", {"file_path": "/dotrix/research/runtime.md"}),
+                       ("list_issues", {}), ("graph_neighbors", {"ref": "research/runtime.md"})):
+        with pytest.raises(Forbidden):
+            await tools[name].execute_scoped(args, context)
+
+
+async def test_fx_code_and_web_reads_are_filtered_and_cannot_return_after_revocation(runtime_world, db_session):
+    from dotrix_backend.modules.agents.runtime_tools import scoped_project_tools
+
+    _, _, _, run, scope, sessions = runtime_world
+    run.agent = None
+    await db_session.commit()
+    scope = await bind_scope(sessions, replace(scope, agent="project-manager"))
+
+    async def code_read(path: str) -> str:
+        """Read authorized repository evidence."""
+        return "repository evidence"
+
+    async def web_search(query: str) -> str:
+        """Read web evidence using the configured project service."""
+        async with sessions() as session:
+            await session.execute(update(Membership).where(Membership.workspace_id == scope.workspace_id,
+                Membership.user_id == scope.requested_by_id).values(role=Role.GUEST))
+            await session.commit()
+        return "evidence that must not be returned"
+
+    kwargs = dict(sessions=sessions, scope=scope, embedder=None, code_tools=[code_read], web_tools=[web_search])
+    restricted = builtin("project-manager").model_copy(update={"tools": ["knowledge.search"]})
+    assert {tool.name for tool in scoped_project_tools(spec=restricted, **kwargs)} == {"search_knowledge"}
+    tools = {tool.name: tool for tool in scoped_project_tools(spec=builtin("project-manager"), **kwargs)}
+    context = RuntimeToolContext(scope.session_id, "read")
+    assert await tools["code_read"].execute_scoped({"path": "app.py"}, context) == "repository evidence"
+    with pytest.raises(Forbidden):
+        await tools["web_search"].execute_scoped({"query": "auth"}, context)

@@ -106,6 +106,10 @@ TokenBudget = Annotated[
 
 
 class ProjectUpdate(BaseModel):
+    automatic_model_routing: bool | None = Field(
+        default=None, description="Use the conversation/project model for architecture, review and project-changing tasks; "
+        "the specialist model for routine tasks. Explicit personal/agent models win.",
+    )
     access: ProjectAccessLevel | None = Field(
         default=None,
         description="workspace (every member) or restricted (owners, admins, and the people added to it)",
@@ -156,6 +160,7 @@ class ProjectRead(BaseModel):
         description="workspace (every member sees it) or restricted (owners, admins, and the people added to it)"
     )
     model: str
+    automatic_model_routing: bool = Field(description="Host-owned task routing is enabled")
     specialist_model: str | None = Field(
         description="The specialists' and summaries' model; null means the project's model"
     )

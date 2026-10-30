@@ -453,3 +453,19 @@ async def test_archive_restore_and_delete_a_project(signup, create_team, add_mem
     audit = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=ada.headers)).json()
     actions = [a["action"] for a in audit]
     assert "project.deleted" in actions and "project.archived" in actions  # its history stays
+
+
+async def test_automatic_routing_setting_is_opt_in_and_preserves_null(signup, create_team, db_client, db_session):
+    person = await signup()
+    workspace = await create_team(person.headers)
+    base = f"/v1/workspaces/{workspace['id']}/projects"
+    created = await db_client.post(base, headers=person.headers, json={"key": "RTG", "name": "Routing"})
+    assert created.status_code == 201
+    project = created.json()
+    assert project["automatic_model_routing"] is False
+    updated = await db_client.patch(f"{base}/{project['id']}", headers=person.headers,
+                                    json={"automatic_model_routing": True})
+    assert updated.status_code == 200 and updated.json()["automatic_model_routing"] is True
+    unchanged = await db_client.patch(f"{base}/{project['id']}", headers=person.headers,
+                                      json={"automatic_model_routing": None})
+    assert unchanged.json()["automatic_model_routing"] is True

@@ -295,3 +295,35 @@ The experiment pins `libfx` 0.0.15. Its [SDK documentation](https://github.com/v
 describes sessions, host tools, durability, steering, and provider support. Recheck
 the installed version's API and behavior before upgrading: the SDK is experimental
 and its main-branch documentation can evolve independently of this prototype.
+
+
+## Context parity and host model routing
+
+The fx Nova preview now uses the shared `project_rules` and `build_context_pack`
+builders for project maps, recent changes, layered workspace/project guidance,
+accepted lessons and the skill catalog. The binding stores an encrypted context
+snapshot for recovery, including the connected-code checkout context. A repository
+push while waiting for specialists does not change the resumed instructions; new turns refresh it. Older bindings without a snapshot
+fail closed. The total instructions must fit libfx's 64 KiB limit; oversized
+instructions are refused, with no silent truncation of guidance.
+
+The read-only tools share DeepAgents builders: document outline/sections/search,
+full reads and folder/glob/grep, issues, graph relationships, connected-code reads,
+and configured platform web tools. Every call checks current capability, project
+visibility, requester, binding and lease before and after returning evidence. No
+write, Kai handoff, approval, native provider search or arbitrary local filesystem
+access is added. Configured web search may still incur its normal credits.
+
+Project owners/admins can opt into `automatic_model_routing` in Agent models.
+Architecture, reviewer and project-changing briefs select the conversation/project
+model; routine briefs select the specialist model. Explicit personal/agent models
+win. Selection is pinned by Dotrix's scheduler for both coordinator runtimes.
+It does not infer semantic importance from untrusted text or assume a particular
+provider is cheaper. Configure the two models accordingly. Each requester needs
+their own provider keys; missing keys never trigger a silent model downgrade.
+
+Dotrix uses personal BYOK, with no platform-supplied LLM or platform LLM budget.
+This change adds no budget controls. Existing optional per-run limits are unchanged.
+Measure cost/quality with paired saved evaluations and the supplied-price report
+in `experiments/fx-chat/costs.py`. No live savings claim is made without real-model
+usage and quality review.

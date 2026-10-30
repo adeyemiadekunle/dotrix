@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import time
@@ -109,6 +110,12 @@ def validate(scenario: dict, role_config: dict) -> None:
         raise ValueError("scenario must have at least one turn")
 
 
+def case_digest(scenario):
+    # Models and host routing are the independent variable; task/evidence must match.
+    case = {key: value for key, value in scenario.items() if key not in ("models", "model_policy", "task_tiers")}
+    return hashlib.sha256(json.dumps(case, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
 async def evaluate(kind: str, scenario: dict, role_config: dict, base_url: str) -> dict:
     runtime = Experiment(kind, scenario, role_config, base_url)
     results: dict[str, dict] = {}
@@ -126,7 +133,7 @@ async def evaluate(kind: str, scenario: dict, role_config: dict, base_url: str) 
             }
     finally:
         await runtime.close()
-    return {"runtime": kind, "scenario": scenario.get("name"), "turns": results}
+    return {"runtime": kind, "scenario": scenario.get("name"), "case_digest": case_digest(scenario), "turns": results}
 
 
 async def evaluate_team(kind: str, scenario: dict, role_config: dict, base_url: str) -> dict:
@@ -162,7 +169,8 @@ async def evaluate_team(kind: str, scenario: dict, role_config: dict, base_url: 
         return {"runtime": kind, "mode": "live-delegation", "scenario": scenario.get("name"),
                 "text": result.text, "stopReason": result.stop_reason, "tools": result.tools,
                 "usage": result.usage, "elapsed_ms": round((time.perf_counter() - start) * 1000),
-                "specialists": team.observations}
+                "specialists": team.observations, "specialist_observations_complete": True, "model": role_config["project-manager"]["model"],
+                "case_digest": case_digest(scenario)}
     finally:
         await team.close()
 

@@ -31340,6 +31340,11 @@
             "type": "string",
             "title": "Model"
           },
+          "automatic_model_routing": {
+            "type": "boolean",
+            "title": "Automatic Model Routing",
+            "description": "Host-owned task routing is enabled"
+          },
           "specialist_model": {
             "anyOf": [
               {
@@ -31454,6 +31459,7 @@
           "repo_url",
           "access",
           "model",
+          "automatic_model_routing",
           "specialist_model",
           "token_budget",
           "health",
@@ -31489,6 +31495,18 @@
       },
       "ProjectUpdate": {
         "properties": {
+          "automatic_model_routing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Automatic Model Routing",
+            "description": "Use the conversation/project model for architecture, review and project-changing tasks; the specialist model for routine tasks. Explicit personal/agent models win."
+          },
           "access": {
             "anyOf": [
               {

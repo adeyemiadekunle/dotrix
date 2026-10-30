@@ -8220,6 +8220,11 @@ export interface components {
             /** Model */
             model: string;
             /**
+             * Automatic Model Routing
+             * @description Host-owned task routing is enabled
+             */
+            automatic_model_routing: boolean;
+            /**
              * Specialist Model
              * @description The specialists' and summaries' model; null means the project's model
              */
@@ -8276,6 +8281,11 @@ export interface components {
         ProjectStatus: "planning" | "active" | "on_hold" | "completed";
         /** ProjectUpdate */
         ProjectUpdate: {
+            /**
+             * Automatic Model Routing
+             * @description Use the conversation/project model for architecture, review and project-changing tasks; the specialist model for routine tasks. Explicit personal/agent models win.
+             */
+            automatic_model_routing?: boolean | null;
             /** @description workspace (every member) or restricted (owners, admins, and the people added to it) */
             access?: components["schemas"]["ProjectAccessLevel"] | null;
             /** Name */

@@ -346,3 +346,30 @@ async def test_coding_outcomes_and_juno_return_once_to_original_chat(nova_world,
         assert children[0].review_context["coding_run_id"] == str(coding.id)
     else:
         assert children == []
+
+
+async def test_automatic_routing_uses_host_task_policy_and_pins_choices(nova_world, db_client, db_session):
+    from dotrix_backend.modules.projects.models import Project
+
+    root = await parent_run(db_session, nova_world)
+    project = await db_session.get(Project, root.project_id)
+    project.specialist_model = "openai:routine"
+    project.automatic_model_routing = True
+    root.conversation_model = "openai:strong"
+    await db_session.commit()
+    tasks = SpecialistBatch(tasks=[
+        {"key": "design", "agent": "architecture", "brief": "Design auth", "expected_result": "Design"},
+        {"key": "review", "agent": "reviewer", "brief": "Check auth", "expected_result": "Review"},
+        {"key": "docs", "agent": "documentation", "brief": "Outline docs", "expected_result": "Outline"},
+        {"key": "write", "agent": "documentation", "brief": "Write docs", "expected_result": "Docs", "changes_project": True},
+    ])
+    scheduler = DelegationService(db_client._transport.app.state.runner)
+    await scheduler.submit(root.workspace_id, root.id, 1, "policy-batch", tasks)
+    children = list(await db_session.scalars(select(AgentRun).where(AgentRun.parent_run_id == root.id)))
+    assert {task.task_key: task.model for task in children} == {
+        "design": "openai:strong", "review": "openai:strong", "docs": "openai:routine", "write": "openai:strong"}
+    project.automatic_model_routing = False
+    project.specialist_model = "openai:different"
+    await db_session.commit()
+    await scheduler.submit(root.workspace_id, root.id, 1, "policy-batch", tasks)
+    assert {task.task_key: task.model for task in children}["docs"] == "openai:routine"

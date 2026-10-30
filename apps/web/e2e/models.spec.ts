@@ -20,6 +20,8 @@ test("project agent models and per-run limits can be saved and reset", async ({ 
   await page.getByRole("button", { name: "Project settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Project settings" });
   await expect(dialog.getByLabel("Project model", { exact: true })).toHaveValue("e2e:rules");
+  await expect(dialog.getByLabel("Automatic model routing", { exact: true })).not.toBeChecked();
+  await dialog.getByLabel("Automatic model routing", { exact: true }).check();
   await dialog.getByLabel("Specialist model").fill("openai:cheap-model");
   await dialog.getByLabel("Default token limit per agent run").fill("10000");
   const saved = page.waitForResponse((r) => r.url().includes("/projects/") && r.request().method() === "PATCH");
@@ -28,6 +30,7 @@ test("project agent models and per-run limits can be saved and reset", async ({ 
   await expect(page.getByText("Agent model settings saved")).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Project settings", exact: true }).click();
+  await expect(dialog.getByLabel("Automatic model routing", { exact: true })).toBeChecked();
   await expect(dialog.getByLabel("Specialist model")).toHaveValue("openai:cheap-model");
   await expect(dialog.getByLabel("Default token limit per agent run")).toHaveValue("10000");
   await dialog.getByLabel("Specialist model").fill("openai:other-model");
@@ -38,11 +41,13 @@ test("project agent models and per-run limits can be saved and reset", async ({ 
   await dialog.getByLabel("Specialist model").fill("unsupported-model");
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await expect(dialog.getByRole("alert")).toContainText(/provider/i);
+  await dialog.getByLabel("Automatic model routing", { exact: true }).uncheck();
   await dialog.getByLabel("Specialist model").fill("");
   await dialog.getByLabel("Default token limit per agent run").fill("");
   const reset = page.waitForResponse((r) => r.url().includes("/projects/") && r.request().method() === "PATCH");
   await dialog.getByRole("button", { name: "Save agent models" }).click();
   expect((await reset).status()).toBe(200);
+  await expect(dialog.getByLabel("Automatic model routing", { exact: true })).not.toBeChecked();
   await expect(dialog.getByLabel("Specialist model")).toHaveValue("");
   await expect(dialog.getByLabel("Default token limit per agent run")).toHaveValue("");
 });

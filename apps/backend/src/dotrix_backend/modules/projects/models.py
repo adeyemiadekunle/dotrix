@@ -82,6 +82,8 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):
     model: Mapped[str] = mapped_column(String(100), default=DEFAULT_MODEL)
     # A cheaper model for the specialists and for summarising long conversations; null: `model`.
     specialist_model: Mapped[str | None] = mapped_column(String(100))
+    # Opt-in host routing: protect architecture/review and project-changing work.
+    automatic_model_routing: Mapped[bool] = mapped_column(default=False, server_default="false")
     # Optional limit chosen for this project's runs (input + output, all steps); null: none.
     token_budget: Mapped[int | None]
     # Bumped on every .dotrix/ change; lets the CLI mirror pull only what changed.

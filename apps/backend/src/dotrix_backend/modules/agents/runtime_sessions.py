@@ -82,7 +82,7 @@ def _matches(binding: AgentRuntimeBinding, identity: RuntimeIdentity) -> bool:
 
 async def bind_runtime_session(
     sessions: SessionFactory, *, workspace_id: uuid.UUID, run_id: uuid.UUID, token: int,
-    identity: RuntimeIdentity, session_id: str,
+    identity: RuntimeIdentity, session_id: str, encrypted_context: str | None = None,
 ) -> RuntimeRunScope:
     """Bind once, or repeat the identical binding after verifying the live lease and access."""
     validate_session(session_id, "bind")
@@ -98,7 +98,7 @@ async def bind_runtime_session(
             session.add(AgentRuntimeBinding(
                 workspace_id=workspace_id, run_id=run_id, runtime=identity.runtime,
                 runtime_version=identity.version, config_digest=identity.config_digest,
-                session_id=session_id, created_at=datetime.now(UTC),
+                session_id=session_id, encrypted_context=encrypted_context, created_at=datetime.now(UTC),
             ))
         scope = _scope(run, token, session_id)
         if run.lease_expires_at <= datetime.now(UTC):

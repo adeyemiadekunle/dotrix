@@ -399,7 +399,7 @@ export function taskForm(): TaskForm | null {
 }
 
 /* ---------- project ---------- */
-type AgentModelsDraft = { model: string; specialist: string; budget: string };
+type AgentModelsDraft = { model: string; specialist: string; budget: string; routing: boolean };
 type AgentModelsControl = { saveIfChanged: () => Promise<boolean> };
 
 /** Project-wide defaults; personal and per-agent choices still take precedence. */
@@ -412,11 +412,19 @@ function ProjectAgentModels({ projectId, control }: { projectId: string; control
   const [busy, setBusy] = useState(false);
   const listId = useId();
   const project = saved ?? current.data;
-  const form = project && (edited ?? { model: project.model, specialist: project.specialist_model ?? "", budget: project.token_budget?.toString() ?? "" });
+  const form =
+    project &&
+    (edited ?? {
+      model: project.model,
+      specialist: project.specialist_model ?? "",
+      budget: project.token_budget?.toString() ?? "",
+      routing: project.automatic_model_routing,
+    });
   const changed = Boolean(
     project &&
     form &&
-    (form.model.trim() !== project.model ||
+    (form.routing !== project.automatic_model_routing ||
+      form.model.trim() !== project.model ||
       form.specialist.trim() !== (project.specialist_model ?? "") ||
       form.budget.trim() !== (project.token_budget?.toString() ?? "")),
   );
@@ -432,7 +440,8 @@ function ProjectAgentModels({ projectId, control }: { projectId: string; control
       setError("Choose a project model.");
       return false;
     }
-    const body: Pick<Schemas["ProjectUpdate"], "model" | "specialist_model" | "token_budget"> = {};
+    const body: Pick<Schemas["ProjectUpdate"], "model" | "specialist_model" | "token_budget" | "automatic_model_routing"> = {};
+    if (form.routing !== project.automatic_model_routing) body.automatic_model_routing = form.routing;
     if (form.model.trim() !== project.model) body.model = form.model.trim();
     if (form.specialist.trim() !== (project.specialist_model ?? "")) body.specialist_model = form.specialist.trim() || null;
     if (budget !== (project.token_budget?.toString() ?? "")) body.token_budget = budget ? Number(budget) : null;
@@ -469,6 +478,13 @@ function ProjectAgentModels({ projectId, control }: { projectId: string; control
       <p className="muted" style={{ fontSize: 12.5 }}>
         Choose a project default and an optional model for specialist work. Individual agent or personal model settings take precedence. Already queued
         specialist tasks keep their selected model. Each person needs a personal key for the model providers their agents use.
+      </p>
+      <label className="field" style={{ display: "flex", gap: 8 }}>
+        <input type="checkbox" checked={form.routing} aria-describedby={`${listId}-routing-help`} onChange={(e) => set({ routing: e.target.checked })} />
+        Automatic model routing
+      </label>
+      <p className="muted" id={`${listId}-routing-help`} style={{ fontSize: 12.5 }}>
+        Route architecture, reviews, and project-changing tasks to the conversation/project model; use the specialist model for routine tasks.
       </p>
       <datalist id={listId}>
         {(options.data ?? []).map((option) => (

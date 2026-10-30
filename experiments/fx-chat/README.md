@@ -107,3 +107,41 @@ node --test packages/engine/src/dotrix_engine/runtimes/fx_host/handoff.test.mjs
 
 See [the runtime evaluation design](../../docs/chat-runtime-evaluation.md) for the
 proposed integration boundaries, comparison method, and rollout gates.
+
+
+## Compare routing costs on personal models
+
+Run the same scenario twice for each runtime: once with all roles on the strong
+model, then with routine roles routed to a cheaper model. Keep prompts and evidence
+identical; `case_digest` verifies that content in newly saved evaluations. Save both
+JSON outputs and supply current per-million input/output rates in one currency:
+
+```json
+{
+  "your-strong-model": { "input": 3, "output": 15, "cached_input": 0.3 },
+  "your-routine-model": { "input": 0.3, "output": 1.5, "cached_input": 0.03 }
+}
+```
+
+Those numbers are examples, not current provider prices. Then run:
+
+```sh
+python experiments/fx-chat/costs.py /tmp/baseline.json /tmp/routed.json /tmp/prices.json
+```
+
+The report includes Nova plus all observed specialist turns and estimates their
+price from reported usage. Cached input uses its supplied rate when reported;
+unreported cache counts are priced as ordinary input. Output counts include any
+reasoning tokens already included by the provider; do not add them twice. Extra
+search fees, taxes, discounts and provider-specific charges are excluded. This is
+not a bill. Missing usage/prices or failed/partial tasks suppress estimated savings.
+Review answer quality separately and repeat runs before choosing defaults. There
+are no platform budgets or platform model credentials in this experiment.
+
+
+Live-delegation evaluations record every requested specialist task, including failed
+runtime creation, failed model attempts and tasks blocked by dependencies. Failed
+usage stays unknown; an unattempted blocked task is not treated as successful free
+work. The report suppresses savings for those runs, and for older delegation logs
+without the explicit observation-completeness marker. Re-run old samples to compare
+them; their omitted failures cannot be reconstructed reliably.
