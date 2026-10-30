@@ -152,6 +152,18 @@ FAKE_FX = textwrap.dedent('''
             send({"jsonrpc": "2.0", "id": mid, "result": None})
         elif method == "session/prompt":
             sid = msg["params"]["sessionId"]
+            if "provider" in msg["params"]["prompt"][0]["text"]:  # call the model the way fx does: the settings' base_url
+                import urllib.error, urllib.request
+                url = json.load(open(os.path.join(os.environ["HOME"], ".fx", "settings.json")))["providers"]["dotrix"]["base_url"]
+                log.write(json.dumps({"method": "provider", "params": {"base_url": url}}) + "\\n"); log.flush()
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # fx itself never uses a proxy
+                try:
+                    opener.open(urllib.request.Request(url + "/chat/completions", data=b"{}", method="POST"), timeout=10)
+                    reason = "end_turn"
+                except urllib.error.HTTPError as error:
+                    reason = "refused" if error.code == 403 else "error"
+                send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": reason}})
+                continue
             if "wait" in msg["params"]["prompt"][0]["text"]:
                 waiting = mid
                 update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Working"}})
@@ -180,8 +192,9 @@ def fake_fx(tmp_path: Path) -> dict[str, str]:
     script.chmod(0o755)
     home = tmp_path / "home"
     (home / "repo").mkdir(parents=True)
-    return {**os.environ, "HOME": str(home), "DOTRIX_FX_BIN": str(script), "FAKE_FX_LOG": str(tmp_path / "fx.log"),
-            "OPENAI_API_KEY": "the-key"}
+    proxies = {"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"}  # a test sets its own
+    return {**{k: v for k, v in os.environ.items() if k not in proxies}, "HOME": str(home), "DOTRIX_FX_BIN": str(script),
+            "FAKE_FX_LOG": str(tmp_path / "fx.log"), "OPENAI_API_KEY": "the-key"}
 
 
 def _drive(env: dict[str, str], brief: str, *extra: str) -> list[dict]:
@@ -276,3 +289,32 @@ def test_the_driver_s_own_failures_never_name_fx(fake_fx) -> None:
     env = {**fake_fx, "DOTRIX_FX_BIN": "/nonexistent/fx"}
     events = _drive(env, "Fix it")
     assert events[-1]["type"] == "error" and "fx" not in events[-1]["message"].lower()
+
+
+def test_behind_an_egress_proxy_fx_calls_a_local_forwarder_and_a_refusal_is_the_sandboxs(fake_fx) -> None:
+    """fx ignores HTTPS_PROXY, so the driver points it at a forwarder on 127.0.0.1 that tunnels through the proxy;
+    a proxy that refuses the provider ends the turn at once, said as the sandbox's refusal, not the model's."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    asked: list[str] = []
+
+    class Refusing(BaseHTTPRequestHandler):
+        def do_CONNECT(self) -> None:  # noqa: N802 (the HTTP method's name)
+            asked.append(self.path)
+            self.send_response(403)
+            self.end_headers()
+
+        def log_message(self, *args) -> None:
+            pass
+
+    proxy = ThreadingHTTPServer(("127.0.0.1", 0), Refusing)
+    threading.Thread(target=proxy.serve_forever, daemon=True).start()
+    try:
+        events = _drive({**fake_fx, "HTTPS_PROXY": f"http://127.0.0.1:{proxy.server_address[1]}"}, "Ask the provider")
+    finally:
+        proxy.shutdown()
+    url = next(c["params"]["base_url"] for c in _calls(fake_fx) if c["method"] == "provider")
+    assert url.startswith("http://127.0.0.1:") and url.endswith("/v1")  # the forwarder, keeping the provider's path
+    assert asked == ["api.openai.com:443"]  # the forwarder tunnels to the configured provider only
+    assert events[-1] == {"type": "error", "message": "The sandbox doesn't allow this model provider (its egress proxy refused it)"}
