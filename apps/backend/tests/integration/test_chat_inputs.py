@@ -344,3 +344,29 @@ async def test_input_racing_turn_completion_cannot_remain_pending(nova_pilot_wor
             await asyncio.gather(task, return_exceptions=True)
     async with sessions() as session:
         assert await session.scalar(select(ChatInput.id).where(ChatInput.run_id == run.id)) is None
+
+
+async def test_new_message_retires_unconfirmed_steering_of_abandoned_limit_turn(nova_pilot_world, monkeypatch):
+    from dotrix_backend.modules.agents.schemas import RunCreate
+    from dotrix_backend.modules.agents.service import AgentService
+
+    run, sessions, secrets = nova_pilot_world
+    item = await submit(sessions, run)
+    await chat_inputs.steering(sessions, run.workspace_id, run.id, 1)
+    async with sessions() as session:
+        await session.execute(update(AgentRun).where(AgentRun.id == run.id).values(
+            status=RunStatus.FAILED, error_kind="model_limit"))
+        await session.commit()
+    runner = AgentRunner(session_factory=sessions, checkpointer=InMemorySaver(), secrets=secrets,
+        model_factory=lambda *args, **kwargs: SimpleNamespace(model=ScriptedChatModel.of("Done")))
+
+    async def start(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(runner, "start", start)
+    async with sessions() as session:
+        await AgentService(session, runner).create_run(await access_for(session, run),
+            RunCreate(message="Try a different question", thread_id=run.thread_id))
+    async with sessions() as session:
+        saved = await session.get(ChatInput, item.id)
+        assert saved.status == "rejected" and "before delivery could be confirmed" in saved.error

@@ -298,6 +298,18 @@ class AgentService:
             )),
         )
         self.session.add(run)
+        if interactive and data.thread_id is not None:
+            # An explicit new turn abandons continuation of older failed turns.
+            # Their unconfirmed steering must not remain apparently in flight.
+            from .chat_inputs import audit
+            for item in await self.session.scalars(select(ChatInput).where(
+                ChatInput.workspace_id == project.workspace_id, ChatInput.project_id == project.id,
+                ChatInput.thread_id == thread_id, ChatInput.owner_id == member.user_id,
+                ChatInput.run_id != run.id, ChatInput.kind == "steer", ChatInput.status.in_(("pending", "sending")),
+            ).with_for_update()):
+                item.status, item.updated_at = "rejected", now
+                item.error = "A new turn started before delivery could be confirmed"
+                audit(self.session, item, "rejected")
         if data.mentions:
             await Notifier(self.session).mentioned(
                 project, data.mentions, data.message, now, title=run.title or title_from_message(data.message),

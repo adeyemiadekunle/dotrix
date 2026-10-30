@@ -10436,6 +10436,7 @@
           "agents"
         ],
         "summary": "List Chat Inputs",
+        "description": "The owner's steering and queued follow-ups, with pending inputs first (at most 100).\n\nAcceptance records runtime delivery, not model completion. Queued follow-ups\nlink to their new run once dispatched. Other people's inputs are not found.",
         "operationId": "list_chat_inputs",
         "security": [
           {
@@ -10538,6 +10539,7 @@
           "agents"
         ],
         "summary": "Cancel Chat Input",
+        "description": "Cancel the owner's pending instruction. Retrying a cancellation is safe.\n\nInstructions already entering delivery cannot be withdrawn here (409).\nThis does not stop the active turn; use its Stop control for that.",
         "operationId": "cancel_chat_input",
         "security": [
           {

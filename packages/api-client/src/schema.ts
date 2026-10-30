@@ -2290,7 +2290,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Chat Inputs */
+        /**
+         * List Chat Inputs
+         * @description The owner's steering and queued follow-ups, with pending inputs first (at most 100).
+         *
+         *     Acceptance records runtime delivery, not model completion. Queued follow-ups
+         *     link to their new run once dispatched. Other people's inputs are not found.
+         */
         get: operations["list_chat_inputs"];
         put?: never;
         /**
@@ -2318,7 +2324,13 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Cancel Chat Input */
+        /**
+         * Cancel Chat Input
+         * @description Cancel the owner's pending instruction. Retrying a cancellation is safe.
+         *
+         *     Instructions already entering delivery cannot be withdrawn here (409).
+         *     This does not stop the active turn; use its Stop control for that.
+         */
         delete: operations["cancel_chat_input"];
         options?: never;
         head?: never;

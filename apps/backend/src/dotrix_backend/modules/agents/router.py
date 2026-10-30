@@ -439,7 +439,7 @@ async def stream_workspace_run(run_id: uuid.UUID, member: WorkspaceChatter, runs
     )
 
 
-@router.post("/threads/{thread_id}/inputs", status_code=202, responses=errors(404, 409, 422))
+@router.post("/threads/{thread_id}/inputs", status_code=202, responses=errors(403, 404, 409, 422))
 async def submit_chat_input(thread_id: uuid.UUID, data: ChatInputCreate, access: Chatter, agents: Agents) -> ChatInputRead:
     """Steer an active project turn at a safe point, or queue an ordered follow-up.
 
@@ -451,13 +451,23 @@ async def submit_chat_input(thread_id: uuid.UUID, data: ChatInputCreate, access:
     return await submit(agents.session, access, thread_id, data)
 
 
-@router.get("/threads/{thread_id}/inputs")
+@router.get("/threads/{thread_id}/inputs", responses=errors(403, 404))
 async def list_chat_inputs(thread_id: uuid.UUID, access: Chatter, agents: Agents) -> list[ChatInputRead]:
+    """The owner's steering and queued follow-ups, with pending inputs first (at most 100).
+
+    Acceptance records runtime delivery, not model completion. Queued follow-ups
+    link to their new run once dispatched. Other people's inputs are not found.
+    """
     from .chat_inputs import inputs
     return [ChatInputRead.model_validate(item) for item in await inputs(agents.session, access, thread_id)]
 
 
-@router.delete("/threads/{thread_id}/inputs/{input_id}", responses=errors(404, 409))
+@router.delete("/threads/{thread_id}/inputs/{input_id}", responses=errors(403, 404, 409))
 async def cancel_chat_input(thread_id: uuid.UUID, input_id: uuid.UUID, access: Chatter, agents: Agents) -> ChatInputRead:
+    """Cancel the owner's pending instruction. Retrying a cancellation is safe.
+
+    Instructions already entering delivery cannot be withdrawn here (409).
+    This does not stop the active turn; use its Stop control for that.
+    """
     from .chat_inputs import cancel
     return await cancel(agents.session, access, thread_id, input_id)
