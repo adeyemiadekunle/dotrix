@@ -169,7 +169,7 @@ async def evaluate_team(kind: str, scenario: dict, role_config: dict, base_url: 
         return {"runtime": kind, "mode": "live-delegation", "scenario": scenario.get("name"),
                 "text": result.text, "stopReason": result.stop_reason, "tools": result.tools,
                 "usage": result.usage, "elapsed_ms": round((time.perf_counter() - start) * 1000),
-                "specialists": team.observations, "model": role_config["project-manager"]["model"],
+                "specialists": team.observations, "specialist_observations_complete": True, "model": role_config["project-manager"]["model"],
                 "case_digest": case_digest(scenario)}
     finally:
         await team.close()

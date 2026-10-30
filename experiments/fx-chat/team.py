@@ -96,6 +96,8 @@ class ReadOnlyTeam:
                 raise RuntimeError("No schedulable tasks")
 
             async def execute(task):
+                selection, turn, error = None, None, None
+                attempted = False
                 if any(results[key]["result"]["status"] != "completed" for key in task.depends_on):
                     result = SpecialistResult(summary="A dependency did not complete", status="blocked")
                 else:
@@ -110,6 +112,7 @@ class ReadOnlyTeam:
                         async with self._task_locks.setdefault(key, asyncio.Lock()):
                             self._active_results[key] = None
                             try:
+                                attempted = True
                                 turn = await runtime.prompt(task.agent, prompt)
                                 submitted = self._active_results[key]
                             finally:
@@ -122,10 +125,17 @@ class ReadOnlyTeam:
                                                       risks=["No structured specialist result was submitted"])
                         else:
                             result = submitted
-                        self.observations.append({"key": task.key, "agent": task.agent, "model": selection.model,
-                                                  "effort": selection.effort, "status": result.status, "usage": turn.usage})
                     except Exception:
-                        result = SpecialistResult(summary="Specialist failed", status="blocked")
+                        error = "Specialist failed"
+                        result = SpecialistResult(summary=error, status="blocked")
+                # Keep every requested task in the evaluation, including work that never
+                # reached a model and failures whose incurred usage cannot be recovered.
+                self.observations.append({
+                    "key": task.key, "agent": task.agent, "model": selection.model if selection else None,
+                    "effort": selection.effort if selection else None,
+                    "status": "failed" if error else result.status, "attempted": attempted, "error": error,
+                    "stopReason": turn.stop_reason if turn else None, "usage": turn.usage if turn else None,
+                })
                 return task.key, {"key": task.key, "agent": task.agent, "result": result.model_dump(mode="json")}
 
             # Match the platform's maximum of two independent read-only specialists.

@@ -33,9 +33,13 @@ def cost(row, prices):
 def summarize(run, prices):
     rows = list(run["turns"].values()) if "turns" in run else [run, *run.get("specialists", [])]
     costs = [cost(row, prices) for row in rows]
-    complete = bool(rows) and all(value is not None for value in costs)
+    coverage = run.get("mode") != "live-delegation" or run.get("specialist_observations_complete") is True
+    complete = coverage and bool(rows) and all(value is not None for value in costs)
     completed = all(row.get("stopReason", "end_turn") == "end_turn" and row.get("status", "completed") == "completed"
                     for row in rows)
+    if "turns" not in run:
+        completed = completed and run.get("stopReason") == "end_turn" and all(
+            row.get("status") == "completed" for row in run.get("specialists", []))
     return {"calls_or_turns": len(rows), "usage_and_prices_complete": complete, "completed": completed,
             "estimated_cost": str(sum(costs)) if complete else None,
             "models": sorted({row["model"] for row in rows if row.get("model")})}

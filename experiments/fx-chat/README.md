@@ -137,3 +137,11 @@ search fees, taxes, discounts and provider-specific charges are excluded. This i
 not a bill. Missing usage/prices or failed/partial tasks suppress estimated savings.
 Review answer quality separately and repeat runs before choosing defaults. There
 are no platform budgets or platform model credentials in this experiment.
+
+
+Live-delegation evaluations record every requested specialist task, including failed
+runtime creation, failed model attempts and tasks blocked by dependencies. Failed
+usage stays unknown; an unattempted blocked task is not treated as successful free
+work. The report suppresses savings for those runs, and for older delegation logs
+without the explicit observation-completeness marker. Re-run old samples to compare
+them; their omitted failures cannot be reconstructed reliably.

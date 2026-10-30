@@ -302,7 +302,8 @@ and its main-branch documentation can evolve independently of this prototype.
 The fx Nova preview now uses the shared `project_rules` and `build_context_pack`
 builders for project maps, recent changes, layered workspace/project guidance,
 accepted lessons and the skill catalog. The binding stores an encrypted context
-snapshot for recovery; new turns refresh it. Older bindings without a snapshot
+snapshot for recovery, including the connected-code checkout context. A repository
+push while waiting for specialists does not change the resumed instructions; new turns refresh it. Older bindings without a snapshot
 fail closed. The total instructions must fit libfx's 64 KiB limit; oversized
 instructions are refused, with no silent truncation of guidance.
 

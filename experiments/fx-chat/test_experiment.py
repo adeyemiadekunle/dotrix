@@ -234,7 +234,9 @@ class RuntimeTest(unittest.IsolatedAsyncioTestCase):
             try:
                 result = await asyncio.wait_for(team.ask("Ask for architecture and review"), timeout=60)
                 self.assertEqual(result.stop_reason, "end_turn")
-                self.assertEqual([item["status"] for item in team.observations], ["partial"])
+                self.assertEqual([item["status"] for item in team.observations], ["partial", "blocked"])
+                self.assertFalse(team.observations[1]["attempted"])
+                self.assertIsNone(team.observations[1]["usage"])
                 self.assertFalse(any(r["model"] == "review-model" for r in ModelHandler.requests))
                 parent_messages = json.dumps([r["messages"] for r in ModelHandler.requests if r["model"] == "main-model"])
                 self.assertIn("No structured specialist result", parent_messages)

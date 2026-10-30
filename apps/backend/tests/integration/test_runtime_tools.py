@@ -1380,6 +1380,8 @@ async def test_fx_context_guidance_is_private_encrypted_and_stable_on_recovery(n
 
     class FakeRuntime:
         async def prompt(self, *args, **kwargs):
+            if len(configs) == 1:
+                return TurnResult("", "handoff", handoff="saved-specialist-batch")
             return TurnResult("Saved answer", "end_turn")
 
         async def close(self):
@@ -1400,16 +1402,20 @@ async def test_fx_context_guidance_is_private_encrypted_and_stable_on_recovery(n
                                   content="Project Nova guidance marker", content_hash="a" * 64, size=28,
                                   created_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
         await session.commit()
-    for _ in range(2):
+    for revision in ("aaaa111", "bbbb222"):
         await fx_pilot.run_fx_nova_pilot(sessions, workspace_id=run.workspace_id, run_id=run.id, token=1,
-                                       secrets=secrets, delegation=object())
+                                       secrets=secrets, delegation=object(),
+                                       code_context=f"Connected repository acme/repo at {revision}")
         async with sessions() as session:
             binding = await session.scalar(select(AgentRuntimeBinding).where(AgentRuntimeBinding.run_id == run.id))
             assert binding.encrypted_context and "guidance marker" not in binding.encrypted_context
+            saved = json.loads(secrets.decrypt(binding.encrypted_context))
+            assert saved["code_context"] == "Connected repository acme/repo at aaaa111"
             await session.execute(update(KnowledgeFile).where(KnowledgeFile.project_id == run.project_id,
                 KnowledgeFile.path == "agent-rules/project-manager.md").values(content="Changed while children run"))
             await session.commit()
     assert configs[0].instructions == configs[1].instructions
+    assert "aaaa111" in configs[1].instructions and "bbbb222" not in configs[1].instructions
     assert "Workspace guidance marker" in configs[0].instructions
     assert "Project Nova guidance marker" in configs[0].instructions
     assert "Project context: Runtime (FXT)" in configs[0].instructions
