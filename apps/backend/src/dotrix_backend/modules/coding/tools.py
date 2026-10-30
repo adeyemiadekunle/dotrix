@@ -138,6 +138,11 @@ class _NoUsageCommand:
         return None
 
 
+def _bare(model: str) -> str:
+    """A model as its engine names it: "anthropic:claude-sonnet-5-5" → "claude-sonnet-5-5" (a bare name stays)."""
+    return model.partition(":")[2] or model
+
+
 def _clip(text: str, limit: int = MAX_STEP) -> str:
     text = " ".join(text.split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
@@ -233,7 +238,7 @@ class ClaudeCode(_NoUsageCommand):
         ]
         if browser:
             argv += ["--mcp-config", json.dumps(BROWSER_MCP)]
-        return argv + (["--model", model] if model else [])
+        return argv + (["--model", _bare(model)] if model else [])
 
     def parse(self, line: str, usage: Usage) -> Parsed:
         out = Parsed()
@@ -323,7 +328,7 @@ class Codex(_NoUsageCommand):
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
         argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral"]
-        return argv + (["-c", f'model="{model}"'] if model else []) + ["-"]
+        return argv + (["-c", f'model="{_bare(model)}"'] if model else []) + ["-"]
 
     def parse(self, line: str, usage: Usage) -> Parsed:
         out = Parsed()
@@ -738,12 +743,41 @@ def fx_models(settings: Settings, providers: frozenset[str] | set[str]) -> list[
 
 
 def models_for(settings: Settings, agent: CodingAgent, providers: frozenset[str] | set[str]) -> list[str]:
-    """The models a person picks from for this tool (the others run their provider's own)."""
+    """The models this engine can code on with these providers."""
     if agent is CodingAgent.OPENCODE:
         return coding_models(settings, providers)
     if agent is CodingAgent.FX:
         return fx_models(settings, providers)
-    return []
+    native = TOOLS[agent].provider  # Claude Code: Anthropic's; Codex: OpenAI's
+    also = [m for m in (TOOLS[agent].model(settings),) if m and ":" in m]
+    return [m for m in available_models(settings, *also, connected=set(providers)) if m.partition(":")[0] == native]
+
+
+# Which engine runs a model when the person hasn't set one that can: its provider's own, else OpenCode.
+AUTO_ENGINE = {"anthropic": CodingAgent.CLAUDE_CODE, "openai": CodingAgent.CODEX}
+
+
+def kai_models(settings: Settings, providers: frozenset[str] | set[str]) -> list[str]:
+    """Every model Kai can code on with these providers, whatever engine runs it: what a new session offers."""
+    found: list[str] = []
+    for agent in (CodingAgent.CLAUDE_CODE, CodingAgent.CODEX, CodingAgent.OPENCODE, CodingAgent.FX):
+        found += [m for m in models_for(settings, agent, providers) if m not in found]
+    return found
+
+
+def engine_for(
+    settings: Settings, model: str, providers: frozenset[str] | set[str], preferred: str | None = None,
+) -> CodingAgent | None:
+    """The engine Kai codes on for a model: the person's preferred engine (Account → Your models) when it can
+    run that model, else the model's provider's own (Claude Code for Anthropic, Codex for OpenAI), else OpenCode."""
+    auto = AUTO_ENGINE.get(model.partition(":")[0], CodingAgent.OPENCODE)
+    for name in dict.fromkeys([preferred, settings.coding_agent, auto, CodingAgent.OPENCODE]):
+        if name in (None, "auto") or name not in set(CodingAgent):
+            continue
+        agent = CodingAgent(name)
+        if model in models_for(settings, agent, providers):
+            return agent
+    return None
 
 
 def choose_agent(

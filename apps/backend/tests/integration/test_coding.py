@@ -903,6 +903,36 @@ async def test_fx_is_offered_only_once_turned_on_and_keeps_its_model(db_client: 
     assert (asked.json()["agent"], asked.json()["model"]) == ("fx", "openai:gpt-6.1")
 
 
+async def test_a_new_session_codes_on_your_model_and_the_engine_follows_it(db_client: AsyncClient, coding) -> None:
+    ada, _, ws, kun, _, _ = coding
+    await _save_key(db_client, ada.headers, "openai", "test-openai-personal-provider-key")
+    await _save_key(db_client, ada.headers, "xai", "test-xai-personal-provider-key")
+    base = f"{ws}/projects/{kun['id']}"
+    available = (await db_client.get(f"{base}/coding", headers=ada.headers)).json()
+    grok = next(m for m in available["models"] if m.startswith("xai:"))
+    gpt = next(m for m in available["models"] if m.startswith("openai:"))
+    saved = await db_client.put("/v1/me/models", json={"default_model": grok}, headers=ada.headers)
+    assert saved.status_code == 200, saved.text
+    assert (await db_client.get(f"{base}/coding", headers=ada.headers)).json()["default_model"] == grok
+
+    async def start(body: dict) -> dict:
+        issue = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Model"}, headers=ada.headers)).json()
+        made = await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json=body, headers=ada.headers)
+        assert made.status_code == 201, made.text
+        return made.json()
+
+    run = await start({})  # nothing picked: your default model, and the engine that runs it
+    assert (run["agent"], run["model"]) == ("opencode", grok)
+    run = await start({"model": gpt})
+    assert (run["agent"], run["model"]) == ("codex", gpt)
+    await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": "opencode"}, headers=ada.headers)
+    run = await start({"model": gpt})  # your preferred engine, where it can run the model
+    assert (run["agent"], run["model"]) == ("opencode", gpt)
+    refused = await db_client.post(f"{base}/coding/issues/{(await db_client.post(f'{base}/issues', json={'type': 'task', 'title': 'x'}, headers=ada.headers)).json()['key']}/runs",
+                                   json={"model": "openai:not-a-catalogue-model"}, headers=ada.headers)
+    assert refused.status_code == 422  # not one of your models
+
+
 async def test_approval_needs_the_recorded_tools_key_even_if_another_tool_is_available(db_client: AsyncClient, coding) -> None:
     ada, _, ws, kun, _, _ = coding
     await _save_key(db_client, ada.headers, "openai", "test-openai-personal-provider-key")

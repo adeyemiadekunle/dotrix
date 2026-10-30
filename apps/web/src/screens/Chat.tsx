@@ -37,7 +37,6 @@ import {
   type WorkMode,
 } from "@/lib/agent";
 import {
-  AGENT_NAMES,
   useCodingAvailability,
   useCodingSession,
   useCodingSessions,
@@ -1269,25 +1268,16 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   const pid = t?.project;
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
   const avail = useCodingAvailability(scope).data;
-  const [chosenTool, setChosenTool] = useState<keyof typeof AGENT_NAMES | null>(null);
   const [chosenModel, setChosenModel] = useState<string | null>(null);
   // On the platform, or on your own computer when one of yours runs `dotrix runner` for this project.
   const [where, setWhere] = useState<"cloud" | "local" | null>(null);
   const location = where ?? (avail && !avail.available && avail.local_available ? "local" : "cloud");
-  const toolOptions =
-    location === "local"
-      ? (avail?.local_tools ?? []).map((agent) => ({ agent, available: true, model: null, models: [] as string[] }))
-      : (avail?.tools ?? []).filter((tool) => tool.available);
-  const agent =
-    toolOptions.find((tool) => tool.agent === chosenTool)?.agent ??
-    toolOptions.find((tool) => tool.agent === avail?.default_tool)?.agent ??
-    toolOptions[0]?.agent ??
-    null;
-  const tool = toolOptions.find((tool) => tool.agent === agent);
-  // OpenCode and fx run on a model you pick; the others on their own provider's.
-  const picksModel = agent === "opencode" || agent === "fx";
-  const model = picksModel && location === "cloud" ? ((tool?.models?.includes(chosenModel ?? "") ? chosenModel : tool?.model) ?? null) : null;
-  const ready = (location === "local" ? avail?.local_available : avail?.available) && !!agent;
+  // Kai codes on the model you pick here, your default model to start with. The engine that runs it follows from
+  // the model (your preferred engine in Account → Your models, else the model's provider's own); on your own
+  // computer, the tool signed in there decides.
+  const models = location === "cloud" ? (avail?.models ?? []) : [];
+  const model = location === "cloud" ? ((chosenModel && models.includes(chosenModel) ? chosenModel : avail?.default_model) ?? models[0] ?? null) : null;
+  const ready = location === "local" ? avail?.local_available && (avail.local_tools ?? []).length > 0 : avail?.available && !!model;
   // In the desktop app, a folder of this computer's picked here starts its runner (core/desktop.ts).
   const here = desktop();
   const runners = useDesktopRunners();
@@ -1308,7 +1298,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
       .catch((e: unknown) => toast(e instanceof Error ? e.message : "This computer's runner didn't start", { kind: "err" }))
       .finally(() => setAdding(false));
   };
-  const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location, agent, model);
+  const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location, null, model);
   // The issue list opens two ways: typing "@" or "/" (menu is the query) or the Issue button (menuBtn); the button never touches the note.
   const menuOpen = menu !== null || menuBtn;
   const found = !menuOpen ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes((menu ?? "").toLowerCase())).slice(0, 8);
@@ -1420,25 +1410,8 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                   {location === "local" ? `On ${avail.local_runner ?? "your computer"}` : "Cloud"}
                 </button>
               )}
-              {toolOptions.length > 0 && agent && (
-                <Pick
-                  value={agent}
-                  label="Coding tool"
-                  lead={<Ic n="bot" s={12} />}
-                  onChange={(value) => {
-                    setChosenTool(value as keyof typeof AGENT_NAMES);
-                    setChosenModel(null);
-                  }}
-                  options={toolOptions.map((tool) => [tool.agent, AGENT_NAMES[tool.agent]])}
-                />
-              )}
-              {picksModel && model && (
-                <Pick
-                  value={model}
-                  label="Coding model"
-                  onChange={setChosenModel}
-                  options={(tool?.models ?? []).map((m) => [m, m.split(":").slice(1).join(":")])}
-                />
+              {model && (
+                <Pick value={model} label="Model" lead={<Ic n="sparkles" s={12} />} onChange={setChosenModel} options={models.map((m) => [m, modelName(m)])} />
               )}
               {avail && location === "cloud" && !avail.available && (
                 <span className="cpill" data-tip={avail.reason ?? undefined}>

@@ -1057,7 +1057,10 @@ function MyModels() {
       </div>
       <div className="sblock">
         <h2>Your default model</h2>
-        <SRow t="New conversations" d="The model your new conversations use when you have its provider key.">
+        <SRow
+          t="New conversations and coding sessions"
+          d="The model your new conversations and Kai's new coding sessions start on, when you have its provider key."
+        >
           <select
             className="select"
             style={{ width: "auto", minWidth: 220 }}
@@ -1075,22 +1078,22 @@ function MyModels() {
         </SRow>
       </div>
       <div className="sblock">
-        <h2>Your default coding tool</h2>
+        <h2>Kai&apos;s coding engine</h2>
         <SRow
-          t="New coding sessions"
-          d="Auto uses Codex with OpenAI, Claude Code with Anthropic, or OpenCode with another available provider. Existing sessions keep their tool."
+          t="Runs the model you pick"
+          d="Kai codes on the model you pick for a session (your default model to start). Auto runs Anthropic models on Claude Code, OpenAI's on Codex, and the rest on OpenCode. A preferred engine is used wherever it can run the model. Existing sessions keep theirs."
         >
           <select
             className="select"
-            aria-label="Your default coding tool"
+            aria-label="Kai's coding engine"
             value={d.default_coding_tool ?? ""}
             onChange={(e) => {
               const tool = e.target.value as "codex" | "claude-code" | "opencode" | "fx" | "";
-              if (isLive()) void save(myCodingToolSaved(tool || null), "Default coding tool saved");
-              else toast("Default coding tool saved");
+              if (isLive()) void save(myCodingToolSaved(tool || null), "Coding engine saved");
+              else toast("Coding engine saved");
             }}
           >
-            <option value="">Auto · available provider</option>
+            <option value="">Auto · follows the model</option>
             <option value="codex">Codex · OpenAI</option>
             <option value="claude-code">Claude Code · Anthropic</option>
             <option value="opencode">OpenCode · any connected provider</option>

@@ -69,7 +69,7 @@ from .schemas import (
     CodingSessionUpdate,
     CodingToolOption,
 )
-from .tools import choose_agent, model_for, models_for, run_key, tool_for
+from .tools import choose_agent, engine_for, kai_models, model_for, models_for, run_key, tool_for
 
 MAX_LISTED = 50
 logger = logging.getLogger(__name__)
@@ -139,6 +139,15 @@ class CodingService:
                 raise CodingUnavailable("The coding tool you picked isn't installed on your computer")
             return selected, model if fixed else None
         keys = await self._keys(project, user_id)
+        # A new session codes on the model picked, else the person's default model; the engine follows it.
+        if agent is None and not fixed:
+            choices = kai_models(self.settings, set(keys))
+            default = user.default_model if user else None
+            wanted = model if model is not None else (default if default in choices else None)
+            if wanted is not None:
+                if wanted not in choices:
+                    raise Unprocessable("Choose one of your models (Account → Your models)")
+                agent, model = engine_for(self.settings, wanted, set(keys), preferred), wanted
         selected = agent or choose_agent(
             self.settings, set(keys), preferred=preferred, preferred_model=user.default_model if user else None,
         )
@@ -187,7 +196,14 @@ class CodingService:
         elif await self._repo(project) is None:
             reason = "Connect the project's GitHub repository first (project settings → Repository)"
         runner, local_reason = await self.local_availability(project, user_id)
+        # What a new session offers: every model you can code on, starting from your default model.
+        models = kai_models(self.settings, providers)
+        default_model = user.default_model if user and user.default_model in models else None
+        if default_model is None and agent is not None:
+            fallback = model_for(self.settings, agent, providers, preferred_model=user.default_model if user else None)
+            default_model = fallback if fallback in models else next(iter(models), None)
         return CodingAvailability(available=reason is None, agent=agent, sandbox=sandbox, reason=reason,
+                                  models=models, default_model=default_model,
                                   local_available=local_reason is None, local_runner=runner.name if runner else None,
                                   local_reason=local_reason, tools=tools, default_tool=agent,
                                   local_tools=[CodingAgent(t) for t in runner.tools] if runner else [])

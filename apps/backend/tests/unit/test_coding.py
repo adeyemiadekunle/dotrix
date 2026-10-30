@@ -354,3 +354,30 @@ def test_a_run_uses_only_a_supplied_personal_key() -> None:
     assert choose_agent(opencode, {"anthropic"}) is CodingAgent.OPENCODE
     assert choose_agent(opencode, {"google_genai"}) is CodingAgent.OPENCODE
     assert tool_for(CodingAgent.OPENCODE, "google_genai:gemini-3-pro").provider == "google_genai"
+
+
+def test_a_session_codes_on_its_model_and_the_engine_follows_it() -> None:
+    from dotrix_backend.modules.coding.tools import engine_for, kai_models
+
+    settings = _settings(coding_fx=True, coding_fx_model="openai:gpt-6.1")
+    keys = {"anthropic", "openai", "xai"}
+    models = kai_models(settings, keys)
+    claude = next(m for m in models if m.startswith("anthropic:"))
+    gpt = next(m for m in models if m.startswith("openai:"))
+    grok = next(m for m in models if m.startswith("xai:"))
+    # Nothing preferred: the model's provider's own engine, else OpenCode.
+    assert engine_for(settings, claude, keys) is CodingAgent.CLAUDE_CODE
+    assert engine_for(settings, gpt, keys) is CodingAgent.CODEX
+    assert engine_for(settings, grok, keys) is CodingAgent.OPENCODE
+    # A preferred engine (Account → Your models) wins where it can run the model.
+    assert engine_for(settings, gpt, keys, "opencode") is CodingAgent.OPENCODE
+    assert engine_for(settings, grok, keys, "fx") is CodingAgent.FX
+    assert engine_for(settings, claude, keys, "fx") is CodingAgent.CLAUDE_CODE  # fx can't run Anthropic
+    assert engine_for(settings, claude, keys, "codex") is CodingAgent.CLAUDE_CODE
+    assert "anthropic:x" not in kai_models(settings, {"openai"})
+
+
+def test_claude_code_and_codex_take_the_model_as_their_engine_names_it() -> None:
+    assert ClaudeCode().command("anthropic:claude-haiku-5-5")[-2:] == ["--model", "claude-haiku-5-5"]
+    assert ClaudeCode().command("claude-haiku-5-5")[-2:] == ["--model", "claude-haiku-5-5"]  # a server setting's bare name
+    assert Codex().command("openai:gpt-5.5")[-3:] == ["-c", 'model="gpt-5.5"', "-"]
