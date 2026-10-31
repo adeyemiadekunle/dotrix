@@ -143,7 +143,9 @@ async def test_kai_s_brief_carries_the_definition_of_done_its_skills_and_the_tea
     from dotrix_backend.modules.projects.models import Project
 
     ada, _, ws, base = await _world(db_client, signup, create_team, add_member)
-    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Add refunds"})).json()
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={
+        "type": "task", "title": "Add a login page", "description": "A form for the email and password."})).json()
+    typo = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Fix a typo in the README"})).json()
     factory = db_client._transport.app.state.jobs.ctx.session_factory  # type: ignore[attr-defined]
     saved = await db_client.put(f"{base}/knowledge/files/agent-rules/coding.md", headers=ada.headers,
                                 json={"content": "# Coding\nUse the repository's logger, never print()."})
@@ -155,6 +157,13 @@ async def test_kai_s_brief_carries_the_definition_of_done_its_skills_and_the_tea
         brief = await build_brief(session, project, IssueRead.model_validate(issue), None)
     assert "## Definition of done" in brief and "migration can be rolled back" in brief
     assert "Use the repository's logger, never print()." in brief  # the project's own coding rules
+    # The skills this issue calls for (a login form: security and UI), not every one of Kai's.
     assert '<data source="skill security-review">' in brief and '<data source="skill build-a-ui-change">' in brief
+    assert "skill plan-a-schema-change" not in brief and "skill design-an-api" not in brief
+    assert "skill definition-of-done" not in brief  # the list itself is in the brief
     assert "write-acceptance-criteria" not in brief  # Lyra's, not Kai's
+    async with factory() as session:
+        project = await session.get(Project, base.rsplit("/", 1)[-1])
+        plain = await build_brief(session, project, IssueRead.model_validate(typo), None)
+    assert "## Definition of done" in plain and "## Skills for this work" not in plain
     assert "Open a pull request that links" not in brief  # the engine's default coding.md isn't repeated

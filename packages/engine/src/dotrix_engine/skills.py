@@ -1,6 +1,8 @@
 """Skills (agents v2 step 2): reusable procedures an agent loads when the work calls for one,
 `SKILL.md`-style: a name (the file's), a one-line description, the agents it's for, and the steps.
 
+A skill's "When:" line lists words that, found in an issue, put the skill in Kai's brief (one
+without the line is always included); chat agents read skills when they choose, so it's Kai's only.
 A skill's "Agents:" line names the roles (agent-rules file names: architecture, reviewer, coding,
 …) whose prompt lists it; a skill without one is listed for every agent. Kai can't read skills
 from the sandbox, so its brief carries its own skills in full (`skills_for("coding")`).
@@ -16,6 +18,7 @@ import re
 SKILLS_FOLDER = "agent-rules/skills/"
 _DESCRIPTION = re.compile(r"^description\s*:\s*(.+)$", re.IGNORECASE)
 _AGENTS = re.compile(r"^agents\s*:\s*(.+)$", re.IGNORECASE)
+_WHEN = re.compile(r"^when\s*:\s*(.+)$", re.IGNORECASE)
 
 # What every change of Kai's has to meet before it's done, and what Juno checks it against.
 DEFINITION_OF_DONE = """## Definition of done
@@ -96,6 +99,7 @@ Agents: product, project-manager
     "threat-model-a-feature": """# Skill: threat-model a feature
 Description: Find how a feature could be abused before it's built (STRIDE), and what has to stop it.
 Agents: architecture, reviewer, coding
+When: auth, login, sign-in, sign in, password, token, session, permission, role, access, tenant, workspace, upload, payment, webhook, secret, encrypt, admin, invite, oauth, public endpoint
 
 ## Steps
 1. Draw the flow in words: who calls it, what data it takes and returns, where it's stored, which
@@ -115,6 +119,7 @@ Agents: architecture, reviewer, coding
     "security-review": """# Skill: security review
 Description: Review code or a design against an OWASP ASVS checklist; every finding with file, line, and fix.
 Agents: reviewer, architecture, coding
+When: auth, login, sign-in, sign in, password, token, session, cookie, csrf, permission, role, access, tenant, upload, file, payment, webhook, secret, key, encrypt, admin, invite, oauth, sql, query, input, form, redirect, url, rate limit, security, vulnerab, dependency, upgrade
 
 ## Check, in order
 1. Authorization and tenant isolation: every route checks permission on the server; every query
@@ -142,6 +147,7 @@ exploited, and the fix. Say what you checked and found nothing in, too.
     "design-an-api": """# Skill: design an API
 Description: Design an HTTP API change: resources, errors, pagination, versioning, and idempotency.
 Agents: architecture, reviewer, coding
+When: api, endpoint, route, rest, http, request, response, webhook, pagination, graphql, openapi, status code
 
 ## Steps
 1. Name the resources (nouns) and their relationships; one URL per resource, nested only for
@@ -162,6 +168,7 @@ Agents: architecture, reviewer, coding
     "plan-a-schema-change": """# Skill: plan a schema change
 Description: Change a database schema without downtime: backward-compatible steps, backfill, rollback, locks.
 Agents: architecture, reviewer, coding
+When: migration, schema, table, column, index, database, db, sql, alembic, model, foreign key, backfill
 
 ## Steps
 1. What changes, and every reader and writer of the affected tables (`code_search`, `graph_impact`).
@@ -181,6 +188,7 @@ Agents: architecture, reviewer, coding
     "review-a-backend-change": """# Skill: review a backend change
 Description: Review server code for transactions, queries, retries, timeouts, logging, and tests.
 Agents: reviewer, coding
+When: api, endpoint, route, server, backend, service, worker, job, queue, database, query, migration, transaction, .py, .go, .rs, .java, .rb, .sql
 
 ## Check
 1. Transactions: one unit of work commits once; no partial writes on failure; no external call
@@ -199,6 +207,7 @@ Agents: reviewer, coding
     "review-a-frontend-change": """# Skill: review a frontend change
 Description: Review UI code for accessibility (WCAG), loading, empty and error states, performance, and secrets.
 Agents: reviewer, coding
+When: ui, page, screen, component, button, form, modal, dialog, layout, css, style, frontend, react, view, accessibility, a11y, .tsx, .jsx, .vue, .svelte, .css
 
 ## Check
 1. Accessibility (WCAG 2.1 AA): every control is a real button or link, reachable and usable by
@@ -218,6 +227,7 @@ Agents: reviewer, coding
     "build-a-ui-change": """# Skill: build a UI change
 Description: Build a frontend change with the project's design system, all its states, and a tested flow.
 Agents: coding
+When: ui, page, screen, component, button, form, modal, dialog, layout, css, style, frontend, react, view, design, accessibility, a11y, .tsx, .jsx, .vue, .svelte, .css
 
 ## Steps
 1. Find the screen and the components it uses; reuse the design system's components, tokens, and
@@ -317,6 +327,31 @@ def skill_agents(content: str) -> frozenset[str] | None:
         if (match := _AGENTS.match(line.strip())) is not None:
             return frozenset(a.strip().lower() for a in match.group(1).split(",") if a.strip())
     return None
+
+
+def skill_triggers(content: str) -> tuple[str, ...] | None:
+    """The words in a skill's "When:" line; None (always) without one."""
+    for line in content.splitlines():
+        if (match := _WHEN.match(line.strip())) is not None:
+            return tuple(w.strip().lower() for w in match.group(1).split(",") if w.strip())
+    return None
+
+
+def skill_matches(content: str, text: str) -> bool:
+    """Whether `text` (an issue, a request) calls for this skill: any of its words, as a whole word
+    (a word starting with "." matches a file extension; one ending in a letter can match its start,
+    so "vulnerab" finds "vulnerability"). A skill without words always matches."""
+    words = skill_triggers(content)
+    if words is None:
+        return True
+    lowered = text.lower()
+    for word in words:
+        if word.startswith("."):
+            if re.search(re.escape(word) + r"\b", lowered):
+                return True
+        elif re.search(r"(?<![a-z0-9])" + re.escape(word) + (r"" if len(word) >= 7 else r"(?![a-z0-9])"), lowered):
+            return True
+    return False
 
 
 def skills_for(skills: dict[str, str], role: str) -> dict[str, str]:

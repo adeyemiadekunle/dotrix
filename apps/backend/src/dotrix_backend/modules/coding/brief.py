@@ -25,6 +25,7 @@ from dotrix_engine.skills import (
     SKILLS_FOLDER,
     default_skills,
     skill_agents,
+    skill_matches,
     skill_name,
 )
 
@@ -96,18 +97,19 @@ async def build_brief(
     if user_id:
         kai = with_preferences([kai], await preferences_for(session, project.workspace_id, user_id), "the person")[0]
     parts += ["", role_instructions(kai), "", RULES, "", DEFINITION_OF_DONE.strip()]
-    parts += await _standards(session, project)
+    parts += await _standards(session, project, "\n".join((issue.title, issue.description, note or "")))
     return "\n".join(parts)
 
 
 STANDARDS_CHARS = 16_000  # the skills and the team's coding rules, together
 
 
-async def _standards(session: AsyncSession, project: Project) -> list[str]:
+async def _standards(session: AsyncSession, project: Project, work: str) -> list[str]:
     """What the team asks of code here: the project's agent-rules/coding.md when a person changed it
     (the engine's default describes the platform's job, said above already; the workspace's and project's
-    guidance for Kai is its contract's, in `role_instructions`), and the
-    skills meant for Kai, in full, since Kai can't read them from the sandbox. The project's skill
+    guidance for Kai is its contract's, in `role_instructions`), and the skills meant for Kai that `work`
+    (the issue and the request) calls for (`skill_matches`: a skill's "When:" words), in full, since Kai
+    can't read them from the sandbox; the definition of done is in the brief already. The project's skill
     wins over the workspace's of the same name; a skill the project deleted stays deleted."""
     files = await KnowledgeRepository(session).list_files(project.id)
     live = {f.path: f.content for f in files if not f.deleted}
@@ -115,7 +117,8 @@ async def _standards(session: AsyncSession, project: Project) -> list[str]:
     skills = await WorkspaceSkills(session).texts(project.workspace_id)
     skills |= {skill_name(path): text for path, text in default_skills().items() if path not in ever}
     skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")}
-    mine = {name: text for name, text in sorted(skills.items()) if "coding" in (skill_agents(text) or ())}
+    mine = {name: text for name, text in sorted(skills.items())
+            if "coding" in (skill_agents(text) or ()) and name != "definition-of-done" and skill_matches(text, work)}
     rules = []
     default = default_rules(project.name).get("agent-rules/coding.md", "").strip()
     if (own := live.get("agent-rules/coding.md", "").strip()) and own != default:
@@ -129,8 +132,8 @@ async def _standards(session: AsyncSession, project: Project) -> list[str]:
             out.append(rule[:budget])
             budget -= min(len(rule), budget)
     if mine and budget > 0:
-        out += ["", "## Your skills",
-                "Use the one that fits the work (an API, a schema change, a UI change, anything security-sensitive):"]
+        out += ["", "## Skills for this work",
+                "Picked for what this issue touches; follow their steps where they apply:"]
         for name, text in mine.items():
             if len(text) > budget:
                 out.append(f"- {name}: (left out: the brief is full)")
