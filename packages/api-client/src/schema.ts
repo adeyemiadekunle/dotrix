@@ -4677,7 +4677,7 @@ export interface components {
             model?: string | null;
             /**
              * Budget Tokens
-             * @description Tokens one run it leads may use; null: the project's
+             * @description Tokens one run it leads may use (input + output, every step); null: no limit
              */
             budget_tokens?: number | null;
             /**
@@ -4803,7 +4803,7 @@ export interface components {
             model?: string | null;
             /**
              * Budget Tokens
-             * @description Tokens one run it leads may use; null: the project's
+             * @description Tokens one run it leads may use (input + output, every step); null: no limit
              */
             budget_tokens?: number | null;
             /**

@@ -22997,7 +22997,7 @@
               }
             ],
             "title": "Budget Tokens",
-            "description": "Tokens one run it leads may use; null: the project's"
+            "description": "Tokens one run it leads may use (input + output, every step); null: no limit"
           },
           "tools": {
             "items": {
@@ -23257,7 +23257,7 @@
               }
             ],
             "title": "Budget Tokens",
-            "description": "Tokens one run it leads may use; null: the project's"
+            "description": "Tokens one run it leads may use (input + output, every step); null: no limit"
           },
           "tools": {
             "items": {
