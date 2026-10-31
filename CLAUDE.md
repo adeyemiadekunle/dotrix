@@ -81,7 +81,7 @@ A pre-commit hook (Husky + lint-staged) runs ESLint --fix and Prettier on staged
 
 Since 2026-10-31 (v0.1.0), every change goes through `stage`:
 
-- **Branch from `stage`, open the PR into `stage`.** Never into `main`: CI's `release-flow` job fails a PR into `main` whose branch isn't `stage`.
+- **Branch from `stage`, open the PR into `stage`.** Never into `main`: the `release-flow` workflow (`.github/workflows/release-flow.yml`) fails a PR into `main` whose branch isn't `stage`, and runs again when a PR is retargeted.
 - **Every PR adds its change to `CHANGELOG.md` under Unreleased** (Added, Changed, Fixed, Removed, Security; one line each, written for the people who use dotrix).
 - **`stage` → `main` is the release.** To release, on a branch from `stage`: `python scripts/release.py bump X.Y.Z` (sets every package's version, `API_VERSION`, and `uv.lock`, and turns Unreleased into `## [X.Y.Z] - date`), then `pnpm openapi`, then a PR into `stage`. Then a PR from `stage` into `main`. When it merges, `.github/workflows/release.yml` tags `vX.Y.Z` and publishes the GitHub release with that section. A `stage` → `main` merge that keeps the version publishes nothing.
 - **Versions** follow semver: before 1.0, a minor bump can change the API or the database; a patch is fixes only. `X.Y.Z-rc.N` is published as a prerelease. `python scripts/release.py check` (in CI) makes sure every package says the same version and the changelog has its section.
