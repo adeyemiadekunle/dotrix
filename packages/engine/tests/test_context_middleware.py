@@ -1,4 +1,5 @@
-"""Keeping prompts small: unchanged re-reads and summarising long conversations."""
+"""Keeping prompts small: unchanged re-reads and summarising long conversations; earlier turns'
+thinking left out."""
 from pathlib import Path
 
 from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
@@ -6,7 +7,12 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from dotrix_engine.agent import build_team
-from dotrix_engine.context_middleware import SHORT_DESCRIPTIONS, UNCHANGED_NOTE, earlier_read
+from dotrix_engine.context_middleware import (
+    SHORT_DESCRIPTIONS,
+    UNCHANGED_NOTE,
+    earlier_read,
+    without_earlier_thinking,
+)
 from dotrix_engine.testing import ScriptedChatModel, tool_call
 
 ROADMAP = "# Roadmap\n\n" + "\n".join(f"- Phase {i}: hubs, drivers and parcels in state {i}" for i in range(40))
@@ -103,3 +109,26 @@ async def test_the_model_gets_fewer_shorter_tool_definitions(tmp_path: Path) -> 
     assert "delete" not in tools and "execute" not in tools
     assert tools["grep"].description == SHORT_DESCRIPTIONS["grep"]
     assert "task" in tools and "write_file" in tools  # everything else is still there
+
+
+THOUGHT = {"type": "thinking", "thinking": "Let me look.", "signature": "signed-for-this-prompt"}
+
+
+def test_earlier_turns_thinking_is_left_out_and_the_current_turns_kept() -> None:
+    earlier = AIMessage(content=[THOUGHT, {"type": "text", "text": "Three issues."}])
+    current = AIMessage(content=[THOUGHT], tool_calls=[{"name": "ls", "args": {}, "id": "c1"}])
+    messages = [HumanMessage("How many?"), earlier, HumanMessage("Which?"), current]
+    sent = without_earlier_thinking(messages)
+    assert sent[1].content == [{"type": "text", "text": "Three issues."}]
+    assert sent[3] is current  # its tool loop needs its thinking
+    assert earlier.content[0] == THOUGHT  # the saved conversation is unchanged
+
+
+async def test_a_follow_up_doesnt_send_the_earlier_turns_thinking(tmp_path: Path) -> None:
+    """Anthropic refuses a thinking block under another system prompt, and each turn's differs."""
+    model = ScriptedChatModel.of(AIMessage(content=[THOUGHT, {"type": "text", "text": "Hello."}]), "Again.")
+    agent = team(model, tmp_path)
+    await agent.ainvoke({"messages": [{"role": "user", "content": "hi"}]}, config("t6"))
+    await agent.ainvoke({"messages": [{"role": "user", "content": "hi again"}]}, config("t6"))
+    [reply] = [m for m in model.received[-1] if isinstance(m, AIMessage)]
+    assert reply.content == [{"type": "text", "text": "Hello."}]

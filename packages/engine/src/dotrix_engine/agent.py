@@ -31,7 +31,7 @@ from .catalog import group as catalog_group
 from .catalog import tool_id, tool_name
 from .code import CODE_GUIDE
 from .config import ProjectConfig
-from .context_middleware import CompactTools, UnchangedReads, summarization
+from .context_middleware import CompactTools, EarlierThinking, UnchangedReads, summarization
 from .contracts import PM_HANDLE, AgentSpec
 from .delegation import DelegationBoundary
 from .outputs import ResultSink, StageSink, result_instructions, result_tool, stage_tool
@@ -509,7 +509,7 @@ blockers, and documentation status. A briefing never writes.
     def middleware() -> list[Any]:
         """Fresh instances for each agent: files already read, and when to summarise."""
         allowed = set() if platform_delegation else {spec.agent_name for spec in team}
-        extra: list[Any] = [CompactTools(), UnchangedReads(), DelegationBoundary(allowed)]
+        extra: list[Any] = [CompactTools(), EarlierThinking(), UnchangedReads(), DelegationBoundary(allowed)]
         if summarize_after_tokens:
             extra.append(summarization(summary_model, backend, summarize_after_tokens))
         return extra
