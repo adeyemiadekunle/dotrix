@@ -140,38 +140,6 @@ function agentReply(th: Thread, by: string, text: string, activity: string[] = [
     render();
   }, 1100);
 }
-function cannedAnswer(th: Thread, q: string): { text: string; activity: string[]; changes?: ProposedChange[] } {
-  const p = proj(th.project);
-  const name = p?.name ?? "your projects";
-  const ql = q.toLowerCase();
-  const open = D().tasks.filter((t) => (!p || t.project === p.id) && t.status !== "done" && !t.archived);
-  if (/summar|status|what changed|update/.test(ql))
-    return {
-      activity: ["Read current-state.md", "Listed the board"],
-      text: `**${name}**: ${open.length} open issues, ${open.filter((t) => t.status === "progress").length} in progress, ${open.filter((t) => t.status === "blocked").length} blocked.\n\nNext up: ${open
-        .slice(0, 3)
-        .map((t) => `**${t.key}** ${t.title}`)
-        .join(", ")}.`,
-    };
-  if (/stor|issue|ticket|break.*down/.test(ql) && p)
-    return {
-      activity: ["Read requirements/", "Searched the board for duplicates"],
-      text: "I'd add one story for this. It waits for your approval:",
-      changes: [
-        {
-          id: uid("pc"),
-          kind: "create_issue",
-          title: q.replace(/^.*?(add|create|write)\s+/i, "").slice(0, 80) || "New story",
-          fields: { Type: "Story", Priority: "Medium" },
-          status: "pending",
-        },
-      ],
-    };
-  return {
-    activity: ["Read project.md", "Searched the project's documents"],
-    text: `Here's what I found in ${name}'s documents and board. ${open.length ? `The most urgent open issue is **${open[0]!.key}** ${open[0]!.title}.` : "Nothing is open."} Ask me to turn this into issues or a document when you're ready.`,
-  };
-}
 /** Chat and coding run on the API in the next step; a real workspace says so instead of a canned reply. */
 /** "owner/name" from a repo's address (or the name as it is). */
 function repoName(url: string | undefined): string | undefined {
@@ -215,41 +183,6 @@ function agentsNotWired(): boolean {
   if (!isLive()) return false;
   toast("Chat with the agents comes to your workspace in the next update. Try it in the demo workspace.", { kind: "info", ms: 5000 });
   return true;
-}
-function sendChat(th: Thread, text: string, agent: string) {
-  const q = text.trim();
-  if (!q || agentsNotWired()) return;
-  mutate(() => {
-    th.messages.push({ id: uid("cm"), role: "user", by: D().me, at: Date.now(), text: q });
-    th.agent = agent;
-    th.at = Date.now();
-  });
-  const a = cannedAnswer(th, q);
-  agentReply(th, agent, a.text, a.activity, a.changes);
-}
-export function newThread(project: string | null, agent: string, model: string, first: string, projects?: string[]): Thread | null {
-  if (agentsNotWired()) return null;
-  const title = first
-    .replace(/^(hi|hello|hey)[,!.\s]+/i, "")
-    .replace(/^(can|could) you\s+|^please\s+/i, "")
-    .split(/[.?!\n]/)[0]!
-    .split(" ")
-    .slice(0, 7)
-    .join(" ");
-  const th: Thread = {
-    id: uid("th"),
-    project,
-    projects,
-    title: title[0]?.toUpperCase() + title.slice(1) || "New chat",
-    by: D().me,
-    agent,
-    model,
-    at: Date.now(),
-    messages: [],
-  };
-  mutate(() => D().threads.unshift(th));
-  sendChat(th, first, agent);
-  return th;
 }
 /* ---------- coding sessions ---------- */
 export function decideCoding(cs: CodingSession, approve: boolean, reason = "") {
