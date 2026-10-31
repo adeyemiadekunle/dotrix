@@ -4,7 +4,8 @@ The sandbox can't see these rules (it only edits files), so the worker checks th
 changes: `.dotrix/` lives on the platform and never goes into a code repo, CI configuration
 (all of `.github/`, other CI systems' files) could leak the repo's secrets when the PR's checks
 run, and `.git` is git's own. Files CI runs without being CI configuration (build scripts, test
-setup) can't be refused without making most runs useless, so they're named on the PR instead.
+setup) can't be refused without making most runs useless, so a person accepts a turn that changes
+them before it's pushed, in every approval mode (`needs_a_person`), and the PR names them.
 """
 from __future__ import annotations
 
@@ -50,6 +51,14 @@ def ci_sensitive(paths: list[str]) -> list[str]:
     """The changed files CI may run (build scripts, test setup): for a person to review first."""
     return [path for path in paths if any(fnmatch(part, pattern) for part in PurePosixPath(path).parts
                                           for pattern in CI_SENSITIVE)]
+
+
+def needs_a_person(approval_mode: str, paths: list[str]) -> tuple[bool, list[str]]:
+    """Whether a turn's checked changes wait for a person to accept them, and the CI-sensitive files
+    that make them: in Manual every turn waits; in Accept edits and Auto, a turn that changes files CI
+    runs waits too (its PR's checks would run that code with the repo's secrets)."""
+    sensitive = ci_sensitive(paths)
+    return approval_mode == "manual" or bool(sensitive), sensitive
 
 
 def check(paths: list[str]) -> list[str]:

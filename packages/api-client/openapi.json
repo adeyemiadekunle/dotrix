@@ -25958,6 +25958,14 @@
             "type": "array",
             "title": "Files Changed"
           },
+          "ci_sensitive": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ci Sensitive",
+            "description": "Changed files CI runs (build scripts, test setup): a turn that changes any waits for a person to accept it, in every mode"
+          },
           "screenshots": {
             "items": {
               "$ref": "#/components/schemas/CodingScreenshot"
