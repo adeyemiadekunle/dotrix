@@ -354,6 +354,20 @@ def skill_matches(content: str, text: str) -> bool:
     return False
 
 
+_DIFF_HEADERS = ("diff --git ", "index ", "--- ", "+++ ", "@@ ", "new file mode", "deleted file mode", "similarity index")
+
+
+def review_skills(text: str, skills: dict[str, str] | None = None) -> list[str]:
+    """The review skills a change calls for, from what it touched (`text`: its title, files, diff):
+    the reviewer's skills whose "When:" words appear, the definition of done aside (always checked)."""
+    found = skills if skills is not None else SKILLS
+    # A diff's own header lines ("index 3f2a..9c1b", "diff --git") say nothing about the change.
+    text = "\n".join(line for line in text.splitlines() if not line.startswith(_DIFF_HEADERS))
+    return [name for name, content in sorted(found.items())
+            if "reviewer" in (skill_agents(content) or ()) and skill_triggers(content) is not None
+            and name != "definition-of-done" and skill_matches(content, text)]
+
+
 def skills_for(skills: dict[str, str], role: str) -> dict[str, str]:
     """The skills `role` gets: those naming it, and those that name nobody."""
     return {name: text for name, text in skills.items() if (agents := skill_agents(text)) is None or role in agents}

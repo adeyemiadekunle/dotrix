@@ -24,6 +24,7 @@ from dotrix_engine.skills import (
     DEFINITION_OF_DONE,
     SKILLS_FOLDER,
     default_skills,
+    describe_skill,
     skill_agents,
     skill_matches,
     skill_name,
@@ -97,7 +98,9 @@ async def build_brief(
     if user_id:
         kai = with_preferences([kai], await preferences_for(session, project.workspace_id, user_id), "the person")[0]
     parts += ["", role_instructions(kai), "", RULES, "", DEFINITION_OF_DONE.strip()]
-    parts += await _standards(session, project, "\n".join((issue.title, issue.description, note or "")))
+    # What the work is about: the issue, the request, and for a follow-up what earlier turns did and touched.
+    work = "\n".join((issue.title, issue.description, note or "", *(summary for _, summary in earlier or [])))
+    parts += await _standards(session, project, work)
     return "\n".join(parts)
 
 
@@ -117,8 +120,10 @@ async def _standards(session: AsyncSession, project: Project, work: str) -> list
     skills = await WorkspaceSkills(session).texts(project.workspace_id)
     skills |= {skill_name(path): text for path, text in default_skills().items() if path not in ever}
     skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")}
-    mine = {name: text for name, text in sorted(skills.items())
-            if "coding" in (skill_agents(text) or ()) and name != "definition-of-done" and skill_matches(text, work)}
+    kais = {name: text for name, text in sorted(skills.items())
+            if "coding" in (skill_agents(text) or ()) and name != "definition-of-done"}
+    mine = {name: text for name, text in kais.items() if skill_matches(text, work)}
+    others = {name: text for name, text in kais.items() if name not in mine}
     rules = []
     default = default_rules(project.name).get("agent-rules/coding.md", "").strip()
     if (own := live.get("agent-rules/coding.md", "").strip()) and own != default:
@@ -140,6 +145,12 @@ async def _standards(session: AsyncSession, project: Project, work: str) -> list
                 continue
             out.append(f'<data source="skill {name}">\n{text.strip()}\n</data>')
             budget -= len(text)
+    if others:
+        # A line each, so the work can name one it turned out to need (a "refund bug" in payment code).
+        out += ["", "## Other skills (not included)",
+                "If your work turns out to touch one of these areas, say so in your summary, with what you "
+                "checked, so the review and the next turn apply it:"]
+        out += [f"- {name}: {describe_skill(text)}" for name, text in others.items()]
     return out
 
 

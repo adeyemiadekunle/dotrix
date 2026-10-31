@@ -103,6 +103,9 @@ def _sees(run: CodingRun, member: Membership) -> bool:
 def _earlier(turn: CodingRun) -> str:
     """What an earlier turn did, for the next turn's brief."""
     said = turn.summary or turn.error or STATUS_WORDS[turn.status]
+    paths = [str(f.get("path")) for f in turn.files_changed or [] if isinstance(f, dict) and f.get("path")]
+    if paths:  # what it touched, for this turn and for picking its skills (brief.py)
+        said += f"\n(changed: {', '.join(paths[:12])}{', …' if len(paths) > 12 else ''})"
     if turn.status is CodingRunStatus.REJECTED and turn.summary:
         return f"(its changes were rejected and never pushed: they're not on the branch) {said}"
     return said

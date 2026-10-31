@@ -166,4 +166,12 @@ async def test_kai_s_brief_carries_the_definition_of_done_its_skills_and_the_tea
         project = await session.get(Project, base.rsplit("/", 1)[-1])
         plain = await build_brief(session, project, IssueRead.model_validate(typo), None)
     assert "## Definition of done" in plain and "## Skills for this work" not in plain
+    # The rest are named, a line each, for Kai to say if its work turned out to need one.
+    assert "## Other skills (not included)" in brief and "- plan-a-schema-change: Change a database schema" in brief
+    # A follow-up picks from what the earlier turn touched, though the issue never said "migration".
+    async with factory() as session:
+        project = await session.get(Project, base.rsplit("/", 1)[-1])
+        after = await build_brief(session, project, IssueRead.model_validate(typo), "Carry on.",
+                                  [(1, "Fixed the typo.\n(changed: README.md, migrations/versions/0042_add_index.py)")])
+    assert '<data source="skill plan-a-schema-change">' in after and "migrations/versions/0042_add_index.py" in after
     assert "Open a pull request that links" not in brief  # the engine's default coding.md isn't repeated
