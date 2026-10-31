@@ -168,6 +168,14 @@ async def close_coding_session(session_id: uuid.UUID, access: ProjectViewer, cod
     await coding.close_session(access, session_id)
 
 
+@router.delete("/sessions/{session_id}/sandbox", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 409))
+async def delete_coding_sandbox(session_id: uuid.UUID, access: ProjectViewer, coding: Coding) -> None:
+    """Delete a coding session's cloud sandbox now, warm or asleep: its installed dependencies and anything
+    not committed go; the session, its branch, PR, and transcript stay, and its next turn starts a fresh
+    sandbox and resumes. Whoever started it, or owners and admins; not while a turn waits or works."""
+    await coding.delete_sandbox(access, session_id)
+
+
 @router.patch("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 422))
 async def update_coding_session(session_id: uuid.UUID, data: CodingSessionUpdate, access: ProjectViewer, coding: Coding) -> None:
     """Rename, pin, or archive a coding session. Whoever started it, or owners and admins."""

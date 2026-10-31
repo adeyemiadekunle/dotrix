@@ -101,14 +101,15 @@ async def test_owners_and_admins_choose_the_hosts_sandboxes_may_reach(
 
 
 async def test_a_session_sleeps_between_turns_and_wakes_for_the_next(
-    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script, db_session,  # noqa: F811
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script, db_session, storage,  # noqa: F811
 ) -> None:
     ada, _, ws, kun, _, _ = coding
     app = db_client._transport.app  # type: ignore[attr-defined]
     jobs = app.state.jobs
     sandbox = SleepingSandbox(claude)
     # No warm sandboxes kept: each turn's sandbox goes to sleep as soon as the turn ends.
-    worker = dataclasses.replace(jobs.ctx.coding, sandbox=sandbox, pool=WarmPool(3600, 0))
+    worker = dataclasses.replace(jobs.ctx.coding, sandbox=sandbox, storage=storage, secrets=app.state.secrets,
+                                 pool=WarmPool(3600, 0))
     jobs.ctx = dataclasses.replace(jobs.ctx, coding=worker)
     claude.found_transcript, claude.argvs = [], []
     base = f"{ws}/projects/{kun['id']}"
@@ -142,10 +143,69 @@ async def test_a_session_sleeps_between_turns_and_wakes_for_the_next(
     assert third["status"] == "pr_opened" and sandbox.opened == 2 and len(sandbox.discarded) == 1
     assert sandbox.allowed[-1] == ["pypi.org", "files.pythonhosted.org"]
 
-    # Closed by hand: the sweep deletes its sleeping sandbox and forgets it.
-    assert (await db_client.post(f"{base}/coding/sessions/{session_id}/close", headers=ada.headers)).status_code == 204
+    # It's asleep again; the session list says so. Someone else can't delete it; whoever started it can.
+    [listed] = (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
+    assert listed["sandbox"] == "asleep" and listed["state"] == "idle"
+    _, cat, *_ = coding
+    sandbox_url = f"{base}/coding/sessions/{session_id}/sandbox"
+    assert (await db_client.delete(sandbox_url, headers=cat.headers)).status_code == 404
+    assert (await db_client.delete(sandbox_url, headers=ada.headers)).status_code == 204
+    assert len(sandbox.discarded) == 2  # deleted at once, not left for the sweep
+    [listed] = (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
+    assert listed["sandbox"] is None
+    audit = list(await db_session.scalars(select(AuditEvent).where(AuditEvent.action == "coding.sandbox_deleted")))
+    assert len(audit) == 1
+
+    # The next turn starts a fresh sandbox and resumes from the saved transcript.
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    assert amount > 0, 'must be positive'\n    return amount\n"}
+    fourth = await _approve(db_client, base, (await db_client.post(
+        turns, json={"message": "Clearer"}, headers=ada.headers)).json(), ada.headers)
+    assert fourth["status"] == "pr_opened" and sandbox.opened == 3
+    assert claude.found_transcript[3] == "turn 1\nturn 2\nturn 3\n"
+
+    # Deleting the session deletes its sandbox straight away too.
+    assert (await db_client.delete(f"{base}/coding/sessions/{session_id}", headers=ada.headers)).status_code == 204
+    assert len(sandbox.discarded) == 3
     await worker.sweep_sandboxes()
-    assert len(sandbox.discarded) == 2 and sandbox.swept[-1] == set()
-    row = await db_session.scalar(select(CodingSession).where(CodingSession.id == session_id)
-                                  .execution_options(populate_existing=True))
-    assert row.sandbox_handle is None
+    assert sandbox.swept[-1] == set() and len(sandbox.discarded) == 3  # nothing left to sweep
+
+
+async def test_closing_a_session_or_deleting_its_warm_sandbox_lets_it_go(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script, db_session,  # noqa: F811
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    jobs = app.state.jobs
+    sandbox = SleepingSandbox(claude)
+    worker = dataclasses.replace(jobs.ctx.coding, sandbox=sandbox, pool=WarmPool(3600, 3))  # kept warm
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=worker)
+    claude.found_transcript, claude.argvs = [], []
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    agent_script.say("Fine.", "Fine again.")
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    first = await _approve(db_client, base, (await db_client.post(
+        f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json(), ada.headers)
+    session_id = uuid.UUID(first["session_id"])
+    [listed] = (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
+    assert listed["sandbox"] == "warm" and worker.pool.sessions() == [session_id]
+
+    # Deleted by hand while warm: the worker's next sweep closes it (outright: it doesn't sleep).
+    assert (await db_client.delete(f"{base}/coding/sessions/{session_id}/sandbox", headers=ada.headers)).status_code == 204
+    row = await db_session.get(CodingSession, session_id)
+    row.last_active_at = row.last_active_at.replace(year=2020)  # past the moment a turn marks it warm
+    await db_session.flush()
+    await worker.reap()
+    assert worker.pool.sessions() == [] and not sandbox.asleep
+    [listed] = (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
+    assert listed["sandbox"] is None
+
+    # Closing a session whose sandbox sleeps deletes it at once.
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    assert amount\n    return amount\n"}
+    second = await _approve(db_client, base, (await db_client.post(
+        f"{base}/coding/sessions/{session_id}/turns", json={"message": "Check it"}, headers=ada.headers)).json(), ada.headers)
+    assert second["status"] == "pr_opened"
+    await worker.pool.close_all()  # the worker stops: its warm sandbox goes to sleep
+    assert len(sandbox.asleep) == 1
+    assert (await db_client.post(f"{base}/coding/sessions/{session_id}/close", headers=ada.headers)).status_code == 204
+    assert len(sandbox.discarded) == 1 and not sandbox.asleep

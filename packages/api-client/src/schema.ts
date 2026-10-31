@@ -3970,6 +3970,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/sandbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Coding Sandbox
+         * @description Delete a coding session's cloud sandbox now, warm or asleep: its installed dependencies and anything
+         *     not committed go; the session, its branch, PR, and transcript stay, and its next turn starts a fresh
+         *     sandbox and resumes. Whoever started it, or owners and admins; not while a turn waits or works.
+         */
+        delete: operations["delete_coding_sandbox"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}": {
         parameters: {
             query?: never;
@@ -6291,6 +6313,11 @@ export interface components {
              * @default idle
              */
             state: components["schemas"]["CodingSessionState"];
+            /**
+             * Sandbox
+             * @description Its cloud sandbox between turns: `warm` (running), `asleep` (stopped, files kept; deleted after the sleep days), or none (the next turn starts one). Whoever started it, or owners and admins, can delete it.
+             */
+            sandbox?: ("warm" | "asleep") | null;
             /**
              * Title
              * @description Its own name when renamed, else its issue's title
@@ -22548,6 +22575,73 @@ export interface operations {
         };
     };
     close_coding_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    delete_coding_sandbox: {
         parameters: {
             query?: never;
             header?: never;

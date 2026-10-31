@@ -614,9 +614,46 @@ class CodingService:
             raise CodingBusy("A turn is waiting or working: stop it first")
         row = await self.session.get(CodingSession, session_id)
         if row is not None and row.workspace_id == access.project.workspace_id and row.state is not CodingSessionState.CLOSED:
+            await self.session.refresh(row, with_for_update=True)  # as the worker last left it
+            asleep = self._let_sandbox_go(row)
             row.state, row.closed_at = CodingSessionState.CLOSED, datetime.now(UTC)
             self._audit(access.project, access, "coding.session_closed", turns[-1])
             await self.session.commit()
+            await self._discard(asleep)
+
+    async def delete_sandbox(self, access: ProjectAccess, session_id: uuid.UUID) -> None:
+        """Delete a session's cloud sandbox now, warm or asleep (its installed dependencies and anything not
+        committed go); the session, its branch, PR and transcript stay, and its next turn starts a fresh
+        sandbox and resumes. Whoever started it, or owners and admins; not while a turn waits or works."""
+        row = await self._own_session(access, session_id)
+        turns = await self._turns(access, session_id)
+        if any(t.status in ACTIVE for t in turns):
+            raise CodingBusy("A turn is waiting or working: stop it first")
+        await self.session.refresh(row, with_for_update=True)  # as the worker last left it
+        if row.state is not CodingSessionState.WARM and row.sandbox_handle is None:
+            return
+        asleep = self._let_sandbox_go(row)
+        self._audit(access.project, access, "coding.sandbox_deleted", turns[-1])
+        await self.session.commit()
+        await self._discard(asleep)
+
+    @staticmethod
+    def _let_sandbox_go(row: CodingSession) -> dict[str, Any] | None:
+        """Forget the session's sandbox: an asleep one is returned for a worker to delete (after the commit);
+        a warm one is closed by its worker's next sweep, which sees the session isn't warm any more."""
+        asleep = dict(row.sandbox_handle) if row.sandbox_handle else None
+        row.sandbox_handle, row.sandbox_slept_at = None, None
+        if row.state is CodingSessionState.WARM:
+            row.state = CodingSessionState.IDLE
+        return asleep
+
+    async def _discard(self, handle: dict[str, Any] | None) -> None:
+        if handle is None:
+            return
+        try:
+            await self.jobs.enqueue("discard_coding_sandbox", handle=handle)
+        except Exception:  # the worker's sweep deletes what nothing refers to
+            logger.warning("couldn't queue deleting a coding sandbox", exc_info=True)
 
     async def update_session(self, access: ProjectAccess, session_id: uuid.UUID, data: CodingSessionUpdate) -> None:
         """Rename, pin, or archive a session. Whoever started it, or owners and admins."""
@@ -642,10 +679,13 @@ class CodingService:
         if keys and storage is None:
             raise StorageUnavailable("File storage isn't configured, so its files can't be deleted")
         self._audit(access.project, access, "coding.session_deleted", turns[-1])
+        await self.session.refresh(row, with_for_update=True)  # as the worker last left it
+        asleep = self._let_sandbox_go(row)
         for turn in turns:
             await self.session.delete(turn)
         await self.session.delete(row)
         await self.session.commit()
+        await self._discard(asleep)
         for key in keys:  # after the commit: a file left behind is harmless, a session pointing at a gone one isn't
             try:
                 await storage.delete(key)  # type: ignore[union-attr]
@@ -711,6 +751,7 @@ class CodingService:
             row = rows_by_id.get(sid)
             if row is not None:
                 read.state, read.pinned, read.archived = row.state, row.pinned_at is not None, row.archived_at is not None
+                read.sandbox = "warm" if row.state is CodingSessionState.WARM else "asleep" if row.sandbox_handle else None
                 read.title = row.title or read.issue_title
             else:
                 read.title = read.issue_title

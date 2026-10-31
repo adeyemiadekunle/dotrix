@@ -235,6 +235,15 @@ export function useCloseSession(scope: Scope | undefined, sessionId: string, iss
   );
 }
 
+/** Delete a session's cloud sandbox (warm or asleep); the session stays and its next turn starts fresh. */
+export function useDeleteSandbox(scope: Scope | undefined, sessionId: string, issueKey: string) {
+  return useCodingMutation(scope, issueKey, (s, _: void) =>
+    unwrap(
+      api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/sandbox", { params: { path: sessionPath(s, sessionId) } }),
+    ),
+  );
+}
+
 export function useDeleteSession(scope: Scope | undefined, sessionId: string, issueKey: string) {
   return useCodingMutation(scope, issueKey, (s, _: void) =>
     unwrap(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}", { params: { path: sessionPath(s, sessionId) } })),

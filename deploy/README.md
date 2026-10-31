@@ -88,8 +88,9 @@ model API (`DOTRIX_DOCKER_CLOUD_KEY_INJECTION`, on by default).
 
 **Sessions sleep between turns.** After a turn (and the warm idle time) a session's sandbox is
 stopped, keeping its files and installed dependencies, and the next turn wakes it. A sleeping
-sandbox is deleted after `DOTRIX_CODING_SLEEP_DAYS` (7), when its session is closed or deleted, or
-when the workspace has more than `DOTRIX_CODING_SLEEP_MAX` (5) asleep. The worker sweeps every 10
+sandbox is deleted after `DOTRIX_CODING_SLEEP_DAYS` (7); straight away when its session is closed or
+deleted, or when someone deletes it ("Delete sandbox" in the session's menu); and the workspace's
+oldest when more than `DOTRIX_CODING_SLEEP_MAX` (5) are asleep. The worker sweeps every 10
 minutes, and also deletes stopped dotrix sandboxes and secrets nothing refers to (a crash's). An
 account stores 50 sandboxes by default, sleeping ones included. A sandbox whose worker crashed stops
 itself after the turn time plus the idle time (and 10 minutes), so it stops billing.

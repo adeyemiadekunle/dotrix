@@ -198,6 +198,11 @@ class CodingSessionRead(BaseModel):
         default=CodingSessionState.IDLE,
         description="`warm`: its sandbox is up between turns; `idle`: the next turn starts one and resumes; `closed`: closed by hand",
     )
+    sandbox: Literal["warm", "asleep"] | None = Field(
+        default=None,
+        description="Its cloud sandbox between turns: `warm` (running), `asleep` (stopped, files kept; deleted after "
+        "the sleep days), or none (the next turn starts one). Whoever started it, or owners and admins, can delete it.",
+    )
     title: str = Field(default="", description="Its own name when renamed, else its issue's title")
     pinned: bool = False
     archived: bool = False

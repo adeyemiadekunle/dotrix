@@ -211,7 +211,16 @@ async def index_knowledge(ctx: JobContext, *, project_id: str | None = None) -> 
     return done
 
 
+
+async def discard_coding_sandbox(ctx: JobContext, *, handle: dict) -> None:
+    """Delete a session's sleeping cloud sandbox (its session was closed or deleted, or someone deleted
+    the sandbox). The worker's sweep catches what this misses."""
+    sandbox = getattr(ctx.coding, "sandbox", None) if ctx.coding is not None else None
+    if sandbox is not None and hasattr(sandbox, "discard"):
+        await sandbox.discard(handle)
+
 JOBS: dict[str, JobFunction] = {
+    "discard_coding_sandbox": discard_coding_sandbox,
     "send_email": send_email,
     "send_password_reset": send_password_reset,
     "send_magic_link": send_magic_link,

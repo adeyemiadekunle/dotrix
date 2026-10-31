@@ -926,8 +926,9 @@ class CodingWorker:
                 logger.warning("closing idle coding sandboxes failed", exc_info=True)
 
     async def reap(self) -> None:
-        """Close warm sandboxes left unused past the idle time, and those whose session was closed by
-        hand or deleted. A closed session keeps its transcript (a new turn resumes); deleting a
+        """Close warm sandboxes left unused past the idle time (they sleep, where they can), and those whose
+        session was closed by hand or deleted, or whose sandbox was deleted by hand (the session isn't
+        warm any more). A closed session keeps its transcript (a new turn resumes); deleting a
         session deletes it (the service does)."""
         for session_id in self.pool.idle():
             await self.pool.close(session_id, keep=True)
@@ -936,11 +937,16 @@ class CodingWorker:
         if not pooled:
             return
         async with self.session_factory() as session:
-            live = dict((await session.execute(
-                select(CodingSession.id, CodingSession.state).where(CodingSession.id.in_(pooled))
-            )).all())
+            live = {sid: (state, at) for sid, state, at in (await session.execute(
+                select(CodingSession.id, CodingSession.state, CodingSession.last_active_at)
+                .where(CodingSession.id.in_(pooled))
+            )).all()}
+        settled = datetime.now(UTC) - timedelta(seconds=60)  # a turn that just ended marks it warm after pooling it
         for session_id in pooled:
-            if live.get(session_id) in (None, CodingSessionState.CLOSED):  # deleted, or closed by hand
+            state, at = live.get(session_id, (None, None))
+            if state in (None, CodingSessionState.CLOSED):  # deleted, or closed by hand
+                await self.pool.close(session_id)
+            elif state is CodingSessionState.IDLE and at is not None and at < settled:  # its sandbox deleted by hand
                 await self.pool.close(session_id)
 
     async def stop_requested(self, run_id: uuid.UUID) -> bool:
