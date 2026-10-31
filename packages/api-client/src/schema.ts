@@ -4677,7 +4677,7 @@ export interface components {
             model?: string | null;
             /**
              * Budget Tokens
-             * @description Tokens one run it leads may use; null: the project's
+             * @description Tokens one run it leads may use (input + output, every step); null: no limit
              */
             budget_tokens?: number | null;
             /**
@@ -4803,7 +4803,7 @@ export interface components {
             model?: string | null;
             /**
              * Budget Tokens
-             * @description Tokens one run it leads may use; null: the project's
+             * @description Tokens one run it leads may use (input + output, every step); null: no limit
              */
             budget_tokens?: number | null;
             /**
@@ -8233,11 +8233,6 @@ export interface components {
              * @description The specialists' and summaries' model; null means the project's model
              */
             specialist_model: string | null;
-            /**
-             * Token Budget
-             * @description Optional per-run token limit for this project; null: no project limit
-             */
-            token_budget: number | null;
             /** @description How it's going, as its owners and admins say; null: not said */
             health: components["schemas"]["ProjectHealth"] | null;
             /**
@@ -8303,11 +8298,6 @@ export interface components {
              * @description A cheaper model for the specialists and for summarising long conversations. Send null to use the project's model; leave it out to keep the current one.
              */
             specialist_model?: string | null;
-            /**
-             * Token Budget
-             * @description Send null to remove this project's token limit; leave it out to keep the current one.
-             */
-            token_budget?: number | null;
             /**
              * Repo Url
              * @description Link the project to its repo (any remote form; stored canonical). Send null to unlink; leave it out to keep the current link.

@@ -194,12 +194,12 @@ recovery.
 `ModelPolicy` resolves host-configured tiers by agent or a host-selected task tier.
 This lets a caller route Nova or an important specialist to a stronger model and a
 routine task to a cheaper one. Project settings expose a shared specialist model
-and a default per-run token budget. For scheduler-owned specialists under either Nova
+(the project token budget was removed on 2026-10-31). For scheduler-owned specialists under either Nova
 runtime, the model is pinned at task creation in this order: a personal agent model,
 project/workspace agent override, shared specialist model, conversation model, then
 project model. Existing unpinned tasks resolve when they start; personal provider keys
-are checked at execution. Changing project model settings is audited. Agent-specific
-budgets override the project default, and the check before a model call can allow the
+are checked at execution. Changing project model settings is audited. An agent's own
+budget (`budget_tokens`) is checked before a model call, which can allow the
 limit to be exceeded by that call. fx runs under it too, checked before each step rather than each model call (libfx reports usage when a turn ends).
 A routing policy alone
 does not enforce an allowed-model list, budgets, provider credentials or cost limits;

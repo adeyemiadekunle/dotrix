@@ -21,7 +21,7 @@ class AgentFields(BaseModel):
     instructions: str = Field(min_length=1, max_length=20_000, description="Its role prompt (Markdown)")
     additional_instructions: str = Field(default="", max_length=20_000, description="Additional guidance; the built-in role is protected")
     model: str | None = Field(default=None, max_length=100, description="provider:model; null uses the run's model")
-    budget_tokens: int | None = Field(default=None, description="Tokens one run it leads may use; null: the project's")
+    budget_tokens: int | None = Field(default=None, description="Tokens one run it leads may use (input + output, every step); null: no limit")
     tools: list[str] = Field(description="Tool ids from `GET .../agents/catalog`")
     access: dict[str, Access] = Field(
         default_factory=dict, description="Folder pattern relative to .dotrix/ (e.g. research/*) -> access"

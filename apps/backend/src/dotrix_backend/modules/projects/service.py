@@ -105,7 +105,7 @@ class ProjectService:
 
     async def update(self, project: Project, data: ProjectUpdate, actor: Membership) -> ProjectRead:
         model_changes = {}
-        for name in ("model", "specialist_model", "token_budget", "automatic_model_routing"):
+        for name in ("model", "specialist_model", "automatic_model_routing"):
             if name in data.model_fields_set:
                 before, after = getattr(project, name), getattr(data, name)
                 # Null keeps the model and routing toggle unchanged; it clears optional defaults.
@@ -128,8 +128,6 @@ class ProjectService:
             project.automatic_model_routing = data.automatic_model_routing
         if "specialist_model" in data.model_fields_set:
             project.specialist_model = data.specialist_model
-        if "token_budget" in data.model_fields_set:
-            project.token_budget = data.token_budget
         if "health" in data.model_fields_set:
             project.health = data.health
         if "target_date" in data.model_fields_set:
