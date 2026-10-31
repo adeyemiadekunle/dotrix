@@ -1,6 +1,6 @@
 import { Button } from "@dotrix/ui/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2Icon } from "lucide-react";
+import { SpinnerGapIcon } from "@phosphor-icons/react";
 import { Link } from "@/lib/navigation";
 
 import { AuthCard } from "@/components/auth-card";
@@ -37,7 +37,7 @@ export function AcceptInvite({ token }: { token: string }) {
   if (!preview.data) {
     return (
       <AuthCard title="Opening your invite…">
-        <Loader2Icon className="text-muted-foreground mx-auto size-6 animate-spin" />
+        <SpinnerGapIcon className="text-muted-foreground mx-auto size-6 animate-spin" />
       </AuthCard>
     );
   }
@@ -54,7 +54,7 @@ export function AcceptInvite({ token }: { token: string }) {
       <div className="grid gap-4">
         <FormError message={accept.isError ? errorMessage(accept.error) : null} />
         <Button className="w-full" disabled={accept.isPending} onClick={() => accept.mutate()}>
-          {accept.isPending && <Loader2Icon className="animate-spin" />}
+          {accept.isPending && <SpinnerGapIcon className="animate-spin" />}
           Accept and join
         </Button>
       </div>

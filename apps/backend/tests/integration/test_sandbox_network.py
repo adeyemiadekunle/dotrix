@@ -1,4 +1,4 @@
-"""Sandbox network (owners and admins choose the hosts Kai's sandboxes may reach) and sandboxes that sleep
+"""Network (owners and admins choose the hosts Kai's sandboxes may reach) and sandboxes that sleep
 between turns (Docker Cloud), through the API and the coding worker, with a fake sandbox."""
 import dataclasses
 import uuid

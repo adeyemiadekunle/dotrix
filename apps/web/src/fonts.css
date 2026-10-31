@@ -3,3 +3,14 @@
   --font-geist-sans: "Geist Variable";
   --font-geist-mono: "Geist Mono Variable";
 }
+
+/* Geist Serif (https://vercel.com/font), for page titles: fonts/GeistSerifVF.woff2 from the `geist`
+   package 1.9.0 (its JS is for Next.js only), under the SIL Open Font License (fonts/GeistSerif-LICENSE.txt).
+   One weight (regular); its variable axis is stylistic. */
+@font-face {
+  font-family: "Geist Serif Variable";
+  src: url("./fonts/GeistSerifVF.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}

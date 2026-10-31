@@ -1,6 +1,6 @@
 import { Button } from "@dotrix/ui/components/button";
 import { useMutation } from "@tanstack/react-query";
-import { CircleCheckIcon, CircleXIcon, Loader2Icon } from "lucide-react";
+import { CheckCircleIcon, XCircleIcon, SpinnerGapIcon } from "@phosphor-icons/react";
 import { Link } from "@/lib/navigation";
 import { useEffect, useRef } from "react";
 
@@ -31,7 +31,7 @@ export function VerifyEmail({ token }: { token: string }) {
       <AuthCard title="We couldn't verify your email">
         <div className="grid gap-4">
           <p className="text-muted-foreground flex gap-2 text-sm">
-            <CircleXIcon className="text-destructive size-4 shrink-0" />
+            <XCircleIcon className="text-destructive size-4 shrink-0" />
             {token ? errorMessage(verify.error) : "This link is incomplete."} You can send a new link from Settings.
           </p>
           {home}
@@ -44,7 +44,7 @@ export function VerifyEmail({ token }: { token: string }) {
       <AuthCard title="Email verified">
         <div className="grid gap-4">
           <p className="text-muted-foreground flex gap-2 text-sm">
-            <CircleCheckIcon className="size-4 shrink-0 text-emerald-600" />
+            <CheckCircleIcon className="size-4 shrink-0 text-emerald-600" />
             Thanks, your email address is confirmed.
           </p>
           {home}
@@ -54,7 +54,7 @@ export function VerifyEmail({ token }: { token: string }) {
   }
   return (
     <AuthCard title="Verifying your email…">
-      <Loader2Icon className="text-muted-foreground mx-auto size-6 animate-spin" />
+      <SpinnerGapIcon className="text-muted-foreground mx-auto size-6 animate-spin" />
     </AuthCard>
   );
 }

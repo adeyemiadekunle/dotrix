@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@dotrix/ui/lib/utils";
-import { CircleIcon } from "lucide-react";
+import { CircleIcon } from "@phosphor-icons/react";
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
 
 function RadioGroup({ className, ...props }: React.ComponentProps<typeof RadioGroupPrimitive.Root>) {

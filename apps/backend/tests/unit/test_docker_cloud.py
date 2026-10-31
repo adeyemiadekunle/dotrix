@@ -291,7 +291,7 @@ async def test_a_host_docker_serves_itself_gets_its_token_and_without_a_secret_o
 
     # No secret at all: the key may go in each process's environment only while nothing else is reachable.
     fake.refuse_secrets = True
-    with pytest.raises(SandboxError, match="Sandbox network"):
+    with pytest.raises(SandboxError, match="Settings → Network"):
         await _sandbox(fake).open(uuid.uuid4(), repo, ClaudeCode(), KEY, allow=["registry.npmjs.org"])
     assert len(fake.created) == 1  # refused before a sandbox was made
     session = await _sandbox(fake).open(uuid.uuid4(), repo, ClaudeCode(), KEY)

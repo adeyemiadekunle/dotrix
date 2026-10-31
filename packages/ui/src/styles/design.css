@@ -78,6 +78,8 @@
   /* type */
   --font: 'Geist Variable', 'Geist', ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Page titles (.title-serif below): Geist Serif, one regular weight, never synthesised bold. */
+  --serif: 'Geist Serif Variable', 'Geist Serif', ui-serif, Georgia, 'Times New Roman', serif;
   --fs-2xs: 11px;
   --fs-xs: 12px;
   --fs-sm: 12.5px;
@@ -593,7 +595,7 @@ kbd,
 .select {
   appearance: none;
   padding-right: 28px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239C988F' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 256 256'%3E%3Cpath fill='%239C988F' d='M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 9px center;
   cursor: pointer;
@@ -1434,8 +1436,10 @@ svg.logo {
 }
 .ph h1 {
   font-size: var(--fs-2xl);
-  font-weight: 600;
-  letter-spacing: -0.022em;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-synthesis-weight: none;
+  letter-spacing: -0.01em;
   margin: 0;
   line-height: 1.2;
   text-wrap: balance;
@@ -2347,9 +2351,11 @@ table.tbl {
 }
 .proj-h h1 {
   font-size: var(--fs-xl);
-  font-weight: 600;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-synthesis-weight: none;
   margin: 0;
-  letter-spacing: -0.018em;
+  letter-spacing: -0.01em;
 }
 /* tabs bleed to the edges; the first label still starts on the gutter (tab has 10px side padding) */
 .proj-h .tabs {
@@ -3492,8 +3498,10 @@ table.tbl {
 .fullstate h1 {
   font-size: var(--fs-xl);
   margin: 0;
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-synthesis-weight: none;
+  letter-spacing: -0.01em;
 }
 .fullstate p {
   color: var(--text-2);
@@ -3534,9 +3542,11 @@ table.tbl {
 }
 .set-in h1 {
   font-size: var(--fs-xl);
-  font-weight: 600;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-synthesis-weight: none;
   margin: 0 0 4px;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.01em;
 }
 .set-in > p.lead {
   color: var(--text-2);
@@ -3705,8 +3715,10 @@ table.tbl {
 }
 .auth-card h1 {
   font-size: var(--fs-2xl);
-  font-weight: 600;
-  letter-spacing: -0.022em;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-synthesis-weight: none;
+  letter-spacing: -0.01em;
   margin: 0;
   text-align: center;
 }

@@ -96,7 +96,7 @@ const SET_NAV: [string, [string, string, string][], boolean?][] = [
     [
       ["agents", "Agents", "bot"],
       ["github", "GitHub", "github"],
-      ["sandbox", "Sandbox network", "shield-check"],
+      ["sandbox", "Network", "shield-check"],
       ["audit", "Audit log", "list-checks"],
     ],
     true,
@@ -1661,7 +1661,7 @@ function SandboxNetworkSettings() {
         setPresets(null);
         setHosts(null);
         loaded.reload();
-        toast("Sandbox network saved");
+        toast("Network saved");
       })
       .catch((e: unknown) => toast(`It didn't save: ${errText(e)}`, { kind: "err", ms: 6000 }))
       .finally(() => setBusy(false));

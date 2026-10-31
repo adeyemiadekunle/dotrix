@@ -1,5 +1,5 @@
 import { Button } from "@dotrix/ui/components/button";
-import { Loader2Icon } from "lucide-react";
+import { SpinnerGapIcon } from "@phosphor-icons/react";
 import { Link } from "@/lib/navigation";
 import { useState } from "react";
 
@@ -40,7 +40,7 @@ export function MagicLinkSignIn({ token }: { token: string }) {
       <div className="grid gap-4">
         <FormError message={error ? `${error.replace(/\.$/, "")}. Ask for a new link from the sign-in page.` : null} />
         <Button className="w-full" disabled={pending} onClick={() => void signIn()}>
-          {pending && <Loader2Icon className="animate-spin" />}
+          {pending && <SpinnerGapIcon className="animate-spin" />}
           Sign in
         </Button>
       </div>

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@dotrix/ui/lib/utils";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon } from "@phosphor-icons/react";
 import { Checkbox as CheckboxPrimitive } from "radix-ui";
 
 function Checkbox({ className, ...props }: React.ComponentProps<typeof CheckboxPrimitive.Root>) {

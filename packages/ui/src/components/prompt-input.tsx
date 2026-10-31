@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpIcon, Loader2Icon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, SpinnerGapIcon, SquareIcon } from "@phosphor-icons/react";
 import { Button } from "@dotrix/ui/components/button";
 import { Textarea } from "@dotrix/ui/components/textarea";
 
@@ -106,11 +106,11 @@ function PromptInput({
             aria-label="Stop"
             title="Stop"
           >
-            {status === "stopping" ? <Loader2Icon className="animate-spin" /> : <SquareIcon className="fill-current" />}
+            {status === "stopping" ? <SpinnerGapIcon className="animate-spin" /> : <SquareIcon className="fill-current" />}
           </Button>
         ) : (
           <Button type="submit" size="icon" className="size-8 shrink-0 rounded-lg" disabled={!ready || !value.trim()} aria-label="Send" title="Send">
-            {status === "sending" ? <Loader2Icon className="animate-spin" /> : <ArrowUpIcon />}
+            {status === "sending" ? <SpinnerGapIcon className="animate-spin" /> : <ArrowUpIcon />}
           </Button>
         )}
       </div>
