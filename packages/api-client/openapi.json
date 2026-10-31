@@ -26106,6 +26106,59 @@
             "title": "Review Thread Id",
             "description": "Its conversation, to open in Chat"
           },
+          "review_posted_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Posted Url",
+            "description": "Juno's review on GitHub, once posted on the PR"
+          },
+          "ci_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "passed",
+                  "failed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci State",
+            "description": "CI on the turn's commit, from GitHub's check suites (null: none seen)"
+          },
+          "ci_review_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Review Run Id",
+            "description": "Juno's look at the failed CI, a run of its own"
+          },
+          "ci_review_posted_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Review Posted Url",
+            "description": "That look on the PR's conversation, once posted"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",

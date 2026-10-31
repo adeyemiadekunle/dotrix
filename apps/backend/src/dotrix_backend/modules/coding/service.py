@@ -767,7 +767,9 @@ class CodingService:
             input_tokens=run.input_tokens if usage else None, output_tokens=run.output_tokens if usage else None,
             cost_usd=run.cost_usd if usage else None, requested_by_id=run.requested_by_id,
             decided_by_id=run.decided_by_id, decision_reason=run.decision_reason, review_run_id=run.review_run_id,
-            review_thread_id=run.review_thread_id,
+            review_thread_id=run.review_thread_id, review_posted_url=_posted(run.review_posted_url),
+            ci_state=run.ci_state if run.ci_state in ("passed", "failed") else None,  # type: ignore[arg-type]
+            ci_review_run_id=run.ci_review_run_id, ci_review_posted_url=_posted(run.ci_review_posted_url),
             created_at=run.created_at, decided_at=run.decided_at, started_at=run.started_at,
             finished_at=run.finished_at,
             can_decide=run.status in WAITING and can(access.member, Permission.APPROVE_ACTIONS),
@@ -791,3 +793,8 @@ class CodingService:
             details={"run_id": str(run.id), "agent": run.agent.value, "reason": run.decision_reason,
                      "approval_mode": run.approval_mode or "manual"},
         )
+
+
+def _posted(url: str | None) -> str | None:
+    """A review's page on GitHub; nothing while it's still being posted."""
+    return url if url and url.startswith("http") else None

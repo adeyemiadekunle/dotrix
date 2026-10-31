@@ -213,6 +213,12 @@ class Settings(DatabaseSettings):
         "groq:openai/gpt-oss-120b",
         "openrouter:openai/gpt-5.5",
     ]
+    # Juno's reviews of Kai's PRs, and its look at their failed CI, posted on the PR as comments (never
+    # approvals); needs the GitHub App's Pull requests (write). Off: they stay in dotrix only.
+    github_pr_reviews: bool = True
+    # Watch CI on Kai's PRs (check_suite deliveries): a failure starts Juno on it, with the failed jobs' logs
+    # when the App has Actions (read). Off: CI is ignored.
+    github_ci_monitor: bool = True
     # How hard the conversation's own model (Nova's) thinks before it answers, per provider, and shows it
     # (agents/llm.py `thinking_options`): Anthropic's effort (low … max; Haiku 5.5 rarely thinks at its
     # default, medium), OpenAI's reasoning effort. A provider left out keeps its own defaults and shows none.

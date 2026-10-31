@@ -124,7 +124,12 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 | `DOTRIX_CODING_DOCKER_RUNTIME` | Docker's | `runsc` for gVisor |
 | `DOTRIX_CODING_FORK_OWNER` | none | The organisation branches are pushed to as a fork (required in staging and production) |
 
-You also need the GitHub App, with Contents (write) and Pull requests (write).
+You also need the GitHub App, with Contents (write) and Pull requests (write). For Juno on Kai's PRs
+(`modules/coding/github_reviews.py`), also give it **Actions (read)** and **Checks (read)**, and subscribe
+it to the **Check suite** event: Juno's review is posted on the PR as a comment (never an approval), and
+a failed check suite on Kai's commit gets Juno's look at the failed jobs' logs, posted on the PR, with
+"Ask Kai to fix" in Codes. Without Actions (read) Juno is told the logs couldn't be read. Switch them off
+with `DOTRIX_GITHUB_PR_REVIEWS=false` and `DOTRIX_GITHUB_CI_MONITOR=false`.
 
 ## Set up Docker (the simplest: once per machine that runs agents)
 

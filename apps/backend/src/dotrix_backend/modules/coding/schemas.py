@@ -147,6 +147,11 @@ class CodingRunRead(BaseModel):
     decision_reason: str | None
     review_run_id: uuid.UUID | None = Field(description="The Reviewer's run on the PR")
     review_thread_id: uuid.UUID | None = Field(description="Its conversation, to open in Chat")
+    review_posted_url: str | None = Field(default=None, description="Juno's review on GitHub, once posted on the PR")
+    ci_state: Literal["passed", "failed"] | None = Field(
+        default=None, description="CI on the turn's commit, from GitHub's check suites (null: none seen)")
+    ci_review_run_id: uuid.UUID | None = Field(default=None, description="Juno's look at the failed CI, a run of its own")
+    ci_review_posted_url: str | None = Field(default=None, description="That look on the PR's conversation, once posted")
     created_at: datetime
     decided_at: datetime | None
     started_at: datetime | None

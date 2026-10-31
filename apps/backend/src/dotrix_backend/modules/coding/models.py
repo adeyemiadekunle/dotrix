@@ -183,6 +183,12 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     stop_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     review_run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # the Reviewer's run on the PR
     review_thread_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # its conversation, to open in Chat
+    review_posted_url: Mapped[str | None] = mapped_column(String(300))  # the review on GitHub, once posted (github_reviews.py)
+    # CI on the turn's commit, from GitHub's check suites: "passed" or "failed" (None: none seen yet).
+    ci_state: Mapped[str | None] = mapped_column(String(16))
+    ci_sha: Mapped[str | None] = mapped_column(String(40))  # the commit ci_state is for
+    ci_review_run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # Juno's look at the failure
+    ci_review_posted_url: Mapped[str | None] = mapped_column(String(300))  # that look on the PR, once posted
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

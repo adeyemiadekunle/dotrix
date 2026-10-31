@@ -49,6 +49,11 @@ class FakeGitHub:
         self.codes = {"code-1", "code-2", "code-3"}
         self.branch_heads: Any = None  # (repo, branch) -> the commit it points at, or None; set by a test
         self.fail_pulls = 0  # how many PR requests to answer with a 502 (a reply lost on the way)
+        self.reviews: list[dict[str, Any]] = []  # reviews posted on pull requests
+        self.comments: list[dict[str, Any]] = []  # comments posted on pull requests
+        self.reject_inline = False  # answer reviews with inline comments with a 422 (a line not in the diff)
+        self.refuse_actions = False  # the App wasn't given Actions (read)
+        self.ci_runs: list[dict[str, Any]] = []  # Actions workflow runs: {"id", "head_sha", "conclusion", "jobs": [...]}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -124,6 +129,33 @@ class FakeGitHub:
             self.pulls.append({"repo": full_name, **json.loads(request.content)})
             number = len(self.pulls)
             return httpx.Response(201, json={"number": number, "html_url": f"https://github.com/{full_name}/pull/{number}"})
+        if path.startswith("/repos/") and path.endswith("/reviews") and request.method == "POST":
+            body = json.loads(request.content)
+            if self.reject_inline and body.get("comments"):
+                return httpx.Response(422, json={"message": "Line could not be resolved"})
+            full_name, _, rest = path.removeprefix("/repos/").partition("/pulls/")
+            self.reviews.append({"repo": full_name, "number": int(rest.split("/")[0]), **body})
+            return httpx.Response(200, json={"html_url": f"https://github.com/{full_name}/pull/{rest.split('/')[0]}"
+                                                         f"#pullrequestreview-{len(self.reviews)}"})
+        if path.startswith("/repos/") and path.endswith("/comments") and "/issues/" in path and request.method == "POST":
+            full_name, _, rest = path.removeprefix("/repos/").partition("/issues/")
+            self.comments.append({"repo": full_name, "number": int(rest.split("/")[0]), **json.loads(request.content)})
+            return httpx.Response(201, json={"html_url": f"https://github.com/{full_name}/pull/{rest.split('/')[0]}"
+                                                         f"#issuecomment-{len(self.comments)}"})
+        if path.startswith("/repos/") and "/actions/" in path and self.refuse_actions:
+            return httpx.Response(403)
+        if path.startswith("/repos/") and path.endswith("/actions/runs"):
+            sha = request.url.params.get("head_sha")
+            return httpx.Response(200, json={"workflow_runs": [
+                {k: v for k, v in r.items() if k != "jobs"} for r in self.ci_runs if r["head_sha"] == sha]})
+        if path.startswith("/repos/") and "/actions/runs/" in path and path.endswith("/jobs"):
+            run_id = int(path.split("/actions/runs/")[1].split("/")[0])
+            run = next(r for r in self.ci_runs if r["id"] == run_id)
+            return httpx.Response(200, json={"jobs": [{k: v for k, v in j.items() if k != "log"} for j in run["jobs"]]})
+        if path.startswith("/repos/") and "/actions/jobs/" in path and path.endswith("/logs"):
+            job_id = int(path.split("/actions/jobs/")[1].split("/")[0])
+            job = next(j for r in self.ci_runs for j in r["jobs"] if j["id"] == job_id)
+            return httpx.Response(200, text=job["log"])
         if path == "/installation/repositories":
             return httpx.Response(200, json={"repositories": installation["repos"]})
         if path.startswith("/repositories/"):

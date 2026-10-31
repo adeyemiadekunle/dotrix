@@ -1170,6 +1170,19 @@ class AgentRunner:
             await session.commit()
             if run.model:  # it worked, so the provider's limit isn't in the way any more
                 await self._key_limit(session, run, run.model.partition(":")[0], None)
+            if run.status is RunStatus.COMPLETED and run.agent == "reviewer" and self.jobs is not None:
+                await self._post_to_github(session, run)
+
+    async def _post_to_github(self, session: Any, run: AgentRun) -> None:
+        """Juno's review of a coding turn, or its look at the turn's failed CI: posted on the PR by a job
+        (coding/github_reviews.py). Never fails the run."""
+        from dotrix_backend.modules.coding.github_reviews import linked_run
+
+        try:
+            if await linked_run(session, run.workspace_id, run.id) is not None:
+                await self.jobs.enqueue("post_coding_review", run_id=str(run.id))
+        except Exception:
+            logger.warning("agent run %s: couldn't queue posting it on GitHub", run.id, exc_info=True)
 
     async def _key_limit(self, session: Any, run: AgentRun, provider: str, said: str | None) -> None:
         """Record (or clear, `said` None) a provider's limit on the key the run used: the person's

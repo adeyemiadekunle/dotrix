@@ -6000,6 +6000,26 @@ export interface components {
              */
             review_thread_id: string | null;
             /**
+             * Review Posted Url
+             * @description Juno's review on GitHub, once posted on the PR
+             */
+            review_posted_url?: string | null;
+            /**
+             * Ci State
+             * @description CI on the turn's commit, from GitHub's check suites (null: none seen)
+             */
+            ci_state?: ("passed" | "failed") | null;
+            /**
+             * Ci Review Run Id
+             * @description Juno's look at the failed CI, a run of its own
+             */
+            ci_review_run_id?: string | null;
+            /**
+             * Ci Review Posted Url
+             * @description That look on the PR's conversation, once posted
+             */
+            ci_review_posted_url?: string | null;
+            /**
              * Created At
              * Format: date-time
              */
