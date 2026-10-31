@@ -325,7 +325,7 @@ async def report_coding_result(
     await runners.result(member, runner_id, coding_run_id, data)
 
 
-# -- Sandbox network: the hosts Kai's sandboxes may reach besides the model API (network.py) --------
+# -- Network: the hosts Kai's sandboxes may reach besides the model API (network.py) --------
 
 WorkspaceSettingsEditor = Annotated[Membership, Depends(require_permission(Permission.MANAGE_WORKSPACE))]
 ProjectNetworkEditor = Annotated[ProjectAccess, Depends(require_project_permission(Permission.MANAGE_WORKSPACE))]

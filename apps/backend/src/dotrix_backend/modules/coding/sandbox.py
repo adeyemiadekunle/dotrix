@@ -18,7 +18,7 @@
 
 None ever receives a GitHub token: the worker clones and pushes outside the sandbox.
 
-Extra hosts owners and admins allow (Settings → Sandbox network, network.py) reach only Docker Cloud
+Extra hosts owners and admins allow (Settings → Network, network.py) reach only Docker Cloud
 sandboxes, which keep the key out of the sandbox; the others refuse a turn rather than open a way
 for the key to leave.
 """
@@ -89,7 +89,7 @@ class CodingSandbox(Protocol):
     ) -> SandboxSession:
         """A sandbox holding a copy of `source` (a folder named `repo`), where commands run in the
         repo, and `tool` can reach its model with `model_key`, and the `allow` hosts (owners' and admins'
-        Settings → Sandbox network; exact, or `*.domain`) besides."""
+        Settings → Network; exact, or `*.domain`) besides."""
         ...
 
 
@@ -386,7 +386,7 @@ class OpenShellSandbox:
         self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
     ) -> SandboxSession:
         if allow:  # its policy reaches the model provider only; not the hosts owners allow
-            raise SandboxError("OpenShell sandboxes don't take the extra hosts in Settings → Sandbox network: "
+            raise SandboxError("OpenShell sandboxes don't take the extra hosts in Settings → Network: "
                                "those need Docker Cloud sandboxes; or remove the hosts.")
         # OpenShell names are at most 19 characters; a UUIDv7's last 16 hex digits are its random part.
         name = provider = f"pm-{run_id.hex[-16:]}"
@@ -420,8 +420,8 @@ def egress_allow(tool: CodingTool) -> str:
     return f"{tool.api_host}:443"
 
 
-EXTRA_HOSTS_REFUSED = ("The key is inside this sandbox, so it can't reach the extra hosts in Settings → Sandbox "
-                       "network (the agent could send the key there). Those need Docker Cloud sandboxes, which "
+EXTRA_HOSTS_REFUSED = ("The key is inside this sandbox, so it can't reach the extra hosts in Settings → "
+                       "Network (the agent could send the key there). Those need Docker Cloud sandboxes, which "
                        "keep the key out; or remove the hosts.")
 
 

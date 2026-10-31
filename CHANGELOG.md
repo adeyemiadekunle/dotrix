@@ -18,7 +18,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   the next one. It's deleted after 7 days asleep, or straight away when the session is closed or deleted or someone
   deletes it ("Delete sandbox" in the session's menu: whoever started it, or owners and admins); at most 5 sleep per
   workspace.
-- Settings → Sandbox network: owners and admins choose package registries and other hosts Kai's sandboxes may reach,
+- Settings → Network: owners and admins choose package registries and other hosts Kai's sandboxes may reach,
   for every project or one; every change is audited, and a turn says which hosts its sandbox blocked.
 - A Windows installer for the desktop app and a standalone Windows CLI, built and attached to each release (unsigned for
   now).
