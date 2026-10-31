@@ -84,7 +84,7 @@ async def test_live_kai_turn_in_docker_opens_a_pr(
           f"cost={run['cost_usd']} steps={steps[:8]}")
 
 
-@pytest.mark.parametrize(("agent", "model"), [c for c in _cases() if c.values[0] in ("claude-code", "codex")])
+@pytest.mark.parametrize(("agent", "model"), list(_cases()))
 async def test_live_skills_follow_what_kai_changed(
     db_client: AsyncClient, coding, github, origin: Path, agent_script, agent, model,  # noqa: F811
 ) -> None:
@@ -110,7 +110,7 @@ async def test_live_skills_follow_what_kai_changed(
     assert "## Skills for this work" not in asked["brief"], "the issue names no skill's area"
     assert "## Other skills (not included)" in asked["brief"] and "- security-review:" in asked["brief"]
     first = await _approve(db_client, base, asked, ada.headers)
-    assert first["status"] == "pr_opened", (first["status"], first["error"])
+    assert first["status"] == "pr_opened", (first["status"], first["error"], first["summary"])
     assert "src/payments.py" in {f["path"] for f in first["files_changed"]}
     review = (await db_client.get(f"{base}/agent/runs/{first['review_run_id']}", headers=ada.headers)).json()
     told = [line for line in review["message"].splitlines() if "review skills" in line]
@@ -127,3 +127,37 @@ async def test_live_skills_follow_what_kai_changed(
     assert second["status"] in ("pr_opened", "no_changes"), (second["status"], second["error"])  # a test may be there already
     print(f"LIVE {agent}/{model}: review told {told[0]!r}; follow-up picked {picked}; "
           f"turn 1 summary: {first['summary']!r}; turn 2 cost {second['cost_usd']}")
+
+
+@pytest.mark.parametrize(("agent", "model"), list(_cases()))
+async def test_live_an_unclear_issue_never_reaches_main_unreviewed(
+    db_client: AsyncClient, coding, github, origin: Path, agent_script, agent, model,  # noqa: F811
+) -> None:
+    """An issue nobody could act on without guessing. Kai's brief adds no rule for it (the engine's own
+    harness decides): whether it stops or builds something, nothing reaches main, and what it built
+    waits on a branch with Juno's review started."""
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    settings = app.state.settings
+    settings.coding_sandbox, settings.coding_image = "docker", IMAGE
+    jobs = app.state.jobs
+    worker: CodingWorker = jobs.ctx.coding
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(worker, sandbox=DockerSandbox(settings)))
+    provider = model.partition(":")[0]
+    await _save_key(db_client, ada.headers, provider, os.environ[KEYS[provider]])
+    agent_script.say("This builds a checkout the issue never described; send it back with questions.")
+    base = f"{ws}/projects/{kun['id']}"
+    main = _git(origin, "rev-parse", "main")
+    task = (await db_client.post(f"{base}/issues", headers=ada.headers, json={
+        "type": "bug", "title": "Fix the checkout bug", "description": "Customers say checkout is broken.",
+    })).json()
+    asked = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", headers=ada.headers,
+                                  json={"agent": agent, "model": model})).json()
+    run = await _approve(db_client, base, asked, ada.headers)
+    print(f"LIVE {agent}/{model}: status={run['status']} files={[f['path'] for f in run['files_changed']]} "
+          f"summary={(run['summary'] or '')[:300]!r}")
+    assert _git(origin, "rev-parse", "main") == main  # main never moves
+    if run["status"] == "no_changes":
+        assert github.pulls == []
+    else:
+        assert run["status"] == "pr_opened" and run["branch"] != "main" and run["review_run_id"], run
