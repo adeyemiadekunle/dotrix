@@ -72,9 +72,20 @@ pnpm db:revision "add issues"             # autogenerate a migration after model
 pnpm docker:up                            # dotrix in Docker: migrate, API on :8000, worker, web on :3080 (DOTRIX_DOCKER_WEB_PORT=3000 keeps the native web address); docker:web rebuilds the web, docker:logs, docker:down
 pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
 pnpm --filter @dotrix/web e2e            # browser tests: fresh dotrix_e2e DB + backend on :8100 + web on :3100, rule-based model
+python scripts/release.py check           # one version in every package, with its CHANGELOG section; `bump X.Y.Z` cuts a release (Branches and releases)
 ```
 
 A pre-commit hook (Husky + lint-staged) runs ESLint --fix and Prettier on staged TypeScript and JavaScript, Prettier on CSS, JSON, and YAML, and Ruff on staged Python. CI runs Ruff and pytest, Prettier and ESLint, the pnpm build, typecheck and unit tests, knip (unused files and dependencies), and the browser tests. Run them before pushing (the browser tests at least when you change web flows).
+
+## Branches and releases
+
+Since 2026-10-31 (v0.1.0), every change goes through `stage`:
+
+- **Branch from `stage`, open the PR into `stage`.** Never into `main`: CI's `release-flow` job fails a PR into `main` whose branch isn't `stage`.
+- **Every PR adds its change to `CHANGELOG.md` under Unreleased** (Added, Changed, Fixed, Removed, Security; one line each, written for the people who use dotrix).
+- **`stage` → `main` is the release.** To release, on a branch from `stage`: `python scripts/release.py bump X.Y.Z` (sets every package's version, `API_VERSION`, and `uv.lock`, and turns Unreleased into `## [X.Y.Z] - date`), then `pnpm openapi`, then a PR into `stage`. Then a PR from `stage` into `main`. When it merges, `.github/workflows/release.yml` tags `vX.Y.Z` and publishes the GitHub release with that section. A `stage` → `main` merge that keeps the version publishes nothing.
+- **Versions** follow semver: before 1.0, a minor bump can change the API or the database; a patch is fixes only. `X.Y.Z-rc.N` is published as a prerelease. `python scripts/release.py check` (in CI) makes sure every package says the same version and the changelog has its section.
+- (you) Protect `stage` and `main` on GitHub: require a pull request and the CI checks (including `release-flow`) before merging, and no direct pushes.
 
 ## Rules that always apply
 
