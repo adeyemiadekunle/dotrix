@@ -32,7 +32,7 @@ class CodingAvailability(BaseModel):
         description="Your compatible default tool: Codex with OpenAI, Claude Code with Anthropic, "
         "or OpenCode with another connected provider"
     )
-    sandbox: str | None = Field(description="`docker`, `openshell`, or `local` (development, no isolation)")
+    sandbox: str | None = Field(description="`docker`, `docker-cloud`, `openshell`, or `local` (development, no isolation)")
     reason: str | None = Field(description="Why not, when it isn't available")
     local_available: bool = Field(default=False, description="Whether you can code here on your own computer")
     local_runner: str | None = Field(default=None, description="Your computer that would code (the one seen last)")

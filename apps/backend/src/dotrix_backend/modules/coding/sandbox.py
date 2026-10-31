@@ -11,6 +11,8 @@
   agent's container has a read-only system, no capabilities, and an unprivileged user; the repo
   sits on a volume deleted with it. Unlike OpenShell, the model key is in the agent's environment:
   the proxy is what keeps it from going anywhere but the model API.
+- Docker Cloud (`docker-cloud`): a Docker Sandboxes microVM per run, its network limited to the
+  model API by Docker's own policy (docker_cloud.py).
 - Local (`local`): a temporary folder on this machine, with no isolation at all. For
   development only; refused in production.
 
@@ -546,6 +548,10 @@ def build_sandbox(settings: Settings) -> CodingSandbox | None:
         return OpenShellSandbox(settings)
     if settings.coding_sandbox == "docker":
         return DockerSandbox(settings)
+    if settings.coding_sandbox == "docker-cloud":
+        from .docker_cloud import DockerCloudSandbox  # (imports this module)
+
+        return DockerCloudSandbox(settings)
     if settings.coding_sandbox == "local":
         return LocalSandbox()
     return None

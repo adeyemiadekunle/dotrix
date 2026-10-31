@@ -120,12 +120,19 @@ class Settings(DatabaseSettings):
     #   OpenShell CLI; see infra/coding/README.md), with a policy and the model key injected
     # - "docker": a container per run from the coding image, on a network whose only way out is
     #   a proxy to the model API (Docker and the image built; see infra/coding/README.md)
+    # - "docker-cloud": a Docker Cloud sandbox (microVM) per run, from the coding image in a
+    #   registry, its network limited to the model API (modules/coding/docker_cloud.py)
     # - "local": a temporary folder on this machine, no isolation (development only)
     # - "off": "Start coding" is refused
-    coding_sandbox: Literal["off", "openshell", "docker", "local"] = "off"
+    coding_sandbox: Literal["off", "openshell", "docker", "docker-cloud", "local"] = "off"
     openshell_bin: str = "openshell"
     docker_bin: str = "docker"
     coding_image: str = "dotrix-coding:latest"  # the sandbox image (infra/coding/Dockerfile)
+    # Docker Cloud sandboxes: the Docker ID and a personal access token with Cloud Sandboxes access
+    # (sandbox:use); the coding image must then be a registry reference Docker can pull.
+    docker_cloud_url: str = "https://connect.docker.com/sandboxes"
+    docker_cloud_id: str | None = None
+    docker_cloud_pat: SecretStr | None = None
     # Which tool codes: "auto" follows the person's keys (OpenAI: Codex, Anthropic: Claude Code,
     # other supported providers: OpenCode); naming one needs their key for its provider.
     coding_agent: Literal["auto", "claude-code", "codex", "opencode", "fx"] = "auto"  # Default, overridable per person/run.
@@ -292,6 +299,12 @@ class Settings(DatabaseSettings):
             raise ValueError("search_provider=tavily needs DOTRIX_TAVILY_API_KEY")
         if self.search_provider == "fake" and not self.e2e_models:
             raise ValueError("search_provider=fake is for end-to-end tests (needs DOTRIX_E2E_MODELS=true)")
+        if self.coding_sandbox == "docker-cloud":
+            if not self.docker_cloud_id or self.docker_cloud_pat is None:
+                raise ValueError("coding_sandbox=docker-cloud needs DOTRIX_DOCKER_CLOUD_ID and DOTRIX_DOCKER_CLOUD_PAT")
+            if "/" not in self.coding_image.split("@")[0]:
+                raise ValueError("coding_sandbox=docker-cloud pulls the coding image from a registry: set "
+                                 "DOTRIX_CODING_IMAGE to its reference (e.g. docker.io/acme/dotrix-coding:0.1.0)")
         if self.is_deployed and self.coding_sandbox == "local":
             raise ValueError("coding_sandbox=local runs coding agents unisolated; not allowed in staging or production")
         if self.is_deployed and self.coding_sandbox != "off" and not self.coding_fork_owner:
