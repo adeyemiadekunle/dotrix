@@ -94,15 +94,6 @@ class ProjectCreate(BaseModel):
     color: ProjectColor | None = Field(default=None, description="Its colour; none follows its key")
 
 
-TokenBudget = Annotated[
-    int,
-    Field(
-        ge=10_000,
-        le=10_000_000,
-        description="The most tokens (input + output, over all its steps) one agent run may use; "
-        "a run that reaches it stops and says so",
-    ),
-]
 
 
 class ProjectUpdate(BaseModel):
@@ -121,9 +112,6 @@ class ProjectUpdate(BaseModel):
         default=None,
         description="A cheaper model for the specialists and for summarising long conversations. "
         "Send null to use the project's model; leave it out to keep the current one.",
-    )
-    token_budget: TokenBudget | None = Field(
-        default=None, description="Send null to remove this project's token limit; leave it out to keep the current one."
     )
     repo_url: RepoUrl | None = Field(
         default=None,
@@ -164,7 +152,6 @@ class ProjectRead(BaseModel):
     specialist_model: str | None = Field(
         description="The specialists' and summaries' model; null means the project's model"
     )
-    token_budget: int | None = Field(description="Optional per-run token limit for this project; null: no project limit")
     health: ProjectHealth | None = Field(description="How it's going, as its owners and admins say; null: not said")
     target_date: date | None = Field(description="When it should be done; null: no date")
     status: ProjectStatus = Field(description="planning, active, on_hold, or completed")

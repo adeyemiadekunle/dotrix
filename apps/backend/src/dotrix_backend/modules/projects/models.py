@@ -84,8 +84,6 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):
     specialist_model: Mapped[str | None] = mapped_column(String(100))
     # Opt-in host routing: protect architecture/review and project-changing work.
     automatic_model_routing: Mapped[bool] = mapped_column(default=False, server_default="false")
-    # Optional limit chosen for this project's runs (input + output, all steps); null: none.
-    token_budget: Mapped[int | None]
     # Bumped on every .dotrix/ change; lets the CLI mirror pull only what changed.
     knowledge_revision: Mapped[int] = mapped_column(default=0, server_default="0")
     # Next issue number (KUN-<n>). Incremented under a row lock; numbers are never reused.

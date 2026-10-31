@@ -399,7 +399,7 @@ export function taskForm(): TaskForm | null {
 }
 
 /* ---------- project ---------- */
-type AgentModelsDraft = { model: string; specialist: string; budget: string; routing: boolean };
+type AgentModelsDraft = { model: string; specialist: string; routing: boolean };
 type AgentModelsControl = { saveIfChanged: () => Promise<boolean> };
 
 /** Project-wide defaults; personal and per-agent choices still take precedence. */
@@ -417,34 +417,24 @@ function ProjectAgentModels({ projectId, control }: { projectId: string; control
     (edited ?? {
       model: project.model,
       specialist: project.specialist_model ?? "",
-      budget: project.token_budget?.toString() ?? "",
       routing: project.automatic_model_routing,
     });
   const changed = Boolean(
     project &&
     form &&
-    (form.routing !== project.automatic_model_routing ||
-      form.model.trim() !== project.model ||
-      form.specialist.trim() !== (project.specialist_model ?? "") ||
-      form.budget.trim() !== (project.token_budget?.toString() ?? "")),
+    (form.routing !== project.automatic_model_routing || form.model.trim() !== project.model || form.specialist.trim() !== (project.specialist_model ?? "")),
   );
   const save = async (announce = true): Promise<boolean> => {
     if (!project || !form || !changed) return true;
     if (busy) return false;
-    const budget = form.budget.trim();
-    if (budget && (!/^\d+$/.test(budget) || Number(budget) < 10_000 || Number(budget) > 10_000_000)) {
-      setError("The token budget must be between 10,000 and 10,000,000, or left empty.");
-      return false;
-    }
     if (!form.model.trim()) {
       setError("Choose a project model.");
       return false;
     }
-    const body: Pick<Schemas["ProjectUpdate"], "model" | "specialist_model" | "token_budget" | "automatic_model_routing"> = {};
+    const body: Pick<Schemas["ProjectUpdate"], "model" | "specialist_model" | "automatic_model_routing"> = {};
     if (form.routing !== project.automatic_model_routing) body.automatic_model_routing = form.routing;
     if (form.model.trim() !== project.model) body.model = form.model.trim();
     if (form.specialist.trim() !== (project.specialist_model ?? "")) body.specialist_model = form.specialist.trim() || null;
-    if (budget !== (project.token_budget?.toString() ?? "")) body.token_budget = budget ? Number(budget) : null;
     setBusy(true);
     try {
       const updated = await projectAgentModelsSaved(projectId, body);
@@ -511,22 +501,6 @@ function ProjectAgentModels({ projectId, control }: { projectId: string; control
           onChange={(e) => set({ specialist: e.target.value })}
           placeholder="Use the conversation or project model"
         />
-      </div>
-      <div className="field">
-        <label className="label" htmlFor={`${listId}-budget`}>
-          Default token limit per agent run
-        </label>
-        <input
-          className="input"
-          id={`${listId}-budget`}
-          inputMode="numeric"
-          value={form.budget}
-          onChange={(e) => set({ budget: e.target.value })}
-          placeholder="No project limit"
-        />
-        <span className="faint" style={{ fontSize: 12 }}>
-          Agent-specific limits override this default. A run can stop before its next model call; fx chat checks it before each step instead.
-        </span>
       </div>
       {error && (
         <div className="alert danger" role="alert">

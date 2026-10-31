@@ -267,10 +267,7 @@ export const projectAgentModels = (projectId: string) =>
       params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
     }),
   );
-export const projectAgentModelsSaved = (
-  projectId: string,
-  body: Pick<Schemas["ProjectUpdate"], "model" | "specialist_model" | "token_budget" | "automatic_model_routing">,
-) =>
+export const projectAgentModelsSaved = (projectId: string, body: Pick<Schemas["ProjectUpdate"], "model" | "specialist_model" | "automatic_model_routing">) =>
   send(
     api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}", {
       params: { path: { workspace_id: live.ws!.id, project_id: projectId } },

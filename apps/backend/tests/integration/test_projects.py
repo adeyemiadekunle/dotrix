@@ -140,7 +140,7 @@ async def test_project_model_changes_are_authorized_and_audited(signup, create_t
     await add_member(team["id"], member.id, Role.MEMBER)
     project = (await db_client.post(projects_url(team), json={"key": "MODEL", "name": "Models"}, headers=owner.headers)).json()
     url = f"{projects_url(team)}/{project['id']}"
-    settings = {"model": "openai:strong", "specialist_model": "openai:small", "token_budget": 10000}
+    settings = {"model": "openai:strong", "specialist_model": "openai:small"}
     assert (await db_client.patch(url, json=settings, headers=member.headers)).status_code == 403
     assert (await db_client.patch(url, json=settings, headers=owner.headers)).status_code == 200
     assert (await db_client.patch(url, json=settings, headers=owner.headers)).status_code == 200  # no-op
@@ -150,9 +150,8 @@ async def test_project_model_changes_are_authorized_and_audited(signup, create_t
     assert audit[0]["details"]["changes"] == {
         "model": {"from": project["model"], "to": "openai:strong"},
         "specialist_model": {"from": None, "to": "openai:small"},
-        "token_budget": {"from": None, "to": 10000},
     }
-    assert (await db_client.patch(url, json={"specialist_model": None, "token_budget": None}, headers=owner.headers)).status_code == 200
+    assert (await db_client.patch(url, json={"specialist_model": None}, headers=owner.headers)).status_code == 200
     audit = (await db_client.get(f"/v1/workspaces/{team['id']}/audit", headers=owner.headers,
                                  params={"action": "project.agent_model_settings_changed"})).json()
     assert len(audit) == 2

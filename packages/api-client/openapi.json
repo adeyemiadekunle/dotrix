@@ -31374,18 +31374,6 @@
             "title": "Specialist Model",
             "description": "The specialists' and summaries' model; null means the project's model"
           },
-          "token_budget": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Token Budget",
-            "description": "Optional per-run token limit for this project; null: no project limit"
-          },
           "health": {
             "anyOf": [
               {
@@ -31478,7 +31466,6 @@
           "model",
           "automatic_model_routing",
           "specialist_model",
-          "token_budget",
           "health",
           "target_date",
           "status",
@@ -31586,21 +31573,6 @@
             ],
             "title": "Specialist Model",
             "description": "A cheaper model for the specialists and for summarising long conversations. Send null to use the project's model; leave it out to keep the current one."
-          },
-          "token_budget": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 10000000.0,
-                "minimum": 10000.0,
-                "description": "The most tokens (input + output, over all its steps) one agent run may use; a run that reaches it stops and says so"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Token Budget",
-            "description": "Send null to remove this project's token limit; leave it out to keep the current one."
           },
           "repo_url": {
             "anyOf": [
