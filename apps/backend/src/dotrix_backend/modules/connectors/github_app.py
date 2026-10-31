@@ -25,6 +25,18 @@ from dotrix_backend.modules.auth.github import API_URL, GitHubUnavailable
 HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
 MAX_REPOS = 1_000  # per installation, in pages of 100
 FORK_READY_TRIES = 5
+FAILED = ("failure", "timed_out")  # a CI run's or job's conclusion that means it failed
+MAX_FAILED_JOBS = 3
+LOG_TAIL = 8_000  # characters of a failed job's log
+
+
+@dataclass(frozen=True)
+class FailedJob:
+    """A CI job that failed on a commit: its name, page, and the end of its log (or why there's none)."""
+
+    name: str
+    html_url: str
+    log: str
 
 
 @dataclass(frozen=True)
@@ -83,6 +95,13 @@ class GitHubApp(Protocol):
     async def org_installation(self, org: str) -> int: ...
     async def fork(self, installation_id: int, full_name: str, *, org: str, name: str) -> Repo: ...
     async def sync_fork(self, full_name: str, branch: str, *, token: str) -> None: ...
+    async def post_review(
+        self, full_name: str, number: int, *, token: str, body: str, comments: list[dict[str, Any]], commit_id: str | None,
+    ) -> str: ...
+    async def comment(self, full_name: str, number: int, *, token: str, body: str) -> str: ...
+    async def failed_job_logs(self, full_name: str, sha: str, *, token: str) -> list[FailedJob]: ...
+
+    async def create_issue(self, full_name: str, *, token: str, title: str, body: str) -> PullRequest: ...
 
 
 class GitHubAppClient:
@@ -154,11 +173,12 @@ class GitHubAppClient:
 
     async def access_token(
         self, installation_id: int, *, repository_id: int | None = None, write: bool = False,
-        pull_requests: bool = False,
+        pull_requests: bool = False, actions: bool = False, issues: bool = False,
     ) -> str:
         """An installation token (an hour long) for git; never stored. With `repository_id`, it
-        works on that one repo only; `write` adds pushing and opening pull requests there, and
-        `pull_requests` only opening them (from a fork)."""
+        works on that one repo only; `write` adds pushing and opening pull requests there,
+        `pull_requests` only opening them (from a fork) or commenting on them, and `actions` reading
+        its CI runs and their logs, `issues` opening issues there."""
         body: dict | None = None
         if repository_id is not None:
             permissions: dict[str, str] = {"contents": "read"}
@@ -166,6 +186,10 @@ class GitHubAppClient:
                 permissions = {"contents": "write", "pull_requests": "write"}
             elif pull_requests:
                 permissions["pull_requests"] = "write"
+            if actions:
+                permissions["actions"] = "read"
+            if issues:
+                permissions["issues"] = "write"
             body = {"repository_ids": [repository_id], "permissions": {"metadata": "read", **permissions}}
         return await self._installation_token(installation_id, body)
 
@@ -268,6 +292,94 @@ class GitHubAppClient:
             await asyncio.sleep(2 * (attempt + 1))
 
     # -- tokens and requests -----------------------------------------------------------
+
+    async def post_review(
+        self, full_name: str, number: int, *, token: str, body: str, comments: list[dict[str, Any]], commit_id: str | None,
+    ) -> str:
+        """A review on pull request `number`, as a comment (never an approval: merging is a person's), with
+        `comments` on lines of its diff ({path, line, body}, on the new side). GitHub refuses the whole
+        review when one line isn't in the diff, so it's posted again without them, their text in `body`.
+        Returns the review's page."""
+        payload: dict[str, Any] = {"event": "COMMENT", "body": body}
+        if commit_id:
+            payload["commit_id"] = commit_id
+        if comments:
+            payload["comments"] = [{"path": c["path"], "line": c["line"], "side": "RIGHT", "body": c["body"]}
+                                   for c in comments]
+        res = await self._post(f"/repos/{full_name}/pulls/{number}/reviews", token, payload)
+        if res.status_code == 422 and comments:
+            folded = body + "\n\n" + "\n\n".join(f"**`{c['path']}:{c['line']}`**: {c['body']}" for c in comments)
+            res = await self._post(f"/repos/{full_name}/pulls/{number}/reviews", token,
+                                   {k: v for k, v in payload.items() if k != "comments"} | {"body": folded})
+        if res.status_code in (403, 404):
+            raise Forbidden("The GitHub App can't review pull requests there: it needs Pull requests (write)")
+        if res.status_code != 200:
+            raise GitHubUnavailable(f"GitHub didn't take the review ({res.status_code})")
+        return str(res.json().get("html_url") or "")
+
+    async def comment(self, full_name: str, number: int, *, token: str, body: str) -> str:
+        """A comment on pull request (or issue) `number`'s conversation; returns its page."""
+        res = await self._post(f"/repos/{full_name}/issues/{number}/comments", token, {"body": body})
+        if res.status_code in (403, 404):
+            raise Forbidden("The GitHub App can't comment there: it needs Pull requests (write)")
+        if res.status_code != 201:
+            raise GitHubUnavailable(f"GitHub didn't take the comment ({res.status_code})")
+        return str(res.json().get("html_url") or "")
+
+    async def create_issue(self, full_name: str, *, token: str, title: str, body: str) -> PullRequest:
+        """An issue in `full_name`, with a token from `access_token(issues=True)`; its number and page."""
+        res = await self._post(f"/repos/{full_name}/issues", token, {"title": title[:250], "body": body})
+        if res.status_code in (403, 404):
+            raise Forbidden("The GitHub App can't open issues there: it needs Issues (write)")
+        if res.status_code == 410:
+            raise Conflict(f"Issues are turned off in {full_name}")
+        if res.status_code != 201:
+            raise GitHubUnavailable(f"GitHub didn't open the issue ({res.status_code})")
+        data = res.json()
+        return PullRequest(number=int(data["number"]), html_url=str(data["html_url"]))
+
+    async def failed_job_logs(self, full_name: str, sha: str, *, token: str) -> list[FailedJob]:
+        """The GitHub Actions jobs that failed on `sha` (the latest attempt of each run), with the end of
+        each one's log: at most `MAX_FAILED_JOBS`, `LOG_TAIL` characters each. Without the Actions (read)
+        permission GitHub refuses, which is raised as Forbidden for the caller to say."""
+        try:
+            runs = await self._get(f"/repos/{full_name}/actions/runs?head_sha={sha}&per_page=20", token)
+        except GitHubUnavailable as exc:
+            if "403" in str(exc):
+                raise Forbidden("The GitHub App can't read CI here: it needs Actions (read)") from exc
+            raise
+        failed: list[FailedJob] = []
+        for run in runs.get("workflow_runs") or []:
+            if run.get("conclusion") not in FAILED or len(failed) >= MAX_FAILED_JOBS:
+                continue
+            jobs = await self._get(f"/repos/{full_name}/actions/runs/{run['id']}/jobs?filter=latest", token)
+            for job in jobs.get("jobs") or []:
+                if job.get("conclusion") not in FAILED or len(failed) >= MAX_FAILED_JOBS:
+                    continue
+                log = await self._log(f"/repos/{full_name}/actions/jobs/{job['id']}/logs", token)
+                failed.append(FailedJob(name=f"{run.get('name') or 'CI'} / {job.get('name') or job['id']}",
+                                        html_url=str(job.get("html_url") or run.get("html_url") or ""), log=log))
+        return failed
+
+    async def _log(self, path: str, token: str) -> str:
+        """A job's log, its end only (the failure is near the end); GitHub answers with a redirect to it."""
+        async with httpx.AsyncClient(transport=self.transport, timeout=30, follow_redirects=True) as http:
+            try:
+                res = await http.get(f"{API_URL}{path}", headers={**HEADERS, "Authorization": f"Bearer {token}"})
+            except httpx.HTTPError:
+                return "(the log couldn't be fetched)"
+        if res.status_code != 200:
+            return f"(the log couldn't be fetched: {res.status_code})"
+        text = res.text
+        return text if len(text) <= LOG_TAIL else "…" + text[-LOG_TAIL:]
+
+    async def _post(self, path: str, token: str, payload: dict[str, Any]) -> httpx.Response:
+        async with httpx.AsyncClient(transport=self.transport, timeout=30) as http:
+            try:
+                return await http.post(f"{API_URL}{path}", headers={**HEADERS, "Authorization": f"Bearer {token}"},
+                                       json=payload)
+            except httpx.HTTPError as exc:
+                raise GitHubUnavailable("GitHub couldn't be reached; try again shortly") from exc
 
     def _app_token(self) -> str:
         self._require_config()

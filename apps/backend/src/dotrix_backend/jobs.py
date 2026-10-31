@@ -20,6 +20,8 @@ from .modules.auth.repository import (
 from .modules.auth.service import AuthService
 from .modules.automations.service import AutomationService
 from .modules.code.service import CodeService
+from .modules.coding.github_reviews import post_review as post_coding_review
+from .modules.coding.github_reviews import triage_ci
 from .modules.coding.models import CodingRun, CodingRunStatus
 from .modules.connectors.webhook import delete_stale_deliveries
 from .modules.documents.service import DocumentService
@@ -219,5 +221,7 @@ JOBS: dict[str, JobFunction] = {
     "sync_repository": sync_repository,
     "run_automations": run_automations,
     "run_coding": run_coding,
+    "post_coding_review": post_coding_review,
+    "triage_ci": triage_ci,
     "email_notifications": email_notifications,
 }

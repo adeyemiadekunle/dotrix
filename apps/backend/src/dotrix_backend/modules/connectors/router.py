@@ -156,14 +156,14 @@ async def github_webhook(
     if x_github_delivery and not await webhook.first_delivery(session, x_github_delivery, x_github_event):
         logger.info("github webhook %s: delivery %s already applied", x_github_event, x_github_delivery)
         return {"result": "duplicate"}
-    done, pushed = await webhook.handle(session, x_github_event, payload)
+    done, follow_ups = await webhook.handle(session, x_github_event, payload, settings)
     await session.commit()  # the delivery's record, when handling changed nothing
     logger.info("github webhook %s: %s", x_github_event, done)
     try:
-        for project_id in pushed:  # their checkouts are behind now
-            await jobs.enqueue("sync_repository", project_id=str(project_id))
+        for name, kwargs in follow_ups:  # checkouts behind a push; Juno's look at a failed CI
+            await jobs.enqueue(name, **kwargs)
     except Exception:
-        if x_github_delivery:  # so GitHub's retry is applied again and schedules the syncs
+        if x_github_delivery:  # so GitHub's retry is applied again and schedules the jobs
             await webhook.forget_delivery(session, x_github_delivery)
         raise
     return {"result": done}

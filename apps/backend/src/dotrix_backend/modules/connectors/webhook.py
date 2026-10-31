@@ -57,17 +57,24 @@ async def delete_stale_deliveries(session: AsyncSession, cutoff: datetime) -> in
     return result.rowcount
 
 
-async def handle(session: AsyncSession, event: str, payload: dict[str, Any]) -> tuple[str, list[uuid.UUID]]:
-    """Apply one delivery; returns what was done (for the log and the response), and the
-    projects whose default branch moved (their checkouts need a sync)."""
+async def handle(
+    session: AsyncSession, event: str, payload: dict[str, Any], settings: Settings | None = None,
+) -> tuple[str, list[tuple[str, dict[str, Any]]]]:
+    """Apply one delivery; returns what was done (for the log and the response), and the jobs it
+    calls for: a sync for each project whose default branch moved, Juno's look at a failed CI."""
     if event == "push":
-        return await _push(session, payload)
+        done, pushed = await _push(session, payload)
+        return done, [("sync_repository", {"project_id": str(project_id)}) for project_id in pushed]
     if event == "installation":
         return await _installation(session, payload), []
     if event == "installation_repositories":
         return await _repositories(session, payload), []
     if event == "pull_request":
         return await _pull_request(session, payload), []
+    if event == "check_suite" and settings is not None:
+        from dotrix_backend.modules.coding.github_reviews import ci_completed
+
+        return await ci_completed(session, settings, payload)
     return "ignored", []
 
 

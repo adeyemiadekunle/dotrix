@@ -988,6 +988,8 @@ class CodingWorker:
                 )
                 run.review_run_id, run.review_thread_id = review.id, review.thread_id
                 await session.commit()
+            from .github_reviews import post_when_done
+            await post_when_done(self.session_factory, getattr(self.reviewer, "jobs", None), review.id)
         except Exception:
             logger.exception("coding run %s: the Reviewer didn't start", run_id)
 

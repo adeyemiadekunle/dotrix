@@ -362,6 +362,24 @@ function ReviewPanel({
       setSaving(false);
     }
   };
+  // A finding as an issue in the project's GitHub repository, opened by the GitHub App at your request.
+  const openOnGitHub = async (outputId: string, index: number) => {
+    if (!scope || !run || saving) return;
+    setSaving(true);
+    try {
+      const updated = await unwrap(
+        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/outputs/{output_id}/items/{index}/github-issue", {
+          params: { path: { workspace_id: scope.workspaceId, project_id: scope.projectId, run_id: run.id, output_id: outputId, index } },
+        }),
+      );
+      queryClient.setQueryData(["review-run", run.id], updated);
+      toast("Opened a GitHub issue from Juno's finding");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "GitHub didn't open the issue", { kind: "err" });
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <div className="review-panel">
       <div className="row review-panel-head">
@@ -430,12 +448,17 @@ function ReviewPanel({
                   return (
                     <section className="panel review-finding" key={`${run.id}-${index}`}>
                       <span className="badge">{text(finding.severity) || "Finding"}</span>
-                      {item.state !== "open" && (
-                        <span className="badge">
-                          {item.state}
-                          {item.link ? ` · ${item.link}` : ""}
-                        </span>
-                      )}
+                      {item.state !== "open" &&
+                        (item.link?.startsWith("https://github.com/") ? (
+                          <a className="badge" href={item.link} target="_blank" rel="noreferrer">
+                            {item.state} · GitHub #{item.link.split("/").pop()}
+                          </a>
+                        ) : (
+                          <span className="badge">
+                            {item.state}
+                            {item.link ? ` · ${item.link}` : ""}
+                          </span>
+                        ))}
                       <h3>{title}</h3>
                       <p>{detail}</p>
                       {fix && <p className="muted">Suggested fix: {fix}</p>}
@@ -458,6 +481,12 @@ function ReviewPanel({
                         {canCreate && scope && item.state === "open" && (
                           <button className="btn btn-sm" disabled={saving} onClick={() => void createFromFinding(outputId, item.index, title, detail, fix)}>
                             Create issue
+                          </button>
+                        )}
+                        {canCreate && scope && isLive() && context?.coding_run_id && item.state === "open" && (
+                          <button className="btn btn-sm" disabled={saving} onClick={() => void openOnGitHub(outputId, item.index)}>
+                            <Ic n="github" s={13} />
+                            Open on GitHub
                           </button>
                         )}
                         {onAskFix && allowed("agents:code") && (

@@ -47,6 +47,7 @@ import {
   useRevertCoding,
   statusLabel,
   useStopCoding,
+  type CodingRun,
   type CodingSession,
 } from "@/lib/coding";
 import { useCrossConversations, useCrossStream, useCrossThread, useSendCross, useStopCross } from "@/lib/conversations";
@@ -71,7 +72,7 @@ import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT } from "../data/seed-dotrix";
 import { CODING_VIEWS, CodingPanel, type CodingView } from "../components/SidePanel";
-import { useConversationTasks, useReviewRuns, type SpecialistTask } from "@/lib/team";
+import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
 import { useAtPicker } from "../components/AtPicker";
 import { Splitter, useStoredFlag, useStoredSize, useStoredText } from "../ui/splitter";
 
@@ -1558,6 +1559,61 @@ function PathLinks({ text, paths, onPath }: { text: string; paths: string[]; onP
   );
 }
 
+/** CI on the turn's commit: passed, or failed with Juno's look at the logs and "Ask Kai to fix" (a follow-up turn). */
+function CiCard({ turn, scope, canFix, onFix }: { turn: CodingRun; scope: Scope | undefined; canFix: boolean; onFix: (message: string) => void }) {
+  const [look] = useReviewRunQueries(scope, turn.ci_review_run_id ? [turn.ci_review_run_id] : []);
+  const run = look?.data;
+  const reply = run?.reply?.trim() ?? "";
+  if (turn.ci_state === "passed") {
+    return (
+      <div className="row muted" style={{ gap: 6, fontSize: 12.5 }}>
+        <Ic n="circle-check" s={13} />
+        CI passed on {turn.commit_sha?.slice(0, 7)}
+      </div>
+    );
+  }
+  const fix = () =>
+    onFix(
+      `CI failed on PR #${turn.pr_number} at ${turn.commit_sha?.slice(0, 7)}. Fix it on this branch.` +
+        (reply ? `\n\nJuno looked at the failed jobs' logs (its analysis, as evidence):\n\n${reply.slice(0, 4000)}` : ""),
+    );
+  return (
+    <div className="change" role="group" aria-label="CI failed">
+      <div className="change-h">
+        <Ic n="circle-x" s={14} />
+        <b style={{ fontWeight: 500 }}>CI failed on {turn.commit_sha?.slice(0, 7)}</b>
+        <span className="sp" />
+        {turn.ci_review_posted_url && (
+          <a href={turn.ci_review_posted_url} target="_blank" rel="noreferrer" style={{ color: "var(--acc)", fontSize: 12 }}>
+            On the PR
+          </a>
+        )}
+      </div>
+      <div className="change-b" style={{ fontSize: 13 }}>
+        {!turn.ci_review_run_id ? (
+          <span className="muted">Juno will look at the failed jobs.</span>
+        ) : !run || run.status === "queued" || run.status === "running" ? (
+          <span className="muted">Juno is reading the failed jobs' logs…</span>
+        ) : reply ? (
+          <Markdown>{reply}</Markdown>
+        ) : (
+          <span className="muted">Juno didn't say what failed; open the PR's checks.</span>
+        )}
+      </div>
+      <div className="change-f">
+        <span className="faint" style={{ fontSize: 12 }}>
+          A follow-up turn on the same branch, approved like the first.
+        </span>
+        <span className="sp" />
+        <button className="btn btn-sm btn-primary" disabled={!canFix} onClick={fix}>
+          <Ic n="wrench" s={13} />
+          Ask {CODING_AGENT.name} to fix
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Session({ cs }: { cs: CodingSession }) {
   const ws = wsId();
   const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
@@ -1622,6 +1678,8 @@ export function Session({ cs }: { cs: CodingSession }) {
   const [label0, c] = STATUS[cs.status];
   const label = latest ? statusLabel(latest) : label0;
   const busy = BUSY.includes(cs.status) || cs.state === "closed";
+  // The latest turn that reached the PR: CI runs on its commit.
+  const pushed = [...turns].reverse().find((t) => t.commit_sha && t.pr_number);
   // Its details (project, repo, branches, commit, PR) float over the chat from the ⋮: on hover,
   // or pinned by a click until a click elsewhere or Escape.
   const [info, setInfo] = useState<null | "hover" | "pinned">(null);
@@ -1810,12 +1868,20 @@ export function Session({ cs }: { cs: CodingSession }) {
               </dt>
               <dd>
                 {cs.pr_url && cs.pr_number ? (
-                  <a href={cs.pr_url} target="_blank" rel="noreferrer" className="row" style={{ gap: 6, color: "var(--acc)" }}>
-                    #{cs.pr_number}
-                    {cs.pr_state && (
-                      <span className={`badge ${cs.pr_state === "merged" ? "accent" : cs.pr_state === "open" ? "green" : ""}`}>{cs.pr_state}</span>
+                  <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <a href={cs.pr_url} target="_blank" rel="noreferrer" className="row" style={{ gap: 6, color: "var(--acc)" }}>
+                      #{cs.pr_number}
+                      {cs.pr_state && (
+                        <span className={`badge ${cs.pr_state === "merged" ? "accent" : cs.pr_state === "open" ? "green" : ""}`}>{cs.pr_state}</span>
+                      )}
+                    </a>
+                    {pushed?.ci_state && <span className={`badge ${pushed.ci_state === "passed" ? "green" : "red"}`}>CI {pushed.ci_state}</span>}
+                    {pushed?.review_posted_url && (
+                      <a href={pushed.review_posted_url} target="_blank" rel="noreferrer" style={{ color: "var(--acc)", fontSize: 12 }}>
+                        Juno's review
+                      </a>
                     )}
-                  </a>
+                  </span>
                 ) : (
                   <span className="faint">none yet</span>
                 )}
@@ -2009,6 +2075,7 @@ export function Session({ cs }: { cs: CodingSession }) {
                 </div>
               </div>
             )}
+            {pushed?.ci_state && <CiCard turn={pushed} scope={scope} canFix={!busy && !follow.isPending} onFix={(message) => follow.mutate(message)} />}
             {(latest?.status === "running" || latest?.status === "queued") && (
               <div className="row" style={{ gap: 8 }}>
                 <span className="chat-typing">
