@@ -50,13 +50,26 @@ class FakeDockerCloud:
         self.files: dict[str, bytes] = {}
         self.unpacked: list[str] = []
         self.procs: list[Proc] = []
-        self.deleted: list[tuple[str, str]] = []
+        self.deleted: list[tuple[str, str]] = []  # (If-Match, force) of each sandbox deleted
+        self.sandboxes: dict[str, dict] = {}  # id -> {"status", "displayName", "createdAt"}
+        self.secrets: dict[str, dict] = {}  # id -> what was asked for, and its placeholder
+        self.secrets_deleted: list[str] = []
+        self.managed: set[str] = set()  # hosts Docker serves itself: a custom secret for them is refused
+        self.refuse_secrets = False  # no secrets at all
+        self.stops = self.starts = 0
+        self.blocked: list[dict] = []  # policy log entries
         self.renewed = 0
         self.tokens = 0
         self.credentials = 0
         self.rate_limited = 0  # requests to answer 429 before the next is served
         self.reject_token_once = False
         self.program = lambda proc: None  # sets what a command prints and how it ends
+
+    def sandbox(self, sid: str) -> dict:
+        found = self.sandboxes[sid]
+        return {"name": f"sandboxes/{sid}", "uid": sid, "displayName": found["displayName"], "core": {
+            "status": found["status"], "etag": f"e-{sid}", "createdAt": found["createdAt"],
+            "endpoint": {"uri": ENDPOINT, "protocol": "http"}}}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         url, auth = str(request.url), request.headers.get("Authorization", "")
@@ -74,26 +87,69 @@ class FakeDockerCloud:
         if self.reject_token_once:
             self.reject_token_once = False
             return httpx.Response(401, json={"error": {"code": "unauthenticated"}})
-        path = request.url.path.removeprefix("/sandboxes")
-        if path == "/v1/sandboxes" and request.method == "POST":
-            assert request.headers.get("Idempotency-Key")
-            self.created.append(json.loads(request.content))
-            return httpx.Response(202, json={"name": "sandboxes/sbx-1", "uid": "sbx-1", "core": {"status": "creating"}})
-        if path == "/v1/sandboxes/sbx-1" and request.method == "GET":
-            if self.deleted:
+        path, method = request.url.path.removeprefix("/sandboxes"), request.method
+        parts = path.split("/")  # ["", "v1", "sandboxes", id, action]
+        if path == "/v1/secrets" and method == "POST":
+            body = json.loads(request.content)
+            host = (body.get("custom") or {}).get("injection", {}).get("hosts", [None])[0]
+            if self.refuse_secrets or (host in self.managed):
+                return httpx.Response(400, json={"error": {"code": "invalidArgument", "message": "host is managed"}})
+            sid = f"sec-{len(self.secrets) + 1}"
+            self.secrets[sid] = {**body, "placeholder": "sk-ant-api03-PLACEHOLDER"}
+            return httpx.Response(201, json={"name": f"secrets/{sid}", "uid": sid, "displayName": body["displayName"],
+                                             "placeholder": "sk-ant-api03-PLACEHOLDER", "createdAt": "2026-10-01T00:00:00Z"})
+        if path == "/v1/secrets" and method == "GET":
+            return httpx.Response(200, json={"secrets": [
+                {"name": f"secrets/{k}", "uid": k, "displayName": v["displayName"], "createdAt": "2026-10-01T00:00:00Z"}
+                for k, v in self.secrets.items()]})
+        if parts[1:3] == ["v1", "secrets"] and len(parts) == 4:
+            if parts[3] not in self.secrets:
                 return httpx.Response(404, json={"error": {"code": "notFound"}})
-            return httpx.Response(200, json={"name": "sandboxes/sbx-1", "uid": "sbx-1", "core": {
-                "status": "running", "etag": "e-1", "endpoint": {"uri": ENDPOINT, "protocol": "http"}}})
-        if path == "/v1/sandboxes/sbx-1" and request.method == "DELETE":
-            self.deleted.append((request.headers["If-Match"], request.url.params.get("force", "")))
-            return httpx.Response(204)
-        if path == "/v1/sandboxes/sbx-1/endpoint-credentials":
-            assert set(json.loads(request.content)["permissions"]) == set(docker_cloud.CREDENTIAL_PERMISSIONS)
-            self.credentials += 1
-            return httpx.Response(200, json={"token": "ep-token", "expireTime": "2026-10-31T00:05:00Z"})
-        if path == "/v1/sandboxes/sbx-1/renew-timeout":
-            self.renewed += 1
-            return httpx.Response(200, json={"name": "sandboxes/sbx-1"})
+            if method == "DELETE":
+                del self.secrets[parts[3]]
+                self.secrets_deleted.append(parts[3])
+                return httpx.Response(204)
+            return httpx.Response(200, json={"name": f"secrets/{parts[3]}", "etag": "s-etag"})
+        if path == "/v1/sandboxes" and method == "POST":
+            assert request.headers.get("Idempotency-Key")
+            body = json.loads(request.content)
+            self.created.append(body)
+            sid = f"sbx-{len(self.created)}"
+            self.sandboxes[sid] = {"status": "running", "displayName": body["displayName"],
+                                   "createdAt": "2026-10-31T00:00:00Z"}
+            return httpx.Response(202, json={"name": f"sandboxes/{sid}", "uid": sid, "core": {"status": "creating"}})
+        if path == "/v1/sandboxes" and method == "GET":
+            return httpx.Response(200, json={"sandboxes": [self.sandbox(k) for k in self.sandboxes]})
+        if parts[1:3] == ["v1", "sandboxes"]:
+            sid = parts[3]
+            if sid not in self.sandboxes:
+                return httpx.Response(404, json={"error": {"code": "notFound"}})
+            action = parts[4] if len(parts) > 4 else ""
+            if action == "" and method == "GET":
+                return httpx.Response(200, json=self.sandbox(sid))
+            if action == "" and method == "DELETE":
+                self.deleted.append((request.headers["If-Match"], request.url.params.get("force", "")))
+                del self.sandboxes[sid]
+                return httpx.Response(204)
+            if action == "stop":
+                assert request.headers["If-Match"] == f"e-{sid}"
+                self.stops += 1
+                self.sandboxes[sid]["status"] = "stopped"
+                return httpx.Response(200, json=self.sandbox(sid))
+            if action == "start":
+                self.starts += 1
+                self.sandboxes[sid]["status"] = "running"
+                return httpx.Response(202, json={**self.sandbox(sid), "core": {"status": "starting"}})
+            if action == "endpoint-credentials":
+                assert set(json.loads(request.content)["permissions"]) == set(docker_cloud.CREDENTIAL_PERMISSIONS)
+                self.credentials += 1
+                return httpx.Response(200, json={"token": "ep-token", "expireTime": "2026-10-31T00:05:00Z"})
+            if action == "renew-timeout":
+                self.renewed += 1
+                return httpx.Response(200, json=self.sandbox(sid))
+            if action == "policy-logs":
+                assert request.url.params["filter"] == "domain=network"
+                return httpx.Response(200, json={"entries": self.blocked})
         return httpx.Response(404, json={"error": {"code": "notFound", "message": path}})
 
     def endpoint(self, request: httpx.Request, path: str) -> httpx.Response:
@@ -186,9 +242,15 @@ async def test_a_sandbox_holds_the_repo_reaches_only_the_model_api_and_streams_c
     [body] = fake.created
     assert body["imageRef"] == IMAGE and body["resources"] == {"cpus": 2, "memoryMib": 4096}
     assert body["networkPolicies"] == [{"mode": "denyAll", "allowNetworks": ["api.anthropic.com"]}]
-    assert body["features"] == {"timeouts": {"timeout": f"{(30 + 15 + 10) * 60}s", "onTimeout": "delete"}}
+    assert body["features"]["timeouts"] == {"timeout": f"{(30 + 15 + 10) * 60}s", "onTimeout": "stop"}
     assert body["labels"] == {"dotrix-run": str(run_id)}
-    assert KEY not in json.dumps(body)  # the key never goes in the sandbox's own (stored) settings
+    # The key is a secret Docker writes into the model API's requests: the sandbox holds a placeholder.
+    [secret] = fake.secrets.values()
+    assert secret["custom"]["value"] == KEY and secret["custom"]["injection"] == {
+        "hosts": ["api.anthropic.com"], "header": "x-api-key", "format": "%s", "envVar": "ANTHROPIC_API_KEY",
+        "placeholderTemplate": "sk-ant-api03-{rand}"}
+    assert body["features"]["storedSecrets"] == {"secrets": ["secrets/sec-1"]}
+    assert KEY not in json.dumps(body)
     assert fake.unpacked == ["repo", "repo/src", "repo/src/payments.py"]
 
     lines: list[str] = []
@@ -202,7 +264,8 @@ async def test_a_sandbox_holds_the_repo_reaches_only_the_model_api_and_streams_c
     assert result.stderr == "warming up\n" and result.stdout == ""
     proc = fake.procs[-1]
     assert proc.cmd == ["claude", "-p"] and proc.stdin == b"the brief"
-    assert proc.env == {"ANTHROPIC_API_KEY": KEY, "HOME": "/sandbox", "LANG": "C.UTF-8"}
+    assert proc.env == {"ANTHROPIC_API_KEY": "sk-ant-api03-PLACEHOLDER", "HOME": "/sandbox", "LANG": "C.UTF-8"}
+    assert all(KEY not in json.dumps(p.env) for p in fake.procs)  # never inside the sandbox
     assert not any(path.startswith("/tmp/dotrix-stdin") for path in fake.files)  # handed over, not left behind
 
     kept = await session.exec(["git", "diff"], timeout=60)  # not streamed: kept whole
@@ -211,9 +274,74 @@ async def test_a_sandbox_holds_the_repo_reaches_only_the_model_api_and_streams_c
 
     await session.close()
     await session.close()
-    assert fake.deleted == [("e-1", "true")]
+    assert fake.deleted == [("e-sbx-1", "true")] and fake.secrets_deleted == ["sec-1"]
     with pytest.raises(SandboxError, match="closed"):
         await session.exec(["true"], timeout=5)
+
+
+async def test_a_host_docker_serves_itself_gets_its_token_and_without_a_secret_only_the_model_api(
+    fake: FakeDockerCloud, repo: Path,
+) -> None:
+    fake.managed = {"api.anthropic.com"}
+    session = await _sandbox(fake).open(uuid.uuid4(), repo, ClaudeCode(), KEY, allow=["registry.npmjs.org"])
+    [secret] = fake.secrets.values()
+    assert secret["serviceType"] == "anthropic" and secret["token"] == {"value": KEY}
+    assert fake.created[-1]["networkPolicies"][0]["allowNetworks"] == ["api.anthropic.com", "registry.npmjs.org"]
+    await session.close()
+
+    # No secret at all: the key may go in each process's environment only while nothing else is reachable.
+    fake.refuse_secrets = True
+    with pytest.raises(SandboxError, match="Sandbox network"):
+        await _sandbox(fake).open(uuid.uuid4(), repo, ClaudeCode(), KEY, allow=["registry.npmjs.org"])
+    assert len(fake.created) == 1  # refused before a sandbox was made
+    session = await _sandbox(fake).open(uuid.uuid4(), repo, ClaudeCode(), KEY)
+    await session.exec(["claude", "-p"], timeout=60)
+    assert fake.procs[-1].env["ANTHROPIC_API_KEY"] == KEY and "storedSecrets" not in fake.created[-1]["features"]
+    await session.close()
+
+
+async def test_a_sandbox_sleeps_between_turns_and_wakes_with_its_files(fake: FakeDockerCloud, repo: Path) -> None:
+    sandbox = _sandbox(fake)
+    session = await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY)
+    handle = sandbox.handle(session)
+    assert handle == {"kind": "docker-cloud", "sandbox": "sbx-1", "secret": "secrets/sec-1",
+                      "placeholder": "sk-ant-api03-PLACEHOLDER"}
+    assert KEY not in json.dumps(handle)  # stored on the session: never the key
+    await sandbox.sleep(session)
+    assert fake.sandboxes["sbx-1"]["status"] == "stopped" and fake.stops == 1 and not fake.deleted
+
+    woken = await sandbox.wake(handle, ClaudeCode(), KEY)
+    assert woken is not None and fake.starts == 1 and fake.sandboxes["sbx-1"]["status"] == "running"
+    await woken.exec(["git", "status"], timeout=60)  # the same sandbox, its files as they were
+    assert fake.procs[-1].env["ANTHROPIC_API_KEY"] == "sk-ant-api03-PLACEHOLDER"
+    await sandbox.discard(handle)
+    assert "sbx-1" not in fake.sandboxes and fake.secrets_deleted == ["sec-1"]
+    assert await sandbox.wake(handle, ClaudeCode(), KEY) is None  # gone
+
+
+async def test_the_sweep_deletes_leftovers_only(fake: FakeDockerCloud, repo: Path) -> None:
+    sandbox = _sandbox(fake)
+    kept = await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY)
+    left = await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY)
+    running = await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY)
+    await sandbox.sleep(kept)
+    await sandbox.sleep(left)
+    fake.sandboxes["other"] = {"status": "stopped", "displayName": "someone-elses", "createdAt": "2026-10-01T00:00:00Z"}
+    deleted = await sandbox.sweep({"sbx-1"}, min_age=0)
+    assert deleted == 1 and set(fake.sandboxes) == {"sbx-1", "sbx-3", "other"}  # not a session's, running, or not ours
+    assert fake.secrets_deleted == ["sec-2"]  # the deleted sandbox's key went with it
+    assert running is not None
+
+
+async def test_blocked_hosts_are_reported(fake: FakeDockerCloud, repo: Path) -> None:
+    session = await _sandbox(fake).open(uuid.uuid4(), repo, ClaudeCode(), KEY)
+    fake.blocked = [
+        {"resource": "registry.npmjs.org:443", "decision": "blocked", "count": "3"},
+        {"resource": "api.anthropic.com:443", "decision": "allowed", "count": "40"},
+        {"resource": "https://pypi.org/simple", "decision": "blocked", "count": 5},
+    ]
+    from datetime import UTC, datetime
+    assert await session.blocked_hosts(datetime.now(UTC)) == ["pypi.org", "registry.npmjs.org"]
 
 
 async def test_stop_interrupts_then_kills_and_the_time_limit_kills(
@@ -248,7 +376,7 @@ async def test_rate_limits_are_waited_out_and_a_refused_token_is_renewed(fake: F
     fake.rate_limited, fake.reject_token_once = 2, True
     sandbox = _sandbox(fake)
     session = await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY)
-    assert len(fake.created) == 1  # the same create retried, not repeated
+    assert len(fake.created) == 1 and len(fake.secrets) == 1  # each retried, not repeated
     assert fake.tokens == 2  # the refused token exchanged again once
     await session.close()
 
@@ -257,13 +385,14 @@ async def test_a_sandbox_that_fails_to_start_is_deleted_and_says_why(fake: FakeD
     original = fake.handle
 
     def failing(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET" and request.url.path.endswith("/v1/sandboxes/sbx-1") and not fake.deleted:
-            return httpx.Response(200, json={"name": "sandboxes/sbx-1", "uid": "sbx-1",
-                                             "core": {"status": "failed", "etag": "e-9"},
+        if request.method == "GET" and request.url.path.endswith("/v1/sandboxes/sbx-1") and "sbx-1" in fake.sandboxes:
+            if fake.sandboxes["sbx-1"]["status"] == "running":
+                fake.sandboxes["sbx-1"]["status"] = "failed"
+            return httpx.Response(200, json={**fake.sandbox("sbx-1"),
                                              "failure": {"code": "notFound", "message": "image not found"}})
         return original(request)
 
     sandbox = DockerCloudSandbox(_settings(), transport=httpx.MockTransport(failing))
     with pytest.raises(SandboxError, match="image not found"):
         await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY)
-    assert fake.deleted == [("e-9", "true")]  # nothing left running
+    assert fake.deleted == [("e-sbx-1", "true")] and fake.secrets_deleted == ["sec-1"]  # nothing left behind

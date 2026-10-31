@@ -133,6 +133,13 @@ class Settings(DatabaseSettings):
     docker_cloud_url: str = "https://connect.docker.com/sandboxes"
     docker_cloud_id: str | None = None
     docker_cloud_pat: SecretStr | None = None
+    # The model key as a Docker secret (the sandbox holds a placeholder; Docker writes the key into the model
+    # API's requests). Off: the key is in each process's environment, and extra allowed hosts are refused.
+    docker_cloud_key_injection: bool = True
+    # Between turns a session's Docker Cloud sandbox sleeps (stopped, its files kept) for up to this many days,
+    # then is deleted (0: never sleeps); at most this many sleep per workspace (the oldest goes first).
+    coding_sleep_days: int = Field(default=7, ge=0, le=30)
+    coding_sleep_max: int = Field(default=5, ge=0, le=50)
     # Which tool codes: "auto" follows the person's keys (OpenAI: Codex, Anthropic: Claude Code,
     # other supported providers: OpenCode); naming one needs their key for its provider.
     coding_agent: Literal["auto", "claude-code", "codex", "opencode", "fx"] = "auto"  # Default, overridable per person/run.

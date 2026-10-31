@@ -311,3 +311,20 @@ class CodingFile(BaseModel):
     after: str | None = Field(description="Its text after the turn (none: deleted, or isn't shown)")
     binary: bool
     too_large: bool = Field(description="Over 1 MB: not shown")
+
+
+class SandboxNetworkUpdate(BaseModel):
+    """The hosts Kai's sandboxes may reach besides the model API, here (workspace or project)."""
+
+    presets: list[str] = Field(default_factory=list, max_length=20,
+                               description="Named presets (package registries), e.g. npm, pypi")
+    hosts: list[str] = Field(default_factory=list, max_length=50,
+                             description="Exact host names, or *.domain for one domain's hosts")
+
+
+class SandboxNetworkRead(BaseModel):
+    presets: list[str] = Field(description="The presets chosen here")
+    hosts: list[str] = Field(description="The custom hosts chosen here")
+    effective: list[str] = Field(
+        description="Everything a sandbox here may reach besides the model API (a project: the workspace's too)")
+    available_presets: dict[str, dict[str, Any]] = Field(description="Each preset's name and its hosts")

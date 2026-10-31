@@ -64,6 +64,7 @@ from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
+from dotrix_backend.modules.workspaces.models import Workspace
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.skills import DEFINITION_OF_DONE, review_skills
 
@@ -78,6 +79,7 @@ from .models import (
     CodingSessionState,
     PrState,
 )
+from .network import allowed_hosts, network_digest
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
 from .slots import RunSlots, Stopped
 from .tools import BROWSER_RULE, CodingTool, Usage, run_key, tool_for
@@ -184,6 +186,83 @@ class CodingWorker:
     pool: WarmPool = field(default_factory=lambda: WarmPool(30 * 60, 3))  # sessions' sandboxes between turns
     slots: RunSlots = field(default_factory=lambda: RunSlots(2))  # coding runs working at once (0: no limit)
     _reaper: asyncio.Task[None] | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        self.pool.retire = self._retire
+
+    @property
+    def _sleeps(self) -> bool:
+        """Whether a session's sandbox sleeps between turns (Docker Cloud), rather than being closed."""
+        return (getattr(self.sandbox, "sleeps", False) and self.settings.coding_sleep_days > 0
+                and self.settings.coding_sleep_max > 0)
+
+    async def _retire(self, session_id: uuid.UUID, box: SandboxSession, credential: str) -> None:
+        """A warm sandbox the pool let go: asleep (recorded on its session, so any worker wakes it for the
+        next turn), the workspace's oldest sleepers deleted beyond its limit; or closed when it can't sleep
+        or its session is closed or gone."""
+        handle = self.sandbox.handle(box) if self._sleeps else None  # type: ignore[union-attr]
+        if handle is None:
+            await close_quietly(box)
+            return
+        handle["credential"] = credential
+        evicted: list[dict[str, Any]] = []
+        async with self.session_factory() as session:
+            row = await session.get(CodingSession, session_id, with_for_update=True)
+            if row is None or row.state is CodingSessionState.CLOSED:
+                await close_quietly(box)
+                return
+            others = list(await session.scalars(
+                select(CodingSession).where(
+                    CodingSession.workspace_id == row.workspace_id, CodingSession.id != session_id,
+                    CodingSession.sandbox_handle.is_not(None),
+                ).order_by(CodingSession.sandbox_slept_at).with_for_update()
+            ))
+            for older in others[: max(0, len(others) - (self.settings.coding_sleep_max - 1))]:
+                evicted.append(dict(older.sandbox_handle or {}))
+                older.sandbox_handle, older.sandbox_slept_at = None, None
+            # Recorded before it stops, so the sweep never mistakes it for a leftover.
+            row.sandbox_handle, row.sandbox_slept_at = handle, datetime.now(UTC)
+            await session.commit()
+        for gone in evicted:
+            await self.sandbox.discard(gone)  # type: ignore[union-attr]
+        await self.sandbox.sleep(box)  # type: ignore[union-attr]
+
+    async def _wake(
+        self, session_id: uuid.UUID, handle: dict[str, Any], slept_at: datetime | None, credential: str,
+        tool: CodingTool, key: str,
+    ) -> SandboxSession | None:
+        """The session's sleeping sandbox, woken for this turn; None (and it's deleted) when it was opened
+        with another key or network, slept too long, or won't start."""
+        await self._session(session_id, sandbox_handle=None, sandbox_slept_at=None)  # taken: in use now
+        fresh = slept_at is not None and datetime.now(UTC) - slept_at < timedelta(days=self.settings.coding_sleep_days)
+        if not (self._sleeps and fresh and handle.get("credential") == credential):
+            if self.sandbox is not None and hasattr(self.sandbox, "discard"):
+                await self.sandbox.discard(handle)
+            return None
+        return await self.sandbox.wake(handle, tool, key)  # type: ignore[union-attr]
+
+    async def sweep_sandboxes(self) -> None:
+        """Delete sleeping sandboxes past their days or of closed sessions, then what nothing refers to
+        (a deleted session's, a crash's). Only for sandboxes that sleep."""
+        if not getattr(self.sandbox, "sleeps", False):
+            return
+        cutoff = datetime.now(UTC) - timedelta(days=self.settings.coding_sleep_days)
+        done: list[dict[str, Any]] = []
+        async with self.session_factory() as session:
+            rows = list(await session.scalars(
+                select(CodingSession).where(CodingSession.sandbox_handle.is_not(None)).with_for_update(skip_locked=True)
+            ))
+            for row in rows:
+                if (row.state is CodingSessionState.CLOSED or not self._sleeps
+                        or row.sandbox_slept_at is None or row.sandbox_slept_at < cutoff):
+                    done.append(dict(row.sandbox_handle or {}))
+                    row.sandbox_handle, row.sandbox_slept_at = None, None
+            await session.commit()
+            kept = {str((h or {}).get("sandbox")) for h in await session.scalars(
+                select(CodingSession.sandbox_handle).where(CodingSession.sandbox_handle.is_not(None)))}
+        for handle in done:
+            await self.sandbox.discard(handle)  # type: ignore[union-attr]
+        await self.sandbox.sweep(kept)  # type: ignore[union-attr]
 
     async def execute(
         self, run_id: uuid.UUID, *, operation: DispatchOperation | None = None,
@@ -340,6 +419,9 @@ class CodingWorker:
             workspace_id, session_id = run.workspace_id, run.session_id
             sess = await _session_row(session, run)
             claude_session, transcript_key, cost_before = sess.claude_session, sess.transcript_key, sess.cost_reported
+            sleeping, slept_at = (dict(sess.sandbox_handle) if sess.sandbox_handle else None), sess.sandbox_slept_at
+            # The hosts its sandbox may reach besides the model API (owners and admins set them).
+            allow = allowed_hosts(await session.get(Workspace, run.workspace_id), await session.get(Project, run.project_id))
             sess.last_active_at = datetime.now(UTC)
             await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
@@ -409,8 +491,13 @@ class CodingWorker:
         #    the session's transcript restored so a tool that can resume (Claude Code) continues its
         #    conversation.
         resumable = tool.resumes
-        credential = hashlib.sha256(key.encode()).hexdigest()  # which key the sandbox holds, for the pool
+        # Which key and network the sandbox has: a warm or sleeping one opened with others isn't reused.
+        credential = hashlib.sha256(f"{key}\n{network_digest(allow)}".encode()).hexdigest()
         box = await self.pool.take(session_id, credential)
+        woken = False
+        if box is None and sleeping is not None:
+            box = await self._wake(session_id, sleeping, slept_at, credential, tool, key)
+            woken = box is not None
         warm = False
         if box is not None:
             here = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=60)
@@ -423,19 +510,21 @@ class CodingWorker:
             copy = work / "upload" / "repo"
             await _export(host, copy)
             await _baseline(copy)
-            box = await self.sandbox.open(run_id, copy, tool, key)
+            box = await self.sandbox.open(run_id, copy, tool, key, **({"allow": allow} if allow else {}))
             if resumable and transcript_key:
                 resumed = await self._restore_transcript(box, tool, claude_session, transcript_key)
         keep = False
         reported: float | None = None
         try:
             baseline = (await box.exec(["git", "rev-parse", "HEAD"], timeout=60)).stdout.strip()
-            where = "kept from the last turn" if warm else self.sandbox.kind
+            where = ("woken from the last turn" if woken else "kept from the last turn") if warm else self.sandbox.kind
             await self._update(run_id, step=f"Sandbox ready ({where}); {CODING_AGENT_NAME} is "
                                + ("continuing the session" if resumed else "working"))
             extra = tool.session_args(claude_session, resumed)
+            started = datetime.now(UTC)
             summary, reported = await self._code(run_id, box, tool, model, claude_session, brief, extra,
                                                  cost_before if resumed else None)
+            await self._blocked(run_id, box, started)
             await self._screenshots(run_id, box)
             changes = await box.exec(
                 ["sh", "-c", "git add -A && git -c core.quotepath=off diff --cached --binary --no-color "
@@ -491,6 +580,22 @@ class CodingWorker:
             else:
                 await close_quietly(box)
                 await self._session(session_id, state=CodingSessionState.IDLE)
+
+    async def _blocked(self, run_id: uuid.UUID, box: SandboxSession, since: datetime) -> None:
+        """Say which hosts the sandbox refused during the turn (Docker Cloud keeps a log), so a turn that
+        needed a package registry says where to allow it rather than failing for no visible reason."""
+        blocked = getattr(box, "blocked_hosts", None)
+        if blocked is None:
+            return
+        try:
+            hosts = await blocked(since)
+        except Exception:
+            logger.warning("coding run %s: couldn't read the sandbox's blocked hosts", run_id, exc_info=True)
+            return
+        if hosts:
+            shown = ", ".join(hosts[:8]) + (f" and {len(hosts) - 8} more" if len(hosts) > 8 else "")
+            await self._update(run_id, step=f"The sandbox blocked {shown}. Owners and admins can allow hosts in "
+                                            "Settings → Sandbox network")
 
     async def _hold_for_acceptance(
         self, run_id: uuid.UUID, diff: str, files: list[dict[str, Any]], summary: str | None,
@@ -825,7 +930,7 @@ class CodingWorker:
         hand or deleted. A closed session keeps its transcript (a new turn resumes); deleting a
         session deletes it (the service does)."""
         for session_id in self.pool.idle():
-            await self.pool.close(session_id)
+            await self.pool.close(session_id, keep=True)
             await self._session(session_id, state=CodingSessionState.IDLE)
         pooled = self.pool.sessions()
         if not pooled:

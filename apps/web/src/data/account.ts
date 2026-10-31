@@ -386,3 +386,26 @@ export async function repoConnected(pid: string, r: Schemas["RepoOption"] | null
     }),
   );
 }
+
+/* ---------- Sandbox network: the hosts Kai's sandboxes may reach besides the model API ---------- */
+export type SandboxNetwork = Schemas["SandboxNetworkRead"];
+type NetworkBody = Schemas["SandboxNetworkUpdate"];
+
+export async function sandboxNetwork(projectId?: string): Promise<SandboxNetwork> {
+  if (!projectId) return unwrap(api.GET("/v1/workspaces/{workspace_id}/coding/network", wsPath()));
+  return unwrap(
+    api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/network", {
+      params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
+    }),
+  );
+}
+
+export async function sandboxNetworkSaved(body: NetworkBody, projectId?: string): Promise<SandboxNetwork> {
+  if (!projectId) return unwrap(api.PUT("/v1/workspaces/{workspace_id}/coding/network", { ...wsPath(), body }));
+  return unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/network", {
+      params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
+      body,
+    }),
+  );
+}

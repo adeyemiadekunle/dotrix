@@ -4112,6 +4112,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/network": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project Sandbox Network
+         * @description The hosts this project's coding sandboxes may reach on top of the workspace's, and all of them together.
+         */
+        get: operations["get_project_sandbox_network"];
+        /**
+         * Set Project Sandbox Network
+         * @description Set the hosts this project's coding sandboxes may also reach, on top of the workspace's. Owners and
+         *     admins; audited.
+         */
+        put: operations["set_project_sandbox_network"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/coding/sessions": {
         parameters: {
             query?: never;
@@ -4237,6 +4262,32 @@ export interface paths {
          *     accept them, otherwise they're pushed by the platform. 409 `lease_lost` when no longer held.
          */
         post: operations["report_coding_result"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/coding/network": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Sandbox Network
+         * @description The hosts every project's coding sandboxes may reach besides the model API, and the presets to
+         *     choose from. Anyone in the workspace can read it (a blocked turn says where to ask).
+         */
+        get: operations["get_workspace_sandbox_network"];
+        /**
+         * Set Workspace Sandbox Network
+         * @description Set the hosts every project's coding sandboxes may reach (presets and custom hosts: exact, or
+         *     *.domain). Each one is somewhere an agent could send data. Owners and admins; audited.
+         */
+        put: operations["set_workspace_sandbox_network"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -8988,6 +9039,49 @@ export interface components {
             output_tokens?: number | null;
             /** Cost Usd */
             cost_usd?: number | null;
+        };
+        /** SandboxNetworkRead */
+        SandboxNetworkRead: {
+            /**
+             * Presets
+             * @description The presets chosen here
+             */
+            presets: string[];
+            /**
+             * Hosts
+             * @description The custom hosts chosen here
+             */
+            hosts: string[];
+            /**
+             * Effective
+             * @description Everything a sandbox here may reach besides the model API (a project: the workspace's too)
+             */
+            effective: string[];
+            /**
+             * Available Presets
+             * @description Each preset's name and its hosts
+             */
+            available_presets: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        /**
+         * SandboxNetworkUpdate
+         * @description The hosts Kai's sandboxes may reach besides the model API, here (workspace or project).
+         */
+        SandboxNetworkUpdate: {
+            /**
+             * Presets
+             * @description Named presets (package registries), e.g. npm, pypi
+             */
+            presets?: string[];
+            /**
+             * Hosts
+             * @description Exact host names, or *.domain for one domain's hosts
+             */
+            hosts?: string[];
         };
         /**
          * Scope
@@ -23079,6 +23173,128 @@ export interface operations {
             };
         };
     };
+    get_project_sandbox_network: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxNetworkRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_project_sandbox_network: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SandboxNetworkUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxNetworkRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     list_coding_sessions: {
         parameters: {
             query?: {
@@ -23445,6 +23661,126 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_workspace_sandbox_network: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxNetworkRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_workspace_sandbox_network: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SandboxNetworkUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxNetworkRead"];
+                };
             };
             /** @description Missing, invalid, or expired credentials */
             401: {
