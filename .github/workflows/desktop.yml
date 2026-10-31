@@ -1,0 +1,75 @@
+name: Desktop and CLI builds
+# The Windows desktop installer (NSIS, with the dotrix CLI bundled for local coding) and the standalone
+# Windows CLI, built on Windows (PyInstaller doesn't cross-compile). For a release, both are attached to
+# it; on a pull request that touches them, or by hand, they're kept as the run's artifacts.
+# A release opens and talks to the repository variable DOTRIX_APP_URL (e.g. https://dotrix.example.com).
+# Unsigned for now: Windows SmartScreen warns on first run. macOS comes later.
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - apps/desktop/**
+      - apps/cli/**
+      - .github/workflows/desktop.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write # attaching the builds to the release
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      # A pull request builds against a placeholder address; a release needs the real one.
+      DOTRIX_WEB_URL: ${{ vars.DOTRIX_APP_URL || (github.event_name != 'release' && 'https://dotrix.example.com' || '') }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The address it opens
+        run: |
+          if [ -z "$DOTRIX_WEB_URL" ]; then
+            echo "::error::Set the repository variable DOTRIX_APP_URL (the https:// address of dotrix) to build a release"
+            exit 1
+          fi
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Building $version for $DOTRIX_WEB_URL"
+      - uses: astral-sh/setup-uv@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: The standalone CLI
+        run: uv run --no-project python apps/cli/scripts/standalone.py --api-url "$DOTRIX_WEB_URL"
+      - name: It runs, and talks to that server by default
+        run: |
+          ./apps/desktop/resources/dotrix/dotrix.exe --help > /dev/null
+          ./apps/desktop/resources/dotrix/dotrix.exe whoami --json 2> whoami.txt || true
+          cat whoami.txt
+      - name: Zip the CLI
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Compress-Archive -Path apps/desktop/resources/dotrix/* -DestinationPath "out/dotrix-cli-$env:VERSION-windows-x64.zip"
+
+      - name: The desktop installer
+        run: pnpm --filter @dotrix/desktop dist:win
+      - name: Collect
+        run: cp apps/desktop/release/*-setup.exe out/ && ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dotrix-windows-x64
+          path: out/*
+          if-no-files-found: error
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" out/* --clobber

@@ -20,7 +20,10 @@ import httpx
 # The MCP server's logging setup would otherwise print every request to stderr.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-DEFAULT_API_URL = "http://127.0.0.1:8000"
+try:  # a release build's server (apps/cli/scripts/standalone.py --api-url)
+    from ._build import API_URL as DEFAULT_API_URL
+except ImportError:  # from source: the local API
+    DEFAULT_API_URL = "http://127.0.0.1:8000"
 KEYRING_SERVICE = "dotrix"
 CLIENT_NAME = "dotrix CLI"
 

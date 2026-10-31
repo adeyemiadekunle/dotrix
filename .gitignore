@@ -40,6 +40,8 @@ test-results/
 
 # The desktop app's bundled dotrix CLI (pnpm --filter @dotrix/desktop bundle-cli)
 apps/desktop/resources/dotrix/
+# Installers electron-builder makes (pnpm --filter @dotrix/desktop dist:win)
+apps/desktop/release/
 
 # taste-skill working files
 .taste-skill/
