@@ -1,6 +1,6 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { Loader2Icon } from "lucide-react";
+import { SpinnerGapIcon } from "@phosphor-icons/react";
 import { cn } from "@dotrix/ui/lib/utils";
 
 /**
@@ -11,7 +11,7 @@ import { cn } from "@dotrix/ui/lib/utils";
  *     <ChatBubble>What's blocked?</ChatBubble>
  *   </ChatMessage>
  *
- *   <ChatMessage from="agent" avatar={<BotIcon />}>
+ *   <ChatMessage from="agent" avatar={<RobotIcon />}>
  *     <ChatNotice tone="progress">Checking the board</ChatNotice>
  *     <Markdown>…</Markdown>
  *   </ChatMessage>
@@ -84,7 +84,7 @@ function ChatNotice({
       className={cn(noticeVariants({ tone }), className)}
       {...props}
     >
-      {icon ?? (tone === "progress" ? <Loader2Icon className="animate-spin" /> : null)}
+      {icon ?? (tone === "progress" ? <SpinnerGapIcon className="animate-spin" /> : null)}
       <span className="min-w-0">{children}</span>
     </p>
   );

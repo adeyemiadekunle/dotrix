@@ -595,7 +595,7 @@ class CodingWorker:
         if hosts:
             shown = ", ".join(hosts[:8]) + (f" and {len(hosts) - 8} more" if len(hosts) > 8 else "")
             await self._update(run_id, step=f"The sandbox blocked {shown}. Owners and admins can allow hosts in "
-                                            "Settings → Sandbox network")
+                                            "Settings → Network")
 
     async def _hold_for_acceptance(
         self, run_id: uuid.UUID, diff: str, files: list[dict[str, Any]], summary: str | None,

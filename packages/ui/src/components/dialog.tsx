@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@dotrix/ui/lib/utils";
-import { XIcon } from "lucide-react";
+import { XIcon } from "@phosphor-icons/react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { Button } from "@dotrix/ui/components/button";

@@ -387,7 +387,7 @@ export async function repoConnected(pid: string, r: Schemas["RepoOption"] | null
   );
 }
 
-/* ---------- Sandbox network: the hosts Kai's sandboxes may reach besides the model API ---------- */
+/* ---------- Network: the hosts Kai's sandboxes may reach besides the model API ---------- */
 export type SandboxNetwork = Schemas["SandboxNetworkRead"];
 type NetworkBody = Schemas["SandboxNetworkUpdate"];
 

@@ -1,4 +1,4 @@
-"""Sandbox network: the hosts Kai's sandboxes may reach besides the model API.
+"""Network: the hosts Kai's sandboxes may reach besides the model API.
 
 Owners and admins set them (`Permission.MANAGE_WORKSPACE`, never granted to members), for the workspace
 and on top of that per project: named presets (package registries) and custom hosts, exact
