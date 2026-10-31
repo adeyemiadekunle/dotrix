@@ -91,7 +91,7 @@ from .models import (
 from .queue import RunQueue
 from .specialist_sessions import seal_history, specialist_history, specialist_result_visible
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
-from .streams import RunStreams, Stream, Streams, text_of
+from .streams import RunStreams, Stream, Streams, text_of, thinking_of
 from .unattended import Unattended, accepting, changes_today, effective_specs
 from .usage import TokenBudgetExceeded, TokenUsage, merge_breakdown
 from .work_modes import ModeContext, codes, lead_tools
@@ -614,6 +614,8 @@ class AgentRunner:
                 async def fx_event(event):
                     if event.type == "text_delta":
                         await recording.publish(event.text)
+                    elif event.type == "reasoning_delta":
+                        await recording.think(event.text)
                     elif event.type == "tool_start" and event.tool:
                         if label := activity_label(event.tool, None):
                             await recording.activity(label)
@@ -1440,6 +1442,7 @@ async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream,
             if getattr(chunk, "type", "") == "AIMessageChunk" and role_for_agent_name(
                 (metadata or {}).get("lc_agent_name")
             ) == speaker:
+                await stream.think(thinking_of(chunk.content))
                 await stream.publish(text_of(chunk.content))
     if interrupts:
         return {**latest, "__interrupt__": interrupts} if isinstance(latest, dict) else {"__interrupt__": interrupts}

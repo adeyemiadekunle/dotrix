@@ -78,6 +78,6 @@ async def test_live_kai_turn_in_docker_opens_a_pr(
     assert (run["agent"], run["model"]) == (agent, model)
     assert "src/payments.py" in {f["path"] for f in run["files_changed"]}, run["files_changed"]
     assert "def refund(" in _git(origin, "show", f"{run['branch']}:src/payments.py")
-    assert run["input_tokens"] > 0, run
+    assert run["input_tokens"] > 0 and run["cost_usd"], run  # every engine shows a cost (Codex and fx priced from tokens)
     print(f"LIVE {agent}/{model}: {run['summary']!r} tokens={run['input_tokens']}+{run['output_tokens']} "
           f"cost={run['cost_usd']} steps={steps[:8]}")

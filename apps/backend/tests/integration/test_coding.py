@@ -268,7 +268,7 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     # The token was for this repo only, with push and PR rights; the agent never had it.
     assert github.token_requests[-1] == {"repository_ids": [9001], "permissions": {
         "metadata": "read", "contents": "write", "pull_requests": "write"}}
-    assert set(claude.env) - {"ANTHROPIC_BASE_URL"} == {"PATH", "HOME", "LANG", "ANTHROPIC_API_KEY"}
+    assert set(claude.env) == {"PATH", "HOME", "LANG", "ANTHROPIC_API_KEY"}
     assert claude.env["ANTHROPIC_API_KEY"] == "test-anthropic-personal-key-" + str(ada.id)
     assert claude.argv[:3] == ["claude", "-p", "--bare"] and "--dangerously-skip-permissions" not in claude.argv
 
@@ -782,7 +782,7 @@ async def test_opencode_codes_on_the_model_the_server_names(
         "opencode", "run", "--standalone", "--format", "json", "--auto", "-m", "openai/gpt-5.5", "-s"]
     assert re.fullmatch(r"ses_[0-9a-f]{32}", opencode.argv[-1])  # the session's own id: made, then continued
     assert "OPENCODE_DISABLE_PROJECT_CONFIG=1" in opencode.argv
-    assert set(opencode.env) - {"OPENAI_BASE_URL"} == {"PATH", "HOME", "LANG", "OPENAI_API_KEY"}
+    assert set(opencode.env) == {"PATH", "HOME", "LANG", "OPENAI_API_KEY"}
     assert opencode.env["OPENAI_API_KEY"] == "test-opencode-openai-personal-key"
     # OpenCode isn't an assignee of its own: the issue shows the built-in coding agent.
     issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=ada.headers)).json()

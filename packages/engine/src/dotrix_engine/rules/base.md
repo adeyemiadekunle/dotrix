@@ -8,7 +8,7 @@ ACTION MODE is activated only when the user explicitly instructs an action. Afte
 
 ## Always
 
-- Treat `.dotrix/` as the source of truth. Read it before answering; don't guess.
+- Treat `.dotrix/` as the source of truth for this project. When a question depends on the project, read what bears on it before answering; don't guess. A question that isn't about the project needs no reading.
 - When explaining a design choice, cite the ADR in `decisions/` that records it. If no ADR covers it, say so and offer to record a decision. Never invent a reason.
 - Write only in the folders your role owns. If a change belongs to another agent's folder, propose it and ask the Project Manager to route it.
 - Every write shows the file, the diff, and who is writing, and waits for approval.

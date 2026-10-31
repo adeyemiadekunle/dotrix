@@ -30,6 +30,10 @@ class Stream(Protocol):
         """What the PM is doing now ("Reading roadmap.md"); replaces the previous one."""
         ...
 
+    async def think(self, delta: str) -> None:
+        """A piece of the PM's thinking before (or between) its replies, as the model reports it."""
+        ...
+
 
 class Streams(Protocol):
     async def open(self, run_id: uuid.UUID) -> Stream: ...
@@ -43,6 +47,7 @@ class Streams(Protocol):
 @dataclass
 class RunStream:
     text: str = ""
+    thinking: str = ""
     current_activity: str | None = None
     closed: bool = False
     subscribers: set[asyncio.Queue[object]] = field(default_factory=set)
@@ -53,6 +58,13 @@ class RunStream:
         self.text += delta
         for queue in self.subscribers:
             queue.put_nowait(("delta", delta))
+
+    async def think(self, delta: str) -> None:
+        if not delta or self.closed:
+            return
+        self.thinking += delta
+        for queue in self.subscribers:
+            queue.put_nowait(("thinking", delta))
 
     async def activity(self, label: str) -> None:
         if not label or self.closed or label == self.current_activity:
@@ -83,8 +95,9 @@ class RunStreams:
             stream.close()
 
     async def follow(self, run_id: uuid.UUID, heartbeat_seconds: float = 15) -> AsyncIterator[tuple[str, str]]:
-        """Yield ("text", everything so far) and the current ("activity", label) if any, then
-        ("delta", piece) and ("activity", label) as they happen, then ("end", "").
+        """Yield ("text", everything so far), ("thinking_text", the thinking so far) and the current
+        ("activity", label) if any, then ("delta" | "thinking" | "activity", …) as they happen, then
+        ("end", "").
         Heartbeats ("ping", "") keep idle connections open through proxies."""
         stream = self._streams.get(run_id)
         if stream is None:
@@ -94,6 +107,8 @@ class RunStreams:
         stream.subscribers.add(queue)
         try:
             yield ("text", stream.text)
+            if stream.thinking:
+                yield ("thinking_text", stream.thinking)
             if stream.current_activity:
                 yield ("activity", stream.current_activity)
             while True:
@@ -126,6 +141,13 @@ class RedisRunStream:
         end = await self.redis.append(self.keys.text, delta.encode())
         await self.redis.publish(self.keys.channel, json.dumps({"end": end, "text": delta}))
 
+    async def think(self, delta: str) -> None:
+        if not delta:
+            return
+        await self.redis.append(self.keys.thinking, delta.encode())
+        await self.redis.expire(self.keys.thinking, TTL_SECONDS)
+        await self.redis.publish(self.keys.channel, json.dumps({"thinking": delta}))
+
     async def activity(self, label: str) -> None:
         if not label:
             return
@@ -139,6 +161,7 @@ class _Keys:
     active: str
     channel: str
     activity: str
+    thinking: str
 
 
 class RedisRunStreams:
@@ -148,13 +171,14 @@ class RedisRunStreams:
     def _keys(self, run_id: uuid.UUID) -> _Keys:
         base = f"{self.prefix}:{run_id}"
         return _Keys(
-            text=f"{base}:text", active=f"{base}:active", channel=f"{base}:events", activity=f"{base}:activity"
+            text=f"{base}:text", active=f"{base}:active", channel=f"{base}:events", activity=f"{base}:activity",
+            thinking=f"{base}:thinking",
         )
 
     async def open(self, run_id: uuid.UUID) -> RedisRunStream:
         keys = self._keys(run_id)
         pipe = self.redis.pipeline()
-        pipe.delete(keys.text, keys.activity)
+        pipe.delete(keys.text, keys.activity, keys.thinking)
         pipe.set(keys.text, b"", ex=TTL_SECONDS)
         pipe.set(keys.active, b"1", ex=TTL_SECONDS)
         await pipe.execute()
@@ -162,7 +186,7 @@ class RedisRunStreams:
 
     async def close(self, run_id: uuid.UUID) -> None:
         keys = self._keys(run_id)
-        await self.redis.delete(keys.active, keys.activity)
+        await self.redis.delete(keys.active, keys.activity, keys.thinking)
         await self.redis.expire(keys.text, 60)
         await self.redis.publish(keys.channel, json.dumps({"end": -1}))
 
@@ -178,6 +202,8 @@ class RedisRunStreams:
             snapshot = await self.redis.get(keys.text) or b""
             position = len(snapshot)
             yield ("text", snapshot.decode(errors="replace"))
+            if thought := await self.redis.get(keys.thinking):
+                yield ("thinking_text", thought.decode(errors="replace"))
             if current := await self.redis.get(keys.activity):
                 yield ("activity", current.decode(errors="replace"))
             loop = asyncio.get_running_loop()
@@ -202,6 +228,9 @@ class RedisRunStreams:
                 if "activity" in event:
                     yield ("activity", event["activity"])
                     continue
+                if "thinking" in event:
+                    yield ("thinking", event["thinking"])
+                    continue
                 if event["end"] == -1:
                     break
                 if event["end"] <= position:
@@ -212,6 +241,26 @@ class RedisRunStreams:
         finally:
             await pubsub.unsubscribe(keys.channel)
             await pubsub.aclose()
+
+
+def thinking_of(content: object) -> str:
+    """The thinking in a message chunk's content blocks: Anthropic's `thinking` blocks, and the
+    summaries in OpenAI's `reasoning` blocks. Redacted thinking has none to show."""
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "thinking" and isinstance(block.get("thinking"), str):
+            parts.append(block["thinking"])
+        elif block.get("type") == "reasoning":
+            if isinstance(block.get("reasoning"), str):
+                parts.append(block["reasoning"])
+            for summary in block.get("summary") or []:
+                if isinstance(summary, dict) and isinstance(summary.get("text"), str):
+                    parts.append(summary["text"])
+    return "".join(parts)
 
 
 def text_of(content: object) -> str:

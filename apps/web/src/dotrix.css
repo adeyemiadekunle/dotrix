@@ -459,6 +459,21 @@
     align-items: center;
     gap: 6px;
   }
+  .chat-thinking {
+    margin-top: 6px;
+    font-size: var(--fs-xs);
+    color: var(--text-3);
+  }
+  .chat-thinking-text {
+    margin: 4px 0 2px;
+    padding: 6px 10px;
+    border-left: 2px solid var(--border);
+    white-space: pre-wrap;
+    line-height: 1.55;
+    font-style: italic;
+    max-height: 220px;
+    overflow-y: auto;
+  }
   .chat-refs {
     display: flex;
     flex-wrap: wrap;

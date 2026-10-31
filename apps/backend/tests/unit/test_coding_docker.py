@@ -23,12 +23,10 @@ def _docker_ready() -> bool:
 
 
 def test_the_proxy_lets_each_tool_reach_its_model_api(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
-    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     assert egress_allow(ClaudeCode()) == "api.anthropic.com:443"
     assert egress_allow(Codex()) == "api.openai.com:443"
-    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://llm-proxy.internal:8080/v1")
-    assert egress_allow(ClaudeCode()) == "llm-proxy.internal:8080"
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://llm-proxy.internal:8080/v1")  # never followed
+    assert egress_allow(ClaudeCode()) == "api.anthropic.com:443"
 
 
 async def test_the_docker_daemon_does_not_inherit_the_agents_egress_proxy(tmp_path: Path, monkeypatch) -> None:

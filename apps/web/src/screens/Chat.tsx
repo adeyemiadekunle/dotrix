@@ -559,6 +559,25 @@ function TaskApproval({ scope, id }: { scope: Scope | undefined; id: string }) {
   return run ? <RunApprovals run={run} scope={scope} /> : null;
 }
 
+/** What Nova thought, as its model summarised it: live, the latest of it, as it comes; kept, all of it. */
+function Thinking({ text, live = false }: { text: string; live?: boolean }) {
+  const [open, setOpen] = useState(live);
+  const shown = live && text.length > 600 ? `…${text.slice(-600)}` : text;
+  return (
+    <div className="chat-thinking">
+      <button className="chat-steps-h" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
+        {live ? "Thinking" : "Thought"}
+      </button>
+      {open && (
+        <div className="chat-thinking-text" aria-live={live ? "polite" : undefined}>
+          {shown}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RunSteps({ scope, runId }: { scope: Scope | undefined; runId: string }) {
   const [open, setOpen] = useState(false);
   const steps = useRunSteps(scope, runId, open);
@@ -569,9 +588,16 @@ function RunSteps({ scope, runId }: { scope: Scope | undefined; runId: string })
         Steps
       </button>
       {open && (
-        <ol className="muted" style={{ fontSize: 12.5, margin: "4px 0 0 20px" }} aria-label="Steps">
-          {steps.data?.length ? steps.data.map((label, i) => <li key={i}>{label}</li>) : <li>{steps.isLoading ? "Loading…" : "No steps kept"}</li>}
-        </ol>
+        <>
+          {steps.data?.thinking && <Thinking text={steps.data.thinking} />}
+          <ol className="muted" style={{ fontSize: 12.5, margin: "4px 0 0 20px" }} aria-label="Steps">
+            {steps.data?.steps.length ? (
+              steps.data.steps.map((label, i) => <li key={i}>{label}</li>)
+            ) : (
+              <li>{steps.isLoading ? "Loading…" : "No steps kept"}</li>
+            )}
+          </ol>
+        </>
       )}
     </div>
   );
@@ -1040,12 +1066,13 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
                       <i />
                       <i />
                     </span>
-                    {stream.activity ?? `${agentName(agent)} is reading the project's documents…`}
+                    {stream.activity ?? `${agentName(agent)} is thinking…`}
                     <span className="sp" />
                     <button className="btn btn-sm btn-ghost" onClick={halt}>
                       Stop
                     </button>
                   </div>
+                  {stream.thinking && !stream.text && <Thinking text={stream.thinking} live />}
                 </div>
               </div>
             )}

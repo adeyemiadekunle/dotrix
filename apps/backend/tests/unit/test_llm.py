@@ -28,6 +28,13 @@ def test_compatible_providers_use_their_fixed_endpoint(provider: str, endpoint: 
     assert chat.openai_api_key.get_secret_value() == "test-provider-key"
 
 
+def test_anthropic_and_openai_ignore_a_base_url_in_the_servers_environment(monkeypatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://elsewhere.example")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://elsewhere.example")
+    assert build_chat_model("anthropic:claude-haiku-5-5", "k").anthropic_api_url == "https://api.anthropic.com"
+    assert str(build_chat_model("openai:gpt-5.5", "k").openai_api_base) == "https://api.openai.com/v1"
+
+
 def test_gemini_enables_builtin_tools_alongside_function_calling() -> None:
     model = build_chat_model("google_genai:gemini-3.8-flash", "test-key")
     assert isinstance(model, GeminiWithBuiltinTools)

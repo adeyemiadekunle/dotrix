@@ -331,6 +331,7 @@ class RunEventKind(enum.StrEnum):
     STEP = "step"  # an attempt at a step began (start, resume, continue; recovered or not): its text starts over
     TEXT = "text"  # a piece of the reply, as written (coalesced: about a second's worth)
     ACTIVITY = "activity"  # what the agents were doing ("Reading roadmap.md")
+    THINKING = "thinking"  # a piece of Nova's thinking, as the model reported it (coalesced like text)
     STATUS = "status"  # the run's outcome for the step: awaiting_approval, completed, failed
     TASK = "task"
 

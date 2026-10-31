@@ -68,7 +68,9 @@ async def test_live_chat_reads_project_knowledge_and_follows_up(
         assert second.status_code == 202 and second.json()["status"] == "completed", second.text
         assert second.json()["chat_runtime"] == runtime
         assert "runtime.md" in second.json()["reply"], second.json()["reply"]
-        print(f"LIVE {runtime}/{model}:", run["reply"], "|", second.json()["reply"])
+        events = (await fx.client.get(f"{fx.base}/runs/{run['id']}/events", headers=fx.headers)).json()["events"]
+        thought = "".join(e["data"].get("text", "") for e in events if e["kind"] == "thinking")
+        print(f"LIVE {runtime}/{model}:", run["reply"], "|", second.json()["reply"], f"| thinking={thought[:200]!r}")
     finally:
         await chat.__aexit__(None, None, None)
 
@@ -99,5 +101,26 @@ async def test_live_build_change_waits_for_approval_then_goes_through_once(
         written = await _file(fx.sessions, fx.existing.project_id, "progress/status.md")
         assert written is not None and "Runtime check passed." in written.content and written.version == 1
         print(f"LIVE {runtime}/{model}:", done["reply"])
+    finally:
+        await chat.__aexit__(None, None, None)
+
+
+@pytest.mark.parametrize(("runtime", "provider", "model"), CASES)
+async def test_live_a_general_question_is_answered_without_reading_the_project(
+    nova_pilot_world, db_client, agent_script, outbox, storage, checkouts, runtime, provider, model,  # noqa: F811
+):
+    """Nova decides first: a question that isn't about the project gets an answer, not a search."""
+    chat, fx = await _live(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script, provider)
+    try:
+        asked = await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+            "message": "What is the capital of France?", "chat_runtime": runtime, "work_mode": "discuss", "model": model,
+        })
+        run = asked.json()
+        assert run["status"] == "completed" and "paris" in run["reply"].lower(), (run["status"], run.get("error"), run["reply"])
+        events = (await fx.client.get(f"{fx.base}/runs/{run['id']}/events", headers=fx.headers)).json()["events"]
+        steps = [e["data"].get("label") for e in events if e["kind"] == "activity"]
+        assert steps == [], steps  # nothing read, searched or asked of a specialist
+        thought = "".join(e["data"].get("text", "") for e in events if e["kind"] == "thinking")
+        print(f"LIVE {runtime}/{model}: {run['reply']!r} thinking={thought[:200]!r}")
     finally:
         await chat.__aexit__(None, None, None)

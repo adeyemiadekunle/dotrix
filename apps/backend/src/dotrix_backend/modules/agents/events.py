@@ -96,6 +96,7 @@ class RecordingStream:
     def __init__(self, inner: Stream, recorder: RunRecorder) -> None:
         self.inner, self.recorder = inner, recorder
         self._text: list[str] = []
+        self._thinking: list[str] = []
         self._since = time.monotonic()
         self._flusher: asyncio.Task[None] | None = None
 
@@ -107,8 +108,20 @@ class RecordingStream:
         await self.inner.publish(delta)
         if not delta:
             return
+        if self._thinking:
+            await self.flush()
         self._text.append(delta)
         if sum(map(len, self._text)) >= FLUSH_CHARS or time.monotonic() - self._since >= FLUSH_SECONDS:
+            await self.flush()
+
+    async def think(self, delta: str) -> None:
+        await self.inner.think(delta)
+        if not delta:
+            return
+        if self._text:  # keep the order: the reply so far, then this thought
+            await self.flush()
+        self._thinking.append(delta)
+        if sum(map(len, self._thinking)) >= FLUSH_CHARS or time.monotonic() - self._since >= FLUSH_SECONDS:
             await self.flush()
 
     async def activity(self, label: str) -> None:
@@ -119,6 +132,9 @@ class RecordingStream:
 
     async def flush(self) -> None:
         self._since = time.monotonic()
+        if self._thinking:
+            thought, self._thinking = "".join(self._thinking), []
+            await self.recorder.write(RunEventKind.THINKING, {"text": thought})
         if not self._text:
             return
         text, self._text = "".join(self._text), []
@@ -133,7 +149,7 @@ class RecordingStream:
     async def _flush_idle(self) -> None:
         while True:
             await asyncio.sleep(FLUSH_SECONDS)
-            if self._text and time.monotonic() - self._since >= FLUSH_SECONDS:
+            if (self._text or self._thinking) and time.monotonic() - self._since >= FLUSH_SECONDS:
                 await self.flush()
 
 
@@ -145,8 +161,9 @@ async def events_after(
     ).order_by(AgentRunEvent.seq).limit(min(limit, PAGE_MAX))))
 
 
-async def current_step(session: AsyncSession, run: AgentRun) -> tuple[int, str, str | None]:
-    """(last seq, the current step's text so far, its latest activity), from the kept events."""
+async def current_step(session: AsyncSession, run: AgentRun) -> tuple[int, str, str | None, str]:
+    """(last seq, the current step's text so far, its latest activity, its thinking so far), from the
+    kept events."""
     start = await session.scalar(select(func.max(AgentRunEvent.seq)).where(
         AgentRunEvent.workspace_id == run.workspace_id, AgentRunEvent.run_id == run.id,
         AgentRunEvent.kind == RunEventKind.STEP)) or 0
@@ -155,7 +172,8 @@ async def current_step(session: AsyncSession, run: AgentRun) -> tuple[int, str, 
     ).order_by(AgentRunEvent.seq)))
     text = "".join(r.data.get("text", "") for r in rows if r.kind is RunEventKind.TEXT)
     activity = next((r.data.get("label") for r in reversed(rows) if r.kind is RunEventKind.ACTIVITY), None)
-    return (rows[-1].seq if rows else start), text, activity
+    thinking = "".join(r.data.get("text", "") for r in rows if r.kind is RunEventKind.THINKING)
+    return (rows[-1].seq if rows else start), text, activity, thinking
 
 
 async def follow_kept(
@@ -170,8 +188,10 @@ async def follow_kept(
         if run is None:
             yield ("end", "")
             return
-        seq, text, activity = await current_step(session, run)
+        seq, text, activity, thinking = await current_step(session, run)
     yield ("text", text)
+    if thinking:
+        yield ("thinking_text", thinking)
     if activity:
         yield ("activity", activity)
     quiet = 0.0
@@ -189,6 +209,8 @@ async def follow_kept(
                 yield ("text", "")
             elif row.kind is RunEventKind.TEXT:
                 yield ("delta", row.data.get("text", ""))
+            elif row.kind is RunEventKind.THINKING:
+                yield ("thinking", row.data.get("text", ""))
             elif row.kind is RunEventKind.ACTIVITY:
                 yield ("activity", row.data.get("label", ""))
         if not active and not rows:

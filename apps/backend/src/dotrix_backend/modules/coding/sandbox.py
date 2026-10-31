@@ -35,7 +35,6 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
-from urllib.parse import urlsplit
 
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.code.checkouts import remove_tree
@@ -403,12 +402,7 @@ EGRESS_PORT = 3128
 
 
 def egress_allow(tool: CodingTool) -> str:
-    """Where the egress proxy lets the tool go: its model API, or the proxy in front of it."""
-    base = os.environ.get(tool.base_url_env, "")
-    if base:
-        parts = urlsplit(base)
-        if parts.hostname:
-            return f"{parts.hostname}:{parts.port or (80 if parts.scheme == 'http' else 443)}"
+    """Where the egress proxy lets the tool go: its model API, nothing else."""
     return f"{tool.api_host}:443"
 
 
@@ -494,8 +488,6 @@ class DockerSandbox:
             container_env = {"HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "https_proxy": proxy,
                              "http_proxy": proxy, "NO_PROXY": "localhost,127.0.0.1,::1",
                              "no_proxy": "localhost,127.0.0.1,::1", "HOME": DOCKER_HOME, "LANG": "C.UTF-8"}
-            if os.environ.get(tool.base_url_env):
-                credentials[tool.base_url_env] = os.environ[tool.base_url_env]
             # --init: a reaper as PID 1, so what a stopped turn leaves behind doesn't linger as zombies.
             await self.cli("run", "-d", "--init", "--name", name, "--label", label, "--network", name, "--read-only",
                            "--tmpfs", "/tmp:rw,exec,size=1g", "--mount", f"type=volume,dst={DOCKER_HOME}",
@@ -546,8 +538,6 @@ class LocalSandbox:
         (root / "home").mkdir()
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(root / "home"), "LANG": "C.UTF-8",
                **tool.sandbox_env(model_key)}
-        if os.environ.get(tool.base_url_env):  # a proxy in front of the provider
-            env[tool.base_url_env] = os.environ[tool.base_url_env]
         return LocalSession(root, env)
 
 

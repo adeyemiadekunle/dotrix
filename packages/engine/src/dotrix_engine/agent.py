@@ -169,6 +169,23 @@ Your reply goes back to Nova, the project manager, not to a person. Answer with 
 answer first, then the key points, each with the path and section it comes from, and any
 changes you propose. Don't paste whole documents back; quote only the lines that matter."""
 
+# Nova decides what a message needs before any tool: a general question gets an answer, not a
+# search of the project's documents. Shared with the fx runtime (fx_pilot.py).
+DECIDE_GUIDE = """## Think first, then decide what this message needs
+Before you call any tool, read the message and work out what it is asking. Then pick the least
+that answers it well:
+- Not about this project (general knowledge, a definition, small talk, e.g. "What is the capital
+  of France?"): answer directly from what you know. Don't read, search, or delegate.
+- About this project, and the project context above already answers it: answer from that.
+- About this project, and it needs what's in its documents, board, or code: read or search only
+  what bears on it, everything you need in one step, then answer.
+- It needs a specialist's work (research, architecture, a review, a document drafted): delegate it
+  (where this conversation lets you).
+- It's unclear what they mean: ask one short question rather than guessing or reading everything.
+Reading, searching, and delegating cost the person time and tokens: use them when the answer
+depends on them, never as a reflex.
+"""
+
 # Nova speaks in every interactive conversation: picking a specialist is a request to
 # involve them, not to hand the chat over.
 _CHAT_GUIDE = """## You're in the project's chat
@@ -176,7 +193,8 @@ You're talking with a person in the project's chat; answer them directly. When t
 a specialist, or the work needs one, involve them with the `task` tool: a short brief (the
 question, what the person asked for, what you already know, where to start, what to return),
 then weigh what they return into your answer.
-"""
+
+""" + DECIDE_GUIDE
 
 # A specialist picked in the chat leads the run: it talks to the person, and may ask the
 # other specialists (one level: the ones it calls can't call anyone).
