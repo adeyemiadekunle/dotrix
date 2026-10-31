@@ -1,10 +1,24 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, stage]
   pull_request:
 
 jobs:
+  release-flow:
+    # Every change goes into stage first; main only takes stage (CLAUDE.md, Branches and releases).
+    # The version is the same in every package and has its CHANGELOG section (scripts/release.py).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pull requests into main come from stage
+        if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref != 'stage'
+        run: |
+          echo "::error::Open this pull request into stage. main only takes stage (CLAUDE.md, Branches and releases)."
+          exit 1
+      - name: One version everywhere, with its changelog section
+        run: python3 scripts/release.py check
+
   python:
     runs-on: ubuntu-latest
     services:

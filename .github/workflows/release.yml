@@ -1,0 +1,45 @@
+name: Release
+# When stage is merged into main with a version that isn't tagged yet (scripts/release.py bump on stage),
+# tag that commit vX.Y.Z and publish the GitHub release with its CHANGELOG section. A merge that keeps the
+# version publishes nothing, so main can take stage without a release in between.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # the tag and the release
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the existing tags
+      - name: The version, and whether it's released
+        id: version
+        run: |
+          python3 scripts/release.py check
+          version="$(python3 scripts/release.py version)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "v$version is already tagged at $(git rev-list -n 1 "v$version"); nothing to release"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Tag and publish the release
+        if: steps.version.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 scripts/release.py notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac # 1.2.0-rc.1
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "dotrix $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" $prerelease
