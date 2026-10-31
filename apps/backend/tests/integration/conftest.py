@@ -52,6 +52,7 @@ class FakeGitHub:
         self.reviews: list[dict[str, Any]] = []  # reviews posted on pull requests
         self.comments: list[dict[str, Any]] = []  # comments posted on pull requests
         self.reject_inline = False  # answer reviews with inline comments with a 422 (a line not in the diff)
+        self.issues: list[dict[str, Any]] = []  # issues opened
         self.refuse_actions = False  # the App wasn't given Actions (read)
         self.ci_runs: list[dict[str, Any]] = []  # Actions workflow runs: {"id", "head_sha", "conclusion", "jobs": [...]}
 
@@ -142,6 +143,11 @@ class FakeGitHub:
             self.comments.append({"repo": full_name, "number": int(rest.split("/")[0]), **json.loads(request.content)})
             return httpx.Response(201, json={"html_url": f"https://github.com/{full_name}/pull/{rest.split('/')[0]}"
                                                          f"#issuecomment-{len(self.comments)}"})
+        if path.startswith("/repos/") and path.endswith("/issues") and request.method == "POST":
+            full_name = path.removeprefix("/repos/").removesuffix("/issues")
+            self.issues.append({"repo": full_name, **json.loads(request.content)})
+            number = 100 + len(self.issues)
+            return httpx.Response(201, json={"number": number, "html_url": f"https://github.com/{full_name}/issues/{number}"})
         if path.startswith("/repos/") and "/actions/" in path and self.refuse_actions:
             return httpx.Response(403)
         if path.startswith("/repos/") and path.endswith("/actions/runs"):

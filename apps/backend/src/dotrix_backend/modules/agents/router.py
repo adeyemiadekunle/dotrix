@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from dotrix_backend.api.deps import SessionDep, SettingsDep, require_permission
 from dotrix_backend.core.openapi import errors
 from dotrix_backend.modules.agent_definitions.schemas import AgentRead
+from dotrix_backend.modules.connectors.github_app import GitHubAppDep
 from dotrix_backend.modules.model_keys.deps import Connected, Personal
 from dotrix_backend.modules.projects.deps import (
     KnowledgeEditor,
@@ -338,6 +339,20 @@ async def update_run_output_item(
     """Act on one item of a run's result: `done` with what it became (e.g. the issue key you
     created from a finding), `dismissed` with why, or `open` again. Anyone who works the board."""
     return await agents.update_output_item(access, run_id, output_id, index, data)
+
+
+@router.post("/runs/{run_id}/outputs/{output_id}/items/{index}/github-issue", responses=errors(409, 503))
+async def open_github_issue_from_finding(
+    run_id: uuid.UUID, output_id: uuid.UUID, index: int, access: IssueEditor, agents: Agents,
+    session: SessionDep, app: GitHubAppDep,
+) -> AgentRunRead:
+    """Open a GitHub issue in the project's connected repository from one finding (e.g. from Juno's
+    review of a PR): its title, detail, suggested fix and where it is, opened by the GitHub App at your
+    request and audited as you. The finding is marked done with the issue's page. 409 when the finding
+    is already a GitHub issue or the project has no connected repository; the App needs Issues (write)."""
+    from dotrix_backend.modules.coding.github_reviews import open_github_issue
+
+    return await open_github_issue(session, app, agents, access, run_id, output_id, index)
 
 
 @router.post("/runs/{run_id}/outputs/{output_id}/note", responses=errors(403, 422))

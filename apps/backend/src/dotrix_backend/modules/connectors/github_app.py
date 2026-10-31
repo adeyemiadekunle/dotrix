@@ -101,6 +101,8 @@ class GitHubApp(Protocol):
     async def comment(self, full_name: str, number: int, *, token: str, body: str) -> str: ...
     async def failed_job_logs(self, full_name: str, sha: str, *, token: str) -> list[FailedJob]: ...
 
+    async def create_issue(self, full_name: str, *, token: str, title: str, body: str) -> PullRequest: ...
+
 
 class GitHubAppClient:
     def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None) -> None:
@@ -171,12 +173,12 @@ class GitHubAppClient:
 
     async def access_token(
         self, installation_id: int, *, repository_id: int | None = None, write: bool = False,
-        pull_requests: bool = False, actions: bool = False,
+        pull_requests: bool = False, actions: bool = False, issues: bool = False,
     ) -> str:
         """An installation token (an hour long) for git; never stored. With `repository_id`, it
         works on that one repo only; `write` adds pushing and opening pull requests there,
         `pull_requests` only opening them (from a fork) or commenting on them, and `actions` reading
-        its CI runs and their logs."""
+        its CI runs and their logs, `issues` opening issues there."""
         body: dict | None = None
         if repository_id is not None:
             permissions: dict[str, str] = {"contents": "read"}
@@ -186,6 +188,8 @@ class GitHubAppClient:
                 permissions["pull_requests"] = "write"
             if actions:
                 permissions["actions"] = "read"
+            if issues:
+                permissions["issues"] = "write"
             body = {"repository_ids": [repository_id], "permissions": {"metadata": "read", **permissions}}
         return await self._installation_token(installation_id, body)
 
@@ -321,6 +325,18 @@ class GitHubAppClient:
         if res.status_code != 201:
             raise GitHubUnavailable(f"GitHub didn't take the comment ({res.status_code})")
         return str(res.json().get("html_url") or "")
+
+    async def create_issue(self, full_name: str, *, token: str, title: str, body: str) -> PullRequest:
+        """An issue in `full_name`, with a token from `access_token(issues=True)`; its number and page."""
+        res = await self._post(f"/repos/{full_name}/issues", token, {"title": title[:250], "body": body})
+        if res.status_code in (403, 404):
+            raise Forbidden("The GitHub App can't open issues there: it needs Issues (write)")
+        if res.status_code == 410:
+            raise Conflict(f"Issues are turned off in {full_name}")
+        if res.status_code != 201:
+            raise GitHubUnavailable(f"GitHub didn't open the issue ({res.status_code})")
+        data = res.json()
+        return PullRequest(number=int(data["number"]), html_url=str(data["html_url"]))
 
     async def failed_job_logs(self, full_name: str, sha: str, *, token: str) -> list[FailedJob]:
         """The GitHub Actions jobs that failed on `sha` (the latest attempt of each run), with the end of

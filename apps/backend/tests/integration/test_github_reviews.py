@@ -164,3 +164,37 @@ async def test_without_actions_permission_juno_is_told_the_logs_couldnt_be_read(
     read = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     look = (await db_client.get(f"{base}/agent/runs/{read['ci_review_run_id']}", headers=ada.headers)).json()
     assert "needs the Actions (read) permission" in look["message"]
+
+
+async def test_a_finding_becomes_a_github_issue_when_a_person_asks(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script, db_session,  # noqa: F811
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    run = await _turn(db_client, coding, claude, agent_script,
+                      tool_call("submit_result", items=[
+                          {"severity": "high", "title": "Negative refunds", "detail": "refund(-5) pays out.",
+                           "refs": ["src/payments.py:3"], "suggested_fix": "Reject amounts below zero."}]),
+                      "One thing to fix.")
+    review = (await db_client.get(f"{base}/agent/runs/{run['review_run_id']}", headers=ada.headers)).json()
+    [output] = [o for o in review["outputs"] if o["kind"] == "finding"]
+    url = f"{base}/agent/runs/{review['id']}/outputs/{output['id']}/items/0/github-issue"
+    # Juno's review is Ada's (she asked for the turn): Cat can't open it, so can't file it either.
+    assert (await db_client.post(url, headers=cat.headers)).status_code == 404
+    assert github.issues == []
+
+    opened = await db_client.post(url, headers=ada.headers)
+    assert opened.status_code == 200, opened.text
+    [issue] = github.issues
+    assert issue["repo"] == "kunemi/api" and issue["title"] == "High: Negative refunds"
+    assert "refund(-5) pays out." in issue["body"] and "Reject amounts below zero." in issue["body"]
+    assert "`src/payments.py:3`" in issue["body"] and f"#{run['pr_number']}" in issue["body"]
+    assert {"repository_ids": [9001], "permissions": {"metadata": "read", "contents": "read", "issues": "write"}} \
+        in github.token_requests
+    [item] = [o for o in opened.json()["outputs"] if o["id"] == output["id"]][0]["items"]
+    assert item["state"] == "done" and item["link"] == "https://github.com/kunemi/api/issues/101"
+    [entry] = await _audit(db_session, "agent_output.github_issue")
+    assert str(entry.actor_user_id) == ada.id and entry.details["issue"] == 101
+    # Once is enough.
+    again = await db_client.post(url, headers=ada.headers)
+    assert again.status_code == 409 and len(github.issues) == 1
