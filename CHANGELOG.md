@@ -23,6 +23,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - A Windows installer for the desktop app and a standalone Windows CLI, built and attached to each release (unsigned for
   now).
 
+### Changed
+
+- Icons are Phosphor everywhere, and page titles use Geist Serif.
+
 ## [0.1.0] - 2026-10-31
 
 The first versioned release: everything built before versioning began, through #199.

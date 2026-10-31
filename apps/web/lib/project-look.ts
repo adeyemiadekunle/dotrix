@@ -3,23 +3,23 @@
 import type { Schemas } from "@dotrix/api-client";
 import {
   BriefcaseIcon,
-  Building2Icon,
+  BuildingsIcon,
   CodeIcon,
-  ComponentIcon,
+  DiamondsFourIcon,
   FolderIcon,
   GlobeIcon,
   HeartIcon,
-  LayersIcon,
-  LayoutGridIcon,
+  StackIcon,
+  GridFourIcon,
   MegaphoneIcon,
   PaletteIcon,
   RocketIcon,
-  SmartphoneIcon,
-  SparklesIcon,
+  DeviceMobileIcon,
+  SparkleIcon,
   TargetIcon,
-  ZapIcon,
-  type LucideIcon,
-} from "lucide-react";
+  LightningIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 
 export type ProjectColor = Schemas["ProjectColor"];
 export type ProjectStatus = Schemas["ProjectStatus"];
@@ -47,23 +47,23 @@ export function projectColor(key: string, color?: ProjectColor | null): string {
 }
 
 /** The icons a project can have (the API accepts these names). */
-export const PROJECT_ICONS: Record<string, LucideIcon> = {
+export const PROJECT_ICONS: Record<string, Icon> = {
   globe: GlobeIcon,
-  smartphone: SmartphoneIcon,
+  smartphone: DeviceMobileIcon,
   megaphone: MegaphoneIcon,
   rocket: RocketIcon,
-  component: ComponentIcon,
-  "building-2": Building2Icon,
-  "layout-grid": LayoutGridIcon,
+  component: DiamondsFourIcon,
+  "building-2": BuildingsIcon,
+  "layout-grid": GridFourIcon,
   palette: PaletteIcon,
   code: CodeIcon,
   briefcase: BriefcaseIcon,
   target: TargetIcon,
-  layers: LayersIcon,
-  zap: ZapIcon,
+  layers: StackIcon,
+  zap: LightningIcon,
   heart: HeartIcon,
   folder: FolderIcon,
-  sparkles: SparklesIcon,
+  sparkles: SparkleIcon,
 };
 
 export const PROJECT_STATUSES: { value: ProjectStatus; label: string; dot: string }[] = [

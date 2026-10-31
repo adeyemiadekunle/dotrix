@@ -1,5 +1,5 @@
 import { Button } from "@dotrix/ui/components/button";
-import { MailIcon } from "lucide-react";
+import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { Link } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -64,7 +64,7 @@ export function SignupForm({ next, github = false }: { next?: string; github?: b
         </SubmitButton>
         <Button type="button" variant="ghost" className="w-full" asChild>
           <Link href="/login?link=1">
-            <MailIcon /> Sign up with an email link instead
+            <EnvelopeSimpleIcon /> Sign up with an email link instead
           </Link>
         </Button>
       </form>

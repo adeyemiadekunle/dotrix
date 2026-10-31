@@ -230,7 +230,7 @@ apps/web/
 │   ├── router.tsx               every URL: the sign-in pages (from pages/(auth)), /onboarding, and /w/{ws}/… (all one `Studio`, the screen picked from the path)
 │   ├── root.tsx                 the browser tab's title (a route's `staticData.title`), the not-found page
 │   ├── dotrix.css               Dotrix's own surfaces (chat, proposed changes, diffs), on the design's tokens
-│   ├── core/                    utils, constants, icons (`Ic`, a lucide subset from `icons-plugin.ts`), nav (`Route`, `href`, `go`, `useRoute`), actions + more, can (what you may do), agents (decisions, checkpoints, chat replies, coding, Continue after a limit), presence (what each agent is doing now), theme, dragdrop, keyboard, desktop (the desktop app's bridge: its runners, a local turn's live worktree)
+│   ├── core/                    utils, constants, icons (`Ic`, a Phosphor subset from `icons-plugin.ts`), nav (`Route`, `href`, `go`, `useRoute`), actions + more, can (what you may do), agents (decisions, checkpoints, chat replies, coding, Continue after a limit), presence (what each agent is doing now), theme, dragdrop, keyboard, desktop (the desktop app's bridge: its runners, a local turn's live worktree)
 │   ├── data/                    types, store (`S`, `D()`, `mutate`, `useStudio`, lookups; saved in localStorage `dotrix.studio.v2`), seed + seed-dotrix (agents, threads, knowledge, coding, audit, automations), live.ts (a real workspace from the API into the store's shapes, writes sent as they happen), account.ts (Settings and Members: your account, the workspace, its people, agents, models; `useApi`)
 │   ├── shell/                   Shell (sidebar, top bar), Studio (screens by route, overlays), AgentsPanel (who needs you, who is working), Notices (corner notices), viewEngine (filters, sort, group, toolbar)
 │   ├── overlays/                PopLayer (every popover and context menu), Modals, Drawer (the task), Palette (⌘K)
@@ -259,11 +259,11 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
   - A new page is a `Route` in `core/nav.ts` (with its path in `href` / `routeOf`), a screen in `screens/`, a case in `shell/Studio.tsx`, and a title in `src/router.tsx`.
 - **UI:**
   - The design lives in `packages/ui/src/styles/design.css`: warm paper neutrals and one accent (indigo, or the one picked in Settings → Appearance, `data-accent` on `<html>`). Build with its classes and CSS variables (`row`, `grow`, `muted`, `btn`, `--acc`, `--bg`…) and the helpers in `ui/helpers.tsx`, never raw colours, so light and dark mode both work. Dotrix's own surfaces go in `dotrix.css` on the same tokens.
-  - Icons are `Ic` (`core/icons.tsx`). Toasts are `toast()` (`ui/toast.tsx`). Agents' faces are `ui/face.tsx`, and what each agent is doing comes from `core/presence.ts`.
+  - Icons are Phosphor (https://phosphoricons.com, regular weight): `Ic` (`core/icons.tsx`), which bundles only the names `src/` uses (`icons-plugin.ts`; a Phosphor name, or one of dotrix's own names in its `ALIASES`, kept because projects store theirs in the database), and `@phosphor-icons/react` (`…Icon` components) in `packages/ui` and the sign-in pages. Page titles use Geist Serif (`--serif`, regular weight only: `apps/web/src/fonts/`, vendored from the `geist` package under the OFL); everything else is Geist Sans and Mono. Toasts are `toast()` (`ui/toast.tsx`). Agents' faces are `ui/face.tsx`, and what each agent is doing comes from `core/presence.ts`.
   - Write copy in sentence case.
   - Show people only what they can do. Hide a control they can't use (`allowed(...)` / `canInvite()` in `src/core/can.ts`, from the permissions the API reports for them) rather than letting it fail; the API is what enforces access.
 - **Theme:** Settings → Appearance (System / Light / Dark, the accent, density, motion) is kept in the store's preferences in this browser and applied before the first paint (`applyPrefs` in `core/theme.ts`).
-- The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@dotrix/ui/lib/utils` and `@/hooks/…` → `@dotrix/ui/hooks/…`.
+- The shadcn CLI writes some imports wrongly in this monorepo. After adding a component, fix `from "cn"` → `@dotrix/ui/lib/utils` and `@/hooks/…` → `@dotrix/ui/hooks/…`, and its `lucide-react` icons → `@phosphor-icons/react`.
 
 ## Where things stand (2026-10-30)
 

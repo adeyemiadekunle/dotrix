@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 
-import { lucideSubset } from "./icons-plugin";
+import { iconSubset } from "./icons-plugin";
 
 // The web app and the API share one origin, so the session cookies the API sets are first-party
 // and the page never handles tokens. Locally Vite's server forwards the API's paths; in
@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
   const forward: ProxyOptions = { target: api, xfwd: true };
   const proxy = { "/v1": forward, "/api": forward, "/health": forward };
   return {
-    plugins: [react(), tailwindcss(), lucideSubset(fileURLToPath(new URL("./src", import.meta.url)))],
+    plugins: [react(), tailwindcss(), iconSubset(fileURLToPath(new URL("./src", import.meta.url)))],
     resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } },
     server: { port: 3000, strictPort: true, proxy },
     preview: { port: 3000, strictPort: true, proxy },

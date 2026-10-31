@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDownIcon } from "lucide-react";
+import { ArrowDownIcon } from "@phosphor-icons/react";
 import { cn } from "@dotrix/ui/lib/utils";
 import { Button } from "@dotrix/ui/components/button";
 

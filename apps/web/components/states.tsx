@@ -1,6 +1,6 @@
-import { type LucideIcon } from "lucide-react";
+import { type Icon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
-export function EmptyState({ icon: Icon, title, description, action }: { icon: LucideIcon; title: string; description: string; action?: ReactNode }) {
+export function EmptyState({ icon: Icon, title, description, action }: { icon: Icon; title: string; description: string; action?: ReactNode }) {
   return (
     // Sized to its content and placed where the page's content starts, so the action is where
     // the eye lands (not floating in the middle of a full-height box).
