@@ -13,10 +13,20 @@ from dotrix_backend.modules.agent_definitions.preferences import preferences_for
 from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from dotrix_backend.modules.graph.service import GraphService
 from dotrix_backend.modules.issues.schemas import IssueRead
+from dotrix_backend.modules.knowledge.repository import KnowledgeRepository
 from dotrix_backend.modules.knowledge.service import KnowledgeService
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.repo_knowledge.service import RepoKnowledgeService
+from dotrix_backend.modules.rules.service import WorkspaceSkills
 from dotrix_engine.builtins import role_instructions
+from dotrix_engine.layout import default_rules
+from dotrix_engine.skills import (
+    DEFINITION_OF_DONE,
+    SKILLS_FOLDER,
+    default_skills,
+    skill_agents,
+    skill_name,
+)
 
 MAX_DOCUMENTS = 4
 DOCUMENT_CHARS = 6_000
@@ -85,8 +95,49 @@ async def build_brief(
     kai = (await AgentDefinitionRepository(session).coding_configuration(project.workspace_id, project.id)).spec
     if user_id:
         kai = with_preferences([kai], await preferences_for(session, project.workspace_id, user_id), "the person")[0]
-    parts += ["", role_instructions(kai), "", RULES]
+    parts += ["", role_instructions(kai), "", RULES, "", DEFINITION_OF_DONE.strip()]
+    parts += await _standards(session, project)
     return "\n".join(parts)
+
+
+STANDARDS_CHARS = 16_000  # the skills and the team's coding rules, together
+
+
+async def _standards(session: AsyncSession, project: Project) -> list[str]:
+    """What the team asks of code here: the project's agent-rules/coding.md when a person changed it
+    (the engine's default describes the platform's job, said above already; the workspace's and project's
+    guidance for Kai is its contract's, in `role_instructions`), and the
+    skills meant for Kai, in full, since Kai can't read them from the sandbox. The project's skill
+    wins over the workspace's of the same name; a skill the project deleted stays deleted."""
+    files = await KnowledgeRepository(session).list_files(project.id)
+    live = {f.path: f.content for f in files if not f.deleted}
+    ever = {f.path for f in files}
+    skills = await WorkspaceSkills(session).texts(project.workspace_id)
+    skills |= {skill_name(path): text for path, text in default_skills().items() if path not in ever}
+    skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")}
+    mine = {name: text for name, text in sorted(skills.items()) if "coding" in (skill_agents(text) or ())}
+    rules = []
+    default = default_rules(project.name).get("agent-rules/coding.md", "").strip()
+    if (own := live.get("agent-rules/coding.md", "").strip()) and own != default:
+        rules.append(f'<data source="agent-rules/coding.md">\n{own}\n</data>')
+    out: list[str] = []
+    budget = STANDARDS_CHARS
+    if rules:
+        out += ["", "## This team's rules for code",
+                "Follow these where they don't contradict the platform's rules above (those win)."]
+        for rule in rules:
+            out.append(rule[:budget])
+            budget -= min(len(rule), budget)
+    if mine and budget > 0:
+        out += ["", "## Your skills",
+                "Use the one that fits the work (an API, a schema change, a UI change, anything security-sensitive):"]
+        for name, text in mine.items():
+            if len(text) > budget:
+                out.append(f"- {name}: (left out: the brief is full)")
+                continue
+            out.append(f'<data source="skill {name}">\n{text.strip()}\n</data>')
+            budget -= len(text)
+    return out
 
 
 async def _documents(session: AsyncSession, project: Project, key: str) -> list[tuple[str, str]]:
