@@ -281,6 +281,8 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     review = (await db_client.get(f"{base}/agent/runs/{run['review_run_id']}", headers=ada.headers)).json()
     assert review["status"] == "completed" and review["reply"].startswith("Looks right")
     assert "src/payments.py (+2 -1)" in review["message"] and "<repo_content" in review["message"]
+    assert "## Definition of done" in review["message"] and "Added refunds" in review["message"]  # Kai's report
+    assert "read review-a-backend-change, security-review, threat-model-a-feature with read_skill" in review["message"]
 
     actions = [e["action"] for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()]
     assert {"coding.requested", "coding.approved", "coding.changes_ready", "coding.changes_accepted",

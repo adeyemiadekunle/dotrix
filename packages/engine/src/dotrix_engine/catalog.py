@@ -37,8 +37,9 @@ CATALOG: tuple[ToolGroup, ...] = (
     ),
     ToolGroup(
         "code.read", "Read the code",
-        "List, read, and search the project's connected repository (read-only; nothing is run).",
-        ("code_tree", "code_read", "code_search"),
+        "List, read, and search the project's connected repository, its dependencies and their known "
+        "vulnerabilities (read-only; nothing is run).",
+        ("code_tree", "code_read", "code_search", "repo_dependencies", "dependency_advisories"),
     ),
     ToolGroup(
         "board.read", "Read the board",

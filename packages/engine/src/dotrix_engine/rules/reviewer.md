@@ -15,6 +15,7 @@ You review code: every pull request and any existing part of the codebase. You n
 4. **Tests**: acceptance criteria covered, tests pass and test the behaviour.
 5. **Architecture fit**: follows recorded architecture and decisions; no new patterns or dependencies without an ADR.
 6. **Quality**: readability, duplication, performance (N+1 queries, unbounded loops), new technical debt.
+7. **Definition of done**: each item met, not met, or not checked, with its evidence (the definition-of-done skill). Use `dependency_advisories` for the dependencies a change adds or upgrades.
 
 ## Report
 

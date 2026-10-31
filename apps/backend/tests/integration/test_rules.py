@@ -113,3 +113,65 @@ async def test_workspace_skills_are_shared_and_a_project_s_own_wins(
     gone = await db_client.put(f"{ws}/skills/release-note", json={"content": "", "base_version": 1}, headers=ada.headers)
     assert gone.status_code == 200
     assert [s["name"] for s in (await db_client.get(f"{ws}/skills", headers=cat.headers)).json()] == ["write-an-adr"]
+
+
+async def test_each_agent_lists_its_own_skills(
+    db_client: AsyncClient, signup, create_team, add_member, agent_script
+) -> None:
+    from dotrix_backend.modules.agents.guidance import project_rules
+    from dotrix_backend.modules.projects.models import Project
+
+    ada, _, ws, base = await _world(db_client, signup, create_team, add_member)
+    await db_client.put(f"{base}/knowledge/files/agent-rules/skills/team-checklist.md", headers=ada.headers,
+                        json={"content": "# Skill\nDescription: Our own checklist, for everyone.\n"})
+    factory = db_client._transport.app.state.jobs.ctx.session_factory  # type: ignore[attr-defined]
+    async with factory() as session:
+        project = await session.get(Project, base.rsplit("/", 1)[-1])
+        rules = await project_rules(session, project.id, None, project.workspace_id)
+    assert "- team-checklist: Our own checklist" in rules["base"]  # no Agents line: every agent's
+    assert "security-review" not in rules["base"]
+    assert "- security-review:" in rules["reviewer"] and "- threat-model-a-feature:" in rules["architecture"]
+    assert "- write-acceptance-criteria:" in rules["product"] and "security-review" not in rules["product"]
+    assert "- evaluate-a-library:" in rules["research"] and "- keep-the-wiki-fresh:" in rules["documentation"]
+    assert "- definition-of-done:" in rules["reviewer"]
+
+
+async def test_kai_s_brief_carries_the_definition_of_done_its_skills_and_the_team_s_coding_rules(
+    db_client: AsyncClient, signup, create_team, add_member, agent_script
+) -> None:
+    from dotrix_backend.modules.coding.brief import build_brief
+    from dotrix_backend.modules.projects.models import Project
+
+    ada, _, ws, base = await _world(db_client, signup, create_team, add_member)
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={
+        "type": "task", "title": "Add a login page", "description": "A form for the email and password."})).json()
+    typo = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Fix a typo in the README"})).json()
+    factory = db_client._transport.app.state.jobs.ctx.session_factory  # type: ignore[attr-defined]
+    saved = await db_client.put(f"{base}/knowledge/files/agent-rules/coding.md", headers=ada.headers,
+                                json={"content": "# Coding\nUse the repository's logger, never print()."})
+    assert saved.status_code in (200, 201), saved.text
+    from dotrix_backend.modules.issues.schemas import IssueRead
+
+    async with factory() as session:
+        project = await session.get(Project, base.rsplit("/", 1)[-1])
+        brief = await build_brief(session, project, IssueRead.model_validate(issue), None)
+    assert "## Definition of done" in brief and "migration can be rolled back" in brief
+    assert "Use the repository's logger, never print()." in brief  # the project's own coding rules
+    # The skills this issue calls for (a login form: security and UI), not every one of Kai's.
+    assert '<data source="skill security-review">' in brief and '<data source="skill build-a-ui-change">' in brief
+    assert "skill plan-a-schema-change" not in brief and "skill design-an-api" not in brief
+    assert "skill definition-of-done" not in brief  # the list itself is in the brief
+    assert "write-acceptance-criteria" not in brief  # Lyra's, not Kai's
+    async with factory() as session:
+        project = await session.get(Project, base.rsplit("/", 1)[-1])
+        plain = await build_brief(session, project, IssueRead.model_validate(typo), None)
+    assert "## Definition of done" in plain and "## Skills for this work" not in plain
+    # The rest are named, a line each, for Kai to say if its work turned out to need one.
+    assert "## Other skills (not included)" in brief and "- plan-a-schema-change: Change a database schema" in brief
+    # A follow-up picks from what the earlier turn touched, though the issue never said "migration".
+    async with factory() as session:
+        project = await session.get(Project, base.rsplit("/", 1)[-1])
+        after = await build_brief(session, project, IssueRead.model_validate(typo), "Carry on.",
+                                  [(1, "Fixed the typo.\n(changed: README.md, migrations/versions/0042_add_index.py)")])
+    assert '<data source="skill plan-a-schema-change">' in after and "migrations/versions/0042_add_index.py" in after
+    assert "Open a pull request that links" not in brief  # the engine's default coding.md isn't repeated

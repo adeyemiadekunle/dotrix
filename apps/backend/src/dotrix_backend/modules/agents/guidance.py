@@ -5,7 +5,13 @@ from dotrix_backend.modules.lessons.service import lessons_path
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.rules.service import WorkspaceRules, WorkspaceSkills, layered
 from dotrix_engine.layout import AGENTS
-from dotrix_engine.skills import SKILLS_FOLDER, default_skills, skill_name, skills_guide
+from dotrix_engine.skills import (
+    SKILLS_FOLDER,
+    default_skills,
+    skill_agents,
+    skill_name,
+    skills_guide,
+)
 from dotrix_engine.templates import TEMPLATES_GUIDE, default_templates
 
 
@@ -35,6 +41,12 @@ async def project_rules(session, project_id, handles=None, workspace_id=None) ->
         skills = await WorkspaceSkills(session).texts(workspace_id)
     # The project's own skills win over the workspace's of the same name.
     skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")}
-    skills = skills_guide(skills)
-    rules["base"] = "\n\n".join(part for part in (rules.get("base", "").rstrip(), TEMPLATES_GUIDE, skills) if part)
+    # Skills for every agent go with the base rules; a skill naming its agents, with theirs only.
+    shared = {name: text for name, text in skills.items() if skill_agents(text) is None}
+    rules["base"] = "\n\n".join(part for part in (rules.get("base", "").rstrip(), TEMPLATES_GUIDE, skills_guide(shared)) if part)
+    for name in dict.fromkeys(names[1:]):  # handles may repeat a built-in role
+        own = {skill: text for skill, text in skills.items() if name in (skill_agents(text) or ())}
+        if own:
+            heading = "## Skills" if not shared else "## Your skills"
+            rules[name] = "\n\n".join(part for part in (rules.get(name, "").rstrip(), skills_guide(own, heading)) if part)
     return rules

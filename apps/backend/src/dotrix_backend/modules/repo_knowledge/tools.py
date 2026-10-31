@@ -2,7 +2,8 @@
 and checking a page's citations against the inventory, so coverage counts what the agent really
 read and every `path:line` it cites is in the repository at that commit.
 
-The leading agent's alone, in that mode only. Marking read is bookkeeping on the inventory (no
+The leading agent's alone, in that mode only (`repo_dependencies` and `dependency_advisories` go with
+the code tools to every agent that reads code: advisories.py). Marking read is bookkeeping on the inventory (no
 document or board change), so it needs no approval; the pages themselves go through `write_file`
 and its approval, like every document.
 """
@@ -60,11 +61,6 @@ def repo_tools(ctx: RepoContext) -> list[Any]:
         """The inventory's commit, and each knowledge domain: how many paths, how many read, or the gap."""
         return await _coverage(ctx)
 
-    async def repo_dependencies(manifest: str | None = None) -> dict[str, Any]:
-        """Each manifest's direct dependencies with the version its lockfile pins (read from the
-        files, nothing run), and the files that couldn't be read. `manifest`: only that one."""
-        return await _dependencies(ctx, manifest)
-
     async def repo_stale_pages() -> dict[str, Any]:
         """The wiki's pages that cite paths changed since they were read, removed, or never read."""
         return await _stale(ctx)
@@ -72,7 +68,6 @@ def repo_tools(ctx: RepoContext) -> list[Any]:
     return [
         StructuredTool.from_function(coroutine=repo_coverage, name="repo_coverage"),
         StructuredTool.from_function(coroutine=repo_stale_pages, name="repo_stale_pages"),
-        StructuredTool.from_function(coroutine=repo_dependencies, name="repo_dependencies"),
         StructuredTool.from_function(
             coroutine=lambda **kw: _paths(ctx, RepoPaths(**kw)), name="repo_paths", args_schema=RepoPaths,
             description="A domain's paths still to read (pending), a page at a time, with their size and kind.",
