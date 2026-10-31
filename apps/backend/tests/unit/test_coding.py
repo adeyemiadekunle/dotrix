@@ -277,7 +277,6 @@ def test_opencode_uses_an_available_personal_provider_without_server_keys() -> N
 
 
 def test_opencode_s_config_is_ours_and_the_key_is_only_in_its_environment(monkeypatch) -> None:
-    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
     tool = OpenCode(OPENCODE_PROVIDERS["anthropic"])
     argv = tool.command("anthropic:claude-haiku-5-5")
     assert argv[0] == "env" and argv[argv.index("opencode"):] == [
@@ -297,10 +296,10 @@ def test_opencode_s_config_is_ours_and_the_key_is_only_in_its_environment(monkey
     assert opencode_session(session) in tool.save_state(session)
     assert tool.session_args(session, resumed=False) == tool.session_args(session, resumed=True) == [
         "-s", f"ses_{session.hex}"]
-    # A proxy in front of Anthropic: the same ANTHROPIC_BASE_URL Claude Code takes.
+    # Nothing in the worker's environment sends the key elsewhere.
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://proxy:8080/")
     config = json.loads(dict(p.split("=", 1) for p in tool.command(None)[1:5])["OPENCODE_CONFIG_CONTENT"])
-    assert config["provider"] == {"anthropic": {"options": {"baseURL": "http://proxy:8080/v1"}}}
+    assert "provider" not in config
 
 
 def test_opencode_events_become_steps_and_tokens() -> None:

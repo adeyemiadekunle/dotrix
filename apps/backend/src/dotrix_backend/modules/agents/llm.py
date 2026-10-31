@@ -63,13 +63,43 @@ class GeminiWithBuiltinTools(ChatGoogleGenerativeAI):
         return super().bind_tools(tools, tool_config=config, **kwargs)
 
 
-def build_chat_model(model: str, api_key: str) -> Any:
+# The providers' own APIs, given explicitly: their SDKs otherwise read ANTHROPIC_BASE_URL and
+# OPENAI_BASE_URL from the server's environment, which would send a person's key somewhere else.
+OWN_ENDPOINTS = {"anthropic": "https://api.anthropic.com", "openai": "https://api.openai.com/v1"}
+
+
+# Models whose thinking can't be shown this way (Haiku 4.5 still takes a token budget).
+_NO_ADAPTIVE_THINKING = ("claude-haiku-4-5",)
+
+
+def thinking_options(model: str, effort: dict[str, str]) -> dict[str, Any]:
+    """How Nova's model thinks, and shows what it thought: Anthropic's adaptive thinking with summaries
+    (its default hides them), at `effort` (the model decides how much to think; at Haiku 5.5's default,
+    medium, it often doesn't); OpenAI's reasoning with a summary, through its Responses API. Nothing
+    for other providers, or a provider with no effort set."""
+    provider, _, name = model.partition(":")
+    level = effort.get(provider)
+    if not level:
+        return {}
+    if provider == "anthropic" and not name.startswith(_NO_ADAPTIVE_THINKING):
+        # Thinking counts against max_tokens: room for it and the reply.
+        return {"thinking": {"type": "adaptive", "display": "summarized"}, "output_config": {"effort": level},
+                "max_tokens": 16_000}
+    if provider == "openai" and name.startswith(("gpt-5", "gpt-6", "o")):
+        return {"use_responses_api": True, "reasoning": {"effort": level, "summary": "auto"}}
+    return {}
+
+
+def build_chat_model(model: str, api_key: str, *, thinking: dict[str, str] | None = None) -> Any:
+    """`thinking`: effort per provider for a model that should think and show it (Nova's); none for
+    specialists and summaries, which keep the provider's defaults."""
     provider, _, name = model.partition(":")
     if provider == "google_genai":
         return GeminiWithBuiltinTools(model=name, google_api_key=api_key)
     if base_url := PROVIDERS[provider].base_url:
         return ChatOpenAI(model=name, api_key=api_key, base_url=base_url, use_responses_api=False)
-    return init_chat_model(model, **{PROVIDERS[provider].kwarg: api_key})
+    return init_chat_model(model, base_url=OWN_ENDPOINTS[provider], **{PROVIDERS[provider].kwarg: api_key},
+                           **thinking_options(model, thinking or {}))
 
 
 def key_for(settings: Settings, model: str, keys: Keys | None = None) -> str | None:
@@ -108,19 +138,19 @@ def settings_model_factory(settings: Settings) -> ModelFactory:
             return ModelChoice(model=RuleBasedChatModel(), web_search=None)
         specialist = project.specialist_model
         return ModelChoice(
-            model=_build(chosen, keys),
+            model=_build(chosen, keys, thinking=settings.chat_thinking_effort),
             web_search=_web_search_tool(chosen),
             specialist_model=_build(specialist, keys) if specialist and specialist != chosen else None,
         )
 
-    def _build(model: str, keys: Keys | None) -> Any:
+    def _build(model: str, keys: Keys | None, thinking: dict[str, str] | None = None) -> Any:
         provider = provider_of(model)
         key = key_for(settings, model, keys)
         if key is None:
             raise ModelUnavailable(
                 f"No personal {provider.label} key for {model}: connect yours in Account → Your models"
             )
-        return build_chat_model(model, key)
+        return build_chat_model(model, key, thinking=thinking)
 
     return factory
 

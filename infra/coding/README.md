@@ -77,8 +77,8 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
      to workflows from fork pull requests" off. Set "Require approval for fork pull request
      workflows" to all outside collaborators, so a person approves before checks run.
 - **Network.** The only host a run reaches is its tool's model API. That is api.anthropic.com,
-  api.openai.com, or generativelanguage.googleapis.com, or the host of `ANTHROPIC_BASE_URL`,
-  `OPENAI_BASE_URL` or `GOOGLE_GEMINI_BASE_URL`. GitHub, package registries, and everything else
+  api.openai.com, generativelanguage.googleapis.com, or the other provider's own API; a
+  `*_BASE_URL` in the worker's environment is never followed. GitHub, package registries, and everything else
   are blocked. To let the agent install dependencies, add your registries to the Docker egress
   allowlist and OpenShell's policy (`sandbox_policy()` in `coding/sandbox.py`).
 - **OpenCode's own settings are ours.** Its config comes from `OPENCODE_CONFIG_CONTENT` (that

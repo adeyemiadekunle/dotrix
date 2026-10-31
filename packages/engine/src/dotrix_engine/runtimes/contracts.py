@@ -103,7 +103,7 @@ class RuntimeHandoff:
 
 @dataclass(frozen=True)
 class RuntimeEvent:
-    type: Literal["turn_accepted", "text_delta", "tool_start", "tool_end"]
+    type: Literal["turn_accepted", "text_delta", "reasoning_delta", "tool_start", "tool_end"]
     session_id: str
     text: str = ""
     tool: str | None = None

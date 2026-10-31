@@ -12,7 +12,7 @@ FROM node:22-bookworm
 # the model APIs (see dotrix-claude-code.yaml and dotrix-codex.yaml). Pinned like OpenCode and fx, because
 # modules/coding/tools.py reads their headless events and passes their flags: Claude Code as checked on a
 # real model (2.1.296, docs/coding-agent.md Phase 0); Codex at the release its flags were checked against
-# (0.166.0: `exec --json --skip-git-repo-check --sandbox danger-full-access --ephemeral`; not yet run on a model).
+# (0.166.0: `exec --json --skip-git-repo-check --sandbox danger-full-access --ephemeral`; run on GPT-5.5, 2026-10-31).
 # Raise a version only after checking its events and flags.
 ARG CLAUDE_CODE_VERSION=2.1.296
 ARG CODEX_VERSION=0.166.0
@@ -24,6 +24,9 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/code
 # dotrix-opencode-*.yaml.
 ARG OPENCODE_VERSION=2.1.4
 RUN npm install -g @opencode/cli@${OPENCODE_VERSION} && opencode --version
+# ripgrep on PATH: OpenCode's glob and grep otherwise download it from GitHub at their first use, which
+# the sandbox refuses, and the failed download takes the rest of the turn down with it (seen with GPT-5.5).
+RUN apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/* && rg --version
 
 # fx (DOTRIX_CODING_FX=true): Kai on an OpenAI-compatible provider, driven over ACP by fx-acp.mjs. Pinned,
 # because the driver reads its ACP messages and modes (written against 0.0.16's source); the release is

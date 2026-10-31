@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.crypto import Secrets
 from dotrix_backend.core.errors import DomainError
+from dotrix_backend.core.model_prices import cost_of
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.core.storage import BlobStorage
 from dotrix_backend.modules.audit.models import AuthorType
@@ -879,7 +880,11 @@ class CodingWorker:
                 raise _ReconciliationRequired()
             add_events(run, session, events=events, step=step)
             if usage is not None:
-                run.input_tokens, run.output_tokens, run.cost_usd = usage.input_tokens, usage.output_tokens, usage.cost_usd
+                run.input_tokens, run.output_tokens = usage.input_tokens, usage.output_tokens
+                run.cost_usd = usage.cost_usd if usage.cost_usd is not None else cost_of(
+                    run.model, input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
+                    cached_input_tokens=usage.cached_input_tokens, cache_write_tokens=usage.cache_write_tokens,
+                    overrides=self.settings.model_prices) if usage.total else None
             if base_sha:
                 run.base_sha = base_sha
             await session.commit()

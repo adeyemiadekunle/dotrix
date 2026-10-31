@@ -15,7 +15,6 @@ what the run page shows (steps) and what the run used (tokens).
 from __future__ import annotations
 
 import json
-import os
 import shlex
 import uuid
 from dataclasses import dataclass, field
@@ -83,6 +82,9 @@ class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float | None = None
+    # Of input_tokens: read from and written to the provider's cache (to price them when no cost is reported).
+    cached_input_tokens: int = 0
+    cache_write_tokens: int = 0
     # Claude Code repeats a model call's usage on each of its content blocks: counted once.
     _calls: dict[str, tuple[int, int]] = field(default_factory=dict)
     # The tool calls of this run that ran a command: their results are kept as the command's output.
@@ -111,7 +113,6 @@ class CodingTool(Protocol):
     key_env: str  # the model key's environment variable
     provider_type: str  # its OpenShell provider profile
     api_host: str  # where its model API is (the Docker sandbox lets it through, nothing else)
-    base_url_env: str  # a proxy in front of the provider, when this is set
     resumes: bool  # its conversation carries over between turns (saved, and restored in a fresh sandbox)
     browser: bool  # it can use the sandbox's browser (Playwright MCP)
 
@@ -209,7 +210,6 @@ class ClaudeCode(_NoUsageCommand):
     key_env = "ANTHROPIC_API_KEY"
     provider_type = "dotrix-claude-code"
     api_host = "api.anthropic.com"
-    base_url_env = "ANTHROPIC_BASE_URL"
     resumes = True
     browser = True
 
@@ -307,7 +307,6 @@ class Codex(_NoUsageCommand):
     key_env = "OPENAI_API_KEY"
     provider_type = "dotrix-codex"
     api_host = "api.openai.com"
-    base_url_env = "OPENAI_BASE_URL"
     resumes = False  # `--ephemeral`: each turn starts afresh
     browser = False  # not yet
 
@@ -354,7 +353,8 @@ class Codex(_NoUsageCommand):
                         out.steps.append(Step("tool", f"Edited {_relative(str(change.get('path', '')))}"))
         elif kind == "turn.completed":
             turn = event.get("usage") or {}
-            usage.input_tokens += int(turn.get("input_tokens") or 0)
+            usage.input_tokens += int(turn.get("input_tokens") or 0)  # cached reads included, as OpenAI counts
+            usage.cached_input_tokens += int(turn.get("cached_input_tokens") or 0)
             usage.output_tokens += int(turn.get("output_tokens") or 0)
         elif kind in ("turn.failed", "error"):
             message = (event.get("error") or {}).get("message") if kind == "turn.failed" else event.get("message")
@@ -372,26 +372,22 @@ class OpenCodeProvider:
     label: str
     key_env: str  # the key's variable, which OpenCode reads
     api_host: str
-    base_url_env: str  # a proxy in front of the provider, when this is set
     setting: str  # Settings attribute with the server's key
-    # What OpenCode's SDK wants after the base URL that Claude Code and Codex take (Anthropic's SDK
-    # in OpenCode posts to `{baseURL}/messages`; Claude Code to `{ANTHROPIC_BASE_URL}/v1/messages`).
-    base_url_suffix: str = ""
 
 
 OPENCODE_PROVIDERS = {
     p.name: p for p in (
         OpenCodeProvider("anthropic", "anthropic", "Anthropic", "ANTHROPIC_API_KEY", "api.anthropic.com",
-                         "ANTHROPIC_BASE_URL", "anthropic_api_key", "/v1"),
+                         "anthropic_api_key"),
         OpenCodeProvider("openai", "openai", "OpenAI", "OPENAI_API_KEY", "api.openai.com",
-                         "OPENAI_BASE_URL", "openai_api_key"),
+                         "openai_api_key"),
         OpenCodeProvider("google_genai", "google", "Google", "GOOGLE_API_KEY", "generativelanguage.googleapis.com",
-                         "GOOGLE_GEMINI_BASE_URL", "google_api_key"),
-        OpenCodeProvider("xai", "xai", "xAI (Grok)", "XAI_API_KEY", "api.x.ai", "XAI_BASE_URL", "xai_api_key"),
-        OpenCodeProvider("deepseek", "deepseek", "DeepSeek", "DEEPSEEK_API_KEY", "api.deepseek.com", "DEEPSEEK_BASE_URL", "deepseek_api_key"),
-        OpenCodeProvider("mistral", "mistral", "Mistral", "MISTRAL_API_KEY", "api.mistral.ai", "MISTRAL_BASE_URL", "mistral_api_key"),
-        OpenCodeProvider("groq", "groq", "Groq", "GROQ_API_KEY", "api.groq.com", "GROQ_BASE_URL", "groq_api_key"),
-        OpenCodeProvider("openrouter", "openrouter", "OpenRouter", "OPENROUTER_API_KEY", "openrouter.ai", "OPENROUTER_BASE_URL", "openrouter_api_key"),
+                         "google_api_key"),
+        OpenCodeProvider("xai", "xai", "xAI (Grok)", "XAI_API_KEY", "api.x.ai", "xai_api_key"),
+        OpenCodeProvider("deepseek", "deepseek", "DeepSeek", "DEEPSEEK_API_KEY", "api.deepseek.com", "deepseek_api_key"),
+        OpenCodeProvider("mistral", "mistral", "Mistral", "MISTRAL_API_KEY", "api.mistral.ai", "mistral_api_key"),
+        OpenCodeProvider("groq", "groq", "Groq", "GROQ_API_KEY", "api.groq.com", "groq_api_key"),
+        OpenCodeProvider("openrouter", "openrouter", "OpenRouter", "OPENROUTER_API_KEY", "openrouter.ai", "openrouter_api_key"),
     )
 }
 # Never offered to the model: the sandbox can't reach the web, and a run has nobody to answer.
@@ -457,7 +453,7 @@ class OpenCode:
     def __init__(self, provider: OpenCodeProvider) -> None:
         self.opencode_provider = provider
         self.provider = provider.name
-        self.key_env, self.api_host, self.base_url_env = provider.key_env, provider.api_host, provider.base_url_env
+        self.key_env, self.api_host = provider.key_env, provider.api_host
         self.provider_type = f"dotrix-opencode-{provider.opencode}"  # infra/coding/dotrix-opencode-*.yaml
 
     def _env(self, model: str | None = None) -> list[str]:
@@ -468,10 +464,8 @@ class OpenCode:
             "permission": {tool: "deny" for tool in OPENCODE_DENIED},
             "autoupdate": False,
         }
-        if base_url := os.environ.get(self.base_url_env, "").rstrip("/"):
-            # The URL itself, not `{env:…}`: OpenShell passes the sandbox nothing but the key.
-            config["provider"] = {self.opencode_provider.opencode: {"options": {"baseURL": base_url + self.opencode_provider.base_url_suffix}}}
-        elif endpoint := PROVIDERS[self.provider].base_url:
+        # Always the provider's own API: nothing in the worker's environment redirects the key.
+        if endpoint := PROVIDERS[self.provider].base_url:
             config["provider"] = {self.opencode_provider.opencode: {"options": {"baseURL": endpoint}}}
         if model:
             # The pinned CLI's built-in catalogue may predate a platform-configured model.
@@ -617,14 +611,11 @@ class Fx:
         self.fx_provider = provider
         self.driver = driver
         self.provider = provider.name
-        self.key_env, self.api_host, self.base_url_env = provider.key_env, provider.api_host, provider.base_url_env
+        self.key_env, self.api_host = provider.key_env, provider.api_host
         self.provider_type = f"dotrix-fx-{provider.opencode}"  # infra/coding/dotrix-fx-*.yaml
 
     def _base_url(self) -> str:
-        # A proxy in front of the provider takes the same path after it as OpenCode's (Anthropic's: /v1).
-        if proxy := os.environ.get(self.base_url_env, "").rstrip("/"):
-            return proxy + self.fx_provider.base_url_suffix
-        return FX_ENDPOINTS[self.provider]
+        return FX_ENDPOINTS[self.provider]  # always the provider's own API
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
         name = (model or "").partition(":")[2] or (model or "")
@@ -685,8 +676,9 @@ class Fx:
                     out.steps.append(Step("error", _clip(f"{usage._tools.get(ref) or 'A tool'}: {detail}")))
             case "done":
                 totals = event.get("usage") or {}
-                usage.input_tokens = int(totals.get("inputTokens") or 0) + int(totals.get("cacheReadTokens") or 0) \
-                    + int(totals.get("cacheWriteTokens") or 0)
+                usage.cached_input_tokens = int(totals.get("cacheReadTokens") or 0)
+                usage.cache_write_tokens = int(totals.get("cacheWriteTokens") or 0)
+                usage.input_tokens = int(totals.get("inputTokens") or 0) + usage.cached_input_tokens + usage.cache_write_tokens
                 usage.output_tokens = int(totals.get("outputTokens") or 0) + int(totals.get("reasoningTokens") or 0)
                 reason = str(event.get("stopReason") or "end_turn")
                 if reason != "end_turn":

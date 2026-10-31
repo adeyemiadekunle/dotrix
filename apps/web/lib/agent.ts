@@ -331,12 +331,15 @@ export interface RunStreamState {
   text: string;
   /** What the PM is doing right now ("Reading roadmap.md"), or null. */
   activity: string | null;
+  /** What the PM has thought so far, as its model summarises it (empty when it shows none). */
+  thinking: string;
 }
 
 export function useRunStream(scope: Scope | undefined, runId: string, active: boolean): RunStreamState {
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
   const [activity, setActivity] = useState<string | null>(null);
+  const [thinking, setThinking] = useState("");
   // A dropped connection reconnects (the server sends the text so far again, from the run's kept
   // events if its live stream is gone), a little later each time.
   const [attempt, setAttempt] = useState(0);
@@ -352,9 +355,15 @@ export function useRunStream(scope: Scope | undefined, runId: string, active: bo
       source = new EventSource(`/v1/workspaces/${scope.workspaceId}/projects/${scope.projectId}/agent/runs/${runId}/stream`);
       const stream = source;
       const read = (event: MessageEvent) => (JSON.parse(event.data) as { text: string }).text;
-      stream.addEventListener("text", (e) => setText(read(e as MessageEvent)));
+      // Each connection (and each new step) starts with the text so far, then the thinking so far.
+      stream.addEventListener("text", (e) => {
+        setText(read(e as MessageEvent));
+        setThinking("");
+      });
       stream.addEventListener("delta", (e) => setText((t) => t + read(e as MessageEvent)));
       stream.addEventListener("activity", (e) => setActivity(read(e as MessageEvent)));
+      stream.addEventListener("thinking_text", (e) => setThinking(read(e as MessageEvent)));
+      stream.addEventListener("thinking", (e) => setThinking((t) => t + read(e as MessageEvent)));
       // The stream ends when the run does (or wasn't running): don't let EventSource reconnect,
       // and fetch the finished run right away rather than at the next poll (which also pauses
       // while the tab is in the background).
@@ -378,12 +387,12 @@ export function useRunStream(scope: Scope | undefined, runId: string, active: bo
       source?.close();
     };
   }, [scope, runId, active, queryClient, attempt]);
-  return { text, activity };
+  return { text, activity, thinking };
 }
 
 export type RunEvent = Schemas["RunEventRead"];
 
-/** What a run did, kept after it: its steps (what the agents were doing), in order. */
+/** What a run did, kept after it: its steps (what the agents were doing), in order, and what Nova thought. */
 export function useRunSteps(scope: Scope | undefined, runId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["run-events", scope?.workspaceId, runId],
@@ -394,7 +403,13 @@ export function useRunSteps(scope: Scope | undefined, runId: string, enabled: bo
         }),
       ),
     enabled: Boolean(scope) && enabled,
-    select: (page) => page.events.filter((e) => e.kind === "activity").map((e) => String("label" in e.data ? e.data.label : "")),
+    select: (page) => ({
+      steps: page.events.filter((e) => e.kind === "activity").map((e) => String("label" in e.data ? e.data.label : "")),
+      thinking: page.events
+        .filter((e) => e.kind === "thinking")
+        .map((e) => String("text" in e.data ? e.data.text : ""))
+        .join(""),
+    }),
   });
 }
 

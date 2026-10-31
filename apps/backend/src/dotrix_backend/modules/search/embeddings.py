@@ -74,7 +74,9 @@ def build_embedder(settings: Settings, keys: dict[str, str] | None = None) -> Em
             return None
         from langchain_openai import OpenAIEmbeddings
 
-        model = OpenAIEmbeddings(model=name, api_key=key, dimensions=EMBEDDING_DIMENSIONS)
+        from dotrix_backend.modules.agents.llm import OWN_ENDPOINTS
+
+        model = OpenAIEmbeddings(model=name, api_key=key, base_url=OWN_ENDPOINTS["openai"], dimensions=EMBEDDING_DIMENSIONS)
         return LangchainEmbedder(spec, model, model, settings.embedding_min_similarity)
     logger.warning("search: embedding model %r isn't supported (google_genai or openai); keywords only", spec)
     return None

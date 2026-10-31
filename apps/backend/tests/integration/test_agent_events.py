@@ -89,3 +89,22 @@ async def test_the_stream_falls_back_to_kept_events_when_the_live_one_is_gone(
 
     # A run that isn't working: just the end.
     assert [e async for e in follow_run(RunStreams(), factory, workspace_id, run_id)] == [("end", "")]
+
+
+async def test_nova_s_thinking_is_kept_apart_from_its_reply(
+    db_client: AsyncClient, signup, create_team, add_member, agent_script
+) -> None:
+    from langchain_core.messages import AIMessage
+
+    ada, _, _, base = await _project(db_client, signup, create_team, add_member)
+    thought = "This isn't about the project: no documents to read, I'll answer directly."
+    agent_script.say(AIMessage(content=[{"type": "thinking", "thinking": thought, "signature": "s"},
+                                        {"type": "text", "text": "Paris."}]))
+    run = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                                json={"message": "What is the capital of France?"})).json()
+    assert run["status"] == "completed" and run["reply"] == "Paris.", run
+    events = (await db_client.get(f"{base}/agent/runs/{run['id']}/events", headers=ada.headers)).json()["events"]
+    assert "".join(e["data"]["text"] for e in events if e["kind"] == "thinking") == thought
+    assert "".join(e["data"]["text"] for e in events if e["kind"] == "text") == "Paris."
+    kinds = [e["kind"] for e in events]
+    assert kinds.index("thinking") < kinds.index("text")  # in the order it happened

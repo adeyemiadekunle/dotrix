@@ -70,6 +70,7 @@ export function useCrossStream(workspaceId: string | undefined, runId: string, a
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
   const [activity, setActivity] = useState<string | null>(null);
+  const [thinking, setThinking] = useState("");
   useEffect(() => {
     if (!workspaceId || !active) return;
     let source: EventSource | undefined;
@@ -80,9 +81,15 @@ export function useCrossStream(workspaceId: string | undefined, runId: string, a
       source = new EventSource(`/v1/workspaces/${workspaceId}/conversations/runs/${runId}/stream`);
       const stream = source;
       const read = (event: MessageEvent) => (JSON.parse(event.data) as { text: string }).text;
-      stream.addEventListener("text", (e) => setText(read(e as MessageEvent)));
+      // Each connection (and each new step) starts with the text so far, then the thinking so far.
+      stream.addEventListener("text", (e) => {
+        setText(read(e as MessageEvent));
+        setThinking("");
+      });
       stream.addEventListener("delta", (e) => setText((t) => t + read(e as MessageEvent)));
       stream.addEventListener("activity", (e) => setActivity(read(e as MessageEvent)));
+      stream.addEventListener("thinking_text", (e) => setThinking(read(e as MessageEvent)));
+      stream.addEventListener("thinking", (e) => setThinking((t) => t + read(e as MessageEvent)));
       stream.addEventListener("end", () => {
         stream.close();
         setActivity(null);
@@ -95,5 +102,5 @@ export function useCrossStream(workspaceId: string | undefined, runId: string, a
       source?.close();
     };
   }, [workspaceId, runId, active, queryClient]);
-  return { text, activity };
+  return { text, activity, thinking };
 }

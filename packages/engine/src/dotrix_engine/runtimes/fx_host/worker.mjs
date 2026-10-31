@@ -186,6 +186,8 @@ async function handle(command) {
             if (event.type === "text_delta") {
               text += event.delta;
               send({ kind: "event", id: command.id, event: { type: "text_delta", text: event.delta } });
+            } else if (event.type === "reasoning_delta") {
+              send({ kind: "event", id: command.id, event: { type: "reasoning_delta", text: event.delta } });
             } else if (event.type === "tool_start" || event.type === "tool_end") {
               if (event.type === "tool_start") tools.push(event.name);
               send({ kind: "event", id: command.id, event: { type: event.type, tool: event.name } });
@@ -227,6 +229,8 @@ async function handle(command) {
       if (event.type === "text_delta") {
         text += event.delta;
         send({ kind: "event", id: command.id, event: { type: "text_delta", text: event.delta } });
+      } else if (event.type === "reasoning_delta") {
+        send({ kind: "event", id: command.id, event: { type: "reasoning_delta", text: event.delta } });
       } else if (event.type === "tool_start" || event.type === "tool_end") {
         if (event.type === "tool_start") tools.push(event.name);
         send({ kind: "event", id: command.id, event: { type: event.type, tool: event.name } });

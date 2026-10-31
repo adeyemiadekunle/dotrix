@@ -2,6 +2,8 @@
 
 - `UnchangedReads`: reading a file the agent already has in its conversation, unchanged,
   returns a one-line note instead of the whole file again.
+- `EarlierThinking`: earlier turns' thinking blocks aren't sent again (Anthropic binds each one to
+  the system prompt it was made under, and each turn's context differs).
 - `summarization()`: a long conversation's older turns are summarised once its prompt passes
   a token threshold, keeping the recent turns word for word (deepagents' summarisation,
   whose own default waits until 85% of the model's context window: far too late to save
@@ -20,7 +22,7 @@ from deepagents.middleware.summarization import (
     _DeepAgentsSummarizationMiddleware,
 )
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 UNCHANGED_NOTE = (
     "{path} is unchanged since you read it earlier in this conversation (the same lines are "
@@ -124,6 +126,38 @@ class CompactTools(AgentMiddleware):
             if getattr(tool, "name", None) not in EXCLUDED_TOOLS
         ]
         return request.override(tools=tools)
+
+    async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        return await handler(self._request(request))
+
+    def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
+        return handler(self._request(request))
+
+
+THINKING_BLOCKS = frozenset({"thinking", "redacted_thinking", "reasoning"})
+
+
+def without_earlier_thinking(messages: list[Any]) -> list[Any]:
+    """`messages` with the thinking blocks of replies before the latest person's message removed.
+    Anthropic signs each thinking block for the system prompt it was made under and refuses it
+    under another ("bound to a different conversation"); every turn's context pack differs, so a
+    follow-up would fail. The current turn's blocks stay: its tool loop needs them."""
+    latest = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1)
+    changed = list(messages)
+    for i, message in enumerate(messages[:latest]):
+        if not isinstance(message, AIMessage) or not isinstance(message.content, list):
+            continue
+        content = [b for b in message.content if not (isinstance(b, dict) and b.get("type") in THINKING_BLOCKS)]
+        if len(content) != len(message.content):
+            changed[i] = message.model_copy(update={"content": content or ""})
+    return changed
+
+
+class EarlierThinking(AgentMiddleware):
+    """Leaves earlier turns' thinking out of the prompt (see `without_earlier_thinking`)."""
+
+    def _request(self, request: Any) -> Any:
+        return request.override(messages=without_earlier_thinking(list(request.messages or [])))
 
     async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
         return await handler(self._request(request))

@@ -8710,7 +8710,7 @@ export interface components {
          * RunEventKind
          * @enum {string}
          */
-        RunEventKind: "step" | "text" | "activity" | "status" | "task";
+        RunEventKind: "step" | "text" | "activity" | "thinking" | "status" | "task";
         /** RunEventPage */
         RunEventPage: {
             /** Events */

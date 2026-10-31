@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.errors import Conflict, NotFound, Unprocessable
 from dotrix_backend.core.jobs import Jobs
+from dotrix_backend.core.model_prices import cost_of
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
@@ -180,7 +181,10 @@ class LocalRunners:
         add_events(run, self.session, events=_events(data.events))
         if data.input_tokens is not None:
             run.input_tokens, run.output_tokens = data.input_tokens, data.output_tokens or 0
-            run.cost_usd = data.cost_usd
+            # No cost from the tool (Codex, fx): priced from the tokens, without the cache split the runner doesn't send.
+            run.cost_usd = data.cost_usd if data.cost_usd is not None else cost_of(
+                run.model, input_tokens=run.input_tokens, output_tokens=run.output_tokens,
+                overrides=self.settings.model_prices)
         if data.base_sha:
             run.base_sha = data.base_sha
         summary = (data.summary or "").strip() or None

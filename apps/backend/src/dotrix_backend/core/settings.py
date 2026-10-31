@@ -206,13 +206,20 @@ class Settings(DatabaseSettings):
         "anthropic:claude-haiku-5-5",
         "anthropic:claude-haiku-4-5-20251001",
         "openai:gpt-5.5",
-        "openai:gpt-5.5-mini",
+        "openai:gpt-5.4-mini",
         "xai:grok-4.7",
         "deepseek:deepseek-flash",
         "mistral:mistral-small-latest",
         "groq:openai/gpt-oss-120b",
         "openrouter:openai/gpt-5.5",
     ]
+    # How hard the conversation's own model (Nova's) thinks before it answers, per provider, and shows it
+    # (agents/llm.py `thinking_options`): Anthropic's effort (low … max; Haiku 5.5 rarely thinks at its
+    # default, medium), OpenAI's reasoning effort. A provider left out keeps its own defaults and shows none.
+    chat_thinking_effort: dict[str, str] = {"anthropic": "high", "openai": "medium"}
+    # USD per million tokens, (input, cached input, cache write, output), for coding engines that report
+    # tokens but no cost (Codex, fx); added to and replacing core/model_prices.py's PRICES.
+    model_prices: dict[str, list[float]] = {}
     # Automation runs a workspace may start per day (UTC), across all its projects; 0: no limit
     # (the default: creators run on their own keys, and their provider's limits apply).
     automation_daily_runs: int = Field(default=0, ge=0)

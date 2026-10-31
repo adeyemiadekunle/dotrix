@@ -60,7 +60,6 @@ def test_fx_runs_on_openai_compatible_providers_only() -> None:
 
 
 def test_fx_command_reaches_one_provider_with_its_key_by_name(monkeypatch) -> None:
-    monkeypatch.delenv("XAI_BASE_URL", raising=False)
     settings = _settings(coding_fx_driver="/opt/dotrix/fx-acp.mjs")
     tool = tool_for(CodingAgent.FX, "xai:grok-4.7", settings)
     assert tool is not None
@@ -70,8 +69,8 @@ def test_fx_command_reaches_one_provider_with_its_key_by_name(monkeypatch) -> No
     ]
     assert tool.sandbox_env("secret") == {"XAI_API_KEY": "secret"}
     assert (tool.api_host, tool.provider_type) == ("api.x.ai", "dotrix-fx-xai")
-    monkeypatch.setenv("XAI_BASE_URL", "https://proxy.example/xai/")
-    assert "https://proxy.example/xai" in tool.command("xai:grok-4.7")
+    monkeypatch.setenv("XAI_BASE_URL", "https://proxy.example/xai/")  # never followed
+    assert "https://api.x.ai/v1" in tool.command("xai:grok-4.7")
 
 
 def test_fx_continues_its_session_from_saved_state() -> None:
