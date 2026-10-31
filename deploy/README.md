@@ -71,6 +71,31 @@ of the tool Kai runs: Claude Code and Codex by default, or OpenCode on the provi
 `DOTRIX_CODING_OPENCODE_MODEL` (`DOTRIX_CODING_AGENT=opencode`). Runs use the requester's own key
 where the organisation allows it, else the workspace's (Settings → Models), else the server's.
 
+## Outbound access
+
+The API and the worker sit on Docker's default network, so they reach the internet without any
+setup. If you put a firewall or an egress proxy in front of the VPS, allow HTTPS (443) to:
+
+| Host | What for |
+| --- | --- |
+| `api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`, `api.x.ai`, `api.deepseek.com`, `api.mistral.ai`, `api.groq.com`, `openrouter.ai` | People's model keys: chat, specialists, coding (only the providers people connect) |
+| `github.com`, `api.github.com` | Sign-in, the GitHub App, checkouts, pushes and PRs |
+| `api.osv.dev` | `dependency_advisories`: known vulnerabilities in a repository's dependencies. Without it the tool says OSV can't be reached; nothing else breaks |
+| `api.sendlyai.com` | Email |
+| `api.tavily.com`, and the pages research reads | Web research (optional) |
+
+Building the coding image (`coding-image`) also needs Docker Hub, `registry.npmjs.org`,
+`releases.fx.sh`, Debian's package mirrors and Playwright's browser download. The coding sandboxes
+themselves need nothing here: their egress proxy reaches only the model API of the run's tool.
+
+To check OSV from the worker:
+
+```bash
+docker compose exec worker python -c "import httpx; print(httpx.post('https://api.osv.dev/v1/querybatch', json={'queries': []}, timeout=10).status_code)"
+```
+
+`200` means the tool can check dependencies.
+
 **In Dokploy's container list** you'll see each run's two containers (label `dotrix.run=<run id>`)
 for as long as it lasts. Leave them to dotrix: stop a run with Stop in dotrix, not in Dokploy.
 
