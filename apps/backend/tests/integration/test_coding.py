@@ -266,8 +266,12 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     [pr] = github.pulls
     assert pr["head"] == run["branch"] and pr["base"] == "main" and pr["title"] == f"{story['key']}: Refund a payment"
     # The token was for this repo only, with push and PR rights; the agent never had it.
-    assert github.token_requests[-1] == {"repository_ids": [9001], "permissions": {
-        "metadata": "read", "contents": "write", "pull_requests": "write"}}
+    # (then Juno's review is posted on the PR with a token that may only comment there)
+    assert github.token_requests[-2:] == [
+        {"repository_ids": [9001], "permissions": {"metadata": "read", "contents": "write", "pull_requests": "write"}},
+        {"repository_ids": [9001], "permissions": {"metadata": "read", "contents": "read", "pull_requests": "write"}},
+    ]
+    assert github.reviews and github.reviews[0]["event"] == "COMMENT"
     assert set(claude.env) == {"PATH", "HOME", "LANG", "ANTHROPIC_API_KEY"}
     assert claude.env["ANTHROPIC_API_KEY"] == "test-anthropic-personal-key-" + str(ada.id)
     assert claude.argv[:3] == ["claude", "-p", "--bare"] and "--dangerously-skip-permissions" not in claude.argv
@@ -441,10 +445,12 @@ async def test_with_a_fork_owner_branches_go_to_the_apps_fork(
     [pr] = github.pulls
     assert pr["repo"] == "kunemi/api" and pr["head"] == f"dotrix-fork:{first['branch']}" and not pr["maintainer_can_modify"]
     # The repo's token reads and opens the PR, no more; only the fork's token pushes.
-    assert github.token_requests[-3:] == [
+    assert github.token_requests[-4:] == [
         {"repository_ids": [9001], "permissions": {"metadata": "read", "contents": "read", "pull_requests": "write"}},
         {},  # the fork organisation's, to fork
         {"repository_ids": [9700], "permissions": {"metadata": "read", "contents": "write", "pull_requests": "write"}},
+        # Juno's review, posted on the upstream PR
+        {"repository_ids": [9001], "permissions": {"metadata": "read", "contents": "read", "pull_requests": "write"}},
     ]
 
     # A follow-up continues on the fork's branch, with the same fork and PR.
