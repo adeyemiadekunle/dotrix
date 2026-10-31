@@ -98,8 +98,10 @@ async def build_brief(
     if user_id:
         kai = with_preferences([kai], await preferences_for(session, project.workspace_id, user_id), "the person")[0]
     parts += ["", role_instructions(kai), "", RULES, "", DEFINITION_OF_DONE.strip()]
-    # What the work is about: the issue, the request, and for a follow-up what earlier turns did and touched.
-    work = "\n".join((issue.title, issue.description, note or "", *(summary for _, summary in earlier or [])))
+    # What the work is about: the issue, the request, and for a follow-up the files earlier turns changed
+    # (their "(changed: …)" line; not their prose, which repeats the definition of done's words).
+    touched = [line for _, summary in earlier or [] for line in summary.splitlines() if line.startswith("(changed: ")]
+    work = "\n".join((issue.title, issue.description, note or "", *touched))
     parts += await _standards(session, project, work)
     return "\n".join(parts)
 

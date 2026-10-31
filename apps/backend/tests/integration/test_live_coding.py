@@ -4,6 +4,7 @@ Each runs only when its provider's key is given (DOTRIX_LIVE_ANTHROPIC_API_KEY, 
 and the coding image is built (docker build -t dotrix-coding:latest infra/coding); each makes paid calls."""
 import dataclasses
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -81,3 +82,48 @@ async def test_live_kai_turn_in_docker_opens_a_pr(
     assert run["input_tokens"] > 0 and run["cost_usd"], run  # every engine shows a cost (Codex and fx priced from tokens)
     print(f"LIVE {agent}/{model}: {run['summary']!r} tokens={run['input_tokens']}+{run['output_tokens']} "
           f"cost={run['cost_usd']} steps={steps[:8]}")
+
+
+@pytest.mark.parametrize(("agent", "model"), [c for c in _cases() if c.values[0] in ("claude-code", "codex")])
+async def test_live_skills_follow_what_kai_changed(
+    db_client: AsyncClient, coding, github, origin: Path, agent_script, agent, model,  # noqa: F811
+) -> None:
+    """An issue that names no skill's area gets none, the rest listed; Juno's review and the next turn pick
+    them from what Kai changed (a .py file in the payments code)."""
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    settings = app.state.settings
+    settings.coding_sandbox, settings.coding_image = "docker", IMAGE
+    jobs = app.state.jobs
+    worker: CodingWorker = jobs.ctx.coding
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(worker, sandbox=DockerSandbox(settings)))
+    provider = model.partition(":")[0]
+    await _save_key(db_client, ada.headers, provider, os.environ[KEYS[provider]])
+    agent_script.say("Looks right.")
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", headers=ada.headers, json={
+        "type": "task", "title": "Give the provider class a refund method",
+        "description": "Add refund(self, amount) to the provider class; it returns the amount it refunded.",
+    })).json()
+    asked = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", headers=ada.headers,
+                                  json={"agent": agent, "model": model})).json()
+    assert "## Skills for this work" not in asked["brief"], "the issue names no skill's area"
+    assert "## Other skills (not included)" in asked["brief"] and "- security-review:" in asked["brief"]
+    first = await _approve(db_client, base, asked, ada.headers)
+    assert first["status"] == "pr_opened", (first["status"], first["error"])
+    assert "src/payments.py" in {f["path"] for f in first["files_changed"]}
+    review = (await db_client.get(f"{base}/agent/runs/{first['review_run_id']}", headers=ada.headers)).json()
+    told = [line for line in review["message"].splitlines() if "review skills" in line]
+    assert told and "review-a-backend-change" in told[0] and "security-review" in told[0], told
+
+    follow = await db_client.post(f"{base}/coding/sessions/{first['session_id']}/turns", headers=ada.headers,
+                                  json={"message": "Also add a test for it."})
+    assert follow.status_code == 201, follow.text
+    brief = follow.json()["brief"]
+    picked = sorted(set(re.findall(r'<data source="skill ([a-z-]+)">', brief)))
+    assert "review-a-backend-change" in picked and "security-review" in picked, picked
+    assert not {"build-a-ui-change", "review-a-frontend-change", "plan-a-schema-change"} & set(picked), picked
+    second = await _approve(db_client, base, follow.json(), ada.headers)
+    assert second["status"] in ("pr_opened", "no_changes"), (second["status"], second["error"])  # a test may be there already
+    print(f"LIVE {agent}/{model}: review told {told[0]!r}; follow-up picked {picked}; "
+          f"turn 1 summary: {first['summary']!r}; turn 2 cost {second['cost_usd']}")
