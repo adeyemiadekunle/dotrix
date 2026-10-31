@@ -124,3 +124,26 @@ async def test_live_a_general_question_is_answered_without_reading_the_project(
         print(f"LIVE {runtime}/{model}: {run['reply']!r} thinking={thought[:200]!r}")
     finally:
         await chat.__aexit__(None, None, None)
+
+
+@pytest.mark.parametrize(("runtime", "provider", "model"), [c for c in CASES if c.values[0] == "deepagents"])
+async def test_live_nova_says_what_it_is_doing_like_a_person(
+    nova_pilot_world, db_client, agent_script, outbox, storage, checkouts, runtime, provider, model,  # noqa: F811
+):
+    """The steps a run keeps read like what a person would say: reading, asking a specialist, weighing
+    what it found."""
+    chat, fx = await _live(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script, provider)
+    try:
+        asked = await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+            "message": "Ask the architecture specialist whether research/runtime.md is enough evidence to pick a "
+                       "runtime, then tell me what they said in two sentences.",
+            "chat_runtime": runtime, "work_mode": "discuss", "model": model,
+        })
+        run = asked.json()
+        events = (await fx.client.get(f"{fx.base}/runs/{run['id']}/events", headers=fx.headers)).json()["events"]
+        steps = [e["data"].get("label") for e in events if e["kind"] == "activity"]
+        print(f"LIVE {runtime}/{model}: status={run['status']} steps={steps}")
+        assert run["status"] in ("completed", "waiting_children"), (run["status"], run.get("error"))
+        assert any(s.startswith(("Asking", "Weighing")) for s in steps), steps
+    finally:
+        await chat.__aexit__(None, None, None)

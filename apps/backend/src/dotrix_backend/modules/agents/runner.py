@@ -69,7 +69,7 @@ from dotrix_engine.code import build_code_tools
 from dotrix_engine.contracts import AgentPolicy, AgentSpec
 from dotrix_engine.delegation import SpecialistResult
 
-from .activity import activity_label
+from .activity import WEIGHING_SPECIALISTS, WRITING, activity_label, result_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
 from .context import build_context_pack
 from .delegation import DelegationService, delegation_tool, task_interrupts
@@ -610,15 +610,26 @@ class AgentRunner:
                 if usage.budget is not None and usage.used >= usage.budget:
                     raise TokenBudgetExceeded(usage.used, usage.budget)
                 recording = await self._record(run_id, workspace_id, token, payload)
+                if payload["kind"] == "delegation_ready":
+                    await recording.activity(WEIGHING_SPECIALISTS)
+                fx_writing = [False]  # "Writing the reply" said since the last other activity
 
                 async def fx_event(event):
                     if event.type == "text_delta":
+                        if event.text and not fx_writing[0]:
+                            await recording.activity(WRITING)
+                            fx_writing[0] = True
                         await recording.publish(event.text)
                     elif event.type == "reasoning_delta":
                         await recording.think(event.text)
                     elif event.type == "tool_start" and event.tool:
                         if label := activity_label(event.tool, None):
                             await recording.activity(label)
+                            fx_writing[0] = False
+                    elif event.type == "tool_end" and event.tool:
+                        if label := result_label(event.tool, None):
+                            await recording.activity(label)
+                            fx_writing[0] = False
 
                 if self.web is not None:
                     run_web = await self.web.for_run(self.session_factory, workspace_id=workspace_id,
@@ -817,6 +828,8 @@ class AgentRunner:
                                      usage, discard_specialist_result=True)
                     return
             stream = recording = await self._record(run_id, workspace_id, token, payload)
+            if payload["kind"] == "delegation_ready":
+                await stream.activity(WEIGHING_SPECIALISTS)
             result = None
             if retry:
                 graph_input, result = await _continue_from_checkpoint(
@@ -1429,12 +1442,15 @@ async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream,
     published as they're written. Subagents' words aren't streamed: only the PM speaks to you."""
     latest: Any = None
     interrupts: list[Any] = []
+    calls: dict[str, tuple[str, Any]] = {}  # this step's tool calls, to say what's done with their results
+    writing = False  # "Writing the reply" said since the last other activity
     async for mode, payload in agent.astream(graph_input, config, stream_mode=["updates", "values", "messages"]):
         if mode == "updates" and isinstance(payload, dict):
             if (found := payload.get("__interrupt__")) is not None:
                 interrupts.extend(found)
-            for label in _activities(payload):
+            for label in _activities(payload, calls):
                 await stream.activity(label)
+                writing = False
         elif mode == "values":
             latest = payload
         elif mode == "messages":
@@ -1443,7 +1459,10 @@ async def _run_graph(agent: Any, graph_input: Any, config: dict, stream: Stream,
                 (metadata or {}).get("lc_agent_name")
             ) == speaker:
                 await stream.think(thinking_of(chunk.content))
-                await stream.publish(text_of(chunk.content))
+                if (delta := text_of(chunk.content)) and not writing:
+                    await stream.activity(WRITING)
+                    writing = True
+                await stream.publish(delta)
     if interrupts:
         return {**latest, "__interrupt__": interrupts} if isinstance(latest, dict) else {"__interrupt__": interrupts}
     return latest if isinstance(latest, dict) else {}
@@ -1465,9 +1484,12 @@ async def _brief(agent: Any, model: Any, system: str, message: str, config: dict
     return {"messages": messages}
 
 
-def _activities(update: dict) -> list[str]:
+def _activities(update: dict, calls: dict[str, tuple[str, Any]] | None = None) -> list[str]:
     """Labels for the tool calls the PM just decided to make (graph updates are the PM's own
-    steps; subagents run inside the `task` tool, which gets one label: "Asking …")."""
+    steps; subagents run inside the `task` tool, which gets one label: "Asking …"), and for what
+    it does with their results ("Weighing what the research agent found"), from `calls`: the
+    calls seen so far this step, by id."""
+    calls = {} if calls is None else calls
     labels = []
     for name, output in update.items():
         # Only the model's own steps. Middleware hooks ("HumanInTheLoopMiddleware.after_model")
@@ -1477,7 +1499,13 @@ def _activities(update: dict) -> list[str]:
         messages = output.get("messages")
         messages = getattr(messages, "value", messages)  # (an Overwrite wraps the list)
         for message in messages if isinstance(messages, list) else []:
+            if getattr(message, "type", None) == "tool" and (call := calls.get(getattr(message, "tool_call_id", ""))):
+                if (label := result_label(*call)) and label not in labels:
+                    labels.append(label)
+                continue
             for call in getattr(message, "tool_calls", None) or []:
+                if call.get("id"):
+                    calls[call["id"]] = (call.get("name", ""), call.get("args"))
                 if label := activity_label(call.get("name", ""), call.get("args")):
                     labels.append(label)
     return labels

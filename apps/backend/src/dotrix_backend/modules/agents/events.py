@@ -25,6 +25,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid_utils.compat import uuid7
 
+from .activity import WRITING
 from .models import AgentRun, AgentRunEvent, RunEventKind, RunStatus
 from .storage_backend import SessionFactory
 from .streams import Stream
@@ -126,7 +127,7 @@ class RecordingStream:
 
     async def activity(self, label: str) -> None:
         await self.inner.activity(label)
-        if label:
+        if label and label != WRITING:  # live only: the reply itself is what's kept
             await self.flush()
             await self.recorder.write(RunEventKind.ACTIVITY, {"label": label})
 

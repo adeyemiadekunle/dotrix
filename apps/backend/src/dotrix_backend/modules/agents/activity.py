@@ -18,6 +18,48 @@ _KNOWLEDGE_ROOT = "/dotrix/"
 _AGENT_NAME = re.compile(r"^[a-z][a-z0-9-]{1,30}-agent$")
 _HOST = re.compile(r"^[a-z0-9][a-z0-9.-]{0,79}$")
 _STAGES = {stage for stages in PIPELINES.values() for stage in stages}
+# Each pipeline stage (dotrix_engine/outputs.py PIPELINES) as what a person would say they're doing.
+STAGE_LABELS = {
+    "classify": "Working out what's being asked",
+    "plan": "Planning the steps",
+    "dispatch": "Handing parts to the specialists",
+    "merge": "Weighing what the specialists found",
+    "propose": "Drafting the changes to propose",
+    "follow_up": "Noting what's left to do",
+    "read": "Reading",
+    "duplicates": "Checking for duplicates",
+    "clarify": "Working out what's needed",
+    "related": "Looking at related work",
+    "draft": "Drafting",
+    "check": "Checking the draft",
+    "understand": "Understanding the change",
+    "impact": "Weighing the impact",
+    "options": "Considering options",
+    "recommend": "Choosing what to recommend",
+    "our_knowledge": "Checking what the project already knows",
+    "search": "Searching",
+    "extract": "Pulling out the findings",
+    "verify": "Checking the facts against the sources",
+    "report": "Writing the report",
+    "requirements": "Reading the requirements",
+    "board": "Checking the board",
+    "code": "Reading the code",
+    "assess": "Assessing what it found",
+    "issue": "Reading the issue",
+    "criteria": "Checking the acceptance criteria",
+    "evidence": "Gathering the evidence",
+    "diff": "Reading the changes",
+    "blast_radius": "Working out what the change could affect",
+    "findings": "Writing up the findings",
+    "change": "Understanding the change",
+    "affected": "Finding the documents it affects",
+    "excerpts": "Collecting the relevant excerpts",
+    "tests": "Picking the tests to run",
+    "hand_off": "Handing the work to Kai",
+    "scope": "Scoping the work",
+}
+WRITING = "Writing the reply"
+WEIGHING_SPECIALISTS = "Weighing what the specialists found"
 _SUBAGENTS = {
     "product-agent": "the product agent",
     "architecture-agent": "the architecture agent",
@@ -39,6 +81,24 @@ def _path(args: dict[str, Any]) -> str:
 def _key(args: dict[str, Any]) -> str:
     key = str(args.get("key") or "").strip().upper()
     return key[:24] if key else "an issue"
+
+
+def _who(args: dict[str, Any]) -> str:
+    name = str(args.get("subagent_type") or "")
+    return _SUBAGENTS.get(name, f"@{name.removesuffix('-agent')}" if _AGENT_NAME.match(name) else "a specialist agent")
+
+
+def result_label(tool: str, args: dict[str, Any] | None) -> str | None:
+    """What the agent does with a tool's result, when that's worth saying: a specialist's answer is
+    weighed before the agent goes on. None for every other result."""
+    args = args if isinstance(args, dict) else {}
+    match tool:
+        case "task":
+            return f"Weighing what {_who(args)} found"
+        case "delegate_tasks":
+            return WEIGHING_SPECIALISTS
+        case _:
+            return None
 
 
 def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
@@ -79,7 +139,9 @@ def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
         case "stage":
             current = str(args.get("current") or "")
             # Only the fixed stage names (dotrix_engine.pipelines), never model text.
-            return f"Now: {current.replace('_', ' ')}" if current in _STAGES else None
+            if current not in _STAGES:
+                return None
+            return STAGE_LABELS.get(current, f"Now: {current.replace('_', ' ')}")
         case "graph_neighbors" | "graph_impact" | "graph_path":
             return "Following how things connect"
         case "link_items":
@@ -91,10 +153,7 @@ def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
         case "delegate_tasks":
             return "Asking specialists"
         case "task":
-            name = str(args.get("subagent_type") or "")
-            custom = f"@{name.removesuffix('-agent')}" if _AGENT_NAME.match(name) else "a specialist agent"
-            who = _SUBAGENTS.get(name, custom)
-            return f"Asking {who}"
+            return f"Asking {_who(args)}"
         case "web_search":
             return "Searching the web"
         case "fetch_page":

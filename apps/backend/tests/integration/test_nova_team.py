@@ -214,7 +214,7 @@ async def test_pinned_specialist_does_not_require_new_project_model_key(nova_wor
     async def keys(*_args, **_kwargs):
         return SimpleNamespace(keys={"openai": "personal-key"})
 
-    def build(name, key):
+    def build(name, key, **_):
         built.append((name, key))
         return model
 
