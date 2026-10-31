@@ -551,9 +551,9 @@ class AgentRunner:
                 active_spec = next(spec for spec in specs if spec.handle == (run.agent or PM_ROLE))
                 run.model = ((run.model or active_spec.model or project.specialist_model) if run.parent_run_id else None) or run.conversation_model or project.model
                 run.agent_version = lead_agent.version
-                # The budget covers every step of the run: what earlier steps used counts. The
-                # leading agent's own budget wins over the project's.
-                run.token_budget = lead_agent.spec.budget_tokens or project.token_budget
+                # The budget covers every step of the run: what earlier steps used counts. It is the
+                # leading agent's own (its contract's `budget_tokens`), if one is set.
+                run.token_budget = lead_agent.spec.budget_tokens
                 usage = TokenUsage(
                     budget=run.token_budget,
                     used=(run.input_tokens or 0) + (run.output_tokens or 0),

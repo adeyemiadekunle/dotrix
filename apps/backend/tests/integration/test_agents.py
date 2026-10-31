@@ -32,6 +32,17 @@ async def run(client: AsyncClient, base: str, headers, message: str = "hello", *
     return res.json()
 
 
+async def budget(client: AsyncClient, base: str, headers, tokens: int, agent: str = "project-manager") -> None:
+    """Give a built-in agent a token budget for each run it leads (its contract's `budget_tokens`)."""
+    from dotrix_backend.modules.agent_definitions.schemas import AgentFields
+
+    url = f"{base.split('/projects/')[0]}/agents/{agent}"
+    current = (await client.get(url, headers=headers)).json()
+    fields = {name: current[name] for name in AgentFields.model_fields if name in current}
+    saved = await client.put(url, json={"agent": {**fields, "budget_tokens": tokens}}, headers=headers)
+    assert saved.status_code == 200 and saved.json()["budget_tokens"] == tokens, saved.text
+
+
 async def decide(client: AsyncClient, base: str, run_: dict, headers, *choices):
     """choices: ("approve",) or ("reject", "reason") per pending approval, in order."""
     pending = [a for a in run_["approvals"] if a["status"] == "pending"]
@@ -592,8 +603,7 @@ async def test_owners_see_where_the_tokens_went(
 
 async def test_a_run_stops_at_its_token_budget(project, db_client: AsyncClient, agent_script) -> None:
     ada, team, base = await project()
-    res = await db_client.patch(base, json={"token_budget": 10_000}, headers=ada.headers)
-    assert res.status_code == 200 and res.json()["token_budget"] == 10_000
+    await budget(db_client, base, ada.headers, 10_000)
     model = agent_script.say(
         used(tool_call("read_file", file_path="/dotrix/project.md"), 8_000, 100),
         used(tool_call("read_file", file_path="/dotrix/roadmap.md"), 3_000, 0),
@@ -609,9 +619,9 @@ async def test_a_run_stops_at_its_token_budget(project, db_client: AsyncClient, 
     assert next(e for e in events if e["action"] == "agent_run.failed")["details"]["input_tokens"] == 11_000
 
 
-async def test_the_budget_covers_specialists_too(project, db_client: AsyncClient, agent_script) -> None:
+async def test_a_specialists_own_budget_stops_its_task(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
-    await db_client.patch(base, json={"token_budget": 10_000}, headers=ada.headers)
+    await budget(db_client, base, ada.headers, 10_000, agent="research")
     agent_script.say(
         used(tool_call("delegate_tasks", tasks=[{"key": "research", "agent": "research", "brief": "Research it",
                                                  "expected_result": "Evidence"}]), 6_000, 0),
@@ -626,7 +636,7 @@ async def test_the_budget_covers_specialists_too(project, db_client: AsyncClient
 
 async def test_the_budget_counts_every_step_of_a_run(project, db_client: AsyncClient, agent_script) -> None:
     ada, _, base = await project()
-    await db_client.patch(base, json={"token_budget": 10_000}, headers=ada.headers)
+    await budget(db_client, base, ada.headers, 10_000)
     agent_script.say(
         used(tool_call("write_file", file_path="/dotrix/roadmap.md", content="New"), 10_500, 0),
         "never reached",
@@ -666,25 +676,20 @@ async def test_project_model_settings(project, db_client: AsyncClient, signup, a
     ada, team, base = await project()
     res = await db_client.patch(
         base,
-        json={"specialist_model": "google_genai:gemini-3.8-flash-lite", "token_budget": 200_000},
+        json={"specialist_model": "google_genai:gemini-3.8-flash-lite"},
         headers=ada.headers,
     )
     assert res.status_code == 200
-    assert (res.json()["specialist_model"], res.json()["token_budget"]) == (
-        "google_genai:gemini-3.8-flash-lite",
-        200_000,
-    )
+    assert res.json()["specialist_model"] == "google_genai:gemini-3.8-flash-lite"
+    assert "token_budget" not in res.json()  # a run's budget is its leading agent's, not the project's
     kept = (await db_client.patch(base, json={"name": "Kunemi 2"}, headers=ada.headers)).json()
-    assert kept["specialist_model"] and kept["token_budget"] == 200_000  # left out: unchanged
-    reset = (
-        await db_client.patch(base, json={"specialist_model": None, "token_budget": None}, headers=ada.headers)
-    ).json()
-    assert (reset["specialist_model"], reset["token_budget"]) == (None, None)
+    assert kept["specialist_model"]  # left out: unchanged
+    reset = (await db_client.patch(base, json={"specialist_model": None}, headers=ada.headers)).json()
+    assert reset["specialist_model"] is None
     assert (await db_client.patch(base, json={"specialist_model": "nope"}, headers=ada.headers)).status_code == 422
-    assert (await db_client.patch(base, json={"token_budget": 5}, headers=ada.headers)).status_code == 422
     bob = await signup(email="bob@example.com", name="Bob")
     await add_member(team["id"], bob.id, Role.MEMBER)
-    assert (await db_client.patch(base, json={"token_budget": 50_000}, headers=bob.headers)).status_code == 403
+    assert (await db_client.patch(base, json={"specialist_model": None}, headers=bob.headers)).status_code == 403
 
 
 async def test_only_owners_and_admins_see_token_usage(

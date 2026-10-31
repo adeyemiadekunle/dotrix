@@ -210,8 +210,8 @@ class LocalRunners:
             elif reasons:
                 finish_run(self.session, run, CodingRunStatus.FAILED, error="Not pushed: " + "; ".join(reasons[:5]),
                            summary=summary)
-            elif run.approval_mode == ApprovalMode.MANUAL.value:
-                await ready_for_acceptance(self.session, run, patch, files, summary)
+            elif (held := guard.needs_a_person(run.approval_mode or ApprovalMode.MANUAL.value, paths))[0]:
+                await ready_for_acceptance(self.session, run, patch, files, summary, ci_sensitive=held[1])
             else:
                 # Accept edits and Auto: their instruction is the acceptance, as for a cloud turn.
                 run.pending_patch, run.files_changed, run.summary = patch, files, summary or run.summary

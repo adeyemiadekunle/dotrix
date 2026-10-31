@@ -1261,6 +1261,61 @@ async def test_accept_edits_starts_kai_at_once_and_manual_still_waits(
     assert built["approval_mode"] == "accept_edits" and built["status"] in ("pr_opened", "no_changes", "running")
 
 
+async def test_changes_to_files_ci_runs_wait_for_a_person_in_every_mode(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    """Accept edits and Auto push a turn's changes at once, unless they change files CI runs (build
+    scripts, test setup): those wait for a person to accept them, and approvers are told why."""
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.patch(ws, json={"approval_mode_cap": "auto"}, headers=ada.headers)
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Lint"}, headers=ada.headers)).json()
+    claude.edits = {"src/lint.py": "RULES = []\n", "package.json": '{"scripts": {"test": "echo ok"}}\n'}
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", headers=ada.headers,
+                                json={"approval_mode": "auto"})).json()
+    assert run["approval_mode"] == "auto" and run["status"] == "changes_ready", run  # started at once, then held
+    assert run["ci_sensitive"] == ["package.json"] and github.pulls == []
+    assert _git(origin, "branch", "--list", "dotrix/*") == ""  # nothing reached GitHub
+    assert any("they change files CI runs (package.json)" in e["text"] for e in run["events"])
+    [note] = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()[:1]
+    assert note["coding_run_id"] == run["id"] and "files CI runs" in note["title"]
+    audit = [e for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json() if e["action"] == "coding.changes_ready"]
+    assert audit[0]["details"]["ci_sensitive"] == ["package.json"]
+
+    agent_script.say("Looks right.")  # the Reviewer, on the PR
+    accepted = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"},
+                                    headers=ada.headers)
+    assert accepted.status_code == 200, accepted.text
+    done = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert done["status"] == "pr_opened" and done["accepted_by_id"] == ada.id and len(github.pulls) == 1, done
+    assert "CI may run these changed files" in github.pulls[0]["body"]
+
+    # A later turn that changes no such file goes straight through again.
+    claude.edits = {"src/lint.py": "RULES = ['no-print']\n"}
+    turn = (await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", json={"message": "A rule", "approval_mode": "auto"},
+                                 headers=ada.headers)).json()
+    turn = (await db_client.get(f"{base}/coding/runs/{turn['id']}", headers=ada.headers)).json()
+    assert turn["status"] == "pr_opened" and turn["ci_sensitive"] == [], turn
+
+
+async def test_a_local_turn_changing_files_ci_runs_waits_for_a_person_in_accept_edits(
+    db_client: AsyncClient, coding, github, origin: Path, checkout: Path, tmp_path: Path
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.patch(ws, json={"approval_mode_cap": "accept_edits"}, headers=ada.headers)
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Build"}, headers=ada.headers)).json()
+    runner = _local_runner(db_client, coding, checkout, tmp_path, _tool({"Makefile": "test:\n\techo ok\n"}))
+    await runner.register()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", headers=ada.headers,
+                                json={"location": "local", "approval_mode": "accept_edits"})).json()
+    assert run["status"] == "queued", run  # Accept edits: it starts at once, on her computer
+    assert await runner.once() is True
+    ready = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert ready["status"] == "changes_ready" and ready["ci_sensitive"] == ["Makefile"], ready
+    assert github.pulls == [] and ready["accepted_at"] is None
+
+
 # -- A2: in Manual, a turn's changes wait for a person before they're pushed; a pushed turn can be reverted --
 
 

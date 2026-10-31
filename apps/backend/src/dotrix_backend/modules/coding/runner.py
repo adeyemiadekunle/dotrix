@@ -479,17 +479,20 @@ class CodingWorker:
     async def _hold_for_acceptance(
         self, run_id: uuid.UUID, diff: str, files: list[dict[str, Any]], summary: str | None,
     ) -> bool:
-        """In Manual, a turn's checked changes wait for a person (`changes_ready`) instead of being
-        pushed: kept as the patch, its files listed, its approvers told. False: push them now."""
+        """In Manual, or when they change files CI runs (`guard.needs_a_person`), a turn's checked changes
+        wait for a person (`changes_ready`) instead of being pushed: kept as the patch, its files listed,
+        its approvers told. False: push them now."""
         async with self.session_factory() as session:
             run = await session.scalar(select(CodingRun).where(CodingRun.id == run_id).with_for_update())
             if run is None or run.status is not CodingRunStatus.RUNNING or not self._holds(run):
                 raise _ReconciliationRequired()
-            if run.approval_mode != ApprovalMode.MANUAL.value or run.accepted_at is not None or run.revert_of:
+            waits, sensitive = guard.needs_a_person(run.approval_mode or ApprovalMode.MANUAL.value,
+                                                    [f["path"] for f in files])
+            if not waits or run.accepted_at is not None or run.revert_of:
                 return False
             if run.stop_requested:
                 raise _Stopped("Stopped before its changes were ready")
-            await ready_for_acceptance(session, run, diff, files, summary)
+            await ready_for_acceptance(session, run, diff, files, summary, ci_sensitive=sensitive)
             await session.commit()
         return True
 
@@ -996,25 +999,34 @@ def add_events(run: CodingRun, session: AsyncSession, *, events: list[dict[str, 
 
 async def ready_for_acceptance(
     session: AsyncSession, run: CodingRun, diff: str, files: list[dict[str, Any]], summary: str | None,
+    *, ci_sensitive: list[str] | None = None,
 ) -> None:
-    """Manual: a turn's checked changes wait for a person (`changes_ready`); its approvers are told.
-    Not committed."""
+    """A turn's checked changes wait for a person (`changes_ready`): in Manual, or because they change
+    files CI runs (`ci_sensitive`, in any mode); its approvers are told. Not committed."""
     run.status, run.pending_patch, run.diff, run.files_changed = CodingRunStatus.CHANGES_READY, diff, diff, files
     run.summary = summary or run.summary
     run.lease_expires_at = None
     project = await session.get(Project, run.project_id)
     title = await issue_title(session, run)
-    add_events(run, session, step="Changes ready: waiting for a person to accept them")
+    named = ""
+    if ci_sensitive:
+        named = ", ".join(ci_sensitive[:3]) + (f" and {len(ci_sensitive) - 3} more" if len(ci_sensitive) > 3 else "")
+    add_events(run, session, step=(
+        f"Changes ready: they change files CI runs ({named}), so a person accepts them first" if named
+        else "Changes ready: waiting for a person to accept them"
+    ))
     assert project is not None
     await Notifier(session).coding_waiting(
-        project, run.id, run.issue_id, f"Changes ready for {run.issue_key}: {title}", datetime.now(UTC),
-        run.agent.value, requester_id=run.requested_by_id,
+        project, run.id, run.issue_id,
+        f"Changes ready for {run.issue_key}{' (they change files CI runs)' if named else ''}: {title}",
+        datetime.now(UTC), run.agent.value, requester_id=run.requested_by_id,
     )
     AuditLog(session).record(
         workspace_id=run.workspace_id, project_id=run.project_id, action="coding.changes_ready",
         target=run.issue_key, actor_type=AuthorType.AGENT, agent=run.agent.value,
         instructed_by_id=run.requested_by_id, approved_by_id=run.decided_by_id,
-        details={"run_id": str(run.id), "files": len(files), "location": run.location.value},
+        details={"run_id": str(run.id), "files": len(files), "location": run.location.value,
+                 **({"ci_sensitive": ci_sensitive[:20]} if ci_sensitive else {})},
     )
 
 

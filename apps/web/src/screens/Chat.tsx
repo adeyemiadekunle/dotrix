@@ -51,6 +51,7 @@ import {
 } from "@/lib/coding";
 import { useCrossConversations, useCrossStream, useCrossThread, useSendCross, useStopCross } from "@/lib/conversations";
 import type { Scope } from "@/lib/issues";
+import { CiSensitiveNote } from "../components/CiSensitiveNote";
 import { LimitNotice } from "../components/LimitNotice";
 import { approvalModes, defaultApproval } from "../core/can";
 import { openPop, openTask } from "../core/actions";
@@ -1975,6 +1976,7 @@ export function Session({ cs }: { cs: CodingSession }) {
                     ))}
                   </div>
                 )}
+                {(latest.ci_sensitive ?? []).length > 0 && <CiSensitiveNote files={latest.ci_sensitive ?? []} />}
                 <div className="change-f">
                   <span className="faint" style={{ fontSize: 12 }}>
                     Accepted, they're pushed to {latest.branch ? <code>{latest.branch}</code> : "a new branch"} and the pull request is opened or updated.

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { signUp } from "./helpers";
 
-test("project agent models and per-run limits can be saved and reset", async ({ page }) => {
+test("project agent models can be saved and reset", async ({ page }) => {
   await signUp(page);
   const slug = new URL(page.url()).pathname.split("/")[2]!;
   await page.evaluate(async (workspaceSlug) => {
@@ -23,7 +23,7 @@ test("project agent models and per-run limits can be saved and reset", async ({ 
   await expect(dialog.getByLabel("Automatic model routing", { exact: true })).not.toBeChecked();
   await dialog.getByLabel("Automatic model routing", { exact: true }).check();
   await dialog.getByLabel("Specialist model").fill("openai:cheap-model");
-  await dialog.getByLabel("Default token limit per agent run").fill("10000");
+  await expect(dialog.getByLabel("Default token limit per agent run")).toHaveCount(0); // no project budget
   const saved = page.waitForResponse((r) => r.url().includes("/projects/") && r.request().method() === "PATCH");
   await dialog.getByRole("button", { name: "Save agent models" }).click();
   expect((await saved).status()).toBe(200);
@@ -32,7 +32,6 @@ test("project agent models and per-run limits can be saved and reset", async ({ 
   await page.getByRole("button", { name: "Project settings", exact: true }).click();
   await expect(dialog.getByLabel("Automatic model routing", { exact: true })).toBeChecked();
   await expect(dialog.getByLabel("Specialist model")).toHaveValue("openai:cheap-model");
-  await expect(dialog.getByLabel("Default token limit per agent run")).toHaveValue("10000");
   await dialog.getByLabel("Specialist model").fill("openai:other-model");
   await dialog.getByLabel("Specialist model").press("Enter");
   await expect(dialog).toHaveCount(0);
@@ -43,13 +42,11 @@ test("project agent models and per-run limits can be saved and reset", async ({ 
   await expect(dialog.getByRole("alert")).toContainText(/provider/i);
   await dialog.getByLabel("Automatic model routing", { exact: true }).uncheck();
   await dialog.getByLabel("Specialist model").fill("");
-  await dialog.getByLabel("Default token limit per agent run").fill("");
   const reset = page.waitForResponse((r) => r.url().includes("/projects/") && r.request().method() === "PATCH");
   await dialog.getByRole("button", { name: "Save agent models" }).click();
   expect((await reset).status()).toBe(200);
   await expect(dialog.getByLabel("Automatic model routing", { exact: true })).not.toBeChecked();
   await expect(dialog.getByLabel("Specialist model")).toHaveValue("");
-  await expect(dialog.getByLabel("Default token limit per agent run")).toHaveValue("");
 });
 
 test("a missing provider blocks the workspace until an encrypted personal key is connected", async ({ page }) => {
